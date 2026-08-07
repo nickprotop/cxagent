@@ -19,7 +19,7 @@ namespace CxAgent.Tests;
 /// </summary>
 public class SingleAgentLoopChallengeTests
 {
-    private static SingleAgentLoop Build(MockLlmProvider provider, RecordingSink sink) =>
+    private static SingleAgentLoop Build(ILlmProvider provider, RecordingSink sink) =>
         new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null), sink,
             new NullJobPanel(), logs: null, maxTurns: 50);
 
@@ -232,13 +232,72 @@ public class SingleAgentLoopChallengeTests
         Usage = new LlmUsage(),
     };
 
+
+    [Fact]
+    public async Task EveryTurnOpensAndClosesExactlyOneAssistantTurn()
+    {
+        // THE SPINNER. A turn is created with thinking:true and the control clears that flag when
+        // body content arrives, so the turn must be OPEN while the model is being called -- that is
+        // the part that takes seconds to minutes locally. It used to be opened and closed together
+        // AFTER the response arrived, so between a tool result and the next response the transcript
+        // sat still, with no way to tell a model that is thinking from one that has died.
+        //
+        // Balance is the testable half: every Begin must have its End, or a spinner is left running
+        // over a finished goal -- which says "still working" about something already over.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Prose("Looking."));
+        provider.EnqueueResponse(Prose("Focus is decided by FocusManager."));
+
+        var sink = new RecordingSink();
+        await Build(provider, sink).RunAsync("gs", Goal("how does focus work?"), CancellationToken.None);
+
+        Assert.True(sink.Begins > 0, "no assistant turn was ever opened");
+        Assert.Equal(sink.Begins, sink.Ends);
+    }
+
+    [Fact]
+    public async Task TheAssistantTurnIsClosedEvenWhenTheProviderThrows()
+    {
+        // A spinner left running after a failure is worse than no spinner.
+        var provider = new ThrowingProvider();
+        var sink = new RecordingSink();
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            Build(provider, sink).RunAsync("gt", Goal("fix it"), CancellationToken.None));
+
+        Assert.Equal(sink.Begins, sink.Ends);
+    }
+
+    private sealed class ThrowingProvider : ILlmProvider
+    {
+        public string ProviderId => "throwing";
+        public string DisplayName => "Throwing";
+        public string ModelId => "throwing-1";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public ILlmProvider WithModel(string model) => this;
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition> tools,
+            CancellationToken ct) => throw new InvalidOperationException("boom");
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition> tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("boom");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
         public ChatMessageId AddUserTurn(string text) => new(0);
-        public ChatMessageId BeginAssistantTurn() => new(0);
+        public int Begins, Ends;
+        public ChatMessageId BeginAssistantTurn() { Begins++; return new(0); }
         public void AppendAssistant(ChatMessageId id, string token) { }
-        public void EndAssistantTurn(ChatMessageId id) { }
+        public void EndAssistantTurn(ChatMessageId id) => Ends++;
         public void ShowGoalResult(GoalState state, int failedCount) { }
         public void ShowError(string message) => Errors.Add(message);
         public void ShowSystemMessage(string message) { }

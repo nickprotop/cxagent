@@ -121,10 +121,36 @@ public sealed class SingleAgentLoop
                 return GoalState.Failed;
             }
 
-            var response = await StreamTurnAsync(messages, tools, ct);
+            // OPEN THE TURN BEFORE THE CALL, not after it. A turn is created with thinking:true and
+            // the control clears that flag when body content arrives, so opening it here puts the
+            // spinner on screen for the whole wait — which is exactly the part that takes seconds to
+            // minutes on a local model.
+            //
+            // It used to be opened and closed together, AFTER the response had fully arrived: the
+            // one moment nothing needed indicating. Between a tool result and the next response the
+            // transcript sat completely still, with no way to tell a model that is thinking from one
+            // that has died somewhere in the silicon.
+            var turnId = _sink.BeginAssistantTurn();
+            LlmResponse response;
+            try
+            {
+                response = await StreamTurnAsync(messages, tools, ct, turnId);
+            }
+            catch (Exception)
+            {
+                // The turn MUST be closed on every path. A spinner left running after a failure is
+                // worse than no spinner: it says "still working" about a goal that is already over.
+                _sink.EndAssistantTurn(turnId);
+                throw;
+            }
+
             _ledger.Record(response.Usage);
 
             var text = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
+
+            // Nothing more will be appended to this turn. Closing it stops the spinner; the text (if
+            // any) was streamed in as it arrived.
+            _sink.EndAssistantTurn(turnId);
 
             if (response.ToolCalls.Count == 0)
             {
@@ -159,12 +185,11 @@ public sealed class SingleAgentLoop
                     continue;
                 }
 
+                // Already ON SCREEN — it streamed into the turn opened above. Only the session
+                // conversation still needs it.
                 if (!string.IsNullOrWhiteSpace(text))
-                {
-                    Say(text);
                     conversation.Add(new ChatMessage
                         { Role = "assistant", Content = text, Timestamp = DateTimeOffset.UtcNow });
-                }
 
                 // NOT Completed when the goal wanted a change and none was made. Reporting success
                 // over an unchanged working tree is the same lie this mode was built to stop, one
@@ -192,9 +217,8 @@ public sealed class SingleAgentLoop
                 return GoalState.Completed;
             }
 
-            // Prose that came WITH tool calls is narration ("let me check that file") and is shown,
-            // but it is not the answer — the answer is the last turn's text.
-            if (!string.IsNullOrWhiteSpace(text)) Say(text);
+            // Prose that came WITH tool calls is narration ("let me check that file"). It has
+            // already streamed into this turn; nothing more to render.
 
             messages.Add(new ChatMessage
             {
@@ -271,15 +295,33 @@ public sealed class SingleAgentLoop
     }
 
     private async Task<LlmResponse> StreamTurnAsync(List<ChatMessage> messages,
-        List<ToolDefinition> tools, CancellationToken ct)
+        List<ToolDefinition> tools, CancellationToken ct, ChatMessageId turnId)
     {
         var text = new StringBuilder();
         var calls = new List<ToolCall>();
         LlmUsage usage = new();
 
+        // How much of the (reasoning-stripped) text has already been shown. Deltas arrive raw, and a
+        // reasoning block can span many of them, so what is SAFE to display is recomputed from the
+        // accumulated text after each chunk rather than appended blindly — streaming the raw delta
+        // would put the model's <think> block on screen, which is exactly what StripReasoning exists
+        // to prevent.
+        var shown = 0;
+
         await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
         {
-            if (!string.IsNullOrEmpty(chunk.TextDelta)) text.Append(chunk.TextDelta);
+            if (!string.IsNullOrEmpty(chunk.TextDelta))
+            {
+                text.Append(chunk.TextDelta);
+
+                var visible = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(text.ToString());
+                if (visible.Length > shown)
+                {
+                    _sink.AppendAssistant(turnId, visible[shown..]);
+                    shown = visible.Length;
+                }
+            }
+
             if (chunk.ToolCallDelta is { } tc) calls.Add(tc);
             if (chunk.Usage is { } u) usage = u;
         }
@@ -287,12 +329,6 @@ public sealed class SingleAgentLoop
         return new LlmResponse { Text = text.ToString(), ToolCalls = calls, Usage = usage };
     }
 
-    private void Say(string text)
-    {
-        var id = _sink.BeginAssistantTurn();
-        _sink.AppendAssistant(id, text);
-        _sink.EndAssistantTurn(id);
-    }
 
     private static bool IsWrite(string toolName) =>
         toolName is "write_file" or "replace_in_file";
