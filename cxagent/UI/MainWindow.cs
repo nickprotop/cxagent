@@ -244,7 +244,12 @@ public sealed class MainWindow
         Window = new WindowBuilder(_system)
             .WithTitle("cxagent")
             .Maximized()
-            .Borderless()
+            // FRAMELESS, not Borderless. Borderless is BorderStyle.None, which keeps the one-cell
+            // frame RESERVED BUT INVISIBLE — so the app painted inside a blank margin, visible on
+            // screen as a gap between the terminal edge and the content on all four sides. Frameless
+            // reclaims that space and lets the content fill the window rect, which is what a
+            // full-screen TUI wants.
+            .Frameless()
             .HideTitle()
             .AddControls(_mainGrid, StatusBar)
             .BuildAndShow();
@@ -346,14 +351,18 @@ public sealed class MainWindow
 
         _dimHandler = (buffer, _, _) =>
         {
-            // Dim everything ABOVE the prompt. Measured from the bottom rather than from the
-            // prompt's own bounds: IWindowControl exposes no rectangle, and reaching into the
-            // renderer for one would couple this to layout internals that are free to change.
+            // The prompt's REAL top, from its laid-out bounds. A fixed row reserve was tried first
+            // and is visibly wrong: the prompt's height depends on the command it is asking about
+            // (one line for `ls ~/source`, many for a long pipeline), so any constant is too big or
+            // too small. Measured live at reserve 12 against a ~6-row prompt, it left a bright band
+            // of empty space between the dimmed transcript and the question — the one region on
+            // screen carrying no information was the brightest thing on it.
             //
-            // PromptReserve is what the prompt plus the status bar occupy at their tallest. Erring
-            // LARGE is the safe direction — a slightly generous reserve leaves one transcript line
-            // undimmed, where a mean one would dim the top of the question itself.
-            var height = buffer.Height - PromptReserve;
+            // BaseControl publishes ActualY/ActualHeight, written on the UI thread each layout and
+            // read here during paint, so this needs no renderer internals.
+            var height = _activePrompt is BaseControl { ActualY: > 0 } bc
+                ? bc.ActualY
+                : buffer.Height - FallbackReserve;
             if (height <= 0) return;
 
             SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
@@ -388,9 +397,9 @@ public sealed class MainWindow
         // Same reasoning as ApplyPromptDim: the caller's ReplaceControl invalidates for us.
     }
 
-    /// <summary>Rows reserved for the prompt and the status bar, excluded from the dim. The prompt
-    /// is a heading, up to a few lines of command, a blank, a rule and a button row.</summary>
-    private const int PromptReserve = 12;
+    /// <summary>Used only before the prompt has been laid out once (ActualY is 0 until then), so
+    /// the first paint dims something rather than nothing.</summary>
+    private const int FallbackReserve = 12;
 
     /// <summary>Rows the status bar occupies at the bottom of the buffer.</summary>
     private const int StatusBarRows = 1;
