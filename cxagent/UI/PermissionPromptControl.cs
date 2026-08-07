@@ -141,7 +141,13 @@ public sealed class PermissionPromptControl
     }
 
     /// <summary>
-    /// One choice as a bordered button carrying its semantic role.
+    /// One choice as a borderless button carrying its semantic role.
+    ///
+    /// <para>NO BORDER, so the whole row is ONE LINE. A rounded border is three rows tall — top
+    /// edge, label, bottom edge — and four of them turned the answer to a one-line question into a
+    /// block deeper than the question itself, on a prompt that already sits under a heading, the
+    /// command, a blank line and a rule. The role still carries the meaning; the box added height,
+    /// not information.</para>
     ///
     /// <para>Labels are FIXED STRINGS now, so the escaping that used to matter here (an unescaped
     /// '[' from a shell command in AlwaysRule rendered the button as an empty row) can no longer be
@@ -152,7 +158,7 @@ public sealed class PermissionPromptControl
     {
         var btn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape(label))
             .WithColorRole(role)
-            .WithBorder(ButtonBorderStyle.Rounded)
+            .WithBorder(ButtonBorderStyle.None)
             .Build();
         btn.Click += (_, _) => _tcs.TrySetResult(choice);
         return btn;
