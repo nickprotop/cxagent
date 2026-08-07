@@ -95,6 +95,14 @@ public sealed class SingleAgentLoop
         var wrote = false;
         var challenges = 0;
 
+        // The LAST build/test result seen this goal, or null if none was ever run. Tracked because a
+        // broken edit is not a finished goal, and the model will say it is: measured live, an agent
+        // wrote a correct diagnosis, its patch failed to compile (`error CS1612`), the transcript
+        // recorded "Build FAILED", and it reported success in the same breath. `wrote` was true, so
+        // the no-write challenge never fired — the goal was broken in a way the existing gate is
+        // structurally unable to see.
+        string? lastBuild = null;
+
         for (var turn = 0; ; turn++)
         {
             ct.ThrowIfCancellationRequested();
@@ -126,13 +134,18 @@ public sealed class SingleAgentLoop
                 // proceed just burns turns to hear the same thing louder.
                 var refused = text.Contains("CANNOT:", StringComparison.OrdinalIgnoreCase);
 
-                if (!wrote && !refused && challenges < MaxChallenges && AsksForAChange(conversation))
+                // Two ways a change goal can finish badly, and they need different words: nothing was
+                // written at all, or something was written that does not build.
+                var broken = wrote && lastBuild is not null && BuildFailed(lastBuild);
+                var unfinished = !wrote && AsksForAChange(conversation);
+
+                if ((unfinished || broken) && !refused && challenges < MaxChallenges)
                 {
                     challenges++;
                     messages.Add(new ChatMessage
                     {
                         Role = "user",
-                        Content = ChallengeText(challenges),
+                        Content = broken ? BrokenBuildChallenge(lastBuild!) : ChallengeText(challenges),
                         Timestamp = DateTimeOffset.UtcNow,
                     });
                     continue;
@@ -148,11 +161,23 @@ public sealed class SingleAgentLoop
                 // NOT Completed when the goal wanted a change and none was made. Reporting success
                 // over an unchanged working tree is the same lie this mode was built to stop, one
                 // level up: the run says done, the disk says otherwise, and the user finds out later.
-                if (!wrote && AsksForAChange(conversation))
+                if (unfinished)
                 {
                     _sink.ShowError(
                         "the goal asked for a change, but nothing was written. Investigation ran to "
                         + "a stop without reaching an edit.");
+                    return GoalState.Failed;
+                }
+
+                // A BROKEN BUILD IS A FAILED GOAL. Measured live: a correct diagnosis, a patch that
+                // did not compile, "Build FAILED" in the transcript, and a confident success summary
+                // in the same turn. Edits were made, so the no-write gate above saw nothing wrong —
+                // this is the one that has to catch it.
+                if (broken)
+                {
+                    _sink.ShowError(
+                        "changes were written but the build did not succeed. The last build or test "
+                        + "run reported a failure and it was not resolved.");
                     return GoalState.Failed;
                 }
 
@@ -174,6 +199,11 @@ public sealed class SingleAgentLoop
             {
                 var result = await InvokeAndShowAsync(goalId, call, ct);
                 if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
+
+                // A build or test run REPLACES the previous verdict rather than accumulating: what
+                // matters at the end is whether the tree compiles NOW, not whether it ever did. A
+                // model that breaks the build, fixes it, and stops has finished the job.
+                if (call.Name == "run_shell" && LooksLikeBuildOrTest(call)) lastBuild = result;
 
                 messages.Add(new ChatMessage
                 {
@@ -296,6 +326,87 @@ public sealed class SingleAgentLoop
         result.StartsWith("error", StringComparison.OrdinalIgnoreCase)
         || result.Contains("was not found", StringComparison.Ordinal)
         || result.Contains("is required", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether a shell call was a BUILD or TEST run — the commands whose result says whether the
+    /// edits actually work.
+    ///
+    /// <para>Matched on the command text, which is the only signal available: run_shell is one tool
+    /// and every toolchain looks different through it. Deliberately narrow — a command that is not
+    /// recognised simply does not update the verdict, which fails safe (the goal is judged on the
+    /// last build it DID run, or on nothing at all).</para>
+    /// </summary>
+    private static bool LooksLikeBuildOrTest(ToolCall call)
+    {
+        var cmd = TryGetArgument(call, "command");
+        if (string.IsNullOrEmpty(cmd)) return false;
+
+        ReadOnlySpan<string> verbs =
+        [
+            "dotnet build", "dotnet test", "msbuild",
+            "cargo build", "cargo test", "cargo check",
+            "go build", "go test",
+            "npm run build", "npm test", "yarn build", "yarn test", "pnpm build", "pnpm test",
+            "make", "cmake --build", "gradle", "mvn ", "pytest", "tsc",
+        ];
+        foreach (var v in verbs)
+            if (cmd.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Whether a build/test result reads as a failure.
+    ///
+    /// <para>Exit code would be the honest signal, but it does not survive: WorkerToolset renders a
+    /// shell result as text, and a non-zero exit already arrives prefixed "error:". Both forms are
+    /// matched, plus the phrases the major toolchains print, because a command that fails INSIDE a
+    /// pipeline (`… | tail -30`) exits 0 and only says so in its output — which is exactly how the
+    /// live failure was invisible: `dotnet build … 2>&amp;1 | tail -30` returned success while its
+    /// text said "Build FAILED".</para>
+    /// </summary>
+    private static bool BuildFailed(string result)
+    {
+        if (result.StartsWith("error", StringComparison.OrdinalIgnoreCase)) return true;
+
+        ReadOnlySpan<string> markers =
+        [
+            "Build FAILED", "error CS", "error MSB",
+            "Failed!", "FAILED", "Test Run Failed",
+            "error[E", "error: could not compile",
+            "npm ERR!", "Compilation failed", "SyntaxError", "cannot find symbol",
+        ];
+        foreach (var m in markers)
+            if (result.Contains(m, StringComparison.Ordinal)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// The nudge for a goal whose edits do not build. Carries the build OUTPUT, because the model
+    /// has already seen it once and moved on — repeating the fact without the detail would earn the
+    /// same shrug.
+    /// </summary>
+    private static string BrokenBuildChallenge(string buildResult)
+    {
+        var detail = buildResult.Length > 1500 ? buildResult[..1500] + "…" : buildResult;
+        return "The build is broken. Your changes were written, but the last build or test run "
+             + "failed and you stopped without fixing it — a change that does not compile is not a "
+             + "finished change. Fix it now, or revert your edits and say plainly why it cannot be "
+             + "done.\n\nThe failing output was:\n" + detail;
+    }
+
+    /// <summary>One argument of a tool call as a string, or null when absent or not a string.</summary>
+    private static string? TryGetArgument(ToolCall call, string name)
+    {
+        try
+        {
+            return call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object
+                && call.Arguments.TryGetProperty(name, out var v)
+                && v.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? v.GetString()
+                    : null;
+        }
+        catch (Exception) { return null; }
+    }
 
     /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
     private static string ToolPluginType(string toolName) => toolName switch
