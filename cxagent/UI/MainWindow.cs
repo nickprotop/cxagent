@@ -337,7 +337,8 @@ public sealed class MainWindow
     /// <para>A REGION, not the window. cxpost dims OTHER WINDOWS because its dialogs are separate
     /// windows; this prompt is an inline swap into the composer's own grid cell, so dimming the
     /// window would dim the prompt too. The region is everything above the prompt — the transcript —
-    /// leaving the prompt and the status bar at full strength.</para>
+    /// leaving ONLY the prompt at full strength — the status bar is dimmed too, by a second region,
+    /// since its shortcuts are inert while a prompt is waiting.</para>
     /// </summary>
     private void ApplyPromptDim()
     {
@@ -358,6 +359,14 @@ public sealed class MainWindow
             SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
                 buffer, Color.Black, DimIntensity, DimForegroundRatio,
                 new LayoutRect(0, 0, buffer.Width, height));
+
+            // THE STATUS BAR TOO. It is below the prompt, so the region above missed it entirely —
+            // leaving a bright row of shortcuts under a dimmed screen, which read as the one thing
+            // still asking for attention while the question above it was the thing that mattered.
+            // Its keys are also inert while a prompt is up.
+            SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
+                buffer, Color.Black, DimIntensity, DimForegroundRatio,
+                new LayoutRect(0, buffer.Height - StatusBarRows, buffer.Width, StatusBarRows));
         };
 
         // NO explicit Invalidate. ReplaceControl (the swap that brought us here) already
@@ -383,9 +392,16 @@ public sealed class MainWindow
     /// is a heading, up to a few lines of command, a blank, a rule and a button row.</summary>
     private const int PromptReserve = 12;
 
-    /// <summary>Black at 0.45 — cxpost's DialogBase and cxgpu's BusyIndicator use the same value, so
-    /// a user moving between the apps sees one product.</summary>
-    private const float DimIntensity = 0.45f;
+    /// <summary>Rows the status bar occupies at the bottom of the buffer.</summary>
+    private const int StatusBarRows = 1;
+
+    /// <summary>
+    /// Black at 0.65. cxpost's DialogBase and cxgpu's BusyIndicator both use 0.45, and that is the
+    /// right weight for a SEPARATE WINDOW floating above the content — the window's own border and
+    /// fill already separate it. This prompt is inline, sharing the column with the transcript, so
+    /// it has no chrome of its own doing that work and needs the contrast from the dim instead.
+    /// </summary>
+    private const float DimIntensity = 0.65f;
 
     /// <summary>Foreground blends less than background, so dimmed text stays readable rather than
     /// dissolving into the fill. cxpost's ratio.</summary>
