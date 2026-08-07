@@ -343,4 +343,87 @@ public class WorkerToolsetTests
         var tools = WorkerToolset.For(Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins());
         Assert.Equal(7, tools.Count);
     }
+
+    // ---- ARGUMENT TYPE TOLERANCE -------------------------------------------
+    // Models routinely stringify scalars. Each slip used to become a JsonException whose message
+    // named a JSON path ("Path: $ | LineNumber: 0") rather than the parameter, so the model knew
+    // something was wrong but not which argument to change -- and retried the same shape.
+
+    [Fact]
+    public async Task Invoke_AcceptsANumberSentAsAString()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "f.txt");
+            File.WriteAllText(f, "one\ntwo\nthree\nfour\n");
+
+            var r = await WorkerToolset.InvokeAsync(
+                Call("read_file", new { path = f, offset = "2", limit = "1" }),
+                new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+                new CollectingContext(), CancellationToken.None);
+
+            Assert.Contains("two", r);
+            Assert.DoesNotContain("LineNumber", r);   // no raw JsonException text
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Invoke_AcceptsABoolSentAsAString()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "a.txt"), "alpha\n");
+
+            var r = await WorkerToolset.InvokeAsync(
+                Call("search_files", new { path = dir, pattern = "al.ha", regex = "true" }),
+                new[] { WorkerTool.SearchFiles }, PluginRegistry.CreateWithBuiltins(),
+                new CollectingContext(), CancellationToken.None);
+
+            Assert.Contains("alpha", r);   // regex actually took effect
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Invoke_TreatsAnExplicitNullAsAbsent()
+    {
+        // A model with nothing to say for an optional arg emits null rather than omitting the key.
+        // TryGetValue then succeeded, the default was never applied, and list_files threw a
+        // NullReferenceException -- "Object reference not set to an instance of an object", which
+        // tells the model nothing it can act on.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "a.txt"), "x");
+
+            var r = await WorkerToolset.InvokeAsync(
+                Call("list_files", new { path = dir, pattern = (string?)null }),
+                new[] { WorkerTool.ListFiles }, PluginRegistry.CreateWithBuiltins(),
+                new CollectingContext(), CancellationToken.None);
+
+            Assert.Contains("a.txt", r);
+            Assert.DoesNotContain("Object reference", r);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Invoke_DoesNotThrowWhenAnArgumentIsAnArray()
+    {
+        // Argv-array form is natural -- many shell tools take one. This threw a JsonException out of
+        // Validate, which sits OUTSIDE the try/catch, past both call sites and killed the turn.
+        var r = await WorkerToolset.InvokeAsync(
+            Call("run_shell", new { command = new[] { "ls", "-l" } }),
+            new[] { WorkerTool.RunShell }, PluginRegistry.CreateWithBuiltins(),
+            new CollectingContext(), CancellationToken.None);
+
+        Assert.Contains("command", r);        // names the offending argument
+        Assert.DoesNotContain("LineNumber", r);
+    }
 }

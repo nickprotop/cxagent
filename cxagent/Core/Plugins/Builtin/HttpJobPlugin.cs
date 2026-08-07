@@ -27,9 +27,24 @@ public class HttpJobPlugin : IJobPlugin
     public JobValidation Validate(JobParameters parameters)
     {
         var url = parameters.Get("url", "");
-        return Uri.TryCreate(url, UriKind.Absolute, out _)
-            ? JobValidation.Valid()
-            : JobValidation.Invalid("'url' must be a valid absolute URL.");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return JobValidation.Invalid("'url' must be a valid absolute URL.");
+
+        // SCHEME, not just well-formedness. `file:///etc/passwd` and `ftp://…` are absolute URIs, so
+        // they passed here and then threw NotSupportedException out of SendAsync — an exception the
+        // model reads as a transport failure rather than as "this tool does not do that".
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return JobValidation.Invalid(
+                $"'url' must use http or https; '{uri.Scheme}' is not supported by this tool.");
+
+        // A method the HttpMethod constructor rejects (whitespace, a stray quote) threw a raw
+        // FormatException from ExecuteAsync naming neither the parameter nor the value.
+        var method = parameters.Get("method", "GET");
+        if (method.Length == 0 || method.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
+            return JobValidation.Invalid(
+                $"'method' must be a bare HTTP verb such as GET or POST; got '{method}'.");
+
+        return JobValidation.Valid();
     }
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
@@ -49,9 +64,37 @@ public class HttpJobPlugin : IJobPlugin
             try
             {
                 using var req = new HttpRequestMessage(method, url);
-                if (body is not null) req.Content = new StringContent(body);
+
+                // CONTENT HEADERS GO ON THE CONTENT. req.Headers.TryAddWithoutValidation returns
+                // false for Content-Type and silently DISCARDS it, so a POST always went out as
+                // StringContent's default text/plain. That is a guaranteed retry loop: the API
+                // rejects the body, the model correctly diagnoses it and retries with
+                // headers:{"Content-Type":"application/json"}, and gets the identical request back.
+                if (body is not null)
+                {
+                    var declared = headers?.FirstOrDefault(h =>
+                        string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase));
+
+                    // A body that parses as JSON is JSON. A model sending one to an API and being
+                    // told text/plain has no way to see what went wrong from the response alone.
+                    var contentType = declared?.Value is { Length: > 0 } ct2 ? ct2
+                        : LooksLikeJson(body) ? "application/json"
+                        : "text/plain";
+
+                    req.Content = new StringContent(body, System.Text.Encoding.UTF8);
+                    req.Content.Headers.ContentType =
+                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
+                }
+
                 if (headers is not null)
-                    foreach (var h in headers) req.Headers.TryAddWithoutValidation(h.Key, h.Value);
+                    foreach (var h in headers)
+                    {
+                        // Content-Type was applied above; adding it here would fail anyway.
+                        if (string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (!req.Headers.TryAddWithoutValidation(h.Key, h.Value))
+                            req.Content?.Headers.TryAddWithoutValidation(h.Key, h.Value);
+                    }
 
                 using var resp = await _client.SendAsync(req, ct);
                 var status = (int)resp.StatusCode;
@@ -82,5 +125,14 @@ public class HttpJobPlugin : IJobPlugin
 
             if (retryInterval > 0) await Task.Delay(TimeSpan.FromSeconds(retryInterval), ct);
         }
+    }
+
+    /// <summary>Whether a body is JSON, by its first non-space character. Deliberately shallow: a
+    /// full parse would reject a body that is JSON-with-a-trailing-comma, which the server should
+    /// get the chance to reject itself with a real error message.</summary>
+    private static bool LooksLikeJson(string body)
+    {
+        var t = body.AsSpan().TrimStart();
+        return t.Length > 0 && (t[0] == '{' || t[0] == '[');
     }
 }

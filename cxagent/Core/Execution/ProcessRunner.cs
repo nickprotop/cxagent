@@ -47,6 +47,12 @@ public static class ProcessRunner
             FileName = spec.FileName,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            // REDIRECT STDIN AND CLOSE IT (below), so an interactive command gets EOF instead of the
+            // terminal. Unredirected, the child INHERITS the TUI's stdin: `git commit` opens $EDITOR,
+            // `apt install` waits on y/n, and each one both steals the user's keystrokes from the
+            // interface and blocks until the timeout with no output to explain why. EOF turns all of
+            // that into a fast, legible failure the model can act on.
+            RedirectStandardInput = true,
             UseShellExecute = false,
             WorkingDirectory = spec.WorkingDir ?? Environment.CurrentDirectory,
         };
@@ -81,6 +87,13 @@ public static class ProcessRunner
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { ctx.Log(JobLogLevel.Warning, e.Data); Capture(stderr, e.Data); } };
 
         process.Start();
+
+        // Close stdin IMMEDIATELY. Redirecting it without closing it is worse than not redirecting:
+        // the child then blocks on a pipe that no one will ever write to. Closed, a read returns EOF
+        // and the command fails in milliseconds with a message the model can act on.
+        try { process.StandardInput.Close(); }
+        catch (Exception) { /* already gone: the process exited before we got here */ }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 

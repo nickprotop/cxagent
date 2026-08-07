@@ -425,4 +425,84 @@ public class FileJobPluginTests : IDisposable
 
         Assert.False(r.Success);
     }
+
+    // ---- GLOB NORMALISATION -------------------------------------------------
+    // `**/*.cs` is what a developer writes and what a model reaches for first. .NET's
+    // EnumerateFiles treats `**` as a literal directory name and throws "Could not find a part of
+    // the path", which reads as "your path is wrong" rather than "that syntax is unsupported".
+    // Seen live on a 1,294-file tree: two failed searches, then a fallback to `find` through
+    // run_shell -- a permission prompt for a read the agent was already entitled to make.
+
+    private void Seed()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "sub"));
+        File.WriteAllText(Path.Combine(_dir, "a.cs"), "class A { }\nTARGET\n");
+        File.WriteAllText(Path.Combine(_dir, "sub", "b.cs"), "class B { }\nTARGET\n");
+        File.WriteAllText(Path.Combine(_dir, "notes.txt"), "TARGET\n");
+    }
+
+    [Theory]
+    [InlineData("**/*.cs")]   // the form that failed live
+    [InlineData("*.cs")]      // already worked
+    [InlineData("./*.cs")]    // harmless to a shell, fatal to EnumerateFiles
+    [InlineData("src/**/*.cs")] // ** mid-pattern: the file half is what selects
+    public async Task List_AcceptsEveryStandardGlobForm(string glob)
+    {
+        Seed();
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", glob));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var content = r.Output["content"] as string ?? "";
+        // Recursion is the search mode, so both the root and nested .cs file are found -- and the
+        // .txt is excluded, proving the pattern still SELECTS rather than being discarded.
+        Assert.Contains("a.cs", content);
+        Assert.Contains("b.cs", content);
+        Assert.DoesNotContain("notes.txt", content);
+    }
+
+    [Theory]
+    [InlineData("**/*.cs")]
+    [InlineData("*.cs")]
+    public async Task Search_AcceptsEveryStandardGlobForm(string glob)
+    {
+        Seed();
+        var r = await Run(("action", "search"), ("path", _dir),
+                          ("pattern", "TARGET"), ("glob", glob));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var content = r.Output["content"] as string ?? "";
+        Assert.Contains("a.cs", content);
+        Assert.Contains("b.cs", content);
+        Assert.DoesNotContain("notes.txt", content);   // glob still filters
+    }
+
+    [Fact]
+    public async Task List_BareDoubleStarMatchesEverything()
+    {
+        Seed();
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", "**"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("notes.txt", r.Output["content"] as string ?? "");
+    }
+
+    [Fact]
+    public async Task Replace_RefusesAmbiguityThatDiffersOnlyInWhitespace()
+    {
+        // The uniqueness check searched for the LITERAL matched text, while matching itself ignores
+        // whitespace. So two occurrences that differ only in spacing -- the commonest kind of near
+        // duplicate in real source -- read as unique, and the tool silently edits the first.
+        var f = Path.Combine(_dir, "dup.cs");
+        File.WriteAllText(f, "if (x) {\n\treturn 1;\n}\nif (x)  {\n\treturn 1;\n}\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "if (x) {"), ("replacement", "if (y) {"));
+
+        Assert.False(r.Success);
+        // The count is part of the signal: "appears 2 times" tells the model how much more context
+        // it needs to disambiguate, where "more than once" leaves it guessing.
+        Assert.Contains("appears 2 times", r.ErrorMessage ?? "");
+        Assert.Contains("Nothing was written", r.ErrorMessage ?? "");
+        Assert.Equal("if (x) {\n\treturn 1;\n}\nif (x)  {\n\treturn 1;\n}\n", File.ReadAllText(f));
+    }
 }

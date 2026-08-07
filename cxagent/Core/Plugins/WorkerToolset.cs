@@ -177,7 +177,21 @@ public static class WorkerToolset
             values["action"] = entry.Spec.PinnedAction;
         var parameters = new JobParameters(values);
 
-        var validation = plugin.Validate(parameters);
+        // Validate READS the parameters, so a type slip throws HERE, before the try/catch below.
+        // `run_shell {"command": ["ls","-l"]}` — argv-array form, which many shell tools do take —
+        // threw a JsonException straight out of InvokeAsync, past both call sites (SingleAgentLoop
+        // and LlmAgentJobPlugin, neither of which guards it) and killed the whole turn over one
+        // correctable argument. That directly contradicts this method's "never throws" contract.
+        JobValidation validation;
+        try
+        {
+            validation = plugin.Validate(parameters);
+        }
+        catch (Exception ex)
+        {
+            return Truncate(DescribeBadArguments(call, ex), MaxToolResultChars);
+        }
+
         if (!validation.IsValid)
             return string.Join("; ", validation.Errors);
 
@@ -191,6 +205,11 @@ public static class WorkerToolset
         try
         {
             result = await plugin.ExecuteAsync(parameters, ctx, ct);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            // Same treatment as Validate's: name the argument, not the JSON path.
+            return Truncate(DescribeBadArguments(call, ex), MaxToolResultChars);
         }
         catch (Exception ex)
         {
@@ -207,11 +226,7 @@ public static class WorkerToolset
         // next, and the model cannot see the tool schema's offset/limit text at the moment it is
         // staring at a hole. Appended AFTER truncation so the advice itself is never elided.
         var truncated = Truncate(body, MaxToolResultChars);
-        if (truncated.Length != body.Length && call.Name == "read_file")
-            truncated += "\n\nThis file was too large to return whole. Re-read it in pieces with the "
-                + "'offset' (1-based line) and 'limit' (line count) parameters — see 'total_lines' "
-                + "above for how far it goes. Do NOT repeat this call unchanged; it returns the same "
-                + "elision.";
+        if (truncated.Length != body.Length) truncated += RecoveryAdviceFor(call.Name);
         return truncated;
     }
 
@@ -235,14 +250,88 @@ public static class WorkerToolset
         return string.IsNullOrWhiteSpace(detail) ? toolName : $"{toolName}: {detail}";
     }
 
+    /// <summary>
+    /// Turns a type-conversion failure into a message naming the ARGUMENT that is wrong.
+    ///
+    /// <para>System.Text.Json reports position, not meaning: "The JSON value could not be converted
+    /// to System.String. Path: $ | LineNumber: 0 | BytePositionInLine: 1". Handed that, a model
+    /// knows something about its call was malformed but not WHICH parameter, so its cheapest move is
+    /// to retry the same shape. Naming the offending arguments and showing the kinds actually sent
+    /// makes the mistake correctable in one turn.</para>
+    /// </summary>
+    private static string DescribeBadArguments(ToolCall call, Exception ex)
+    {
+        var entry = Specs.FirstOrDefault(s => s.Spec.Name == call.Name);
+        var expected = entry.Spec?.Params ?? [];
+
+        var sent = new List<string>();
+        try
+        {
+            foreach (var prop in call.Arguments.EnumerateObject())
+                if (prop.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    sent.Add($"'{prop.Name}' was sent as a JSON {prop.Value.ValueKind.ToString().ToLowerInvariant()}");
+        }
+        catch (Exception) { /* arguments themselves unreadable; fall through to the generic text */ }
+
+        var detail = sent.Count > 0
+            ? string.Join("; ", sent) + ". Each argument must be a plain scalar (string, number or "
+              + "boolean), not a nested object or array."
+            : $"one of the arguments has the wrong type ({ex.Message})";
+
+        return $"error: {call.Name} could not read its arguments: {detail} "
+             + $"Accepted arguments: {string.Join(", ", expected)}.";
+    }
+
+    /// <summary>
+    /// How to get the part that was cut, PER TOOL.
+    ///
+    /// <para>This advice used to be gated on <c>read_file</c>, leaving every other tool to show a
+    /// hole with no way out — the exact re-issue loop the advice exists to prevent, unfixed for the
+    /// tools that need it most. The distinction that matters is whether the tool can page at all:
+    /// <c>search_files</c> and <c>list_files</c> take a <c>limit</c>, while <c>run_shell</c> and
+    /// <c>http_request</c> expose nothing, so telling those two to "narrow the parameters" would be
+    /// advice they cannot follow. They are told to narrow the COMMAND instead.</para>
+    /// </summary>
+    private static string RecoveryAdviceFor(string toolName) => toolName switch
+    {
+        "read_file" =>
+            "\n\nThis file was too large to return whole. Re-read it in pieces with the 'offset' "
+            + "(1-based line) and 'limit' (line count) parameters — see 'total_lines' above for how "
+            + "far it goes. Do NOT repeat this call unchanged; it returns the same elision.",
+
+        "search_files" or "list_files" =>
+            "\n\nToo many results to return whole. Narrow the search — a more specific 'pattern', a "
+            + "'glob' that restricts the file types, or a path further down the tree — or set a "
+            + "smaller 'limit' and work through it. Do NOT repeat this call unchanged.",
+
+        "run_shell" =>
+            "\n\nThe output was too large to return whole, and this tool cannot page. Re-run with "
+            + "the command itself narrowed — pipe through 'head', 'tail', 'grep', or 'wc -l' — "
+            + "rather than repeating the call unchanged.",
+
+        _ =>
+            "\n\nThe result was too large to return whole and the middle was elided. Request less "
+            + "in a single call rather than repeating this one unchanged.",
+    };
+
+    /// <summary>
+    /// Elides the middle of an over-long result, keeping both ends.
+    ///
+    /// <para>The marker is counted INSIDE the cap. It was not: <c>half + marker + half</c> returned
+    /// roughly <c>cap + 30</c> characters, so the one number this constant exists to guarantee was
+    /// the one thing it did not — and ProcessRunner documents its own cap as matching this one.</para>
+    /// </summary>
     private static string Truncate(string text, int cap)
     {
         if (cap <= 0 || text.Length <= cap) return text;
 
-        var half = cap / 2;
-        var elided = text.Length - (half * 2);
-        if (elided <= 0) return text;
+        // Measured with the real elided count, so the budget is right rather than approximately
+        // right; a few characters either way in the count itself cannot push it back over.
+        var marker = $"\n[... {text.Length - cap:N0} bytes elided ...]\n";
+        var keep = cap - marker.Length;
+        if (keep <= 0) return text[..cap];
 
-        return text[..half] + $"\n[... {elided:N0} bytes elided ...]\n" + text[^half..];
+        var half = keep / 2;
+        return text[..half] + marker + text[^(keep - half)..];
     }
 }

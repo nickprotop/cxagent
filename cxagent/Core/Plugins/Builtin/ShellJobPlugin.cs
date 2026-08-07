@@ -29,7 +29,12 @@ public class ShellJobPlugin : IJobPlugin
     {
         var command = parameters.Get<string>("command");
         var workingDir = parameters.Get<string?>("working_dir", null);
-        var timeout = parameters.Get<int?>("timeout_seconds", null);
+        // A DEFAULT TIMEOUT, because `timeout_seconds` is optional and a model almost never sends
+        // it. Without one, ProcessRunner builds a CancellationTokenSource that is never scheduled to
+        // fire, so `run_shell {"command":"npm install"}` — or a curl to a dead host, or a grep over
+        // a huge tree — waits forever with nothing to interrupt it. Two minutes is long enough for
+        // a build step and short enough that a wedged call fails while the user is still watching.
+        var timeout = parameters.Get<int?>("timeout_seconds", null) ?? 120;
         var env = parameters.Get<Dictionary<string, string>?>("env", null);
 
         var spec = new ProcessSpec("/bin/sh", new[] { "-c", command }, workingDir, env, timeout);
@@ -39,7 +44,12 @@ public class ShellJobPlugin : IJobPlugin
 
         if (result.TimedOut)
             return new JobResult { Success = false, ExitCode = -1, Duration = duration,
-                ErrorMessage = $"timed out after {timeout}s" };
+                // Name the knob. "timed out after 120s" tells the model it failed but not that the
+                // limit is raisable, so its usual next move is to re-run the identical command.
+                ErrorMessage = $"timed out after {timeout}s. If the command legitimately needs "
+                             + "longer, retry with a larger 'timeout_seconds'. If it was waiting "
+                             + "for input, re-run it with a non-interactive flag — this shell has "
+                             + "no stdin." };
 
         return new JobResult
         {

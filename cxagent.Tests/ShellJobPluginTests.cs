@@ -86,4 +86,40 @@ public class ShellJobPluginTests
     {
         Assert.Equal("shell", new ShellJobPlugin().TypeName);
     }
+
+    [Fact]
+    public async Task Shell_CommandThatReadsStdinFailsFastInsteadOfHanging()
+    {
+        // Unredirected, the child INHERITS the TUI's stdin: `git commit` opens $EDITOR, `apt` waits
+        // on y/n, and the command blocks until the timeout while stealing the user's keystrokes.
+        // Closed, the read returns EOF and the command finishes in milliseconds.
+        var plugin = new ShellJobPlugin();
+        var p = new JobParameters(new Dictionary<string, object?>
+        {
+            ["command"] = "cat",              // reads stdin until EOF
+            ["timeout_seconds"] = 10,
+        });
+
+        var start = DateTimeOffset.UtcNow;
+        var r = await plugin.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
+        var elapsed = DateTimeOffset.UtcNow - start;
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.True(elapsed < TimeSpan.FromSeconds(5),
+            $"`cat` should hit EOF immediately, took {elapsed.TotalSeconds:N1}s");
+    }
+
+    [Fact]
+    public async Task Shell_RunsWithNoTimeoutParameterSupplied()
+    {
+        // timeout_seconds is optional and a model almost never sends it. With no default,
+        // ProcessRunner built a CancellationTokenSource that was never scheduled to fire, so a
+        // blocking command waited forever with nothing able to interrupt it.
+        var plugin = new ShellJobPlugin();
+        var p = new JobParameters(new Dictionary<string, object?> { ["command"] = "echo hi" });
+
+        var r = await plugin.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+    }
 }

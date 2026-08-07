@@ -158,7 +158,7 @@ public class FileJobPlugin : IJobPlugin
         // nothing it can act on.
         var dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
 
-        var matches = Directory.EnumerateFiles(dir, pattern, SearchOption.AllDirectories)
+        var matches = Directory.EnumerateFiles(dir, NormalizeGlob(pattern), SearchOption.AllDirectories)
             .Take(limit + 1)
             .ToList();
 
@@ -169,6 +169,43 @@ public class FileJobPlugin : IJobPlugin
         output["count"] = matches.Count;
         // Says so rather than silently returning a partial answer the model reads as complete.
         if (truncated) output["truncated"] = true;
+    }
+
+    /// <summary>
+    /// Normalises a caller's glob into the single-segment pattern <c>Directory.EnumerateFiles</c>
+    /// accepts, since both call sites already search recursively via SearchOption.AllDirectories.
+    ///
+    /// <para><c>**/*.cs</c> is what any developer writes and what a model reaches for first. .NET
+    /// does not understand it — it treats <c>**</c> as a literal directory name and throws "Could
+    /// not find a part of the path", which reads as "your path is wrong" rather than "that syntax is
+    /// unsupported". Seen live: a search of a 1,294-file tree failed twice on it, and the agent fell
+    /// back to `find` through run_shell, paying a permission prompt for a read it was already
+    /// entitled to make.</para>
+    ///
+    /// <para>Leading <c>./</c> is stripped for the same reason: harmless to a shell, fatal here.</para>
+    /// </summary>
+    private static string NormalizeGlob(string glob)
+    {
+        var g = glob.Trim();
+        if (g.Length == 0) return "*";
+
+        // Recursion is the search mode, not part of the pattern: drop any leading **/ or ./ segments.
+        while (g.StartsWith("**/", StringComparison.Ordinal) || g.StartsWith("**\\", StringComparison.Ordinal))
+            g = g[3..];
+        while (g.StartsWith("./", StringComparison.Ordinal) || g.StartsWith(".\\", StringComparison.Ordinal))
+            g = g[2..];
+
+        // A ** left anywhere else (src/**/*.cs) cannot be expressed in one segment. Keep the file
+        // part, which is the half that actually selects, rather than throwing over the directory
+        // half that AllDirectories already covers.
+        var star2 = g.LastIndexOf("**", StringComparison.Ordinal);
+        if (star2 >= 0)
+        {
+            var tail = g[(star2 + 2)..].TrimStart('/', '\\');
+            g = tail.Length > 0 ? tail : "*";
+        }
+
+        return g.Length == 0 ? "*" : g;
     }
 
     /// <summary>
@@ -221,7 +258,7 @@ public class FileJobPlugin : IJobPlugin
         }
 
         var hits = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(dir, glob, SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(dir, NormalizeGlob(glob), SearchOption.AllDirectories))
         {
             ct.ThrowIfCancellationRequested();
             if (hits.Count >= limit) break;
@@ -268,13 +305,6 @@ public class FileJobPlugin : IJobPlugin
         var text = await File.ReadAllTextAsync(path, ct);
 
         var (first, matchLength) = FindSingleMatch(text, pattern, path);
-
-        var second = text.IndexOf(text.Substring(first, matchLength), first + matchLength,
-            StringComparison.Ordinal);
-        if (second >= 0)
-            throw new InvalidOperationException(
-                $"'pattern' appears more than once in {path}, so which one to change is ambiguous. "
-                + "Include enough surrounding lines to make it unique. Nothing was written.");
 
         // PRESERVE THE BOM. File.WriteAllTextAsync writes UTF-8 without one regardless of what the
         // file had, so editing one line of a BOM'd file silently rewrote its first three bytes —
@@ -348,10 +378,41 @@ public class FileJobPlugin : IJobPlugin
 
     private static (int Start, int Length) FindSingleMatch(string text, string pattern, string path)
     {
-        var exact = text.IndexOf(pattern, StringComparison.Ordinal);
-        if (exact >= 0) return (exact, pattern.Length);
+        var matches = FindAllMatches(text, pattern);
 
-        // Line-by-line, comparing each line with its leading whitespace stripped.
+        if (matches.Count == 0)
+            throw new InvalidOperationException(
+                $"'pattern' was not found in {path}, even ignoring indentation. Read the file first "
+                + "and copy the text from what it actually says, rather than reproducing it from "
+                + "memory.");
+
+        if (matches.Count > 1)
+            throw new InvalidOperationException(
+                $"'pattern' appears {matches.Count} times in {path}, so which one to change is "
+                + "ambiguous. Include enough surrounding lines to make it unique. Nothing was "
+                + "written.");
+
+        return matches[0];
+    }
+
+    /// <summary>
+    /// Every place <paramref name="pattern"/> matches, under the SAME whitespace-insensitive rule
+    /// used to locate the edit.
+    ///
+    /// <para>Uniqueness and location must be decided by ONE matcher. They were not: the edit was
+    /// located ignoring whitespace, then uniqueness was re-checked by searching for the literal
+    /// matched text. Two occurrences differing only in spacing — `if (x) {` and `if (x)  {`, the
+    /// commonest kind of near-duplicate in real source — therefore read as unique, and the tool
+    /// silently edited the first. Nothing warned, and the diff looked deliberate.</para>
+    /// </summary>
+    private static List<(int Start, int Length)> FindAllMatches(string text, string pattern)
+    {
+        var found = new List<(int, int)>();
+
+        // ONE pass, whitespace-insensitive, over whole lines. Not "exact matches first, else fall
+        // back": an exact hit and a spacing-variant hit are equally plausible targets to a caller
+        // who could not know the file's exact spacing — that is why the insensitive rule exists at
+        // all — so short-circuiting on the exact one hides the ambiguity instead of reporting it.
         var patternLines = pattern.Replace("\r\n", "\n").Split('\n');
         var textLines = text.Replace("\r\n", "\n").Split('\n');
 
@@ -362,18 +423,16 @@ public class FileJobPlugin : IJobPlugin
                 all = Squash(textLines[i + j]) == Squash(patternLines[j]);
             if (!all) continue;
 
-            // Character offset of line i in the ORIGINAL text, so the slice below is exact.
+            // Character offset of line i in the ORIGINAL text, so the slice is exact.
             var start = 0;
             for (var k = 0; k < i; k++) start += textLines[k].Length + 1;
             var length = 0;
             for (var k = 0; k < patternLines.Length; k++) length += textLines[i + k].Length + 1;
 
-            return (start, Math.Min(length - 1, text.Length - start));
+            found.Add((start, Math.Min(length - 1, text.Length - start)));
         }
 
-        throw new InvalidOperationException(
-            $"'pattern' was not found in {path}, even ignoring indentation. Read the file first and "
-            + "copy the text from what it actually says, rather than reproducing it from memory.");
+        return found;
     }
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
