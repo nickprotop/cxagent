@@ -613,4 +613,74 @@ public class FileJobPluginTests : IDisposable
 
         Assert.DoesNotContain("indentation adjusted", (string)r.Output["content"]!);
     }
+
+    [Fact]
+    public async Task Replace_TwiceOnTheSameRegionDoesNotCompoundIndentation()
+    {
+        // NOT IDEMPOTENT was the hole: the first replace shifts the text onto the file's
+        // indentation, and a second replace over that ALREADY-SHIFTED text measured its own base
+        // from a line that had moved -- adding another level each time. Measured live: a file
+        // indented with 3 tabs came out with 5 after two successive edits to the same region.
+        var f = Path.Combine(_dir, "twice.cs");
+        File.WriteAllText(f, "\t\t\tif (x)\n\t\t\t{\n\t\t\t\tint a = 1;\n\t\t\t}\n");
+
+        var first = await Run(("action", "replace"), ("path", f),
+                              ("pattern", "int a = 1;"),
+                              ("replacement", "    int a = 2;"));
+        Assert.True(first.Success, first.ErrorMessage);
+
+        // Second edit over the region the first one just wrote.
+        var second = await Run(("action", "replace"), ("path", f),
+                               ("pattern", "int a = 2;"),
+                               ("replacement", "    int a = 3;\n    int b = 4;"));
+        Assert.True(second.Success, second.ErrorMessage);
+
+        var lines = File.ReadAllLines(f);
+        Assert.Equal("\t\t\tif (x)", lines[0]);
+        Assert.Equal("\t\t\t{", lines[1]);
+        Assert.Equal("\t\t\t\tint a = 3;", lines[2]);   // still FOUR tabs, not five
+        Assert.Equal("\t\t\t\tint b = 4;", lines[3]);
+        Assert.Equal("\t\t\t}", lines[4]);
+    }
+
+    [Fact]
+    public async Task Replace_RepeatedIdenticalEditsAreStable()
+    {
+        // The strongest form: applying an edit whose replacement ALREADY carries the file's exact
+        // indentation must leave the file byte-identical however many times it runs.
+        var f = Path.Combine(_dir, "stable.cs");
+        File.WriteAllText(f, "\t\tvar a = 1;\n");
+
+        for (var i = 0; i < 3; i++)
+        {
+            var r = await Run(("action", "replace"), ("path", f),
+                              ("pattern", "var a = 1;"), ("replacement", "\t\tvar a = 1;"));
+            Assert.True(r.Success, r.ErrorMessage);
+            Assert.Equal("\t\tvar a = 1;\n", File.ReadAllText(f));
+        }
+    }
+
+    [Fact]
+    public async Task Replace_AnchoredOnAShallowerFirstLineDoesNotOverIndentTheRest()
+    {
+        // THE LIVE FAILURE. A model disambiguating its match anchors on a comment line, sending the
+        // comment at column 0 and the block below it with its own tabs. Taking the FIRST line's
+        // indent as the replacement's base made "" the base, so every following line's indentation
+        // counted as nesting and was ADDED to the file's: three tabs became eight.
+        var f = Path.Combine(_dir, "anchor.cs");
+        File.WriteAllText(f, "\t\t\t// Handle trailing char\n\t\t\tif (p.HasValue)\n\t\t\t{\n\t\t\t\tint a = 1;\n\t\t\t}\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "// Handle trailing char\n\t\t\tif (p.HasValue)\n\t\t\t{\n\t\t\t\tint a = 1;"),
+                          ("replacement",
+                           "// Handle trailing char\n\t\t\t\t\tif (p.HasValue)\n\t\t\t\t\t{\n\t\t\t\t\t\tint a = 1;\n\t\t\t\t\t\tNEW();"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var lines = File.ReadAllLines(f);
+        Assert.Equal("\t\t\t// Handle trailing char", lines[0]);
+        Assert.Equal("\t\t\tif (p.HasValue)", lines[1]);      // still THREE tabs, not eight
+        Assert.Equal("\t\t\t{", lines[2]);
+        Assert.Equal("\t\t\t\tint a = 1;", lines[3]);          // nesting preserved: one deeper
+        Assert.Equal("\t\t\t\tNEW();", lines[4]);
+    }
 }

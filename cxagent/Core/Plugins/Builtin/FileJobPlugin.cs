@@ -374,8 +374,19 @@ public class FileJobPlugin : IJobPlugin
         var lines = replacement.Replace("\r\n", "\n").Split('\n');
         if (lines.Length == 0) return replacement;
 
-        // What the replacement indents its own first line by. Everything shifts by the difference.
-        var ownIndent = LeadingWhitespace(lines[0], 0);
+        // The replacement's own base — the frame everything in it is relative to.
+        //
+        // NORMALLY the first line's indent. But when the first line is SHALLOWER than the body below
+        // it, the model ANCHORED: it copied a match anchor (a comment, a brace) at whatever column
+        // the tool result showed, then wrote the body in its own frame. The anchor's column then
+        // describes nothing, and using it as the base makes every line under it look like nesting to
+        // ADD — measured live on exactly this shape, three tabs became eight. The body's own minimum
+        // is the real base there, and the anchor line rides along with it.
+        var firstIndent = LeadingWhitespace(lines[0], 0);
+        var bodyIndent = lines.Length > 1 ? MinimumIndent(lines[1..]) : firstIndent;
+        var anchored = lines.Length > 1 && firstIndent.Length < bodyIndent.Length;
+
+        var ownIndent = anchored ? bodyIndent : firstIndent;
         if (ownIndent == fileIndent) return replacement;   // already right: leave it exactly alone
 
         var sb = new System.Text.StringBuilder(replacement.Length + lines.Length * fileIndent.Length);
@@ -446,6 +457,20 @@ public class FileJobPlugin : IJobPlugin
 
         // Tabs -> spaces, the mirror case: a tab of nesting in a space-indented file.
         return new string(' ', extra.Count(c => c == '\t') * 4);
+    }
+
+    /// <summary>The shallowest indentation across non-blank lines. Blank lines carry none and would
+    /// otherwise force the result to "" and flatten everything.</summary>
+    private static string MinimumIndent(string[] lines)
+    {
+        string? min = null;
+        foreach (var line in lines)
+        {
+            if (line.Trim().Length == 0) continue;
+            var indent = LeadingWhitespace(line, 0);
+            if (min is null || indent.Length < min.Length) min = indent;
+        }
+        return min ?? "";
     }
 
     /// <summary>The run of spaces and tabs starting at <paramref name="from"/>.</summary>
