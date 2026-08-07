@@ -118,8 +118,25 @@ public sealed class SingleAgentLoop
         {
             ct.ThrowIfCancellationRequested();
 
+            // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
+            // print one line and throw away everything the model had learned — the user was left
+            // with a half-edited tree and no account of what happened or what remains.
+            //
+            // opencode does the inverse of a keep-going nudge here: it injects a forced-stop prompt
+            // ("Tools are disabled until next user input… MUST provide a text response summarizing
+            // work done so far") and takes a summary. SWE-agent auto-submits whatever diff exists,
+            // on the same principle — an interrupted run should still yield its artifact. Both
+            // salvage; neither discards.
+            //
+            // The summary turn runs WITHOUT tools, so it cannot start new work, and it is the last
+            // thing the loop does either way.
             if (turn >= _maxTurns)
             {
+                var summary = await SummariseAtCapAsync(messages, ct);
+                if (!string.IsNullOrWhiteSpace(summary))
+                    conversation.Add(new ChatMessage
+                        { Role = "assistant", Content = summary, Timestamp = DateTimeOffset.UtcNow });
+
                 _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
                 return GoalState.Failed;
             }
@@ -274,6 +291,49 @@ public sealed class SingleAgentLoop
                     Content = result,
                 });
             }
+        }
+    }
+
+    /// <summary>
+    /// One final tool-less turn asking what was done and what remains, shown in the transcript.
+    ///
+    /// <para>NO TOOLS, deliberately: the cap has been reached, so the model must not be able to
+    /// start work it cannot finish. Passing an empty tool list is what makes that structural rather
+    /// than a request the model may ignore — opencode has to say "any attempt to use tools is a
+    /// critical violation" in its prompt precisely because its tools are still bound.</para>
+    ///
+    /// <para>Best-effort: a provider failure here must not replace the cap message with a stack
+    /// trace, since the goal has already ended and the summary is a courtesy on top of it.</para>
+    /// </summary>
+    private async Task<string> SummariseAtCapAsync(List<ChatMessage> messages, CancellationToken ct)
+    {
+        var ask = new List<ChatMessage>(messages)
+        {
+            new()
+            {
+                Role = "user",
+                Content = "You have reached the maximum number of steps for this task and no more "
+                        + "tools are available. Reply with text only: what you accomplished, what "
+                        + "is left unfinished, and what you would do next. Be specific about files "
+                        + "you changed.",
+                Timestamp = DateTimeOffset.UtcNow,
+            },
+        };
+
+        var turnId = _sink.BeginAssistantTurn();
+        try
+        {
+            var response = await StreamTurnAsync(ask, [], ct, turnId);
+            _ledger.Record(response.Usage);
+            return Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+        finally
+        {
+            _sink.EndAssistantTurn(turnId);
         }
     }
 

@@ -359,6 +359,34 @@ public class SingleAgentLoopChallengeTests
         Usage = new LlmUsage(),
     };
 
+
+    [Fact]
+    public async Task HittingTheTurnCapAsksForAHandoffSummary()
+    {
+        // The cap used to print one line and discard everything the model had learned, leaving the
+        // user with a half-edited tree and no account of it. opencode injects a forced-stop prompt
+        // and takes a summary; SWE-agent auto-submits whatever diff exists. Both salvage.
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 40; i++) provider.EnqueueResponse(Prose("thinking"));
+
+        var sink = new RecordingSink();
+        var loop = new SingleAgentLoop(provider, PluginRegistry.CreateWithBuiltins(),
+            new TokenLedger(null), sink, new NullJobPanel(), logs: null, maxTurns: 2);
+
+        var conversation = Goal("fix the parser");
+        var state = await loop.RunAsync("gcap", conversation, CancellationToken.None);
+
+        Assert.Equal(GoalState.Failed, state);
+
+        // The summary turn ran WITHOUT tools, so it cannot start work it has no budget to finish.
+        Assert.Empty(provider.LastTools!);
+        Assert.Contains(provider.LastMessages!, m =>
+            m.Role == "user" && m.Content.Contains("maximum number of steps", StringComparison.OrdinalIgnoreCase));
+
+        // And what it said survives into the session, not just the transcript.
+        Assert.Contains(conversation, m => m.Role == "assistant" && m.Content.Contains("thinking"));
+    }
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
