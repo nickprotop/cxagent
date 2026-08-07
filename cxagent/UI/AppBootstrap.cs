@@ -191,6 +191,11 @@ public static class AppBootstrap
                 singleAgent: !(args.Contains("--fan-out")
                                || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut));
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
+            runner.GoalStarted += (_, id) => system.EnqueueOnUIThread(() =>
+            {
+                mainWindow.SessionId = id;
+                mainWindow.RefreshSessionPanel();
+            });
             runner.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionPanel.RecordTurn(calls);

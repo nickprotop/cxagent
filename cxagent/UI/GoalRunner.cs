@@ -92,6 +92,9 @@ public sealed class GoalRunner : IDisposable
     /// </summary>
     public event EventHandler<int>? TurnCompleted;
 
+    /// <summary>A goal began; the payload is its id, which is also the name of its log directory.</summary>
+    public event EventHandler<string>? GoalStarted;
+
     /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
     /// knows a turn boundary.</summary>
     internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
@@ -343,6 +346,8 @@ public sealed class GoalRunner : IDisposable
         var assistantId = _sink.BeginAssistantTurn();
 
         var goalId = UlidGenerator.NewId();
+        // The log directory is named by THIS id, so it is what a user needs to find the run again.
+        GoalStarted?.Invoke(this, goalId);
 
         // SINGLE-AGENT MODE takes a different path entirely: no plan, no dag, no consult.
         //

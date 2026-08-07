@@ -51,6 +51,16 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public bool FanOut { get; init; }
 
+    /// <summary>
+    /// This session's id — the directory its logs are written under.
+    ///
+    /// <para>Set by AppBootstrap, which mints it. Surfaced so a user can correlate what they are
+    /// looking at with what is on disk: logs are written to a directory named by the GOAL's id, and
+    /// without this the only way to find the right one afterwards is to guess by timestamp. Updated
+    /// per goal, because that is the granularity the directories actually use.</para>
+    /// </summary>
+    public string SessionId { get; set; } = string.Empty;
+
     // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
     // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
     // window on a different page, which is a parameter, not a seam. ShowSettings is the single
@@ -499,15 +509,15 @@ public sealed class MainWindow : IDisposable
             _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
             string.Empty,
             _permissionRuleCount,
-            // MaxWorkerTurns ONLY IN FAN-OUT. Its own documentation calls it "a cap one level DOWN:
-            // it bounds a single llm_agent WORKER's tool loop" — and single-agent has no workers, so
-            // there it silently becomes the whole session's turn budget at a number (200) no real
-            // session approaches. Showing it as a Limit advertises a constraint that never binds,
-            // which is worse than showing nothing: it invites the user to plan around a fiction.
-            FanOut ? _resolution.Orchestrator?.MaxWorkerTurns ?? 0 : 0,
+            // THE EFFECTIVE CAP, including its default. GoalRunner passes
+            // `_orchestrator?.MaxWorkerTurns ?? 200` to the loop, so 200 turns bounds every session
+            // whether or not an orchestrator block exists — reading the config alone reported 0 and
+            // hid a limit that was actually in force.
+            _resolution.Orchestrator?.MaxWorkerTurns ?? 200,
             _resolution.Orchestrator?.GoalTokenBudget,
             _lastInput,
-            _lastOutput);
+            _lastOutput,
+            SessionId);
     }
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>

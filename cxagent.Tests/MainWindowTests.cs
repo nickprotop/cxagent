@@ -668,20 +668,40 @@ public class MainWindowTests
             maxTurns: 200, goalTokenBudget: 50_000);
 
         Assert.Contains("1/200 turns", panel.RenderedText, StringComparison.Ordinal);
-        Assert.Contains("50,000 token budget", panel.RenderedText, StringComparison.Ordinal);
+        // Compact now, like every other count in a 24-column panel.
+        Assert.Contains("50.0k token budget", panel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SessionPanel_OmitsTheLimitsBlockWhenNothingIsCapped()
+    public void SessionPanel_AlwaysShowsTheLimitsThatActuallyBind()
     {
-        // An "unlimited" block is noise: it takes space to say nothing will happen.
+        // This asserted the OPPOSITE and was wrong. The block was gated on the orchestrator CONFIG,
+        // so with no such block — the common case — it rendered nothing, and the caps stayed exactly
+        // as invisible as before the panel existed. But they still APPLY: MaxWorkerTurns falls back
+        // to 200 at the call site whether configured or not, and the tool-result cap is a const no
+        // config touches. A cap you cannot see is one you cannot plan around.
         var panel = new SessionPanel();
-        panel.Refresh(tokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0);
+        panel.Refresh(tokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
+            maxTurns: 200);
 
-        Assert.DoesNotContain("Limits", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Limits", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("0/200 turns", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]
+    public void SessionPanel_ShowsTheGoalIdForLogCorrelation()
+    {
+        // Not glanceable — nobody reads a ULID — but it is the one string connecting what is on
+        // screen to the logs on disk, which are written to a directory named by exactly this.
+        var panel = new SessionPanel();
+        panel.Refresh(tokens: 0, contextWindow: null, model: "m", endpoint: "", rules: 0,
+            sessionId: "01KZEF93C6K66HP6T2SJ9WKMHR");
+
+        Assert.Contains("01KZEF93C6K66HP6T2SJ9WKMHR", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact(Skip = "Superseded: the turn cap binds in BOTH modes, so it is shown in both.")]
     public void SessionPanel_HidesTheWorkerTurnCap_InSingleAgent()
     {
         // MaxWorkerTurns' own documentation calls it "a cap one level DOWN: it bounds a single

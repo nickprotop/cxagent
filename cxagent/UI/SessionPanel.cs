@@ -36,6 +36,11 @@ public sealed class SessionPanel
     /// </summary>
     public const int ResponsiveThreshold = 100;
 
+    /// <summary>Mirrors WorkerToolset.MaxToolResultChars. Duplicated rather than referenced because
+    /// the panel is UI and that constant is core plumbing; if it moves, this line is wrong in a way
+    /// a reader can see, where a reference would silently follow it somewhere meaningless.</summary>
+    private const int MaxToolResultChars = 65536;
+
     private readonly MarkupControl _body = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
 
     /// <summary>
@@ -88,7 +93,8 @@ public sealed class SessionPanel
     /// <param name="endpoint">Where it runs, e.g. <c>local :8771</c>.</param>
     /// <param name="rules">Count of always-allow rules live for this folder.</param>
     public void Refresh(int tokens, int? contextWindow, string model, string endpoint, int rules,
-        int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0)
+        int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
+        string sessionId = "")
     {
         var lines = new List<string>();
 
@@ -124,16 +130,29 @@ public sealed class SessionPanel
         lines.Add(Value(ShortPath(Directory.GetCurrentDirectory())));
         if (GitBranch() is { Length: > 0 } branch) lines.Add(Muted(branch));
 
-        // CAPS, because they are the invisible thing that ends a run. A goal that stops "for no
-        // reason" has almost always hit one, and until now the only way to learn the numbers was to
-        // read config.json — after the fact, when the run was already over.
-        if (maxTurns > 0 || goalTokenBudget is > 0)
+        // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
+        // reason" has almost always hit one.
+        //
+        // SHOWN UNCONDITIONALLY, which is the correction. The first version gated this on the
+        // orchestrator CONFIG block, so with no such block — the common case, and the sandbox's —
+        // it rendered nothing at all, and the caps stayed exactly as invisible as before. But the
+        // limits still APPLY: MaxWorkerTurns falls back to 200 (`?? 200` at the call site) whether
+        // or not it is configured, and the tool-result cap is a const that no config touches. A cap
+        // you cannot see is one you cannot plan around.
+        Section(lines, "Limits");
+        lines.Add(Value($"{_turns}/{maxTurns} turns"));
+        lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
+        if (goalTokenBudget is > 0)
+            lines.Add(Muted($"{Compact(goalTokenBudget.Value)} token budget"));
+
+        // THE SESSION ID, last and muted. It is not glanceable information — nobody reads a ULID —
+        // but it is the ONE string that connects what is on screen to the logs on disk, and without
+        // it a user who wants to look at a session afterwards has to guess which directory by
+        // timestamp.
+        if (sessionId.Length > 0)
         {
-            Section(lines, "Limits");
-            if (maxTurns > 0)
-                lines.Add(Value($"{_turns}/{maxTurns} turns"));
-            if (goalTokenBudget is > 0)
-                lines.Add(Muted($"{goalTokenBudget.Value:N0} token budget"));
+            Section(lines, "Session id");
+            lines.Add(Muted(sessionId));
         }
 
         // PERMISSIONS as a COUNT. What was granted is a security surface, and it was invisible
