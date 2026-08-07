@@ -111,6 +111,9 @@ public sealed class SingleAgentLoop
         // structurally unable to see.
         string? lastBuild = null;
 
+        // Identical (call, arguments, result) triples seen this goal, for stuck detection below.
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+
         for (var turn = 0; ; turn++)
         {
             ct.ThrowIfCancellationRequested();
@@ -232,6 +235,30 @@ public sealed class SingleAgentLoop
                 var result = await InvokeAndShowAsync(goalId, call, ct);
                 if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
 
+                // STUCK: the same call returning the same result, over and over. Measured on one
+                // drive that produced nothing in 42 calls — MarkupParser.cs was READ six times and
+                // SEARCHED five times, each returning what it had already returned. A model in that
+                // state is not making progress and will not spontaneously leave it; every repeat is
+                // a paid turn against the cap.
+                //
+                // OpenHands calls this "scenario 1: same action, same observation" and nudges once
+                // before killing, which is the right order — the model may simply have lost track,
+                // and telling it so is far cheaper than failing the goal.
+                var signature = call.Name + " " + call.Arguments.ToString() + " " + result;
+                seen.TryGetValue(signature, out var times);
+                seen[signature] = ++times;
+
+                if (times == StuckRepeats)
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "user",
+                        Content = $"You have called {call.Name} with the same arguments {times} times "
+                                + "and received the same result each time. Repeating it will not "
+                                + "produce anything new. Use what you already have, or try a "
+                                + "genuinely different approach.",
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+
                 // A build or test run REPLACES the previous verdict rather than accumulating: what
                 // matters at the end is whether the tree compiles NOW, not whether it ever did. A
                 // model that breaks the build, fixes it, and stops has finished the job.
@@ -335,6 +362,11 @@ public sealed class SingleAgentLoop
 
     /// <summary>How many times a no-write finish is challenged before the goal is failed.</summary>
     private const int MaxChallenges = 3;
+
+    /// <summary>Identical repeats of one (call, arguments, result) before the model is told; twice
+    /// that many before the goal is failed. Three is high enough that a legitimate re-read after
+    /// changing something is never mistaken for a loop.</summary>
+    private const int StuckRepeats = 3;
 
     /// <summary>
     /// The nudge sent when the model stops without writing. EACH ONE SAYS SOMETHING NEW — repeating

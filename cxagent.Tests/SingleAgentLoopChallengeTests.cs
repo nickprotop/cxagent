@@ -290,6 +290,75 @@ public class SingleAgentLoopChallengeTests
         }
     }
 
+
+    [Fact]
+    public async Task RepeatingTheSameCallWithTheSameResultIsCalledOut()
+    {
+        // Measured: one drive produced NOTHING in 42 calls, having read MarkupParser.cs six times
+        // and searched it five times -- each call returning what it had already returned. A model in
+        // that state is not making progress and will not spontaneously leave it; every repeat is a
+        // paid turn against the cap. OpenHands names this "same action, same observation" and nudges
+        // once before killing, which is the right order: the model may simply have lost track.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "same.txt");
+            File.WriteAllText(f, "unchanging");
+
+            var provider = new MockLlmProvider();
+            for (var i = 0; i < 5; i++) provider.EnqueueResponse(ReadCall(f));
+            for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Here is what I found."));
+
+            var sink = new RecordingSink();
+            await Build(provider, sink).RunAsync("gr", Goal("what does this say?"),
+                CancellationToken.None);
+
+            Assert.Contains(provider.LastMessages!, m =>
+                m.Role == "user" && m.Content.Contains("same arguments", StringComparison.OrdinalIgnoreCase));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ReadingTheSameFileAfterCHANGINGItIsNotCalledOut()
+    {
+        // The signature includes the RESULT, so a re-read that returns something different is
+        // progress, not a loop. Without that, the commonest correct pattern in the whole tool --
+        // read, edit, read back -- would be flagged.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "changing.txt");
+            File.WriteAllText(f, "before");
+
+            var provider = new MockLlmProvider();
+            provider.EnqueueResponse(ReadCall(f));
+            provider.EnqueueResponse(Write(f, "after"));
+            provider.EnqueueResponse(ReadCall(f));
+            provider.EnqueueResponse(Prose("Updated."));
+
+            var sink = new RecordingSink();
+            await Build(provider, sink).RunAsync("gn", Goal("update the file"), CancellationToken.None);
+
+            Assert.DoesNotContain(provider.LastMessages!, m =>
+                m.Role == "user" && m.Content.Contains("same arguments", StringComparison.OrdinalIgnoreCase));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    private static LlmResponse ReadCall(string path) => new()
+    {
+        Text = "",
+        ToolCalls = [new ToolCall
+        {
+            Id = "r1", Name = "read_file",
+            Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { path }),
+        }],
+        Usage = new LlmUsage(),
+    };
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
