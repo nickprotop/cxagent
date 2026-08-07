@@ -661,12 +661,18 @@ public class FileJobPluginTests : IDisposable
     }
 
     [Fact]
-    public async Task Replace_AnchoredOnAShallowerFirstLineDoesNotOverIndentTheRest()
+    public async Task Replace_RefusesToReindentANonUniformlyIndentedReplacement()
     {
-        // THE LIVE FAILURE. A model disambiguating its match anchors on a comment line, sending the
-        // comment at column 0 and the block below it with its own tabs. Taking the FIRST line's
-        // indent as the replacement's base made "" the base, so every following line's indentation
-        // counted as nesting and was ADDED to the file's: three tabs became eight.
+        // THE LIVE FAILURE, and the honest resolution. A model disambiguating its match anchors on a
+        // comment line: it sends "// comment" at column 0 with the block below carrying its own
+        // tabs. The anchor and the body are then in DIFFERENT frames, so no single shift describes
+        // the edit -- every rule that assumed one frame produced a wrong answer for the other, and
+        // one of them turned three tabs into eight.
+        //
+        // Aider reaches the same rule from the other direction and encodes it as `if len(add) != 1:
+        // return` -- non-uniform indent is REJECTED, not repaired. Writing the model's own bytes is
+        // the honest outcome: it is visible in the echoed result and the model can correct it, where
+        // a reshaped guess is silent.
         var f = Path.Combine(_dir, "anchor.cs");
         File.WriteAllText(f, "\t\t\t// Handle trailing char\n\t\t\tif (p.HasValue)\n\t\t\t{\n\t\t\t\tint a = 1;\n\t\t\t}\n");
 
@@ -676,11 +682,15 @@ public class FileJobPluginTests : IDisposable
                            "// Handle trailing char\n\t\t\t\t\tif (p.HasValue)\n\t\t\t\t\t{\n\t\t\t\t\t\tint a = 1;\n\t\t\t\t\t\tNEW();"));
 
         Assert.True(r.Success, r.ErrorMessage);
+
+        // Written verbatim -- NOT re-indented onto some invented base. The critical property is that
+        // it never GROWS the indentation: the old bug added the file's indent on top of the model's.
         var lines = File.ReadAllLines(f);
-        Assert.Equal("\t\t\t// Handle trailing char", lines[0]);
-        Assert.Equal("\t\t\tif (p.HasValue)", lines[1]);      // still THREE tabs, not eight
-        Assert.Equal("\t\t\t{", lines[2]);
-        Assert.Equal("\t\t\t\tint a = 1;", lines[3]);          // nesting preserved: one deeper
-        Assert.Equal("\t\t\t\tNEW();", lines[4]);
+        Assert.Equal("// Handle trailing char", lines[0]);
+        Assert.Equal("\t\t\t\t\tif (p.HasValue)", lines[1]);
+        Assert.DoesNotContain(lines, l => l.StartsWith("\t\t\t\t\t\t\t\t", StringComparison.Ordinal));
+
+        // And it does not claim to have adjusted anything, because it did not.
+        Assert.DoesNotContain("indentation adjusted", (string)r.Output["content"]!);
     }
 }

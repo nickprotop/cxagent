@@ -389,6 +389,28 @@ public class FileJobPlugin : IJobPlugin
         var ownIndent = anchored ? bodyIndent : firstIndent;
         if (ownIndent == fileIndent) return replacement;   // already right: leave it exactly alone
 
+        // REFUSE TO GUESS when the shift is not uniform. Every line must sit at or below the
+        // replacement's own base, so that moving the base moves the whole block rigidly and the
+        // shape the model wrote is preserved exactly. A line ABOVE the base cannot be expressed as
+        // base + nesting, and re-indenting it means inventing a second interpretation of what the
+        // model meant.
+        //
+        // Aider reached the same rule from the other direction and states it as code: it collapses
+        // the per-line whitespace deltas and bails with `if len(add) != 1: return` — non-uniform
+        // indent is REJECTED rather than repaired. Its benchmark is also the reason to attempt this
+        // at all (disabling flexible patching: 9x more editing errors), so the pairing is the whole
+        // lesson: be generous about the offset, refuse anything that is not one.
+        //
+        // Returning the replacement untouched is the honest failure: the model's own text is written
+        // and it can see the result in the echo, rather than the tool silently reshaping code on a
+        // guess.
+        foreach (var line in lines)
+        {
+            if (line.Trim().Length == 0) continue;
+            if (!LeadingWhitespace(line, 0).StartsWith(ownIndent, StringComparison.Ordinal))
+                return replacement;
+        }
+
         var sb = new System.Text.StringBuilder(replacement.Length + lines.Length * fileIndent.Length);
         for (var i = 0; i < lines.Length; i++)
         {
@@ -473,6 +495,39 @@ public class FileJobPlugin : IJobPlugin
         return min ?? "";
     }
 
+    /// <summary>
+    /// The closest few lines in the file to the pattern's first line, with whitespace MADE VISIBLE.
+    ///
+    /// <para>"not found, even ignoring indentation" tells a model that it failed but not what the
+    /// file actually says, so its next move is to guess again from the same memory that just missed.
+    /// crush does the same thing for the same reason — its diagnoseMismatch renders tabs as → and
+    /// spaces as · and points at the closest window — because whitespace is precisely the thing a
+    /// model cannot see in ordinary tool output and precisely the thing it got wrong.</para>
+    /// </summary>
+    private static string NearestLines(string text, string pattern)
+    {
+        var needle = pattern.Replace("\r\n", "\n").Split('\n')
+                            .FirstOrDefault(l => l.Trim().Length > 0)?.Trim();
+        if (string.IsNullOrEmpty(needle)) return "";
+
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var hits = new List<string>();
+        for (var i = 0; i < lines.Length && hits.Count < 3; i++)
+            if (lines[i].Trim() == needle) hits.Add($"  line {i + 1}: {VisualizeWhitespace(lines[i])}");
+
+        return hits.Count == 0 ? ""
+            : "\n\nThe file has these lines with matching text but different whitespace "
+              + "(→ = tab, · = space):\n" + string.Join('\n', hits);
+    }
+
+    /// <summary>Renders leading tabs and spaces as visible glyphs.</summary>
+    private static string VisualizeWhitespace(string line)
+    {
+        var indent = LeadingWhitespace(line, 0);
+        var shown = new string(indent.Select(c => c == '\t' ? '→' : '·').ToArray());
+        return shown + line[indent.Length..];
+    }
+
     /// <summary>The run of spaces and tabs starting at <paramref name="from"/>.</summary>
     private static string LeadingWhitespace(string s, int from)
     {
@@ -544,7 +599,8 @@ public class FileJobPlugin : IJobPlugin
             throw new InvalidOperationException(
                 $"'pattern' was not found in {path}, even ignoring indentation. Read the file first "
                 + "and copy the text from what it actually says, rather than reproducing it from "
-                + "memory.");
+                + "memory."
+                + NearestLines(text, pattern));
 
         if (matches.Count > 1)
             throw new InvalidOperationException(
