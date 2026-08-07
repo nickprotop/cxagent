@@ -86,6 +86,10 @@ public sealed class MainWindow : IDisposable
     /// can swap the Input cell's content via ReplaceControl (GridControl.cs:381), which preserves
     /// the cell's GridPlacement across the swap.</summary>
     private GridControl _mainGrid = null!;
+
+    /// <summary>Test seam: the panel column's width is a layout decision worth pinning, and it is
+    /// only observable through the grid.</summary>
+    internal GridControl MainGridForTest => _mainGrid;
     private RuleControl _composerRule = null!;
 
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
@@ -109,6 +113,10 @@ public sealed class MainWindow : IDisposable
     /// first resize after startup would silently override a choice the user had just made.</para>
     /// </summary>
     private bool? _panelOverride;
+
+    /// <summary>The panel column's current width, so a resize only rewrites the definition when the
+    /// answer actually changed.</summary>
+    private int _panelWidth = UI.SessionPanel.MinWidth;
 
     /// <summary>Last token total seen, so a panel refresh triggered by a RESIZE still shows the
     /// current number rather than zero.</summary>
@@ -302,7 +310,7 @@ public sealed class MainWindow : IDisposable
             // and the whole window painted its background with no text at all: not a crash, not an
             // error, just an empty screen. Measured against the same build: 0 lines of text with
             // Auto, 7 with the column removed, 7 with a fixed width.
-            .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.Width))
+            .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.WidthFor(_system.DesktopDimensions.Width)))
             .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
             .Place(Chat, 0, 0)
             .Place(SessionPanel.Control, 0, 1)
@@ -496,8 +504,24 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void RefreshSessionPanel()
     {
-        var wide = _system.DesktopDimensions.Width >= UI.SessionPanel.ResponsiveThreshold;
+        var terminalWidth = _system.DesktopDimensions.Width;
+        var wide = terminalWidth >= UI.SessionPanel.ResponsiveThreshold;
         SessionPanel.Control.Visible = _panelOverride ?? wide;
+
+        // RE-WIDEN ON RESIZE. The column was fixed at construction, so a terminal that grew from 100
+        // to 200 columns kept a 24-wide panel wrapping model ids and paths while a third of the new
+        // space sat unused. Assigned only on CHANGE — ColumnDefinitions is a live list and writing
+        // it invalidates layout, so an unconditional write would relayout on every refresh, which
+        // now includes the one-second clock tick.
+        if (_mainGrid.ColumnDefinitions.Count > 1)
+        {
+            var want = UI.SessionPanel.WidthFor(terminalWidth);
+            if (_panelWidth != want)
+            {
+                _panelWidth = want;
+                _mainGrid.ColumnDefinitions[1] = GridLength.Cells(want);
+            }
+        }
 
         if (!SessionPanel.Control.Visible) return;
 

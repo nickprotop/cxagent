@@ -667,6 +667,10 @@ public static class AppBootstrap
         // and doing that during BuildWindow joins a render tick that does not exist yet.
         system.EnqueueOnUIThread(() =>
         {
+            // The panel is responsive in BOTH senses — whether it shows at all, and how wide it is —
+            // so a resize has to re-run the same decision that startup did.
+            system.WindowResized += (_, _) => system.EnqueueOnUIThread(mainWindow.RefreshSessionPanel);
+
             mainWindow.SetPermissionRuleCount(
                 permissionRules.RulesFor(Directory.GetCurrentDirectory()).Rules.Count);
             mainWindow.RefreshSessionPanel();

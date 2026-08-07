@@ -22,12 +22,27 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class SessionPanel
 {
+    /// <summary>Narrowest the panel goes. At the 100-column threshold this leaves 76 for the
+    /// transcript — enough for code and diffs to stay readable, which is what the user is here
+    /// for.</summary>
+    public const int MinWidth = 24;
+
     /// <summary>
-    /// Columns the panel occupies. 24 rather than opencode's 28 because the responsive threshold is
-    /// 100 columns, and at 100 the transcript keeps 76 — enough for code and diffs to stay readable,
-    /// which is what the user is actually here to read.
+    /// Widest it goes, however large the terminal. Past this the panel stops gaining anything: its
+    /// content is short labels and numbers, and a 60-column column of them is mostly empty space
+    /// taken from the one pane that can always use more.
     /// </summary>
-    public const int Width = 24;
+    public const int MaxWidth = 34;
+
+    /// <summary>
+    /// The panel's width for a given terminal width — a fixed SHARE, clamped at both ends.
+    ///
+    /// <para>A constant 24 is right at 100 columns and wrong at 200: model ids and paths wrap for
+    /// no reason while a third of the screen sits unused. A share keeps the proportion the layout
+    /// was designed around instead of freezing one terminal's answer.</para>
+    /// </summary>
+    public static int WidthFor(int terminalWidth) =>
+        Math.Clamp(terminalWidth / 6, MinWidth, MaxWidth);
 
     /// <summary>
     /// Terminal width at or above which the panel appears on its own. Below this the transcript
@@ -209,7 +224,7 @@ public sealed class SessionPanel
         if (home.Length > 0 && path.StartsWith(home, StringComparison.Ordinal))
             path = "~" + path[home.Length..];
 
-        var max = Width - 2;
+        var max = MaxWidth - 2;
         return path.Length <= max ? path : "…" + path[^(max - 1)..];
     }
 

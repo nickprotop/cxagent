@@ -766,4 +766,33 @@ public class MainWindowTests
 
         Assert.DoesNotContain("↑", panel.RenderedText, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(100, 24)]   // at the threshold: the documented minimum, 76 left for the transcript
+    [InlineData(120, 24)]   // 120/6 = 20, below the floor
+    [InlineData(160, 26)]
+    [InlineData(200, 33)]
+    [InlineData(400, 34)]   // capped: past here the panel gains nothing and the transcript loses
+    public void SessionPanel_WidthIsProportionalWithinBounds(int terminal, int expected)
+    {
+        // A constant 24 is right at 100 columns and wrong at 200 — model ids and paths wrap for no
+        // reason while a third of the screen sits unused. A share keeps the proportion the layout
+        // was designed around instead of freezing one terminal's answer.
+        Assert.Equal(expected, SessionPanel.WidthFor(terminal));
+    }
+
+    [Fact]
+    public void SessionPanel_ColumnStartsAtTheWidthForItsTerminal()
+    {
+        // The grid's own re-widening on resize is not asserted here: it needs a driver-level screen
+        // resize the test harness has no accessor for, and a test that fakes it would be testing the
+        // fake. The WIDTH RULE is the part that can silently go wrong, and it is pure.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+        mw.RefreshSessionPanel();
+
+        Assert.True(mw.SessionPanel.Control.Visible);
+        Assert.Equal(33, SessionPanel.WidthFor(200));
+    }
 }
