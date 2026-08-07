@@ -87,19 +87,15 @@ public sealed class SingleAgentLoop
                         + "Do not guess absolute paths — prefer paths relative to it.\n\n"
                         + "You have tools. USE THEM: read a file before editing it, and make changes "
                         + "with write_file or replace_in_file rather than describing them. Text in a "
-                        + "message changes nothing.\n\n"
-                        // TRACING A BUG, said UP FRONT rather than in a give-up message. Measured
-                        // across three drives on one bug: the model found where a flag was SET and
-                        // where it was READ, described the failure correctly from those two points,
-                        // and never opened the function BETWEEN them — which is where the value was
-                        // being lost. Both endpoints were greppable by name; the middle was reachable
-                        // only by asking what runs in between. That question has to arrive before the
-                        // budget is spent, not after.
-                        + "Tracing a bug: when a value is set in one place and used correctly in "
-                        + "another, the fault is usually in neither — it is in whatever runs BETWEEN "
-                        + "them. Find that code and read it before concluding. When a file is central "
-                        + "to the goal, read it whole rather than paging through windows; a function "
-                        + "you never open cannot be the one you blame.",
+                        + "message changes nothing.",
+                        // NO DEBUGGING ADVICE HERE. A paragraph on tracing a value between where it
+                        // is set and where it is used lived here briefly, added after three drives
+                        // failed to find one bug. It was generalised from a single case whose answer
+                        // was already known, and it rode on EVERY goal — including the ones that only
+                        // ask a question. The cap was the real constraint: an 8 KB window on a
+                        // 1,587-line file meant the model read a quarter of it at a time, and no
+                        // amount of coaching fixes a window too small to look through. Raising the
+                        // window removes the problem; describing how to page around it only hides it.
                 Timestamp = DateTimeOffset.UtcNow,
             });
 
