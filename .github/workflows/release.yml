@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            name: cxagent-linux-x64
+          - rid: linux-arm64
+            name: cxagent-linux-arm64
+          - rid: osx-x64
+            name: cxagent-osx-x64
+          - rid: osx-arm64
+            name: cxagent-osx-arm64
+          - rid: win-x64
+            name: cxagent-win-x64.exe
+          - rid: win-arm64
+            name: cxagent-win-arm64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore cxagent/cxagent.csproj -r ${{ matrix.rid }}
+
+      - name: Build
+        run: |
+          dotnet publish cxagent/cxagent.csproj -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -o ./publish/${{ matrix.rid }}
+
+      - name: Rename binary
+        run: |
+          if [ -f "./publish/${{ matrix.rid }}/cxagent.exe" ]; then
+            mv ./publish/${{ matrix.rid }}/cxagent.exe ./publish/${{ matrix.rid }}/${{ matrix.name }}
+          else
+            mv ./publish/${{ matrix.rid }}/cxagent ./publish/${{ matrix.rid }}/${{ matrix.name }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ./publish/${{ matrix.rid }}/${{ matrix.name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          find . -type f -name "cxagent-*" -exec sha256sum {} \; | sed 's|  \./[^/]*/||' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
+          fi
+          echo "CHANGELOG<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*/cxagent-*
+            artifacts/SHA256SUMS
+          body: |
+            ## Install
+
+            **Linux / macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
+            ```
+
+            ## Manual Download
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x64 | `cxagent-linux-x64` |
+            | Linux ARM64 | `cxagent-linux-arm64` |
+            | macOS x64 (Intel) | `cxagent-osx-x64` |
+            | macOS ARM64 (Apple Silicon) | `cxagent-osx-arm64` |
+            | Windows x64 | `cxagent-win-x64.exe` |
+            | Windows ARM64 | `cxagent-win-arm64.exe` |
+
+            ## Changes
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Checksums
+
+            See `SHA256SUMS` in the release assets.
+          draft: false
+          prerelease: false

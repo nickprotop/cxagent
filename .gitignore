@@ -7,3 +7,15 @@ obj/
 CLAUDE.md
 docs/superpowers/
 .superpowers/
+
+# Local config and secrets never belong here. Real configuration lives in
+# ~/.config/cxagent/config.json (XDG), outside the repo — these patterns are a
+# backstop for a stray copy made while debugging.
+config.json
+secrets.json
+appsettings.*.json
+*.env
+.env
+
+publish/
+.worktrees/
