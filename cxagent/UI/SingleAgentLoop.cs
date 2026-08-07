@@ -1,0 +1,290 @@
+using System.Text;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Execution;
+using CxAgent.Core.Models;
+using CxAgent.Core.Plugins;
+using CxAgent.Core.Storage;
+
+namespace CxAgent.UI;
+
+/// <summary>
+/// The whole of single-agent mode: one model, its tools, and a turn loop. No plan, no DAG, no
+/// consult.
+///
+/// <para>WHY THIS EXISTS. The plan/drive/consult cycle asks the orchestrator to describe work it
+/// cannot yet see. A `file replace` needs the target's exact bytes; those arrive only after a read
+/// job FINISHES, and by then the orchestrator is being asked whether the goal is done rather than
+/// what to do next. Measured across a long session: it produced a perfect edit — right tabs, right
+/// house style, the exact exception asked for — and then had nowhere to put it, so it emitted the
+/// edit as prose under an invented `{"action":"edit_file"}` schema and nothing was written. Another
+/// drive read twelve files and reported success having changed none. The failure was never the
+/// prompt; three wordings were tried. It is that describing an action and taking one were different
+/// channels, and only the describing channel was open.</para>
+///
+/// <para>Here they are the same channel. The model calls <c>read_file</c>, sees the bytes in its own
+/// context, and calls <c>replace_in_file</c> with text it is LOOKING AT. Nothing is reconstructed
+/// from a digest because nothing round-trips through one.</para>
+///
+/// <para>PERMISSIONS ARE UNCHANGED, and that is structural rather than careful: every call goes
+/// through <see cref="WorkerToolset.InvokeAsync"/> into the same <see cref="PluginRegistry"/>, whose
+/// file/shell/http plugins are wrapped in <c>PermissionGatedPlugin</c>. The gate reads
+/// <c>(TypeName, parameters)</c> and nothing else — no part of the job path was load-bearing for it,
+/// which is what makes this substitution safe.</para>
+///
+/// <para>WHAT IS LOST, stated plainly: copilot's whole-plan pre-approval has no plan to approve, and
+/// the DAG's parallelism is gone. Both are fan-out's job now (<c>--fan-out</c>).</para>
+/// </summary>
+public sealed class SingleAgentLoop
+{
+    private readonly ILlmProvider _provider;
+    private readonly PluginRegistry _plugins;
+    private readonly TokenLedger _ledger;
+    private readonly IChatSink _sink;
+    private readonly IJobPanel _jobs;
+    private readonly LogFileManager? _logs;
+    private readonly int _maxTurns;
+
+    public SingleAgentLoop(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
+        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns)
+    {
+        _provider = provider;
+        _plugins = plugins;
+        _ledger = ledger;
+        _sink = sink;
+        _jobs = jobs;
+        _logs = logs;
+        _maxTurns = maxTurns;
+    }
+
+    /// <summary>Every tool, always. Roles used to slice this per worker name; that mechanism is gone
+    /// and safety lives in the permission gate, not in withholding capability.</summary>
+    private static readonly IReadOnlyList<WorkerTool> AllTools = Enum.GetValues<WorkerTool>();
+
+    /// <summary>
+    /// Runs the goal to completion and returns its final state.
+    ///
+    /// <para><paramref name="conversation"/> is the SESSION's history and is appended to only twice:
+    /// the user's goal (by the caller) and the final answer. The turn-by-turn working — tool calls,
+    /// tool results, intermediate prose — lives on a goal-local copy and is discarded. That is the
+    /// same rule the consult loop follows, and here it also avoids a concrete hazard: orphaned
+    /// <c>ToolCallId</c> pairings surviving into a later goal, which providers reject and the
+    /// session compressor does not understand.</para>
+    /// </summary>
+    public async Task<GoalState> RunAsync(string goalId, List<ChatMessage> conversation,
+        CancellationToken ct)
+    {
+        var messages = new List<ChatMessage>(conversation);
+
+        // WHERE IT IS. A fresh context has never seen a shell prompt, and measured across one
+        // session, ten of twenty shell calls were `find`/`ls` hunting for paths that do not exist on
+        // this machine — /Users/<someone>/…, /home/user, bare /.
+        var cwd = TryGetWorkingDirectory();
+        if (cwd is not null)
+            messages.Insert(0, new ChatMessage
+            {
+                Role = "system",
+                Content = $"Your working directory is {cwd}. Relative paths resolve from there. "
+                        + "Do not guess absolute paths — prefer paths relative to it.\n\n"
+                        + "You have tools. USE THEM: read a file before editing it, and make changes "
+                        + "with write_file or replace_in_file rather than describing them. Text in a "
+                        + "message changes nothing.",
+                Timestamp = DateTimeOffset.UtcNow,
+            });
+
+        var tools = WorkerToolset.For(AllTools, _plugins).ToList();
+        var wrote = false;
+        var challenged = false;
+
+        for (var turn = 0; ; turn++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (turn >= _maxTurns)
+            {
+                _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
+                return GoalState.Failed;
+            }
+
+            var response = await StreamTurnAsync(messages, tools, ct);
+            _ledger.Record(response.Usage);
+
+            var text = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
+
+            if (response.ToolCalls.Count == 0)
+            {
+                // A turn with no tool calls is the model saying it is done. CHALLENGE IT ONCE if the
+                // goal asked for a change and nothing was written — the failure this mode exists to
+                // fix ends exactly here, with a confident summary of work that never happened.
+                if (!wrote && !challenged && AsksForAChange(conversation))
+                {
+                    challenged = true;
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "user",
+                        Content = "Nothing was written. The request asked you to change something — "
+                                + "use write_file or replace_in_file to do it now, or say plainly "
+                                + "why it cannot be done.",
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    Say(text);
+                    conversation.Add(new ChatMessage
+                        { Role = "assistant", Content = text, Timestamp = DateTimeOffset.UtcNow });
+                }
+                return GoalState.Completed;
+            }
+
+            // Prose that came WITH tool calls is narration ("let me check that file") and is shown,
+            // but it is not the answer — the answer is the last turn's text.
+            if (!string.IsNullOrWhiteSpace(text)) Say(text);
+
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = response.Text ?? "",
+                ToolCalls = response.ToolCalls.ToList(),
+            });
+
+            foreach (var call in response.ToolCalls)
+            {
+                var result = await InvokeAndShowAsync(goalId, call, ct);
+                if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
+
+                messages.Add(new ChatMessage
+                {
+                    Role = "tool",
+                    // call.Id ?? call.Name, never a bare Id: ToolCallId is the ONLY field marking a
+                    // message as a tool result, and a null turns it into an ordinary user turn — no
+                    // error, no warning, the model simply never sees the result.
+                    ToolCallId = call.Id ?? call.Name,
+                    Content = result,
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Dispatches one tool call and renders it as a transcript row.
+    ///
+    /// <para>The row is a SYNTHETIC job — it enters no scheduler and no dag. It exists because the
+    /// user already reads job rows ("Tool  Read HexEncoder.cs · done · 0.0s") and a tool call is the
+    /// same event; inventing a second visual language for it would be gratuitous. Without this the
+    /// calls are invisible: <c>ToolCallReported</c> has no UI subscriber anywhere in the app.</para>
+    /// </summary>
+    private async Task<string> InvokeAndShowAsync(string goalId, ToolCall call, CancellationToken ct)
+    {
+        var jobId = Helpers.UlidGenerator.NewId();
+        var job = new Job
+        {
+            Id = jobId,
+            PlanLocalId = call.Name,
+            GoalId = goalId,
+            PluginType = ToolPluginType(call.Name),
+            DisplayName = DescribeCall(call),
+            State = JobState.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            StartedAt = DateTimeOffset.UtcNow,
+        };
+        _jobs.SetJobs(new[] { job });
+
+        var started = DateTimeOffset.UtcNow;
+        var ctx = new JobContext(goalId, jobId, new Dictionary<string, JobResult>(), _logs);
+        var result = await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct);
+
+        var failed = LooksLikeFailure(result);
+        job.State = failed ? JobState.Failed : JobState.Succeeded;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        job.Result = new JobResult
+        {
+            Success = !failed,
+            ExitCode = failed ? -1 : 0,
+            Duration = DateTimeOffset.UtcNow - started,
+            ErrorMessage = failed ? result : null,
+            Output = new Dictionary<string, object?> { ["content"] = result },
+        };
+        _jobs.UpdateJob(job);
+
+        return result;
+    }
+
+    private async Task<LlmResponse> StreamTurnAsync(List<ChatMessage> messages,
+        List<ToolDefinition> tools, CancellationToken ct)
+    {
+        var text = new StringBuilder();
+        var calls = new List<ToolCall>();
+        LlmUsage usage = new();
+
+        await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
+        {
+            if (!string.IsNullOrEmpty(chunk.TextDelta)) text.Append(chunk.TextDelta);
+            if (chunk.ToolCallDelta is { } tc) calls.Add(tc);
+            if (chunk.Usage is { } u) usage = u;
+        }
+
+        return new LlmResponse { Text = text.ToString(), ToolCalls = calls, Usage = usage };
+    }
+
+    private void Say(string text)
+    {
+        var id = _sink.BeginAssistantTurn();
+        _sink.AppendAssistant(id, text);
+        _sink.EndAssistantTurn(id);
+    }
+
+    private static bool IsWrite(string toolName) =>
+        toolName is "write_file" or "replace_in_file";
+
+    /// <summary>
+    /// Whether a tool result reads as a failure. WorkerToolset never throws — every failure comes
+    /// back as a STRING — so "did that write land" cannot be answered by exception handling. Matched
+    /// on the two shapes the plugins actually produce.
+    /// </summary>
+    private static bool LooksLikeFailure(string result) =>
+        result.StartsWith("error", StringComparison.OrdinalIgnoreCase)
+        || result.Contains("was not found", StringComparison.Ordinal)
+        || result.Contains("is required", StringComparison.Ordinal);
+
+    /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
+    private static string ToolPluginType(string toolName) => toolName switch
+    {
+        "run_shell" => "shell",
+        "http_request" => "http",
+        _ => "file",
+    };
+
+    private static string DescribeCall(ToolCall call)
+    {
+        var args = call.Arguments.ToString();
+        var detail = args.Length > 60 ? args[..60] + "…" : args;
+        return $"{call.Name} {detail}";
+    }
+
+    /// <summary>
+    /// Whether the user asked for a CHANGE, as opposed to an explanation. Deliberately conservative:
+    /// it decides whether "wrote nothing" is a failure, and failing a question that was only ever a
+    /// question would be worse than missing one edit.
+    /// </summary>
+    private static bool AsksForAChange(IReadOnlyList<ChatMessage> conversation)
+    {
+        var last = conversation.LastOrDefault(m => m.Role == "user")?.Content ?? "";
+        ReadOnlySpan<string> verbs =
+        [
+            "edit ", "modify ", "change ", "add ", "insert ", "replace ", "rewrite ", "fix ",
+            "apply ", "update ", "remove ", "delete ", "write ", "create ", "implement ",
+            "refactor ", "rename ",
+        ];
+        foreach (var v in verbs)
+            if (last.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private static string? TryGetWorkingDirectory()
+    {
+        try { return Directory.GetCurrentDirectory(); }
+        catch (Exception) { return null; }
+    }
+}

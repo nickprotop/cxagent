@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CxAgent</RootNamespace>
+    <AssemblyName>cxagent</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Local dev: use ConsoleEx project reference when available as sibling repo -->
+  <ItemGroup Condition="Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
+    <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
+  </ItemGroup>
+  <!-- CI/release: use NuGet package -->
+  <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
+    <PackageReference Include="SharpConsoleUI" Version="2.5.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+  </ItemGroup>
+
+</Project>

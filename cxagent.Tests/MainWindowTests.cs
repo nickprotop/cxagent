@@ -1,0 +1,470 @@
+using CxAgent.Core.Llm;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Storage;
+using CxAgent.UI;
+using SharpConsoleUI;
+using SharpConsoleUI.Configuration;
+using SharpConsoleUI.Controls;
+using SharpConsoleUI.Drivers;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+public class MainWindowTests
+{
+    private static ConsoleWindowSystem Sys() =>
+        new(new HeadlessConsoleDriver(80, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
+
+    private static LogFileManager Logs()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-mwt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var paths = new AppPaths(dir);
+        paths.EnsureCreated();
+        return new LogFileManager(paths);
+    }
+
+    [Fact]
+    public void Build_WithProvider_EnablesSubmission_AndExposesControls()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        var win = mw.Build();
+
+        Assert.NotNull(win);
+        Assert.NotNull(mw.Chat);
+        Assert.NotNull(mw.Input);
+        Assert.True(mw.SubmissionEnabled);
+    }
+
+    /// <summary>
+    /// Regression (P5b live-drive): the goal composer must start in EDITING mode.
+    /// MultilineEditControl has two modes — focused-but-navigating (_isEditing=false, where
+    /// non-navigation keys BUBBLE and typed characters are discarded) and editing. It flips to
+    /// editing ONLY on Enter (MultilineEditControl.Keyboard.cs: `case ConsoleKey.Enter: IsEditing = true`).
+    /// But AppBootstrap's PreviewKeyPressed consumes EVERY Enter while the composer has focus
+    /// (e.Handled = true) to implement Enter-submits, so the control can never receive the Enter
+    /// that would start editing — leaving the composer permanently unable to accept text.
+    /// Verified live: keys arrive (KEY A ch=97) with focus=MultilineEditControl HasFocus=True,
+    /// yet the placeholder never changes. Build() must therefore set IsEditing itself.
+    /// </summary>
+    [Fact]
+    public void Build_GoalComposer_StartsInEditingMode_SoTypingWorks()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.True(mw.Input.HasFocus, "composer must hold focus");
+        Assert.True(mw.Input.IsEditing, "composer must be in editing mode or typed characters are discarded");
+    }
+
+    /// <summary>
+    /// Regression (P5b live-drive): the status bar advertises Ctrl+N / Ctrl+J / Ctrl+H / F1, but only
+    /// Ctrl+Q was ever registered — the other four were dead keys. Ctrl+J in particular is the ONLY
+    /// way to move focus into the job panel, without which a block can't be collapsed/expanded and
+    /// P5b's headline feature (expand → live log tail) is unreachable by keyboard.
+    /// These focus helpers are what the AppBootstrap shortcuts invoke.
+    /// </summary>
+    [Fact]
+    public void FocusJobs_IsANoOp_SinceJobsMovedInline()
+    {
+        // Replaces FocusJobs_And_FocusChat_MoveFocusBetweenPanes. Jobs now render INLINE in the
+        // transcript, so JobPanel is constructed but never placed in the grid. FocusJobs must NOT
+        // move focus to it: the old implementation set Input.IsEditing = false first, which would
+        // leave the composer silently unable to accept typed input with nothing visible to show for
+        // it — exactly D10's failure mode, and unrecoverable without knowing to press F4.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.True(mw.Input.HasFocus);
+
+        mw.FocusJobs();
+
+        Assert.True(mw.Input.HasFocus, "focus must stay on the composer — the job panel is not displayed");
+        Assert.True(mw.Input.IsEditing, "and it must still be typable");
+    }
+
+    /// <summary>F4 returns focus to the composer and restores editing mode.</summary>
+    [Fact]
+    public void FocusChat_ReturnsAndRestoresEditing()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        mw.Input.IsEditing = false;
+        mw.FocusChat();
+
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing, "returning focus must restore editing mode, or typing dies again");
+    }
+
+    /// <summary>
+    /// Ctrl+N clears the composer for a fresh goal and returns it to a typable state.
+    /// </summary>
+    [Fact]
+    public void NewGoal_ClearsComposer_AndRestoresEditing()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        mw.Input.Content = "half-typed goal";
+        mw.NewGoal();
+
+        Assert.True(string.IsNullOrEmpty(mw.Input.Content));
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing);
+    }
+
+    /// <summary>
+    /// Drift guard: every key the status bar advertises must be one AppBootstrap can actually bind.
+    /// The status bar is the only discovery surface for these, so a shown-but-unbound key is a dead
+    /// key the user will press and get nothing from — which is exactly what shipped (Ctrl+N/J/H were
+    /// displayed but never registered, and Ctrl+J/Ctrl+H can't be registered at all: a terminal
+    /// sends them as 0x0A/0x08, byte-identical to Enter/Backspace).
+    /// This asserts the bar advertises only F-keys (unambiguous escape sequences) plus Ctrl+Q,
+    /// which is verified working.
+    /// </summary>
+    [Fact]
+    public void StatusBar_AdvertisesOnlyBindableKeys()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var shortcuts = mw.StatusBar.LeftItems
+            .Select(i => i.Shortcut)
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToList();
+
+        Assert.NotEmpty(shortcuts);
+        foreach (var s in shortcuts)
+        {
+            // Ctrl+<letter> combos that alias an ASCII control char can never be delivered.
+            Assert.False(s == "Ctrl+J" || s == "Ctrl+H" || s == "Ctrl+M" || s == "Ctrl+I",
+                $"'{s}' aliases an ASCII control byte (Enter/Backspace/Tab) and can never be bound");
+            Assert.True(s!.StartsWith("F") || s == "Ctrl+Q",
+                $"'{s}' is advertised but is not a key AppBootstrap binds (expected an F-key or Ctrl+Q)");
+        }
+    }
+
+    [Fact]
+    public void Build_NoProvider_DisablesSubmission_ShowsErrors()
+    {
+        var res = new ProviderResolution(null, null, new[] { "config.json not found at '/x'." });
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.False(mw.SubmissionEnabled);
+        // The no-provider message + the error line are rendered somewhere in the chat panel.
+        // (Assert via the chat control's content or a dedicated status field — see impl note.)
+    }
+
+    [Fact]
+    public void Build_SetsInitialFocusToInputControl()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var focused = mw.Window!.FocusManager.FocusedControl;
+        Assert.True(object.ReferenceEquals(focused, mw.Input),
+            $"Expected focus on Input (MultilineEditControl) but was on {focused?.GetType().Name ?? "null"}");
+    }
+
+    /// <summary>
+    /// First-run setup rebuilds the runner wiring live, so the composer must become submittable in the
+    /// same session — without a restart. `Build()` starts it disabled when no provider resolved; the
+    /// setter is what first-run flips, and it must also refresh the placeholder, which Build() derived
+    /// from the same flag (otherwise the UI still reads "(no provider — submission disabled)" while
+    /// Enter works).
+    /// </summary>
+    [Fact]
+    public void SetSubmissionEnabled_FlipsFlag_AndRefreshesPlaceholder()
+    {
+        var noProvider = new ProviderResolution(null, null, new[] { "config.json not found." });
+        var mw = new MainWindow(Sys(), noProvider, Logs());
+        mw.Build();
+
+        Assert.False(mw.SubmissionEnabled);
+        var disabledPlaceholder = mw.Input.PlaceholderText;
+
+        mw.SetSubmissionEnabled(true);
+
+        Assert.True(mw.SubmissionEnabled);
+        Assert.NotEqual(disabledPlaceholder, mw.Input.PlaceholderText);
+    }
+
+    [Fact]
+    public void StatusBar_AdvertisesSettings_F5()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var shortcuts = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
+        Assert.Contains("F5", shortcuts);
+    }
+
+    [Fact]
+    public void ShowHelp_PostsAMessage_AndKeepsComposerTypable()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var before = mw.Chat.MessageIds.Count;
+        mw.ShowHelp();
+
+        Assert.True(mw.Chat.MessageIds.Count > before, "ShowHelp must post a message to the transcript");
+        // ShowHelp ends by returning focus to the composer — otherwise F1 would leave the app untypable.
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing);
+    }
+
+    // --- Task 11: F6 diagnose, status-bar cost --------------------------------------------------
+
+    [Fact]
+    public void StatusBar_AdvertisesDiagnose_F6()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.Contains("F6", mw.StatusBar.LeftItems.Select(i => i.Shortcut));
+    }
+
+    /// <summary>
+    /// Settings is ONE key, not three. F7 (Roles) and F8 (Providers) were retired when the three
+    /// dialogs became one: both opened the SAME consolidated dialog on a different page, so the bar
+    /// advertised three shortcuts for one surface and a user pressing F7 had no way to learn that F5
+    /// and F8 went to the same place. The page names live in the dialog's nav pane instead.
+    ///
+    /// This replaces StatusBar_AdvertisesRoles_F7 / StatusBar_AdvertisesProviders_F8, which asserted
+    /// the OLD design. Written as an ABSENCE check as well as a presence one, because a stale
+    /// registration that still fires is exactly the kind of thing that survives a refactor unnoticed
+    /// -- a dead key advertised in the bar is worse than no key.
+    /// </summary>
+    [Fact]
+    public void StatusBar_AdvertisesSettingsOnce_AndNoLongerAdvertisesF7OrF8()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.Contains(mw.StatusBar.LeftItems, i => i.Shortcut == "F5" && (i.Label ?? "").Contains("Settings"));
+        Assert.DoesNotContain(mw.StatusBar.LeftItems, i => i.Shortcut == "F7");
+        Assert.DoesNotContain(mw.StatusBar.LeftItems, i => i.Shortcut == "F8");
+    }
+
+    [Fact]
+    public void SetTokenTotal_ShowsSpend_AndZeroShowsNothing()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        mw.SetTokenTotal(1234);
+        Assert.Contains(mw.StatusBar.RightItems.Select(i => i.Label ?? ""), l => l.Contains("1234")
+            || l.Contains("1,234"));
+
+        // Before any LLM call there is nothing to report — an unconditional "0 tokens" is noise.
+        mw.SetTokenTotal(0);
+        Assert.DoesNotContain(mw.StatusBar.RightItems.Select(i => i.Label ?? ""), l => l.Contains("0 tokens"));
+    }
+
+    [Fact]
+    public void ShowHelp_MentionsF6()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var before = mw.Chat.MessageIds.Count;
+        mw.ShowHelp();
+
+        Assert.True(mw.Chat.MessageIds.Count > before);
+        // The help TEXT is not headless-assertable (ChatTranscriptControl exposes MessageIds/GetRole but
+        // NO content accessor) — the tmux drive checks the wording. Here we assert it still posts and
+        // still returns the composer to a typable state.
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing);
+    }
+
+    /// <summary>
+    /// F6's handler must find "the focused job" from wherever focus currently sits inside a job
+    /// block (the block itself, or one of its buttons) — not just the block's own direct focus.
+    /// FocusPath is the ancestor chain from the window root to the focused control, so walking it
+    /// for a JobBlockControl covers both cases without MainWindow needing to know JobBlockControl's
+    /// internal layout.
+    /// </summary>
+    [Fact]
+    public void FocusedJobId_FindsJobBlock_AnywhereInFocusPath()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        mw.JobPanel.SetJobs(new[]
+        {
+            new CxAgent.Core.Models.Job
+            {
+                Id = "j1", GoalId = "g1", PluginType = "shell", DisplayName = "Demo",
+                State = CxAgent.Core.Models.JobState.Failed,
+            },
+        });
+
+        mw.FocusJobs();
+        Assert.True(mw.JobPanel.TryGetBlock("j1", out var block));
+        mw.Window!.FocusManager.SetFocus(block, SharpConsoleUI.Controls.FocusReason.Programmatic);
+
+        Assert.Equal("j1", mw.FocusedJobId());
+    }
+
+    [Fact]
+    public void FocusedJobId_Null_WhenNoJobBlockInFocusPath()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        // Composer, not a job block, holds focus after Build().
+        Assert.Null(mw.FocusedJobId());
+    }
+
+    // --- Task 3: prompt control / composer swap --------------------------------------------------
+
+    private static PermissionRequest ShellRequest(string command) =>
+        new(PermissionKind.Shell, command, command);
+
+    private static MainWindow BuiltMainWindow()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+        return mw;
+    }
+
+    [Fact]
+    public void ShowPermissionPrompt_ReplacesTheComposer_AndRestorePutsItBack()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();   // built ONCE — the same control rides both calls
+
+        mw.ShowPermissionPrompt(built);
+        Assert.False(mw.Input.HasFocus);          // the composer is out of the tree
+
+        mw.RestoreComposer(built);
+        Assert.True(mw.Input.HasFocus, "composer must come back focused");
+        Assert.True(mw.Input.IsEditing, "…and EDITING, or typing dies (D10)");
+    }
+
+    [Fact]
+    public void RestoreComposer_PreservesWhateverTheUserHadTyped()
+    {
+        // The prompt interrupts mid-thought; the half-typed goal must survive the round trip.
+        var mw = BuiltMainWindow();
+        mw.Input.Content = "half-typed goal";
+        var prompt = new PermissionPromptControl(ShellRequest("ls"));
+        var built = prompt.BuildContent();
+        mw.ShowPermissionPrompt(built);
+        mw.RestoreComposer(built);
+        Assert.Equal("half-typed goal", mw.Input.Content);
+    }
+
+    [Fact]
+    public void ShowPermissionPrompt_CalledTwice_IsIdempotent_DoesNotThrow()
+    {
+        // A second Show while one is already up is a caller bug in Task 4's serialisation, but the
+        // UI must not crash the render loop over it — guard and no-op rather than let
+        // GridControl.ReplaceControl throw ArgumentException on the already-swapped-out composer.
+        var mw = BuiltMainWindow();
+        var prompt1 = new PermissionPromptControl(ShellRequest("git status")).BuildContent();
+        var prompt2 = new PermissionPromptControl(ShellRequest("ls")).BuildContent();
+
+        mw.ShowPermissionPrompt(prompt1);
+        var ex = Record.Exception(() => mw.ShowPermissionPrompt(prompt2));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void RestoreComposer_CalledTwice_IsIdempotent_DoesNotThrow()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status")).BuildContent();
+
+        mw.ShowPermissionPrompt(prompt);
+        mw.RestoreComposer(prompt);
+        var ex = Record.Exception(() => mw.RestoreComposer(prompt));
+
+        Assert.Null(ex);
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing);
+    }
+
+    /// <summary>
+    /// I4 fix: RestoreComposer now enforces the identity contract itself instead of merely stating
+    /// it. GridControl.ReplaceControl locates the "old" control by ReferenceEquals
+    /// (GridControl.cs:389) and would throw ArgumentException on a mismatch — but a control that was
+    /// never placed is reachable from a legitimate caller, not just a bug: ShowPermissionPrompt
+    /// no-ops when a prompt is already up (its own idempotence guard) without telling its caller,
+    /// so that caller's `finally` still calls RestoreComposer with ITS OWN control, which was never
+    /// the one placed. RestoreComposer must treat that as "not my prompt to restore" and no-op the
+    /// swap (leaving the real active prompt in place) rather than throw from the UI thread — while
+    /// still leaving the composer typable, since a stray restore must never brick input.
+    ///
+    /// This test previously asserted the throw; that was the OLD contract (build twice = crash).
+    /// The new, safer contract is a no-op for a mismatched instance, pinned below.
+    /// </summary>
+    [Fact]
+    public void ShowPermissionPrompt_MovesFocusIntoThePrompt_SoItIsAnswerableByKEYBOARD()
+    {
+        // USER-REPORTED BUG: "I can't select the allow etc buttons with keyboard... Only mouse works."
+        //
+        // ReplaceControl swaps the composer OUT of the grid, but focus stayed on that removed control.
+        // ButtonControl.ProcessKey returns false unless it has focus (ButtonControl.cs:225), so Tab,
+        // Enter and Space reached nothing and clicking was the only way to answer.
+        //
+        // That is a bad failure for a SECURITY prompt in particular: it blocks goal submission until
+        // answered, so a keyboard-driven user was stuck on a question they could not answer.
+        // RestoreComposer already called FocusComposer() on the way OUT; nothing did the equivalent
+        // on the way IN.
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();
+
+        mw.ShowPermissionPrompt(built);
+
+        var focused = mw.Window!.FocusManager.FocusedControl;
+        Assert.NotNull(focused);
+        Assert.IsType<ButtonControl>(focused);          // a BUTTON, not the panel that contains them
+        Assert.False(mw.Input.HasFocus, "focus must leave the composer that was swapped out");
+    }
+
+    [Fact]
+    public void RestoreComposer_WithADifferentBuildContentCall_IsASafeNoOp_NotTheSameInstance()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();
+        mw.ShowPermissionPrompt(built);
+
+        var ex = Record.Exception(() => mw.RestoreComposer(prompt.BuildContent()));
+        Assert.Null(ex);
+
+        // The mismatched call must not have touched the real active prompt: the composer is not
+        // back in the tree yet (a real BuildContent()-once caller must still restore it properly).
+        Assert.False(mw.Input.HasFocus, "the stray restore must not have swapped the real prompt out");
+
+        // The correct call — passing the SAME instance Show received — still works afterwards.
+        mw.RestoreComposer(built);
+        Assert.True(mw.Input.HasFocus);
+        Assert.True(mw.Input.IsEditing);
+    }
+}

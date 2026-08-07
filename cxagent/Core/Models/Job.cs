@@ -1,0 +1,56 @@
+namespace CxAgent.Core.Models;
+
+public enum JobState
+{
+    Pending,      // Waiting for dependencies
+    Queued,       // Dependencies met, waiting for execution slot
+    Running,      // Currently executing
+    Paused,       // User paused (can resume -> Running)
+    Succeeded,    // Completed successfully
+    Failed,       // Completed with error
+    Cancelled,    // User cancelled
+    Skipped       // User or LLM chose to skip
+}
+
+public record Job
+{
+    public required string Id { get; init; }           // ULID — sortable, unique
+
+    /// <summary>
+    /// The id the orchestrator used for this job inside its create_plan call (e.g. "r1"), or null for
+    /// jobs not born from a plan (DagModifier's recovery inserts). PlanCompiler rewrites plan-local ids
+    /// to ULIDs for DependsOn; this keeps the original so a parameter can reference an upstream job by
+    /// the name the orchestrator itself chose. Without it, {{r1.content}} refers to nothing.
+    /// </summary>
+    public string? PlanLocalId { get; init; }
+    public required string GoalId { get; init; }
+    public required string PluginType { get; init; }   // "shell", "docker", etc.
+    public required string DisplayName { get; init; }
+    public JobParameters Parameters { get; init; } = new();
+    public List<string> DependsOn { get; init; } = new(); // Job IDs (ULIDs), not names
+    public JobState State { get; set; } = JobState.Pending;
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public JobResult? Result { get; set; }
+    public int RetryCount { get; set; }
+    public int MaxRetries { get; init; } = 3;
+
+    /// <summary>
+    /// Set when someone deliberately stopped this job. Read by the scheduler's completion path to
+    /// report Cancelled rather than Failed — nothing is WRONG with a cancelled job, and calling it
+    /// Failed invites the diagnoser to spend a paid round repairing a decision someone made on
+    /// purpose. Mutable (not init) because it is set on a live job mid-flight.
+    /// </summary>
+    public bool CancelRequested { get; set; }
+
+    /// <summary>
+    /// How many times the orchestrator's feedback loop has edited/added jobs in response to this
+    /// job's outcome. Mutated in place by the loop, like RetryCount is by DagScheduler — bounded by
+    /// OrchestratorSettings.MaxEditsPerJob to stop a fail-edit-fail cycle on one job. Must survive a
+    /// restart (see SqliteGoalStore), or an interrupted goal resumes with a fresh budget every time.
+    /// </summary>
+    public int OrchestratorEditCount { get; set; }
+    public double? Progress { get; set; }
+    public string? ProgressMessage { get; set; }
+}

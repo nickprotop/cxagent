@@ -1,0 +1,68 @@
+using CxAgent.Core.Models;
+
+namespace CxAgent.Core.Plugins;
+
+/// <summary>Severity for a structured log line. Local enum keeps the core dependency-free.</summary>
+public enum JobLogLevel { Trace, Debug, Info, Warning, Error }
+
+/// <summary>A native job plugin: advertises a type + schema, validates params, and executes.</summary>
+public interface IJobPlugin
+{
+    string TypeName { get; }              // "shell", "file", etc.
+    string DisplayName { get; }
+    JobSchema GetSchema();
+    JobValidation Validate(JobParameters parameters);
+    Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct);
+}
+
+/// <summary>Runtime callbacks a plugin uses during execution.</summary>
+public interface IJobContext
+{
+    void ReportProgress(double percent, string? message = null);
+    void Log(string line);
+    void Log(JobLogLevel level, string line);
+    /// <summary>
+    /// Reports a CPU/memory sample for the job's underlying work (e.g. a monitored child
+    /// process). Not every plugin has a process to sample — implementations must treat this
+    /// as best-effort telemetry, never load-bearing for job completion.
+    /// </summary>
+    void ReportResources(ResourceSnapshot snapshot);
+
+    /// <summary>
+    /// Reports that this job's worker invoked a TOOL, so the UI can show what a long-running
+    /// llm_agent is actually doing instead of 40 seconds of silence.
+    ///
+    /// <para>Best-effort telemetry like <see cref="ReportResources"/>: never load-bearing for job
+    /// completion, and a plugin with no tool loop simply never calls it. <paramref name="summary"/>
+    /// is a short human phrase ("read Calc.cs"), not the tool's result — the result can be
+    /// thousands of characters and already reaches the transcript through the job's own output.</para>
+    /// </summary>
+    void ReportToolCall(string toolName, string summary);
+
+    /// <summary>
+    /// Reports a chunk of a worker's generated TEXT as it arrives, so the UI can show prose
+    /// building rather than a spinner followed by a wall of text.
+    ///
+    /// <para>Best-effort telemetry, same contract as <see cref="ReportResources"/>: a plugin that
+    /// does not stream simply never calls it, and a dropped chunk costs a moment's smoothness,
+    /// never correctness. The job's real output is still assembled and returned in
+    /// <see cref="JobResult.Output"/> — this is a VIEW of that work in progress, not the record
+    /// of it.</para>
+    /// </summary>
+    void ReportTextDelta(string delta);
+    /// <summary>The results of this job's completed dependencies, keyed by dependency Job.Id (ULID).</summary>
+    IReadOnlyDictionary<string, JobResult> CompletedJobOutputs { get; }
+
+    /// <summary>
+    /// Human-readable names for the same dependencies, keyed by the SAME Job.Id as
+    /// <see cref="CompletedJobOutputs"/>. A parallel map rather than a name-keyed output dictionary:
+    /// display names are not unique and are not identity, so keying results by them would break the
+    /// id lookup that <see cref="CompletedJobOutputs"/> promises.
+    ///
+    /// <para>Exists because a ULID is meaningless to a worker model. The plan the orchestrator
+    /// authored refers to jobs by name, so labelling injected dependency output with
+    /// <c>01JQZX9K2M4P7R8V…</c> gives the model nothing to bind a prompt like "the first reviewer
+    /// disagreed with the second" to — and spends ~80 tokens per dependency saying nothing.</para>
+    /// </summary>
+    IReadOnlyDictionary<string, string> CompletedJobNames { get; }
+}
