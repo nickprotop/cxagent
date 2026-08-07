@@ -19,3 +19,9 @@ appsettings.*.json
 
 publish/
 .worktrees/
+
+# Editor workspace state. lazydotide writes .lazydotide.workspace beside whatever
+# project it has open — per-developer window layout and open tabs, which is
+# exactly the kind of file that produces a diff for everyone the moment one
+# person opens the repo in it.
+.lazydotide.workspace
