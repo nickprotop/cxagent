@@ -93,7 +93,7 @@ public sealed class SingleAgentLoop
 
         var tools = WorkerToolset.For(AllTools, _plugins).ToList();
         var wrote = false;
-        var challenged = false;
+        var challenges = 0;
 
         for (var turn = 0; ; turn++)
         {
@@ -112,18 +112,27 @@ public sealed class SingleAgentLoop
 
             if (response.ToolCalls.Count == 0)
             {
-                // A turn with no tool calls is the model saying it is done. CHALLENGE IT ONCE if the
-                // goal asked for a change and nothing was written — the failure this mode exists to
-                // fix ends exactly here, with a confident summary of work that never happened.
-                if (!wrote && !challenged && AsksForAChange(conversation))
+                // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
+                // asked for a change and nothing was written — the failure this mode exists to fix
+                // ends exactly here, with a confident summary of work that never happened.
+                //
+                // MORE THAN ONCE, and escalating. A single nudge was measured against a real bug
+                // hunt: the model answered the challenge with PROSE rather than a tool call, and the
+                // loop took that as done — twice in a row, 55 tool calls across two runs, nothing
+                // written either time. One challenge only catches a model that forgot to write; it
+                // does nothing about one that has stalled mid-investigation, which is the commoner
+                // case on a hard task.
+                // An explicit refusal ends it. Challenging a model that has already said it cannot
+                // proceed just burns turns to hear the same thing louder.
+                var refused = text.Contains("CANNOT:", StringComparison.OrdinalIgnoreCase);
+
+                if (!wrote && !refused && challenges < MaxChallenges && AsksForAChange(conversation))
                 {
-                    challenged = true;
+                    challenges++;
                     messages.Add(new ChatMessage
                     {
                         Role = "user",
-                        Content = "Nothing was written. The request asked you to change something — "
-                                + "use write_file or replace_in_file to do it now, or say plainly "
-                                + "why it cannot be done.",
+                        Content = ChallengeText(challenges),
                         Timestamp = DateTimeOffset.UtcNow,
                     });
                     continue;
@@ -135,6 +144,18 @@ public sealed class SingleAgentLoop
                     conversation.Add(new ChatMessage
                         { Role = "assistant", Content = text, Timestamp = DateTimeOffset.UtcNow });
                 }
+
+                // NOT Completed when the goal wanted a change and none was made. Reporting success
+                // over an unchanged working tree is the same lie this mode was built to stop, one
+                // level up: the run says done, the disk says otherwise, and the user finds out later.
+                if (!wrote && AsksForAChange(conversation))
+                {
+                    _sink.ShowError(
+                        "the goal asked for a change, but nothing was written. Investigation ran to "
+                        + "a stop without reaching an edit.");
+                    return GoalState.Failed;
+                }
+
                 return GoalState.Completed;
             }
 
@@ -237,6 +258,34 @@ public sealed class SingleAgentLoop
 
     private static bool IsWrite(string toolName) =>
         toolName is "write_file" or "replace_in_file";
+
+    /// <summary>How many times a no-write finish is challenged before the goal is failed.</summary>
+    private const int MaxChallenges = 3;
+
+    /// <summary>
+    /// The nudge sent when the model stops without writing. EACH ONE SAYS SOMETHING NEW — repeating
+    /// a message the model has already answered just earns the same answer again, which is exactly
+    /// what a single fixed challenge produced in measurement.
+    ///
+    /// <para>The escalation follows the observed failure: first assume it forgot to write, then
+    /// assume it stalled mid-investigation and name the concrete recovery (widen the read — a large
+    /// file read through a 40-line window is how the relevant function gets missed), then demand a
+    /// decision either way so a genuine "cannot" ends the goal honestly instead of looping.</para>
+    /// </summary>
+    private static string ChallengeText(int attempt) => attempt switch
+    {
+        1 => "Nothing was written. The request asked you to change something — use write_file or "
+           + "replace_in_file to do it now, or say plainly why it cannot be done.",
+
+        2 => "Still nothing written. You stopped before reaching an edit. If you have not yet found "
+           + "the cause, keep looking — read the whole of the file you suspect rather than a small "
+           + "window of it (omit 'limit', or use a large one), and search for the function that sits "
+           + "BETWEEN where the relevant value is set and where it is used. Then make the edit.",
+
+        _ => "This is the final attempt. Either call replace_in_file or write_file now, or reply "
+           + "with one sentence beginning 'CANNOT:' explaining what is blocking you. Do not "
+           + "summarise what you have read — a summary changes nothing on disk.",
+    };
 
     /// <summary>
     /// Whether a tool result reads as a failure. WorkerToolset never throws — every failure comes
