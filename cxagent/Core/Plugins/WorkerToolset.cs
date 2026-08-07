@@ -17,9 +17,24 @@ namespace CxAgent.Core.Plugins;
 /// </summary>
 public static class WorkerToolset
 {
-    /// <summary>Cap on a tool-result string. Unbounded output (e.g. a large file read) would be fed
-    /// into every subsequent ChatAsync call for the rest of the tool loop.</summary>
-    public const int MaxToolResultChars = 8192;
+    /// <summary>
+    /// Cap on a tool-result string. Unbounded output would be fed into every subsequent ChatAsync
+    /// call for the rest of the tool loop, so SOME bound is real — but 8,192 was far too tight and
+    /// the cost was measured, not theoretical.
+    ///
+    /// <para>MarkupParser.cs is 1,587 lines. At 8 KB a read returns roughly a quarter of it, so
+    /// finding a function meant paging blind through four windows. Across three drives the model
+    /// opened that file 3, 20 and 13 times and never once landed on line 1196, where the bug was —
+    /// while writing a correct description of the bug from the endpoints it COULD see. Twenty reads
+    /// that fail to find one function is not a model failing to understand; it is a window too small
+    /// to look through.</para>
+    ///
+    /// <para>64 KB holds that file whole. A modern context is 128k tokens and up, where a 64 KB read
+    /// is a few percent — the old number was sized for a budget nobody runs any more. Paging still
+    /// exists for genuinely huge files; it is no longer the common case for an ordinary source
+    /// file.</para>
+    /// </summary>
+    public const int MaxToolResultChars = 65536;
 
     /// <param name="Params">
     /// The params THIS tool takes, in the order the model should read them. Selected from the

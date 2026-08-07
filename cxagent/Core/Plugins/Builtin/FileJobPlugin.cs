@@ -283,13 +283,106 @@ public class FileJobPlugin : IJobPlugin
                 try { match = rx is null ? lines[i].Contains(needle, StringComparison.Ordinal) : rx.IsMatch(lines[i]); }
                 catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { continue; }
 
-                if (match) hits.Add($"{file}:{i + 1}:{lines[i].Trim()}");
+                if (match)
+                    hits.Add($"{file}:{i + 1}:{EnclosingScope(lines, i)}{lines[i].Trim()}");
             }
         }
 
         output["content"] = string.Join('\n', hits);
         output["count"] = hits.Count;
         if (hits.Count >= limit) output["truncated"] = true;
+    }
+
+    /// <summary>
+    /// The declaration a matched line sits inside, as a "[in Foo]" prefix — or "" when none is
+    /// found within a reasonable distance.
+    ///
+    /// <para>WHY. "file:1196:text" tells a model WHERE a hit is only if it already knows the file's
+    /// shape; a NAME tells it what the hit is part of. Measured across three drives on a 1,587-line
+    /// file: the model searched for the flag, got a list of line numbers, and never opened the
+    /// function that one of them was inside — while correctly describing the bug from the two
+    /// endpoints it could name. The bug lived in a third function that neither endpoint mentions and
+    /// that only a line number pointed at. A name in the search result is the cheapest possible way
+    /// to say "this is in WrapCellLine".</para>
+    ///
+    /// <para>Scans upward for the nearest line that looks like a declaration and is indented less
+    /// than the hit — the same rule a reader's eye uses. Bounded, because an unbounded scan on a
+    /// match near the end of a large file would walk the whole thing for every hit.</para>
+    /// </summary>
+    private static string EnclosingScope(string[] lines, int hit)
+    {
+        const int MaxScan = 400;
+        var hitIndent = LeadingWhitespace(lines[hit], 0).Length;
+
+        for (var i = hit - 1; i >= 0 && hit - i <= MaxScan; i--)
+        {
+            var line = lines[i];
+            if (line.Trim().Length == 0) continue;
+
+            var indent = LeadingWhitespace(line, 0).Length;
+            if (indent >= hitIndent) continue;          // same block or deeper: not a parent
+
+            var name = DeclarationName(line);
+            if (name is not null) return $"[in {name}] ";
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// The declared name on a line, or null if it does not look like a declaration.
+    ///
+    /// <para>Deliberately language-agnostic and shallow: it recognises the shape "…keyword Name(" or
+    /// "…keyword Name" across the C-family, Python, Go, Rust, JS/TS. A wrong guess costs a slightly
+    /// misleading label on one search hit, so the bar for including a keyword is low, but anything
+    /// that would need real parsing is left out.</para>
+    /// </summary>
+    private static string? DeclarationName(string line)
+    {
+        var t = line.Trim();
+        if (t.StartsWith("//") || t.StartsWith("*") || t.StartsWith("#")) return null;
+
+        ReadOnlySpan<string> keywords =
+        [
+            "class ", "struct ", "interface ", "record ", "enum ", "namespace ",
+            "def ", "func ", "fn ", "function ", "impl ", "trait ", "module ",
+        ];
+        foreach (var kw in keywords)
+        {
+            var at = t.IndexOf(kw, StringComparison.Ordinal);
+            if (at < 0) continue;
+            var rest = t[(at + kw.Length)..].TrimStart();
+            var name = TakeIdentifier(rest);
+            if (name.Length > 0) return name;
+        }
+
+        // NOT A DECLARATION: an assignment, a `new` expression, or a statement. `var frameIsLink =
+        // new Stack<bool>();` ends in ')' and contains '(', so the signature rule below accepted it
+        // and labelled every hit in the method "[in Stack]" — a confidently wrong name, which is
+        // worse than none because the model has no reason to doubt it. Verified on the real file:
+        // this exact line produced that label.
+        if (t.Contains('=', StringComparison.Ordinal) && !t.Contains("=>", StringComparison.Ordinal))
+            return null;
+        if (t.EndsWith(";", StringComparison.Ordinal)) return null;
+
+        // A method/function signature without a leading keyword: "…Name(" with a body or an
+        // expression arrow. Requires the paren so a bare call or a field does not qualify.
+        var paren = t.IndexOf('(');
+        if (paren > 0 && (t.EndsWith("{") || t.EndsWith(")") || t.Contains("=>", StringComparison.Ordinal)))
+        {
+            var before = t[..paren];
+            var lastSpace = before.LastIndexOfAny([' ', '\t', '.', '*', '&']);
+            var name = TakeIdentifier(before[(lastSpace + 1)..]);
+            if (name.Length > 1 && char.IsLetter(name[0])) return name;
+        }
+
+        return null;
+    }
+
+    private static string TakeIdentifier(string s)
+    {
+        var i = 0;
+        while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] == '_')) i++;
+        return s[..i];
     }
 
     /// <summary>

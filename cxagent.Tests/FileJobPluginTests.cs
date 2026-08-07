@@ -693,4 +693,58 @@ public class FileJobPluginTests : IDisposable
         // And it does not claim to have adjusted anything, because it did not.
         Assert.DoesNotContain("indentation adjusted", (string)r.Output["content"]!);
     }
+
+    [Fact]
+    public async Task Search_NamesTheEnclosingFunctionOfEachHit()
+    {
+        // "file:1196:text" locates a hit only for a reader who already knows the file's shape. A
+        // NAME says what the hit is part of. Measured across three drives on a 1,587-line file: the
+        // model searched for the flag, got line numbers, and never opened the function one of them
+        // was inside -- while correctly describing the bug from the two endpoints it could name.
+        var f = Path.Combine(_dir, "scope.cs");
+        File.WriteAllText(f, string.Join('\n',
+        [
+            "public class Widget",
+            "{",
+            "\tprivate static void WrapCellLine(List<Cell> cells)",
+            "\t{",
+            "\t\tvar found = TARGET;",
+            "\t}",
+            "}",
+        ]));
+
+        var r = await Run(("action", "search"), ("path", _dir), ("pattern", "TARGET"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("[in WrapCellLine]", (string)r.Output["content"]!);
+    }
+
+    [Fact]
+    public async Task Search_FallsBackToTheTypeWhenNoFunctionEncloses()
+    {
+        var f = Path.Combine(_dir, "field.cs");
+        File.WriteAllText(f, string.Join('\n',
+        [
+            "public class Holder",
+            "{",
+            "\tprivate int TARGET = 1;",
+            "}",
+        ]));
+
+        var r = await Run(("action", "search"), ("path", _dir), ("pattern", "TARGET"));
+
+        Assert.Contains("[in Holder]", (string)r.Output["content"]!);
+    }
+
+    [Fact]
+    public async Task Search_SaysNothingWhenNothingEncloses()
+    {
+        // A top-level hit must not gain an invented label -- a wrong name is worse than no name.
+        var f = Path.Combine(_dir, "top.txt");
+        File.WriteAllText(f, "TARGET at top level\n");
+
+        var r = await Run(("action", "search"), ("path", _dir), ("pattern", "TARGET"));
+
+        Assert.DoesNotContain("[in ", (string)r.Output["content"]!);
+    }
 }
