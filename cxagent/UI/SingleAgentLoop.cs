@@ -447,9 +447,19 @@ public sealed class SingleAgentLoop
                 // the moment BODY content arrives, so putting it there would kill the very indicator
                 // it is meant to reinforce. The header keeps both: a live [spinner] beside the text.
                 //
-                // Dimmed and last-line-only. This is a progress indicator, not a transcript: the
-                // full chain of thought is many screens long, is never shown in full anywhere, and
-                // is discarded rather than entering the conversation.
+                // AMBER, not [dim]. Dim asks the terminal to render the SAME colour more faintly,
+                // which is a request many terminals ignore and none render identically — and against
+                // an already-dark background the ones that honour it produce grey mush. A colour of
+                // its own says "this is a different KIND of text" rather than "this text matters
+                // less", which is what reasoning actually is.
+                //
+                // opencode gives thinking its warning hue for exactly this, and the palette already
+                // carries it (ColorScheme.ThinkingMarkup), so the transcript and the reasoning line
+                // now come from one source rather than two conventions.
+                //
+                // Last-line-only: this is a progress indicator, not a transcript. The full chain of
+                // thought is many screens long, is never shown whole anywhere, and is discarded
+                // rather than entering the conversation.
                 var reasoning = Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(accumulated);
                 if (reasoning.Length > 0)
                 {
@@ -457,7 +467,8 @@ public sealed class SingleAgentLoop
                     if (tail.Length > 0 && tail != lastHeader)
                     {
                         lastHeader = tail;
-                        _sink.SetAssistantHeader(turnId, "[spinner] [dim]" + Escape(tail) + "[/]");
+                        _sink.SetAssistantHeader(turnId,
+                            $"[spinner] [{ColorScheme.ThinkingMarkup}]{Escape(tail)}[/]");
                     }
                 }
             }

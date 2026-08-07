@@ -471,6 +471,14 @@ public class SingleAgentLoopChallengeTests
         Assert.Contains(sink.Headers, h => h.Contains("weighing the options", StringComparison.Ordinal));
         Assert.Contains(sink.Headers, h => h.Contains("[spinner]", StringComparison.Ordinal));
 
+        // AMBER, not [dim]. Dim asks the terminal to render the same colour more faintly — a request
+        // many terminals ignore and none render identically, and against a dark background the ones
+        // that honour it produce grey mush. The colour comes from the shared palette, so the
+        // transcript and this line cannot drift apart.
+        Assert.Contains(sink.Headers, h =>
+            h.Contains(CxAgent.UI.ColorScheme.ThinkingMarkup, StringComparison.Ordinal));
+        Assert.DoesNotContain(sink.Headers, h => h.Contains("[dim]", StringComparison.Ordinal));
+
         Assert.DoesNotContain(conversation, m => m.Content.Contains("weighing", StringComparison.Ordinal));
         Assert.Contains(conversation, m => m.Content.Contains("The answer is 4.", StringComparison.Ordinal));
     }
