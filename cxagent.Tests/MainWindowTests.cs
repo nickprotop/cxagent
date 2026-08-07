@@ -16,6 +16,11 @@ public class MainWindowTests
         new(new HeadlessConsoleDriver(80, 24),
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
 
+    /// <summary>A system with a chosen terminal width, for the panel's responsive threshold.</summary>
+    private static ConsoleWindowSystem SysOfWidth(int width) =>
+        new(new HeadlessConsoleDriver(width, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
+
     private static LogFileManager Logs()
     {
         var dir = Path.Combine(Path.GetTempPath(), "cxagent-mwt-" + Guid.NewGuid().ToString("N"));
@@ -578,5 +583,152 @@ public class MainWindowTests
             style.H1Color!.Value, style.CodeForeground, style.QuoteColor, style.LinkColor,
         };
         Assert.Equal(hues.Length, hues.Distinct().Count());
+    }
+
+    [Fact]
+    public void SessionPanel_HiddenOnANarrowTerminal_ShownOnAWideOne()
+    {
+        // The panel is a luxury of WIDTH. Below the threshold a 24-column panel is a third of the
+        // screen spent on six numbers, beside code the user is trying to read.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+
+        var narrow = new MainWindow(SysOfWidth(80), res, Logs());
+        narrow.Build();
+        narrow.RefreshSessionPanel();
+        Assert.False(narrow.SessionPanel.Control.Visible);
+
+        var wide = new MainWindow(SysOfWidth(140), res, Logs());
+        wide.Build();
+        wide.RefreshSessionPanel();
+        Assert.True(wide.SessionPanel.Control.Visible);
+    }
+
+    [Fact]
+    public void SessionPanel_F3OverridesTheWidthInBothDirections()
+    {
+        // The override must win BOTH ways, and there is a third state: "decide for me". Without it
+        // the first resize after an explicit F3 would silently undo the user's choice.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(SysOfWidth(80), res, Logs());   // narrow: hidden by default
+        mw.Build();
+        mw.RefreshSessionPanel();
+        Assert.False(mw.SessionPanel.Control.Visible);
+
+        mw.ToggleSessionPanel();                                 // force SHOWN on a narrow terminal
+        Assert.True(mw.SessionPanel.Control.Visible);
+
+        mw.ToggleSessionPanel();                                 // force HIDDEN
+        Assert.False(mw.SessionPanel.Control.Visible);
+
+        mw.ToggleSessionPanel();                                 // back to automatic → narrow → hidden
+        mw.RefreshSessionPanel();
+        Assert.False(mw.SessionPanel.Control.Visible);
+    }
+
+    [Fact]
+    public void SessionPanel_ShowsContextModelAndLocation()
+    {
+        var panel = new SessionPanel();
+        panel.RecordTurn(toolCalls: 3);
+        panel.Refresh(tokens: 47_000, contextWindow: 100_000, model: "qwen3.6-35b",
+            endpoint: "openai-compatible", rules: 2);
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("47,000 tokens", text, StringComparison.Ordinal);
+        Assert.Contains("47% used", text, StringComparison.Ordinal);
+        Assert.Contains("qwen3.6-35b", text, StringComparison.Ordinal);
+        Assert.Contains("1 turn", text, StringComparison.Ordinal);      // singular, not "1 turns"
+        Assert.Contains("3 tool calls", text, StringComparison.Ordinal);
+        Assert.Contains("2 always-allow rules", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_OmitsThePercentageWhenTheWindowIsUnknown()
+    {
+        // A percentage needs a denominator. Inventing one would put a confident number on a guess.
+        var panel = new SessionPanel();
+        panel.Refresh(tokens: 5_000, contextWindow: null, model: "m", endpoint: "", rules: 0);
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("5,000 tokens", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("% used", text, StringComparison.Ordinal);
+        Assert.Contains("none granted", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_ShowsTheCapsThatWillEndTheRun()
+    {
+        // A goal that stops "for no reason" has almost always hit a cap, and the numbers lived only
+        // in config.json — readable after the fact, when the run was already over.
+        var panel = new SessionPanel();
+        panel.RecordTurn(toolCalls: 1);
+        panel.Refresh(tokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
+            maxTurns: 200, goalTokenBudget: 50_000);
+
+        Assert.Contains("1/200 turns", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("50,000 token budget", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_OmitsTheLimitsBlockWhenNothingIsCapped()
+    {
+        // An "unlimited" block is noise: it takes space to say nothing will happen.
+        var panel = new SessionPanel();
+        panel.Refresh(tokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0);
+
+        Assert.DoesNotContain("Limits", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_HidesTheWorkerTurnCap_InSingleAgent()
+    {
+        // MaxWorkerTurns' own documentation calls it "a cap one level DOWN: it bounds a single
+        // llm_agent WORKER's tool loop". Single-agent has no workers, so there it silently becomes
+        // the whole session's budget at a number no real session approaches. Advertising it invites
+        // the user to plan around a constraint that never binds.
+        var orch = new OrchestratorSettings(null, null, MaxWorkerTurns: 200);
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock",
+            System.Array.Empty<string>(), orch);
+
+        var single = new MainWindow(SysOfWidth(140), res, Logs());
+        single.Build();
+        single.RefreshSessionPanel();
+        Assert.DoesNotContain("200 turns", single.SessionPanel.RenderedText, StringComparison.Ordinal);
+
+        // In FAN-OUT it bounds a real worker, so it is shown.
+        var fan = new MainWindow(SysOfWidth(140), res, Logs()) { FanOut = true };
+        fan.Build();
+        fan.RefreshSessionPanel();
+        Assert.Contains("200 turns", fan.SessionPanel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_ShowsTheInputOutputSplit()
+    {
+        // Input and output behave nothing alike: input grows with the conversation (every turn
+        // re-sends everything before it) and dominates a long session, while output is what the
+        // model produced. A single total hides which is growing — and they have different remedies,
+        // compress the history or ask for less.
+        var panel = new SessionPanel();
+        panel.Refresh(tokens: 96_500, contextWindow: 200_000, model: "m", endpoint: "", rules: 0,
+            inputTokens: 94_000, outputTokens: 2_500);
+
+        // Compact, because 24 columns cannot hold two full counts on one line — and at this
+        // magnitude the exact digits are never what the number is read for.
+        Assert.Contains("↑94.0k", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("↓2.5k", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_OmitsTheSplitBeforeAnyUsageIsReported()
+    {
+        // "↑0 ↓0" is noise: it takes a line to say nothing has happened yet, and a provider that
+        // never reports usage would show it for the whole session.
+        var panel = new SessionPanel();
+        panel.Refresh(tokens: 0, contextWindow: 200_000, model: "m", endpoint: "", rules: 0);
+
+        Assert.DoesNotContain("↑", panel.RenderedText, StringComparison.Ordinal);
     }
 }

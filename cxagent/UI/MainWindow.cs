@@ -14,7 +14,7 @@ namespace CxAgent.UI;
 /// transcript via InlineJobSink rather than in a side panel. When no provider resolved, the chat shows an actionable message and
 /// submission is disabled (the seam the P5c wizard fills).
 /// </summary>
-public sealed class MainWindow
+public sealed class MainWindow : IDisposable
 {
     private readonly ConsoleWindowSystem _system;
     private readonly ProviderResolution _resolution;
@@ -73,6 +73,56 @@ public sealed class MainWindow
     /// the cell's GridPlacement across the swap.</summary>
     private GridControl _mainGrid = null!;
     private RuleControl _composerRule = null!;
+
+    /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
+    public SessionPanel SessionPanel { get; } = new();
+
+    /// <summary>
+    /// Drives the panel's ELAPSED CLOCK. Everything else in the panel changes on an event — tokens
+    /// when a turn ends, rules when one is granted — but elapsed time changes because time passed,
+    /// and nothing else was going to say so. Without this the clock froze at whatever the last turn
+    /// left it, which is worse than no clock: a stopped one still looks like it is running.
+    ///
+    /// <para>One second: fast enough that the seconds field is never visibly wrong, slow enough to
+    /// be free. Marshalled onto the UI thread like every other mutation (framework Rule 13).</para>
+    /// </summary>
+    private System.Threading.Timer? _panelClock;
+
+    /// <summary>
+    /// User's explicit F3 choice, or null while the panel follows the terminal width.
+    ///
+    /// <para>Three states, not two: "shown", "hidden", and "decide for me". Without the third, the
+    /// first resize after startup would silently override a choice the user had just made.</para>
+    /// </summary>
+    private bool? _panelOverride;
+
+    /// <summary>Last token total seen, so a panel refresh triggered by a RESIZE still shows the
+    /// current number rather than zero.</summary>
+    private int _lastTokens;
+
+    /// <summary>The in/out split behind <see cref="_lastTokens"/>, so a refresh driven by the clock
+    /// or a resize shows the same numbers as the one driven by a turn.</summary>
+    private int _lastInput;
+    private int _lastOutput;
+
+    /// <summary>Records the input/output split. Separate from SetTokenTotal because the total
+    /// arrives through an event that predates the split and is raised from two different paths.</summary>
+    public void SetTokenSplit(int input, int output)
+    {
+        _lastInput = input;
+        _lastOutput = output;
+    }
+
+    /// <summary>Always-allow rules live for this folder; set by AppBootstrap, which owns the store.</summary>
+    private int _permissionRuleCount;
+
+    /// <summary>Told by AppBootstrap when a rule is granted, so the count is current without this
+    /// class reaching into the permission store itself.</summary>
+    public void SetPermissionRuleCount(int count)
+    {
+        _permissionRuleCount = count;
+        RefreshSessionPanel();
+    }
 
     /// <summary>Whichever control currently occupies the composer's grid cell in place of
     /// <see cref="Input"/> — null when the composer itself is there. Tracked so a second
@@ -133,6 +183,7 @@ public sealed class MainWindow
     {
         SubmissionEnabled = _resolution.HasProvider;
         InstallMarkdownStyle();
+        StartPanelClock();
 
         // Role rendering: ChatRoleStyle.Markdown defaults to TRUE, which routes content through
         // MarkdownToMarkup and ESCAPES literal '[' — so cxagent's own [red]/[cyan] markup renders
@@ -228,12 +279,26 @@ public sealed class MainWindow
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
 
+        // TWO COLUMNS: the transcript, and the session panel beside it. The panel's column is Auto,
+        // so hiding the control collapses the column to nothing rather than leaving a gap — which is
+        // what makes the responsive behaviour a visibility flip rather than a rebuild.
         _mainGrid = Controls.Grid()
-            .Columns(GridLength.Star(1))
+            // CELLS, not Auto. Auto sizes a column to its content's INTRINSIC width, and a
+            // ScrollablePanel has none — it fills whatever it is given. The measure never resolved
+            // and the whole window painted its background with no text at all: not a crash, not an
+            // error, just an empty screen. Measured against the same build: 0 lines of text with
+            // Auto, 7 with the column removed, 7 with a fixed width.
+            .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.Width))
             .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
             .Place(Chat, 0, 0)
-            .Place(_composerRule, 1, 0)
-            .Place(Input, 2, 0)
+            .Place(SessionPanel.Control, 0, 1)
+            // THE COMPOSER SPANS BOTH COLUMNS. The panel is reference material beside the
+            // conversation; the composer is the whole app's input. Confining it to the transcript's
+            // column squeezed a multi-line editor into 76 characters while 24 sat empty beside it —
+            // and the rule above it stopped short of the screen edge, which read as a broken line
+            // rather than a deliberate one.
+            .Place(_composerRule, 1, 0, colSpan: 2)
+            .Place(Input, 2, 0, colSpan: 2)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -247,6 +312,7 @@ public sealed class MainWindow
         // focus, so the key does nothing observable. In fan-out focus can legitimately be sitting in
         // a job block, and F2 is the way back.
         if (FanOut) StatusBar.AddLeft("F2", "New Goal");
+        StatusBar.AddLeft("F3", "Panel");
         StatusBar.AddLeft("F4", "Chat");
         StatusBar.AddLeft("F1", "Help");
         // One key for settings, not three. F7 (Roles) and F8 (Providers) were retired when the
@@ -370,6 +436,92 @@ public sealed class MainWindow
         // the same call FocusComposer uses.
         if (Window?.FocusManager is { } fm && FirstFocusable(prompt) is { } target)
             fm.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    }
+
+    /// <summary>
+    /// Starts the panel's one-second tick.
+    ///
+    /// <para>ELAPSED TIME IS THE ONE VALUE NOTHING ELSE ANNOUNCES. Tokens arrive with a turn, rules
+    /// with a grant — but time passes on its own, and without a clock the field froze at whatever
+    /// the last event left it. A stopped clock is worse than none: it still looks like it is
+    /// running, so it lies rather than abstains.</para>
+    ///
+    /// <para>One second is fast enough that the seconds field is never visibly wrong and slow enough
+    /// to cost nothing. Marshalled onto the UI thread like every other mutation, and skipped
+    /// entirely while the panel is hidden — a timer repainting an invisible control is pure waste.</para>
+    /// </summary>
+    /// <summary>Stops the panel clock. The window outlives no goal, so this runs once at shutdown —
+    /// but a Timer holds a callback rooting this instance, and leaving it running keeps the whole
+    /// UI graph alive after the app has stopped drawing it.</summary>
+    public void Dispose()
+    {
+        _panelClock?.Dispose();
+        _panelClock = null;
+    }
+
+    private void StartPanelClock()
+    {
+        _panelClock = new System.Threading.Timer(
+            _ => _system.EnqueueOnUIThread(() =>
+            {
+                if (SessionPanel.Control.Visible) RefreshSessionPanel();
+            }),
+            null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// Applies the panel's visibility from the terminal width and any F3 override, and refreshes it.
+    ///
+    /// <para>RESPONSIVE BY DEFAULT: the panel is a luxury of width — taken when there is room, and
+    /// yielded when the transcript needs every column. Below the threshold a 24-column panel would
+    /// be a third of the screen spent on six numbers, next to code the user is trying to read.</para>
+    ///
+    /// <para>The override wins in BOTH directions, because "decide for me" is a state the user can
+    /// leave but the app must not re-enter on their behalf — a resize silently undoing an explicit
+    /// F3 is the kind of thing that reads as a bug.</para>
+    /// </summary>
+    public void RefreshSessionPanel()
+    {
+        var wide = _system.DesktopDimensions.Width >= UI.SessionPanel.ResponsiveThreshold;
+        SessionPanel.Control.Visible = _panelOverride ?? wide;
+
+        if (!SessionPanel.Control.Visible) return;
+
+        // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
+        // provider will actually send. Both are shown because they differ often enough that seeing
+        // only one leaves the question open.
+        SessionPanel.Refresh(
+            _lastTokens,
+            _resolution.ContextWindow,
+            // ModelId ONLY. DisplayName is "openai-compatible <the same model id>", so showing both
+            // printed the model twice — and at 24 columns a long gguf name wraps to three lines, so
+            // the duplicate cost six lines to say one thing.
+            _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
+            string.Empty,
+            _permissionRuleCount,
+            // MaxWorkerTurns ONLY IN FAN-OUT. Its own documentation calls it "a cap one level DOWN:
+            // it bounds a single llm_agent WORKER's tool loop" — and single-agent has no workers, so
+            // there it silently becomes the whole session's turn budget at a number (200) no real
+            // session approaches. Showing it as a Limit advertises a constraint that never binds,
+            // which is worse than showing nothing: it invites the user to plan around a fiction.
+            FanOut ? _resolution.Orchestrator?.MaxWorkerTurns ?? 0 : 0,
+            _resolution.Orchestrator?.GoalTokenBudget,
+            _lastInput,
+            _lastOutput);
+    }
+
+    /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
+    public void ToggleSessionPanel()
+    {
+        // Cycles through the THREE states rather than flipping two, so a user can get back to
+        // responsive without restarting: shown -> hidden -> automatic.
+        _panelOverride = _panelOverride switch
+        {
+            null => !SessionPanel.Control.Visible,
+            true => false,
+            false => null,
+        };
+        RefreshSessionPanel();
     }
 
     /// <summary>
@@ -609,6 +761,14 @@ public sealed class MainWindow
 
     public void SetTokenTotal(int total)
     {
+        // THE PANEL IS UPDATED FIRST, and unconditionally. This method used to return early at zero
+        // — hiding the status-bar item, which is right, but taking the panel refresh with it. A
+        // provider that reports no usage (a local llama.cpp build often does not) therefore left the
+        // whole panel frozen at its startup values: 0 tokens, 0 turns, 0m 0s, forever. The one
+        // number that was missing hid four that were not.
+        _lastTokens = total;
+        RefreshSessionPanel();
+
         if (total == 0)
         {
             if (_tokenItem is not null) _tokenItem.IsVisible = false;

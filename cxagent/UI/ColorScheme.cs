@@ -54,6 +54,18 @@ public static class ColorScheme
     public static string ThresholdMarkup(double percent) =>
         percent < 60 ? AccentMarkup : percent < 85 ? "yellow" : "red";
 
+    /// <summary>
+    /// The session panel's surface — one step off the window background, so the column reads as a
+    /// different KIND of thing rather than as narrow transcript. opencode's backgroundElement.
+    ///
+    /// <para>DELIBERATELY NOT the same as <see cref="CodeBackground"/>. Both started at #141414 —
+    /// opencode's backgroundPanel — and the collision was visible immediately: inline code spans in
+    /// the transcript painted the identical grey, so the panel stopped reading as a surface and read
+    /// as more scattered code. Two different meanings cannot share one colour when they appear side
+    /// by side.</para>
+    /// </summary>
+    public static readonly Color PanelSurface = new(0x1e, 0x1e, 0x1e);
+
     // --- Markdown ---------------------------------------------------------------
     // Values from opencode's default dark theme (packages/tui/src/theme/assets/
     // opencode.json), which is the palette this was compared against.

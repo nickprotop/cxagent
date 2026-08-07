@@ -83,6 +83,20 @@ public sealed class GoalRunner : IDisposable
     public event EventHandler<int>? TokensUpdated;
 
     /// <summary>
+    /// One model turn finished; the payload is how many tool calls it made.
+    ///
+    /// <para>Added because the session panel's turn and tool-call counters had NO source — the
+    /// method that incremented them was never called, so both read 0 for the life of a session no
+    /// matter how much work it did. Token usage was not a substitute: a provider that reports no
+    /// usage (a local llama.cpp build often does not) leaves that channel silent too.</para>
+    /// </summary>
+    public event EventHandler<int>? TurnCompleted;
+
+    /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
+    /// knows a turn boundary.</summary>
+    internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
+
+    /// <summary>
     /// Copilot mode (P9 Task 2): fires true the instant the goal parks in GoalState.Draft (same point
     /// as IChatSink.ShowApprovalRequest — see RunCoreAsync) and false the instant the gate resolves,
     /// whichever way. This is the seam MainWindow's F9/Esc footer hint subscribes to; mirrors
@@ -341,7 +355,19 @@ public sealed class GoalRunner : IDisposable
         {
             _sink.EndAssistantTurn(assistantId);   // the loop opens its own turns
             var single = new SingleAgentLoop(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
-                _orchestrator?.MaxWorkerTurns ?? 200);
+                _orchestrator?.MaxWorkerTurns ?? 200)
+            {
+                TurnCompleted = calls =>
+                {
+                    OnTurnCompleted(calls);
+                    // TOKENS TOO. Single-agent records to the Ledger itself and never raised
+                    // TokensUpdated — that event fires only inside the fan-out driver's stream loop.
+                    // So the ctx readout and the panel both sat at 0 for an entire single-agent
+                    // session no matter how many tokens it burned, which is the mode that is the
+                    // default.
+                    TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+                },
+            };
             return await single.RunAsync(goalId, conversation, ct);
         }
 

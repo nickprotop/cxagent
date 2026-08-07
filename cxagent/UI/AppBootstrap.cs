@@ -191,6 +191,12 @@ public static class AppBootstrap
                 singleAgent: !(args.Contains("--fan-out")
                                || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut));
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
+            runner.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
+            {
+                mainWindow.SessionPanel.RecordTurn(calls);
+                mainWindow.SetTokenSplit(runner.Ledger.InputTokens, runner.Ledger.OutputTokens);
+                mainWindow.RefreshSessionPanel();
+            });
             runner.DraftPending += (_, pending) => system.EnqueueOnUIThread(() => mainWindow.SetDraftPending(pending));
             mainWindow.SetSubmissionEnabled(true);
         }
@@ -460,6 +466,7 @@ public static class AppBootstrap
         // either, so it's avoided too. F-keys arrive as escape sequences — unambiguous — and Ctrl+Q
         // (0x11) is proven working, so it keeps the quit binding.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2, mainWindow.NewGoal);
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusChat);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5, () => { _ = mainWindow.ShowSettings?.Invoke(); });
@@ -629,13 +636,28 @@ public static class AppBootstrap
         // D10: same deferral, same reason. Adding a status-bar item calls Invalidate(Relayout),
         // which is a max-join at the render tick — inside BuildWindow there is no tick to join and
         // it blocks forever. On the first pump after Run() begins, there is.
-        system.EnqueueOnUIThread(mainWindow.ShowComposerHint);
+        // THE HINT IS FAN-OUT ONLY. It exists because a live-drive agent once read a collapsed
+        // transcript, concluded the app "does not accept typed input" and filed a blocking defect —
+        // but that was before the composer had a rule above it separating it from the conversation.
+        // In single-agent the composer is unmistakable, and the hint just occupies the corner the
+        // context readout wants.
+        if (fanOutMode) system.EnqueueOnUIThread(mainWindow.ShowComposerHint);
+
+        // Seed the panel on the first pump, for the same reason as the hint above: it adds controls,
+        // and doing that during BuildWindow joins a render tick that does not exist yet.
+        system.EnqueueOnUIThread(() =>
+        {
+            mainWindow.SetPermissionRuleCount(
+                permissionRules.RulesFor(Directory.GetCurrentDirectory()).Rules.Count);
+            mainWindow.RefreshSessionPanel();
+        });
 
         int code = system.Run();
         // I1 #1: GoalRunner.Dispose releases EVERY scheduler this session's runner ever created (each
         // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
         // the process's lifetime, since (as of review round 2's N2 fix) GoalRunner no longer disposes
         // schedulers one-at-a-time as goals swap; this is now the only release point.
+        mainWindow.Dispose();   // stops the panel clock
         runner?.Dispose();
         return code;
     }
