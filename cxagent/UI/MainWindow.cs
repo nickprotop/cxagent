@@ -61,6 +61,10 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public string SessionId { get; set; } = string.Empty;
 
+    /// <summary>maxWorkerTurns as the user configured it, or null. Set by AppBootstrap, which reads
+    /// the file — see ReadConfiguredMaxWorkerTurns for why the settings record cannot answer.</summary>
+    public int? ConfiguredMaxWorkerTurns { get; set; }
+
     // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
     // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
     // window on a different page, which is a parameter, not a seam. ShowSettings is the single
@@ -509,11 +513,11 @@ public sealed class MainWindow : IDisposable
             _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
             string.Empty,
             _permissionRuleCount,
-            // THE EFFECTIVE CAP, including its default. GoalRunner passes
-            // `_orchestrator?.MaxWorkerTurns ?? 200` to the loop, so 200 turns bounds every session
-            // whether or not an orchestrator block exists — reading the config alone reported 0 and
-            // hid a limit that was actually in force.
-            _resolution.Orchestrator?.MaxWorkerTurns ?? 200,
+            // The CONFIGURED cap only, supplied by AppBootstrap from the raw JSON. NOT read off
+            // _resolution.Orchestrator: that property is non-nullable and defaults to Unbounded,
+            // which carries MaxWorkerTurns = 200 — so it reports a ceiling for a session that has
+            // none, which is exactly the fiction this panel exists to stop.
+            ConfiguredMaxWorkerTurns ?? (FanOut ? 200 : 0),
             _resolution.Orchestrator?.GoalTokenBudget,
             _lastInput,
             _lastOutput,

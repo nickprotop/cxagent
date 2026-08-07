@@ -100,9 +100,17 @@ public sealed class ChatTranscriptSink : IChatSink
     public void ShowGoalResult(GoalState state, int failedCount) =>
         _system.EnqueueOnUIThread(() =>
         {
+            // "JOB(S)" ONLY WHEN THERE ARE JOBS. Single-agent has no dag and no jobs, so a failed
+            // run announced itself as "Goal Failed (0 job(s) failed)" — a count of a thing that does
+            // not exist there, which reads as a bug in the app rather than a result of the work.
+            // The plural is also wrong at 1 either way.
+            var detail = failedCount > 0
+                ? $" ({failedCount} job{(failedCount == 1 ? "" : "s")} failed)"
+                : "";
+
             var id = _chat.AddMessage(ChatRole.System,
-                state == GoalState.Completed ? "[green]▸ Goal completed.[/]"
-                : $"[red]▸ Goal {state} ({failedCount} job(s) failed).[/]");
+                state == GoalState.Completed ? "[green]▸ Done.[/]"
+                : $"[red]▸ {state}{detail}.[/]");
             _chat.SetExpanded(id, true);
         });
 

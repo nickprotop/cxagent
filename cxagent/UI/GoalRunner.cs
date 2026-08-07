@@ -95,6 +95,16 @@ public sealed class GoalRunner : IDisposable
     /// <summary>A goal began; the payload is its id, which is also the name of its log directory.</summary>
     public event EventHandler<string>? GoalStarted;
 
+    /// <summary>
+    /// MaxWorkerTurns as the USER set it, or null when they did not.
+    ///
+    /// <para>Distinct from <c>_orchestrator.MaxWorkerTurns</c>, which is 200 whenever the settings
+    /// object exists — including the placeholder AppBootstrap supplies for an absent config block.
+    /// Single-agent needs to tell "the user asked for 200" apart from "nobody said anything", and
+    /// the settings record cannot express that difference.</para>
+    /// </summary>
+    public int? ConfiguredMaxWorkerTurns { get; init; }
+
     /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
     /// knows a turn boundary.</summary>
     internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
@@ -360,7 +370,27 @@ public sealed class GoalRunner : IDisposable
         {
             _sink.EndAssistantTurn(assistantId);   // the loop opens its own turns
             var single = new SingleAgentLoop(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
-                _orchestrator?.MaxWorkerTurns ?? 200)
+                // NO DEFAULT CAP IN SINGLE-AGENT. MaxWorkerTurns exists to bound a WORKER inside a
+                // fan-out — one job among many, where a runaway costs the whole plan. Single-agent
+                // is the session itself: the user is watching it, can stop it, and a turn ceiling
+                // just ends real work at an arbitrary number that has nothing to do with the task.
+                //
+                // The field agrees. crush ships no step cap at all (loop detection and context
+                // pressure only); opencode's is `agent.steps ?? Infinity`, uncapped unless asked
+                // for. What replaces it here is what already exists: stuck detection catches the
+                // repeat loops a cap was standing in for, and the context window ends a session
+                // that genuinely cannot continue.
+                //
+                // An explicitly CONFIGURED value is still honoured — someone who sets a limit meant
+                // it. Only the invented 200 is gone.
+                // NOT `?? int.MaxValue`, which never fired: AppBootstrap substitutes
+                // OrchestratorSettings.Unbounded when the config has no orchestrator block, and that
+                // object carries MaxWorkerTurns = 200 from the RECORD's default. "Unbounded" is
+                // documented in its own source as describing "only the token fields" — so the null
+                // check was testing for a null that does not reach here.
+                //
+                // The user's explicitly configured value, or no cap at all.
+                ConfiguredMaxWorkerTurns ?? int.MaxValue)
             {
                 TurnCompleted = calls =>
                 {

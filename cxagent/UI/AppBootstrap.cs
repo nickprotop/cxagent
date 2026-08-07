@@ -39,7 +39,11 @@ public static class AppBootstrap
         // FanOut decides what the status bar advertises (F6 Diagnose needs a dag). Computed here
         // from the same expression the loop uses, so the key and the feature cannot disagree.
         var fanOutMode = args.Contains("--fan-out");
-        var mainWindow = new MainWindow(system, resolution, logs) { FanOut = fanOutMode };
+        var mainWindow = new MainWindow(system, resolution, logs)
+        {
+            FanOut = fanOutMode,
+            ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
+        };
         var window = mainWindow.Build();
 
         // Task 4: the real interactive gate. workingDir is captured ONCE here — not re-read per
@@ -189,7 +193,18 @@ public static class AppBootstrap
                 contextWindow: res.ContextWindow,
                 // Single-agent unless fan-out was asked for: one agent with tools, no dag.
                 singleAgent: !(args.Contains("--fan-out")
-                               || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut));
+                               || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut))
+            {
+                // The user's OWN value, or null. res.Orchestrator is null exactly when the config
+                // said nothing — the Unbounded placeholder substituted elsewhere would report 200
+                // and make "unconfigured" indistinguishable from "configured to 200".
+                // Read the RAW JSON, not the settings record. ProviderConfig.Orchestrator is a
+                // non-nullable property that shadows its own nullable parameter and defaults to
+                // Unbounded (ProviderConfig.cs:140) — so it is NEVER null, every `?? ` against it is
+                // dead code, and "the user configured 200" is indistinguishable from "the config
+                // said nothing" at every layer above the file itself.
+                ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
+            };
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
             runner.GoalStarted += (_, id) => system.EnqueueOnUIThread(() =>
             {
@@ -708,4 +723,33 @@ public static class AppBootstrap
             ? $"Configuration saved. Provider: {reResolved.DisplayName}. Type a goal and press Enter."
             : "Configuration saved, but it did not load cleanly: " + string.Join("; ", reResolved.Errors));
     }
+
+    /// <summary>
+    /// <c>orchestrator.maxWorkerTurns</c> exactly as the user wrote it, or null when absent.
+    ///
+    /// <para>Goes to the FILE because the settings record cannot answer the question: its
+    /// Orchestrator property is non-nullable and falls back to Unbounded, which carries
+    /// MaxWorkerTurns = 200 from the record's own default. Single-agent needs "nobody said" and
+    /// "somebody said 200" to be different, and only the raw JSON still knows.</para>
+    /// </summary>
+    private static int? ReadConfiguredMaxWorkerTurns(AppPaths paths)
+    {
+        try
+        {
+            var path = Path.Combine(paths.ConfigDir, "config.json");
+            if (!File.Exists(path)) return null;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty("orchestrator", out var o)
+                && o.TryGetProperty("maxWorkerTurns", out var v)
+                && v.TryGetInt32(out var turns)
+                    ? turns
+                    : null;
+        }
+        catch (Exception)
+        {
+            return null;   // unreadable config is the loader's problem to report, not this one's
+        }
+    }
+
 }

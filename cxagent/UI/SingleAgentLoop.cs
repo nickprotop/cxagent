@@ -260,8 +260,8 @@ public sealed class SingleAgentLoop
                 if (unfinished)
                 {
                     _sink.ShowError(
-                        "the goal asked for a change, but nothing was written. Investigation ran to "
-                        + "a stop without reaching an edit.");
+                        "you asked for a change, but nothing was written. Investigation ran to a "
+                        + "stop without reaching an edit.");
                     return GoalState.Failed;
                 }
 

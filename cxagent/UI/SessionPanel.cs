@@ -140,7 +140,14 @@ public sealed class SessionPanel
         // or not it is configured, and the tool-result cap is a const that no config touches. A cap
         // you cannot see is one you cannot plan around.
         Section(lines, "Limits");
-        lines.Add(Value($"{_turns}/{maxTurns} turns"));
+
+        // A TURN CEILING ONLY WHEN ONE EXISTS. Single-agent runs unbounded unless configured, so
+        // printing "3/200" there would advertise a limit that was removed precisely because it
+        // ended real work at an arbitrary number.
+        lines.Add(maxTurns > 0
+            ? Value($"{_turns}/{maxTurns} turns")
+            : Muted($"{_turns} turns · no cap"));
+
         lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
         if (goalTokenBudget is > 0)
             lines.Add(Muted($"{Compact(goalTokenBudget.Value)} token budget"));

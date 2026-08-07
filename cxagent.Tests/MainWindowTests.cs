@@ -673,6 +673,21 @@ public class MainWindowTests
     }
 
     [Fact]
+    public void SessionPanel_SaysNoCapWhenTheSessionIsUnbounded()
+    {
+        // Single-agent no longer defaults to 200 turns, so printing "3/200" would advertise a
+        // ceiling that was removed precisely because it ended real work at an arbitrary number. The
+        // tool-result cap is still shown, because that one always applies.
+        var panel = new SessionPanel();
+        panel.RecordTurn(toolCalls: 2);
+        panel.Refresh(tokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0);
+
+        Assert.Contains("1 turns · no cap", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("/200", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SessionPanel_AlwaysShowsTheLimitsThatActuallyBind()
     {
         // This asserted the OPPOSITE and was wrong. The block was gated on the orchestrator CONFIG,
