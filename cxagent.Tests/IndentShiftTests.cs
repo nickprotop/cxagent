@@ -160,4 +160,19 @@ public class IndentShiftTests
         var result = IndentShift.Apply("var a = 1;", "var a = 1;", "var a = 2;");
         Assert.Equal("var a = 2;", result);
     }
+
+    [Fact]
+    public void APatternRECONSTRUCTEDWithTheFilesIndentIsANoOp()
+    {
+        // How the plugin calls this after an EXACT match: the span begins at the pattern's first
+        // character, so the caller extends both the span and the pattern back to the line start.
+        // Both sides then carry the file's indentation, the outdent cancels it on each, and the
+        // measured offset is empty — a replacement that already has the right indent keeps it.
+        var result = IndentShift.Apply(
+            matched: "\t\tvar a = 1;",
+            pattern: "\t\tvar a = 1;",          // lead + pattern, as the caller builds it
+            replacement: "\t\tvar a = 1;");
+
+        Assert.Equal("\t\tvar a = 1;", result);
+    }
 }
