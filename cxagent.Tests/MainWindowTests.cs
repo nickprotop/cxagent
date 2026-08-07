@@ -553,4 +553,30 @@ public class MainWindowTests
         mw.RestoreComposer(prompt);
         Assert.True(mw.StatusBar.Visible, "restoring the composer must bring the status bar back");
     }
+
+    [Fact]
+    public void MarkdownStyle_UsesDistinctHues_NotOneFamily()
+    {
+        // The framework default is deliberately restrained — its own comment calls it "one cool
+        // blue-grey family... without competing hues" — which is right for a log viewer and wrong
+        // for a transcript that is mostly model-authored Markdown. H1-H3 were three shades of the
+        // same blue and H4-H6 had no colour at all, so a document read as one flat wash.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        new MainWindow(Sys(), res, Logs()).Build();
+
+        var style = SharpConsoleUI.Configuration.MarkdownStyle.Default;
+
+        // EVERY heading level is coloured. The old style left H4-H6 null, so deep structure vanished.
+        Assert.NotNull(style.H1Color);
+        Assert.NotNull(style.H4Color);
+        Assert.NotNull(style.H6Color);
+
+        // Headings, code, quotes and links are FOUR DIFFERENT colours — the property that makes a
+        // document's structure visible before it is read, and the one the old palette lacked.
+        var hues = new[]
+        {
+            style.H1Color!.Value, style.CodeForeground, style.QuoteColor, style.LinkColor,
+        };
+        Assert.Equal(hues.Length, hues.Distinct().Count());
+    }
 }

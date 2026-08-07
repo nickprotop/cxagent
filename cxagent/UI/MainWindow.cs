@@ -1,6 +1,7 @@
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
+using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Themes;
@@ -94,9 +95,44 @@ public sealed class MainWindow
         JobPanel = new JobPanelControl(system, logs);
     }
 
+    /// <summary>
+    /// Replaces the framework's Markdown palette with cxagent's.
+    ///
+    /// <para>The built-in one is deliberately restrained — its own comment calls it "one cool
+    /// blue-grey family... without competing hues" — which is right for a log viewer and wrong for a
+    /// transcript that is mostly model-authored Markdown. H1-H3 were three shades of the same blue
+    /// and H4-H6 had no colour at all, so a document read as one flat wash.
+    ///
+    /// <para>The replacement is opencode's default dark palette, adapted: purple headings, green
+    /// code, sand quotes, peach links. Distinct HUES rather than one family, which is what makes the
+    /// structure of a document visible before it is read.</para>
+    ///
+    /// <para>Set on the static Default, so it reaches every Markdown surface (transcript, job
+    /// output, help) without each one being wired. This is cxagent's choice alone — the framework
+    /// default is untouched, and the other cx apps keep their restrained look.</para>
+    /// </summary>
+    private static void InstallMarkdownStyle() => MarkdownStyle.Default = MarkdownStyle.Default with
+    {
+        // ONE colour at every level. opencode does not step the hue down by depth; it distinguishes
+        // h1 by underline alone, and stepping it produced exactly the muddiness being fixed.
+        H1Color = ColorScheme.Heading,
+        H2Color = ColorScheme.Heading,
+        H3Color = ColorScheme.Heading,
+        H4Color = ColorScheme.Heading,
+        H5Color = ColorScheme.Heading,
+        H6Color = ColorScheme.Heading,
+
+        CodeForeground = ColorScheme.Code,
+        CodeBackground = ColorScheme.CodeBackground,
+        QuoteColor = ColorScheme.Quote,
+        LinkColor = ColorScheme.Link,
+        BorderColor = ColorScheme.MarkdownBorder,
+    };
+
     public Window Build()
     {
         SubmissionEnabled = _resolution.HasProvider;
+        InstallMarkdownStyle();
 
         // Role rendering: ChatRoleStyle.Markdown defaults to TRUE, which routes content through
         // MarkdownToMarkup and ESCAPES literal '[' — so cxagent's own [red]/[cyan] markup renders

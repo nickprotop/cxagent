@@ -53,4 +53,41 @@ public static class ColorScheme
     /// </summary>
     public static string ThresholdMarkup(double percent) =>
         percent < 60 ? AccentMarkup : percent < 85 ? "yellow" : "red";
+
+    // --- Markdown ---------------------------------------------------------------
+    // Values from opencode's default dark theme (packages/tui/src/theme/assets/
+    // opencode.json), which is the palette this was compared against.
+
+    /// <summary>Headings. Purple, and the SAME colour at every level — opencode does not step the
+    /// hue down, it distinguishes h1 by underline alone. Ours was three shades of blue for H1-H3
+    /// and nothing below, which reads as one muddy family rather than a hierarchy.</summary>
+    public static readonly Color Heading = new(0x9d, 0x7c, 0xd8);
+
+    /// <summary>Code, inline and fenced. Green — the one element that must never be mistaken for
+    /// prose.</summary>
+    public static readonly Color Code = new(0x7f, 0xd8, 0x8f);
+
+    /// <summary>
+    /// Code background. opencode uses the WINDOW background here (no fill at all), letting colour
+    /// alone separate code from prose. A near-black panel tint is kept instead: the transcript is a
+    /// chat, so a fenced block sits inside flowing text rather than on its own screen, and it needs
+    /// an edge the eye can find without reading.
+    /// </summary>
+    public static readonly Color CodeBackground = new(0x14, 0x14, 0x14);
+
+    /// <summary>Blockquotes. Sand, italic in opencode's styling.</summary>
+    public static readonly Color Quote = new(0xe5, 0xc0, 0x7b);
+
+    /// <summary>Links. Peach — opencode's primary, the colour it gives whatever the user should
+    /// reach for.</summary>
+    public static readonly Color Link = new(0xfa, 0xb2, 0x83);
+
+    /// <summary>Table and rule borders. Recedes.</summary>
+    public static readonly Color MarkdownBorder = new(0x48, 0x48, 0x48);
+
+    /// <summary>
+    /// Reasoning and any "thinking" label. Amber — opencode's warning hue, which it reuses for
+    /// exactly this, and the colour in the screenshot that prompted the comparison.
+    /// </summary>
+    public const string ThinkingMarkup = "#f5a742";
 }
