@@ -505,4 +505,112 @@ public class FileJobPluginTests : IDisposable
         Assert.Contains("Nothing was written", r.ErrorMessage ?? "");
         Assert.Equal("if (x) {\n\treturn 1;\n}\nif (x)  {\n\treturn 1;\n}\n", File.ReadAllText(f));
     }
+
+    // ---- REPLACE: INDENTATION -----------------------------------------------
+    // Matching ignores whitespace, but the replacement was inserted VERBATIM. A model that writes
+    // standard 4-space C# into a tab-indented file therefore got its match and then silently broke
+    // the indentation. Measured live: a real edit turned "\t\t\tif (open)" into "\t\tif (open)",
+    // the agent noticed with `cat -A`, reverted its own correct fix, and spent the rest of the run
+    // building a heredoc patch through run_shell instead -- abandoning a tool that had worked.
+
+    [Fact]
+    public async Task Replace_ReindentsTheReplacementToMatchTheFile()
+    {
+        var f = Path.Combine(_dir, "tabs.cs");
+        File.WriteAllText(f, "\t\t\tif (open) sb.Append(\"x\");\n\t\t\treturn sb;\n");
+
+        // Spaces in, tabs expected out -- the model cannot know the file uses tabs.
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "if (open) sb.Append(\"x\");"),
+                          ("replacement", "        if (open) sb.Append(\"y\");"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var text = File.ReadAllText(f);
+        Assert.Contains("\t\t\tif (open) sb.Append(\"y\");", text);
+        Assert.DoesNotContain("        if (open)", text);
+    }
+
+    [Fact]
+    public async Task Replace_ReindentsEveryLineOfAMultiLineReplacement()
+    {
+        // The common shape: insert a line above an existing one. Every line of the replacement must
+        // land on the file's indentation, not just the first.
+        var f = Path.Combine(_dir, "multi.cs");
+        File.WriteAllText(f, "\t\tvar a = 1;\n\t\tvar b = 2;\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "var b = 2;"),
+                          ("replacement", "    // note\n    var b = 3;"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var lines = File.ReadAllLines(f);
+        Assert.Equal("\t\t// note", lines[1]);
+        Assert.Equal("\t\tvar b = 3;", lines[2]);
+    }
+
+    [Fact]
+    public async Task Replace_PreservesRelativeIndentationInsideTheReplacement()
+    {
+        // Re-indenting must not FLATTEN a block. The replacement's own internal structure (a nested
+        // line indented one level deeper) has to survive the shift.
+        var f = Path.Combine(_dir, "nest.cs");
+        File.WriteAllText(f, "\t\tif (x)\n\t\t{\n\t\t}\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "if (x)\n{\n}"),
+                          ("replacement", "if (y)\n{\n    Go();\n}"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var lines = File.ReadAllLines(f);
+        Assert.Equal("\t\tif (y)", lines[0]);
+        Assert.Equal("\t\t{", lines[1]);
+        Assert.Equal("\t\t\tGo();", lines[2]);   // one level deeper, in the file's own tabs
+        Assert.Equal("\t\t}", lines[3]);
+    }
+
+    [Fact]
+    public async Task Replace_LeavesAnExactMatchAlone()
+    {
+        // When the model DID supply the file's real indentation, nothing should be rewritten --
+        // re-indentation must be a repair, not a reformat.
+        var f = Path.Combine(_dir, "exact.cs");
+        File.WriteAllText(f, "\t\tvar a = 1;\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "\t\tvar a = 1;"), ("replacement", "\t\tvar a = 2;"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Equal("\t\tvar a = 2;\n", File.ReadAllText(f));
+    }
+
+    [Fact]
+    public async Task Replace_ReportsWhatItActuallyWrote()
+    {
+        // "replaced 1 occurrence" gave a doubting model exactly one way to verify: shell out. An
+        // agent did precisely that live -- `cat -A`, mistrusted what it saw, reverted its own
+        // correct fix, and finished the run patching through run_shell.
+        var f = Path.Combine(_dir, "echo.cs");
+        File.WriteAllText(f, "\t\tvar a = 1;\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "var a = 1;"), ("replacement", "    var a = 2;"));
+
+        var content = (string)r.Output["content"]!;
+        Assert.Contains("indentation adjusted", content);
+        Assert.Contains("\t\tvar a = 2;", content);   // the model can see the tabs it did not send
+    }
+
+    [Fact]
+    public async Task Replace_SaysNothingAboutIndentationWhenItChangedNothing()
+    {
+        // The note must mean something. Appending it to every edit would make it noise the model
+        // learns to skip -- including on the one edit where it mattered.
+        var f = Path.Combine(_dir, "noop.cs");
+        File.WriteAllText(f, "\t\tvar a = 1;\n");
+
+        var r = await Run(("action", "replace"), ("path", f),
+                          ("pattern", "\t\tvar a = 1;"), ("replacement", "\t\tvar a = 2;"));
+
+        Assert.DoesNotContain("indentation adjusted", (string)r.Output["content"]!);
+    }
 }

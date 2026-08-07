@@ -52,9 +52,16 @@ public class FileJobPlugin : IJobPlugin
             + "— a pattern containing . or ( means something different under each mode."),
         new JobParamSpec("glob", "string", Required: false,
             "search: restrict to files matching this glob, e.g. \"*.cs\". Default all files."),
+        // Says the indentation is handled. Without it a model spends turns trying to reproduce a
+        // file's exact leading whitespace — which it cannot see reliably in a tool result — and,
+        // measured live, mistrusts its own correct edit afterwards and reverts it.
         new JobParamSpec("replacement", "string", Required: false,
             "replace: the text to substitute for `pattern`. The pattern must appear EXACTLY once "
-            + "in the file, or nothing is written."),
+            + "in the file, or nothing is written. INDENTATION IS HANDLED FOR YOU: write the "
+            + "replacement at whatever indentation is natural and it is shifted onto the file's own "
+            + "(tabs or spaces, matching the line being replaced), keeping any nesting inside it. "
+            + "The result echoes the exact text written, so there is no need to re-read the file "
+            + "or inspect it with a shell command to confirm."),
     });
 
     public JobValidation Validate(JobParameters parameters)
@@ -306,6 +313,19 @@ public class FileJobPlugin : IJobPlugin
 
         var (first, matchLength) = FindSingleMatch(text, pattern, path);
 
+        // RE-INDENT TO THE FILE. Matching already ignores whitespace, so a model that writes
+        // standard 4-space C# into a tab-indented file gets its match — and then, because the
+        // replacement was inserted VERBATIM, silently breaks the indentation it just matched past.
+        // The tool was lenient about what it accepted and literal about what it wrote, which is the
+        // worst combination: the edit lands and the file is subtly wrong.
+        //
+        // Measured live on a real bug hunt: a correct one-line fix turned "\t\t\tif (open)" into
+        // "\t\tif (open)". The agent spotted it with `cat -A`, REVERTED its own correct fix, and
+        // spent the rest of the run building a heredoc patch through run_shell — abandoning a tool
+        // that had worked, over indentation it had no way to know.
+        var original = replacement;
+        replacement = ReindentToMatch(text, first, matchLength, replacement);
+
         // PRESERVE THE BOM. File.WriteAllTextAsync writes UTF-8 without one regardless of what the
         // file had, so editing one line of a BOM'd file silently rewrote its first three bytes —
         // caught live: HexEncoder.cs went from EF BB BF to 2F 2F on a two-line insertion. In a C#
@@ -317,8 +337,123 @@ public class FileJobPlugin : IJobPlugin
         await File.WriteAllTextAsync(path,
             text[..first] + replacement + text[(first + matchLength)..], encoding, ct);
 
-        output["content"] = $"replaced 1 occurrence in {path}";
+        // SHOW WHAT LANDED. The old result said only "replaced 1 occurrence", so a model with any
+        // doubt about its edit had exactly one way to check: shell out. Measured live — an agent
+        // followed a correct replace with `cat -A`, mistrusted what it saw, reverted its own fix and
+        // spent the rest of the run patching through run_shell. Echoing the written line closes that
+        // loop in-band, and saying the indentation was adjusted explains the difference it would
+        // otherwise discover and misread as damage.
+        var note = ReferenceEquals(original, replacement)
+            ? ""
+            : " (indentation adjusted to match the file)";
+
+        output["content"] = $"replaced 1 occurrence in {path}{note}\n"
+            + $"the file now reads:\n{QuoteWritten(replacement)}";
         output["bytes_before"] = text.Length;
+    }
+
+    /// <summary>
+    /// Shifts <paramref name="replacement"/> onto the indentation the REPLACED TEXT actually had.
+    ///
+    /// <para>Only the leading whitespace of each line is touched, and only when the replacement's own
+    /// indentation differs from the file's. An edit that already carries the file's exact indentation
+    /// is returned unchanged — this is a repair, not a reformat, and rewriting a correct edit would
+    /// be its own kind of surprise.</para>
+    ///
+    /// <para>RELATIVE STRUCTURE SURVIVES: every line is shifted by the same amount, computed from the
+    /// FIRST line, so a nested line one level deeper stays one level deeper. Flattening a block would
+    /// trade a small indentation bug for a much worse one.</para>
+    /// </summary>
+    private static string ReindentToMatch(string text, int start, int length, string replacement)
+    {
+        // The file's indentation at the edit site: the whitespace opening the line `start` sits on,
+        // which is the indentation the replaced text itself had.
+        var lineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(start, text.Length - 1))) + 1;
+        var fileIndent = LeadingWhitespace(text, lineStart);
+
+        var lines = replacement.Replace("\r\n", "\n").Split('\n');
+        if (lines.Length == 0) return replacement;
+
+        // What the replacement indents its own first line by. Everything shifts by the difference.
+        var ownIndent = LeadingWhitespace(lines[0], 0);
+        if (ownIndent == fileIndent) return replacement;   // already right: leave it exactly alone
+
+        var sb = new System.Text.StringBuilder(replacement.Length + lines.Length * fileIndent.Length);
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0) sb.Append('\n');
+
+            var line = lines[i];
+            if (line.Trim().Length == 0) { sb.Append(line); continue; }   // blank lines keep as-is
+
+            var indent = LeadingWhitespace(line, 0);
+
+            // The part of this line's indentation BEYOND the replacement's own base — its nesting.
+            // TRANSLATED into the file's indent character, not copied: keeping the model's four
+            // spaces verbatim under a tab base produces "\t\t    Go();", mixing both in one line,
+            // which is a worse artefact than the original bug and one every C# linter flags.
+            var extra = indent.StartsWith(ownIndent, StringComparison.Ordinal)
+                ? indent[ownIndent.Length..]
+                : "";
+
+            sb.Append(fileIndent).Append(TranslateIndent(extra, fileIndent)).Append(line[indent.Length..]);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The written text, capped, for echoing back in the tool result. Bounded because a large
+    /// replacement would otherwise crowd out the rest of the worker's context to confirm something
+    /// it already knows it sent.
+    /// </summary>
+    private static string QuoteWritten(string written)
+    {
+        var lines = written.Replace("\r\n", "\n").Split('\n');
+        if (lines.Length <= 12) return written;
+        return string.Join('\n', lines.Take(6))
+             + $"\n… {lines.Length - 12} more lines …\n"
+             + string.Join('\n', lines.Skip(lines.Length - 6));
+    }
+
+    /// <summary>
+    /// Rewrites one level of nesting in the FILE's indent character.
+    ///
+    /// <para>A replacement's inner indentation is whatever the model wrote — usually four spaces. Under
+    /// a tab-indented file, appending it verbatim yields "\t\t    Go();", mixing tabs and spaces on a
+    /// single line: a worse artefact than the bug being fixed, and one every C# linter flags. Four
+    /// spaces of nesting under a tab file must become one tab.</para>
+    ///
+    /// <para>Space-indented files keep spaces, so nothing changes for the common case.</para>
+    /// </summary>
+    private static string TranslateIndent(string extra, string fileIndent)
+    {
+        if (extra.Length == 0) return extra;
+
+        // Only translate when the file indents with TABS and the nesting uses spaces (or vice
+        // versa). Same-character nesting is already right.
+        var fileUsesTabs = fileIndent.Contains('\t');
+        var extraUsesTabs = extra.Contains('\t');
+        if (fileUsesTabs == extraUsesTabs) return extra;
+
+        if (fileUsesTabs)
+        {
+            // Spaces -> tabs. Four is the near-universal step in the C# these files are written in,
+            // and any remainder is dropped rather than left as stray spaces after a tab.
+            var levels = extra.Count(c => c == ' ') / 4;
+            return new string('\t', Math.Max(1, levels));
+        }
+
+        // Tabs -> spaces, the mirror case: a tab of nesting in a space-indented file.
+        return new string(' ', extra.Count(c => c == '\t') * 4);
+    }
+
+    /// <summary>The run of spaces and tabs starting at <paramref name="from"/>.</summary>
+    private static string LeadingWhitespace(string s, int from)
+    {
+        var i = from;
+        while (i < s.Length && (s[i] == ' ' || s[i] == '\t')) i++;
+        return s[from..i];
     }
 
     /// <summary>Whether the file begins with a UTF-8 BOM. Read from the BYTES, not from
