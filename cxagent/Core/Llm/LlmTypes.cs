@@ -26,7 +26,17 @@ public record LlmResponse
         };
 }
 
-public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal, LlmUsage? Usage = null);
+/// <param name="StopReason">
+/// The NORMALIZED stop reason, on the final chunk only; null on every other chunk.
+///
+/// <para>Carried so a caller can tell "the model is done" from "the model emitted tool calls and
+/// this stream happens to have ended". Both opencode and crush AND the tool-call check with this
+/// value rather than trusting either alone, and opencode's source says why: "Some providers return
+/// 'stop' even when the assistant message contains tool calls." A local llama.cpp or vLLM server is
+/// exactly the kind of endpoint that does.</para>
+/// </param>
+public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal,
+    LlmUsage? Usage = null, string? StopReason = null);
 
 /// <summary>A terminal LLM provider failure (auth, bad request, model-not-found, or retries exhausted).</summary>
 public sealed class LlmProviderException : Exception

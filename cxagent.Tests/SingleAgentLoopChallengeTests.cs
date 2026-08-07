@@ -387,6 +387,45 @@ public class SingleAgentLoopChallengeTests
         Assert.Contains(conversation, m => m.Role == "assistant" && m.Content.Contains("thinking"));
     }
 
+
+    [Fact]
+    public async Task AToolUseStopWithNoParsedCallIsRetriedNotTakenAsDone()
+    {
+        // The server said the turn ended in a tool call and none was parsed. They disagree only when
+        // something went wrong in between -- a truncated stream, a malformed arguments blob the
+        // accumulator dropped -- and ending the goal there discards a turn the model believed it was
+        // mid-way through.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+            { Text = "", ToolCalls = [], StopReason = "tool_use", Usage = new LlmUsage() });
+        for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Here is the answer."));
+
+        var sink = new RecordingSink();
+        var state = await Build(provider, sink).RunAsync("gm", Goal("what does this do?"),
+            CancellationToken.None);
+
+        Assert.Equal(GoalState.Completed, state);
+        Assert.Contains(provider.LastMessages!, m =>
+            m.Role == "user" && m.Content.Contains("cut off", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AServerThatAlwaysSaysToolUseCannotSpinTheLoop()
+    {
+        // Bounded, because a server that misreports on EVERY turn would otherwise never let the goal
+        // end -- trading a truncation bug for a hang.
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 12; i++)
+            provider.EnqueueResponse(new LlmResponse
+                { Text = "done", ToolCalls = [], StopReason = "tool_use", Usage = new LlmUsage() });
+
+        var sink = new RecordingSink();
+        var state = await Build(provider, sink).RunAsync("gm2", Goal("what does this do?"),
+            CancellationToken.None);
+
+        Assert.Equal(GoalState.Completed, state);   // gave up retrying and took it at face value
+    }
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];

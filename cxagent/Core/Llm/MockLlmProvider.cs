@@ -77,7 +77,10 @@ public class MockLlmProvider : ILlmProvider
         _state.ChatCallCount++;
         // Non-streaming mock: yield the whole dequeued response as one final chunk.
         var resp = _state.Responses.Dequeue();
-        yield return new LlmStreamChunk(resp.Text, resp.ToolCalls.FirstOrDefault(), IsFinal: true, Usage: resp.Usage);
+        // StopReason rides the final chunk, as the real providers emit it — without it a test
+        // cannot exercise the "server said tool_use but no call was parsed" path at all.
+        yield return new LlmStreamChunk(resp.Text, resp.ToolCalls.FirstOrDefault(), IsFinal: true,
+            Usage: resp.Usage, StopReason: resp.StopReason);
         await Task.CompletedTask;
     }
 }

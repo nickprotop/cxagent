@@ -127,7 +127,11 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
                 yield return new LlmStreamChunk(
                     i == 0 ? textDelta : null, completedCalls[i], IsFinal: false);
         }
-        yield return new LlmStreamChunk(null, null, IsFinal: true, usage);
+        // The normalized stop reason rides the final chunk so the agent loop can AND it with its
+        // own tool-call check. Trusting either alone is a known failure: some servers report "stop"
+        // on a turn that carried tool calls.
+        yield return new LlmStreamChunk(null, null, IsFinal: true, usage,
+            OpenAiWire.NormalizeStopReason(finish));
     }
 
     /// <inheritdoc/>

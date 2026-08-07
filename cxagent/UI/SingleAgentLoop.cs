@@ -114,6 +114,10 @@ public sealed class SingleAgentLoop
         // Identical (call, arguments, result) triples seen this goal, for stuck detection below.
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
 
+        // Times the server claimed "tool_use" while no call was parsed. Bounded so a server that
+        // reports it on EVERY turn cannot spin the loop.
+        var toolUseMismatches = 0;
+
         for (var turn = 0; ; turn++)
         {
             ct.ThrowIfCancellationRequested();
@@ -171,6 +175,31 @@ public sealed class SingleAgentLoop
             // Nothing more will be appended to this turn. Closing it stops the spinner; the text (if
             // any) was streamed in as it arrived.
             _sink.EndAssistantTurn(turnId);
+
+            // KEEP GOING IF THE SERVER SAID "tool_use" BUT WE PARSED NO CALLS. The two disagree only
+            // when something went wrong in between — a truncated stream, a malformed arguments blob
+            // the accumulator dropped — and ending the goal there discards a turn the model believed
+            // it was mid-way through.
+            //
+            // The mirror case is the one opencode documents: "Some providers return 'stop' even when
+            // the assistant message contains tool calls." Both it and crush therefore AND the stop
+            // reason with a real scan for tool calls rather than trusting either alone, and a local
+            // llama.cpp or vLLM endpoint is exactly the kind that gets this wrong. Trusting the
+            // PARSED CALLS as the primary signal covers that half; this covers the other.
+            if (response.ToolCalls.Count == 0
+                && response.StopReason == "tool_use"
+                && toolUseMismatches < MaxToolUseMismatches)
+            {
+                toolUseMismatches++;
+                messages.Add(new ChatMessage
+                {
+                    Role = "user",
+                    Content = "Your last response was cut off before its tool call arrived. Re-issue "
+                            + "the call you intended, or say what you want to do next.",
+                    Timestamp = DateTimeOffset.UtcNow,
+                });
+                continue;
+            }
 
             if (response.ToolCalls.Count == 0)
             {
@@ -387,6 +416,7 @@ public sealed class SingleAgentLoop
         var text = new StringBuilder();
         var calls = new List<ToolCall>();
         LlmUsage usage = new();
+        var stop = "";
 
         // How much of the (reasoning-stripped) text has already been shown. Deltas arrive raw, and a
         // reasoning block can span many of them, so what is SAFE to display is recomputed from the
@@ -411,9 +441,13 @@ public sealed class SingleAgentLoop
 
             if (chunk.ToolCallDelta is { } tc) calls.Add(tc);
             if (chunk.Usage is { } u) usage = u;
+            if (chunk.StopReason is { Length: > 0 } sr) stop = sr;
         }
 
-        return new LlmResponse { Text = text.ToString(), ToolCalls = calls, Usage = usage };
+        return new LlmResponse
+        {
+            Text = text.ToString(), ToolCalls = calls, Usage = usage, StopReason = stop,
+        };
     }
 
 
@@ -427,6 +461,11 @@ public sealed class SingleAgentLoop
     /// that many before the goal is failed. Three is high enough that a legitimate re-read after
     /// changing something is never mistaken for a loop.</summary>
     private const int StuckRepeats = 3;
+
+    /// <summary>Retries for a "tool_use" turn that carried no parseable call, before the response is
+    /// taken at face value. Two, because a genuine truncation is transient and a server that always
+    /// misreports would otherwise never let the goal end.</summary>
+    private const int MaxToolUseMismatches = 2;
 
     /// <summary>
     /// The nudge sent when the model stops without writing. EACH ONE SAYS SOMETHING NEW — repeating
