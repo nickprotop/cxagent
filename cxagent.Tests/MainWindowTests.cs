@@ -531,4 +531,26 @@ public class MainWindowTests
 
         Assert.False(mw.IsDimmed);
     }
+
+    [Fact]
+    public void PermissionPrompt_HidesTheStatusBarAndRestoresIt()
+    {
+        // Every key the bar advertises is inert until the prompt is answered, so showing them is a
+        // promise the app will not keep. Hiding also gives the question the bottom of the screen.
+        //
+        // The RESTORE is the half that regresses silently: a bar left hidden takes every shortcut
+        // with it for the rest of the session, and nothing errors when it happens.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        Assert.True(mw.StatusBar.Visible);
+
+        var prompt = SharpConsoleUI.Builders.Controls.Markup().AddLine("Run shell command?").Build();
+        mw.ShowPermissionPrompt(prompt);
+        Assert.False(mw.StatusBar.Visible, "a permission prompt must hide the status bar");
+
+        mw.RestoreComposer(prompt);
+        Assert.True(mw.StatusBar.Visible, "restoring the composer must bring the status bar back");
+    }
 }

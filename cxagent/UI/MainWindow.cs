@@ -313,6 +313,12 @@ public sealed class MainWindow
         _activePrompt = prompt;
         ApplyPromptDim();
 
+        // HIDE THE STATUS BAR OUTRIGHT while a prompt is up. Dimming it was the first attempt and
+        // it is the weaker answer: every key it advertises is inert until the prompt is answered,
+        // so a dimmed row still shows the user four shortcuts that will not respond. Removing it
+        // also gives the question the bottom of the screen to itself.
+        StatusBar.Visible = false;
+
         // MOVE FOCUS INTO THE PROMPT. Without this the buttons were mouse-only: ReplaceControl swaps
         // the composer OUT of the grid but focus stays on that removed control, and ButtonControl's
         // ProcessKey returns false unless it has focus (ButtonControl.cs:225) — so Tab/Enter/Space
@@ -342,8 +348,8 @@ public sealed class MainWindow
     /// <para>A REGION, not the window. cxpost dims OTHER WINDOWS because its dialogs are separate
     /// windows; this prompt is an inline swap into the composer's own grid cell, so dimming the
     /// window would dim the prompt too. The region is everything above the prompt — the transcript —
-    /// leaving ONLY the prompt at full strength — the status bar is dimmed too, by a second region,
-    /// since its shortcuts are inert while a prompt is waiting.</para>
+    /// leaving only the prompt at full strength. The status bar needs no dim region of its own —
+    /// <see cref="ShowPermissionPrompt"/> hides it entirely for the duration.</para>
     /// </summary>
     private void ApplyPromptDim()
     {
@@ -369,13 +375,6 @@ public sealed class MainWindow
                 buffer, Color.Black, DimIntensity, DimForegroundRatio,
                 new LayoutRect(0, 0, buffer.Width, height));
 
-            // THE STATUS BAR TOO. It is below the prompt, so the region above missed it entirely —
-            // leaving a bright row of shortcuts under a dimmed screen, which read as the one thing
-            // still asking for attention while the question above it was the thing that mattered.
-            // Its keys are also inert while a prompt is up.
-            SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
-                buffer, Color.Black, DimIntensity, DimForegroundRatio,
-                new LayoutRect(0, buffer.Height - StatusBarRows, buffer.Width, StatusBarRows));
         };
 
         // NO explicit Invalidate. ReplaceControl (the swap that brought us here) already
@@ -400,9 +399,6 @@ public sealed class MainWindow
     /// <summary>Used only before the prompt has been laid out once (ActualY is 0 until then), so
     /// the first paint dims something rather than nothing.</summary>
     private const int FallbackReserve = 12;
-
-    /// <summary>Rows the status bar occupies at the bottom of the buffer.</summary>
-    private const int StatusBarRows = 1;
 
     /// <summary>
     /// Black at 0.65. cxpost's DialogBase and cxgpu's BusyIndicator both use 0.45, and that is the
@@ -465,6 +461,7 @@ public sealed class MainWindow
             _mainGrid.ReplaceControl(prompt, Input);
             _activePrompt = null;
             ClearPromptDim();
+            StatusBar.Visible = true;
         }
 
         FocusComposer();
