@@ -55,10 +55,37 @@ public static class PatternMatcher
         // ignoring indentation": indentation blamed for a substring the matcher could not express.
         for (var at = text.IndexOf(pattern, StringComparison.Ordinal); at >= 0;
              at = text.IndexOf(pattern, at + 1, StringComparison.Ordinal))
-            found.Add(new PatternMatch(at, pattern.Length, WholeLines: CoversWholeLines(text, at, pattern.Length)));
+        {
+            var whole = CoversWholeLines(text, at, pattern.Length);
 
-        if (found.Count > 0) return found;
+            // A WHOLE-LINE SPAN ALWAYS STARTS AT THE LINE, whichever pass found it. The exact pass
+            // begins at the pattern's first character, so a pattern sent without indentation
+            // produced a span that omitted the file's — while the tolerant pass, which slices whole
+            // lines, produced one that included it. That asymmetry is invisible in the type and
+            // pushed the correction onto every caller: extend both alike and the tolerant match is
+            // double-counted, extend neither and the exact one is never corrected. Normalising here
+            // means a span means the same thing regardless of how it was found.
+            var start = at;
+            var length = pattern.Length;
+            if (whole)
+            {
+                var lineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(at, text.Length - 1))) + 1;
+                length += at - lineStart;
+                start = lineStart;
+            }
 
+            found.Add(new PatternMatch(start, length, whole));
+        }
+
+        // The exact pass does NOT short-circuit. Tempting, and wrong: a file holding both
+        // `if (x) {` and `if (x)  {` gives the first an exact hit, and returning it alone edits one
+        // of two indistinguishable targets. A model cannot see which spacing a file uses — that is
+        // the whole reason tolerance exists — so it cannot have MEANT one variant over the other,
+        // and picking silently is exactly the "wrong line changed in a file nobody is watching"
+        // failure this tool exists to prevent.
+        //
+        // Running both passes and reporting every hit lets the caller refuse. Duplicates are removed
+        // below, so an exact match is not counted twice for also matching tolerantly.
         var patternLines = Split(pattern);
         var textLines = Split(text);
 
@@ -83,10 +110,14 @@ public static class PatternMatcher
             var length = 0;
             for (var k = 0; k < patternLines.Length; k++) length += textLines[i + k].Length + 1;
 
-            found.Add(new PatternMatch(start, Math.Min(length - 1, text.Length - start), WholeLines: true));
+            var span = new PatternMatch(start, Math.Min(length - 1, text.Length - start), WholeLines: true);
+
+            // An exact whole-line hit was already normalised to this same span, so it would appear
+            // twice and turn a single unambiguous edit into a refusal.
+            if (!found.Any(f => f.Start == span.Start && f.Length == span.Length)) found.Add(span);
         }
 
-        return found;
+        return found.OrderBy(f => f.Start).ToList();
     }
 
     /// <summary>
@@ -112,10 +143,17 @@ public static class PatternMatcher
     /// A line reduced to what a whitespace-tolerant comparison should see: outer whitespace gone,
     /// interior runs collapsed to a single space.
     ///
-    /// <para>NOT "every whitespace character removed", which is what this did. That made `foo bar`
-    /// match `foobar` — two different identifiers — so a replace aimed at one could edit the other.
-    /// Tolerating INDENTATION and house-style spacing is the point; erasing the distinction between
-    /// separated and joined tokens is a far larger claim, and one nobody asked for.</para>
+    /// <para>WHITESPACE SURVIVES ONLY BETWEEN TWO WORD CHARACTERS, which is the line between the
+    /// two things that must not be confused:</para>
+    /// <list type="bullet">
+    ///   <item>`Estimate (int n)` and `Estimate(int n)` are the SAME code in different house styles,
+    ///     and a model writing standard C# against a file that spaces before the paren must still
+    ///     match it. Removing every whitespace character was how that worked.</item>
+    ///   <item>`foo bar` and `foobar` are two DIFFERENT identifiers, and removing every whitespace
+    ///     character made them equal — so a replace aimed at one could silently edit the other.</item>
+    /// </list>
+    /// <para>A space between `)` and `{`, or before a paren, is formatting. A space between `o` and
+    /// `b` is a token boundary. Keeping only the latter tolerates style while preserving meaning.</para>
     /// </summary>
     private static string Squash(string line)
     {
@@ -124,9 +162,14 @@ public static class PatternMatcher
         foreach (var c in line.Trim())
         {
             if (char.IsWhiteSpace(c)) { pending = sb.Length > 0; continue; }
-            if (pending) { sb.Append(' '); pending = false; }
+
+            // Only when it separates two word characters does the gap carry meaning.
+            if (pending && sb.Length > 0 && IsWord(sb[^1]) && IsWord(c)) sb.Append(' ');
+            pending = false;
             sb.Append(c);
         }
         return sb.ToString();
     }
+
+    private static bool IsWord(char c) => char.IsLetterOrDigit(c) || c == '_';
 }

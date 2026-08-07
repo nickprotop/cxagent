@@ -20,8 +20,10 @@ public class PatternMatcherTests
         var m = PatternMatcher.FindAll("\t\tvar a = 1;\n", "var a = 1;");
 
         Assert.Single(m);
-        Assert.Equal(2, m[0].Start);
-        Assert.Equal(10, m[0].Length);
+        // The LINE start, not the pattern's first character — a whole-line span means the same
+        // thing whichever pass found it.
+        Assert.Equal(0, m[0].Start);
+        Assert.Equal(12, m[0].Length);
     }
 
     [Fact]
@@ -53,11 +55,23 @@ public class PatternMatcherTests
     }
 
     [Fact]
-    public void AnExactMatchSuppressesTheTolerantPass()
+    public void AnExactHitDoesNotHIDESpacingVariants()
     {
-        // An exact hit is what the caller literally asked for. Mixing in formatting variants they
-        // did not mean would make an unambiguous request look ambiguous and refuse it.
+        // I first specified the opposite — that an exact hit is returned alone — and it is wrong.
+        // A file holding both `var a = 1;` and `var  a  =  1;` gives the first an exact match, and
+        // returning it alone silently edits one of two indistinguishable targets. A model cannot see
+        // which spacing a file uses (that is why tolerance exists), so it cannot have MEANT one over
+        // the other. Reporting both lets the caller refuse.
         var m = PatternMatcher.FindAll("var a = 1;\nvar  a  =  1;\n", "var a = 1;");
+        Assert.Equal(2, m.Count);
+    }
+
+    [Fact]
+    public void AnExactHitIsNotCountedTwiceForAlsoMatchingTolerantly()
+    {
+        // Both passes find the same span, and a duplicate would turn one unambiguous edit into an
+        // ambiguity refusal.
+        var m = PatternMatcher.FindAll("\t\tvar a = 1;\n", "var a = 1;");
         Assert.Single(m);
     }
 
@@ -115,7 +129,9 @@ public class PatternMatcherTests
         var m = PatternMatcher.FindAll(text, "two();");
 
         Assert.Single(m);
-        Assert.Equal("two();", text.Substring(m[0].Start, m[0].Length));
+        // The whole LINE, indentation included — that is what gets replaced, and it is what the
+        // tolerant pass returns for the same edit.
+        Assert.Equal("\t\ttwo();", text.Substring(m[0].Start, m[0].Length));
     }
 
     [Fact]
@@ -149,5 +165,34 @@ public class PatternMatcherTests
         // A file with Windows line endings must be reachable by a model that sent Unix ones.
         var m = PatternMatcher.FindAll("\t\tif (x)\r\n\t\t{\r\n\t\t}\r\n", "if (x)\n{\n}");
         Assert.Single(m);
+    }
+
+    [Fact]
+    public void AnExactWholeLineMatchSpanIncludesTheLinesIndent()
+    {
+        // The property the caller must account for. An exact match starts at the pattern's first
+        // CHARACTER, so a pattern sent without indentation produces a span that does not contain
+        // the file's — the caller has to extend it back to the line start before comparing.
+        const string text = "\t\tvar a = 1;\n";
+        var m = PatternMatcher.FindAll(text, "var a = 1;");
+
+        // NORMALISED to the line start, so it matches what the tolerant pass returns for the same
+        // edit. The caller no longer has to know which pass ran.
+        Assert.Equal(0, m[0].Start);
+        Assert.True(m[0].WholeLines);
+        Assert.Equal("\t\tvar a = 1;", text.Substring(m[0].Start, m[0].Length));
+    }
+
+    [Fact]
+    public void ATolerantMatchSpanINCLUDESTheLinesIndent()
+    {
+        // And the asymmetry that makes the seam subtle: the tolerant pass slices WHOLE LINES, so its
+        // span already contains the indentation the exact pass omits. A caller that extends both
+        // alike double-counts one of them.
+        const string text = "\t\tvar a = 1;\n";
+        var m = PatternMatcher.FindAll(text, "    var a = 1;");
+
+        Assert.Equal(0, m[0].Start);                       // the line start
+        Assert.Equal("\t\tvar a = 1;", text.Substring(m[0].Start, m[0].Length));
     }
 }

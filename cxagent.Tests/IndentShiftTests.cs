@@ -175,4 +175,24 @@ public class IndentShiftTests
 
         Assert.Equal("\t\tvar a = 1;", result);
     }
+
+    [Theory]
+    // matched (span incl. its line's indent) | pattern as sent | replacement as sent | expected
+    [InlineData("\t\tvar a = 1;", "var a = 1;",     "\t\tvar a = 1;", "\t\tvar a = 1;")]
+    [InlineData("\t\tvar a = 1;", "var a = 1;",     "    var a = 2;", "\t\tvar a = 2;")]
+    [InlineData("\t\tvar a = 1;", "\t\tvar a = 1;", "\t\tvar a = 2;", "\t\tvar a = 2;")]
+    [InlineData("\t\tvar a = 1;", "    var a = 1;", "    var a = 2;", "\t\tvar a = 2;")]
+    public void TheCallerSContract(string matched, string pattern, string replacement, string expected)
+    {
+        // THE SEAM, pinned. The plugin passes the matched span extended to its line start, and the
+        // pattern and replacement exactly as the model sent them — neither reconstructed. Every
+        // combination of "model indented it / model did not" must land on the file's indentation
+        // once, and only once.
+        //
+        // This is the contract three call-site rewrites kept violating: reconstructing the pattern
+        // with the file's leading whitespace while leaving the replacement raw makes the two sides
+        // describe different things, and the file's indent is then added on top of indentation the
+        // replacement already had.
+        Assert.Equal(expected, IndentShift.Apply(matched, pattern, replacement));
+    }
 }

@@ -404,7 +404,8 @@ public class FileJobPlugin : IJobPlugin
         var replacement = parameters.Get<string>("replacement");
         var text = await File.ReadAllTextAsync(path, ct);
 
-        var (first, matchLength) = FindSingleMatch(text, pattern, path);
+        var match = FindSingleMatch(text, pattern, path);
+        var (first, matchLength) = (match.Start, match.Length);
 
         // SHIFT ONTO THE FILE'S INDENTATION. Extracted to IndentShift, a pure function over three
         // strings — see its doc for why. The matched span is extended back to the START OF ITS LINE,
@@ -413,12 +414,20 @@ public class FileJobPlugin : IJobPlugin
         //
         // A match that does not begin a line is a FRAGMENT (`a + b` inside `int t = a + b;`) and has
         // no indentation to correct; prepending one would splice whitespace into a statement.
+        // NO CORRECTION AT THE CALL SITE. The matcher normalises a whole-line span to start at the
+        // line, so the slice already contains the file's indentation whichever pass found it — and
+        // the pattern and replacement go through exactly as the model sent them, so IndentShift can
+        // cancel each side's own base independently. That is the entire mechanism.
+        //
+        // Every previous attempt failed by reconstructing one side here: extending the pattern with
+        // the file's leading whitespace while leaving the replacement raw made the two describe
+        // different things, and the indent was added on top of indentation already present.
+        //
+        // A fragment (`a + b` inside `int t = a + b;`) has no indentation to correct at all.
         var original = replacement;
-        var matchLineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(first, text.Length - 1))) + 1;
-
-        if (text[matchLineStart..first].Trim().Length == 0)
+        if (match.WholeLines)
             replacement = IndentShift.Apply(
-                text[matchLineStart..(first + matchLength)], pattern, replacement);
+                text.Substring(first, matchLength), pattern, replacement);
 
         // PRESERVE THE BOM. File.WriteAllTextAsync writes UTF-8 without one regardless of what the
         // file had, so editing one line of a BOM'd file silently rewrote its first three bytes —
@@ -542,30 +551,18 @@ public class FileJobPlugin : IJobPlugin
     /// quietly edit a DIFFERENT piece of code, which is the risk that made exact-match the first
     /// choice.</para>
     /// </summary>
-    /// <summary>
-    /// A line with ALL whitespace removed, so two lines that differ only in spacing compare equal.
-    /// Non-space characters and their order are untouched.
-    ///
-    /// <para>All of it, not collapsed-to-one-space: the failure this exists for is
-    /// <c>Estimate (int n)</c> versus <c>Estimate(int n)</c>, where the file has a space and the
-    /// pattern has none. Collapsing runs still leaves those different.</para>
-    ///
-    /// <para>What this gives up: <c>a b</c> and <c>ab</c> now compare equal, so a pattern could in
-    /// principle match a line whose tokens run together differently. In a language where that
-    /// changes meaning it would matter; in C# it takes a deliberately perverse pattern, and the
-    /// alternative — measured twice on live drives — is a tool too brittle to use at all.</para>
-    /// </summary>
-    private static string Squash(string line)
-    {
-        var sb = new System.Text.StringBuilder(line.Length);
-        foreach (var c in line)
-            if (!char.IsWhiteSpace(c)) sb.Append(c);
-        return sb.ToString();
-    }
 
-    private static (int Start, int Length) FindSingleMatch(string text, string pattern, string path)
+    /// <summary>
+    /// The single place <paramref name="pattern"/> occurs, or a throw naming what went wrong.
+    ///
+    /// <para>Locating is <see cref="PatternMatcher"/>'s job; this decides what to do about the
+    /// count. EXACTLY ONE, or nothing is written: an ambiguous match means the model does not know
+    /// which occurrence it is editing, and picking one silently is how the wrong line gets changed
+    /// in a file nobody is watching.</para>
+    /// </summary>
+    private static PatternMatch FindSingleMatch(string text, string pattern, string path)
     {
-        var matches = FindAllMatches(text, pattern);
+        var matches = PatternMatcher.FindAll(text, pattern);
 
         if (matches.Count == 0)
             throw new InvalidOperationException(
@@ -581,46 +578,6 @@ public class FileJobPlugin : IJobPlugin
                 + "written.");
 
         return matches[0];
-    }
-
-    /// <summary>
-    /// Every place <paramref name="pattern"/> matches, under the SAME whitespace-insensitive rule
-    /// used to locate the edit.
-    ///
-    /// <para>Uniqueness and location must be decided by ONE matcher. They were not: the edit was
-    /// located ignoring whitespace, then uniqueness was re-checked by searching for the literal
-    /// matched text. Two occurrences differing only in spacing — `if (x) {` and `if (x)  {`, the
-    /// commonest kind of near-duplicate in real source — therefore read as unique, and the tool
-    /// silently edited the first. Nothing warned, and the diff looked deliberate.</para>
-    /// </summary>
-    private static List<(int Start, int Length)> FindAllMatches(string text, string pattern)
-    {
-        var found = new List<(int, int)>();
-
-        // ONE pass, whitespace-insensitive, over whole lines. Not "exact matches first, else fall
-        // back": an exact hit and a spacing-variant hit are equally plausible targets to a caller
-        // who could not know the file's exact spacing — that is why the insensitive rule exists at
-        // all — so short-circuiting on the exact one hides the ambiguity instead of reporting it.
-        var patternLines = pattern.Replace("\r\n", "\n").Split('\n');
-        var textLines = text.Replace("\r\n", "\n").Split('\n');
-
-        for (var i = 0; i + patternLines.Length <= textLines.Length; i++)
-        {
-            var all = true;
-            for (var j = 0; j < patternLines.Length && all; j++)
-                all = Squash(textLines[i + j]) == Squash(patternLines[j]);
-            if (!all) continue;
-
-            // Character offset of line i in the ORIGINAL text, so the slice is exact.
-            var start = 0;
-            for (var k = 0; k < i; k++) start += textLines[k].Length + 1;
-            var length = 0;
-            for (var k = 0; k < patternLines.Length; k++) length += textLines[i + k].Length + 1;
-
-            found.Add((start, Math.Min(length - 1, text.Length - start)));
-        }
-
-        return found;
     }
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
