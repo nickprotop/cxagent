@@ -25,6 +25,17 @@ public interface IChatSink
     /// which read as "still working" long after the goal had finished.</para>
     /// </summary>
     void EndAssistantTurn(ChatMessageId id);
+
+    /// <summary>
+    /// Replaces a message's HEADER — used to show live state on a turn whose body is still empty.
+    ///
+    /// <para>The body cannot carry it: the transcript control clears a message's spinner as soon as
+    /// body content arrives, so streaming a reasoning model's thinking into the body would kill the
+    /// one indicator that says it is alive. The header is the place ConsoleEx documents for exactly
+    /// this ("combined with an inline [spinner] tag the same header carries the running indicator"),
+    /// and it is where the job rows already put their status.</para>
+    /// </summary>
+    void SetAssistantHeader(ChatMessageId id, string header);
     void ShowGoalResult(GoalState state, int failedCount);
     void ShowError(string message);
 

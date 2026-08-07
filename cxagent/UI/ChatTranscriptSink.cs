@@ -59,6 +59,12 @@ public sealed class ChatTranscriptSink : IChatSink
     ///
     /// <para>A turn that DID produce text is left alone; only the empty ones vanish.</para>
     /// </summary>
+    public void SetAssistantHeader(ChatMessageId id, string header) =>
+        _system.EnqueueOnUIThread(() =>
+        {
+            if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
+        });
+
     public void EndAssistantTurn(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>
         {

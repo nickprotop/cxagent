@@ -417,6 +417,7 @@ public sealed class SingleAgentLoop
         var calls = new List<ToolCall>();
         LlmUsage usage = new();
         var stop = "";
+        var lastHeader = "";
 
         // How much of the (reasoning-stripped) text has already been shown. Deltas arrive raw, and a
         // reasoning block can span many of them, so what is SAFE to display is recomputed from the
@@ -431,11 +432,33 @@ public sealed class SingleAgentLoop
             {
                 text.Append(chunk.TextDelta);
 
-                var visible = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(text.ToString());
+                var accumulated = text.ToString();
+
+                var visible = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(accumulated);
                 if (visible.Length > shown)
                 {
                     _sink.AppendAssistant(turnId, visible[shown..]);
                     shown = visible.Length;
+                }
+
+                // REASONING GOES TO THE HEADER, not the body. A reasoning model spends most of a
+                // long turn thinking and emits nothing else, so this is the only evidence it is
+                // working rather than wedged — but the transcript control clears a message's spinner
+                // the moment BODY content arrives, so putting it there would kill the very indicator
+                // it is meant to reinforce. The header keeps both: a live [spinner] beside the text.
+                //
+                // Dimmed and last-line-only. This is a progress indicator, not a transcript: the
+                // full chain of thought is many screens long, is never shown in full anywhere, and
+                // is discarded rather than entering the conversation.
+                var reasoning = Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(accumulated);
+                if (reasoning.Length > 0)
+                {
+                    var tail = LastLine(reasoning);
+                    if (tail.Length > 0 && tail != lastHeader)
+                    {
+                        lastHeader = tail;
+                        _sink.SetAssistantHeader(turnId, "[spinner] [dim]" + Escape(tail) + "[/]");
+                    }
                 }
             }
 
@@ -582,6 +605,28 @@ public sealed class SingleAgentLoop
         }
         catch (Exception) { return null; }
     }
+
+    /// <summary>The last non-blank line of a reasoning stream, capped for a one-line header.</summary>
+    private static string LastLine(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            var line = lines[i].Trim();
+            if (line.Length == 0) continue;
+            return line.Length > 110 ? line[..110] + "…" : line;
+        }
+        return "";
+    }
+
+    /// <summary>
+    /// Escapes markup so reasoning text cannot be interpreted as tags.
+    ///
+    /// <para>A model reasoning ABOUT markup writes "[dim]" and "[/]" as ordinary words, and an
+    /// unescaped one would open a style scope that never closes — corrupting every header after it.
+    /// </para>
+    /// </summary>
+    private static string Escape(string text) => text.Replace("[", "[[");
 
     /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
     private static string ToolPluginType(string toolName) => toolName switch

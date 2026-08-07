@@ -24,6 +24,8 @@ public sealed class LatestChatSink : IChatSink
     public ChatMessageId AddUserTurn(string text) => Current?.AddUserTurn(text) ?? default;
     public ChatMessageId BeginAssistantTurn() => Current?.BeginAssistantTurn() ?? default;
     public void AppendAssistant(ChatMessageId id, string token) => Current?.AppendAssistant(id, token);
+    public void SetAssistantHeader(ChatMessageId id, string header) { }
+
     public void EndAssistantTurn(ChatMessageId id) => Current?.EndAssistantTurn(id);
     public void ShowGoalResult(GoalState state, int failedCount) => Current?.ShowGoalResult(state, failedCount);
     public void ShowError(string message) => Current?.ShowError(message);

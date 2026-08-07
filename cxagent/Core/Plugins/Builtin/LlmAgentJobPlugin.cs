@@ -166,6 +166,34 @@ public class LlmAgentJobPlugin : IJobPlugin
     /// the loop the permission gate runs through; showing prose sooner does not require it.</para>
     /// </summary>
     /// <summary>
+    /// The text INSIDE the reasoning block — the complement of <see cref="StripReasoning"/>.
+    ///
+    /// <para>A reasoning model spends most of a long turn here and emits nothing else, so this is
+    /// the only evidence available that it is working rather than wedged. It is shown live and
+    /// discarded; it never enters the conversation, because a model that sees its own thinking
+    /// replayed as content starts treating it as commitment.</para>
+    ///
+    /// <para>Handles the UNBALANCED case deliberately: mid-stream the opening tag has arrived and
+    /// the closing one has not, which is exactly when this is wanted.</para>
+    /// </summary>
+    public static string ExtractReasoning(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+
+        var open = text.IndexOf("<think", StringComparison.OrdinalIgnoreCase);
+        if (open < 0) return string.Empty;
+
+        var contentStart = text.IndexOf('>', open);
+        if (contentStart < 0) return string.Empty;          // tag itself still arriving
+        contentStart++;
+
+        var close = text.IndexOf("</think>", contentStart, StringComparison.OrdinalIgnoreCase);
+        return close < 0
+            ? text[contentStart..]                          // still thinking
+            : text[contentStart..close];
+    }
+
+    /// <summary>
     /// Removes a reasoning model's <c>&lt;think&gt;…&lt;/think&gt;</c> block from generated text.
     ///
     /// <para>Seen live: a worker's finished body read literally "&lt;/think&gt;" — the reasoning

@@ -426,16 +426,67 @@ public class SingleAgentLoopChallengeTests
         Assert.Equal(GoalState.Completed, state);   // gave up retrying and took it at face value
     }
 
+
+    [Fact]
+    public void ExtractReasoning_ReturnsTheThinkingWhileItIsSTILLOPEN()
+    {
+        // The mid-stream case, which is the whole point: the opening tag has arrived and the closing
+        // one has not, and that is exactly when the model has emitted nothing else.
+        var partial = "<think>Checking WrapCellLine for where the flag";
+        Assert.Equal("Checking WrapCellLine for where the flag",
+            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(partial));
+    }
+
+    [Fact]
+    public void ExtractReasoning_AndStripReasoning_AreComplements()
+    {
+        const string full = "<think>weighing options</think>The answer is 4.";
+
+        Assert.Equal("weighing options",
+            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(full));
+        Assert.Equal("The answer is 4.",
+            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(full).Trim());
+    }
+
+    [Fact]
+    public void ExtractReasoning_IsEmptyWhenThereIsNoThinking()
+    {
+        Assert.Equal("", CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning("plain text"));
+        Assert.Equal("", CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(null));
+    }
+
+    [Fact]
+    public async Task ReasoningIsShownInTheHeaderAndNeverInTheConversation()
+    {
+        // The body would kill the spinner (the control clears it on first body content), and the
+        // conversation must not carry thinking: a model that sees its own reasoning replayed as
+        // content starts treating it as commitment.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Prose("<think>weighing the options</think>The answer is 4."));
+
+        var sink = new RecordingSink();
+        var conversation = Goal("what is 2+2?");
+        await Build(provider, sink).RunAsync("gh", conversation, CancellationToken.None);
+
+        Assert.Contains(sink.Headers, h => h.Contains("weighing the options", StringComparison.Ordinal));
+        Assert.Contains(sink.Headers, h => h.Contains("[spinner]", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(conversation, m => m.Content.Contains("weighing", StringComparison.Ordinal));
+        Assert.Contains(conversation, m => m.Content.Contains("The answer is 4.", StringComparison.Ordinal));
+    }
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
         public ChatMessageId AddUserTurn(string text) => new(0);
         public int Begins, Ends;
+        public readonly List<string> Headers = [];
         public ChatMessageId BeginAssistantTurn() { Begins++; return new(0); }
         public void AppendAssistant(ChatMessageId id, string token) { }
         public void EndAssistantTurn(ChatMessageId id) => Ends++;
         public void ShowGoalResult(GoalState state, int failedCount) { }
         public void ShowError(string message) => Errors.Add(message);
+        public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);
         public void ShowSystemMessage(string message) { }
         public void ShowApprovalRequest(string? detail = null) { }
     }
