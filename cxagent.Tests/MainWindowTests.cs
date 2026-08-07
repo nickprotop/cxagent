@@ -229,13 +229,36 @@ public class MainWindowTests
     // --- Task 11: F6 diagnose, status-bar cost --------------------------------------------------
 
     [Fact]
-    public void StatusBar_AdvertisesDiagnose_F6()
+    public void StatusBar_AdvertisesDiagnose_F6_InFanOut()
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
+        var mw = new MainWindow(Sys(), res, Logs()) { FanOut = true };
         mw.Build();
 
         Assert.Contains("F6", mw.StatusBar.LeftItems.Select(i => i.Shortcut));
+    }
+
+    [Fact]
+    public void StatusBar_HidesDiagnoseAndNewGoal_InSingleAgent()
+    {
+        // The status bar is the ONLY discovery surface for these keys, so an entry that does nothing
+        // is worse than a missing one — it teaches the user the app is broken rather than that the
+        // feature lives elsewhere.
+        //
+        // F6 Diagnose resolves a FAILED JOB through GoalRunner.TryGetSession, and single-agent never
+        // creates a session for it to find. F2 New Goal clears the composer and focuses it, both of
+        // which single-agent has already done by the time the key could be pressed.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());   // FanOut defaults to false
+        mw.Build();
+
+        var shortcuts = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
+        Assert.DoesNotContain("F6", shortcuts);
+        Assert.DoesNotContain("F2", shortcuts);
+
+        // The keys that DO work in single-agent are still advertised.
+        Assert.Contains("F5", shortcuts);
+        Assert.Contains("Ctrl+Q", shortcuts);
     }
 
     /// <summary>

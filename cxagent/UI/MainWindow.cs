@@ -42,12 +42,21 @@ public sealed class MainWindow
     /// </summary>
     public Func<Task>? DiagnoseFocusedJob { get; set; }
 
+    /// <summary>
+    /// True in fan-out mode, where a DAG of jobs exists. Single-agent has no dag and no scheduler,
+    /// which decides what the status bar may offer: F6 Diagnose resolves a FAILED JOB through
+    /// GoalRunner.TryGetSession, and single-agent never creates a session for it to find — the key
+    /// was advertised, pressed, and silently did nothing.
+    /// </summary>
+    public bool FanOut { get; init; }
+
     // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
     // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
     // window on a different page, which is a parameter, not a seam. ShowSettings is the single
     // entry point, and the page choice lives inside the dialog where the four names are visible.
 
     private StatusBarItem? _tokenItem;
+
 
     /// <summary>
     /// The "type your goal here" hint (D10). Retired the moment the user submits their first goal —
@@ -62,6 +71,7 @@ public sealed class MainWindow
     /// can swap the Input cell's content via ReplaceControl (GridControl.cs:381), which preserves
     /// the cell's GridPlacement across the swap.</summary>
     private GridControl _mainGrid = null!;
+    private RuleControl _composerRule = null!;
 
     /// <summary>Whichever control currently occupies the composer's grid cell in place of
     /// <see cref="Input"/> — null when the composer itself is there. Tracked so a second
@@ -163,11 +173,23 @@ public sealed class MainWindow
         // you actually read — was squeezed into the other half. JobPanelControl is still constructed
         // and still works; it is simply not placed. Nothing in the engine changed: GoalRunner talks to
         // IJobPanel, so swapping which implementation is wired is a UI-only decision.
+        // A RULE BETWEEN THE TRANSCRIPT AND THE COMPOSER. Without it the two run together: the
+        // conversation ends and the box you type into begins, with nothing saying which is which,
+        // and on a full screen of tool output the composer stops being findable at all.
+        //
+        // Its own grid row rather than a margin on either neighbour — a rule is a control, and
+        // giving it Auto height is what keeps it exactly one line regardless of what is above it.
+        _composerRule = Controls.RuleBuilder()
+            .WithColorRole(ColorScheme.Structure)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
         _mainGrid = Controls.Grid()
             .Columns(GridLength.Star(1))
-            .Rows(GridLength.Star(1), GridLength.Auto())
+            .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
             .Place(Chat, 0, 0)
-            .Place(Input, 1, 0)
+            .Place(_composerRule, 1, 0)
+            .Place(Input, 2, 0)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -176,14 +198,21 @@ public sealed class MainWindow
         // only discovery surface for these, so an entry here that isn't bound there is a dead key.
         // F-keys (not Ctrl+letter) because several Ctrl combos are indistinguishable from Enter/
         // Backspace/Tab at the byte level; see the comment on the registrations.
-        StatusBar.AddLeft("F2", "New Goal");
+        // F2 ONLY IN FAN-OUT, for the same reason as F6. It clears the composer and focuses it —
+        // and in single-agent mode the composer is ALREADY cleared on submit and already holds
+        // focus, so the key does nothing observable. In fan-out focus can legitimately be sitting in
+        // a job block, and F2 is the way back.
+        if (FanOut) StatusBar.AddLeft("F2", "New Goal");
         StatusBar.AddLeft("F4", "Chat");
         StatusBar.AddLeft("F1", "Help");
         // One key for settings, not three. F7 (Roles) and F8 (Providers) were retired when the
         // three dialogs became one: they opened the SAME dialog on a different page, so the bar
         // was advertising three keys for one surface. The pages are named in the dialog's nav.
         StatusBar.AddLeft("F5", "Settings");
-        StatusBar.AddLeft("F6", "Diagnose");
+        // F6 ONLY IN FAN-OUT. The status bar is the only discovery surface for these keys, so an
+        // entry that does nothing is worse than a missing one: it teaches the user the app is
+        // broken rather than that the feature is elsewhere.
+        if (FanOut) StatusBar.AddLeft("F6", "Diagnose");
         StatusBar.AddLeft("Ctrl+Q", "Quit");
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
@@ -426,7 +455,22 @@ public sealed class MainWindow
     public void ShowComposerHint()
     {
         if (_composerHint is not null) return;   // idempotent — a second call must not stack items
-        _composerHint = StatusBar.AddRight(string.Empty, "Type your goal below → Enter to run");
+        _composerHint = StatusBar.AddRight(string.Empty,
+            $"[{ColorScheme.MutedMarkup}]Type your goal below → Enter to run[/]");
+    }
+
+    /// <summary>
+    /// Retires the composer hint. Called when a goal STARTS, not when tokens first arrive.
+    ///
+    /// <para>Tying it to the token readout left the hint on screen for the whole of a running goal —
+    /// the corner said "Type your goal below" while the agent was several tool calls into one, which
+    /// is not merely stale but contradicts what the transcript shows. Usage also lands late (and,
+    /// with a provider that reports none, never), so a goal could run to completion under a hint
+    /// telling the user to start it.</para>
+    /// </summary>
+    public void RetireComposerHint()
+    {
+        if (_composerHint is not null) _composerHint.IsVisible = false;
     }
 
     public void SetTokenTotal(int total)
@@ -437,18 +481,36 @@ public sealed class MainWindow
             return;
         }
 
-        // Tokens only ever appear once a goal has actually run, which means the user found the
-        // composer — retire the D10 hint here rather than hunting for a submit hook, and free the
-        // corner it shares with this readout.
-        if (_composerHint is not null) _composerHint.IsVisible = false;
+        // CONTEXT USED, not a bare token count. "94,102 tokens" is a number without a scale — it
+        // says nothing about whether the next turn fits, which is the only question a user actually
+        // has. With the window known it reads "ctx 46% · 94,102", and the percentage is coloured by
+        // how alarming it is (cxtop's thresholds), so it can be read without being read.
+        //
+        // Falls back to the plain count when the provider's context window is unknown: inventing a
+        // denominator would put a confident percentage on a guess.
+        // Read from the resolution rather than a copied field: it is already here, and one source
+        // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
+        // percentage needs a denominator, and a guessed one is worse than none.
+        var label = ContextLabel(total, _resolution.ContextWindow);
 
         if (_tokenItem is null)
-            _tokenItem = StatusBar.AddRight(string.Empty, $"{total:N0} tokens");
+            _tokenItem = StatusBar.AddRight(string.Empty, label);
         else
         {
-            _tokenItem.Label = $"{total:N0} tokens";
+            _tokenItem.Label = label;
             _tokenItem.IsVisible = true;
         }
+    }
+
+    /// <summary>The bottom-right readout: context used, as a percentage when the window is known.</summary>
+    private static string ContextLabel(int total, int? window)
+    {
+        if (window is not > 0) return $"{total:N0} tokens";
+
+        var percent = 100.0 * total / window.Value;
+        var colour = ColorScheme.ThresholdMarkup(percent);
+        return $"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{percent:N0}%[/] "
+             + $"[{ColorScheme.MutedMarkup}]· {total:N0}[/]";
     }
 
     /// <summary>

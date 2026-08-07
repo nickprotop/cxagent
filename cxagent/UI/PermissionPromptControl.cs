@@ -3,6 +3,7 @@ using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
+using SharpConsoleUI.Themes;
 using Ctl = SharpConsoleUI.Builders.Controls;
 
 namespace CxAgent.UI;
@@ -103,29 +104,57 @@ public sealed class PermissionPromptControl
             markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(line));
         panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
-        AddChoiceButton(panel, "Allow once", PermissionChoice.Once);
+        // A BLANK LINE between the question and the controls that answer it, so the eye reads
+        // "what is being asked" and "what I can do" as two things rather than one paragraph.
+        panel.AddControl(Ctl.Markup().AddLine(string.Empty).Build());
 
+        // The rule the family draws above a button row (cxpost puts one in every dialog it has).
+        panel.AddControl(Ctl.RuleBuilder()
+            .WithColorRole(ColorScheme.Structure)
+            .WithMargin(1, 0, 1, 0)
+            .Build());
+
+        var toolbar = Ctl.Toolbar()
+            .WithSpacing(2)
+            .WithAlignment(HorizontalAlignment.Center)
+            .WithMargin(1, 0, 1, 0);
+
+        // ROLES, NOT LITERAL COLOURS: Success/Warning/Danger resolve through the active theme, so
+        // the buttons stay legible if the theme changes and the meanings stay tied to the framework's
+        // vocabulary rather than to three hex values chosen here.
+        toolbar.AddButton(ChoiceButton("Allow once", ColorScheme.Affirmative, PermissionChoice.Once));
+
+        // NO LONGER "Always allow: <the whole command>". The command is already displayed, in full,
+        // three lines above — repeating it made the button as wide as the dialog and pushed the row
+        // off screen, so the answer to a question you could read was a control you could not.
         if (_request.AlwaysRule is not null)
-            AddChoiceButton(panel, $"Always allow: {_request.AlwaysRule}", PermissionChoice.Always);
+            toolbar.AddButton(ChoiceButton("Always allow", ColorScheme.Caution, PermissionChoice.Always));
 
         if (_offerTrust)
-            AddChoiceButton(panel, "Trust this folder", PermissionChoice.TrustFolder);
+            toolbar.AddButton(ChoiceButton("Trust this folder", ColorScheme.Caution,
+                PermissionChoice.TrustFolder));
 
-        AddChoiceButton(panel, "Deny", PermissionChoice.Deny);
+        toolbar.AddButton(ChoiceButton("Deny", ColorScheme.Destructive, PermissionChoice.Deny));
 
+        panel.AddControl(toolbar.Build());
         return panel;
     }
 
-    private void AddChoiceButton(ScrollablePanelControl panel, string label, PermissionChoice choice)
+    /// <summary>
+    /// One choice as a bordered button carrying its semantic role.
+    ///
+    /// <para>Labels are FIXED STRINGS now, so the escaping that used to matter here (an unescaped
+    /// '[' from a shell command in AlwaysRule rendered the button as an empty row) can no longer be
+    /// reached. It stays anyway: the cost is one call, and the failure it prevents is invisible
+    /// rather than loud.</para>
+    /// </summary>
+    private ButtonControl ChoiceButton(string label, ColorRole role, PermissionChoice choice)
     {
-        // Escape the LABEL, not just the heading above. An unescaped '[' — inevitable once
-        // AlwaysRule is a shell command or path — renders the button as an EMPTY ROW rather than
-        // erroring (ChoiceStepContent.cs:54-64, found live on the F8 provider list). The full
-        // label including the raw AlwaysRule is still what gets compared/stored; only the
-        // button's rendered Text is escaped.
-        var btn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape($"[ {label} ]"))
-            .WithMargin(1, 0, 1, 0).Build();
+        var btn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape(label))
+            .WithColorRole(role)
+            .WithBorder(ButtonBorderStyle.Rounded)
+            .Build();
         btn.Click += (_, _) => _tcs.TrySetResult(choice);
-        panel.AddControl(btn);
+        return btn;
     }
 }

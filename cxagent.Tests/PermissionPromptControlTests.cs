@@ -107,9 +107,13 @@ public class PermissionPromptControlTests
         if (control is ButtonControl btn)
             yield return btn;
 
-        if (control is ScrollablePanelControl panel)
+        // Descend ANY container, not just ScrollablePanelControl. The buttons moved into a
+        // ToolbarControl (a horizontal row at the bottom of the dialog), and a walker that knew one
+        // container type reported "no button labelled X" for buttons that were plainly there —
+        // testing the layout rather than the behaviour it was written for.
+        if (control is IContainerControl container)
         {
-            foreach (var child in panel.Children)
+            foreach (var child in container.GetChildren())
                 foreach (var found in FindButtons(child))
                     yield return found;
         }

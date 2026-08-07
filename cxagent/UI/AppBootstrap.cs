@@ -36,7 +36,10 @@ public static class AppBootstrap
 
         var logs = new LogFileManager(paths);
 
-        var mainWindow = new MainWindow(system, resolution, logs);
+        // FanOut decides what the status bar advertises (F6 Diagnose needs a dag). Computed here
+        // from the same expression the loop uses, so the key and the feature cannot disagree.
+        var fanOutMode = args.Contains("--fan-out");
+        var mainWindow = new MainWindow(system, resolution, logs) { FanOut = fanOutMode };
         var window = mainWindow.Build();
 
         // Task 4: the real interactive gate. workingDir is captured ONCE here — not re-read per
@@ -437,6 +440,11 @@ public static class AppBootstrap
             }
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
+            // Retire the hint HERE, at submission — not when tokens first arrive. Tied to the token
+            // readout it stayed on screen for the whole of a running goal, telling the user to type
+            // a goal while the agent was several tool calls into one.
+            mainWindow.RetireComposerHint();
+
             _ = runner.RunAsync(goalText, conversation, cts.Token);
         };
 
