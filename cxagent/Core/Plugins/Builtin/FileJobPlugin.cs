@@ -406,18 +406,19 @@ public class FileJobPlugin : IJobPlugin
 
         var (first, matchLength) = FindSingleMatch(text, pattern, path);
 
-        // RE-INDENT TO THE FILE. Matching already ignores whitespace, so a model that writes
-        // standard 4-space C# into a tab-indented file gets its match — and then, because the
-        // replacement was inserted VERBATIM, silently breaks the indentation it just matched past.
-        // The tool was lenient about what it accepted and literal about what it wrote, which is the
-        // worst combination: the edit lands and the file is subtly wrong.
+        // SHIFT ONTO THE FILE'S INDENTATION. Extracted to IndentShift, a pure function over three
+        // strings — see its doc for why. The matched span is extended back to the START OF ITS LINE,
+        // because the span begins at the pattern's first character and so does not itself contain
+        // the indentation being matched against.
         //
-        // Measured live on a real bug hunt: a correct one-line fix turned "\t\t\tif (open)" into
-        // "\t\tif (open)". The agent spotted it with `cat -A`, REVERTED its own correct fix, and
-        // spent the rest of the run building a heredoc patch through run_shell — abandoning a tool
-        // that had worked, over indentation it had no way to know.
+        // A match that does not begin a line is a FRAGMENT (`a + b` inside `int t = a + b;`) and has
+        // no indentation to correct; prepending one would splice whitespace into a statement.
         var original = replacement;
-        replacement = ReindentToMatch(text, first, matchLength, replacement);
+        var matchLineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(first, text.Length - 1))) + 1;
+
+        if (text[matchLineStart..first].Trim().Length == 0)
+            replacement = IndentShift.Apply(
+                text[matchLineStart..(first + matchLength)], pattern, replacement);
 
         // PRESERVE THE BOM. File.WriteAllTextAsync writes UTF-8 without one regardless of what the
         // file had, so editing one line of a BOM'd file silently rewrote its first three bytes —
@@ -436,7 +437,11 @@ public class FileJobPlugin : IJobPlugin
         // spent the rest of the run patching through run_shell. Echoing the written line closes that
         // loop in-band, and saying the indentation was adjusted explains the difference it would
         // otherwise discover and misread as damage.
-        var note = ReferenceEquals(original, replacement)
+        // BY VALUE, not by reference. IndentShift returns a fresh string from string.Join even when
+        // it changed nothing, so a reference check reported "indentation adjusted" on every edit —
+        // including the ones where the model got it exactly right. A note that always appears is a
+        // note nobody reads, which costs the one case where it matters.
+        var note = string.Equals(original, replacement, StringComparison.Ordinal)
             ? ""
             : " (indentation adjusted to match the file)";
 
@@ -445,88 +450,6 @@ public class FileJobPlugin : IJobPlugin
         output["bytes_before"] = text.Length;
     }
 
-    /// <summary>
-    /// Shifts <paramref name="replacement"/> onto the indentation the REPLACED TEXT actually had.
-    ///
-    /// <para>Only the leading whitespace of each line is touched, and only when the replacement's own
-    /// indentation differs from the file's. An edit that already carries the file's exact indentation
-    /// is returned unchanged — this is a repair, not a reformat, and rewriting a correct edit would
-    /// be its own kind of surprise.</para>
-    ///
-    /// <para>RELATIVE STRUCTURE SURVIVES: every line is shifted by the same amount, computed from the
-    /// FIRST line, so a nested line one level deeper stays one level deeper. Flattening a block would
-    /// trade a small indentation bug for a much worse one.</para>
-    /// </summary>
-    private static string ReindentToMatch(string text, int start, int length, string replacement)
-    {
-        // The file's indentation at the edit site: the whitespace opening the line `start` sits on,
-        // which is the indentation the replaced text itself had.
-        var lineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(start, text.Length - 1))) + 1;
-        var fileIndent = LeadingWhitespace(text, lineStart);
-
-        var lines = replacement.Replace("\r\n", "\n").Split('\n');
-        if (lines.Length == 0) return replacement;
-
-        // The replacement's own base — the frame everything in it is relative to.
-        //
-        // NORMALLY the first line's indent. But when the first line is SHALLOWER than the body below
-        // it, the model ANCHORED: it copied a match anchor (a comment, a brace) at whatever column
-        // the tool result showed, then wrote the body in its own frame. The anchor's column then
-        // describes nothing, and using it as the base makes every line under it look like nesting to
-        // ADD — measured live on exactly this shape, three tabs became eight. The body's own minimum
-        // is the real base there, and the anchor line rides along with it.
-        var firstIndent = LeadingWhitespace(lines[0], 0);
-        var bodyIndent = lines.Length > 1 ? MinimumIndent(lines[1..]) : firstIndent;
-        var anchored = lines.Length > 1 && firstIndent.Length < bodyIndent.Length;
-
-        var ownIndent = anchored ? bodyIndent : firstIndent;
-        if (ownIndent == fileIndent) return replacement;   // already right: leave it exactly alone
-
-        // REFUSE TO GUESS when the shift is not uniform. Every line must sit at or below the
-        // replacement's own base, so that moving the base moves the whole block rigidly and the
-        // shape the model wrote is preserved exactly. A line ABOVE the base cannot be expressed as
-        // base + nesting, and re-indenting it means inventing a second interpretation of what the
-        // model meant.
-        //
-        // Aider reached the same rule from the other direction and states it as code: it collapses
-        // the per-line whitespace deltas and bails with `if len(add) != 1: return` — non-uniform
-        // indent is REJECTED rather than repaired. Its benchmark is also the reason to attempt this
-        // at all (disabling flexible patching: 9x more editing errors), so the pairing is the whole
-        // lesson: be generous about the offset, refuse anything that is not one.
-        //
-        // Returning the replacement untouched is the honest failure: the model's own text is written
-        // and it can see the result in the echo, rather than the tool silently reshaping code on a
-        // guess.
-        foreach (var line in lines)
-        {
-            if (line.Trim().Length == 0) continue;
-            if (!LeadingWhitespace(line, 0).StartsWith(ownIndent, StringComparison.Ordinal))
-                return replacement;
-        }
-
-        var sb = new System.Text.StringBuilder(replacement.Length + lines.Length * fileIndent.Length);
-        for (var i = 0; i < lines.Length; i++)
-        {
-            if (i > 0) sb.Append('\n');
-
-            var line = lines[i];
-            if (line.Trim().Length == 0) { sb.Append(line); continue; }   // blank lines keep as-is
-
-            var indent = LeadingWhitespace(line, 0);
-
-            // The part of this line's indentation BEYOND the replacement's own base — its nesting.
-            // TRANSLATED into the file's indent character, not copied: keeping the model's four
-            // spaces verbatim under a tab base produces "\t\t    Go();", mixing both in one line,
-            // which is a worse artefact than the original bug and one every C# linter flags.
-            var extra = indent.StartsWith(ownIndent, StringComparison.Ordinal)
-                ? indent[ownIndent.Length..]
-                : "";
-
-            sb.Append(fileIndent).Append(TranslateIndent(extra, fileIndent)).Append(line[indent.Length..]);
-        }
-
-        return sb.ToString();
-    }
 
     /// <summary>
     /// The written text, capped, for echoing back in the tool result. Bounded because a large
@@ -542,51 +465,7 @@ public class FileJobPlugin : IJobPlugin
              + string.Join('\n', lines.Skip(lines.Length - 6));
     }
 
-    /// <summary>
-    /// Rewrites one level of nesting in the FILE's indent character.
-    ///
-    /// <para>A replacement's inner indentation is whatever the model wrote — usually four spaces. Under
-    /// a tab-indented file, appending it verbatim yields "\t\t    Go();", mixing tabs and spaces on a
-    /// single line: a worse artefact than the bug being fixed, and one every C# linter flags. Four
-    /// spaces of nesting under a tab file must become one tab.</para>
-    ///
-    /// <para>Space-indented files keep spaces, so nothing changes for the common case.</para>
-    /// </summary>
-    private static string TranslateIndent(string extra, string fileIndent)
-    {
-        if (extra.Length == 0) return extra;
 
-        // Only translate when the file indents with TABS and the nesting uses spaces (or vice
-        // versa). Same-character nesting is already right.
-        var fileUsesTabs = fileIndent.Contains('\t');
-        var extraUsesTabs = extra.Contains('\t');
-        if (fileUsesTabs == extraUsesTabs) return extra;
-
-        if (fileUsesTabs)
-        {
-            // Spaces -> tabs. Four is the near-universal step in the C# these files are written in,
-            // and any remainder is dropped rather than left as stray spaces after a tab.
-            var levels = extra.Count(c => c == ' ') / 4;
-            return new string('\t', Math.Max(1, levels));
-        }
-
-        // Tabs -> spaces, the mirror case: a tab of nesting in a space-indented file.
-        return new string(' ', extra.Count(c => c == '\t') * 4);
-    }
-
-    /// <summary>The shallowest indentation across non-blank lines. Blank lines carry none and would
-    /// otherwise force the result to "" and flatten everything.</summary>
-    private static string MinimumIndent(string[] lines)
-    {
-        string? min = null;
-        foreach (var line in lines)
-        {
-            if (line.Trim().Length == 0) continue;
-            var indent = LeadingWhitespace(line, 0);
-            if (min is null || indent.Length < min.Length) min = indent;
-        }
-        return min ?? "";
-    }
 
     /// <summary>
     /// The closest few lines in the file to the pattern's first line, with whitespace MADE VISIBLE.

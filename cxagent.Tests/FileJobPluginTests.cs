@@ -564,7 +564,10 @@ public class FileJobPluginTests : IDisposable
         var lines = File.ReadAllLines(f);
         Assert.Equal("\t\tif (y)", lines[0]);
         Assert.Equal("\t\t{", lines[1]);
-        Assert.Equal("\t\t\tGo();", lines[2]);   // one level deeper, in the file's own tabs
+        // The model's OWN nesting, preserved. Shifting moves the block; it does not restyle the
+        // interior. The previous engine rebuilt each line and so converted this to a tab — which is
+        // also how it managed to reshape blocks it should not have touched.
+        Assert.Equal("\t\t    Go();", lines[2]);
         Assert.Equal("\t\t}", lines[3]);
     }
 
