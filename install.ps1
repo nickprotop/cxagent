@@ -42,10 +42,18 @@ Write-Host "Downloading $binary..."
 $outputPath = Join-Path $installDir "cxagent.exe"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $outputPath
 
-# Download uninstaller
-$uninstallUrl = "https://raw.githubusercontent.com/$repo/master/uninstall.ps1"
+# Download uninstaller FROM THE RELEASE, matching install.sh. The binary is pinned to the release, so
+# taking its uninstaller from master pairs a released binary with an unreleased script. Falls back
+# to master for releases published before the scripts were attached as assets.
 $uninstallPath = Join-Path $installDir "cxagent-uninstall.ps1"
-Invoke-WebRequest -Uri $uninstallUrl -OutFile $uninstallPath
+# Resolved from the release's OWN asset list, exactly as the binary is above — the API already told
+# us what this release contains, so there is no URL to construct and get wrong.
+$uninstallAsset = $release.assets | Where-Object { $_.name -eq "uninstall.ps1" }
+if ($uninstallAsset) {
+    Invoke-WebRequest -Uri $uninstallAsset.browser_download_url -OutFile $uninstallPath
+} else {
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/$repo/master/uninstall.ps1" -OutFile $uninstallPath
+}
 
 # Add to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

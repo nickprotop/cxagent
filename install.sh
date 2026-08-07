@@ -59,8 +59,14 @@ mkdir -p "$INSTALL_DIR"
 curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/cxagent"
 chmod +x "$INSTALL_DIR/cxagent"
 
-# Download uninstaller
-curl -fsSL "https://raw.githubusercontent.com/$REPO/master/uninstall.sh" -o "$INSTALL_DIR/cxagent-uninstall.sh"
+# Download uninstaller FROM THE RELEASE, not from master. The binary above is pinned to $TAG, so
+# fetching its uninstaller from whatever master happens to be pairs a released binary with an
+# unreleased script — a skew that only shows up when the two disagree, which is exactly when the
+# uninstaller matters. Falls back to master for releases published before the scripts were attached
+# as assets.
+if ! curl -fsSL "https://github.com/$REPO/releases/download/$TAG/uninstall.sh" -o "$INSTALL_DIR/cxagent-uninstall.sh" 2>/dev/null; then
+    curl -fsSL "https://raw.githubusercontent.com/$REPO/master/uninstall.sh" -o "$INSTALL_DIR/cxagent-uninstall.sh"
+fi
 chmod +x "$INSTALL_DIR/cxagent-uninstall.sh"
 
 # Ensure PATH

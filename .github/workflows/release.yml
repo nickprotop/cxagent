@@ -80,8 +80,21 @@ jobs:
 
       - name: Generate checksums
         run: |
-          cd artifacts
-          find . -type f -name "cxagent-*" -exec sha256sum {} \; | sed 's|  \./[^/]*/||' > SHA256SUMS
+          # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
+          # release notes tell users to curl them from raw.githubusercontent — which pins them to
+          # whatever master happens to be, not to the release they are installing. cxshell's app
+          # manager needs them ON THE RELEASE, so a version can be installed by its own scripts.
+          mkdir -p release
+          for dir in ./artifacts/*/; do
+            cp "$dir"/cxagent-* release/ 2>/dev/null || true
+          done
+          cp install.sh install.ps1 uninstall.sh uninstall.ps1 release/
+          chmod +x release/cxagent-* release/*.sh 2>/dev/null || true
+
+          # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
+          # of thing worth being able to verify.
+          cd release
+          sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
       - name: Generate changelog
@@ -100,9 +113,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*/cxagent-*
-            artifacts/SHA256SUMS
+          files: release/*
           body: |
             ## Install
 
