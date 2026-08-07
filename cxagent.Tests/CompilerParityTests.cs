@@ -48,6 +48,14 @@ public class CompilerParityTests
 
 
         new GuardCase(
+            "a MISSPELLED param — named, not reported as merely absent",
+            """
+            [ { "id":"r", "name":"R", "type":"file",
+                "params":{ "action":"read", "file_path":"/tmp/parity.md" } } ]
+            """,
+            "did you mean 'path'"),
+
+        new GuardCase(
             "AMBIGUOUS WRITE: several dependencies, no authored content",
             """
             [ { "id":"a", "name":"A", "type":"shell", "params":{ "command":"echo a" } },
@@ -99,7 +107,13 @@ public class CompilerParityTests
     {
         var plan = JsonDocument.Parse($$"""{ "summary":"x", "jobs": {{c.JobsJson}} }""").RootElement;
 
-        var ex = Assert.Throws<InvalidOperationException>(() => PlanCompiler.BuildDag("g", plan));
+        // WITH the registry. Called without it, PlanCompiler skips the plugin's own param check
+        // entirely (`plugins is not null` guards it), so every rule that lives in a plugin's
+        // Validate passed this harness vacuously — while ConsultJobCompiler, which takes a registry
+        // as a required argument, checked them. The two compilers were not being compared on the
+        // same rules, which is the one thing this file exists to guarantee.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => PlanCompiler.BuildDag("g", plan, RegistryWithRoles()));
         Assert.Contains(c.ExpectedInMessage, ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 

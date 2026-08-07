@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CxAgent.Core.Models;
 using CxAgent.Core.Execution;
+using CxAgent.Core.Plugins;
 using CxAgent.Helpers;
 
 namespace CxAgent.Core.Orchestrator;
@@ -129,7 +130,9 @@ public static class PlanCompiler
                 var validation = plugin.Validate(new JobParameters(paramsDict));
                 if (!validation.IsValid)
                     throw new InvalidOperationException(
-                        $"Job '{localId}' ('{type}'): {string.Join(", ", validation.Errors)}");
+                        $"Job '{localId}' ('{type}'): {string.Join(", ", validation.Errors)}"
+                        + UnknownArgumentNote.For(paramsDict.Keys,
+                              plugin.GetSchema().Params.Select(p => p.Name).ToList(), type));
             }
 
             dag.AddJob(new Job

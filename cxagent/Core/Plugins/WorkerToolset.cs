@@ -193,7 +193,9 @@ public static class WorkerToolset
         }
 
         if (!validation.IsValid)
-            return string.Join("; ", validation.Errors);
+            return string.Join("; ", validation.Errors)
+                 + UnknownArgumentNote.For(call.Arguments.EnumerateObject().Select(p => p.Name),
+                       entry.Spec.Params, call.Name);
 
         // Tell the UI what this worker is DOING, before the call rather than after: a read of a large
         // file or a slow shell command is exactly when the user is staring at a silent "running…"

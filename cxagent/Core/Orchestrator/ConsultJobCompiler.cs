@@ -194,7 +194,9 @@ public static class ConsultJobCompiler
                 var validation = plugin.Validate(jobParams);
                 if (!validation.IsValid)
                 {
-                    error = $"Job '{localId}' ('{type}'): {string.Join(", ", validation.Errors)}";
+                    error = $"Job '{localId}' ('{type}'): {string.Join(", ", validation.Errors)}"
+                          + UnknownArgumentNote.For(jobParams.Values.Keys,
+                                plugin.GetSchema().Params.Select(p => p.Name).ToList(), type);
                     return false;
                 }
             }

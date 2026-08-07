@@ -426,4 +426,42 @@ public class WorkerToolsetTests
         Assert.Contains("command", r);        // names the offending argument
         Assert.DoesNotContain("LineNumber", r);
     }
+
+    [Fact]
+    public async Task Invoke_NamesAMisspelledArgumentInsteadOfClaimingItIsAbsent()
+    {
+        // "'path' is required" contradicts what the model just sent: it DID supply a path, under the
+        // wrong name. Faced with a message asserting an absence it can see is untrue, its cheapest
+        // move is to resend the same shape.
+        var r = await WorkerToolset.InvokeAsync(
+            Call("read_file", new { file_path = "/tmp/x.txt" }),
+            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new CollectingContext(), CancellationToken.None);
+
+        Assert.Contains("file_path", r);
+        Assert.Contains("did you mean 'path'", r);
+    }
+
+    [Fact]
+    public async Task Invoke_SaysNothingAboutUnknownArgsWhenTheCallSUCCEEDS()
+    {
+        // Only on failure. A stray key on a call that worked is not worth a lecture appended to a
+        // good result -- that would put noise on the common path to fix the rare one.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "f.txt");
+            File.WriteAllText(f, "hello\n");
+
+            var r = await WorkerToolset.InvokeAsync(
+                Call("read_file", new { path = f, encoding = "utf8" }),
+                new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+                new CollectingContext(), CancellationToken.None);
+
+            Assert.Contains("hello", r);
+            Assert.DoesNotContain("Unrecognised", r);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }
