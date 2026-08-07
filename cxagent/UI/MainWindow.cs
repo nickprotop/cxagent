@@ -79,6 +79,14 @@ public sealed class MainWindow
     /// the render loop on GridControl.ReplaceControl's "not currently placed" ArgumentException.</summary>
     private IWindowControl? _activePrompt;
 
+    /// <summary>Whether the transcript is currently dimmed behind a permission prompt. Exposed so
+    /// the attach/detach balance can be asserted — a dim left on is invisible in code and obvious
+    /// on screen, which is the wrong way round for a defect.</summary>
+    public bool IsDimmed => _dimHandler is not null;
+
+    /// <summary>The dim handler while a permission prompt is showing; null otherwise.</summary>
+    private SharpConsoleUI.Windows.WindowRenderer.BufferPaintDelegate? _dimHandler;
+
     public MainWindow(ConsoleWindowSystem system, ProviderResolution resolution, LogFileManager logs)
     {
         _system = system;
@@ -298,6 +306,7 @@ public sealed class MainWindow
 
         _mainGrid.ReplaceControl(Input, prompt);
         _activePrompt = prompt;
+        ApplyPromptDim();
 
         // MOVE FOCUS INTO THE PROMPT. Without this the buttons were mouse-only: ReplaceControl swaps
         // the composer OUT of the grid but focus stays on that removed control, and ButtonControl's
@@ -315,6 +324,72 @@ public sealed class MainWindow
         if (Window?.FocusManager is { } fm && FirstFocusable(prompt) is { } target)
             fm.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
     }
+
+    /// <summary>
+    /// Dims the TRANSCRIPT while a permission prompt is showing, so the question owns the screen.
+    ///
+    /// <para>A permission prompt is the one moment the app stops and asks, and it was rendering as
+    /// just another thing in the column — the same weight as the scrollback above it. Dimming what
+    /// the user is not being asked about is how the cx family marks a modal (cxpost dims for every
+    /// dialog it opens; cxgpu uses the same 0.45 for its busy overlay), and it is the difference
+    /// between a prompt you notice and one you scroll past.</para>
+    ///
+    /// <para>A REGION, not the window. cxpost dims OTHER WINDOWS because its dialogs are separate
+    /// windows; this prompt is an inline swap into the composer's own grid cell, so dimming the
+    /// window would dim the prompt too. The region is everything above the prompt — the transcript —
+    /// leaving the prompt and the status bar at full strength.</para>
+    /// </summary>
+    private void ApplyPromptDim()
+    {
+        if (Window is null || _dimHandler is not null) return;
+
+        _dimHandler = (buffer, _, _) =>
+        {
+            // Dim everything ABOVE the prompt. Measured from the bottom rather than from the
+            // prompt's own bounds: IWindowControl exposes no rectangle, and reaching into the
+            // renderer for one would couple this to layout internals that are free to change.
+            //
+            // PromptReserve is what the prompt plus the status bar occupy at their tallest. Erring
+            // LARGE is the safe direction — a slightly generous reserve leaves one transcript line
+            // undimmed, where a mean one would dim the top of the question itself.
+            var height = buffer.Height - PromptReserve;
+            if (height <= 0) return;
+
+            SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
+                buffer, Color.Black, DimIntensity, DimForegroundRatio,
+                new LayoutRect(0, 0, buffer.Width, height));
+        };
+
+        // NO explicit Invalidate. ReplaceControl (the swap that brought us here) already
+        // invalidated, and calling it again outside a render tick is a documented HANG in this
+        // codebase — Invalidate is a max-join at the tick, and during construction or a test there
+        // is no tick to join. Measured elsewhere in this file: 18/18 tests in 144ms became an
+        // indefinite hang.
+        Window.PostBufferPaint += _dimHandler;
+    }
+
+    /// <summary>Removes the dim. Must run on every path out of the prompt, or the transcript stays
+    /// dimmed over a session that is no longer asking anything.</summary>
+    private void ClearPromptDim()
+    {
+        if (Window is null || _dimHandler is null) return;
+
+        Window.PostBufferPaint -= _dimHandler;
+        _dimHandler = null;
+        // Same reasoning as ApplyPromptDim: the caller's ReplaceControl invalidates for us.
+    }
+
+    /// <summary>Rows reserved for the prompt and the status bar, excluded from the dim. The prompt
+    /// is a heading, up to a few lines of command, a blank, a rule and a button row.</summary>
+    private const int PromptReserve = 12;
+
+    /// <summary>Black at 0.45 — cxpost's DialogBase and cxgpu's BusyIndicator use the same value, so
+    /// a user moving between the apps sees one product.</summary>
+    private const float DimIntensity = 0.45f;
+
+    /// <summary>Foreground blends less than background, so dimmed text stays readable rather than
+    /// dissolving into the fill. cxpost's ratio.</summary>
+    private const float DimForegroundRatio = 0.6f;
 
     /// <summary>
     /// Depth-first search for the first control that can actually take focus. Mirrors the traversal
@@ -364,6 +439,7 @@ public sealed class MainWindow
         {
             _mainGrid.ReplaceControl(prompt, Input);
             _activePrompt = null;
+            ClearPromptDim();
         }
 
         FocusComposer();

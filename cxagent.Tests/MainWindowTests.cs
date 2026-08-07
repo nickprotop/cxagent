@@ -490,4 +490,45 @@ public class MainWindowTests
         Assert.True(mw.Input.HasFocus);
         Assert.True(mw.Input.IsEditing);
     }
+
+    [Fact]
+    public void PermissionPrompt_DimsTheTranscriptAndClearsItOnRestore()
+    {
+        // A permission prompt is the one moment the app stops and asks, and it rendered with the
+        // same weight as the scrollback above it. The dim is how the cx family marks a modal.
+        //
+        // The LIFECYCLE is what can regress silently: a dim left attached keeps the transcript grey
+        // over a session that is no longer asking anything, and there is no error when it happens.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var prompt = SharpConsoleUI.Builders.Controls.Markup().AddLine("Run shell command?").Build();
+
+        mw.ShowPermissionPrompt(prompt);
+        Assert.True(mw.IsDimmed, "showing a permission prompt must dim the transcript");
+
+        mw.RestoreComposer(prompt);
+        Assert.False(mw.IsDimmed, "restoring the composer must clear the dim");
+    }
+
+    [Fact]
+    public void PermissionPrompt_DimIsNotStackedByASecondShow()
+    {
+        // ShowPermissionPrompt no-ops when one is already showing (a caller bug it chooses to
+        // survive). The dim must follow that rule too — two handlers would darken twice and only
+        // one would ever be removed.
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(Sys(), res, Logs());
+        mw.Build();
+
+        var first = SharpConsoleUI.Builders.Controls.Markup().AddLine("first").Build();
+        var second = SharpConsoleUI.Builders.Controls.Markup().AddLine("second").Build();
+
+        mw.ShowPermissionPrompt(first);
+        mw.ShowPermissionPrompt(second);   // no-op
+        mw.RestoreComposer(first);
+
+        Assert.False(mw.IsDimmed);
+    }
 }
