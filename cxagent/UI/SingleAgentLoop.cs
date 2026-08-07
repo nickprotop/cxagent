@@ -44,6 +44,10 @@ public sealed class SingleAgentLoop
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
 
+    /// <summary>Raised when a turn finishes, with its tool-call count. A callback rather than a
+    /// GoalRunner reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
+    public Action<int>? TurnCompleted { get; set; }
+
     public SingleAgentLoop(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns)
     {
@@ -169,6 +173,16 @@ public sealed class SingleAgentLoop
             }
 
             _ledger.Record(response.Usage);
+
+            // LOG THE RAW RESPONSE. Only tool RESULTS were ever written, so the model's own output —
+            // the prose, the reasoning, the markdown — existed nowhere once the screen scrolled. A
+            // rendering bug reported from a screenshot was undiagnosable: the input that produced it
+            // could not be recovered, and every hypothesis about it stayed a guess.
+            //
+            // Raw, before StripReasoning, because the reasoning block is part of what arrived and a
+            // fault in the stripping itself would be invisible in stripped output.
+            LogTurn(goalId, turn, response);
+            TurnCompleted?.Invoke(response.ToolCalls.Count);
 
             var text = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
 
@@ -363,6 +377,43 @@ public sealed class SingleAgentLoop
         finally
         {
             _sink.EndAssistantTurn(turnId);
+        }
+    }
+
+    /// <summary>
+    /// Writes one turn's raw model output to the goal's log directory, fire-and-forget.
+    ///
+    /// <para>Uses the same store as tool results, under a per-turn id, so a session reads in order:
+    /// what the model said, then what its calls returned. The tool-call names and arguments are
+    /// recorded alongside the prose because a turn is often ONLY calls, and a log that showed
+    /// nothing for those turns would look like the model had gone silent.</para>
+    ///
+    /// <para>Never throws and never awaits: logging is diagnostics, and a goal must not fail — or
+    /// stall — because a disk did.</para>
+    /// </summary>
+    private void LogTurn(string goalId, int turn, LlmResponse response)
+    {
+        if (_logs is null) return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            if (!string.IsNullOrEmpty(response.Text)) sb.AppendLine(response.Text);
+
+            foreach (var call in response.ToolCalls)
+                sb.AppendLine($"→ {call.Name} {call.Arguments}");
+
+            if (sb.Length == 0) return;
+
+            // "log", not "response": PathFor VALIDATES the stream against log/stdout/stderr and
+            // throws on anything else. An invented name would have thrown on every turn, been
+            // swallowed by the catch below, and logged nothing at all — a diagnostic that silently
+            // does not work is worse than none, because it is trusted.
+            _ = _logs.AppendAsync(goalId, $"turn-{turn:D3}", "log", sb.ToString());
+        }
+        catch (Exception)
+        {
+            // Diagnostics must never take down the thing they are diagnosing.
         }
     }
 

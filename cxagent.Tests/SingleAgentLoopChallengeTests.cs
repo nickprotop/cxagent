@@ -483,6 +483,43 @@ public class SingleAgentLoopChallengeTests
         Assert.Contains(conversation, m => m.Content.Contains("The answer is 4.", StringComparison.Ordinal));
     }
 
+
+    [Fact]
+    public async Task TheModelsRawResponseIsLogged()
+    {
+        // Only tool RESULTS were ever written, so the model's own output — prose, reasoning,
+        // markdown — existed nowhere once the screen scrolled. A rendering bug reported from a
+        // screenshot was undiagnosable: the input that produced it could not be recovered, and every
+        // hypothesis about it stayed a guess. Measured: three wrong diagnoses before this was added.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-log-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var logs = new LogFileManager(new AppPaths(dir));
+
+            var provider = new MockLlmProvider();
+            provider.EnqueueResponse(Prose("### A heading\n\n- **bold** item"));
+
+            var loop = new SingleAgentLoop(provider, PluginRegistry.CreateWithBuiltins(),
+                new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
+
+            await loop.RunAsync("goal-1", Goal("what is this?"), CancellationToken.None);
+
+            // The write is fire-and-forget, so poll briefly rather than racing it.
+            var goalDir = Path.GetDirectoryName(logs.PathFor("goal-1", "x", "log"))!;
+            for (var i = 0; i < 50 && !Directory.Exists(goalDir); i++) await Task.Delay(20);
+            for (var i = 0; i < 50 && Directory.GetFiles(goalDir).Length == 0; i++) await Task.Delay(20);
+
+            var written = string.Concat(Directory.GetFiles(goalDir).Select(File.ReadAllText));
+
+            // The MARKDOWN SOURCE, verbatim — that is the whole point. A log holding only the
+            // rendered form could not answer "what did the renderer receive?".
+            Assert.Contains("### A heading", written, StringComparison.Ordinal);
+            Assert.Contains("**bold** item", written, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
