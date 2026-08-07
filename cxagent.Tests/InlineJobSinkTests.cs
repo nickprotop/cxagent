@@ -346,4 +346,42 @@ public class InlineJobSinkTests
     // --- Planner visibility ----------------------------------------------------------------------
 
 
+
+    [Fact]
+    public void CompletedRowsRecede_ButFailuresDoNot()
+    {
+        // A screen of twenty finished tool calls is twenty things shouting equally, and the one row
+        // still running is lost among them. Muting finished work is the single mechanic that makes a
+        // long session readable (opencode drops completed rows to textMuted while active rows hold
+        // theme.text).
+        var done = InlineJobSink.CompactHeaderForTest(TypedJob("file", JobState.Succeeded));
+        Assert.Contains(CxAgent.UI.ColorScheme.MutedMarkup, done, StringComparison.Ordinal);
+
+        // A FAILURE is the one finished row the user still has to act on. Muting it would hide the
+        // thing most worth seeing.
+        var failed = InlineJobSink.CompactHeaderForTest(TypedJob("file", JobState.Failed));
+        Assert.DoesNotContain(CxAgent.UI.ColorScheme.MutedMarkup, failed, StringComparison.Ordinal);
+
+        // A RUNNING row keeps full weight and its spinner.
+        var running = InlineJobSink.CompactHeaderForTest(TypedJob("file", JobState.Running));
+        Assert.DoesNotContain(CxAgent.UI.ColorScheme.MutedMarkup, running, StringComparison.Ordinal);
+        Assert.Contains("[spinner]", running, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ADisplayNameContainingBracketsIsEscaped()
+    {
+        // Single-agent rows are tool calls with raw JSON arguments — `read_file {"path":"/x"}` —
+        // which routinely contain '['. Inside the colour scope a completed row now carries, an
+        // unescaped bracket is a tag the parser tries to read, and the row renders as an EMPTY LINE
+        // rather than erroring: silent, and the information is simply gone.
+        var job = TypedJob("file", JobState.Succeeded) with
+        {
+            DisplayName = "read_file {\"path\":\"/x\"} [not-a-tag]",
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.Contains("[[not-a-tag]", header, StringComparison.Ordinal);
+    }
 }

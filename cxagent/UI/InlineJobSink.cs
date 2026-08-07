@@ -489,7 +489,13 @@ public sealed class InlineJobSink : IJobPanel
     private static string CompactHeader(Job job)
     {
         var author = AuthorFor(job);
-        var name = Title(job);
+
+        // ESCAPED, because the terminal branch below wraps this in a colour scope. DisplayName is a
+        // tool call with its raw JSON arguments — `read_file {"path":"/x"}` — and single-agent rows
+        // routinely contain '['. Unescaped inside a scope that is a tag the parser tries to read,
+        // and the row renders as an EMPTY LINE rather than erroring: the failure is silent and the
+        // information is simply gone.
+        var name = SharpConsoleUI.Parsing.MarkupParser.Escape(Title(job));
 
         if (!IsTerminal(job.State))
             // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick, and the framework default, so the tag needs no
@@ -510,7 +516,19 @@ public sealed class InlineJobSink : IJobPanel
         // shifts the whole row one cell left the instant a step finishes, so a column of steps
         // jitters as each completes. A static mark holds the column and reads as "settled".
         var mark = job.State == JobState.Succeeded ? "✔" : "•";
-        return $"{mark} {author}  {name}  ·  {state}{duration}";
+
+        // FINISHED WORK RECEDES. A completed row is history — it stays legible, and stops competing
+        // for attention with the one row still running. Without this a screen of twenty finished
+        // tool calls is twenty things all shouting equally, and the live one is lost among them.
+        // opencode does exactly this (its completed rows drop to textMuted while active rows hold
+        // theme.text) and it is the single mechanic that makes a long session readable.
+        //
+        // A FAILURE DOES NOT RECEDE. It is the one finished row the user still has to act on, so it
+        // keeps full weight — muting it would hide the thing most worth seeing.
+        if (job.State == JobState.Failed)
+            return $"{mark} {author}  {name}  ·  {state}{duration}";
+
+        return $"[{ColorScheme.MutedMarkup}]{mark} {author}  {name}  ·  {state}{duration}[/]";
     }
 
     /// <summary>Test seam: the folded row is a pure projection of the job.</summary>
