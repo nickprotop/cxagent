@@ -456,11 +456,15 @@ public class SingleAgentLoopChallengeTests
     }
 
     [Fact]
-    public async Task ReasoningIsShownInTheHeaderAndNeverInTheConversation()
+    public async Task ReasoningIsShownInTheBodyAndNeverInTheConversation()
     {
-        // The body would kill the spinner (the control clears it on first body content), and the
-        // conversation must not carry thinking: a model that sees its own reasoning replayed as
-        // content starts treating it as commitment.
+        // IN THE BODY, not the header. It was a one-line header that rewrote itself as each new line
+        // of thought arrived, which discarded the reasoning as fast as it appeared and — because
+        // nothing cleared the header at the end of a turn — left the last line of thinking welded to
+        // the finished message as its title.
+        //
+        // The conversation must still not carry thinking: a model that sees its own reasoning
+        // replayed as content starts treating it as commitment.
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(Prose("<think>weighing the options</think>The answer is 4."));
 
@@ -468,16 +472,18 @@ public class SingleAgentLoopChallengeTests
         var conversation = Goal("what is 2+2?");
         await Build(provider, sink).RunAsync("gh", conversation, CancellationToken.None);
 
-        Assert.Contains(sink.Headers, h => h.Contains("weighing the options", StringComparison.Ordinal));
-        Assert.Contains(sink.Headers, h => h.Contains("[spinner]", StringComparison.Ordinal));
+        var body = string.Concat(sink.Appended);
+        Assert.Contains("weighing the options", body, StringComparison.Ordinal);
 
         // AMBER, not [dim]. Dim asks the terminal to render the same colour more faintly — a request
         // many terminals ignore and none render identically, and against a dark background the ones
         // that honour it produce grey mush. The colour comes from the shared palette, so the
-        // transcript and this line cannot drift apart.
-        Assert.Contains(sink.Headers, h =>
-            h.Contains(CxAgent.UI.ColorScheme.ThinkingMarkup, StringComparison.Ordinal));
-        Assert.DoesNotContain(sink.Headers, h => h.Contains("[dim]", StringComparison.Ordinal));
+        // transcript and this text cannot drift apart.
+        Assert.Contains(CxAgent.UI.ColorScheme.ThinkingMarkup, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("[dim]", body, StringComparison.Ordinal);
+
+        // The reasoning never became a header — the defect this replaced.
+        Assert.DoesNotContain(sink.Headers, h => h.Contains("weighing", StringComparison.Ordinal));
 
         Assert.DoesNotContain(conversation, m => m.Content.Contains("weighing", StringComparison.Ordinal));
         Assert.Contains(conversation, m => m.Content.Contains("The answer is 4.", StringComparison.Ordinal));
@@ -527,7 +533,9 @@ public class SingleAgentLoopChallengeTests
         public int Begins, Ends;
         public readonly List<string> Headers = [];
         public ChatMessageId BeginAssistantTurn() { Begins++; return new(0); }
-        public void AppendAssistant(ChatMessageId id, string token) { }
+        /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
+        public readonly List<string> Appended = [];
+        public void AppendAssistant(ChatMessageId id, string token) => Appended.Add(token);
         public void EndAssistantTurn(ChatMessageId id) => Ends++;
         public void ShowGoalResult(GoalState state, int failedCount) { }
         public void ShowError(string message) => Errors.Add(message);

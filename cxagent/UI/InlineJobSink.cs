@@ -258,10 +258,13 @@ public sealed class InlineJobSink : IJobPanel
                 // A tool's output is an echo of something already on disk, so it collapses to its
                 // one-line summary. A worker's output IS the answer that was asked for.
                 //
-                // Failure always expands, whatever it is. Only on the transition, never re-applied:
-                // a user who collapses a read message has read it, and re-expanding under them on
-                // the next update would fight them.
-                var keepOpen = job.State == JobState.Failed || job.PluginType == "llm_agent";
+                // FAILURE NO LONGER EXPANDS. It did, on the reasoning that the error and the buttons
+                // that act on it must be visible together — but those inline buttons were removed
+                // (see below), and what is left is an ordinary failed tool call. A read_file that
+                // missed is a one-line fact, and expanding it printed the same error twice, header
+                // and body, on every miss. The header already says `failed`, and `expand…` is there
+                // for anyone who wants the detail.
+                var keepOpen = job.PluginType == "llm_agent";
                 _chat.SetExpanded(id, keepOpen);
             }
 

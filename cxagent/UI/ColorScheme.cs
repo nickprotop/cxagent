@@ -66,6 +66,33 @@ public static class ColorScheme
     /// </summary>
     public static readonly Color PanelSurface = new(0x1e, 0x1e, 0x1e);
 
+    /// <summary>
+    /// The LEFT column's surface — the transcript and the composer cell under it: almost black.
+    ///
+    /// <para>opencode's relationship, and the one worth copying: the chat column is the dark field
+    /// you read against, and the side panel is the lighter surface beside it. Ours had it inverted —
+    /// the panel was a shade lighter than a chat that was simply the app background — so the two
+    /// columns did not read as two panes at all.</para>
+    /// </summary>
+    public static readonly Color ChatSurface = new(0x0d, 0x0d, 0x0d);
+
+    /// <summary>The same colour as <see cref="ChatSurface"/>, for an `on &lt;colour&gt;` markup tag.</summary>
+    public const string ChatSurfaceMarkup = "#0d0d0d";
+
+    /// <summary>
+    /// The composer's surface — the prompt box AND the mode line under it.
+    ///
+    /// <para>ONE CONSTANT FOR BOTH, because they are one control as far as the eye is concerned. The
+    /// prompt was picking up the framework's focused-edit background while the mode line sat on the
+    /// app background, so the composer read as a grey box with an unrelated caption floating beneath
+    /// it. Naming the surface here also means it no longer depends on which theme the framework
+    /// resolves at focus time.</para>
+    /// </summary>
+    public static readonly Color ComposerSurface = new(0x2a, 0x2a, 0x2a);
+
+    /// <summary>The same colour as <see cref="ComposerSurface"/>, for an `on &lt;colour&gt;` markup tag.</summary>
+    public const string ComposerSurfaceMarkup = "#2a2a2a";
+
     // --- Markdown ---------------------------------------------------------------
     // Values from opencode's default dark theme (packages/tui/src/theme/assets/
     // opencode.json), which is the palette this was compared against.

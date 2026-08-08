@@ -24,9 +24,46 @@ public sealed class MainWindow : IDisposable
         VerticalAlignment = VerticalAlignment.Fill,
         HorizontalAlignment = HorizontalAlignment.Stretch,
     };
-    public MultilineEditControl Input { get; } = new(viewportHeight: 3);   // multi-line goal composer
+    /// <summary>The multi-line goal composer. A one-column margin each side so the text it holds is
+    /// inset from the screen edge rather than flush against it — the transcript above already reads
+    /// with that gap, and a composer without it looks like a different surface.</summary>
+    public MultilineEditControl Input { get; } = new(viewportHeight: PromptRows)
+    {
+        Margin = new Margin(1, 0, 1, 0),
+
+        // TOP, not the inherited Fill. GetEffectiveViewportHeight grows the control to its bounds
+        // whenever its alignment is Fill, so at measure time it asked for more than the three rows
+        // it draws — and the composer's Auto row in the main grid sized to that inflated answer.
+        // The visible cost was a band of dead rows between the end of the transcript and the prompt,
+        // with the chat's scrollbar stopping short of the composer.
+        VerticalAlignment = VerticalAlignment.Top,
+
+        // BOTH states, so the composer does not change colour when focus enters it. Unfocused it was
+        // falling through to the app background and focused to the framework's own grey — two
+        // surfaces for one control, and neither matched the mode line below it.
+        BackgroundColor = ColorScheme.ComposerSurface,
+        FocusedBackgroundColor = ColorScheme.ComposerSurface,
+    };
     public JobPanelControl JobPanel { get; }
-    public StatusBarControl StatusBar { get; } = new(stickyBottom: true);
+    /// <summary>
+    /// The bottom line: working directory on the left, context and the two escape keys on the right.
+    ///
+    /// <para>NOT STICKY. StickyPosition.Bottom pins the control to the WINDOW, so it spanned both
+    /// columns and cut across the base of the session panel — the two panes met everywhere except
+    /// the last row. As an ordinary control it takes a grid cell under the composer, inside the
+    /// chat column, and the panel runs unbroken to the bottom edge.</para>
+    /// </summary>
+    public StatusBarControl StatusBar { get; } = new(stickyBottom: false)
+    {
+        // The chat column's field, so the bar reads as the base of that pane rather than a separate
+        // strip laid across the app.
+        BackgroundColor = ColorScheme.ChatSurface,
+
+        // A column each side so the cwd and the shortcut keys are not flush against the pane edges.
+        // StatusBarControl insets its CONTENT by Margin but fills the whole bar with its background,
+        // so unlike MarkupControl this reads as padding rather than a gap.
+        Margin = new Margin(1, 0, 1, 0),
+    };
     public bool SubmissionEnabled { get; private set; }
     public Window? Window { get; private set; }
 
@@ -90,7 +127,32 @@ public sealed class MainWindow : IDisposable
     /// <summary>Test seam: the panel column's width is a layout decision worth pinning, and it is
     /// only observable through the grid.</summary>
     internal GridControl MainGridForTest => _mainGrid;
-    private RuleControl _composerRule = null!;
+
+    /// <summary>Rule, prompt and mode line as ONE grid cell — see the comment at its construction.</summary>
+    private GridControl _composer = null!;
+
+    /// <summary>
+    /// Rows the composer occupies: the prompt's 3-row viewport, the mode line, the status bar.
+    /// Named so the grid row and the controls inside it cannot drift apart.
+    /// </summary>
+    private const int ComposerRows = PromptRows + 2;
+
+    /// <summary>The prompt's viewport height — must match Input's constructor argument.</summary>
+    private const int PromptRows = 3;
+
+    /// <summary>One-cell container giving the mode line's margins a background — see its construction.</summary>
+    private GridControl _modeLineHost = null!;
+
+    /// <summary>
+    /// The line under the composer: which MODE is running, then the model it runs on.
+    ///
+    /// <para>opencode puts its agent mode here ("Build"), and the slot is worth copying because the
+    /// answer changes what the app does. Ours is single-agent or fan-out — the one piece of state
+    /// that decides whether a goal becomes a plan of jobs or one agent with tools, and it was
+    /// previously visible nowhere at all. The model beside it was in a startup line that scrolls
+    /// away.</para>
+    /// </summary>
+    private MarkupControl _modeLine = null!;
 
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
     public SessionPanel SessionPanel { get; } = new();
@@ -296,31 +358,113 @@ public sealed class MainWindow : IDisposable
         //
         // Its own grid row rather than a margin on either neighbour — a rule is a control, and
         // giving it Auto height is what keeps it exactly one line regardless of what is above it.
-        _composerRule = Controls.RuleBuilder()
-            .WithColorRole(ColorScheme.Structure)
+        // Mode first and accented, model after and muted: the mode is a property of the SESSION and
+        // the model is a detail of it, and reading them the other way round invites a user to think
+        // the model is what they are choosing.
+        var model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "no provider";
+        _modeLine = Controls.Markup()
+            // THE BACKGROUND IS IN THE MARKUP, not on the control. MarkupControl.PaintDOM fills from
+            // Container?.BackgroundColor and never consults its own, so the builder's
+            // WithBackgroundColor set a property nothing reads. An `on <colour>` tag plus [fillwidth]
+            // paints the row itself — and fillwidth is the same tag that carries a code block's
+            // background to the end of a wrapped line, so it is already load-bearing here.
+            // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
+            // the background form, so it painted nothing. Each run carries its own background, and
+            // [fillwidth] carries the last one to the end of the row.
+            .AddLine($"[{ColorScheme.AccentMarkup} on {ColorScheme.ComposerSurfaceMarkup}]"
+                   + $" {(FanOut ? "Fan-out" : "Single agent")}[/]"
+                   + $"[{ColorScheme.MutedMarkup} on {ColorScheme.ComposerSurfaceMarkup}]"
+                   + $" · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[fillwidth][/]")
+            // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
+            // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
+            // the last character — the fill was working, it simply had nothing to cross.
+            .WithAlignment(HorizontalAlignment.Stretch)
+            // THE CONTROL CARRIES THE SURFACE TOO, not only the markup runs.
+            //
+            // MarkupControl reads its own BackgroundColor for the right-hand fill (PaintDOM's
+            // rightFillBg) but takes the main fill from Container?.BackgroundColor — so the colour
+            // has to be set in BOTH places for every paint path to agree. With only the markup runs
+            // carrying it, any cell the runs did not cover fell back to whatever was behind.
+            .WithBackgroundColor(ColorScheme.ComposerSurface)
+            // NO CONTROL MARGIN. MarkupControl paints its margins with a HARDCODED Transparent
+            // (PaintDOM's marginBg), so a margin here is a hole showing whatever sits behind the
+            // control. Giving it a container whose background is the composer surface makes the
+            // hole land on the right colour — but only where that container's background actually
+            // resolves, and it demonstrably does not everywhere: the margins rendered as dark
+            // columns either side of the band while the same build measured as continuous here.
+            //
+            // The inset is INSIDE THE PAINTED RUN instead: a leading space in the first styled run
+            // and [fillwidth] carrying the last one past the trailing edge. There is no margin to
+            // show through, so the row cannot break regardless of what is behind it.
+            .Build();
+
+        // ONE CELL FOR THE WHOLE COMPOSER: rule, prompt, mode line. They were three grid rows, which
+        // meant the panel beside them had to span four rows to reach the bottom — and a row count is
+        // the wrong thing for the panel's height to depend on, because it changes whenever the
+        // composer gains or loses a line. Stacked in one cell, the composer is one row however many
+        // lines it holds, and the panel spans it as a unit.
+        // THE MODE LINE'S OWN CONTAINER carries the surface, NOT the whole composer grid.
+        //
+        // MarkupControl paints its margins with a hardcoded Transparent and resolves its fill from
+        // `Container?.BackgroundColor`, so the colour has to come from a container for the margins
+        // to land on it. Setting it on _composer did that — and also filled every other cell of the
+        // composer, so the space around the prompt turned composer-grey instead of staying the chat
+        // field. A one-cell grid wrapping just the mode line gives the margins their colour and
+        // leaves the prompt's cell alone.
+        _modeLineHost = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Auto())
+            .Place(_modeLine, 0, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
+        _modeLineHost.BackgroundColor = ColorScheme.ComposerSurface;
+
+        _composer = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            // CELLS, not Auto, for the prompt's row. MultilineEditControl grows to fill its bounds
+            // when its VerticalAlignment is Fill (GetEffectiveViewportHeight), and Fill is what it
+            // inherits here — so an Auto row handed it the composer's whole share and it reported
+            // back that it wanted all of it. The result was three usable lines of prompt sitting on
+            // seven rows of its own background, with the mode line pushed to the bottom of the gap.
+            // Naming the row's height makes the control's own viewportHeight the thing that decides.
+            .Rows(GridLength.Cells(PromptRows), GridLength.Auto(), GridLength.Auto())
+            .Place(Input, 0, 0)
+            .Place(_modeLineHost, 1, 0)
+            .Place(StatusBar, 2, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
+            // taller than the composer — and that is exactly the defect: the row measured six rows
+            // larger than its contents, the composer sank to the bottom of it, and the unused top of
+            // the row became a band of dead space between the end of the transcript and the prompt.
+            // The chat's Star(1) row ends where this row begins, so those rows were unreachable by
+            // either pane. Sizing to content leaves nothing to sink through.
+            .WithVerticalAlignment(VerticalAlignment.Top)
+            .Build();
+
 
         // TWO COLUMNS: the transcript, and the session panel beside it. The panel's column is Auto,
         // so hiding the control collapses the column to nothing rather than leaving a gap — which is
         // what makes the responsive behaviour a visibility flip rather than a rebuild.
+        // THE PANEL SPANS THE FULL HEIGHT, beside everything rather than above the composer. It is
+        // a standing readout of where you are, not a note attached to the transcript — and running
+        // it to the bottom edge makes the two columns read as two panes instead of one pane with
+        // something stacked on it.
+        //
+        // CELLS, not Auto: Auto sizes a column to its content's INTRINSIC width, and a
+        // ScrollablePanel has none — it fills whatever it is given. The measure never resolved and
+        // the window painted its background with NO TEXT AT ALL. Measured on one build: 0 lines
+        // with Auto, 22 with a fixed width.
         _mainGrid = Controls.Grid()
-            // CELLS, not Auto. Auto sizes a column to its content's INTRINSIC width, and a
-            // ScrollablePanel has none — it fills whatever it is given. The measure never resolved
-            // and the whole window painted its background with no text at all: not a crash, not an
-            // error, just an empty screen. Measured against the same build: 0 lines of text with
-            // Auto, 7 with the column removed, 7 with a fixed width.
             .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.WidthFor(_system.DesktopDimensions.Width)))
-            .Rows(GridLength.Star(1), GridLength.Auto(), GridLength.Auto())
+            // THE COMPOSER'S ROW IS NAMED, not Auto. Auto measured it at ~11 rows for 5 rows of
+            // content, and the surplus showed as dead space between the transcript and the prompt —
+            // the chat's Star(1) row ends where this row begins, so those rows belonged to neither
+            // pane and simply went blank. Cells(ComposerRows) makes the row exactly what the
+            // composer draws: the prompt's viewport, the mode line, the status bar.
+            .Rows(GridLength.Star(1), GridLength.Cells(ComposerRows))
             .Place(Chat, 0, 0)
-            .Place(SessionPanel.Control, 0, 1)
-            // THE COMPOSER SPANS BOTH COLUMNS. The panel is reference material beside the
-            // conversation; the composer is the whole app's input. Confining it to the transcript's
-            // column squeezed a multi-line editor into 76 characters while 24 sat empty beside it —
-            // and the rule above it stopped short of the screen edge, which read as a broken line
-            // rather than a deliberate one.
-            .Place(_composerRule, 1, 0, colSpan: 2)
-            .Place(Input, 2, 0, colSpan: 2)
+            .Place(_composer, 1, 0)
+            .Place(SessionPanel.Control, 0, 1, rowSpan: 2)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -333,19 +477,20 @@ public sealed class MainWindow : IDisposable
         // and in single-agent mode the composer is ALREADY cleared on submit and already holds
         // focus, so the key does nothing observable. In fan-out focus can legitimately be sitting in
         // a job block, and F2 is the way back.
-        if (FanOut) StatusBar.AddLeft("F2", "New Goal");
-        StatusBar.AddLeft("F3", "Panel");
-        StatusBar.AddLeft("F4", "Chat");
-        StatusBar.AddLeft("F1", "Help");
-        // One key for settings, not three. F7 (Roles) and F8 (Providers) were retired when the
-        // three dialogs became one: they opened the SAME dialog on a different page, so the bar
-        // was advertising three keys for one surface. The pages are named in the dialog's nav.
-        StatusBar.AddLeft("F5", "Settings");
-        // F6 ONLY IN FAN-OUT. The status bar is the only discovery surface for these keys, so an
-        // entry that does nothing is worse than a missing one: it teaches the user the app is
-        // broken rather than that the feature is elsewhere.
-        if (FanOut) StatusBar.AddLeft("F6", "Diagnose");
-        StatusBar.AddLeft("Ctrl+Q", "Quit");
+        // THE STATUS BAR IS TWO THINGS NOW: where you are, and how to leave. It used to carry six
+        // shortcuts, which is a menu rather than a status bar — and every one of them is a key the
+        // user either knows or will find in Help. The keys still WORK; they are simply no longer
+        // the loudest thing on screen.
+        //
+        // The working directory takes the left, because "which checkout am I editing" is the
+        // question a status bar should answer and the one whose wrong answer costs most.
+        StatusBar.AddLeft(string.Empty,
+            $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(ShortCwd())}[/]");
+
+        // Two on the right, both about leaving: help for what you do not know, quit for when you
+        // are done. The context readout joins them from SetTokenTotal.
+        StatusBar.AddRight("F1", "Help");
+        StatusBar.AddRight("Ctrl+Q", "Quit");
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
         //
@@ -374,8 +519,13 @@ public sealed class MainWindow : IDisposable
             // reclaims that space and lets the content fill the window rect, which is what a
             // full-screen TUI wants.
             .Frameless()
+            // THE LEFT COLUMN'S FIELD. The transcript control paints per-message panels, not a
+            // surface of its own, so what shows between and around them is the WINDOW background —
+            // which makes this the only place to set the chat column's colour. The session panel
+            // overrides it with PanelSurface, so darkening here darkens the chat side alone.
+            .WithBackgroundColor(ColorScheme.ChatSurface)
             .HideTitle()
-            .AddControls(_mainGrid, StatusBar)
+            .AddControls(_mainGrid)
             .BuildAndShow();
 
         // Set initial focus to the goal input so the user can type immediately (the job panel is
@@ -433,7 +583,10 @@ public sealed class MainWindow : IDisposable
     {
         if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
 
-        _mainGrid.ReplaceControl(Input, prompt);
+        // THE COMPOSER GRID, not the main one: the prompt moved into a nested cell alongside the
+        // rule and mode line, and swapping against the outer grid silently found nothing — the
+        // permission prompt never appeared and the composer stayed live underneath it.
+        _composer.ReplaceControl(Input, prompt);
         _activePrompt = prompt;
         ApplyPromptDim();
 
@@ -684,7 +837,7 @@ public sealed class MainWindow : IDisposable
     {
         if (ReferenceEquals(_activePrompt, prompt))
         {
-            _mainGrid.ReplaceControl(prompt, Input);
+            _composer.ReplaceControl(prompt, Input);
             _activePrompt = null;
             ClearPromptDim();
             StatusBar.Visible = true;
@@ -832,6 +985,25 @@ public sealed class MainWindow : IDisposable
             _tokenItem.Label = label;
             _tokenItem.IsVisible = true;
         }
+    }
+
+
+    /// <summary>The working directory, <c>~</c>-relative. Trimmed from the LEFT when long: the tail
+    /// identifies a project and the head repeats for every project on the machine.</summary>
+    private static string ShortCwd()
+    {
+        var path = TryGetWorkingDirectory() ?? "";
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (home.Length > 0 && path.StartsWith(home, StringComparison.Ordinal))
+            path = "~" + path[home.Length..];
+
+        return path.Length <= 60 ? path : "…" + path[^59..];
+    }
+
+    private static string? TryGetWorkingDirectory()
+    {
+        try { return Directory.GetCurrentDirectory(); }
+        catch (Exception) { return null; }
     }
 
     /// <summary>The bottom-right readout: context used, as a percentage when the window is known.</summary>

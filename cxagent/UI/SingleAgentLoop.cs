@@ -468,7 +468,6 @@ public sealed class SingleAgentLoop
         var calls = new List<ToolCall>();
         LlmUsage usage = new();
         var stop = "";
-        var lastHeader = "";
 
         // How much of the (reasoning-stripped) text has already been shown. Deltas arrive raw, and a
         // reasoning block can span many of them, so what is SAFE to display is recomputed from the
@@ -476,6 +475,10 @@ public sealed class SingleAgentLoop
         // would put the model's <think> block on screen, which is exactly what StripReasoning exists
         // to prevent.
         var shown = 0;
+
+        // Same trick for reasoning: a reasoning block spans many deltas, so only the part not yet
+        // written is appended after each chunk.
+        var shownReasoning = 0;
 
         await foreach (var chunk in _provider.ChatStreamAsync(messages, tools, ct))
         {
@@ -492,11 +495,15 @@ public sealed class SingleAgentLoop
                     shown = visible.Length;
                 }
 
-                // REASONING GOES TO THE HEADER, not the body. A reasoning model spends most of a
-                // long turn thinking and emits nothing else, so this is the only evidence it is
-                // working rather than wedged — but the transcript control clears a message's spinner
-                // the moment BODY content arrives, so putting it there would kill the very indicator
-                // it is meant to reinforce. The header keeps both: a live [spinner] beside the text.
+                // REASONING GOES IN THE BODY, dimmed — not into the header.
+                //
+                // It WAS a one-line header that rewrote itself on every new line of thought, and
+                // that was wrong twice over. A single line that overwrites itself discards the
+                // reasoning as fast as it arrives, so the thing it is meant to make visible can
+                // never actually be read; and because nothing clears the header when the turn ends,
+                // the last line of thinking stayed welded to the finished message as its title.
+                //
+                // The body can hold all of it, in order, where it scrolls with everything else.
                 //
                 // AMBER, not [dim]. Dim asks the terminal to render the SAME colour more faintly,
                 // which is a request many terminals ignore and none render identically — and against
@@ -504,23 +511,16 @@ public sealed class SingleAgentLoop
                 // its own says "this is a different KIND of text" rather than "this text matters
                 // less", which is what reasoning actually is.
                 //
-                // opencode gives thinking its warning hue for exactly this, and the palette already
-                // carries it (ColorScheme.ThinkingMarkup), so the transcript and the reasoning line
-                // now come from one source rather than two conventions.
-                //
-                // Last-line-only: this is a progress indicator, not a transcript. The full chain of
-                // thought is many screens long, is never shown whole anywhere, and is discarded
-                // rather than entering the conversation.
+                // The cost is the spinner: ChatTranscriptControl clears a message's thinking flag as
+                // soon as body content arrives. That is the right trade — the reasoning text itself
+                // is now the evidence the model is alive, and it is far better evidence than a
+                // spinner, because it says WHAT the model is doing.
                 var reasoning = Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(accumulated);
-                if (reasoning.Length > 0)
+                if (reasoning.Length > shownReasoning)
                 {
-                    var tail = LastLine(reasoning);
-                    if (tail.Length > 0 && tail != lastHeader)
-                    {
-                        lastHeader = tail;
-                        _sink.SetAssistantHeader(turnId,
-                            $"[spinner] [{ColorScheme.ThinkingMarkup}]{Escape(tail)}[/]");
-                    }
+                    _sink.AppendAssistant(turnId,
+                        $"[{ColorScheme.ThinkingMarkup}]{Escape(reasoning[shownReasoning..])}[/]");
+                    shownReasoning = reasoning.Length;
                 }
             }
 

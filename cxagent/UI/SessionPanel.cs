@@ -32,7 +32,7 @@ public sealed class SessionPanel
     /// content is short labels and numbers, and a 60-column column of them is mostly empty space
     /// taken from the one pane that can always use more.
     /// </summary>
-    public const int MaxWidth = 34;
+    public const int MaxWidth = 40;
 
     /// <summary>
     /// The panel's width for a given terminal width — a fixed SHARE, clamped at both ends.
@@ -40,9 +40,13 @@ public sealed class SessionPanel
     /// <para>A constant 24 is right at 100 columns and wrong at 200: model ids and paths wrap for
     /// no reason while a third of the screen sits unused. A share keeps the proportion the layout
     /// was designed around instead of freezing one terminal's answer.</para>
+    ///
+    /// <para>A FIFTH, widened from a sixth: at 160 columns a sixth gave 26, which still wrapped a
+    /// long gguf model id and a nested path. The transcript keeps 80 columns at 100 and 128 at 160 —
+    /// past what code needs to stay readable either way.</para>
     /// </summary>
     public static int WidthFor(int terminalWidth) =>
-        Math.Clamp(terminalWidth / 6, MinWidth, MaxWidth);
+        Math.Clamp(terminalWidth / 5, MinWidth, MaxWidth);
 
     /// <summary>
     /// Terminal width at or above which the panel appears on its own. Below this the transcript
@@ -130,11 +134,9 @@ public sealed class SessionPanel
         if (inputTokens > 0 || outputTokens > 0)
             lines.Add(Muted($"↑{Compact(inputTokens)} ↓{Compact(outputTokens)}"));
 
-        // MODEL, because it was printed once in a startup line that scrolls away — twenty minutes
-        // into a session there was no way to tell which model was answering.
-        Section(lines, "Model");
-        lines.Add(Value(model));
-        if (endpoint.Length > 0) lines.Add(Muted(endpoint));
+        // NO MODEL BLOCK. It moved to the line under the composer, where opencode puts it and
+        // where it sits beside the mode it belongs to. Two places showing one value is how they
+        // drift, and the panel is the one that can be hidden.
 
         Section(lines, "Session");
         lines.Add(Value($"{Elapsed()} · {_turns} turn{(_turns == 1 ? "" : "s")}"));

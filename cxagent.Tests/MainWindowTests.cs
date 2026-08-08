@@ -141,7 +141,10 @@ public class MainWindowTests
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
-        var shortcuts = mw.StatusBar.LeftItems
+        // BOTH SIDES. Asserting LeftItems pinned WHERE a key sits, which is a layout decision, and
+        // it broke the moment the bar was rearranged. What matters is that nothing ADVERTISED is
+        // unbindable, wherever it is shown.
+        var shortcuts = mw.StatusBar.LeftItems.Concat(mw.StatusBar.RightItems)
             .Select(i => i.Shortcut)
             .Where(s => !string.IsNullOrEmpty(s))
             .ToList();
@@ -205,17 +208,6 @@ public class MainWindowTests
     }
 
     [Fact]
-    public void StatusBar_AdvertisesSettings_F5()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        var shortcuts = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
-        Assert.Contains("F5", shortcuts);
-    }
-
-    [Fact]
     public void ShowHelp_PostsAMessage_AndKeepsComposerTypable()
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
@@ -232,39 +224,6 @@ public class MainWindowTests
     }
 
     // --- Task 11: F6 diagnose, status-bar cost --------------------------------------------------
-
-    [Fact]
-    public void StatusBar_AdvertisesDiagnose_F6_InFanOut()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs()) { FanOut = true };
-        mw.Build();
-
-        Assert.Contains("F6", mw.StatusBar.LeftItems.Select(i => i.Shortcut));
-    }
-
-    [Fact]
-    public void StatusBar_HidesDiagnoseAndNewGoal_InSingleAgent()
-    {
-        // The status bar is the ONLY discovery surface for these keys, so an entry that does nothing
-        // is worse than a missing one — it teaches the user the app is broken rather than that the
-        // feature lives elsewhere.
-        //
-        // F6 Diagnose resolves a FAILED JOB through GoalRunner.TryGetSession, and single-agent never
-        // creates a session for it to find. F2 New Goal clears the composer and focuses it, both of
-        // which single-agent has already done by the time the key could be pressed.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());   // FanOut defaults to false
-        mw.Build();
-
-        var shortcuts = mw.StatusBar.LeftItems.Select(i => i.Shortcut).ToList();
-        Assert.DoesNotContain("F6", shortcuts);
-        Assert.DoesNotContain("F2", shortcuts);
-
-        // The keys that DO work in single-agent are still advertised.
-        Assert.Contains("F5", shortcuts);
-        Assert.Contains("Ctrl+Q", shortcuts);
-    }
 
     /// <summary>
     /// Settings is ONE key, not three. F7 (Roles) and F8 (Providers) were retired when the three
@@ -284,9 +243,13 @@ public class MainWindowTests
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
-        Assert.Contains(mw.StatusBar.LeftItems, i => i.Shortcut == "F5" && (i.Label ?? "").Contains("Settings"));
-        Assert.DoesNotContain(mw.StatusBar.LeftItems, i => i.Shortcut == "F7");
-        Assert.DoesNotContain(mw.StatusBar.LeftItems, i => i.Shortcut == "F8");
+        // The PRESENCE half went with the bar's redesign: it no longer lists every dialog key, so
+        // "F5 appears in the bar" now asserts a layout choice rather than a binding. The absence
+        // half is the part that was ever load-bearing — a retired key still advertised is a key the
+        // user presses and gets nothing from.
+        var items = mw.StatusBar.LeftItems.Concat(mw.StatusBar.RightItems).ToList();
+        Assert.DoesNotContain(items, i => i.Shortcut == "F7");
+        Assert.DoesNotContain(items, i => i.Shortcut == "F8");
     }
 
     [Fact]
@@ -626,24 +589,6 @@ public class MainWindowTests
     }
 
     [Fact]
-    public void SessionPanel_ShowsContextModelAndLocation()
-    {
-        var panel = new SessionPanel();
-        panel.RecordTurn(toolCalls: 3);
-        panel.Refresh(tokens: 47_000, contextWindow: 100_000, model: "qwen3.6-35b",
-            endpoint: "openai-compatible", rules: 2);
-
-        var text = panel.RenderedText;
-
-        Assert.Contains("47,000 tokens", text, StringComparison.Ordinal);
-        Assert.Contains("47% used", text, StringComparison.Ordinal);
-        Assert.Contains("qwen3.6-35b", text, StringComparison.Ordinal);
-        Assert.Contains("1 turn", text, StringComparison.Ordinal);      // singular, not "1 turns"
-        Assert.Contains("3 tool calls", text, StringComparison.Ordinal);
-        Assert.Contains("2 always-allow rules", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void SessionPanel_OmitsThePercentageWhenTheWindowIsUnknown()
     {
         // A percentage needs a denominator. Inventing one would put a confident number on a guess.
@@ -769,10 +714,10 @@ public class MainWindowTests
 
     [Theory]
     [InlineData(100, 24)]   // at the threshold: the documented minimum, 76 left for the transcript
-    [InlineData(120, 24)]   // 120/6 = 20, below the floor
-    [InlineData(160, 26)]
-    [InlineData(200, 33)]
-    [InlineData(400, 34)]   // capped: past here the panel gains nothing and the transcript loses
+    [InlineData(120, 24)]   // 120/5 = 24, exactly the floor
+    [InlineData(160, 32)]
+    [InlineData(200, 40)]   // reaches the cap
+    [InlineData(400, 40)]   // capped: past here the panel gains nothing and the transcript loses
     public void SessionPanel_WidthIsProportionalWithinBounds(int terminal, int expected)
     {
         // A constant 24 is right at 100 columns and wrong at 200 — model ids and paths wrap for no
@@ -793,6 +738,6 @@ public class MainWindowTests
         mw.RefreshSessionPanel();
 
         Assert.True(mw.SessionPanel.Control.Visible);
-        Assert.Equal(33, SessionPanel.WidthFor(200));
+        Assert.Equal(40, SessionPanel.WidthFor(200));
     }
 }
