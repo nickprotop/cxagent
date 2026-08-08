@@ -115,6 +115,14 @@ public sealed class SingleAgentLoop
         // structurally unable to see.
         string? lastBuild = null;
 
+        // TESTS ARE TRACKED SEPARATELY from compilation, because a passing build does not answer the
+        // question a failing test asked. One slot for both was measured wrong on a live drive: the
+        // agent ran `dotnet test` (1 failed), then rebuilt the test project to iterate, and that
+        // build SUCCEEDED — overwriting the failing verdict. The goal reported done over a tree whose
+        // own new test was red, which is precisely the "run says done, disk says otherwise" failure
+        // this gate exists to stop.
+        string? lastTest = null;
+
         // Identical (call, arguments, result) triples seen this goal, for stuck detection below.
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
 
@@ -233,7 +241,9 @@ public sealed class SingleAgentLoop
 
                 // Two ways a change goal can finish badly, and they need different words: nothing was
                 // written at all, or something was written that does not build.
-                var broken = wrote && lastBuild is not null && BuildFailed(lastBuild);
+                var brokenBuild = wrote && lastBuild is not null && BuildFailed(lastBuild);
+                var brokenTest = wrote && lastTest is not null && BuildFailed(lastTest);
+                var broken = brokenBuild || brokenTest;
                 var unfinished = !wrote && AsksForAChange(conversation);
 
                 if ((unfinished || broken) && !refused && challenges < MaxChallenges)
@@ -242,7 +252,11 @@ public sealed class SingleAgentLoop
                     messages.Add(new ChatMessage
                     {
                         Role = "user",
-                        Content = broken ? BrokenBuildChallenge(lastBuild!) : ChallengeText(challenges),
+                        // The FAILING one's output, and the build first when both are red: a test
+                        // failure reported against a tree that does not compile is noise.
+                        Content = broken
+                            ? BrokenBuildChallenge(brokenBuild ? lastBuild! : lastTest!)
+                            : ChallengeText(challenges),
                         Timestamp = DateTimeOffset.UtcNow,
                     });
                     continue;
@@ -319,10 +333,18 @@ public sealed class SingleAgentLoop
                         Timestamp = DateTimeOffset.UtcNow,
                     });
 
-                // A build or test run REPLACES the previous verdict rather than accumulating: what
-                // matters at the end is whether the tree compiles NOW, not whether it ever did. A
-                // model that breaks the build, fixes it, and stops has finished the job.
-                if (call.Name == "run_shell" && LooksLikeBuildOrTest(call)) lastBuild = result;
+                // A build or test run REPLACES the previous verdict of ITS OWN KIND rather than
+                // accumulating: what matters at the end is whether the tree compiles NOW and whether
+                // the tests pass NOW, not whether either ever did. A model that breaks the build,
+                // fixes it, and stops has finished the job.
+                //
+                // Two slots, not one. A build and a test answer different questions, and folding
+                // them together lets the answer to one erase the answer to the other — see lastTest.
+                if (call.Name == "run_shell" && LooksLikeBuildOrTest(call))
+                {
+                    if (LooksLikeTest(call)) lastTest = result;
+                    else lastBuild = result;
+                }
 
                 messages.Add(new ChatMessage
                 {
@@ -596,6 +618,30 @@ public sealed class SingleAgentLoop
     /// recognised simply does not update the verdict, which fails safe (the goal is judged on the
     /// last build it DID run, or on nothing at all).</para>
     /// </summary>
+    /// <summary>
+    /// Whether a shell call is running TESTS specifically, as opposed to compiling.
+    ///
+    /// <para>Both are gates on a finished goal, but they must be remembered separately: a rebuild
+    /// after a failing test run would otherwise overwrite the failure with a success and let the
+    /// goal finish red. Deliberately a subset of <see cref="LooksLikeBuildOrTest"/> — anything that
+    /// is not recognisably a test run is treated as a build, so a new verb defaults to the stricter
+    /// reading rather than being silently ignored.</para>
+    /// </summary>
+    private static bool LooksLikeTest(ToolCall call)
+    {
+        var cmd = TryGetArgument(call, "command");
+        if (string.IsNullOrEmpty(cmd)) return false;
+
+        ReadOnlySpan<string> verbs =
+        [
+            "dotnet test", "cargo test", "go test",
+            "npm test", "yarn test", "pnpm test", "pytest", "vitest", "jest",
+        ];
+        foreach (var v in verbs)
+            if (cmd.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
     private static bool LooksLikeBuildOrTest(ToolCall call)
     {
         var cmd = TryGetArgument(call, "command");

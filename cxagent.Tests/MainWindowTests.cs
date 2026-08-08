@@ -55,14 +55,13 @@ public class MainWindowTests
     /// yet the placeholder never changes. Build() must therefore set IsEditing itself.
     /// </summary>
     [Fact]
-    public void Build_GoalComposer_StartsInEditingMode_SoTypingWorks()
+    public void Build_GoalComposer_StartsFocused_SoTypingWorks()
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
         Assert.True(mw.Input.HasFocus, "composer must hold focus");
-        Assert.True(mw.Input.IsEditing, "composer must be in editing mode or typed characters are discarded");
     }
 
     /// <summary>
@@ -89,40 +88,6 @@ public class MainWindowTests
         mw.FocusJobs();
 
         Assert.True(mw.Input.HasFocus, "focus must stay on the composer — the job panel is not displayed");
-        Assert.True(mw.Input.IsEditing, "and it must still be typable");
-    }
-
-    /// <summary>F4 returns focus to the composer and restores editing mode.</summary>
-    [Fact]
-    public void FocusChat_ReturnsAndRestoresEditing()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        mw.Input.IsEditing = false;
-        mw.FocusChat();
-
-        Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing, "returning focus must restore editing mode, or typing dies again");
-    }
-
-    /// <summary>
-    /// Ctrl+N clears the composer for a fresh goal and returns it to a typable state.
-    /// </summary>
-    [Fact]
-    public void NewGoal_ClearsComposer_AndRestoresEditing()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        mw.Input.Content = "half-typed goal";
-        mw.NewGoal();
-
-        Assert.True(string.IsNullOrEmpty(mw.Input.Content));
-        Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing);
     }
 
     /// <summary>
@@ -199,12 +164,12 @@ public class MainWindowTests
         mw.Build();
 
         Assert.False(mw.SubmissionEnabled);
-        var disabledPlaceholder = mw.Input.PlaceholderText;
+        var disabledPlaceholder = mw.Input.Placeholder;
 
         mw.SetSubmissionEnabled(true);
 
         Assert.True(mw.SubmissionEnabled);
-        Assert.NotEqual(disabledPlaceholder, mw.Input.PlaceholderText);
+        Assert.NotEqual(disabledPlaceholder, mw.Input.Placeholder);
     }
 
     [Fact]
@@ -220,7 +185,6 @@ public class MainWindowTests
         Assert.True(mw.Chat.MessageIds.Count > before, "ShowHelp must post a message to the transcript");
         // ShowHelp ends by returning focus to the composer — otherwise F1 would leave the app untypable.
         Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing);
     }
 
     // --- Task 11: F6 diagnose, status-bar cost --------------------------------------------------
@@ -283,48 +247,6 @@ public class MainWindowTests
         // NO content accessor) — the tmux drive checks the wording. Here we assert it still posts and
         // still returns the composer to a typable state.
         Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing);
-    }
-
-    /// <summary>
-    /// F6's handler must find "the focused job" from wherever focus currently sits inside a job
-    /// block (the block itself, or one of its buttons) — not just the block's own direct focus.
-    /// FocusPath is the ancestor chain from the window root to the focused control, so walking it
-    /// for a JobBlockControl covers both cases without MainWindow needing to know JobBlockControl's
-    /// internal layout.
-    /// </summary>
-    [Fact]
-    public void FocusedJobId_FindsJobBlock_AnywhereInFocusPath()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        mw.JobPanel.SetJobs(new[]
-        {
-            new CxAgent.Core.Models.Job
-            {
-                Id = "j1", GoalId = "g1", PluginType = "shell", DisplayName = "Demo",
-                State = CxAgent.Core.Models.JobState.Failed,
-            },
-        });
-
-        mw.FocusJobs();
-        Assert.True(mw.JobPanel.TryGetBlock("j1", out var block));
-        mw.Window!.FocusManager.SetFocus(block, SharpConsoleUI.Controls.FocusReason.Programmatic);
-
-        Assert.Equal("j1", mw.FocusedJobId());
-    }
-
-    [Fact]
-    public void FocusedJobId_Null_WhenNoJobBlockInFocusPath()
-    {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        // Composer, not a job block, holds focus after Build().
-        Assert.Null(mw.FocusedJobId());
     }
 
     // --- Task 3: prompt control / composer swap --------------------------------------------------
@@ -352,7 +274,6 @@ public class MainWindowTests
 
         mw.RestoreComposer(built);
         Assert.True(mw.Input.HasFocus, "composer must come back focused");
-        Assert.True(mw.Input.IsEditing, "…and EDITING, or typing dies (D10)");
     }
 
     [Fact]
@@ -360,12 +281,12 @@ public class MainWindowTests
     {
         // The prompt interrupts mid-thought; the half-typed goal must survive the round trip.
         var mw = BuiltMainWindow();
-        mw.Input.Content = "half-typed goal";
+        mw.Input.Input = "half-typed goal";
         var prompt = new PermissionPromptControl(ShellRequest("ls"));
         var built = prompt.BuildContent();
         mw.ShowPermissionPrompt(built);
         mw.RestoreComposer(built);
-        Assert.Equal("half-typed goal", mw.Input.Content);
+        Assert.Equal("half-typed goal", mw.Input.Input);
     }
 
     [Fact]
@@ -396,7 +317,6 @@ public class MainWindowTests
 
         Assert.Null(ex);
         Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing);
     }
 
     /// <summary>
@@ -456,48 +376,42 @@ public class MainWindowTests
         // The correct call — passing the SAME instance Show received — still works afterwards.
         mw.RestoreComposer(built);
         Assert.True(mw.Input.HasFocus);
-        Assert.True(mw.Input.IsEditing);
     }
 
     [Fact]
-    public void PermissionPrompt_DimsTheTranscriptAndClearsItOnRestore()
+    public void PermissionPrompt_IsRaisedOntoItsOwnSurface()
     {
-        // A permission prompt is the one moment the app stops and asks, and it rendered with the
-        // same weight as the scrollback above it. The dim is how the cx family marks a modal.
-        //
-        // The LIFECYCLE is what can regress silently: a dim left attached keeps the transcript grey
-        // over a session that is no longer asking anything, and there is no error when it happens.
+        // REPLACES A FULL-SCREEN DIM. Overlaying everything above the prompt darkened the whole
+        // transcript to draw attention to six rows, and its edge had to be computed from the
+        // prompt's laid-out bounds — so it moved with the height of whatever command was being
+        // asked about. Raising the prompt says the same thing locally, with nothing else moving.
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
-        var prompt = SharpConsoleUI.Builders.Controls.Markup().AddLine("Run shell command?").Build();
+        // THE REAL PROMPT, not a bare markup control. The elevation is set where the prompt is
+        // BUILT — a prompt owns its own appearance — so asserting it through a stand-in control
+        // tested the fallback in MainWindow rather than the thing that actually ships.
+        var prompt = new CxAgent.UI.PermissionPromptControl(
+            new CxAgent.Core.Permissions.PermissionRequest(
+                CxAgent.Core.Permissions.PermissionKind.Shell, "ls /", "ls /"),
+            offerTrust: false);
+        var content = prompt.BuildContent();
 
-        mw.ShowPermissionPrompt(prompt);
-        Assert.True(mw.IsDimmed, "showing a permission prompt must dim the transcript");
-
-        mw.RestoreComposer(prompt);
-        Assert.False(mw.IsDimmed, "restoring the composer must clear the dim");
+        mw.ShowPermissionPrompt(content);
+        Assert.Equal(CxAgent.UI.ColorScheme.PromptSurface,
+            ((SharpConsoleUI.Controls.ScrollablePanelControl)content).BackgroundColor);
     }
 
     [Fact]
-    public void PermissionPrompt_DimIsNotStackedByASecondShow()
+    public void PromptSurface_IsRaisedAboveTheComposerItReplaces()
     {
-        // ShowPermissionPrompt no-ops when one is already showing (a caller bug it chooses to
-        // survive). The dim must follow that rule too — two handlers would darken twice and only
-        // one would ever be removed.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(Sys(), res, Logs());
-        mw.Build();
-
-        var first = SharpConsoleUI.Builders.Controls.Markup().AddLine("first").Build();
-        var second = SharpConsoleUI.Builders.Controls.Markup().AddLine("second").Build();
-
-        mw.ShowPermissionPrompt(first);
-        mw.ShowPermissionPrompt(second);   // no-op
-        mw.RestoreComposer(first);
-
-        Assert.False(mw.IsDimmed);
+        // The prompt must be a step UP from the surface it takes the place of, or the elevation
+        // says nothing. Derived from ComposerSurface rather than picked, so the two cannot drift.
+        Assert.True(
+            SharpConsoleUI.Helpers.PaletteColors.Luminance(CxAgent.UI.ColorScheme.PromptSurface) >
+            SharpConsoleUI.Helpers.PaletteColors.Luminance(CxAgent.UI.ColorScheme.ComposerSurface),
+            "the permission prompt must sit above the composer, not level with it");
     }
 
     [Fact]

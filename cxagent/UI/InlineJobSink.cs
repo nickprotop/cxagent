@@ -309,7 +309,20 @@ public sealed class InlineJobSink : IJobPanel
         return output.TryGetValue("content", out var c) ? c?.ToString() : null;
     }
 
-    public static string? BodyFor(Job job)
+    public static string? BodyFor(Job job) => BodyFor(job, forDisplay: true);
+
+    /// <summary>
+    /// A job's body — the expanded block's content.
+    /// </summary>
+    /// <param name="forDisplay">
+    /// True for what the user READS; false for what the row is MEASURED by.
+    ///
+    /// <para>The two diverged when a shell body gained its "$ command" preamble: that is presentation,
+    /// and folding it into the measurement made "echo hello" — a one-line result that belongs inline —
+    /// report "5 lines, 34 chars" and open an expandable block over nothing. The decoration must not
+    /// decide whether the thing it decorates is worth decorating.</para>
+    /// </param>
+    public static string? BodyFor(Job job, bool forDisplay)
     {
         var output = job.Result?.Output;
 
@@ -342,6 +355,24 @@ public sealed class InlineJobSink : IJobPanel
 
         if (output is null) return null;
         if (!output.TryGetValue("content", out var content)) return null;
+
+        // A SHELL BODY LEADS WITH ITS COMMAND. The header carries it too, but the header is one line
+        // and a command is not: "for i in 1 2 3; do echo …" truncates at the width of the row, so the
+        // one thing the output cannot be read without is the thing that gets clipped. Expanding is
+        // the moment the user wants the detail — showing what RAN above what it printed is the whole
+        // point of opening it.
+        //
+        // Shell only. A read_file's path fits the header and repeating it would be noise; a worker's
+        // body is prose it composed, and prefixing that with its own invocation reads as machinery.
+        if (forDisplay
+            && job.PluginType == "shell"
+            && job.Parameters.Get<string>("command", "") is { Length: > 0 } command)
+        {
+            var ran = $"$ {command.TrimEnd()}";
+            var printed = content?.ToString();
+
+            return string.IsNullOrWhiteSpace(printed) ? ran : ran + "\n\n" + printed;
+        }
 
         var text = content?.ToString();
         return string.IsNullOrWhiteSpace(text) ? null : text;
@@ -501,10 +532,19 @@ public sealed class InlineJobSink : IJobPanel
         var name = SharpConsoleUI.Parsing.MarkupParser.Escape(Title(job));
 
         if (!IsTerminal(job.State))
-            // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick, and the framework default, so the tag needs no
-            // style argument. Single-cell like Arc, so the text after it does not shift as it
-            // animates (Dots is three columns wide and does exactly that).
-            return $"[spinner] {author}  {name}";
+            // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick. Single-cell like Arc, so the text after it does
+            // not shift as it animates (Dots is three columns wide and does exactly that).
+            //
+            // THE INTERVAL IS EXPLICIT, and it matches Braille's own default rather than overriding
+            // it. What actually made the spinner crawl was not the interval at all: CollapsiblePanel
+            // parses its own header markup and was never registered as an inline-spinner host, so the
+            // clock ticked on time and had nobody to invalidate — the glyph advanced only when the
+            // app's one-second panel clock happened to dirty the window. Fixed in the framework.
+            //
+            // Stated here anyway because the clock ticks at the SHORTEST interval any parsed tag
+            // reports, so this is the app declaring the repaint cadence it wants rather than
+            // inheriting whatever else is on screen.
+            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}";
 
         var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
         var state = job.State switch
@@ -526,10 +566,16 @@ public sealed class InlineJobSink : IJobPanel
         // opencode does exactly this (its completed rows drop to textMuted while active rows hold
         // theme.text) and it is the single mechanic that makes a long session readable.
         //
-        // A FAILURE DOES NOT RECEDE. It is the one finished row the user still has to act on, so it
-        // keeps full weight — muting it would hide the thing most worth seeing.
+        // A FAILURE IS RED, not merely un-muted. "Does not recede" was implemented as "is not grey",
+        // which left it the same colour as ordinary text — so the one finished row the user still has
+        // to act on looked exactly like the nineteen that succeeded.
+        //
+        // THE MARK AND THE STATE, not the whole row: the tool's name and its arguments are still just
+        // information, and colouring a long JSON blob red makes the row harder to read rather than
+        // easier to spot. The two ends carry it.
         if (job.State == JobState.Failed)
-            return $"{mark} {author}  {name}  ·  {state}{duration}";
+            return $"[{ColorScheme.DangerMarkup}]{mark}[/] {author}  {name}  ·  "
+                 + $"[{ColorScheme.DangerMarkup}]{state}{duration}[/]";
 
         return $"[{ColorScheme.MutedMarkup}]{mark} {author}  {name}  ·  {state}{duration}[/]";
     }
@@ -539,7 +585,9 @@ public sealed class InlineJobSink : IJobPanel
 
     private static string? OneLineRow(Job job)
     {
-        var body = BodyFor(job);
+        // MEASURED, not displayed: the shell preamble is presentation and must not push an otherwise
+        // inline result into an expandable block. See BodyFor's forDisplay parameter.
+        var body = BodyFor(job, forDisplay: false);
         if (body is null) return string.Empty;   // header says it all; no result line
 
         var trimmed = body.Trim();
@@ -556,6 +604,19 @@ public sealed class InlineJobSink : IJobPanel
             // is exempt: its long output is the prose it composed, the answer that was asked for, so
             // it keeps its expandable block. That is the whole tool-vs-worker distinction.
             if (job.PluginType == "llm_agent") return null;
+
+            // A FAILURE IS NEVER SUMMARISED BY SIZE. The count answers "how much came back", which is
+            // the right question for a bulky success and meaningless for an error — a missing file
+            // rendered as "1 lines, 68 chars", measuring the reason instead of stating it. The first
+            // line carries the cause; later lines are usually stack frames or a stderr tail, and they
+            // stay in the expandable body.
+            if (job.State == JobState.Failed)
+            {
+                var first = trimmed.Split('\n')[0].Trim();
+                return first.Length > MaxInlineResultChars
+                    ? $"⎿  {first[..MaxInlineResultChars]}…"
+                    : $"⎿  {first}";
+            }
 
             // Count the RAW output, not the clipped body. BodyFor clips to MaxBodyChars before
             // returning, so counting `trimmed` reported the size of MY OWN TRUNCATION — every row
@@ -614,6 +675,9 @@ public sealed class InlineJobSink : IJobPanel
 
         return blockers.Count == 0 ? null : string.Join(", ", blockers);
     }
+
+    /// <summary>Milliseconds per spinner frame — Braille's own default; see the tag that uses it.</summary>
+    private const int SpinnerIntervalMs = 100;
 
     private string StatusText(Job job)
     {
@@ -687,11 +751,18 @@ public sealed class InlineJobSink : IJobPanel
     /// user asked for — not an echo of something already on disk. That is the whole distinction
     /// between a tool and a worker, and it is why the two are labelled differently.</para>
     ///
-    /// <para>Failure always wins: a failed job keeps its error and its buttons whatever its size.</para>
+    /// <para>FAILURE IS NO LONGER EXEMPT. It was — "a failed job keeps its error and its buttons
+    /// whatever its size" — and the buttons are gone (see the NO INLINE BUTTONS note above), so the
+    /// exemption was reserving a footer for an affordance that no longer exists. What it actually
+    /// bought was four lines to say one thing: the header already ends in "failed · 0.0s", then the
+    /// error, then a full-width rule, then "failed · 0.0s" AGAIN. Measured live on a missing file.
+    ///
+    /// <para>A failed row is now compact on the same terms as any other: the header carries the
+    /// outcome and one line carries the reason. Nothing is hidden — the error is the body, and it
+    /// is what the model reads on the next consult either way.</para>
     /// </summary>
     private static bool IsCompactRow(Job job)
     {
-        if (job.State == JobState.Failed) return false;
         if (OneLineRow(job) is not null) return true;
 
         // A tool's bulky output is an echo; a worker's is the answer.

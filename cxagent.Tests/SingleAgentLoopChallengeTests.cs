@@ -170,6 +170,66 @@ public class SingleAgentLoopChallengeTests
     }
 
     [Fact]
+    public async Task APassingBuildDoesNotEraseAFailingTEST()
+    {
+        // THE LIVE FAILURE, from a drive against a ConsoleEx clone. The agent fixed a bug, wrote a
+        // test, ran `dotnet test` (1 failed), then rebuilt the test project to keep iterating — and
+        // that BUILD SUCCEEDED. One slot held both verdicts, so the passing build overwrote the
+        // failing test, the gate saw a clean tree, and the goal reported done with its own new test
+        // red. Exactly the "run says done, disk says otherwise" failure this gate exists to stop.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "x.cs");
+            File.WriteAllText(f, "old");
+
+            var provider = new MockLlmProvider();
+            provider.EnqueueResponse(Write(f, "new"));
+            provider.EnqueueResponse(ShellCall("dotnet test"));       // fails in the sandbox
+            // A CLEAN BUILD AFTERWARDS. Exits 0 and prints no failure marker, so on its own it is a
+            // passing verdict — it must not be allowed to answer for the test run.
+            provider.EnqueueResponse(ShellCall("dotnet build --help >/dev/null 2>&1 || true"));
+            for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
+
+            var sink = new RecordingSink();
+            var state = await Build(provider, sink).RunAsync("gt", Goal("fix the parser bug"),
+                CancellationToken.None);
+
+            Assert.Equal(GoalState.Failed, state);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ATestThatWasFIXEDAfterFailingStillCompletes()
+    {
+        // The other half of the same rule: the verdict is the LAST test run, not any test run.
+        // Tracking tests separately must not turn a fixed failure into a permanent one.
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "x.cs");
+            File.WriteAllText(f, "old");
+
+            var provider = new MockLlmProvider();
+            provider.EnqueueResponse(Write(f, "broken"));
+            provider.EnqueueResponse(ShellCall("dotnet test"));       // fails in the sandbox
+            provider.EnqueueResponse(Write(f, "fixed"));
+            provider.EnqueueResponse(ShellCall("dotnet test --help >/dev/null 2>&1 || true"));
+            for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
+
+            var sink = new RecordingSink();
+            var state = await Build(provider, sink).RunAsync("gu", Goal("fix the parser bug"),
+                CancellationToken.None);
+
+            Assert.Equal(GoalState.Completed, state);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task AGoalThatNeverBuiltIsNotFailedForIt()
     {
         // No build was run, so there is no verdict -- and inventing one would fail every goal in a

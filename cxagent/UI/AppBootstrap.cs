@@ -241,10 +241,10 @@ public static class AppBootstrap
         // above (RetryCount < MaxRetries), the user is explicitly asking, so this must work on any
         // Failed job regardless of retry headroom — gating it here would make F6 silently do nothing
         // on exactly the exhausted jobs a user most wants explained.
-        // Diagnose ONE job by id. Extracted from the F6 handler so the inline Diagnose button on a
-        // failed job's message can reach the same flow: the button knows exactly WHICH job it belongs
-        // to, and routing it through "whatever is focused" would diagnose the wrong one whenever focus
-        // sat elsewhere — which, for a button living in the transcript, is most of the time.
+        // Diagnose ONE job by id — reached by the inline Diagnose button on a failed job's message,
+        // which knows exactly WHICH job it belongs to. It was once shared with an F6 "diagnose
+        // whatever has focus" key; that key is gone (see the shortcut registrations below), and
+        // resolving by focus was always the weaker addressing anyway.
         async Task DiagnoseByIdAsync(string jobId)
         {
             if (runner is null) return;
@@ -263,11 +263,6 @@ public static class AppBootstrap
 
             await DiagnoseJobAsync(job, dag, scheduler!, activeProvider, isManual: true, cts.Token);
         }
-
-        // F6 keeps its meaning — diagnose whatever job has focus — by resolving focus to an id and
-        // handing it to the shared flow above.
-        mainWindow.DiagnoseFocusedJob = () =>
-            mainWindow.FocusedJobId() is { } focused ? DiagnoseByIdAsync(focused) : Task.CompletedTask;
 
         // The same buttons already exist on every Failed job block (JobBlockControl) and were wired
         // to re-raise as JobPanelControl.DiagnoseRequested/RetryRequested/SkipRequested — but nothing
@@ -403,24 +398,55 @@ public static class AppBootstrap
                         $"[yellow]Could not skip job '{jobId}' — it may already be Succeeded or Running.[/]"));
         }
 
-        // Submit model: plain Enter SUBMITS, Shift+Enter inserts a newline (the chat-UI convention,
-        // portable across terminals). Ctrl+Enter can't be used — most Unix terminals send bare '\r'
-        // for both Enter and Ctrl+Enter with no Control modifier, so it's indistinguishable. We
-        // intercept Enter in PreviewKeyPressed (fires BEFORE the focused control) and set e.Handled
-        // so the MultilineEditControl never inserts its own newline; we insert the newline ourselves
-        // on Shift+Enter. Gated to when the composer has focus, so Enter in the job panel (expand
+        // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
+        // next one — the shell's own convention, and Claude Code's.
+        //
+        // Shift+Enter was the first answer and it does not work here. The reasoning was that it is
+        // "the chat-UI convention, portable across terminals", but that is a GUI assumption: most
+        // Unix terminals send a bare '\r' for Enter with no modifier bits at all, so Shift+Enter and
+        // Enter are the same byte and the app cannot tell them apart. It was documented in three
+        // places and reachable in none. (Ctrl+Enter fails for exactly the same reason, which the
+        // original comment already noted without following the observation through.)
+        //
+        // A trailing '\' needs no modifier to survive, which is the whole point: it is IN THE TEXT.
+        // Every terminal delivers it, and any user who has continued a shell command already knows
+        // it. We intercept Enter in PreviewKeyPressed (fires BEFORE the focused control) and set
+        // e.Handled so the MultilineEditControl never inserts its own newline; we insert the newline
+        // ourselves when the text ends in a backslash. Gated to when the composer has focus, so Enter in the job panel (expand
         // block) still works. Registered UNCONDITIONALLY (not just when a provider is configured at
         // startup) because it closes over the `runner` field above, so a provider wired in later via
         // first-run setup or F5 settings becomes usable without re-registering anything.
+        // THE SLASH MENU. Its keys are handled by the portal's own content, NOT here: an open
+        // desktop portal captures keyboard input before PreviewKeyPressed is reached, so a hook in
+        // this handler would never fire while the menu is up. See CommandMenuContent.
+        var commandMenu = new CommandMenu(system, window, mainWindow.Input) { Composer = mainWindow.Input };
+        commandMenu.Chosen += (_, cmd) =>
+        {
+            // Choosing fills the composer rather than dispatching. The command may take arguments,
+            // and a menu that ran on selection would make "/compress" unreachable-with-an-argument
+            // and give the user no chance to change their mind. One more Enter runs it.
+            mainWindow.Input.Input = cmd.Name;
+        };
+        mainWindow.Input.InputChanged += (_, text) => commandMenu.Sync(text);
+
         window.PreviewKeyPressed += (_, e) =>
         {
+
             if (e.KeyInfo.Key != ConsoleKey.Enter) return;
             if (!mainWindow.Input.HasFocus) return;   // let the job panel etc. handle Enter when focused there
 
-            if (e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift))
+            // A LINE ENDING IN '\' CONTINUES. The backslash is consumed — it is punctuation for the
+            // editor, not part of the goal — and replaced by the newline it asked for. Trailing
+            // whitespace is ignored when looking for it, because a stray space after the backslash is
+            // invisible and would otherwise silently submit the goal instead of continuing it.
+            if (ComposerContinuation(mainWindow.Input.Input) is { } continued)
             {
-                // Shift+Enter → newline (the MLE bubbles modified Enter instead of inserting, so we do it).
-                mainWindow.Input.Content = (mainWindow.Input.Content ?? "") + "\n";
+                // The caret follows on its own: PromptControl's Input setter puts it at the end of
+                // the new value. MultilineEditControl left it at 0,0, so everything typed after a
+                // continuation was inserted at the START — "first line \" + Enter + "second line"
+                // produced "second linefirst line", and it needed an explicit cursor move here.
+                mainWindow.Input.Input = continued;
+
                 e.Handled = true;
                 return;
             }
@@ -428,37 +454,63 @@ public static class AppBootstrap
             // Plain Enter → submit.
             e.Handled = true;   // consume it so the MLE doesn't also insert a newline
             if (runner is null || !mainWindow.SubmissionEnabled) return;
-            var goalText = mainWindow.Input.Content;
+            var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
-            mainWindow.Input.Content = "";   // clear the composer for the next goal
+            // RECORD IT FOR ↑/↓ OURSELVES. PromptControl records history inside its own Submit(),
+            // which this handler pre-empts — we consume Enter before the control sees it, so nothing
+            // would ever reach the history and the feature would be silently dead.
+            mainWindow.Input.RecordHistory(goalText);
 
-            // /compress means COMPRESS — it summarises through the model, exactly as auto-compression
-            // does, rather than deleting the oldest half. Truncation survives only as the fallback
-            // when that call fails. Handled before TryHandle because it is the one command that needs
-            // a provider call, and this handler is synchronous.
-            if (SessionCommands.IsCompress(goalText))
+            mainWindow.Input.Input = "";   // clear the composer for the next goal
+            mainWindow.RetireComposerPlaceholder();
+
+            // ONE DISPATCH, DRIVEN BY THE OUTCOME. This was three ordered checks — IsCompress, then a
+            // Match whose Quit case was an outcome and whose /help case was a NAME comparison, then
+            // TryHandle — and the order between them was load-bearing without saying so. Adding a
+            // command meant finding the right rung. Now the command's own outcome says who services
+            // it, which is also what lets a menu dispatch a chosen row through this same path.
+            if (SessionCommands.Match(goalText) is { } command)
             {
-                var beforeCount = conversation.Count;
-                _ = SessionCompressor.CompressAsync(conversation, activeProvider!, cts.Token, usage =>
-                    {
-                        runner?.Ledger.Record(usage);
-                        if (runner is not null)
-                            system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(runner.Ledger.TotalTokens));
-                    })
-                    .ContinueWith(t => system.EnqueueOnUIThread(() =>
-                    {
-                        var r = t.IsCompletedSuccessfully ? t.Result : default;
-                        mainWindow.Chat.AddMessage(ChatRole.System,
-                            conversation.Count < beforeCount
-                                ? $"{(r.Summarised ? "Summarised" : "Truncated (summary failed)")}: "
-                                  + $"{beforeCount} messages → {conversation.Count}."
-                                : "Conversation is already short — nothing to compress.");
-                    }), TaskScheduler.Default);
-                return;
+                switch (command.Outcome)
+                {
+                    case CommandOutcome.Quit:
+                        cts.Cancel();
+                        system.Shutdown();
+                        return;
+
+                    case CommandOutcome.NeedsWindow:
+                        mainWindow.ShowHelp();
+                        return;
+
+                    case CommandOutcome.NeedsProvider:
+                        // /compress means COMPRESS — it summarises through the model, exactly as
+                        // auto-compression does, rather than deleting the oldest half. Truncation
+                        // survives only as the fallback when that call fails. It is out here rather
+                        // than in SessionCommands because that type is synchronous and provider-free
+                        // by design — which is what keeps it testable without a window.
+                        var beforeCount = conversation.Count;
+                        _ = SessionCompressor.CompressAsync(conversation, activeProvider!, cts.Token, usage =>
+                            {
+                                runner?.Ledger.Record(usage);
+                                if (runner is not null)
+                                    system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(runner.Ledger.TotalTokens));
+                            })
+                            .ContinueWith(t => system.EnqueueOnUIThread(() =>
+                            {
+                                var r = t.IsCompletedSuccessfully ? t.Result : default;
+                                mainWindow.Chat.AddMessage(ChatRole.System,
+                                    conversation.Count < beforeCount
+                                        ? $"{(r.Summarised ? "Summarised" : "Truncated (summary failed)")}: "
+                                          + $"{beforeCount} messages → {conversation.Count}."
+                                        : "Conversation is already short — nothing to compress.");
+                            }), TaskScheduler.Default);
+                        return;
+                }
             }
 
-            // The remaining session commands (/clear) intercept BEFORE RunAsync: they cost nothing —
-            // no goal, no provider call, no tokens — and act on `conversation` directly.
+            // Everything else that begins with a slash — /clear, and any unrecognised command, which
+            // gets the "available commands" reply rather than being sent to the model as a task.
+            // Costs nothing: no goal, no provider call, no tokens.
             if (SessionCommands.TryHandle(goalText, conversation, out var commandReply))
             {
                 mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
@@ -485,14 +537,22 @@ public static class AppBootstrap
         // Ctrl+N (0x0E) doesn't collide with a key, but the driver's raw reader didn't deliver it
         // either, so it's avoided too. F-keys arrive as escape sequences — unambiguous — and Ctrl+Q
         // (0x11) is proven working, so it keeps the quit binding.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2, mainWindow.NewGoal);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusChat);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5, () => { _ = mainWindow.ShowSettings?.Invoke(); });
-        // F6 — diagnose the focused failed job. Fire-and-forget, same as every other action handler:
-        // InstallSynchronizationContext:true makes blocking here a self-deadlock (see cc8b004).
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F6, () => { _ = mainWindow.DiagnoseFocusedJob?.Invoke(); });
+        // F2, F4 and F6 are GONE, and F6 was DEAD CODE the whole time.
+        //
+        // F6 diagnosed "whatever job has focus", resolved through FocusedJobId() — which walks the
+        // focus path for a JobBlockControl. Those are created only by JobPanelControl, and the job
+        // panel is never placed in the grid: jobs render INLINE in the transcript. So the lookup
+        // always returned null and the key was a no-op in every mode, while Help advertised it. The
+        // same flow is still reachable from the Diagnose button on a failed job's own block, which
+        // addresses its job by id rather than by focus.
+        //
+        // F2 cleared the composer and refocused it; F4 focused the composer. Both were routes back
+        // from a focus that can no longer happen — the job panel they existed to return from is gone,
+        // and the composer now keeps focus across submits (UnfocusOnEnter = false). Clearing is
+        // Ctrl+U, and history on the up-arrow made "empty the box" the rarer intent anyway.
         // F7/F8 are GONE. They existed because roles and providers were separate dialogs, and the
         // old comment justified them as "each does one thing and the status bar can name both" —
         // neither is true now. Both opened the SAME consolidated dialog, differing only in which
@@ -756,4 +816,33 @@ public static class AppBootstrap
         }
     }
 
+    /// <summary>
+    /// The composer's line-continuation rule: the text to put back, or null to SUBMIT.
+    ///
+    /// <para>Extracted from the key handler because the rule is pure string logic and the handler
+    /// needs a live window, a focused control and a key event to reach it — a lot of scaffolding for
+    /// "does this end in a backslash". Public rather than internal because this assembly grants no
+    /// InternalsVisibleTo, and the ForTest suffix follows the seam convention used elsewhere here.</para>
+    /// </summary>
+    public static string? ComposerContinuationForTest(string? typed) => ComposerContinuation(typed);
+
+    private static string? ComposerContinuation(string? typed)
+    {
+        var text = (typed ?? "").TrimEnd();
+
+        // TRAILING WHITESPACE IS IGNORED when looking for the backslash. A stray space after it
+        // is invisible, and without this the goal would submit instead of continuing — a
+        // difference the user cannot see and cannot undo.
+        if (!text.EndsWith('\\')) return null;
+
+        // AN ESCAPED BACKSLASH IS NOT A CONTINUATION. "C:\\path\\\\" ends in a literal
+        // backslash the user typed on purpose; only an ODD number of them is the line-continuation
+        // marker, exactly as a shell reads it.
+        var run = 0;
+        for (var i = text.Length - 1; i >= 0 && text[i] == '\\'; i--) run++;
+        if (run % 2 == 0) return null;
+
+        // The marker is punctuation for the editor, not part of the goal, so it is consumed.
+        return text[..^1] + "\n";
+    }
 }

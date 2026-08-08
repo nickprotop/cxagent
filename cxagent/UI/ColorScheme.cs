@@ -1,6 +1,8 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Themes;
 
+using SharpConsoleUI.Helpers;
+
 namespace CxAgent.UI;
 
 /// <summary>
@@ -45,6 +47,24 @@ public static class ColorScheme
 
     /// <summary>The accent, as markup. Kept beside <see cref="Accent"/> so the two cannot drift.</summary>
     public const string AccentMarkup = "cyan1";
+
+    /// <summary>
+    /// Failure, as markup — for text inside a string, where <see cref="Destructive"/> cannot reach.
+    ///
+    /// <para>A failed tool row used to be distinguished only by NOT being muted, on the reasoning
+    /// that it must not recede. True but insufficient: "does not recede" left it the same colour as
+    /// ordinary text, so the one row the user has to act on looked like every other finished one.</para>
+    /// </summary>
+    public const string DangerMarkup = "red";
+
+    /// <summary>
+    /// The accent as an RGB value — cyan1 is #00ffff — for the places a markup NAME cannot go.
+    ///
+    /// <para>Interpolation needs channels. The banner fades its wordmark from this to
+    /// <see cref="Heading"/> across its width, and a per-column colour cannot be expressed as a
+    /// palette name, so the value is spelled once here rather than inline at the one call site.</para>
+    /// </summary>
+    public static readonly Color AccentRgb = new(0x00, 0xff, 0xff);
 
     /// <summary>
     /// Colour for a percentage readout, by how alarming it is. cxtop's thresholds — teal below 60,
@@ -123,6 +143,74 @@ public static class ColorScheme
 
     /// <summary>Table and rule borders. Recedes.</summary>
     public static readonly Color MarkdownBorder = new(0x48, 0x48, 0x48);
+
+    /// <summary>
+    /// The line between the transcript and the composer.
+    ///
+    /// <para>DERIVED, not picked. It is the two surfaces it divides, mixed and lifted a little —
+    /// which is what a divider between them actually is, and it means the line follows if either
+    /// surface is ever retuned instead of quietly falling out of step with a hardcoded hex.</para>
+    ///
+    /// <para>ColorRole.Secondary — what it used first — is a THEME colour meant to carry meaning,
+    /// and a divider carries none; borrowing it made the line the most saturated thing on a screen
+    /// whose whole point is the text above it.</para>
+    /// </summary>
+    public static readonly Color Separator =
+        PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
+
+    /// <summary>
+    /// The permission prompt's surface: raised, but only just.
+    ///
+    /// <para>A prompt is the one moment the app stops and asks, and it needs to read as a different
+    /// plane rather than as more content in the column. Dimming everything else was the first answer
+    /// and it sat badly: it darkened a whole screen to highlight six rows, and the boundary between
+    /// dimmed and undimmed landed wherever the prompt's height happened to fall. Raising ONE surface
+    /// says the same thing, and nothing else on screen has to change.</para>
+    ///
+    /// <para>THE SEPARATOR'S COLOUR. A first attempt tinted the composer by 0.22 and read as a grey
+    /// box pasted over the app — louder than the question printed on it. The separator is already
+    /// the palette's answer to "one step up from these two surfaces", so reusing it gives the app
+    /// ONE raised tone instead of two nearly-equal ones kept in sync by hand.</para>
+    /// </summary>
+    public static readonly Color PromptSurface = Separator;
+
+    /// <summary>
+    /// The user's own turns: a flat block, a step above the transcript field.
+    ///
+    /// <para>opencode marks whose turn it is with a SURFACE rather than a border. Ours drew a rounded
+    /// box, which is chrome around the text instead of the text sitting on its own ground — and a box
+    /// competes with the code blocks and tables that appear inside assistant answers, so the loudest
+    /// frame on screen belonged to the shortest message.</para>
+    ///
+    /// <para>Derived from the chat field, like every other surface here, so retuning the field carries
+    /// through instead of leaving this behind.</para>
+    /// </summary>
+    /// <summary>
+    /// The grip: the vertical rule down the prompt's left edge.
+    ///
+    /// <para>opencode marks the two surfaces the USER owns — their turn and the composer — with a
+    /// rule at the left. It is the same idea as <see cref="UserSurface"/> in a different register:
+    /// the surface says "this block is yours", the grip says "this is where you type".</para>
+    ///
+    /// <para>Accent, because it is the one piece of chrome that tracks the app's active colour, and
+    /// a grip that recedes has no reason to exist.</para>
+    /// </summary>
+    public static readonly Color Grip = AccentRgb;
+
+    public static readonly Color UserSurface = PaletteColors.Tint(ChatSurface, 0.10);
+
+    /// <summary>
+    /// The assistant's prose: the same idea as <see cref="UserSurface"/>, one step quieter.
+    ///
+    /// <para>Both turns get ground of their own so the conversation reads as alternating blocks, but
+    /// the user's sits higher: their turns are short and scanned for orientation ("what did I ask?"),
+    /// while the assistant's are long and read continuously. A lighter block behind a screenful of
+    /// prose would be the brightest region on the display.</para>
+    ///
+    /// <para>Tool rows are deliberately NOT given a surface — they are chrome, and they stay on the
+    /// field so the two conversational voices are the only things raised off it.</para>
+    /// </summary>
+    public static readonly Color AssistantSurface = PaletteColors.Tint(ChatSurface, 0.05);
 
     /// <summary>
     /// Reasoning and any "thinking" label. Amber — opencode's warning hue, which it reuses for

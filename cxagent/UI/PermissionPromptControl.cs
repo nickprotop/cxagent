@@ -92,6 +92,13 @@ public sealed class PermissionPromptControl
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
 
+        // ELEVATED, a step above the composer this replaces. A permission prompt is the one moment
+        // the app stops and asks, and it has to read as a different plane rather than as more
+        // content in the column. The previous answer dimmed the whole transcript behind it, which
+        // changed a screenful of state to say one thing and drew its edge from the prompt's own
+        // laid-out height. Raising this surface says it locally, with nothing else moving.
+        panel.BackgroundColor = ColorScheme.PromptSurface;
+
         var displayed = _request.Display.Length > MaxDisplayChars
             ? _request.Display[..MaxDisplayChars] + " …(truncated)"
             : _request.Display;

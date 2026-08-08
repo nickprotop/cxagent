@@ -33,7 +33,7 @@ public class SessionCommandsTests
         var conversation = new List<ChatMessage>();
         for (int i = 0; i < 20; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
 
-        Assert.True(SessionCommands.IsCompress("/compress"));
+        Assert.Equal(CommandOutcome.NeedsProvider, SessionCommands.Match("/compress")?.Outcome);
         Assert.True(SessionCommands.TryHandle("/compress", conversation, out _));
 
         // TryHandle must NOT truncate it — that would race the caller's summarisation and delete the
@@ -42,11 +42,11 @@ public class SessionCommandsTests
     }
 
     [Fact]
-    public void IsCompress_DoesNotMatchAnOrdinaryGoal()
+    public void CompressDoesNotMatchAnOrdinaryGoal()
     {
         // Same false-positive rule as the other commands: "compress the log files" is a GOAL.
-        Assert.False(SessionCommands.IsCompress("compress the log files"));
-        Assert.False(SessionCommands.IsCompress("what does /compress do?"));
+        Assert.Null(SessionCommands.Match("compress the log files"));
+        Assert.Null(SessionCommands.Match("what does /compress do?"));
     }
 
     [Fact]

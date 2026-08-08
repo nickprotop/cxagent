@@ -107,6 +107,90 @@ public class IndentShiftTests
         Assert.Equal(replacement, result);
     }
 
+    [Fact]
+    public void ARaggedMultiLinePatternStillPlacesAOneLineReplacement()
+    {
+        // THE LIVE FAILURE, from a drive against a ConsoleEx clone. The model sent a two-line pattern
+        // whose FIRST line it had de-indented but whose continuation still carried the file's own
+        // tabs — relative shape [0,+5] against the file's [0,+2]. The lines genuinely disagree, so
+        // refusing to derive one shift is right; what was wrong is what refusal then wrote.
+        //
+        // As-sent put the replacement at column 0 among neighbours three tabs deep. That is visibly
+        // broken, which was the intent — but in a real diff it reads as a deliberate edit, and it
+        // shipped alongside a reverted fix without anything flagging it.
+        var result = IndentShift.Apply(
+            matched: "\t\t\tColor bg = _backgroundColor\n\t\t\t\t\t?? (Container?.Background ?? Transparent);",
+            pattern: "Color bg = _backgroundColor\n\t\t\t\t\t?? (Container?.Background ?? Transparent);",
+            replacement: "Color bg = _backgroundColor ?? Transparent;");
+
+        Assert.Equal("\t\t\tColor bg = _backgroundColor ?? Transparent;", result);
+    }
+
+    [Fact]
+    public void AMultiLinePatternDeIndentedOnlyOnItsFIRSTLineIsStillPlaced()
+    {
+        // THE SECOND LIVE FAILURE, from a re-drive after the one-line fix. A model sent a three-line
+        // pattern whose FIRST line it had de-indented while lines 2 and 3 carried the file's real
+        // tabs — shape [+1,+3,+3] against the file's [+3,+3,+3]. No single shift explains that, so
+        // refusal is right; but the replacement was three lines, so the one-line rule did not apply
+        // and the ragged first line went in as sent: one tab among neighbours at three.
+        //
+        // It IS placeable, and without guessing. Every replacement line here keeps its pattern
+        // counterpart's indentation exactly, which says "leave this line's depth alone" — so each
+        // takes the depth of the FILE line that counterpart matched. Per line, from the file.
+        var result = IndentShift.Apply(
+            matched: "\t\t\tColor bg = A;\n\t\t\tColor fg = B;\n\t\t\tvar m = C;",
+            pattern: "\tColor bg = A;\n\t\t\tColor fg = B;\n\t\t\tvar m = C;",
+            replacement: "\tColor bg = D;\n\t\t\tColor fg = B;\n\t\t\tvar m = bg;");
+
+        Assert.Equal("\t\t\tColor bg = D;\n\t\t\tColor fg = B;\n\t\t\tvar m = bg;", result);
+    }
+
+    [Fact]
+    public void ALineTheModelDELIBERATELYReIndentedIsLeftAlone()
+    {
+        // The limit of the rule above, and what keeps it from being a guess. Rebasing is triggered by
+        // a replacement line MATCHING its pattern counterpart's indent — an explicit "unchanged".
+        // Where the model moved a line on purpose, its choice stands: re-indenting a body it chose to
+        // nest deeper would be exactly the silent reshaping this design exists to prevent.
+        var result = IndentShift.Apply(
+            matched: "\t\t\tif (x)\n\t\t\tGo();",
+            pattern: "\tif (x)\n\t\t\tGo();",
+            replacement: "\tif (x)\n\t\t\t\tGo();");   // second line deliberately deeper
+
+        // First line rebased to the file; second left exactly as the model wrote it.
+        Assert.Equal("\t\t\tif (x)\n\t\t\t\tGo();", result);
+    }
+
+    [Fact]
+    public void AMultiLineReplacementStillFallsBackToAsSent()
+    {
+        // The limit of the rule above. A one-line replacement has no SHAPE, so the file's line start
+        // places it unambiguously. A multi-line one does — and when the pattern's lines disagreed
+        // there is no basis for choosing it, so inventing one would be the silent reshaping this
+        // whole design exists to prevent. Visibly wrong is still the answer here.
+        const string replacement = "alpha();\nbeta();";
+        var result = IndentShift.Apply(
+            matched: "\t\talpha();\n\t\t\t\tbeta();",
+            pattern: "alpha();\nbeta();",
+            replacement: replacement);
+
+        Assert.Equal(replacement, result);
+    }
+
+    [Fact]
+    public void AMixedUnitRefusalStillPlacesAOneLiner()
+    {
+        // The other refusal path — the file's indent does not BEGIN with the sent indent (tabs vs
+        // spaces) — reaches the same conclusion for the same reason.
+        var result = IndentShift.Apply(
+            matched: "\t\tif (x)\n\t\t\tGo();",
+            pattern: "if (x)\n    Go();",
+            replacement: "if (y) Go();");
+
+        Assert.Equal("\t\tif (y) Go();", result);
+    }
+
     // --- Properties that must hold ---------------------------------------------------------------
 
     [Fact]

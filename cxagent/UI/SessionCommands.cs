@@ -14,21 +14,56 @@ namespace CxAgent.UI;
 /// </summary>
 public static class SessionCommands
 {
-    private const string ClearCommand = "/clear";
-    private const string CompressCommand = "/compress";
+    /// <summary>
+    /// Every command, in the order help and a palette should list them.
+    ///
+    /// <para>THE ONE SOURCE. The dispatcher, the unknown-command reply and the help text all read
+    /// this; each used to carry its own copy, and the reply's hardcoded "/clear, /compress" would
+    /// have gone stale on the next addition. A command palette is a filter over this list plus the
+    /// dispatch below — no new mechanism, which is why the data lives here rather than in a switch.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<SessionCommand> All =
+    [
+        new("/clear", "wipe the conversation", CommandOutcome.Handled),
+        new("/compress", "summarise the conversation to free up room", CommandOutcome.NeedsProvider),
+        new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
+        new("/exit", "quit cxagent", CommandOutcome.Quit),
+    ];
+
+    /// <summary>The command matching this input's first token, or null.</summary>
+    public static SessionCommand? Match(string input)
+    {
+        var token = FirstToken(input);
+        if (token.Length == 0) return null;
+
+        foreach (var c in All)
+            if (token.Equals(c.Name, StringComparison.OrdinalIgnoreCase))
+                return c;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Commands whose name starts with <paramref name="prefix"/> — for tab completion and, later, a
+    /// palette. An empty or bare-slash prefix offers everything.
+    /// </summary>
+    public static IReadOnlyList<SessionCommand> Matching(string prefix)
+    {
+        if (string.IsNullOrEmpty(prefix) || prefix == "/") return All;
+
+        var hits = new List<SessionCommand>();
+        foreach (var c in All)
+            if (c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                hits.Add(c);
+
+        return hits;
+    }
 
     /// <summary>
     /// True when <paramref name="input"/> was a recognized (or unrecognized) slash command — either
     /// way, the caller must NOT treat it as a goal. <paramref name="reply"/> is the chat message to
     /// display.
     /// </summary>
-    /// <summary>
-    /// True when <paramref name="input"/> is the /compress command, which the CALLER must service
-    /// asynchronously via <see cref="SessionCompressor.CompressAsync"/>. Split out because
-    /// <see cref="TryHandle"/> is sync (a key handler calls it) and summarising needs a provider call.
-    /// </summary>
-    public static bool IsCompress(string input) =>
-        FirstToken(input).Equals(CompressCommand, StringComparison.OrdinalIgnoreCase);
 
     private static string FirstToken(string input)
     {
@@ -54,26 +89,34 @@ public static class SessionCommands
         var end = trimmed.IndexOf(' ');
         var token = end < 0 ? trimmed : trimmed[..end];
 
-        switch (token.ToLowerInvariant())
+        if (Match(trimmed) is not { } command)
         {
-            case ClearCommand:
+            // An unrecognised slash is still a COMMAND ATTEMPT, never a goal: sending "/celar" to the
+            // model as a task is worse than saying it does not exist.
+            reply = $"Unknown command '{token}'. Available: {string.Join(", ", All.Select(c => c.Name))}.";
+            return true;
+        }
+
+        switch (command.Name)
+        {
+            case "/clear":
                 conversation.Clear();
                 reply = "Conversation cleared.";
                 return true;
 
-            case CompressCommand:
-                // Handled by the CALLER, asynchronously: /compress means COMPRESS — it summarises
-                // through the model like auto-compression does. Truncation is only the fallback when
-                // that call fails. TryHandle is synchronous (it is called from a key handler), so it
-                // reports the intent and lets the caller await SessionCompressor.
-                reply = "";
-                return true;
-
             default:
-                reply = $"Unknown command '{token}'. Available: {ClearCommand}, {CompressCommand}.";
+                // /compress, /help and /exit are all serviced by the CALLER: they need a provider, the
+                // window, or the process — none of which this type has, and deliberately so. It takes
+                // the raw conversation and returns a string, which is what makes it testable without a
+                // ConsoleWindowSystem. The outcome on the command says which.
+                reply = "";
                 return true;
         }
     }
+
+    /// <summary>The command list as help text, one indented line each.</summary>
+    public static string HelpLines(string markupColor) =>
+        string.Join('\n', All.Select(c => $"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary));
 
     /// <summary>
     /// Halves the conversation, dropping the OLDEST messages first and keeping the newest — the

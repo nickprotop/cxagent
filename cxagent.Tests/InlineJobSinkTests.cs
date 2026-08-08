@@ -161,12 +161,58 @@ public class InlineJobSinkTests
     }
 
     [Fact]
-    public void AFAILEDJob_IsNEVERCompact_ItHasAnErrorAndButtons()
+    public void AFAILEDTOOL_IsCompact_HeaderPlusTheReason()
     {
-        // Failure always wins: a failed job carries the error the user must act on and its
-        // Retry/Skip/Diagnose row -- compacting it would hide both.
-        Assert.False(InlineJobSink.IsCompactRowForTest(
-            TypedJob("llm_agent", JobState.Failed, new Dictionary<string, object?>())));
+        // REPLACES AFAILEDJob_IsNEVERCompact_ItHasAnErrorAndButtons, whose own title names the
+        // reason it is obsolete: the Retry/Skip/Diagnose buttons were removed, so the exemption was
+        // reserving a footer for an affordance that no longer exists. What it cost was four lines to
+        // say one thing -- header ending "failed - 0.0s", the error, a full-width rule, then
+        // "failed - 0.0s" AGAIN. Measured live on a missing file.
+        //
+        // (The old test passed for an unrelated reason: it used an llm_agent, which is exempt as a
+        // WORKER whatever its state. It never exercised the failure rule it was named for.)
+        Assert.True(InlineJobSink.IsCompactRowForTest(
+            TypedJob("file", JobState.Failed, new Dictionary<string, object?>())));
+    }
+
+    [Fact]
+    public void AFAILEDWORKER_KeepsItsBlock_LikeAnySucceedingWorker()
+    {
+        // The worker exemption is about WHOSE OUTPUT IT IS, not about success: a worker's prose is
+        // the answer that was asked for either way. Pinned so dropping the failure exemption above
+        // cannot quietly compact a worker too.
+        var job = TypedJob("llm_agent", JobState.Failed,
+            new Dictionary<string, object?>
+            {
+                ["content"] = "I got partway through and then hit a wall.\n"
+                            + "Here is what I learned before stopping, at length.",
+            });
+
+        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+    }
+
+    [Fact]
+    public void AFailedRowStatesTheReason_NotItsSize()
+    {
+        // The size summary answers "how much came back", which is right for a bulky success and
+        // meaningless for an error: a missing file rendered as "1 lines, 68 chars", measuring the
+        // reason instead of stating it. The FIRST line carries the cause; stack frames and stderr
+        // tails stay in the expandable body.
+        var job = TypedJob("file", JobState.Failed, new Dictionary<string, object?>());
+        job = job with
+        {
+            Result = job.Result! with
+            {
+                ErrorMessage = "error: Could not find file '/tmp/nope.txt'.\n   at Frame.One()",
+            },
+        };
+
+        var row = InlineJobSink.OneLineRowForTest(job);
+
+        Assert.NotNull(row);
+        Assert.Contains("Could not find file", row!, StringComparison.Ordinal);
+        Assert.DoesNotContain("chars", row, StringComparison.Ordinal);
+        Assert.DoesNotContain("Frame.One", row, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -331,7 +377,7 @@ public class InlineJobSinkTests
 
         var header = InlineJobSink.CompactHeaderForTest(job);
 
-        Assert.DoesNotContain("[spinner]", header);
+        Assert.DoesNotContain("[spinner", header);
         Assert.Contains("done", header);
     }
 
@@ -339,7 +385,7 @@ public class InlineJobSinkTests
     public void ARunningJobsHeader_HASTheSpinner()
     {
         // The converse -- the guard against "fixing" the above by dropping the spinner entirely.
-        Assert.Contains("[spinner]",
+        Assert.Contains("[spinner",
             InlineJobSink.CompactHeaderForTest(TypedJob("llm_agent", JobState.Running)));
     }
 
@@ -365,7 +411,7 @@ public class InlineJobSinkTests
         // A RUNNING row keeps full weight and its spinner.
         var running = InlineJobSink.CompactHeaderForTest(TypedJob("file", JobState.Running));
         Assert.DoesNotContain(CxAgent.UI.ColorScheme.MutedMarkup, running, StringComparison.Ordinal);
-        Assert.Contains("[spinner]", running, StringComparison.Ordinal);
+        Assert.Contains("[spinner", running, StringComparison.Ordinal);
     }
 
     [Fact]

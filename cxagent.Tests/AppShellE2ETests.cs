@@ -35,16 +35,16 @@ public class AppShellE2ETests
         var conversation = new List<ChatMessage>();
 
         // Set the multi-line composer content (public get/set), exactly what the Ctrl+Enter handler reads.
-        mw.Input.Content = "do two steps";
-        Assert.Equal("do two steps", mw.Input.Content);   // real MLE content round-trips
+        mw.Input.Input = "do two steps";
+        Assert.Equal("do two steps", mw.Input.Input);   // real MLE content round-trips
 
         // Run the goal through the real GoalRunner (the exact call the Ctrl+Enter handler makes with
-        // mw.Input.Content). NOTE: cxagent.Tests CANNOT inject a real key — the framework's
+        // mw.Input.Input). NOTE: cxagent.Tests CANNOT inject a real key — the framework's
         // InputStateService is `internal` (InternalsVisibleTo → SharpConsoleUI.Tests only) and
         // PreviewKeyPressed is an event that can't be raised externally. So the headless test drives
         // RunAsync directly (the handler's body); the real Ctrl+Enter → submit key path is verified by
         // the tmux smoke-drive (Step 3) on the real Run() loop.
-        var state = await runner.RunAsync(mw.Input.Content, conversation, CancellationToken.None);
+        var state = await runner.RunAsync(mw.Input.Input, conversation, CancellationToken.None);
         Assert.Equal(GoalState.Completed, state);
 
         // Re-render the real shell (public ProcessOnce renders without corruption at the narrow size).

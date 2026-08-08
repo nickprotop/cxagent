@@ -10,7 +10,7 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// The app shell: ONE column — ChatTranscript over the multi-line goal input (MultilineEditControl;
-/// Enter submits, Shift+Enter = newline), with a clickable StatusBar. Jobs render INLINE in the
+/// Enter submits, a trailing backslash continues onto the next line), with a clickable StatusBar. Jobs render INLINE in the
 /// transcript via InlineJobSink rather than in a side panel. When no provider resolved, the chat shows an actionable message and
 /// submission is disabled (the seam the P5c wizard fills).
 /// </summary>
@@ -23,26 +23,61 @@ public sealed class MainWindow : IDisposable
     {
         VerticalAlignment = VerticalAlignment.Fill,
         HorizontalAlignment = HorizontalAlignment.Stretch,
-    };
-    /// <summary>The multi-line goal composer. A one-column margin each side so the text it holds is
-    /// inset from the screen edge rather than flush against it — the transcript above already reads
-    /// with that gap, and a composer without it looks like a different surface.</summary>
-    public MultilineEditControl Input { get; } = new(viewportHeight: PromptRows)
-    {
-        Margin = new Margin(1, 0, 1, 0),
 
-        // TOP, not the inherited Fill. GetEffectiveViewportHeight grows the control to its bounds
-        // whenever its alignment is Fill, so at measure time it asked for more than the three rows
-        // it draws — and the composer's Auto row in the main grid sized to that inflated answer.
-        // The visible cost was a band of dead rows between the end of the transcript and the prompt,
-        // with the chat's scrollbar stopping short of the composer.
-        VerticalAlignment = VerticalAlignment.Top,
+        // A column each side, matching the composer card below it. The message surfaces now run edge
+        // to edge, so without this they butt against the pane's borders while the composer sits
+        // inset — two different left edges in one column.
+        Margin = new Margin(1, 0, 1, 0),
+    };
+    /// <summary>
+    /// The goal composer.
+    ///
+    /// <para>A PromptControl rather than a MultilineEditControl. The editor is a general text editor
+    /// bent into the shape of a prompt; this one IS a prompt, and it arrives with the things a
+    /// composer needs — history on ↑/↓, a TabCompleter seam for slash commands, placeholder, max
+    /// length — that were all absent before.</para>
+    ///
+    /// <para>It also removes a workaround. MultilineEditControl is MODAL: focused but not editing it
+    /// bubbles printable keys instead of inserting them, and it normally leaves that mode on Enter —
+    /// which AppBootstrap consumes before the control ever sees it. Every path back to the composer
+    /// therefore had to re-assert IsEditing or typing silently died. PromptControl has no such mode
+    /// (its ProcessKey gates on IsEnabled alone), so the whole hazard is gone.</para>
+    ///
+    /// <para>FIXED HEIGHT, deliberately: MinRows == MaxRows. A growing composer would make the
+    /// grid's composer row and the grip's height dynamic, and every agent CLI in this class keeps a
+    /// fixed prompt. MeasureDOM clamps between the two, so pinning them pins the height.</para>
+    /// </summary>
+    public PromptControl Input { get; } = new()
+    {
+        // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
+        // the mode line beside it has none — so a margin here pushed the prompt one column right of
+        // the caption under it. Two left edges in a control that reads as one object.
+        // STRETCH, so the field claims its whole cell. Left — the default — measures the field from
+        // its CONTENT, and a prompt's content is usually short or absent: the composer was allotted
+        // ten columns, which showed up as a truncated placeholder, a caret wrapping after ten
+        // characters, and clicks past column ten not focusing it at all.
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+
+        Multiline = true,
+        MinRows = PromptRows,
+        MaxRows = PromptRows,
+
+        // Enter SUBMITS. AppBootstrap intercepts it in PreviewKeyPressed before the control sees it,
+        // and a trailing backslash is what continues a line — see ComposerContinuation there for why
+        // no modifier-based alternative is deliverable on a Unix terminal.
+        EnterBehavior = EnterBehavior.Submit,
+
+        // The composer is where the user stays; unfocusing on submit would cost a keystroke to get
+        // back for every goal.
+        UnfocusOnEnter = false,
+
+        HistoryEnabled = true,
 
         // BOTH states, so the composer does not change colour when focus enters it. Unfocused it was
         // falling through to the app background and focused to the framework's own grey — two
         // surfaces for one control, and neither matched the mode line below it.
-        BackgroundColor = ColorScheme.ComposerSurface,
-        FocusedBackgroundColor = ColorScheme.ComposerSurface,
+        InputBackgroundColor = ColorScheme.ComposerSurface,
+        InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
     public JobPanelControl JobPanel { get; }
     /// <summary>
@@ -73,12 +108,6 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public Func<Task>? ShowSettings { get; set; }
 
-    /// <summary>
-    /// Assigned by AppBootstrap (F6): diagnoses whichever job currently has focus. Same seam pattern
-    /// as ShowSettings — MainWindow doesn't know about JobDiagnoser/RecoveryFlow/DagModifier, it just
-    /// exposes where the trigger lands. Null until wired.
-    /// </summary>
-    public Func<Task>? DiagnoseFocusedJob { get; set; }
 
     /// <summary>
     /// True in fan-out mode, where a DAG of jobs exists. Single-agent has no dag and no scheduler,
@@ -135,13 +164,50 @@ public sealed class MainWindow : IDisposable
     /// Rows the composer occupies: the prompt's 3-row viewport, the mode line, the status bar.
     /// Named so the grid row and the controls inside it cannot drift apart.
     /// </summary>
-    private const int ComposerRows = PromptRows + 2;
+    /// <summary>Internal, not private: CommandMenu anchors its portal just above the composer, and
+    /// that arithmetic needs the composer's height.</summary>
+    internal const int ComposerRows = PromptRows + 3;
+
+    /// <summary>
+    /// What the empty composer says.
+    ///
+    /// <para>"Type a goal… (Enter to run · end a line with \ to continue)" was three instructions in
+    /// a hint, and it truncated to "Type a goa" in the space it actually has — a placeholder that
+    /// cannot fit is worse than none. A placeholder should name what the box is FOR; the keys are in
+    /// Help, and the continuation rule is the kind of thing you learn once.</para>
+    /// </summary>
+    private const string ComposerPlaceholder = "What should I do?";
+
+    /// <summary>Shown instead when no provider resolved, so the empty box explains itself.</summary>
+    private const string NoProviderPlaceholder = "No provider configured — press F5 to set one up";
+
+    /// <summary>
+    /// Clears the composer's placeholder for good — called on the first submitted goal.
+    ///
+    /// <para>The hint answers "what is this box for", which is a question the user has only once.
+    /// After a goal has been sent it is a permanent label on an empty prompt, and the composer is
+    /// empty most of the time — so the thing meant to orient a newcomer becomes the most repeated
+    /// text on screen.</para>
+    ///
+    /// <para>The placeholder is not gone for good as a mechanism, only this text: it is where a
+    /// queued-message hint will go once messages can be queued while a goal runs.</para>
+    /// </summary>
+    public void RetireComposerPlaceholder()
+    {
+        if (SubmissionEnabled) Input.Placeholder = string.Empty;
+    }
 
     /// <summary>The prompt's viewport height — must match Input's constructor argument.</summary>
     private const int PromptRows = 3;
 
-    /// <summary>One-cell container giving the mode line's margins a background — see its construction.</summary>
-    private GridControl _modeLineHost = null!;
+    /// <summary>The line between the transcript and the composer — see its placement.</summary>
+    private RuleControl _composerRule = null!;
+
+    /// <summary>Prompt + mode line, painting the composer surface — see its construction.</summary>
+    private GridControl _promptBox = null!;
+
+    /// <summary>The vertical rule marking the prompt as the user's — see its construction.</summary>
+    private MarkupControl _promptGrip = null!;
 
     /// <summary>
     /// The line under the composer: which MODE is running, then the model it runs on.
@@ -214,14 +280,6 @@ public sealed class MainWindow : IDisposable
     /// the render loop on GridControl.ReplaceControl's "not currently placed" ArgumentException.</summary>
     private IWindowControl? _activePrompt;
 
-    /// <summary>Whether the transcript is currently dimmed behind a permission prompt. Exposed so
-    /// the attach/detach balance can be asserted — a dim left on is invisible in code and obvious
-    /// on screen, which is the wrong way round for a defect.</summary>
-    public bool IsDimmed => _dimHandler is not null;
-
-    /// <summary>The dim handler while a permission prompt is showing; null otherwise.</summary>
-    private SharpConsoleUI.Windows.WindowRenderer.BufferPaintDelegate? _dimHandler;
-
     public MainWindow(ConsoleWindowSystem system, ProviderResolution resolution, LogFileManager logs)
     {
         _system = system;
@@ -293,14 +351,48 @@ public sealed class MainWindow : IDisposable
             StartCollapsed = false,
             Header = static (_, author) => author ?? "System",
         });
+        // A FLAT BLOCK, NOT A BOX. opencode marks whose turn it is with a surface; ours drew a
+        // rounded border, which is chrome around the text rather than the text on its own ground —
+        // and it competed with the code blocks and tables inside assistant answers, so the loudest
+        // frame on screen belonged to the shortest message.
+        //
+        // NO HEADER EITHER. Stripping the border leaves a bare "You" label captioning a block that
+        // already reads as the user's by its colour; opencode has no such label. The surface says
+        // whose turn it is, which is all the label ever said.
         Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
         {
             Markdown = false,
             ColorRole = ColorRole.Primary,
-            HeaderStyle = CollapsibleHeaderStyle.Rounded,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            ShowHeader = false,
+            Background = ColorScheme.UserSurface,
             Header = static (_, author) => author ?? "You",
         });
-        // Assistant intentionally left at the default (Markdown = true) — LLM output is markdown.
+
+        // The assistant gets ground of its own too, one step quieter than the user's — see
+        // ColorScheme.AssistantSurface for why the longer voice is the darker one. Markdown stays ON
+        // (the default): LLM output is genuine markdown.
+        //
+        // The "Assistant" header STAYS. Unlike "You", it is not redundant: an answer can be many
+        // screens long and its start is worth marking, and the reasoning stream that now precedes it
+        // in the body would otherwise run straight into the prose with nothing dividing them.
+        // BUILT FROM THE SEEDED STYLE, not from scratch. SetRoleStyle REPLACES the entry outright
+        // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
+        // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
+        // would vanish, which is the opposite of what is wanted here.
+        var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
+        Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
+        {
+            Markdown = assistant.Markdown,
+            ColorRole = assistant.ColorRole,
+            HeaderStyle = assistant.HeaderStyle,
+            ShowHeader = assistant.ShowHeader,
+            Collapsible = assistant.Collapsible,
+            StartCollapsed = assistant.StartCollapsed,
+            Margin = assistant.Margin,
+            Header = assistant.Header,
+            Background = ColorScheme.AssistantSurface,
+        });
 
         // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
         // render as markdown, exactly like Assistant. They used to post as System, which is
@@ -322,7 +414,11 @@ public sealed class MainWindow : IDisposable
 
         if (_resolution.HasProvider)
         {
-            Chat.AddMessage(ChatRole.System, $"Ready — provider: {_resolution.DisplayName}. Type a goal and press Enter (Shift+Enter for a new line).");
+            // The keybinding hint that used to live here is gone: Input.Placeholder below says
+            // the same thing, in the control the user is about to type into.
+            Chat.AddMessage(ChatRole.System, Banner.Render(
+                _system.DesktopDimensions.Width,
+                $"{(FanOut ? "fan-out" : "single agent")} · {_resolution.DisplayName}"));
         }
         else
         {
@@ -333,7 +429,7 @@ public sealed class MainWindow : IDisposable
                 Chat.AddMessage(ChatRole.System, $"[red]• {err}[/]");
             // Input stays constructed but the submission gate ignores Enter when !SubmissionEnabled.
         }
-        Input.PlaceholderText = SubmissionEnabled ? "Type a goal… (Enter to run · Shift+Enter for newline)" : "(no provider — submission disabled)";
+        Input.Placeholder = SubmissionEnabled ? ComposerPlaceholder : NoProviderPlaceholder;
 
         // Apply Fill/Stretch so the JobPanelControl fills its Star grid cell (same fix Chat needed).
         JobPanel.VerticalAlignment = VerticalAlignment.Fill;
@@ -371,10 +467,8 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine($"[{ColorScheme.AccentMarkup} on {ColorScheme.ComposerSurfaceMarkup}]"
-                   + $" {(FanOut ? "Fan-out" : "Single agent")}[/]"
-                   + $"[{ColorScheme.MutedMarkup} on {ColorScheme.ComposerSurfaceMarkup}]"
-                   + $" · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[fillwidth][/]")
+            .AddLine($"[{ColorScheme.AccentMarkup}]{(FanOut ? "Fan-out" : "Single agent")}[/]"
+                   + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]")
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -398,26 +492,56 @@ public sealed class MainWindow : IDisposable
             // show through, so the row cannot break regardless of what is behind it.
             .Build();
 
-        // ONE CELL FOR THE WHOLE COMPOSER: rule, prompt, mode line. They were three grid rows, which
-        // meant the panel beside them had to span four rows to reach the bottom — and a row count is
-        // the wrong thing for the panel's height to depend on, because it changes whenever the
-        // composer gains or loses a line. Stacked in one cell, the composer is one row however many
-        // lines it holds, and the panel spans it as a unit.
-        // THE MODE LINE'S OWN CONTAINER carries the surface, NOT the whole composer grid.
+        // EXPERIMENT: PROMPT AND MODE LINE IN ONE GRID, and the GRID carries the surface.
         //
-        // MarkupControl paints its margins with a hardcoded Transparent and resolves its fill from
-        // `Container?.BackgroundColor`, so the colour has to come from a container for the margins
-        // to land on it. Setting it on _composer did that — and also filled every other cell of the
-        // composer, so the space around the prompt turned composer-grey instead of staying the chat
-        // field. A one-cell grid wrapping just the mode line gives the margins their colour and
-        // leaves the prompt's cell alone.
-        _modeLineHost = Controls.Grid()
-            .Columns(GridLength.Star(1))
-            .Rows(GridLength.Auto())
-            .Place(_modeLine, 0, 0)
+        // MarkupControl resolves its main fill from `Container?.BackgroundColor`, so a container
+        // whose background IS the composer surface should let the mode line drop every workaround it
+        // accumulated — the per-run `on <colour>` tags, the [fillwidth] marker, and the leading
+        // space standing in for a margin. If the grid paints the row, the markup only has to colour
+        // TEXT, which is what markup is for.
+        // ONE GRID, with CELL PADDING carrying the inset.
+        //
+        // GridControl fills its ENTIRE rect with its background, margin included — PaintDOM's
+        // per-line FillRect runs from bounds.X for the full bounds.Width with nothing subtracted —
+        // so a MARGIN here would be inset for layout but painted the composer surface anyway, and
+        // the gap would read as padding. Cell padding is the opposite and the one that is wanted:
+        // GridLayout subtracts it when measuring the child (GridLayout.cs:427), so the content is
+        // inset while the cell's own rect, and therefore the surface, is not.
+        //
+        // The prompt box paints the surface across its rect; the composer cell holding it is padded
+        // by one column, so the chat field shows through at the edges and the composer reads as a
+        // card inset from the pane.
+        // THE GRIP: a one-column rule down the prompt's left edge, marking where the user types.
+        //
+        // Its own column rather than a markup prefix on each line, because a prefix fights everything
+        // the edit control does — wrapping, scrolling, selection — and would have to be re-derived on
+        // every keystroke. A column is laid out once and the control beside it is untouched.
+        //
+        // THE WHOLE COMPOSER, mode line included. The grip marks one object — the thing at the
+        // bottom that belongs to the user — and stopping it at the prompt's last row split that
+        // object in two, leaving the caption looking like something separate that had drifted
+        // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
+        _promptGrip = Controls.Markup()
+            .AddLine(string.Join('\n',
+                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▏[/]",
+                    PromptRows + 1)))
+            .WithAlignment(HorizontalAlignment.Left)
+            .Build();
+
+        _promptBox = Controls.Grid()
+            .Columns(GridLength.Cells(1), GridLength.Star(1))
+            .Rows(GridLength.Cells(PromptRows), GridLength.Auto())
+            .Place(_promptGrip, 0, 0, rowSpan: 2)
+            .Place(Input, 0, 1)
+            .Place(_modeLine, 1, 1)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
-        _modeLineHost.BackgroundColor = ColorScheme.ComposerSurface;
+        _promptBox.BackgroundColor = ColorScheme.ComposerSurface;
+
+        _composerRule = Controls.RuleBuilder()
+            .WithColor(ColorScheme.Separator)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
 
         _composer = Controls.Grid()
             .Columns(GridLength.Star(1))
@@ -427,9 +551,16 @@ public sealed class MainWindow : IDisposable
             // back that it wanted all of it. The result was three usable lines of prompt sitting on
             // seven rows of its own background, with the mode line pushed to the bottom of the gap.
             // Naming the row's height makes the control's own viewportHeight the thing that decides.
-            .Rows(GridLength.Cells(PromptRows), GridLength.Auto(), GridLength.Auto())
-            .Place(Input, 0, 0)
-            .Place(_modeLineHost, 1, 0)
+            // A SEPARATOR ABOVE THE CARD. The transcript and the composer are two different kinds
+            // of surface, and without a line between them a long answer runs straight into the
+            // prompt with nothing marking where output ends and input begins. Structure-coloured
+            // and one cell tall: enough to read as a boundary, not enough to read as chrome.
+            // AUTO for the prompt box's row, not a fixed height: a permission prompt takes its
+            // place there and is as tall as its question. The prompt box itself pins its own two
+            // rows, so Auto still resolves to exactly PromptRows + 1 in the ordinary case.
+            .Rows(GridLength.Cells(1), GridLength.Auto(), GridLength.Auto())
+            .Place(_composerRule, 0, 0)
+            .Place(_promptBox, 1, 0)
             .Place(StatusBar, 2, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
@@ -440,6 +571,12 @@ public sealed class MainWindow : IDisposable
             // either pane. Sizing to content leaves nothing to sink through.
             .WithVerticalAlignment(VerticalAlignment.Top)
             .Build();
+
+        // The one-column inset, on the CELL rather than the control — see the prompt box's note.
+        // The separator's row is padded to match, so the rule stops where the card's edges are
+        // rather than running the full width of the pane.
+        _composer.Cell(0, 0).Padding = new Padding(1, 0, 1, 0);
+        _composer.Cell(1, 0).Padding = new Padding(1, 0, 1, 0);
 
 
         // TWO COLUMNS: the transcript, and the session panel beside it. The panel's column is Auto,
@@ -489,8 +626,12 @@ public sealed class MainWindow : IDisposable
 
         // Two on the right, both about leaving: help for what you do not know, quit for when you
         // are done. The context readout joins them from SetTokenTotal.
+        // TWO KEYS: what to press when lost, and what to press to change the view. Quit moved out —
+        // Ctrl+Q is the one binding nobody needs told, and /exit now says it in the command list.
+        // F3 earns the slot because it is the only key that changes what is ON SCREEN; everything
+        // else opens something and comes back.
         StatusBar.AddRight("F1", "Help");
-        StatusBar.AddRight("Ctrl+Q", "Quit");
+        StatusBar.AddRight("F3", "Panel");
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
         //
@@ -539,23 +680,20 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
-    /// Focuses the goal composer AND puts it in editing mode.
+    /// Focuses the goal composer.
     ///
-    /// Both halves are load-bearing. MultilineEditControl is modal: while focused but NOT editing it
-    /// handles only navigation keys and BUBBLES everything else, so typed characters are silently
-    /// discarded. It normally flips to editing on Enter — but AppBootstrap's PreviewKeyPressed
-    /// consumes every Enter (Enter = submit) before the control sees it, so that transition can never
-    /// happen here. Any path that returns focus to the composer must therefore restore IsEditing too,
-    /// or typing dies again. Centralised here so that can't be forgotten at a call site.
+    /// <para>It used to do two things: focus, then force IsEditing. That second half existed because
+    /// MultilineEditControl is MODAL — focused but not editing it bubbles printable keys instead of
+    /// inserting them, and the Enter that would normally leave that mode is consumed by
+    /// AppBootstrap before the control sees it. Every path back to the composer had to re-assert the
+    /// flag or typing silently died.</para>
+    ///
+    /// <para>PromptControl has no such mode (ProcessKey gates on IsEnabled alone), so focus is now
+    /// the whole job. Kept as a named method because callers say what they mean.</para>
     /// </summary>
     public void FocusComposer()
-    {
-        Window?.FocusManager.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
-        Input.IsEditing = true;
-    }
+        => Window?.FocusManager.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
 
-    /// <summary>Ctrl+H — return focus to the chat composer.</summary>
-    public void FocusChat() => FocusComposer();
 
     /// <summary>
     /// Swaps the prompt INTO the composer's grid cell (GridControl.ReplaceControl keeps the
@@ -583,12 +721,27 @@ public sealed class MainWindow : IDisposable
     {
         if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
 
-        // THE COMPOSER GRID, not the main one: the prompt moved into a nested cell alongside the
-        // rule and mode line, and swapping against the outer grid silently found nothing — the
-        // permission prompt never appeared and the composer stayed live underneath it.
-        _composer.ReplaceControl(Input, prompt);
+        // SWAP THE WHOLE PROMPT BOX, not the Input inside it.
+        //
+        // Replacing Input put the permission prompt in a row sized Cells(PromptRows) — a fixed three
+        // — so the question was clipped to nothing and only its buttons survived, with the mode line
+        // still sitting underneath the thing asking to be answered. A permission prompt is however
+        // tall its question needs, and it cannot be asked to fit the composer's dimensions.
+        //
+        // Taking the prompt box's place puts it in the composer's own row, which sizes to content
+        // (see the row definitions), and removes the mode line with it — the composer is not usable
+        // while a prompt is up, so showing its furniture is noise around the only live control.
+        _composer.ReplaceControl(_promptBox, prompt);
         _activePrompt = prompt;
-        ApplyPromptDim();
+
+        // AND LET THE ROW GROW. The composer's row in the main grid is a fixed Cells(ComposerRows) —
+        // that is what closed the dead band between the transcript and the prompt — but a permission
+        // prompt is taller than the composer, and a fixed row would clip the question just as the
+        // fixed prompt row did. Auto for as long as the prompt is up; restored on the way out, so
+        // the band cannot come back.
+        _mainGrid.RowDefinitions[1] = GridLength.Auto();
+
+        ElevatePrompt(prompt);
 
         // HIDE THE STATUS BAR OUTRIGHT while a prompt is up. Dimming it was the first attempt and
         // it is the weaker answer: every key it advertises is inert until the prompt is answered,
@@ -668,7 +821,11 @@ public sealed class MainWindow : IDisposable
         // now includes the one-second clock tick.
         if (_mainGrid.ColumnDefinitions.Count > 1)
         {
-            var want = UI.SessionPanel.WidthFor(terminalWidth);
+            // ZERO WHEN HIDDEN. Visible=false stops the panel PAINTING; it does nothing to the column
+            // reserving its width, so hiding it left a 24-to-40 column strip of empty background and
+            // the transcript still wrapping as though the panel were there. The width is the column's
+            // to give back, not the control's.
+            var want = SessionPanel.Control.Visible ? UI.SessionPanel.WidthFor(terminalWidth) : 0;
             if (_panelWidth != want)
             {
                 _panelWidth = want;
@@ -716,80 +873,32 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
-    /// Dims the TRANSCRIPT while a permission prompt is showing, so the question owns the screen.
+    /// Raises the permission prompt onto its own surface.
     ///
-    /// <para>A permission prompt is the one moment the app stops and asks, and it was rendering as
-    /// just another thing in the column — the same weight as the scrollback above it. Dimming what
-    /// the user is not being asked about is how the cx family marks a modal (cxpost dims for every
-    /// dialog it opens; cxgpu uses the same 0.45 for its busy overlay), and it is the difference
-    /// between a prompt you notice and one you scroll past.</para>
+    /// <para>REPLACES A FULL-SCREEN DIM. The old answer overlaid everything above the prompt with
+    /// black at 0.45 — cxpost's convention for modal dialogs, borrowed for an inline swap it does
+    /// not fit. Two things were wrong with it. It darkened the entire transcript to draw attention
+    /// to six rows, which is a lot of screen changing state to say one thing; and the edge between
+    /// dimmed and undimmed had to be computed from the prompt's laid-out bounds, so it moved with
+    /// the height of whatever command was being asked about and left a bright band above the
+    /// question whenever the estimate ran long.</para>
     ///
-    /// <para>A REGION, not the window. cxpost dims OTHER WINDOWS because its dialogs are separate
-    /// windows; this prompt is an inline swap into the composer's own grid cell, so dimming the
-    /// window would dim the prompt too. The region is everything above the prompt — the transcript —
-    /// leaving only the prompt at full strength. The status bar needs no dim region of its own —
-    /// <see cref="ShowPermissionPrompt"/> hides it entirely for the duration.</para>
+    /// <para>Elevation says the same thing locally: the prompt sits a step above the composer it
+    /// replaced, nothing else on screen moves, and there is no boundary to compute. The colour is
+    /// derived from the composer surface, so the two cannot drift apart.</para>
     /// </summary>
-    private void ApplyPromptDim()
+    private static void ElevatePrompt(IWindowControl prompt)
     {
-        if (Window is null || _dimHandler is not null) return;
-
-        _dimHandler = (buffer, _, _) =>
-        {
-            // The prompt's REAL top, from its laid-out bounds. A fixed row reserve was tried first
-            // and is visibly wrong: the prompt's height depends on the command it is asking about
-            // (one line for `ls ~/source`, many for a long pipeline), so any constant is too big or
-            // too small. Measured live at reserve 12 against a ~6-row prompt, it left a bright band
-            // of empty space between the dimmed transcript and the question — the one region on
-            // screen carrying no information was the brightest thing on it.
-            //
-            // BaseControl publishes ActualY/ActualHeight, written on the UI thread each layout and
-            // read here during paint, so this needs no renderer internals.
-            var height = _activePrompt is BaseControl { ActualY: > 0 } bc
-                ? bc.ActualY
-                : buffer.Height - FallbackReserve;
-            if (height <= 0) return;
-
-            SharpConsoleUI.Helpers.ColorBlendHelper.ApplyColorOverlay(
-                buffer, Color.Black, DimIntensity, DimForegroundRatio,
-                new LayoutRect(0, 0, buffer.Width, height));
-
-        };
-
-        // NO explicit Invalidate. ReplaceControl (the swap that brought us here) already
-        // invalidated, and calling it again outside a render tick is a documented HANG in this
-        // codebase — Invalidate is a max-join at the tick, and during construction or a test there
-        // is no tick to join. Measured elsewhere in this file: 18/18 tests in 144ms became an
-        // indefinite hang.
-        Window.PostBufferPaint += _dimHandler;
+        // IWindowControl carries no background, and enumerating concrete control types here was
+        // both fragile and wrong: it silently missed ScrollablePanelControl — what the permission
+        // prompt actually is — so the elevation applied to nothing. A prompt owns its own
+        // appearance (PermissionPromptControl.BuildContent sets it), and this remains only for a
+        // caller that passes a bare control.
+        if (prompt is ScrollablePanelControl p) p.BackgroundColor = ColorScheme.PromptSurface;
     }
 
-    /// <summary>Removes the dim. Must run on every path out of the prompt, or the transcript stays
-    /// dimmed over a session that is no longer asking anything.</summary>
-    private void ClearPromptDim()
-    {
-        if (Window is null || _dimHandler is null) return;
 
-        Window.PostBufferPaint -= _dimHandler;
-        _dimHandler = null;
-        // Same reasoning as ApplyPromptDim: the caller's ReplaceControl invalidates for us.
-    }
 
-    /// <summary>Used only before the prompt has been laid out once (ActualY is 0 until then), so
-    /// the first paint dims something rather than nothing.</summary>
-    private const int FallbackReserve = 12;
-
-    /// <summary>
-    /// Black at 0.65. cxpost's DialogBase and cxgpu's BusyIndicator both use 0.45, and that is the
-    /// right weight for a SEPARATE WINDOW floating above the content — the window's own border and
-    /// fill already separate it. This prompt is inline, sharing the column with the transcript, so
-    /// it has no chrome of its own doing that work and needs the contrast from the dim instead.
-    /// </summary>
-    private const float DimIntensity = 0.65f;
-
-    /// <summary>Foreground blends less than background, so dimmed text stays readable rather than
-    /// dissolving into the fill. cxpost's ratio.</summary>
-    private const float DimForegroundRatio = 0.6f;
 
     /// <summary>
     /// Depth-first search for the first control that can actually take focus. Mirrors the traversal
@@ -837,9 +946,10 @@ public sealed class MainWindow : IDisposable
     {
         if (ReferenceEquals(_activePrompt, prompt))
         {
-            _composer.ReplaceControl(prompt, Input);
+            _composer.ReplaceControl(prompt, _promptBox);
+            _mainGrid.RowDefinitions[1] = GridLength.Cells(ComposerRows);
             _activePrompt = null;
-            ClearPromptDim();
+
             StatusBar.Visible = true;
         }
 
@@ -865,28 +975,7 @@ public sealed class MainWindow : IDisposable
         // nothing is worse than no key, because the status bar is the only discovery surface there is.
     }
 
-    /// <summary>Ctrl+N — clear the composer for a fresh goal and make it typable again.</summary>
-    public void NewGoal()
-    {
-        Input.Content = "";
-        FocusComposer();
-    }
 
-    /// <summary>
-    /// F6's target lookup: the Job.Id of whichever job block currently holds — or contains, via one
-    /// of its buttons — keyboard focus. Walks FocusPath (the ancestor chain from the window root to
-    /// the focused control) rather than checking FocusedControl alone, so focus landing on the
-    /// block's Diagnose/Retry/Skip button (a descendant, not the block itself) still resolves.
-    /// Null when nothing job-related has focus (e.g. the composer).
-    /// </summary>
-    public string? FocusedJobId()
-    {
-        if (Window is null) return null;
-        foreach (var control in Window.FocusManager.FocusPath)
-            if (control is JobBlockControl block)
-                return block.JobId;
-        return null;
-    }
 
     /// <summary>
     /// Copilot mode (P9 Task 2): shows/hides the F9 Approve · Esc Discard footer hint. Wired by
@@ -1026,9 +1115,7 @@ public sealed class MainWindow : IDisposable
     public void SetSubmissionEnabled(bool value)
     {
         SubmissionEnabled = value;
-        Input.PlaceholderText = SubmissionEnabled
-            ? "Type a goal… (Enter to run · Shift+Enter for newline)"
-            : "(no provider — submission disabled)";
+        Input.Placeholder = SubmissionEnabled ? ComposerPlaceholder : NoProviderPlaceholder;
     }
 
     /// <summary>
@@ -1041,19 +1128,17 @@ public sealed class MainWindow : IDisposable
         Chat.AddMessage(ChatRole.System,
             "[cyan]Keys[/]\n"
             + "  [cyan]Enter[/]        run the goal in the composer\n"
-            + "  [cyan]Shift+Enter[/]  newline in the composer\n"
-            + "  [cyan]F2[/]           clear the composer for a new goal\n"
-            + "  [cyan]F4[/]           return focus to the composer\n"
+            + "  [cyan]\\[/] + Enter   continue on a new line (Shift+Enter is not deliverable on a Unix terminal)\n"
+            + "  [cyan]↑[/] / [cyan]↓[/]        recall an earlier goal\n"
             + "  [cyan]F1[/]           this help\n"
+            + "  [cyan]F3[/]           show or hide the session panel\n"
             + "  [cyan]F5[/]           settings — providers, roles, orchestrator, permissions\n"
-            + "  [cyan]F6[/]           diagnose the focused failed job\n"
-            + "  [cyan]F7[/]           settings, roles page\n"
-            + "  [cyan]F8[/]           settings, providers page\n"
-            + "  [cyan]F9[/]           approve a drafted plan (copilot mode)\n"
             + "  [cyan]Esc[/]          discard a drafted plan (copilot mode)\n"
             + "  [cyan]Ctrl+Q[/]       quit\n"
-            + "  [cyan]/clear[/]       wipe the conversation\n"
-            + "  [cyan]/compress[/]    drop the oldest turns to free up room");
+            + "\n[cyan]Commands[/]\n"
+            // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand
+            // drifts from the dispatcher the first time one is added.
+            + SessionCommands.HelpLines("cyan"));
         FocusComposer();
     }
 }

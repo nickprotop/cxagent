@@ -664,18 +664,24 @@ public class FileJobPluginTests : IDisposable
     }
 
     [Fact]
-    public async Task Replace_RefusesToReindentANonUniformlyIndentedReplacement()
+    public async Task Replace_DoesNotREINDENTANonUniformlyIndentedReplacement()
     {
-        // THE LIVE FAILURE, and the honest resolution. A model disambiguating its match anchors on a
-        // comment line: it sends "// comment" at column 0 with the block below carrying its own
-        // tabs. The anchor and the body are then in DIFFERENT frames, so no single shift describes
-        // the edit -- every rule that assumed one frame produced a wrong answer for the other, and
-        // one of them turned three tabs into eight.
+        // THE LIVE FAILURE. A model disambiguating its match anchors on a comment line: it sends
+        // "// comment" at column 0 with the block below carrying its own tabs. The anchor and the
+        // body are then in DIFFERENT frames, so no single shift describes the edit -- every rule that
+        // assumed one frame produced a wrong answer for the other, and one of them turned three tabs
+        // into eight.
         //
         // Aider reaches the same rule from the other direction and encodes it as `if len(add) != 1:
-        // return` -- non-uniform indent is REJECTED, not repaired. Writing the model's own bytes is
-        // the honest outcome: it is visible in the echoed result and the model can correct it, where
-        // a reshaped guess is silent.
+        // return` -- non-uniform indent is not REPAIRED by inventing a base.
+        //
+        // THE ANCHOR IS NOW PLACED, though, and that is a later correction rather than a regression.
+        // Writing it verbatim left a comment flush against column 0 inside a block indented three
+        // tabs -- visibly wrong, which was the intent, but measured on two live drives it reads as a
+        // deliberate edit and shipped unnoticed. The body lines here quote the file's own tabs, which
+        // is the model demonstrating it meant the file's shape; the anchor is the one line whose base
+        // it got wrong, and the file supplies it. Nothing is invented: each line takes the depth of
+        // the file line its pattern counterpart matched.
         var f = Path.Combine(_dir, "anchor.cs");
         File.WriteAllText(f, "\t\t\t// Handle trailing char\n\t\t\tif (p.HasValue)\n\t\t\t{\n\t\t\t\tint a = 1;\n\t\t\t}\n");
 
@@ -686,15 +692,21 @@ public class FileJobPluginTests : IDisposable
 
         Assert.True(r.Success, r.ErrorMessage);
 
-        // Written verbatim -- NOT re-indented onto some invented base. The critical property is that
-        // it never GROWS the indentation: the old bug added the file's indent on top of the model's.
+        // The critical property is unchanged and still the point: it never GROWS the indentation.
+        // The old bug added the file's indent on top of the model's own.
         var lines = File.ReadAllLines(f);
-        Assert.Equal("// Handle trailing char", lines[0]);
+
+        // The anchor lands at the file's depth rather than column 0 -- the one line the model
+        // under-indented, placed from the file rather than guessed.
+        Assert.Equal("\t\t\t// Handle trailing char", lines[0]);
         Assert.Equal("\t\t\t\t\tif (p.HasValue)", lines[1]);
         Assert.DoesNotContain(lines, l => l.StartsWith("\t\t\t\t\t\t\t\t", StringComparison.Ordinal));
 
-        // And it does not claim to have adjusted anything, because it did not.
-        Assert.DoesNotContain("indentation adjusted", (string)r.Output["content"]!);
+        // AND IT SAYS SO. The old expectation was "claims nothing, because it adjusted nothing" --
+        // true when the anchor was written verbatim. Now that the anchor is placed from the file, the
+        // report has to say it: the echoed result is the only channel telling the model its text was
+        // moved, and a silent adjustment is the thing this tool is built not to do.
+        Assert.Contains("indentation adjusted", (string)r.Output["content"]!);
     }
 
     [Fact]
