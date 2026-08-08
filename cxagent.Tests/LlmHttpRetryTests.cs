@@ -32,7 +32,17 @@ public class LlmHttpRetryTests : IDisposable
     {
         _listener.Stop();
         try { _serving?.Wait(TimeSpan.FromSeconds(5)); } catch { /* faulted on the stopped listener */ }
-        _listener.Close();
+
+        // GUARDED, exactly as LoopbackServer.Dispose is — and this class was the one call site that
+        // never got the guard. Close() walks RemoveListener -> RemovePrefixInternal -> GetEPListener
+        // into the PROCESS-GLOBAL HttpEndPointManager map and throws "Address already in use" when
+        // that map was corrupted by some other listener's failed Start earlier in the run.
+        //
+        // Measured before this: 3 failures in 6 full-suite runs, EVERY one of them this class's
+        // Dispose, and never reproducible in isolation — the tests themselves had already passed.
+        // A teardown fault in a test helper must not fail a test that already passed.
+        try { _listener.Close(); }
+        catch (HttpListenerException) { /* someone else's cleanup; not this test's failure */ }
     }
 
     private Task? _serving;
