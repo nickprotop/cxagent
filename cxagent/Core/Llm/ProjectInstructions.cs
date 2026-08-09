@@ -22,13 +22,38 @@ public sealed record ProjectInstructionFile(string Path, string Text);
 public static class ProjectInstructions
 {
     /// <summary>
-    /// Names tried in order, nearest directory first.
+    /// Names tried in a PROJECT directory, in order, nearest directory first.
     ///
-    /// <para>AGENTS.md leads because it is the vendor-neutral name. CLAUDE.md is read as well so a
-    /// repo already carrying one — this one does not, but many do — gets its instructions honoured
-    /// without having to duplicate the file under a second name.</para>
+    /// <para>CXAGENT.md leads so a repo can address THIS agent specifically. Some instructions only
+    /// make sense for one tool — "never run pkill, it kills the harness" is about cxagent's own
+    /// process model, not about agents in general — and a shared AGENTS.md is the wrong place to put
+    /// them because every other agent reads it too.</para>
+    ///
+    /// <para>AGENTS.md is next: the vendor-neutral convention, and what a repo will already have if
+    /// it has anything. CLAUDE.md last, so a repo carrying only that one is still honoured without
+    /// having to duplicate it under a second name.</para>
+    ///
+    /// <para>FIRST MATCH WINS, so this degrades cleanly: a repo with no CXAGENT.md behaves exactly as
+    /// if the name did not exist. The extra name costs one File.Exists per directory in the walk.</para>
     /// </summary>
-    private static readonly string[] FileNames = ["AGENTS.md", "CLAUDE.md"];
+    private static readonly string[] ProjectFileNames = ["CXAGENT.md", "AGENTS.md", "CLAUDE.md"];
+
+    /// <summary>
+    /// The name read from cxagent's own config directory — <c>AppPaths.ConfigDir</c>, which resolves
+    /// per-OS (<c>%APPDATA%\cxagent</c>, <c>~/Library/Application Support/cxagent</c>,
+    /// <c>$XDG_CONFIG_HOME/cxagent</c>).
+    ///
+    /// <para>AGENTS.md, not CXAGENT.md: this directory is already cxagent's own, so the name does not
+    /// need to say so again — a file at <c>&lt;config&gt;/cxagent/CXAGENT.md</c> would be saying it
+    /// twice.</para>
+    ///
+    /// <para>A project's CLAUDE.md describes the PROJECT, so it is honoured wherever the project is.
+    /// A user-level CLAUDE.md is a different thing entirely: it is another product's configuration,
+    /// written for a different agent with different tools, and reading it would mean silently
+    /// obeying instructions that were never addressed to this app. opencode does read
+    /// <c>~/.claude/CLAUDE.md</c>; this deliberately does not.</para>
+    /// </summary>
+    private const string GlobalFileName = "AGENTS.md";
 
     /// <summary>
     /// How much of the file is used.
@@ -41,36 +66,49 @@ public static class ProjectInstructions
     private const int MaxChars = 8_000;
 
     /// <summary>
-    /// The nearest instruction file at or above <paramref name="startDirectory"/>, or null when
-    /// there is none.
+    /// The instruction files that apply here: the global one if there is one, then the nearest
+    /// project one, in that order.
     /// </summary>
+    /// <param name="globalDirectory">
+    /// cxagent's own config directory, or null to skip it. It carries what is true of the USER
+    /// wherever they work, which a per-repo file cannot express and which they should not have to
+    /// copy into every checkout.
+    ///
+    /// <para>OUR FOLDER ONLY. opencode also reads <c>~/.claude/CLAUDE.md</c> — another product's
+    /// user-level file — which would mean silently obeying instructions written for a different agent
+    /// with different tools. A repo's CLAUDE.md is a different thing: it describes the PROJECT, so it
+    /// is read where the project is.</para>
+    /// </param>
     /// <remarks>
-    /// Never throws. An unreadable directory, a permission error or a file that vanishes mid-walk
-    /// means the agent runs without project instructions — exactly as it did before this existed.
+    /// <para>GLOBAL FIRST, PROJECT LAST, because later text wins on a conflict: a repo saying "tabs
+    /// here" must override a global "spaces everywhere", the repo being the more specific claim.</para>
+    ///
+    /// <para>Never throws. An unreadable directory, a permission error or a file that vanishes
+    /// mid-walk means the agent runs without instructions — exactly as it did before this existed.</para>
     /// </remarks>
-    public static ProjectInstructionFile? Find(string startDirectory)
+    public static IReadOnlyList<ProjectInstructionFile> Find(
+        string startDirectory, string? globalDirectory = null)
     {
+        var found = new List<ProjectInstructionFile>();
+
+        if (globalDirectory is not null && Read(globalDirectory, GlobalFileName) is { } global)
+            found.Add(global);
+
         try
         {
             var dir = new DirectoryInfo(startDirectory);
             while (dir is not null)
             {
-                foreach (var name in FileNames)
+                // FIRST MATCH WINS, and the nearest directory is the match. opencode's comment on
+                // the same line: "so we don't stack AGENTS.md/CLAUDE.md from every ancestor" —
+                // stacking is how a context fills with advice from three levels up that has nothing
+                // to do with the work in hand.
+                if (ReadFirstProject(dir.FullName) is { } project)
                 {
-                    var path = Path.Combine(dir.FullName, name);
-                    if (!File.Exists(path)) continue;
-
-                    var text = File.ReadAllText(path).Trim();
-
-                    // AN EMPTY FILE IS NOT INSTRUCTIONS. A placeholder would otherwise produce a
-                    // header announcing project instructions followed by nothing.
-                    if (text.Length == 0) continue;
-
-                    if (text.Length > MaxChars)
-                        text = text[..MaxChars]
-                             + $"\n\n[truncated — {name} is longer than {MaxChars:N0} characters]";
-
-                    return new ProjectInstructionFile(path, text);
+                    // A global file found at the same path is the same file; do not send it twice.
+                    if (found.All(f => !string.Equals(f.Path, project.Path, StringComparison.Ordinal)))
+                        found.Add(project);
+                    break;
                 }
 
                 dir = dir.Parent;
@@ -81,7 +119,43 @@ public static class ProjectInstructions
             // Best effort, like every other read in this app that is not the work itself.
         }
 
+        return found;
+    }
+
+    /// <summary>The first readable, non-empty PROJECT instruction file in one directory, or null.</summary>
+    private static ProjectInstructionFile? ReadFirstProject(string directory)
+    {
+        foreach (var name in ProjectFileNames)
+            if (Read(directory, name) is { } file) return file;
+
         return null;
+    }
+
+    /// <summary>One named file, or null when it is absent, empty or unreadable.</summary>
+    private static ProjectInstructionFile? Read(string directory, string name)
+    {
+        try
+        {
+            var path = Path.Combine(directory, name);
+            if (!File.Exists(path)) return null;
+
+            var text = File.ReadAllText(path).Trim();
+
+            // AN EMPTY FILE IS NOT INSTRUCTIONS. A placeholder would otherwise produce a header
+            // announcing project instructions followed by nothing.
+            if (text.Length == 0) return null;
+
+            if (text.Length > MaxChars)
+                text = text[..MaxChars]
+                     + $"\n\n[truncated — {name} is longer than {MaxChars:N0} characters]";
+
+            return new ProjectInstructionFile(Path.GetFullPath(path), text);
+        }
+        catch (Exception)
+        {
+            // Unreadable is the same as absent.
+            return null;
+        }
     }
 
     /// <summary>
@@ -93,11 +167,19 @@ public static class ProjectInstructions
     /// itself said it, and there would be no way for the model to weigh a project rule against a
     /// general one.</para>
     /// </summary>
-    public static string Render(ProjectInstructionFile? file) =>
-        file is null
-            ? ""
-            : $"\n# Project instructions\n\n"
-            + $"These come from {file.Path} and describe THIS project. Where they disagree with "
-            + $"anything above, follow these.\n\n"
-            + file.Text + "\n";
+    public static string Render(IReadOnlyList<ProjectInstructionFile> files)
+    {
+        if (files.Count == 0) return "";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var file in files)
+        {
+            sb.Append("\n# Project instructions\n\n");
+            sb.Append($"These come from {file.Path}. Where they disagree with anything above, "
+                    + "follow these.\n\n");
+            sb.Append(file.Text);
+            sb.Append('\n');
+        }
+        return sb.ToString();
+    }
 }

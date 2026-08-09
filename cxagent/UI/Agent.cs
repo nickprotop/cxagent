@@ -67,6 +67,23 @@ public sealed class Agent
     private int _turn;
 
     /// <summary>
+    /// The date this agent started, frozen.
+    ///
+    /// <para>NOT <c>DateTime.Now</c> PER PROMPT. The system message is the prompt-cache prefix, and a
+    /// session running past midnight would otherwise rebuild it with a new date and throw away every
+    /// cached read for the rest of the conversation. What day it is does not change the work.</para>
+    /// </summary>
+    private readonly DateOnly _startedOn = DateOnly.FromDateTime(DateTime.Now);
+
+    /// <summary>
+    /// Where the user's own instruction file lives, or null when there is none to read.
+    ///
+    /// <para>opencode reads <c>~/.config/opencode/AGENTS.md</c> alongside the project's. It carries
+    /// what is true of the USER wherever they work, which a per-repo file cannot express.</para>
+    /// </summary>
+    private readonly string? _globalInstructionsDir;
+
+    /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
     /// <para>A field rather than a local inside <see cref="RunCoreAsync"/> because a context that
@@ -123,7 +140,7 @@ public sealed class Agent
     /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
-        AgentContext? context = null)
+        AgentContext? context = null, string? globalInstructionsDir = null)
     {
         _provider = provider;
         _plugins = plugins;
@@ -134,6 +151,7 @@ public sealed class Agent
         _maxTurns = maxTurns;
         _compressAbove = compressAbove;
         _context = context ?? new AgentContext();
+        _globalInstructionsDir = globalInstructionsDir;
     }
 
     /// <summary>Every tool, always. Roles used to slice this per worker name; that mechanism is gone
@@ -190,14 +208,20 @@ public sealed class Agent
         // session, ten of twenty shell calls were `find`/`ls` hunting for paths that do not exist on
         // this machine — /Users/<someone>/…, /home/user, bare /.
         //
-        // ONCE PER AGENT, not once per goal: the context now persists, so re-inserting this on every
-        // goal would stack a duplicate preamble at the front of a conversation that already has one.
+        // REBUILT EVERY PROMPT, AND REPLACED ONLY IF IT CHANGED.
+        //
+        // The instruction files are read again each time, so editing AGENTS.md mid-session takes
+        // effect on the next prompt. That is the user's call to make: they edited the file, and an
+        // agent that silently ignores it until a restart is behaving as though it knows better.
+        //
+        // The cache is still protected, because the message is REPLACED only when the text actually
+        // differs. Unchanged files produce a byte-identical system message, the prefix is stable, and
+        // the cached reads keep hitting. A change costs one prefix — which is exactly what the user
+        // asked for by editing the file.
         var cwd = TryGetWorkingDirectory();
-        if (cwd is not null && messages.All(m => m.Role != "system"))
-            messages.Insert(0, new ChatMessage
-            {
-                Role = "system",
-                Content = SystemPrompt.Build(new SystemPromptContext(
+        if (cwd is not null)
+        {
+            var systemText = SystemPrompt.Build(new SystemPromptContext(
                     WorkingDirectory: cwd,
                     // Exists, not Directory.Exists: in a git WORKTREE .git is a FILE pointing at the
                     // real one, and treating that as "not a repo" would be wrong in exactly the
@@ -205,14 +229,17 @@ public sealed class Agent
                     IsGitRepo: Directory.Exists(Path.Combine(cwd, ".git"))
                             || File.Exists(Path.Combine(cwd, ".git")),
                     Platform: Environment.OSVersion.Platform.ToString(),
-                    Today: DateOnly.FromDateTime(DateTime.Now),
+                    Today: _startedOn,
                     ModelId: _provider.ModelId))
-                    // AFTER the general prompt, so a project can override it. Read ONCE here, with
-                    // the rest of the system message, which keeps the cache prefix stable: editing
-                    // AGENTS.md mid-session does not take effect until the next session, and that is
-                    // the right trade — a prefix that changes under the model costs the whole
-                    // conversation's cached reads.
-                    + ProjectInstructions.Render(ProjectInstructions.Find(cwd)),
+                // AFTER the general prompt, so a project can override it.
+                + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir));
+
+            var existing = messages.FirstOrDefault(m => m.Role == "system");
+            if (existing is null)
+                messages.Insert(0, new ChatMessage
+                {
+                    Role = "system",
+                    Content = systemText,
                         // NO DEBUGGING ADVICE HERE. A paragraph on tracing a value between where it
                         // is set and where it is used lived here briefly, added after three drives
                         // failed to find one bug. It was generalised from a single case whose answer
@@ -221,8 +248,19 @@ public sealed class Agent
                         // 1,587-line file meant the model read a quarter of it at a time, and no
                         // amount of coaching fixes a window too small to look through. Raising the
                         // window removes the problem; describing how to page around it only hides it.
-                Timestamp = DateTimeOffset.UtcNow,
-            });
+                    Timestamp = DateTimeOffset.UtcNow,
+                });
+            else if (!string.Equals(existing.Content, systemText, StringComparison.Ordinal))
+            {
+                // The instructions changed on disk. Replace in place rather than inserting a second
+                // system message: two of them read as a contradiction the model has to resolve.
+                messages[messages.IndexOf(existing)] = existing with
+                {
+                    Content = systemText,
+                    Timestamp = DateTimeOffset.UtcNow,
+                };
+            }
+        }
 
         var tools = WorkerToolset.For(AllTools, _plugins).ToList();
         var wrote = false;

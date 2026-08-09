@@ -58,6 +58,42 @@ public class AgentTests
     }
 
     /// <summary>
+    /// EDITING CXAGENT.md MID-SESSION TAKES EFFECT ON THE NEXT PROMPT.
+    ///
+    /// <para>The instruction files are re-read every prompt. That is the user's call to make: they
+    /// edited the file, and an agent that silently ignores it until a restart is behaving as though
+    /// it knows better. The cache is still protected because the system message is REPLACED only when
+    /// the text actually differs — unchanged files produce a byte-identical prefix.</para>
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_RereadsProjectInstructions_WhenTheyChangeMidSession()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-live-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var previous = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(dir);
+            var agent = NewAgent();
+
+            await agent.SendAsync("first", CancellationToken.None);
+            Assert.DoesNotContain(agent.Context.Messages,
+                m => m.Role == "system" && m.Content.Contains("BRAND NEW RULE", StringComparison.Ordinal));
+
+            File.WriteAllText(Path.Combine(dir, "CXAGENT.md"), "BRAND NEW RULE: prefer tabs.");
+            await agent.SendAsync("second", CancellationToken.None);
+
+            var system = Assert.Single(agent.Context.Messages.Where(m => m.Role == "system"));
+            Assert.Contains("BRAND NEW RULE", system.Content, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previous);
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// A stub provider answering with plain text and no tool calls, in the style of
     /// <c>TestProviders.cs</c>. Enough responses queued that a prompt-per-test never runs the mock
     /// dry — an empty queue is a different failure and would hide the one being tested.

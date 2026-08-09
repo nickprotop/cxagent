@@ -33,6 +33,18 @@ public sealed class AgentHost : IDisposable
     private readonly LogFileManager? _logs;
 
     /// <summary>
+    /// cxagent's own config directory, where a user-level AGENTS.md may sit — or null when there is
+    /// none to read.
+    ///
+    /// <para>OUR CONFIG FOLDER ONLY — whatever <c>AppPaths.ConfigDir</c> resolves to on this OS, not a
+    /// hardcoded <c>~/.config</c>. opencode also reads <c>~/.claude/CLAUDE.md</c>, another product's
+    /// user-level file; honouring that would mean silently obeying instructions written for a
+    /// different agent with different tools. A repo's CLAUDE.md is different — it describes the
+    /// PROJECT, so it is read where the project is.</para>
+    /// </summary>
+    private readonly string? _globalInstructionsDir;
+
+    /// <summary>
     /// The resume buffer, or null when this session is not persisted.
     ///
     /// <para>Written on the turn boundary rather than at exit — a crash is precisely when exit does
@@ -194,7 +206,8 @@ public sealed class AgentHost : IDisposable
         OrchestratorSettings? orchestrator = null,
         int? contextWindow = null,
         SqliteSessionStore? store = null,
-        SessionSnapshot? resume = null)
+        SessionSnapshot? resume = null,
+        string? globalInstructionsDir = null)
     {
         _provider = provider;
         _sink = sink;
@@ -202,6 +215,7 @@ public sealed class AgentHost : IDisposable
         _plugins = pluginRegistry;
         _logs = logs;
         _store = store;
+        _globalInstructionsDir = globalInstructionsDir;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
         _sessionTokenBudget = _orchestrator.GoalTokenBudget;
@@ -304,6 +318,8 @@ public sealed class AgentHost : IDisposable
             // which is the only place the measurement that triggers it is taken.
             compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
                 ?? OrchestratorSettings.DefaultCompressThreshold,
+
+            globalInstructionsDir: _globalInstructionsDir,
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.

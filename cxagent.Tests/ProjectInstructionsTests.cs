@@ -43,9 +43,9 @@ public class ProjectInstructionsTests : IDisposable
 
         var found = ProjectInstructions.Find(d);
 
-        Assert.NotNull(found);
-        Assert.Contains("Comment heavily", found!.Text, StringComparison.Ordinal);
-        Assert.EndsWith("AGENTS.md", found.Path, StringComparison.Ordinal);
+        var only = Assert.Single(found);
+        Assert.Contains("Comment heavily", only.Text, StringComparison.Ordinal);
+        Assert.EndsWith("AGENTS.md", only.Path, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -61,8 +61,7 @@ public class ProjectInstructionsTests : IDisposable
 
         var found = ProjectInstructions.Find(deep);
 
-        Assert.NotNull(found);
-        Assert.Contains("root instructions", found!.Text, StringComparison.Ordinal);
+        Assert.Contains("root instructions", Assert.Single(found).Text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -80,9 +79,9 @@ public class ProjectInstructionsTests : IDisposable
 
         var found = ProjectInstructions.Find(inner);
 
-        Assert.NotNull(found);
-        Assert.Contains("INNER", found!.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("OUTER", found.Text, StringComparison.Ordinal);
+        var only = Assert.Single(found);
+        Assert.Contains("INNER", only.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("OUTER", only.Text, StringComparison.Ordinal);
     }
 
     /// <summary>CLAUDE.md is read too — the same file under the name Claude Code uses, so a repo
@@ -93,14 +92,12 @@ public class ProjectInstructionsTests : IDisposable
         var d = Dir("proj");
         Write(d, "CLAUDE.md", "claude-style instructions");
 
-        var found = ProjectInstructions.Find(d);
-
-        Assert.NotNull(found);
-        Assert.Contains("claude-style", found!.Text, StringComparison.Ordinal);
+        Assert.Contains("claude-style", Assert.Single(ProjectInstructions.Find(d)).Text,
+            StringComparison.Ordinal);
     }
 
-    /// <summary>AGENTS.md wins when both exist: it is the vendor-neutral name, and a repo carrying
-    /// both has chosen to keep them separate for a reason.</summary>
+    /// <summary>AGENTS.md wins over CLAUDE.md: the vendor-neutral name, and a repo carrying both has
+    /// chosen to keep them separate for a reason.</summary>
     [Fact]
     public void Find_PrefersAgentsMdOverClaudeMd()
     {
@@ -108,16 +105,46 @@ public class ProjectInstructionsTests : IDisposable
         Write(d, "AGENTS.md", "AGENTS wins");
         Write(d, "CLAUDE.md", "CLAUDE loses");
 
-        var found = ProjectInstructions.Find(d);
+        Assert.Contains("AGENTS wins", Assert.Single(ProjectInstructions.Find(d)).Text,
+            StringComparison.Ordinal);
+    }
 
-        Assert.Contains("AGENTS wins", found!.Text, StringComparison.Ordinal);
+    /// <summary>
+    /// CXAGENT.md WINS OVER BOTH. A repo can address this agent specifically — some instructions only
+    /// make sense for one tool ("never run pkill, it kills the harness" is about cxagent's process
+    /// model, not about agents generally), and a shared AGENTS.md is the wrong place for them because
+    /// every other agent reads it too.
+    /// </summary>
+    [Fact]
+    public void Find_PrefersCxagentMdOverEverything()
+    {
+        var d = Dir("proj");
+        Write(d, "CXAGENT.md", "CXAGENT wins");
+        Write(d, "AGENTS.md", "AGENTS loses");
+        Write(d, "CLAUDE.md", "CLAUDE loses");
+
+        var only = Assert.Single(ProjectInstructions.Find(d));
+
+        Assert.Contains("CXAGENT wins", only.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("AGENTS loses", only.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>No CXAGENT.md is the ordinary case: the shared convention still applies, unchanged.</summary>
+    [Fact]
+    public void Find_WithoutACxagentMd_FallsBackToAgentsMd()
+    {
+        var d = Dir("proj");
+        Write(d, "AGENTS.md", "shared convention");
+
+        Assert.Contains("shared convention", Assert.Single(ProjectInstructions.Find(d)).Text,
+            StringComparison.Ordinal);
     }
 
     /// <summary>No file, nothing to add. The common case, and it must cost nothing.</summary>
     [Fact]
     public void Find_ReturnsNull_WhenThereIsNoInstructionFile()
     {
-        Assert.Null(ProjectInstructions.Find(Dir("bare")));
+        Assert.Empty(ProjectInstructions.Find(Dir("bare")));
     }
 
     /// <summary>
@@ -130,7 +157,7 @@ public class ProjectInstructionsTests : IDisposable
         var d = Dir("proj");
         Write(d, "AGENTS.md", "   \n\n  ");
 
-        Assert.Null(ProjectInstructions.Find(d));
+        Assert.Empty(ProjectInstructions.Find(d));
     }
 
     /// <summary>
@@ -143,11 +170,10 @@ public class ProjectInstructionsTests : IDisposable
         var d = Dir("proj");
         Write(d, "AGENTS.md", new string('x', 40_000));
 
-        var found = ProjectInstructions.Find(d);
+        var only = Assert.Single(ProjectInstructions.Find(d));
 
-        Assert.NotNull(found);
-        Assert.True(found!.Text.Length < 10_000, $"kept {found.Text.Length} chars");
-        Assert.Contains("truncated", found.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.True(only.Text.Length < 10_000, $"kept {only.Text.Length} chars");
+        Assert.Contains("truncated", only.Text, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>An unreadable path is not a crash — the agent runs without project instructions,
@@ -155,7 +181,7 @@ public class ProjectInstructionsTests : IDisposable
     [Fact]
     public void Find_OnAMissingDirectory_ReturnsNull()
     {
-        Assert.Null(ProjectInstructions.Find(Path.Combine(_root, "does", "not", "exist")));
+        Assert.Empty(ProjectInstructions.Find(Path.Combine(_root, "does", "not", "exist")));
     }
 
     /// <summary>
@@ -180,6 +206,93 @@ public class ProjectInstructionsTests : IDisposable
     [Fact]
     public void Render_OfNothing_IsEmpty()
     {
-        Assert.Equal("", ProjectInstructions.Render(null));
+        Assert.Equal("", ProjectInstructions.Render([]));
+    }
+
+    /// <summary>
+    /// A GLOBAL FILE TOO, matching opencode: they read <c>~/.config/opencode/AGENTS.md</c> alongside
+    /// the project's. It carries what is true of the USER wherever they work — house style, a
+    /// preferred test runner — which a per-repo file cannot express and which they should not have to
+    /// copy into every checkout.
+    /// </summary>
+    [Fact]
+    public void Find_ReadsTheGlobalFile_WhenThereIsNoProjectOne()
+    {
+        var global = Dir("globalcfg");
+        Write(global, "AGENTS.md", "I always want British spelling.");
+        var project = Dir("bare-project");
+
+        var found = ProjectInstructions.Find(project, globalDirectory: global);
+
+        Assert.Single(found);
+        Assert.Contains("British spelling", found[0].Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// BOTH, when both exist, and the PROJECT comes last. Later text wins on a conflict, and a repo
+    /// saying "tabs here" must override a global "spaces everywhere" — the repo is the more specific
+    /// claim.
+    /// </summary>
+    [Fact]
+    public void Find_ReturnsGlobalThenProject_SoTheProjectWins()
+    {
+        var global = Dir("globalcfg");
+        Write(global, "AGENTS.md", "GLOBAL RULE");
+        var project = Dir("proj");
+        Write(project, "AGENTS.md", "PROJECT RULE");
+
+        var found = ProjectInstructions.Find(project, globalDirectory: global);
+
+        Assert.Equal(2, found.Count);
+        Assert.Contains("GLOBAL RULE", found[0].Text, StringComparison.Ordinal);
+        Assert.Contains("PROJECT RULE", found[1].Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE GLOBAL FILE IS AGENTS.md ONLY.
+    ///
+    /// <para>A project's CLAUDE.md describes the PROJECT, so it is honoured wherever the project is.
+    /// A USER-level CLAUDE.md is another product's configuration, written for a different agent with
+    /// different tools — reading it would mean silently obeying instructions never addressed to this
+    /// app. opencode does read <c>~/.claude/CLAUDE.md</c>; this deliberately does not.</para>
+    /// </summary>
+    [Fact]
+    public void Find_IgnoresAGlobalClaudeMd()
+    {
+        var global = Dir("globalcfg");
+        Write(global, "CLAUDE.md", "another product's user-level config");
+        var project = Dir("bare-project");
+
+        Assert.Empty(ProjectInstructions.Find(project, globalDirectory: global));
+    }
+
+    /// <summary>No global directory configured is the ordinary case and must cost nothing.</summary>
+    [Fact]
+    public void Find_WithoutAGlobalDirectory_StillReadsTheProject()
+    {
+        var project = Dir("proj");
+        Write(project, "AGENTS.md", "project only");
+
+        var found = ProjectInstructions.Find(project);
+
+        Assert.Single(found);
+        Assert.Contains("project only", found[0].Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>Both rendered, in order, each naming its own source.</summary>
+    [Fact]
+    public void Render_EmitsEveryFile_InOrder()
+    {
+        var global = Dir("globalcfg");
+        Write(global, "AGENTS.md", "GLOBAL RULE");
+        var project = Dir("proj");
+        Write(project, "AGENTS.md", "PROJECT RULE");
+
+        var rendered = ProjectInstructions.Render(
+            ProjectInstructions.Find(project, globalDirectory: global));
+
+        Assert.True(rendered.IndexOf("GLOBAL RULE", StringComparison.Ordinal)
+                  < rendered.IndexOf("PROJECT RULE", StringComparison.Ordinal),
+            "the project block must come after the global one so it wins");
     }
 }
