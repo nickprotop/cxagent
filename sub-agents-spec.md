@@ -6,18 +6,39 @@ presentation (§2) and the orchestrator. Supersedes the existing fan-out code, w
 **Revised** after the context refactor (commit `77734f9`), which turned several of this document's
 assumptions into facts and disproved two of its stated blockers.
 
-**Goal:** a sub-agent is a full, self-contained single agent — its own conversation, context, token
-ledger, compression and job rows — with hooks for an orchestrator. Each sub-agent appears as one row
-in the main transcript; expanding a row replaces the chat view with that sub-agent's own transcript.
+**Goal:** every agent is a full, self-contained single agent — its own conversation, context,
+compression and job rows. Sub-agents report a summary and expose hooks so an orchestrator can drive
+them. Each appears as one row in the main transcript; expanding a row replaces the chat view with
+that agent's own transcript.
 
 ---
 
-## 1. What a sub-agent is
+## 1. What an agent is
 
-A sub-agent is a `SingleAgentLoop`. Not a variant, not a subclass, not a mode — the same class the
-main agent runs, constructed a second time.
+Every agent is a `SingleAgentLoop`. Not a variant, not a subclass, not a mode — one class,
+constructed as many times as there are agents.
+
+**There is no such thing as a "parent agent".** An orchestrator is an agent that has been given the
+`llm-agent` tool; a sub-agent is one that has not. That is the entire difference — not a different
+type, not a different loop, not different context machinery. Every agent is isolated and
+self-contained by the same construction, and an orchestrator's own context, compaction and job rows
+work exactly as any other agent's do.
 
 This is the whole design. Everything below follows from it.
+
+### What an orchestrator can do to a sub-agent
+
+Because a sub-agent is an object with a life of its own rather than a function call, the orchestrator
+can hold it and drive it:
+
+- **spawn** it with a task
+- **ask** it something mid-run, on demand
+- **examine** it — its context, its occupancy, what it is doing now
+- **stop** it
+- **collect** its summary when it finishes
+
+The tool surface for these is out of scope here (§6.4); what matters for this document is that they
+are all reachable, because the sub-agent is a live `SingleAgentLoop` and not a completed `Task`.
 
 `SingleAgentLoop` has no static state and no singleton reach-through. Its UI touchpoints all go
 through two injected interfaces:
@@ -68,7 +89,7 @@ Either way the race wants fixing on its own merits, independently of fan-out.
 
 ### 2.1 The row (first increment)
 
-Each sub-agent owns one row in the parent's transcript:
+Each sub-agent owns one row in its orchestrator's transcript:
 
 ```
 ▸ worker 2 · refactor IndentShift    ⠹ 1m14s · 12.4k/208k
@@ -200,10 +221,10 @@ Queue order is arrival order.
 ## 4. Job rows belong to their own agent
 
 A sub-agent gets its own `IJobPanel` alongside its own `IChatSink`. Its job rows — including its
-compression rows — render in **its** transcript, not the parent's.
+compression rows — render in **its** transcript, not its orchestrator's.
 
 Stated explicitly because it is obviously right once written down and silently wrong if nobody
-decides it: without it, a parent orchestrating four workers fills its column with their
+decides it: without it, an orchestrator driving four workers fills its column with their
 housekeeping.
 
 Not a concurrency hazard either way: `InlineJobSink.SetJobs` is additive by id
@@ -222,7 +243,7 @@ cxagent has **zero** `ConfigureAwait(false)`, installs a synchronization context
 entire loop — streaming, tool dispatch, compression, and the per-delta `StripReasoning` over the whole
 accumulated text (`SingleAgentLoop.cs:531-541`) — resumes on the **UI thread**.
 
-- Spawn N workers from the parent's context and they multiplex against rendering on one thread,
+- Spawn N workers from the orchestrator's context and they multiplex against rendering on one thread,
   compounded by the per-token full-body re-render in §2.2.
 - Spawn them via `Task.Run` and the races currently *masked* by UI-thread affinity become real.
 
@@ -233,7 +254,7 @@ Either is workable. Not deciding is not.
 The only `CancellationTokenSource` is app-lifetime (`AppBootstrap.cs:75`); Ctrl+Q and `/quit` cancel it
 and call `Shutdown()` (`:584`, `:476-479`). There is **no per-goal cancel** to inherit. Undesigned:
 
-- What happens to running workers when the parent finishes or fails.
+- What happens to running workers when their orchestrator finishes or fails.
 - What happens on quit — after `Shutdown()` the UI queue stops pumping, so a continuation posted to
   the sync context never runs. A worker not linked to `cts.Token` freezes rather than cancels, and
   its shell children (killed only via ct/timeout, `ProcessRunner.cs:107-121, 145-147`) can outlive
@@ -261,13 +282,15 @@ wall.
    a view stack. Recommend deciding explicitly rather than discovering it.
 2. **Parent aggregate tokens.** Whether the session panel shows a combined total across workers, and
    if so by which of the two mechanisms in §1.
-3. **Parent context growth.** A parent orchestrating many workers accumulates their *results*, so it
-   can approach its own window from summaries alone without doing much work itself. Its own
-   `AgentContext` and per-turn compaction handle this — the parent is an agent like any other — but
-   note the pressure is now REAL rather than theoretical: contexts persist across goals, so a parent
-   no longer gets a free reset when a goal ends.
-4. **Orchestrator hooks.** This spec covers the sub-agent side. The orchestrator's interface for
-   spawning, awaiting and collecting results is deliberately out of scope here — but note it cannot
+3. **What fills an orchestrator's context.** Not a design question — an orchestrator is an agent like
+   any other and needs nothing special — but worth knowing when thresholds are tuned. An ordinary
+   agent's context is mostly file reads and shell output, which `ToolOutputPruner` dedupes for free.
+   An orchestrator's is mostly sub-agent summaries, which are not snapshots of anything, so nothing
+   supersedes them, so dedup declines and compaction falls through to the expensive tier. Same
+   machinery, same threshold, different cost profile.
+4. **Orchestrator hooks.** This spec covers what an agent IS. The tool surface an orchestrator drives
+   sub-agents through — spawn, ask, examine, stop, collect (§1) — is deliberately out of scope, but
+   note it cannot
    be built without touching the loop: the toolset is a fixed static list of `WorkerTool`s
    (`SingleAgentLoop.cs:191`, `WorkerToolset.Specs`) with no injection point, so a spawn/await tool
    means growing the enum and Specs table or making the toolset injectable. The result channel is
