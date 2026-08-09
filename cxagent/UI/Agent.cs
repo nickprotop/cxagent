@@ -229,6 +229,13 @@ public sealed class Agent
         // reports it on EVERY turn cannot spin the loop.
         var toolUseMismatches = 0;
 
+        // Set when a call has repeated past the point where a nudge could still help, which ends the
+        // request. Carried out of the tool loop rather than returned from inside it: the remaining
+        // calls of THIS turn still need their results appended, or the conversation ends holding a
+        // tool call with no matching result — the orphan providers reject.
+        string? stuckOn = null;
+        var stuckTimes = 0;
+
         // TWO COUNTERS, and they answer different questions. `turn` bounds THIS request against
         // _maxTurns; `_turn` numbers log files across the agent's whole life. Folding them into one
         // would silently tighten the cap on every prompt — the second message in a session would
@@ -480,6 +487,22 @@ public sealed class Agent
                         Timestamp = DateTimeOffset.UtcNow,
                     });
 
+                // AND THE NUDGE IS NOT A FAILSAFE. It is a request, and a model in a loop is
+                // precisely one that is not responding to requests — measured in Plan 1, a provider
+                // yielding the same call every turn ran until something else stopped it, and with no
+                // turn ceiling in production there was nothing else. The doc below this loop has
+                // promised "twice that many before the goal is failed" since the nudge was written;
+                // this is the code that makes the promise true.
+                //
+                // FLAGGED, NOT BROKEN OUT OF. This turn's remaining calls still need their results
+                // appended: a tool call left without its result is the orphan providers reject, and
+                // ending the request is no reason to leave the context malformed.
+                if (times >= StuckRepeats * 2)
+                {
+                    stuckOn = call.Name;
+                    stuckTimes = times;
+                }
+
                 // A build or test run REPLACES the previous verdict of ITS OWN KIND rather than
                 // accumulating: what matters at the end is whether the tree compiles NOW and whether
                 // the tests pass NOW, not whether either ever did. A model that breaks the build,
@@ -502,6 +525,18 @@ public sealed class Agent
                     ToolCallId = call.Id ?? call.Name,
                     Content = result,
                 });
+            }
+
+            // STUCK, AND THE NUDGE DID NOT REACH IT. Every result of this turn is now on the context,
+            // so the conversation is well-formed and the request can end here. Reported as an error
+            // because it is one: the work did not finish, and saying so is the difference between a
+            // session that stopped and a session that appears to still be running.
+            if (stuckOn is not null)
+            {
+                _sink.ShowError(
+                    $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
+                    + "returned the same result each time. The run was not making progress.");
+                return text;
             }
         }
     }
@@ -791,9 +826,16 @@ public sealed class Agent
     /// <summary>How many times a no-write finish is challenged before the goal is failed.</summary>
     private const int MaxChallenges = 3;
 
-    /// <summary>Identical repeats of one (call, arguments, result) before the model is told; twice
-    /// that many before the goal is failed. Three is high enough that a legitimate re-read after
-    /// changing something is never mistaken for a loop.</summary>
+    /// <summary>
+    /// Identical repeats of one (call, arguments, result) before the model is told; twice that many
+    /// before the request is ended. Three is high enough that a legitimate re-read after changing
+    /// something is never mistaken for a loop.
+    ///
+    /// <para>THE SECOND THRESHOLD WAS DOCUMENTED HERE LONG BEFORE IT EXISTED. Only the nudge was
+    /// ever implemented, so this sentence described an intention rather than the code: a model that
+    /// ignored the nudge repeated indefinitely, and with the production turn ceiling at int.MaxValue
+    /// nothing else stopped it. Both halves are real now.</para>
+    /// </summary>
     private const int StuckRepeats = 3;
 
     /// <summary>Retries for a "tool_use" turn that carried no parseable call, before the response is

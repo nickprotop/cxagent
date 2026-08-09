@@ -641,6 +641,75 @@ public class AgentChallengeTests
         Assert.Equal("system", agent.Context.Messages[0].Role);
     }
 
+    /// <summary>
+    /// A model repeating one call forever must be STOPPED, not nudged and left running.
+    ///
+    /// <para>Stuck detection fired at StuckRepeats and appended a single message. Its own
+    /// documentation promised "twice that many before the goal is failed" — no such code existed, so
+    /// a model that ignored the nudge repeated indefinitely. With no turn ceiling either, that hangs
+    /// the app with the spinner running and nothing to interrupt it. This is the same shape as the
+    /// hang that took two E2E tests down in Plan 1: a stateless provider yielding the same call every
+    /// turn.</para>
+    ///
+    /// <para>The test carries its OWN timeout. A regression here does not fail the assertion — it
+    /// stalls the whole suite — so the wait is bounded and a timeout is reported as a failure.</para>
+    /// </summary>
+    [Fact]
+    public async Task RepeatingOneCallForever_EndsTheRequest_RatherThanHanging()
+    {
+        var provider = new RepeatsOneCallProvider();
+        var sink = new RecordingSink();
+
+        var send = Build(provider, sink).SendAsync("look into it", CancellationToken.None);
+        var finished = await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(10)));
+
+        Assert.True(ReferenceEquals(finished, send),
+            "the request did not end — the agent is still repeating the same call");
+        await send;   // surface any exception rather than swallowing it
+
+        Assert.Contains(sink.Errors,
+            e => e.Contains("same", StringComparison.OrdinalIgnoreCase)
+              && e.Contains("run_shell", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Answers every turn with the SAME tool call, forever, ignoring anything it is told. A real
+    /// model in a loop behaves this way; the nudge is a request, not a constraint.
+    /// </summary>
+    private sealed class RepeatsOneCallProvider : ILlmProvider
+    {
+        public string ProviderId => "stuck";
+        public string DisplayName => "Stuck";
+        public string ModelId => "test-model";
+        public ILlmProvider WithModel(string model) => this;
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t,
+            CancellationToken ct) => Task.FromResult(Call());
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            var r = Call();
+            yield return new LlmStreamChunk(r.Text, r.ToolCalls[0], IsFinal: true, Usage: r.Usage);
+            await Task.CompletedTask;
+        }
+
+        private static LlmResponse Call() => new()
+        {
+            Text = "",
+            ToolCalls = [new ToolCall
+            {
+                Id = "s1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonSerializer.SerializeToElement(
+                    new { command = "echo the-same-thing" }),
+            }],
+            Usage = new LlmUsage(),
+        };
+    }
+
     // --- Context pressure ------------------------------------------------------------------------
 
     [Fact]
