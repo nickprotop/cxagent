@@ -197,11 +197,16 @@ public sealed class Agent
             messages.Insert(0, new ChatMessage
             {
                 Role = "system",
-                Content = $"Your working directory is {cwd}. Relative paths resolve from there. "
-                        + "Do not guess absolute paths — prefer paths relative to it.\n\n"
-                        + "You have tools. USE THEM: read a file before editing it, and make changes "
-                        + "with write_file or replace_in_file rather than describing them. Text in a "
-                        + "message changes nothing.",
+                Content = SystemPrompt.Build(new SystemPromptContext(
+                    WorkingDirectory: cwd,
+                    // Exists, not Directory.Exists: in a git WORKTREE .git is a FILE pointing at the
+                    // real one, and treating that as "not a repo" would be wrong in exactly the
+                    // checkout style this project is developed in.
+                    IsGitRepo: Directory.Exists(Path.Combine(cwd, ".git"))
+                            || File.Exists(Path.Combine(cwd, ".git")),
+                    Platform: Environment.OSVersion.Platform.ToString(),
+                    Today: DateOnly.FromDateTime(DateTime.Now),
+                    ModelId: _provider.ModelId)),
                         // NO DEBUGGING ADVICE HERE. A paragraph on tracing a value between where it
                         // is set and where it is used lived here briefly, added after three drives
                         // failed to find one bug. It was generalised from a single case whose answer
