@@ -8,14 +8,14 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// What happens when the model stops WITHOUT writing on a goal that asked for a change.
+/// The turn loop's own guards: a broken build, a repeated call, a turn cap, a context refusal.
 ///
-/// <para>Measured against a real bug hunt: the model investigated competently, stalled before
-/// reaching the edit, answered the single challenge with PROSE rather than a tool call, and the loop
-/// accepted that as done — twice in a row, 55 tool calls across two runs, nothing written either
-/// time, and <c>GoalState.Completed</c> reported over an unchanged working tree. One nudge only
-/// catches a model that FORGOT to write; it does nothing about one that has stalled, which is the
-/// commoner case on a hard task.</para>
+/// <para>There WAS a no-write challenge here — if the prompt contained "add ", "fix ", "change " and
+/// no file had been written, the loop pushed back up to three times. It was removed: that is a
+/// substring match on ordinary English, so it challenged questions. Six of eight realistic prompts
+/// were false positives, and each cost wasted turns and an error on screen about a question that had
+/// merely been answered. No other agent CLI does this. What survives here is only what is a FACT
+/// about the tree — a build that ran and failed — rather than a guess at what the user meant.</para>
 /// </summary>
 public class AgentChallengeTests
 {
@@ -29,39 +29,6 @@ public class AgentChallengeTests
 
     private static LlmResponse Prose(string text) =>
         new() { Text = text, ToolCalls = [], Usage = new LlmUsage() };
-
-    [Fact]
-    public async Task StallingWithoutWritingIsChallengedMoreThanOnce()
-    {
-        // Three prose turns in a row: the old loop challenged once, accepted the second, and
-        // returned Completed. Every one of them must now be challenged.
-        var provider = new MockLlmProvider();
-        for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose($"Here is what I found ({i})."));
-
-        var sink = new RecordingSink();
-        await Build(provider, sink).SendAsync("fix the rendering bug",
-            CancellationToken.None);
-
-        var challenges = provider.LastMessages!
-            .Count(m => m.Role == "user" && m.Content.Contains("written", StringComparison.OrdinalIgnoreCase));
-        Assert.True(challenges >= 2, $"expected repeated challenges, saw {challenges}");
-        Assert.Contains(sink.Errors, e => e.Contains("nothing was written", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task AChangeGoalThatWroteNothingFAILSRatherThanCompleting()
-    {
-        // The lie this mode exists to stop, one level up: the run says done, the disk says
-        // otherwise, and the user finds out later.
-        var provider = new MockLlmProvider();
-        for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("I have analysed the code."));
-
-        var sink = new RecordingSink();
-        await Build(provider, sink).SendAsync("fix the wrapping bug",
-            CancellationToken.None);
-
-        Assert.Contains(sink.Errors, e => e.Contains("nothing was written", StringComparison.OrdinalIgnoreCase));
-    }
 
     [Fact]
     public async Task AnExplicitCANNOTEndsTheGoalWithoutFurtherChallenges()
@@ -425,8 +392,14 @@ public class AgentChallengeTests
         // The cap used to print one line and discard everything the model had learned, leaving the
         // user with a half-edited tree and no account of it. opencode injects a forced-stop prompt
         // and takes a summary; SWE-agent auto-submits whatever diff exists. Both salvage.
+        // TOOL CALLS, not prose. A prose turn ends the request immediately, so it can never reach a
+        // cap — the fixture used to get there by riding the no-write challenge loop, which is gone.
+        // Work that keeps calling tools is what a turn ceiling is actually for.
+        // Two tool-calling turns reach maxTurns:2, then the summary turn is the third call.
         var provider = new MockLlmProvider();
-        for (var i = 0; i < 40; i++) provider.EnqueueResponse(Prose("thinking"));
+        provider.EnqueueResponse(ShellCall("echo thinking"));
+        provider.EnqueueResponse(ShellCall("echo thinking"));
+        provider.EnqueueResponse(Prose("I inspected the parser and did not finish."));
 
         var sink = new RecordingSink();
         var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
@@ -442,8 +415,9 @@ public class AgentChallengeTests
             m.Role == "user" && m.Content.Contains("maximum number of steps", StringComparison.OrdinalIgnoreCase));
 
         // The salvaged summary is RETURNED — it is the answer on this path, and the caller is what
-        // puts it on the transcript.
-        Assert.Contains("thinking", answer);
+        // puts it on the transcript. MockLlmProvider replays the queue, so the summary turn gets the
+        // next scripted response; what matters is that SOMETHING came back rather than nothing.
+        Assert.Contains("did not finish", answer, StringComparison.Ordinal);
     }
 
 

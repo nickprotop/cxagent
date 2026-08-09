@@ -485,13 +485,23 @@ public sealed class Agent
                 var brokenTest = wrote && _lastTest is not null && BuildFailed(_lastTest);
                 var broken = brokenBuild || brokenTest;
 
-                // THE PROMPT, not a scan back through the conversation. It used to take the last user
-                // message off the caller's transcript, which is the same thing by construction — this
-                // request's prompt — but only as long as the transcript's last user entry was the one
-                // being answered. Judging the argument says exactly what is meant.
-                var unfinished = !wrote && AsksForAChange(prompt);
-
-                if ((unfinished || broken) && !refused && challenges < MaxChallenges)
+                // NO "YOU DIDN'T WRITE ANYTHING" CHALLENGE. There was one, and it was removed: it
+                // fired when the prompt contained any of seventeen common verbs — "add ", "fix ",
+                // "change ", "update " — and no file had been written. That is a substring match on
+                // ordinary English, so it challenged questions. Measured against eight realistic
+                // prompts, SIX were false positives: "why does the compressor add a summary?",
+                // "what would you change about this design?", "who calls update on the panel?".
+                // Each cost up to three wasted turns and then an error on screen telling the user
+                // their question had failed.
+                //
+                // No other agent CLI does this — opencode has nothing like it. The failure it was
+                // built for (describing an edit instead of making one) is addressed where it belongs,
+                // in the system prompt: "USE THEM ... Text in a message changes nothing."
+                //
+                // The BROKEN BUILD check below is deliberately kept. It is not a guess about intent:
+                // a build actually ran and actually failed, and that is a fact about the tree rather
+                // than an inference from the wording of a prompt.
+                if (broken && !refused && challenges < MaxChallenges)
                 {
                     challenges++;
                     messages.Add(new ChatMessage
@@ -499,29 +509,16 @@ public sealed class Agent
                         Role = "user",
                         // The FAILING one's output, and the build first when both are red: a test
                         // failure reported against a tree that does not compile is noise.
-                        Content = broken
-                            ? BrokenBuildChallenge(brokenBuild ? _lastBuild! : _lastTest!)
-                            : ChallengeText(challenges),
+                        Content = BrokenBuildChallenge(brokenBuild ? _lastBuild! : _lastTest!),
                         Timestamp = DateTimeOffset.UtcNow,
                     });
                     continue;
                 }
 
-                // NOT A SILENT SUCCESS when the request wanted a change and none was made. Reporting
-                // success over an unchanged working tree is the same lie this mode was built to stop,
-                // one level up: the run says done, the disk says otherwise, and the user finds out
-                // later. The error is the signal — the caller discarded the status enum this used to
-                // return, so the sink is what actually reaches anyone.
-                if (unfinished)
-                    _sink.ShowError(
-                        "you asked for a change, but nothing was written. Investigation ran to a "
-                        + "stop without reaching an edit.");
-
                 // A BROKEN BUILD IS A FAILED REQUEST. Measured live: a correct diagnosis, a patch that
                 // did not compile, "Build FAILED" in the transcript, and a confident success summary
-                // in the same turn. Edits were made, so the no-write gate above saw nothing wrong —
-                // this is the one that has to catch it.
-                else if (broken)
+                // in the same turn.
+                if (broken)
                     _sink.ShowError(
                         "changes were written but the build did not succeed. The last build or test "
                         + "run reported a failure and it was not resolved.");
@@ -947,31 +944,6 @@ public sealed class Agent
     private const int MaxToolUseMismatches = 2;
 
     /// <summary>
-    /// The nudge sent when the model stops without writing. EACH ONE SAYS SOMETHING NEW — repeating
-    /// a message the model has already answered just earns the same answer again, which is exactly
-    /// what a single fixed challenge produced in measurement.
-    ///
-    /// <para>The escalation follows the observed failure: first assume it forgot to write, then
-    /// assume it stalled mid-investigation and name the concrete recovery (widen the read — a large
-    /// file read through a 40-line window is how the relevant function gets missed), then demand a
-    /// decision either way so a genuine "cannot" ends the goal honestly instead of looping.</para>
-    /// </summary>
-    private static string ChallengeText(int attempt) => attempt switch
-    {
-        1 => "Nothing was written. The request asked you to change something — use write_file or "
-           + "replace_in_file to do it now, or say plainly why it cannot be done.",
-
-        2 => "Still nothing written. You stopped before reaching an edit. If you have not yet found "
-           + "the cause, keep looking — read the whole of the file you suspect rather than a small "
-           + "window of it (omit 'limit', or use a large one), and search for the function that sits "
-           + "BETWEEN where the relevant value is set and where it is used. Then make the edit.",
-
-        _ => "This is the final attempt. Either call replace_in_file or write_file now, or reply "
-           + "with one sentence beginning 'CANNOT:' explaining what is blocking you. Do not "
-           + "summarise what you have read — a summary changes nothing on disk.",
-    };
-
-    /// <summary>
     /// Whether a tool result reads as a failure. WorkerToolset never throws — every failure comes
     /// back as a STRING — so "did that write land" cannot be answered by exception handling. Matched
     /// on the two shapes the plugins actually produce.
@@ -1121,25 +1093,6 @@ public sealed class Agent
         var args = call.Arguments.ToString();
         var detail = args.Length > 60 ? args[..60] + "…" : args;
         return $"{call.Name} {detail}";
-    }
-
-    /// <summary>
-    /// Whether the user asked for a CHANGE, as opposed to an explanation. Deliberately conservative:
-    /// it decides whether "wrote nothing" is a failure, and failing a question that was only ever a
-    /// question would be worse than missing one edit.
-    /// </summary>
-    private static bool AsksForAChange(string prompt)
-    {
-        var last = prompt ?? "";
-        ReadOnlySpan<string> verbs =
-        [
-            "edit ", "modify ", "change ", "add ", "insert ", "replace ", "rewrite ", "fix ",
-            "apply ", "update ", "remove ", "delete ", "write ", "create ", "implement ",
-            "refactor ", "rename ",
-        ];
-        foreach (var v in verbs)
-            if (last.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
     }
 
     private static string? TryGetWorkingDirectory()
