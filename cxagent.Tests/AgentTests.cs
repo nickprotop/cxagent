@@ -94,6 +94,35 @@ public class AgentTests
     }
 
     /// <summary>
+    /// THE TURN CAP IS PER REQUEST, NOT PER SESSION — matching opencode, whose <c>let step = 0</c>
+    /// lives inside the per-prompt <c>runLoop</c> (<c>session/prompt.ts:1085</c>).
+    ///
+    /// <para>A session-wide counter would tighten the ceiling with every message: the second prompt
+    /// would start with the first prompt's turns already spent against it, and a long conversation
+    /// would eventually be unable to do any work at all. <c>_turn</c> — the field — is monotonic for
+    /// a different job, numbering log files across the agent's life.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheTurnCap_AppliesPerRequest_NotAcrossTheSession()
+    {
+        var provider = new MockLlmProvider();
+        // Two tool-calling turns per prompt would hit a cap of 2 if the count carried over.
+        for (var i = 0; i < 8; i++)
+            provider.EnqueueResponse(new LlmResponse { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
+
+        var sink = new RecordingSink();
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            sink, new NullJobPanel(), logs: null, maxTurns: 2);
+
+        await agent.SendAsync("first", CancellationToken.None);
+        await agent.SendAsync("second", CancellationToken.None);
+        await agent.SendAsync("third", CancellationToken.None);
+
+        // Each prompt used one turn. A session-wide counter would have hit the cap by the third.
+        Assert.DoesNotContain(sink.Errors, e => e.Contains("stopped after", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// A stub provider answering with plain text and no tool calls, in the style of
     /// <c>TestProviders.cs</c>. Enough responses queued that a prompt-per-test never runs the mock
     /// dry — an empty queue is a different failure and would hide the one being tested.

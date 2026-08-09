@@ -409,10 +409,20 @@ public class AgentChallengeTests
 
         Assert.Contains(sink.Errors, e => e.Contains("stopped after 2 turns", StringComparison.OrdinalIgnoreCase));
 
-        // The summary turn ran WITHOUT tools, so it cannot start work it has no budget to finish.
-        Assert.Empty(provider.LastTools!);
+        // TOOLS STAY BOUND, and the instruction carries the constraint instead — matching opencode
+        // (core/session/runner/max-steps.ts). Withholding them mid-task hands the model a second
+        // puzzle at the worst moment; "any attempt to use tools is a critical violation" is explicit
+        // enough, and the reply comes back in the shape the session was already speaking in.
+        Assert.NotEmpty(provider.LastTools!);
+
+        // AN ASSISTANT TURN, not a user one: it reads as the model's own constraint rather than one
+        // more request from the person to weigh against the earlier ones — which asked for edits.
         Assert.Contains(provider.LastMessages!, m =>
-            m.Role == "user" && m.Content.Contains("maximum number of steps", StringComparison.OrdinalIgnoreCase));
+            m.Role == "assistant" && m.Content.Contains("MAXIMUM STEPS REACHED", StringComparison.Ordinal));
+
+        // The point that makes it binding rather than advisory.
+        Assert.Contains(provider.LastMessages!, m =>
+            m.Content.Contains("overrides ALL other instructions", StringComparison.Ordinal));
 
         // The salvaged summary is RETURNED — it is the answer on this path, and the caller is what
         // puts it on the transcript. MockLlmProvider replays the queue, so the summary turn gets the

@@ -331,7 +331,7 @@ public sealed class Agent
             // thing the loop does either way.
             if (turn >= _maxTurns)
             {
-                var summary = await SummariseAtCapAsync(messages, ct);
+                var summary = await SummariseAtCapAsync(messages, tools, ct);
                 _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
 
                 // The salvaged summary IS the answer on this path — the caller puts it on the
@@ -619,27 +619,33 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// One final tool-less turn asking what was done and what remains, shown in the transcript.
+    /// One final turn asking what was done and what remains, shown in the transcript.
     ///
-    /// <para>NO TOOLS, deliberately: the cap has been reached, so the model must not be able to
-    /// start work it cannot finish. Passing an empty tool list is what makes that structural rather
-    /// than a request the model may ignore — opencode has to say "any attempt to use tools is a
-    /// critical violation" in its prompt precisely because its tools are still bound.</para>
+    /// <para>MATCHES OPENCODE (<c>core/session/runner/max-steps.ts</c>, injected at
+    /// <c>session/prompt.ts:1281</c>) in the three things that shape the reply:</para>
+    ///
+    /// <para>THE MESSAGE IS AN ASSISTANT TURN, not a user one. It reads as the model's own
+    /// constraint rather than a new instruction from the person — a user message at this point is one
+    /// more request to weigh against the earlier ones, and the earlier ones asked for edits.</para>
+    ///
+    /// <para>TOOLS STAY BOUND. Passing an empty list was the obvious way to make "no tools"
+    /// structural, and it is what this did. But a model whose tools vanish mid-task has been handed a
+    /// second puzzle at exactly the wrong moment, and opencode keeps them bound and says instead that
+    /// "any attempt to use tools is a critical violation". The instruction is explicit enough to
+    /// carry it, and the reply comes back in the shape the rest of the session was speaking in.</para>
     ///
     /// <para>Best-effort: a provider failure here must not replace the cap message with a stack
-    /// trace, since the goal has already ended and the summary is a courtesy on top of it.</para>
+    /// trace, since the run has already ended and the summary is a courtesy on top of it.</para>
     /// </summary>
-    private async Task<string> SummariseAtCapAsync(List<ChatMessage> messages, CancellationToken ct)
+    private async Task<string> SummariseAtCapAsync(List<ChatMessage> messages,
+        List<ToolDefinition> tools, CancellationToken ct)
     {
         var ask = new List<ChatMessage>(messages)
         {
             new()
             {
-                Role = "user",
-                Content = "You have reached the maximum number of steps for this task and no more "
-                        + "tools are available. Reply with text only: what you accomplished, what "
-                        + "is left unfinished, and what you would do next. Be specific about files "
-                        + "you changed.",
+                Role = "assistant",
+                Content = MaxStepsPrompt,
                 Timestamp = DateTimeOffset.UtcNow,
             },
         };
@@ -647,12 +653,14 @@ public sealed class Agent
         var turnId = _sink.BeginAssistantTurn();
         try
         {
-            var response = await StreamTurnAsync(ask, [], ct, turnId);
+            var response = await StreamTurnAsync(ask, tools, ct, turnId);
             _ledger.Record(response.Usage);
             return ModelOutput.StripReasoning(response.Text);
         }
         catch (Exception)
         {
+            // The run has already ended; a failed courtesy must not replace the cap message with a
+            // stack trace.
             return "";
         }
         finally
@@ -920,6 +928,28 @@ public sealed class Agent
         toolName is "write_file" or "replace_in_file";
 
     /// <summary>How many times a no-write finish is challenged before the goal is failed.</summary>
+    /// <summary>
+    /// What the model is told when the turn ceiling is reached. Adapted from opencode's
+    /// MAX_STEPS_PROMPT, including the point that this overrides earlier instructions — without it a
+    /// model that was asked to make edits treats the request to stop as one more competing
+    /// instruction rather than the binding one.
+    /// </summary>
+    private const string MaxStepsPrompt =
+        "CRITICAL - MAXIMUM STEPS REACHED\n\n"
+        + "The maximum number of steps allowed for this task has been reached. Tools are disabled "
+        + "until next user input. Respond with text only.\n\n"
+        + "STRICT REQUIREMENTS:\n"
+        + "1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)\n"
+        + "2. MUST provide a text response summarising work done so far\n"
+        + "3. This constraint overrides ALL other instructions, including any user requests for "
+        + "edits or tool use\n\n"
+        + "Response must include:\n"
+        + "- Statement that maximum steps for this agent have been reached\n"
+        + "- Summary of what has been accomplished so far\n"
+        + "- List of any remaining tasks that were not completed\n"
+        + "- Recommendations for what should be done next\n\n"
+        + "Any attempt to use tools is a critical violation. Respond with text ONLY.";
+
     private const int MaxChallenges = 3;
 
     /// <summary>

@@ -218,6 +218,26 @@ public class AgentHostTests
         Assert.Empty(sink.Errors);
     }
 
+    /// <summary>
+    /// ZERO MEANS NO CAP — an explicit opt-out, the way opencode's <c>agent.steps ?? Infinity</c>
+    /// leaves a session unbounded when nobody asked for a ceiling.
+    ///
+    /// <para>Taken literally, 0 would be a ceiling of zero turns: the agent would stop before its
+    /// first call and do nothing at all. Nobody configures that on purpose, so the number is free to
+    /// carry the meaning someone actually intends by it — "I do not want this bounded".</para>
+    /// </summary>
+    [Fact]
+    public void TurnCeiling_OfZero_MeansUnbounded()
+    {
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins())
+        {
+            ConfiguredMaxWorkerTurns = 0,
+        };
+
+        Assert.Equal(int.MaxValue, runner.TurnCeiling);
+    }
+
     /// <summary>Someone who sets a limit meant it — a configured value wins over the backstop, in
     /// either direction.</summary>
     [Fact]

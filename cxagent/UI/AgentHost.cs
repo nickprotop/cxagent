@@ -295,7 +295,17 @@ public sealed class AgentHost : IDisposable
     /// replacement was stuck detection — which, until the change alongside this one, only ever
     /// nudged. So the common case, an unconfigured session, had nothing bounding it at all.</para>
     /// </summary>
-    public int TurnCeiling => ConfiguredMaxWorkerTurns ?? DefaultTurnCeiling;
+    /// <para>ZERO MEANS UNBOUNDED, an explicit opt-out. Read literally it would be a ceiling of zero
+    /// turns — the agent stopping before its first call and doing nothing — which nobody configures
+    /// on purpose, so the number is free to carry the meaning someone actually intends by it. It
+    /// matches opencode's <c>agent.steps ?? Infinity</c>: a session nobody asked to bound is not
+    /// bounded.</para>
+    public int TurnCeiling => ConfiguredMaxWorkerTurns switch
+    {
+        null => DefaultTurnCeiling,
+        0 => int.MaxValue,
+        int configured => configured,
+    };
 
     /// <summary>
     /// Turns a single request may take before it is stopped, absent configuration.
