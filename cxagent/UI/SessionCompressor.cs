@@ -27,8 +27,16 @@ public static class SessionCompressor
     /// </param>
     /// <param name="CharsFreed">Characters reclaimed, for the row and the status bar.</param>
     /// <param name="Summary">The summary the model wrote, when it answered.</param>
+    /// <param name="Declined">
+    /// True when the compression chose NOT to run and nothing was lost — the model returned no usable
+    /// summary, so the conversation was left intact.
+    ///
+    /// <para>Distinct from the other <c>Summarised: false</c> case, where summarisation THREW and the
+    /// oldest messages were dropped unread. Both are "not summarised"; only one costs history, and a
+    /// row that reports them identically tells the user they lost something they did not.</para>
+    /// </param>
     public readonly record struct CompressResult(
-        bool Summarised, int CharsFreed = 0, string? Summary = null);
+        bool Summarised, int CharsFreed = 0, string? Summary = null, bool Declined = false);
 
     /// <summary>
     /// Where to split, so that summarising the head can never leave the tail holding a tool result
@@ -133,7 +141,17 @@ public static class SessionCompressor
             var before = context.TotalChars();
             var summary = await SummariseAsync(oldTurns, provider, ct);
 
+            // METERED REGARDLESS. The call was made and billed whether or not its answer is usable;
+            // not recording it would hide spend from the ledger.
             meter?.Invoke(summary.Usage);
+
+            // NOTHING USEFUL CAME BACK — so nothing is discarded. The call SUCCEEDED (a thrown error
+            // takes the truncation path below), it simply said nothing worth keeping, and splicing it
+            // in would delete half the conversation and leave "" as the only record of it. Declining
+            // is the conservative choice: the context stays over its threshold and the next turn
+            // tries again, which is strictly better than a session whose memory is a blank.
+            if (!IsUsableSummary(summary.Text))
+                return new CompressResult(Summarised: false, Declined: true);
 
             conversation.RemoveRange(pin, cut - pin);
             conversation.Insert(pin, new ChatMessage
@@ -264,6 +282,59 @@ public static class SessionCompressor
     /// <summary>How much of a tool result the summariser is shown. Enough to identify the file and
     /// its shape; not so much that summarising costs what it saves.</summary>
     private const int ToolResultChars = 2_000;
+
+    /// <summary>
+    /// Whether a summary is worth trading half the conversation for.
+    ///
+    /// <para>Three ways it is not. Empty or whitespace is the obvious one. Too short is the next: a
+    /// model answering "ok" or "done" has acknowledged the request rather than performed it, and that
+    /// word would become the session's whole memory of what it replaced. A refusal is the third — it
+    /// is a coherent sentence and passes any length test, but it describes the model declining, not
+    /// the history it was asked about.</para>
+    ///
+    /// <para>Deliberately narrow. The cost of wrongly REJECTING is one skipped compaction: the
+    /// context stays large and the next turn tries again. The cost of wrongly ACCEPTING is history
+    /// deleted and replaced with nothing. Those are not symmetric, so this errs toward rejecting —
+    /// but only on signals that cannot be a real summary, never on a terse one.</para>
+    ///
+    /// <para>A vacuous-but-coherent reply ("Summary of the above.") still passes. No length rule can
+    /// catch that without also rejecting "read Foo.cs, changed the parser", and given the asymmetry
+    /// above, letting it through is the right side to err on.</para>
+    /// </summary>
+    private static bool IsUsableSummary(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        var trimmed = text.Trim();
+        if (trimmed.Length < MinSummaryChars) return false;
+
+        foreach (var opener in RefusalOpeners)
+            if (trimmed.StartsWith(opener, StringComparison.OrdinalIgnoreCase)) return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// The shortest thing that can be a real summary. Long enough to exclude "ok", "done", "none",
+    /// "summary", "Summary:" and "No summary." — acknowledgements of the request, or declarations of
+    /// having nothing to say, rather than answers to it.
+    ///
+    /// <para>TWELVE, AND IT CAME DOWN TWICE. Forty rejected "read Foo.cs, changed the parser" (31);
+    /// twenty then rejected "earlier: a summary." (19). Both are real summaries of short exchanges,
+    /// and both were caught by existing tests rather than by reasoning — which is the point: this
+    /// floor exists to catch a model that said NOTHING, not to impose a word count on one that was
+    /// brief because the history it summarised was.</para>
+    /// </summary>
+    private const int MinSummaryChars = 12;
+
+    /// <summary>How a refusal starts. Matched at the FRONT only: a real summary may well contain the
+    /// words "cannot" or "sorry" while describing what happened, and rejecting on that would throw
+    /// away good summaries of sessions that went badly.</summary>
+    private static readonly string[] RefusalOpeners =
+    [
+        "I cannot", "I can't", "I'm sorry", "I am sorry", "I'm unable", "I am unable",
+        "Sorry,", "As an AI",
+    ];
 
     private static string FormatSummary(string? text) =>
         $"[earlier conversation, summarised: {text}]";

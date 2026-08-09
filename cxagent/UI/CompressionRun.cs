@@ -91,16 +91,25 @@ public static class CompressionRun
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened
         // rather than find the gap later.
-        job.State = result.Summarised ? JobState.Succeeded : JobState.Failed;
+        // A DECLINE IS NOT A FAILURE. Nothing broke and nothing was lost — the model had nothing
+        // useful to say and the conversation was left alone — so it reports as a completed step that
+        // did no work, not as red. A truncating fallback IS a failure: it cost history.
+        job.State = result.Summarised || result.Declined ? JobState.Succeeded : JobState.Failed;
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.Result = new JobResult
         {
             Success = result.Summarised,
             ExitCode = result.Summarised ? 0 : -1,
             Duration = DateTimeOffset.UtcNow - started,
+            // THE TWO FAILURES ARE NOT THE SAME. A THROWN summarisation falls back to truncation and
+            // costs history; a DECLINED one returned no usable summary and cost nothing, leaving the
+            // conversation exactly as it was. Reporting both as "dropped the oldest messages unread"
+            // told the user they had lost something they still had.
             ErrorMessage = result.Summarised
                 ? null
-                : "summarisation failed — dropped the oldest messages unread",
+                : result.Declined
+                    ? "the model returned no usable summary — nothing was compressed, nothing was lost"
+                    : "summarisation failed — dropped the oldest messages unread",
             Output = new Dictionary<string, object?>
             {
                 ["content"] = $"{before} messages → {context.Count}\n\n{summary}",
