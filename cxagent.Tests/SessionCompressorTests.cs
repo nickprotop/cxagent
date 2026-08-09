@@ -129,11 +129,14 @@ public class SessionCompressorTests
     }
 
     /// <summary>
-    /// A refusal is not a summary either. "I cannot summarise this" would otherwise be stored as the
-    /// session's entire memory of everything before it.
+    /// A REFUSAL IS STILL SPLICED IN. There was a check for it — replies starting "I cannot",
+    /// "I'm sorry", "As an AI" were rejected — and it is gone: that is a guess about the QUALITY of a
+    /// reply made by matching English, the same mistake as the no-write challenge. A refusal is at
+    /// least something the next turn can read; an empty string is not, which is the one case still
+    /// rejected.
     /// </summary>
     [Fact]
-    public async Task Compress_RefusalSummary_LeavesTheConversationUntouched()
+    public async Task Compress_RefusalSummary_IsAcceptedRatherThanSecondGuessed()
     {
         var provider = new RecordingProvider(
             Usage(new LlmResponse { Text = "I cannot summarise this conversation." }));
@@ -143,8 +146,9 @@ public class SessionCompressorTests
 
         var result = await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
-        Assert.False(result.Summarised);
-        Assert.Equal(12, conversation.Count);
+        Assert.True(result.Summarised);
+        Assert.Contains("I cannot summarise", string.Concat(conversation.Select(m => m.Content)),
+            StringComparison.Ordinal);
     }
 
     /// <summary>

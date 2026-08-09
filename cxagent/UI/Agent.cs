@@ -469,16 +469,12 @@ public sealed class Agent
                 // asked for a change and nothing was written — the failure this mode exists to fix
                 // ends exactly here, with a confident summary of work that never happened.
                 //
-                // MORE THAN ONCE, and escalating. A single nudge was measured against a real bug
-                // hunt: the model answered the challenge with PROSE rather than a tool call, and the
-                // loop took that as done — twice in a row, 55 tool calls across two runs, nothing
-                // written either time. One challenge only catches a model that forgot to write; it
-                // does nothing about one that has stalled mid-investigation, which is the commoner
-                // case on a hard task.
-                // An explicit refusal ends it. Challenging a model that has already said it cannot
-                // proceed just burns turns to hear the same thing louder.
-                var refused = text.Contains("CANNOT:", StringComparison.OrdinalIgnoreCase);
-
+                // NO "CANNOT:" ESCAPE HATCH. One lived here — a reply containing that literal
+                // suppressed the challenge, so a model could end the loop by saying the right word.
+                // It only ever guarded the no-write challenge, which is gone, and it was the same
+                // string-matching mistake: an invented protocol token the model was never told about,
+                // which a real refusal ("I can't do that because…") would not have used anyway.
+                //
                 // Two ways a change request can finish badly, and they need different words: nothing
                 // was written at all, or something was written that does not build.
                 var brokenBuild = wrote && _lastBuild is not null && BuildFailed(_lastBuild);
@@ -501,7 +497,7 @@ public sealed class Agent
                 // The BROKEN BUILD check below is deliberately kept. It is not a guess about intent:
                 // a build actually ran and actually failed, and that is a fact about the tree rather
                 // than an inference from the wording of a prompt.
-                if (broken && !refused && challenges < MaxChallenges)
+                if (broken && challenges < MaxChallenges)
                 {
                     challenges++;
                     messages.Add(new ChatMessage

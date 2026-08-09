@@ -284,57 +284,22 @@ public static class SessionCompressor
     private const int ToolResultChars = 2_000;
 
     /// <summary>
-    /// Whether a summary is worth trading half the conversation for.
+    /// Whether anything came back at all.
     ///
-    /// <para>Three ways it is not. Empty or whitespace is the obvious one. Too short is the next: a
-    /// model answering "ok" or "done" has acknowledged the request rather than performed it, and that
-    /// word would become the session's whole memory of what it replaced. A refusal is the third — it
-    /// is a coherent sentence and passes any length test, but it describes the model declining, not
-    /// the history it was asked about.</para>
+    /// <para>EMPTINESS ONLY. This checked three things: empty, shorter than twelve characters, and
+    /// starting with a refusal ("I cannot", "I'm sorry", "As an AI"). The last two are gone — they
+    /// were guesses about the QUALITY of a reply, made by matching English, and the length floor had
+    /// already been wrong twice: forty rejected "read Foo.cs, changed the parser" (31 chars), then
+    /// twenty rejected "earlier: a summary." (19). Both were real summaries of short exchanges, and
+    /// both were caught by existing tests rather than by reasoning. A rule that needs correcting
+    /// every time it meets a real reply is not measuring what it claims to.</para>
     ///
-    /// <para>Deliberately narrow. The cost of wrongly REJECTING is one skipped compaction: the
-    /// context stays large and the next turn tries again. The cost of wrongly ACCEPTING is history
-    /// deleted and replaced with nothing. Those are not symmetric, so this errs toward rejecting —
-    /// but only on signals that cannot be a real summary, never on a terse one.</para>
-    ///
-    /// <para>A vacuous-but-coherent reply ("Summary of the above.") still passes. No length rule can
-    /// catch that without also rejecting "read Foo.cs, changed the parser", and given the asymmetry
-    /// above, letting it through is the right side to err on.</para>
+    /// <para>What is left is not a judgement. The model returned nothing, so there is nothing to put
+    /// in place of what would be discarded — splicing <c>""</c> in would delete half the conversation
+    /// and leave no record of it. A terse summary, a vacuous one, even a refusal, is at least
+    /// SOMETHING the next turn can read; an empty string is not.</para>
     /// </summary>
-    private static bool IsUsableSummary(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return false;
-
-        var trimmed = text.Trim();
-        if (trimmed.Length < MinSummaryChars) return false;
-
-        foreach (var opener in RefusalOpeners)
-            if (trimmed.StartsWith(opener, StringComparison.OrdinalIgnoreCase)) return false;
-
-        return true;
-    }
-
-    /// <summary>
-    /// The shortest thing that can be a real summary. Long enough to exclude "ok", "done", "none",
-    /// "summary", "Summary:" and "No summary." — acknowledgements of the request, or declarations of
-    /// having nothing to say, rather than answers to it.
-    ///
-    /// <para>TWELVE, AND IT CAME DOWN TWICE. Forty rejected "read Foo.cs, changed the parser" (31);
-    /// twenty then rejected "earlier: a summary." (19). Both are real summaries of short exchanges,
-    /// and both were caught by existing tests rather than by reasoning — which is the point: this
-    /// floor exists to catch a model that said NOTHING, not to impose a word count on one that was
-    /// brief because the history it summarised was.</para>
-    /// </summary>
-    private const int MinSummaryChars = 12;
-
-    /// <summary>How a refusal starts. Matched at the FRONT only: a real summary may well contain the
-    /// words "cannot" or "sorry" while describing what happened, and rejecting on that would throw
-    /// away good summaries of sessions that went badly.</summary>
-    private static readonly string[] RefusalOpeners =
-    [
-        "I cannot", "I can't", "I'm sorry", "I am sorry", "I'm unable", "I am unable",
-        "Sorry,", "As an AI",
-    ];
+    private static bool IsUsableSummary(string? text) => !string.IsNullOrWhiteSpace(text);
 
     private static string FormatSummary(string? text) =>
         $"[earlier conversation, summarised: {text}]";
