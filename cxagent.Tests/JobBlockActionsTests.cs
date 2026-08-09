@@ -8,7 +8,7 @@ public class JobBlockActionsTests
 {
     private static Job J(JobState state) => new()
     {
-        Id = "j1", GoalId = "g", PluginType = "shell", DisplayName = "Run tests",
+        Id = "j1", AgentId = "g", PluginType = "shell", DisplayName = "Run tests",
         State = state, CreatedAt = DateTimeOffset.UtcNow,
     };
 

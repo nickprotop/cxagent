@@ -146,7 +146,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         _tailCts = new CancellationTokenSource();
         var body = _tailBody;
         var token = _tailCts.Token;
-        var poller = new LogTailPoller(_logs, job.GoalId, job.Id,
+        var poller = new LogTailPoller(_logs, job.AgentId, job.Id,
             newLines => _system.EnqueueOnUIThread(() =>
             {
                 // StopTail no longer waits for the poller (that self-deadlocked), so an emit already

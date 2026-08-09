@@ -560,6 +560,54 @@ public class AgentChallengeTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// TWO PROMPTS, ONE DIRECTORY, TURNS ASCENDING ACROSS THEM.
+    ///
+    /// <para>The failure this pins: an id minted per user message scattered one linear session across
+    /// a directory per prompt, each restarting its turn numbering at 000 — so the run you wanted to
+    /// read was split several ways with nothing saying which came first. This is the automated form of
+    /// the manual two-prompt check in the task brief, which needs a live model; the mechanism is
+    /// deterministic, so a mock drives it exactly as well.</para>
+    /// </summary>
+    [Fact]
+    public async Task TwoPromptsLogToOneDirectory_WithTurnsNumberedStraightThrough()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-logdir-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var logs = new LogFileManager(new AppPaths(dir));
+
+            var provider = new MockLlmProvider();
+            for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("ok"));
+
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
+                new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
+
+            await agent.SendAsync("say hello", CancellationToken.None);
+            await agent.SendAsync("say goodbye", CancellationToken.None);
+
+            var agentDir = Path.GetDirectoryName(logs.PathFor(agent.Id, "x", "log"))!;
+            // Fire-and-forget writes: poll for the second prompt's context log rather than racing it.
+            for (var i = 0; i < 50 && Directory.GetFiles(agentDir, "context-*.log").Length < 2; i++)
+                await Task.Delay(20);
+
+            // ONE directory for the whole session — not one per prompt.
+            Assert.Equal(new[] { agent.Id }, Directory.GetDirectories(Path.Combine(dir, "logs"))
+                .Select(Path.GetFileName).ToArray());
+
+            // Turn 001 EXISTS, which is the whole point: the second prompt continued the numbering
+            // instead of overwriting context-000.
+            Assert.True(File.Exists(Path.Combine(agentDir, "context-000.log")));
+            Assert.True(File.Exists(Path.Combine(agentDir, "context-001.log")));
+
+            // And the header inside says so too — this is the line the manual check greps for.
+            var second = await File.ReadAllTextAsync(Path.Combine(agentDir, "context-001.log"));
+            Assert.Contains("=== turn 001", second, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     // --- Context pressure ------------------------------------------------------------------------
 
     [Fact]

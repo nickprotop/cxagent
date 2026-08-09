@@ -28,7 +28,7 @@ public class PermissionGatedPluginTests
     private static Job J(string id, string type, JobParameters p) => new()
     {
         Id = id,
-        GoalId = "g",
+        AgentId = "g",
         PluginType = type,
         DisplayName = id,
         Parameters = p,

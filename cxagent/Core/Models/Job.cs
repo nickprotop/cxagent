@@ -23,7 +23,13 @@ public record Job
     /// the name the orchestrator itself chose. Without it, {{r1.content}} refers to nothing.
     /// </summary>
     public string? PlanLocalId { get; init; }
-    public required string GoalId { get; init; }
+    /// <summary>
+    /// The agent this job belongs to — the grouping key for its log directory and its panel row.
+    ///
+    /// <para>Was <c>GoalId</c>. Nothing ever interpreted the value, so this is a rename that makes the
+    /// key honest: what it holds is an agent's id, stable for the session, not a per-message goal.</para>
+    /// </summary>
+    public required string AgentId { get; init; }
     public required string PluginType { get; init; }   // "shell", "docker", etc.
     public required string DisplayName { get; init; }
     public JobParameters Parameters { get; init; } = new();

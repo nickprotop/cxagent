@@ -233,7 +233,13 @@ public sealed class Agent
         // _maxTurns; `_turn` numbers log files across the agent's whole life. Folding them into one
         // would silently tighten the cap on every prompt — the second message in a session would
         // start with the first message's turns already counted against it.
-        for (var turn = 0; ; turn++, _turn++)
+        //
+        // _turn IS ADVANCED IN THE BODY, not here. In the increment clause it only ran when the loop
+        // CONTINUED, and the commonest turn of all — a prose answer — returns from inside the body
+        // instead. So a session of one-turn exchanges logged every prompt as context-000, each
+        // silently overwriting the last: the exact log fragmentation this counter exists to prevent,
+        // reintroduced by the one path that never reaches a `continue`.
+        for (var turn = 0; ; turn++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -327,6 +333,12 @@ public sealed class Agent
             // Raw, before StripReasoning, because the reasoning block is part of what arrived and a
             // fault in the stripping itself would be invisible in stripped output.
             LogTurn(Id, _turn, response);
+
+            // THIS turn's number is now spent — both LogContext above and LogTurn just now used it,
+            // so they pair up as context-NNN/turn-NNN. Advanced here rather than in the loop header
+            // so that a turn which RETURNS still counts: see the note there.
+            _turn++;
+
             TurnCompleted?.Invoke(response.ToolCalls.Count);
 
             var text = ModelOutput.StripReasoning(response.Text);
@@ -562,7 +574,7 @@ public sealed class Agent
     /// on every turn is one nobody opens twice. The first line of each message is enough to
     /// recognise it.</para>
     /// </summary>
-    private void LogContext(string goalId, int turn, IReadOnlyList<ChatMessage> messages, int? inputTokens)
+    private void LogContext(string agentId, int turn, IReadOnlyList<ChatMessage> messages, int? inputTokens)
     {
         if (_logs is null) return;
 
@@ -587,7 +599,7 @@ public sealed class Agent
                 sb.AppendLine($"[{i:D3}] {role,-9} {(m.Content?.Length ?? 0),8:N0}ch{calls}  {head}");
             }
 
-            _ = _logs.AppendAsync(goalId, $"context-{turn:D3}", "log", sb.ToString());
+            _ = _logs.AppendAsync(agentId, $"context-{turn:D3}", "log", sb.ToString());
         }
         catch (Exception)
         {
@@ -595,7 +607,7 @@ public sealed class Agent
         }
     }
 
-    private void LogTurn(string goalId, int turn, LlmResponse response)
+    private void LogTurn(string agentId, int turn, LlmResponse response)
     {
         if (_logs is null) return;
 
@@ -613,7 +625,7 @@ public sealed class Agent
             // throws on anything else. An invented name would have thrown on every turn, been
             // swallowed by the catch below, and logged nothing at all — a diagnostic that silently
             // does not work is worse than none, because it is trusted.
-            _ = _logs.AppendAsync(goalId, $"turn-{turn:D3}", "log", sb.ToString());
+            _ = _logs.AppendAsync(agentId, $"turn-{turn:D3}", "log", sb.ToString());
         }
         catch (Exception)
         {
@@ -629,14 +641,14 @@ public sealed class Agent
     /// same event; inventing a second visual language for it would be gratuitous. Without this the
     /// calls are invisible: <c>ToolCallReported</c> has no UI subscriber anywhere in the app.</para>
     /// </summary>
-    private async Task<string> InvokeAndShowAsync(string goalId, ToolCall call, CancellationToken ct)
+    private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
     {
         var jobId = Helpers.UlidGenerator.NewId();
         var job = new Job
         {
             Id = jobId,
             PlanLocalId = call.Name,
-            GoalId = goalId,
+            AgentId = agentId,
             PluginType = ToolPluginType(call.Name),
             DisplayName = DescribeCall(call),
             State = JobState.Running,
@@ -646,7 +658,7 @@ public sealed class Agent
         _jobs.SetJobs(new[] { job });
 
         var started = DateTimeOffset.UtcNow;
-        var ctx = new JobContext(goalId, jobId, new Dictionary<string, JobResult>(), _logs);
+        var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
         var result = await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct);
 
         var failed = LooksLikeFailure(result);
@@ -755,14 +767,14 @@ public sealed class Agent
     /// SessionCompressor falls back to truncation on a provider error, and its result says which
     /// happened so the transcript can be honest about it.</para>
     /// </summary>
-    private async Task MaybeCompressAsync(string goalId, int inputTokens, CancellationToken ct)
+    private async Task MaybeCompressAsync(string agentId, int inputTokens, CancellationToken ct)
     {
         if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
 
         // The row itself lives in CompressionRun, which every compressing route now shares — this one,
         // GoalRunner's between-goals check, and the /compress command. The threshold test stays here
         // because only this caller measures per-turn pressure.
-        await CompressionRun.RunAsync(_context, _provider, _jobs, goalId,
+        await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
             $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
             _ledger.Record, ct, compressed: (b, a) =>
             {

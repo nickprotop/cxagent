@@ -26,7 +26,7 @@ public class InlineJobSinkTests
         new()
         {
             Id = "j1",
-            GoalId = "g1",
+            AgentId = "g1",
             PluginType = "llm_agent",
             DisplayName = "read the RFC files",
             State = state,
@@ -123,7 +123,7 @@ public class InlineJobSinkTests
         Dictionary<string, object?>? output = null) =>
         new()
         {
-            Id = "j1", GoalId = "g1", PluginType = pluginType, DisplayName = "step", State = state,
+            Id = "j1", AgentId = "g1", PluginType = pluginType, DisplayName = "step", State = state,
             Result = new JobResult
             {
                 Success = state == JobState.Succeeded, Output = output, Duration = TimeSpan.Zero,
@@ -287,7 +287,7 @@ public class InlineJobSinkTests
         // missing key, and a header must never kill a render.
         var withRole = new Job
         {
-            Id = "j1", GoalId = "g1", PluginType = "llm_agent", DisplayName = "review it",
+            Id = "j1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "review it",
             State = JobState.Succeeded,
             Parameters = new JobParameters(new Dictionary<string, object?> { ["role"] = "reviewer" }),
         };
@@ -300,7 +300,7 @@ public class InlineJobSinkTests
     {
         var noRole = new Job
         {
-            Id = "j1", GoalId = "g1", PluginType = "llm_agent", DisplayName = "do it",
+            Id = "j1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "do it",
             State = JobState.Succeeded,
         };
 

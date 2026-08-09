@@ -8,7 +8,7 @@ public class JobDigestTests
 {
     private static Job Done(string content, string? error = null) => new()
     {
-        Id = "01JQZX", PlanLocalId = "r1", GoalId = "g", PluginType = "llm_agent",
+        Id = "01JQZX", PlanLocalId = "r1", AgentId = "g", PluginType = "llm_agent",
         DisplayName = "Review the file",
         State = error is null ? JobState.Succeeded : JobState.Failed,
         Parameters = new JobParameters(new() { ["prompt"] = "Review this", ["role"] = "reviewer" }),
@@ -87,7 +87,7 @@ public class JobDigestTests
 
     private static Job JobWithOutput(Dictionary<string, object?> output) => new()
     {
-        Id = "01JQZX", PlanLocalId = "r1", GoalId = "g", PluginType = "llm_agent",
+        Id = "01JQZX", PlanLocalId = "r1", AgentId = "g", PluginType = "llm_agent",
         DisplayName = "Review the file",
         State = JobState.Succeeded,
         Parameters = new JobParameters(new() { ["prompt"] = "Review this", ["role"] = "reviewer" }),
@@ -138,7 +138,7 @@ public class JobDigestTests
     /// <summary>A non-worker job: a file read, whose output is an ECHO of bytes already on disk.</summary>
     private static Job FileRead(string content) => new()
     {
-        Id = "01FILE", PlanLocalId = "f1", GoalId = "g", PluginType = "file",
+        Id = "01FILE", PlanLocalId = "f1", AgentId = "g", PluginType = "file",
         DisplayName = "Read QEncoder.cs",
         State = JobState.Succeeded,
         Parameters = new JobParameters(new() { ["action"] = "read", ["path"] = "QEncoder.cs" }),

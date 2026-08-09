@@ -11,7 +11,7 @@ namespace CxAgent.UI;
 public sealed class LogTailPoller
 {
     private readonly LogFileManager _logs;
-    private readonly string _goalId;
+    private readonly string _agentId;
     private readonly string _jobId;
     private readonly Action<IReadOnlyList<string>> _emit;
     private readonly int _tailLines;
@@ -22,11 +22,11 @@ public sealed class LogTailPoller
     private int _emittedTotal;
     private bool _primed;        // first read emits only the tail window, not the whole backlog
 
-    public LogTailPoller(LogFileManager logs, string goalId, string jobId,
+    public LogTailPoller(LogFileManager logs, string agentId, string jobId,
         Action<IReadOnlyList<string>> emitNewLines, int tailLines = 20, int pollIntervalMs = 500)
     {
         _logs = logs;
-        _goalId = goalId;
+        _agentId = agentId;
         _jobId = jobId;
         _emit = emitNewLines;
         _tailLines = tailLines;
@@ -73,7 +73,7 @@ public sealed class LogTailPoller
     {
         try
         {
-            var text = await _logs.ReadAsync(_goalId, _jobId, "log");
+            var text = await _logs.ReadAsync(_agentId, _jobId, "log");
             if (string.IsNullOrEmpty(text)) return System.Array.Empty<string>();
             var lines = text.Replace("\r\n", "\n").Split('\n');
             // The trailing '\n' yields a final empty element — drop it.

@@ -55,8 +55,22 @@ public class LogFileManagerTests : IDisposable
         Assert.Equal("an error\n", await mgr.ReadAsync("g1", "j1", "stderr"));
     }
 
+    /// <summary>One agent, one directory. Turn logs from a whole session must land together — they
+    /// used to scatter across a directory per user message, with turn numbering restarting in each.</summary>
     [Fact]
-    public async Task Append_CreatesGoalSubdirectory()
+    public async Task AppendAsync_PutsOneAgentsTurnsInOneDirectory()
+    {
+        var logs = new LogFileManager(_paths);
+
+        await logs.AppendAsync("agent-1", "context-000", "log", "first");
+        await logs.AppendAsync("agent-1", "context-001", "log", "second");
+
+        var files = Directory.GetFiles(Path.Combine(_paths.LogsDir, "agent-1"));
+        Assert.Equal(2, files.Length);
+    }
+
+    [Fact]
+    public async Task Append_CreatesAgentSubdirectory()
     {
         var mgr = new LogFileManager(_paths);
         await mgr.AppendAsync("g1", "j1", "log", "x");
@@ -65,11 +79,11 @@ public class LogFileManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteGoalLogs_RemovesTheGoalDirectory()
+    public async Task DeleteAgentLogs_RemovesTheAgentDirectory()
     {
         var mgr = new LogFileManager(_paths);
         await mgr.AppendAsync("g1", "j1", "log", "x");
-        mgr.DeleteGoalLogs("g1");
+        mgr.DeleteAgentLogs("g1");
         Assert.False(Directory.Exists(Path.Combine(_paths.LogsDir, "g1")));
     }
 

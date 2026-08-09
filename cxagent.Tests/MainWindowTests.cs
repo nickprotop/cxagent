@@ -564,10 +564,11 @@ public class MainWindowTests
     }
 
     [Fact]
-    public void SessionPanel_ShowsTheGoalIdForLogCorrelation()
+    public void SessionPanel_ShowsTheAgentIdForLogCorrelation()
     {
         // Not glanceable — nobody reads a ULID — but it is the one string connecting what is on
-        // screen to the logs on disk, which are written to a directory named by exactly this.
+        // screen to the logs on disk, which are written to a directory named by exactly this. It is
+        // the AGENT's id, fixed for the session, so the directory it names does not move mid-session.
         var panel = new SessionPanel();
         panel.Refresh(tokens: 0, contextWindow: null, model: "m", endpoint: "", rules: 0,
             sessionId: "01KZEF93C6K66HP6T2SJ9WKMHR");

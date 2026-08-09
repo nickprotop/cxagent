@@ -33,7 +33,7 @@ public static class CompressionRun
     /// <param name="context">The agent's context, mutated in place.</param>
     /// <param name="provider">The provider used to write the summary.</param>
     /// <param name="jobs">Where the row is rendered.</param>
-    /// <param name="goalId">The goal the row belongs to.</param>
+    /// <param name="agentId">The goal the row belongs to.</param>
     /// <param name="title">
     /// The row's display name. The caller writes it because only the caller knows WHY this ran — the
     /// pressure reading that tripped a threshold, or that the user asked.
@@ -46,7 +46,7 @@ public static class CompressionRun
     /// Optional: callers with no UI to notify pass null.
     /// </param>
     public static async Task<SessionCompressor.CompressResult> RunAsync(
-        AgentContext context, ILlmProvider provider, IJobPanel jobs, string goalId,
+        AgentContext context, ILlmProvider provider, IJobPanel jobs, string agentId,
         string title, Action<LlmUsage>? meter, CancellationToken ct, Action<int, int>? compressed = null)
     {
         // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
@@ -62,7 +62,7 @@ public static class CompressionRun
         {
             Id = Helpers.UlidGenerator.NewId(),
             PlanLocalId = "compress",
-            GoalId = goalId,
+            AgentId = agentId,
             PluginType = "compress",
             DisplayName = title,
             State = JobState.Running,

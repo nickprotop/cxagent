@@ -11,7 +11,7 @@ namespace CxAgent.Core.Execution;
 /// </summary>
 public sealed class JobContext : IJobContext
 {
-    private readonly string _goalId;
+    private readonly string _agentId;
     private readonly string _jobId;
     private readonly LogFileManager? _logs;
 
@@ -23,11 +23,11 @@ public sealed class JobContext : IJobContext
     /// (and tests) that only care about results keep compiling; an absent map degrades the label to
     /// the raw id rather than dropping it.
     /// </param>
-    public JobContext(string goalId, string jobId,
+    public JobContext(string agentId, string jobId,
         IReadOnlyDictionary<string, JobResult> completedOutputs, LogFileManager? logs,
         IReadOnlyDictionary<string, string>? completedNames = null)
     {
-        _goalId = goalId;
+        _agentId = agentId;
         _jobId = jobId;
         CompletedJobOutputs = completedOutputs;
         CompletedJobNames = completedNames ?? new Dictionary<string, string>();
@@ -78,7 +78,7 @@ public sealed class JobContext : IJobContext
 
     private async Task SafeAppend(string stream, string line)
     {
-        try { await _logs!.AppendAsync(_goalId, _jobId, stream, line + Environment.NewLine); }
+        try { await _logs!.AppendAsync(_agentId, _jobId, stream, line + Environment.NewLine); }
         catch { /* diagnostic only */ }
     }
 }
