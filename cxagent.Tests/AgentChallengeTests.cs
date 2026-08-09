@@ -731,8 +731,15 @@ public class AgentChallengeTests
 
         var sink = new RecordingSink();
         var panel = new NullJobPanel();
+
+        // A PROMPT LARGE ENOUGH TO JUSTIFY THE READING. RecordUsage now rejects a report of more
+        // tokens than the conversation has characters — measured live, a provider reported 249,125
+        // tokens for a 371-character context — so a 5,000-token reading against a ten-word prompt is
+        // discarded before it can trigger anything. The threshold under test is unchanged; the
+        // fixture just describes a conversation those tokens could actually have come from.
+        var prompt = "do something long: " + new string('x', 30_000);
         await Build(provider, sink, compressAbove: 1_000, panel: panel)
-            .SendAsync("do something long", CancellationToken.None);
+            .SendAsync(prompt, CancellationToken.None);
 
         // A JOB ROW, so it carries the spinner, the one-line summary and an expandable body like any
         // other piece of work. Asserting on the JOB rather than on transcript text also pins the

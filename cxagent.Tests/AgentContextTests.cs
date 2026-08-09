@@ -185,6 +185,83 @@ public class AgentContextTests
     }
 
     /// <summary>
+    /// A READING THAT CANNOT BE TRUE IS NOT A MEASUREMENT.
+    ///
+    /// <para>Measured on this machine, twice, in independent sessions: 31,060 characters reported as
+    /// 132,495 input tokens, and 57,088 characters reported as 249,125. Both are about 17x more
+    /// tokens than characters — impossible for any tokenizer, since a token is at minimum one
+    /// character — and the second also exceeds the 212,992-token window the model was serving. 2 of
+    /// 25 logged readings were in this state.</para>
+    ///
+    /// <para>Acting on one is destructive: against the default 40,000 threshold either figure
+    /// triggers a compression of a nearly-empty context, which summarises history away to free space
+    /// that was never occupied. The previous reading is kept instead, exactly as for a reported 0.</para>
+    /// </summary>
+    [Fact]
+    public void RecordUsage_RejectsAReadingWithMoreTokensThanCharacters()
+    {
+        var ctx = new AgentContext(window: 212_992);
+        foreach (var _ in Enumerable.Range(0, 10))
+            ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 5_708) });   // 57,080 chars
+
+        ctx.RecordUsage(1_500);          // plausible: ~38 chars/token
+        ctx.RecordUsage(249_125);        // the live garbage reading
+
+        Assert.Equal(1_500, ctx.Used);   // the impossible one did not land
+    }
+
+    /// <summary>
+    /// The first reading of a session has nothing to compare against, so the density check is the
+    /// only thing standing between it and the trigger. A context of 371 characters cannot be 249,125
+    /// tokens — that was the actual pairing in the log.
+    /// </summary>
+    [Fact]
+    public void RecordUsage_RejectsAnImpossibleFirstReading()
+    {
+        var ctx = new AgentContext(window: 212_992);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 371) });
+
+        ctx.RecordUsage(249_125);
+
+        Assert.Null(ctx.Used);
+    }
+
+    /// <summary>
+    /// A reading larger than the window it was served by cannot describe what the provider received.
+    /// Kept separate from the density rule: a small context with a huge reading fails both, but a
+    /// LARGE context can exceed the window while still looking dense enough to pass.
+    /// </summary>
+    [Fact]
+    public void RecordUsage_RejectsAReadingBeyondTheWindow()
+    {
+        var ctx = new AgentContext(window: 100_000);
+        foreach (var _ in Enumerable.Range(0, 100))
+            ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 10_000) });  // 1M chars
+
+        ctx.RecordUsage(30_000);
+        ctx.RecordUsage(150_000);        // 6.7 chars/token — plausible density, impossible total
+
+        Assert.Equal(30_000, ctx.Used);
+    }
+
+    /// <summary>
+    /// A DENSE BUT REAL reading still lands. Code, JSON and CJK all tokenize far below English prose,
+    /// and rejecting them would silence the trigger on exactly the sessions that fill a window
+    /// fastest. The gate is for the impossible, not the merely unusual.
+    /// </summary>
+    [Fact]
+    public void RecordUsage_AcceptsADenseButPossibleReading()
+    {
+        var ctx = new AgentContext(window: 212_992);
+        foreach (var _ in Enumerable.Range(0, 10))
+            ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 1_000) });   // 10,000 chars
+
+        ctx.RecordUsage(8_000);          // 1.25 chars/token — dense, but a token is still >= 1 char
+
+        Assert.Equal(8_000, ctx.Used);
+    }
+
+    /// <summary>
     /// ESTIMATED FROM TOKEN DENSITY, not from a before/after ratio on the conversation. The two sizes
     /// such a ratio compares are taken at different moments — the reading when a turn is SENT, the
     /// size after that turn's tool results have been appended — and measured live that made a −32%
@@ -194,14 +271,19 @@ public class AgentContextTests
     public void EstimateUsageAfterCompaction_AppliesTheMeasuredTokenDensity()
     {
         var ctx = new AgentContext(window: 100_000);
-        ctx.RecordUsage(40_000, atChars: 1_000);      // 40 tokens per character
+
+        // A QUARTER TOKEN PER CHARACTER — i.e. 4 chars/token, ordinary English prose. This fixture
+        // used 40 tokens per CHARACTER as arithmetic convenience, which RecordUsage now rejects as
+        // impossible (a token is at minimum one character). The scaling under test is unchanged; only
+        // the density is now one a real provider could report.
+        ctx.RecordUsage(1_000, atChars: 4_000);
 
         // The conversation GREW after that reading (this turn's tool results), then compaction cut it
-        // to 250 characters. The estimate must follow the surviving size, not the growth.
-        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 250) });
+        // to 1,000 characters. The estimate must follow the surviving size, not the growth.
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 1_000) });
         ctx.EstimateUsageAfterCompaction();
 
-        Assert.Equal(10_000, ctx.Used);               // 250 chars x 40 tokens/char
+        Assert.Equal(250, ctx.Used);                  // 1,000 chars x 0.25 tokens/char
         Assert.True(ctx.IsEstimated);
     }
 
@@ -210,13 +292,13 @@ public class AgentContextTests
     public void RecordUsage_ClearsTheEstimatedMarker()
     {
         var ctx = new AgentContext(window: 100_000);
-        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 1_000) });
-        ctx.RecordUsage(40_000, atChars: 1_000);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 4_000) });
+        ctx.RecordUsage(1_000, atChars: 4_000);      // 4 chars/token — a density a provider can report
         ctx.EstimateUsageAfterCompaction();
-        ctx.RecordUsage(12_000, atChars: 1_000);
+        ctx.RecordUsage(1_200, atChars: 4_000);
 
         Assert.False(ctx.IsEstimated);
-        Assert.Equal(12_000, ctx.Used);
+        Assert.Equal(1_200, ctx.Used);
     }
 
     /// <summary>Without a window there is no denominator, and a guessed one is worse than none.</summary>

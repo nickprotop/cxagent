@@ -122,10 +122,65 @@ public sealed class AgentContext
     public void RecordUsage(int inputTokens, int atChars = 0)
     {
         if (inputTokens <= 0) return;
+
+        var chars = atChars > 0 ? atChars : TotalChars();
+        if (!IsPossible(inputTokens, chars))
+        {
+            // KEEP THE PREVIOUS READING, exactly as for a reported 0. Dropping to null would read as
+            // "occupancy unknown" and silence the trigger; overwriting with the garbage would fire it
+            // on a context that is nowhere near full.
+            RejectedReadings++;
+            LastRejectedReading = inputTokens;
+            return;
+        }
+
         Used = inputTokens;
-        UsedAtChars = atChars > 0 ? atChars : TotalChars();
+        UsedAtChars = chars;
         IsEstimated = false;   // a real measurement supersedes any estimate
     }
+
+    /// <summary>
+    /// Whether a reported input-token count could describe <paramref name="chars"/> characters at all.
+    ///
+    /// <para>THE PROVIDER IS NOT ALWAYS TELLING THE TRUTH, and this is measured rather than defensive.
+    /// Two of twenty-five readings logged on this machine were impossible: 31,060 characters reported
+    /// as 132,495 input tokens, and 57,088 as 249,125 — roughly 17x more tokens than characters, in
+    /// independent sessions, which reads as a systematic endpoint defect rather than noise. A local
+    /// llama.cpp splitting <c>n_ctx</c> across slots is one way this happens; whatever the cause, the
+    /// figure cannot be acted on.</para>
+    ///
+    /// <para>Two rules, and they catch different shapes. A token is at MINIMUM one character in any
+    /// tokenizer, so more tokens than characters is arithmetically impossible whatever the language.
+    /// And a reading larger than the window the provider is serving cannot describe what it received —
+    /// which catches a large context whose density looks plausible but whose total does not.</para>
+    ///
+    /// <para>DELIBERATELY NOT A DENSITY BAND. Rejecting anything under, say, 2 chars/token would also
+    /// reject real readings: code, JSON and CJK all tokenize far denser than English prose, and those
+    /// are precisely the sessions that fill a window fastest and most need the trigger. The gate is
+    /// for the impossible, not the unusual.</para>
+    /// </summary>
+    private bool IsPossible(int inputTokens, int chars)
+    {
+        // Nothing to compare against — an empty conversation cannot contradict any reading.
+        if (chars <= 0) return true;
+
+        if (inputTokens > chars) return false;
+        if (Window is > 0 && inputTokens > Window.Value) return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// How many reported readings were rejected as impossible, and the last such value.
+    ///
+    /// <para>Surfaced rather than silently dropped: a provider misreporting usage is a real fault
+    /// worth seeing, and a count that climbs is the only evidence a session has that its occupancy
+    /// figure is being held back rather than simply not moving.</para>
+    /// </summary>
+    public int RejectedReadings { get; private set; }
+
+    /// <summary>The most recent rejected reading, or null if none was. Diagnostic only.</summary>
+    public int? LastRejectedReading { get; private set; }
 
     /// <summary>
     /// How large the conversation was when <see cref="Used"/> was measured.
