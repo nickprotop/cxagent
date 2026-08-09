@@ -789,43 +789,6 @@ public class LlmAgentJobPluginTests
         Assert.Contains("DIGESTS", spec.Description!);      // WHY splitting fails, not just that it does
     }
 
-    [Fact]
-    public void StripReasoning_RemovesABalancedThinkBlock()
-    {
-        // Seen live: a worker's finished body read literally "</think>". Reasoning tags were never
-        // stripped anywhere, so they reached the transcript AND the job's Output -- and JobDigest
-        // feeds that same text to the ORCHESTRATOR, so a downstream job consuming
-        // {{reviewer.content}} was handed the model's private deliberation as if it were the answer.
-        var text = "<think>I should check the obsolete attribute first.</think>Defect 1: a typo.";
-
-        Assert.Equal("Defect 1: a typo.", LlmAgentJobPlugin.StripReasoning(text));
-    }
-
-    [Fact]
-    public void StripReasoning_HandlesAnUNBALANCEDCloseTag()
-    {
-        // The exact live case: only the closing tag survived into the visible text. Everything
-        // BEFORE it was thought, so the remainder is the answer.
-        Assert.Equal("Here are the defects.",
-            LlmAgentJobPlugin.StripReasoning("deliberating…</think>Here are the defects."));
-    }
-
-    [Fact]
-    public void StripReasoning_HandlesAnUNBALANCEDOpenTag()
-    {
-        // A stream cut mid-thought. Everything AFTER the open tag is thought, so it goes.
-        Assert.Equal("Answer.", LlmAgentJobPlugin.StripReasoning("Answer.<think>still reasoning"));
-    }
-
-    [Theory]
-    [InlineData("A perfectly ordinary review with no tags at all.")]
-    [InlineData("")]
-    public void StripReasoning_LeavesOrdinaryTextUNTOUCHED(string text)
-    {
-        // The normal case must not be disturbed -- this runs on every worker turn.
-        Assert.Equal(text, LlmAgentJobPlugin.StripReasoning(text));
-    }
-
     // --- propose_jobs: the planner's channel back to the orchestrator --------------------------
 
     private static readonly object Proposal = new

@@ -489,34 +489,6 @@ public class SingleAgentLoopChallengeTests
 
 
     [Fact]
-    public void ExtractReasoning_ReturnsTheThinkingWhileItIsSTILLOPEN()
-    {
-        // The mid-stream case, which is the whole point: the opening tag has arrived and the closing
-        // one has not, and that is exactly when the model has emitted nothing else.
-        var partial = "<think>Checking WrapCellLine for where the flag";
-        Assert.Equal("Checking WrapCellLine for where the flag",
-            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(partial));
-    }
-
-    [Fact]
-    public void ExtractReasoning_AndStripReasoning_AreComplements()
-    {
-        const string full = "<think>weighing options</think>The answer is 4.";
-
-        Assert.Equal("weighing options",
-            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(full));
-        Assert.Equal("The answer is 4.",
-            CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(full).Trim());
-    }
-
-    [Fact]
-    public void ExtractReasoning_IsEmptyWhenThereIsNoThinking()
-    {
-        Assert.Equal("", CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning("plain text"));
-        Assert.Equal("", CxAgent.Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(null));
-    }
-
-    [Fact]
     public async Task ReasoningIsShownInTheBodyAndNeverInTheConversation()
     {
         // IN THE BODY, not the header. It was a one-line header that rewrote itself as each new line

@@ -176,22 +176,7 @@ public class LlmAgentJobPlugin : IJobPlugin
     /// <para>Handles the UNBALANCED case deliberately: mid-stream the opening tag has arrived and
     /// the closing one has not, which is exactly when this is wanted.</para>
     /// </summary>
-    public static string ExtractReasoning(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-
-        var open = text.IndexOf("<think", StringComparison.OrdinalIgnoreCase);
-        if (open < 0) return string.Empty;
-
-        var contentStart = text.IndexOf('>', open);
-        if (contentStart < 0) return string.Empty;          // tag itself still arriving
-        contentStart++;
-
-        var close = text.IndexOf("</think>", contentStart, StringComparison.OrdinalIgnoreCase);
-        return close < 0
-            ? text[contentStart..]                          // still thinking
-            : text[contentStart..close];
-    }
+    public static string ExtractReasoning(string? text) => CxAgent.Core.Llm.ModelOutput.ExtractReasoning(text);
 
     /// <summary>
     /// Removes a reasoning model's <c>&lt;think&gt;…&lt;/think&gt;</c> block from generated text.
@@ -206,29 +191,7 @@ public class LlmAgentJobPlugin : IJobPlugin
     /// emits only the closing tag, still yields clean text rather than passing the fragment through.
     /// Text with no tags at all is returned untouched — this must not disturb the normal case.</para>
     /// </summary>
-    public static string StripReasoning(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        if (!text.Contains("<think", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("</think>", StringComparison.OrdinalIgnoreCase))
-            return text;
-
-        // Balanced blocks first.
-        var cleaned = System.Text.RegularExpressions.Regex.Replace(
-            text, "<think[^>]*>.*?</think>", string.Empty,
-            System.Text.RegularExpressions.RegexOptions.Singleline
-            | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-        // An unbalanced OPEN tag means everything after it is thought — drop the remainder.
-        var open = cleaned.IndexOf("<think", StringComparison.OrdinalIgnoreCase);
-        if (open >= 0) cleaned = cleaned[..open];
-
-        // An unbalanced CLOSE tag means everything before it was thought — keep the remainder.
-        var close = cleaned.LastIndexOf("</think>", StringComparison.OrdinalIgnoreCase);
-        if (close >= 0) cleaned = cleaned[(close + "</think>".Length)..];
-
-        return cleaned.Trim();
-    }
+    public static string StripReasoning(string? text) => CxAgent.Core.Llm.ModelOutput.StripReasoning(text);
 
     private static async Task<LlmResponse> StreamOneTurnAsync(ILlmProvider provider,
         List<ChatMessage> messages, List<ToolDefinition> tools, IJobContext context,

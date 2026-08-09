@@ -335,7 +335,7 @@ public sealed class SingleAgentLoop
             LogTurn(goalId, turn, response);
             TurnCompleted?.Invoke(response.ToolCalls.Count);
 
-            var text = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
+            var text = ModelOutput.StripReasoning(response.Text);
 
             // Nothing more will be appended to this turn. Closing it stops the spinner; the text (if
             // any) was streamed in as it arrived.
@@ -533,7 +533,7 @@ public sealed class SingleAgentLoop
         {
             var response = await StreamTurnAsync(ask, [], ct, turnId);
             _ledger.Record(response.Usage);
-            return Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(response.Text);
+            return ModelOutput.StripReasoning(response.Text);
         }
         catch (Exception)
         {
@@ -700,7 +700,7 @@ public sealed class SingleAgentLoop
 
                 var accumulated = text.ToString();
 
-                var visible = Core.Plugins.Builtin.LlmAgentJobPlugin.StripReasoning(accumulated);
+                var visible = ModelOutput.StripReasoning(accumulated);
                 if (visible.Length > shown)
                 {
                     _sink.AppendAssistant(turnId, visible[shown..]);
@@ -727,7 +727,7 @@ public sealed class SingleAgentLoop
                 // soon as body content arrives. That is the right trade — the reasoning text itself
                 // is now the evidence the model is alive, and it is far better evidence than a
                 // spinner, because it says WHAT the model is doing.
-                var reasoning = Core.Plugins.Builtin.LlmAgentJobPlugin.ExtractReasoning(accumulated);
+                var reasoning = ModelOutput.ExtractReasoning(accumulated);
                 if (reasoning.Length > shownReasoning)
                 {
                     _sink.AppendAssistant(turnId,
