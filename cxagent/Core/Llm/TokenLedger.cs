@@ -19,6 +19,25 @@ public sealed class TokenLedger
 
     public TokenLedger(int? goalTokenBudget) => _budget = goalTokenBudget;
 
+    /// <summary>
+    /// A ledger carrying spend that already happened — for a session restored from disk.
+    ///
+    /// <para>A CONSTRUCTOR RATHER THAN A REPLAYED <see cref="Record"/> CALL, and the difference
+    /// matters. Replaying one synthetic <see cref="LlmUsage"/> would reach the budget check and fire
+    /// <see cref="Breached"/> on any session resumed above its budget — reporting as new an error the
+    /// user was already shown in the process that crashed, at the moment they are trying to pick the
+    /// work back up. The breach flag starts already-raised for the same reason: if the total is over
+    /// budget on arrival, that crossing is history, and only a FURTHER crossing is news.</para>
+    /// </summary>
+    public TokenLedger(int? goalTokenBudget, int inputTokens, int outputTokens)
+    {
+        _budget = goalTokenBudget;
+        _input = inputTokens;
+        _output = outputTokens;
+        _total = inputTokens + outputTokens;
+        _breachRaised = IsBreached;
+    }
+
     public int TotalTokens => _total;
 
     /// <summary>

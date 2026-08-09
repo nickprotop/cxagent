@@ -233,7 +233,8 @@ public sealed class AgentHost : IDisposable
         PluginRegistry pluginRegistry, LogFileManager? logs = null,
         OrchestratorSettings? orchestrator = null,
         int? contextWindow = null,
-        SqliteSessionStore? store = null)
+        SqliteSessionStore? store = null,
+        SessionSnapshot? resume = null)
     {
         _provider = provider;
         _sink = sink;
@@ -244,8 +245,17 @@ public sealed class AgentHost : IDisposable
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
         _sessionTokenBudget = _orchestrator.GoalTokenBudget;
-        Ledger = new TokenLedger(_sessionTokenBudget);
+
+        // RESTORED, OR FRESH. A resumed session carries the spend it already incurred — a ledger
+        // restarting at zero would report a long session as costing nothing — and its context is
+        // rehydrated rather than replayed, so the next turn continues from what the agent knew
+        // instead of re-reading what it had already read.
+        Ledger = resume is null
+            ? new TokenLedger(_sessionTokenBudget)
+            : new TokenLedger(_sessionTokenBudget, resume.InputTokens, resume.OutputTokens);
+
         Context = new AgentContext(contextWindow);
+        if (resume is not null) Context.Replace(resume.Context);
         // On breach, pause and ask — never silently keep spending. For now (Task 4) that means
         // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
         Ledger.Breached += (_, total) =>

@@ -96,6 +96,11 @@ public static class AppBootstrap
         // here so there is a registry before the first wire — nothing reads it between here and then.
         var plugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate);
 
+        // A crashed session waiting to be picked up, until the user answers. Consumed ONCE by the
+        // next WireRunner and cleared, so an F5 provider swap later in the session does not silently
+        // re-restore a context the user has already moved past.
+        SessionSnapshot? pendingResume = null;
+
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -145,7 +150,8 @@ public static class AppBootstrap
                 // constant. Null on --mock/no-provider and whenever contextWindow isn't configured.
                 contextWindow: res.ContextWindow,
                 // Every completed turn lands here, so a crash leaves something to resume from.
-                store: sessions)
+                store: sessions,
+                resume: System.Threading.Interlocked.Exchange(ref pendingResume, null))
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -524,7 +530,60 @@ public static class AppBootstrap
             mainWindow.SetPermissionRuleCount(
                 permissionRules.RulesFor(Directory.GetCurrentDirectory()).Rules.Count);
             mainWindow.RefreshSessionPanel();
+
+            // NEVER RESUME SILENTLY. A context the user did not ask for is one they cannot account
+            // for, and it is paid for on the very first turn — so this asks, on the first pump, for
+            // the same reason everything else here is deferred: a dialog needs a render tick to join.
+            _ = OfferResumeAsync();
         });
+
+        async Task OfferResumeAsync()
+        {
+            var snapshot = sessions.LoadLatestUnfinished();
+            if (snapshot is null) return;
+
+            // ENOUGH TO RECOGNISE IT BY. A ULID identifies a session but describes nothing; the size
+            // and the age are what tell someone whether this is the work they were in the middle of.
+            var age = DateTimeOffset.UtcNow - snapshot.UpdatedAt;
+            var when = age.TotalMinutes < 1 ? "just now"
+                     : age.TotalHours < 1 ? $"{(int)age.TotalMinutes}m ago"
+                     : age.TotalDays < 1 ? $"{(int)age.TotalHours}h ago"
+                     : $"{(int)age.TotalDays}d ago";
+
+            const string resume = "Resume it";
+            const string fresh = "Start fresh";
+
+            var choice = await FlowDialogs.ChooseAsync(system, mainWindow.Window,
+                $"An earlier session ended without closing ({snapshot.Context.Count} messages, "
+                + $"last active {when}). Resume it?",
+                [resume, fresh], cts.Token);
+
+            if (choice == resume)
+            {
+                pendingResume = snapshot;
+                WireRunner(resolution);   // rebuilds the runner over the restored context
+
+                // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
+                // writing its own rows, so leaving the old one unfinished would offer the same
+                // crashed context again at every launch — and accepting it twice would fork the
+                // conversation into two sessions claiming the same history.
+                sessions.MarkFinished(snapshot.AgentId);
+
+                // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
+                // model's memory, not this session's scrollback — so without a line here the user
+                // faces an empty screen and an agent that mysteriously already knows things.
+                permissionSink.ShowSystemMessage(
+                    $"[yellow]Resumed an earlier session: {snapshot.Context.Count} messages restored. "
+                    + "They are not shown above, but the agent remembers them.[/]");
+            }
+            else if (choice == fresh)
+            {
+                // Retired explicitly, so it stops being offered on every launch from here on.
+                sessions.MarkFinished(snapshot.AgentId);
+            }
+            // Dismissed: left alone, and offered again next launch. Declining to answer is not the
+            // same as declining the session.
+        }
 
         int code = system.Run();
 

@@ -166,6 +166,58 @@ public class AgentHostTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// Resuming REHYDRATES the agent rather than replaying it. The restored context is what the model
+    /// sees on the next turn, so the session continues mid-thought instead of re-reading what it
+    /// already read — which is the entire point of having saved it.
+    /// </summary>
+    [Fact]
+    public void Resume_RehydratesTheContextAndLedger()
+    {
+        var snapshot = new CxAgent.Core.Storage.SessionSnapshot(
+            "old-agent",
+            [
+                new ChatMessage { Role = "system", Content = "Your working directory is /tmp." },
+                new ChatMessage { Role = "user", Content = "read Foo.cs" },
+                new ChatMessage { Role = "assistant", Content = "it defines Foo" },
+            ],
+            InputTokens: 5_397, OutputTokens: 435,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), resume: snapshot);
+
+        Assert.Equal(3, runner.Context.Messages.Count);
+        Assert.Equal("it defines Foo", runner.Context.Messages[2].Content);
+
+        // The spend comes back too, so a resumed session reports what it has already cost rather
+        // than restarting the count at zero.
+        Assert.Equal(5_397 + 435, runner.Ledger.TotalTokens);
+        Assert.Equal(5_397, runner.Ledger.InputTokens);
+        Assert.Equal(435, runner.Ledger.OutputTokens);
+    }
+
+    /// <summary>
+    /// A restored ledger must not fire Breached. The budget was already crossed in the previous
+    /// process and the user was already told; re-announcing it on resume reports as new an error
+    /// that is neither new nor actionable.
+    /// </summary>
+    [Fact]
+    public void Resume_WithSpendOverBudget_DoesNotReRaiseTheBreach()
+    {
+        var sink = new RecordingSink();
+        var snapshot = new CxAgent.Core.Storage.SessionSnapshot(
+            "old-agent", [new ChatMessage { Role = "user", Content = "hello" }],
+            InputTokens: 900_000, OutputTokens: 100_000, UpdatedAt: DateTimeOffset.UtcNow);
+
+        _ = new AgentHost(new MockLlmProvider(), sink, new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(),
+            orchestrator: new OrchestratorSettings(MaxTokensPerCall: null, GoalTokenBudget: 1_000),
+            resume: snapshot);
+
+        Assert.Empty(sink.Errors);
+    }
+
     /// <summary>Someone who sets a limit meant it — a configured value wins over the backstop, in
     /// either direction.</summary>
     [Fact]
