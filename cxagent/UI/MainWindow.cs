@@ -1304,7 +1304,6 @@ public sealed class MainWindow : IDisposable
             + "  [cyan]F1[/]           this help\n"
             + "  [cyan]F3[/]           show or hide the session panel\n"
             + "  [cyan]F5[/]           settings — providers, roles, orchestrator, permissions\n"
-            + "  [cyan]Esc[/]          discard a drafted plan (copilot mode)\n"
             + "  [cyan]Ctrl+Q[/]       quit\n"
             + "\n[cyan]Commands[/]\n"
             // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand

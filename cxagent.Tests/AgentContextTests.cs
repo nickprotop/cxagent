@@ -262,6 +262,55 @@ public class AgentContextTests
     }
 
     /// <summary>
+    /// THE TRIGGER IS THE REAL WINDOW, less a reserve — the rule opencode uses
+    /// (<c>session/overflow.ts</c>: <c>count >= model.limit.input - reserved</c>). We know the window
+    /// (it is configured, and shown in the panel) and we know occupancy, so a threshold derived from
+    /// the actual limit beats any number picked by hand.
+    /// </summary>
+    [Fact]
+    public void IsUnderPressure_IsTrue_WhenOccupancyReachesTheWindowLessTheReserve()
+    {
+        var ctx = new AgentContext(window: 100_000);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 400_000) });
+
+        ctx.RecordUsage(84_000, atChars: 400_000);   // under 85% — room left
+        Assert.False(ctx.IsUnderPressure);
+
+        ctx.RecordUsage(86_000, atChars: 400_000);   // past the reserve
+        Assert.True(ctx.IsUnderPressure);
+    }
+
+    /// <summary>
+    /// A provider that reports NO usage must still compress. This is the case tokens cannot cover:
+    /// occupancy stays null forever, so a token-only rule never fires and the session grows until the
+    /// endpoint rejects it — measured on this machine, turns reporting no usage at all. Characters are
+    /// the fallback, converted at a deliberately conservative ratio.
+    /// </summary>
+    [Fact]
+    public void IsUnderPressure_FallsBackToCharacters_WhenNoUsageIsEverReported()
+    {
+        var ctx = new AgentContext(window: 100_000);
+
+        // No RecordUsage call at all. 100k window x 3 chars/token x 85% ≈ 255k chars.
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 100_000) });
+        Assert.False(ctx.IsUnderPressure);
+
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 200_000) });
+        Assert.True(ctx.IsUnderPressure);
+    }
+
+    /// <summary>With no window there is nothing to be under pressure against — a percentage needs a
+    /// denominator, and so does a ceiling.</summary>
+    [Fact]
+    public void IsUnderPressure_IsFalse_WithoutAWindow()
+    {
+        var ctx = new AgentContext(window: null);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 5_000_000) });
+
+        Assert.False(ctx.IsUnderPressure);
+    }
+
+    /// <summary>
     /// ESTIMATED FROM TOKEN DENSITY, not from a before/after ratio on the conversation. The two sizes
     /// such a ratio compares are taken at different moments — the reading when a turn is SENT, the
     /// size after that turn's tool results have been appended — and measured live that made a −32%

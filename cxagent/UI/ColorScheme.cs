@@ -42,8 +42,6 @@ public static class ColorScheme
     /// <summary>Keybinds and hints: present but skippable.</summary>
     public const string MutedMarkup = "grey50";
 
-    /// <summary>A label beside an accented value.</summary>
-    public const string LabelMarkup = "grey70";
 
     /// <summary>The accent, as markup. Kept beside <see cref="Accent"/> so the two cannot drift.</summary>
     public const string AccentMarkup = "cyan1";
@@ -96,8 +94,6 @@ public static class ColorScheme
     /// </summary>
     public static readonly Color ChatSurface = new(0x0d, 0x0d, 0x0d);
 
-    /// <summary>The same colour as <see cref="ChatSurface"/>, for an `on &lt;colour&gt;` markup tag.</summary>
-    public const string ChatSurfaceMarkup = "#0d0d0d";
 
     /// <summary>
     /// The composer's surface — the prompt box AND the mode line under it.
@@ -110,8 +106,6 @@ public static class ColorScheme
     /// </summary>
     public static readonly Color ComposerSurface = new(0x2a, 0x2a, 0x2a);
 
-    /// <summary>The same colour as <see cref="ComposerSurface"/>, for an `on &lt;colour&gt;` markup tag.</summary>
-    public const string ComposerSurfaceMarkup = "#2a2a2a";
 
     // --- Markdown ---------------------------------------------------------------
     // Values from opencode's default dark theme (packages/tui/src/theme/assets/

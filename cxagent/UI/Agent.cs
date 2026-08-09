@@ -259,11 +259,10 @@ public sealed class Agent
             // because it had removed exactly the content that arrived after the last measurement.
             //
             // Here the previous turn's results are in, so the check describes what is about to be
-            // sent. It counts CHARACTERS rather than reported tokens: the provider's number is not
-            // always right (2 of 25 readings logged here were impossible) and is often not sent at
-            // all, and a trigger that silently never fires is the worse of the two failures. See
-            // AgentContext.ProjectedChars.
-            await MaybeCompressAsync(Id, _context.ProjectedChars, ct);
+            // sent. The threshold is the context's OWN window less a reserve — see
+            // AgentContext.IsUnderPressure — rather than a separately configured number that can
+            // disagree with the window the panel shows.
+            await MaybeCompressAsync(Id, ct);
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
@@ -802,23 +801,42 @@ public sealed class Agent
     /// SessionCompressor falls back to truncation on a provider error, and its result says which
     /// happened so the transcript can be honest about it.</para>
     /// </summary>
-    private async Task MaybeCompressAsync(string agentId, int chars, CancellationToken ct)
+    private async Task MaybeCompressAsync(string agentId, CancellationToken ct)
     {
-        if (_compressAbove is not { } thresholdTokens) return;
-
-        // THE THRESHOLD IS CONFIGURED IN TOKENS — it is a statement about a context window, and that
-        // is the unit windows are quoted in — but the measurement is in characters, so the
-        // comparison happens in character space. Converted with a fixed ratio, never the measured
-        // density: deriving it from reported tokens would put the dependency this change removes
-        // straight back in.
-        var thresholdChars = thresholdTokens * AgentContext.CharsPerToken;
-        if (chars <= thresholdChars) return;
+        // TWO WAYS TO BE OVER, and a configured number wins where it applies: someone who set an
+        // explicit threshold knows something about their endpoint that a window size does not capture
+        // (a shared or rate-limited box, a provider that charges differently). Absent that, the
+        // context's own window decides — the honest ceiling, and the one the panel already shows.
+        string reason;
+        if (_compressAbove is { } thresholdTokens)
+        {
+            if (_context.ProjectedUsed is { } used)
+            {
+                if (used <= thresholdTokens) return;
+                reason = $"{used:N0} tokens over {thresholdTokens:N0}";
+            }
+            else
+            {
+                // No reported usage — fall back to characters, as IsUnderPressure does.
+                var chars = _context.TotalChars();
+                var thresholdChars = thresholdTokens * AgentContext.CharsPerToken;
+                if (chars <= thresholdChars) return;
+                reason = $"{chars:N0} chars over {thresholdChars:N0}";
+            }
+        }
+        else
+        {
+            if (!_context.IsUnderPressure) return;
+            reason = _context.ProjectedUsed is { } used
+                ? $"{used:N0} of {_context.Window:N0} tokens"
+                : $"{_context.TotalChars():N0} chars, window {_context.Window:N0}";
+        }
 
         // The row itself lives in CompressionRun, which every compressing route now shares — this one
         // and the /compress command. The threshold test stays here because only this caller measures
         // per-turn pressure.
         await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
-            $"compress context · {chars:N0} chars over {thresholdChars:N0}",
+            $"compress context · {reason}",
             _ledger.Record, ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(b, a);

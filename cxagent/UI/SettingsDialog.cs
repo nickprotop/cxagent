@@ -85,7 +85,7 @@ public sealed class SettingsDialog
             .AddHeader("Settings", providersColor, header => header
                 .AddItem("Providers", subtitle: "Instances and default",
                     content: panel => BuildProvidersPage(panel))
-                .AddItem("Orchestrator", subtitle: "Consult and edit limits",
+                .AddItem("Orchestrator", subtitle: "Token budget and context limits",
                     content: panel => BuildOrchestratorPage(panel))
                 .AddItem("Permissions", subtitle: "Always-allow rules",
                     content: panel => BuildPermissionsPage(panel)))

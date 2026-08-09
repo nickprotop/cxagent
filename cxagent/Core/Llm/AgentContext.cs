@@ -211,42 +211,61 @@ public sealed class AgentContext
     }
 
     /// <summary>
-    /// What the next call will carry, measured in CHARACTERS — the figure the compression trigger
-    /// acts on.
-    ///
-    /// <para>CHARACTERS, BECAUSE THEY ARE THE ONLY HONEST INPUT. Tokens come from the provider, and
-    /// the provider is not always right: measured on this machine, 2 of 25 readings were impossible
-    /// (31,060 characters reported as 132,495 tokens; 57,088 as 249,125 — about 17x more tokens than
-    /// characters, in independent sessions). Worse is the silent case: a local llama.cpp build often
-    /// reports no usage at all, so <see cref="Used"/> stays null forever, the token trigger never
-    /// fires, and the session grows until the endpoint rejects it outright. This number is counted
-    /// here, from the messages themselves, and cannot be wrong about the conversation it describes.
-    /// </para>
-    ///
-    /// <para>Tokens remain the DISPLAY figure — the status bar and the panel still report what the
-    /// provider said, because occupancy against a real window is what a user wants to see. Only the
-    /// TRIGGER moved, and only because a trigger must not depend on a number the endpoint may not
-    /// send.</para>
-    /// </summary>
-    public int ProjectedChars => TotalChars();
-
-    /// <summary>
-    /// Characters per token, for converting a token-denominated threshold into the character space
-    /// the trigger now works in.
+    /// Characters per token, for the fallback path only — see <see cref="IsUnderPressure"/>.
     ///
     /// <para>THREE, not four. English prose runs about four, but an agent's context is dominated by
     /// what tool calls return — source code, JSON, file listings, stack traces — all of which
-    /// tokenize denser than prose. Three keeps the converted threshold slightly CONSERVATIVE: the
-    /// trigger fires a little early rather than a little late, and firing late is the failure that
-    /// matters (a context that will not fit is a session that stops working, while an early
-    /// compaction costs one provider call).</para>
-    ///
-    /// <para>A fixed ratio rather than the measured density deliberately. The measured density is
-    /// derived from reported tokens, which is the very number this change exists to stop depending
-    /// on — deriving the threshold from it would reintroduce the dependency through the back door.
-    /// </para>
+    /// tokenize denser than prose. Three keeps the converted threshold CONSERVATIVE: it fires a
+    /// little early rather than a little late, and late is the failure that matters (a context that
+    /// will not fit is a session that stops working, while an early compaction costs one call).</para>
     /// </summary>
     public const int CharsPerToken = 3;
+
+    /// <summary>
+    /// The share of the window left free, so a compaction happens BEFORE the next call would be
+    /// refused rather than after.
+    ///
+    /// <para>opencode reserves an absolute buffer instead — <c>min(20_000, maxOutputTokens)</c> —
+    /// which is the more precise rule when the model's output cap is known. A fraction is used here
+    /// because that cap is not modelled: 15% of a 212k window is ~32k, of a 32k window is ~4.8k, and
+    /// both leave room for a reply where one fixed number cannot serve both.</para>
+    /// </summary>
+    private const double ReserveFraction = 0.15;
+
+    /// <summary>
+    /// Whether the next call is close enough to the window that the conversation should be compacted
+    /// first.
+    ///
+    /// <para>THE REAL LIMIT, NOT A HAND-PICKED NUMBER. This is opencode's rule
+    /// (<c>session/overflow.ts</c>: <c>count >= model.limit.input - reserved</c>): the window is
+    /// known — it is configured per provider instance and shown in the panel — so the threshold is
+    /// derived from it rather than from a separate setting that can disagree with it.</para>
+    ///
+    /// <para>TOKENS WHEN WE HAVE THEM, CHARACTERS WHEN WE DO NOT. Reported usage is the honest
+    /// measure of what the provider received, so it is preferred. But a local llama.cpp build often
+    /// reports none at all — measured on this machine, whole turns with the field absent — and a
+    /// token-only rule then never fires while the session grows until the endpoint refuses it.
+    /// Characters are always countable, so they cover exactly that gap. Impossible readings never
+    /// reach here: <see cref="RecordUsage"/> rejects them, so <see cref="Used"/> holds either a
+    /// plausible measurement or the last one that was.</para>
+    /// </summary>
+    public bool IsUnderPressure
+    {
+        get
+        {
+            // No window, no ceiling to be under pressure against.
+            if (Window is not { } window || window <= 0) return false;
+
+            var budget = window * (1.0 - ReserveFraction);
+
+            // ProjectedUsed, not Used: the measurement is always one turn behind the growth, so it is
+            // rescaled to the conversation as it stands now — see its own doc.
+            if (ProjectedUsed is { } tokens) return tokens >= budget;
+
+            // Nothing was ever reported. Fall back to what we can count ourselves.
+            return TotalChars() >= budget * CharsPerToken;
+        }
+    }
 
     /// <summary>
     /// Re-estimates occupancy after the conversation has been rewritten, and marks it approximate.
