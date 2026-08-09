@@ -135,12 +135,73 @@ thing. Writing a claude variant now would be inventing quirks. `SystemPromptTest
 
 ---
 
-## 6. Deliberately not copied
+## 6. Proactiveness — considered, not copied
+
+opencode's section reads: *"You are allowed to be proactive, but only when the user asks… if the user
+asks you HOW to approach something, answer their question first, and not immediately jump into taking
+actions."*
+
+**Not added, and the reason is specific to this project.** Our prompt says `USE THEM: text in a
+message changes nothing` — which exists because the measured failure here was the model DESCRIBING
+edits instead of making them: "a perfect edit, right tabs, right house style… and then nowhere to put
+it, so it emitted the edit as prose". Their balance-seeking language pulls directly against that, and
+on a local model the weaker instruction tends to win.
+
+The half worth having is their point 3 — *"do not add a code explanation summary unless requested;
+after working on a file, just stop"* — and our Answering section already covers it ("skip preamble",
+"be concise").
+
+If a drive ever shows the agent acting when it should have answered, revisit. Right now the evidence
+points the other way.
+
+---
+
+## 7. AGENTS.md — a feature, not a prompt line
+
+opencode reads project instructions and prepends them (`session/instruction.ts:55-130`): a global
+`~/.config/opencode/AGENTS.md` plus `findUp` from the working directory for `AGENTS.md`, `CLAUDE.md`,
+`CONTEXT.md`. First project-level match wins, deliberately — "so we don't stack AGENTS.md/CLAUDE.md
+from every ancestor".
+
+**Why it is not in our prompt yet:** it is not prompt text, it is a file-discovery feature. And it is
+the right home for the one instruction we know we want and cannot put in a universal prompt: this
+codebase wants HEAVY explanatory comments, where opencode's prompt says "DO NOT ADD ***ANY***
+COMMENTS". That is a claim about THIS repo — writing it into the universal prompt would be wrong for
+anyone pointing cxagent at a different tree.
+
+Small when we do it: read one file, prepend it below the system prompt, say in the prompt that
+project instructions may follow and take precedence. `findUp` with first-match-wins is the part worth
+copying exactly — stacking every ancestor's file is how the context fills with stale advice.
+
+---
+
+## 8. The model id stays OUT of the prompt
+
+opencode's `<env>` opens with *"You are powered by the model named ${model.api.id}. The exact model ID
+is ${model.providerID}/${model.api.id}"*. We take the model id in `SystemPromptContext` and discard it
+(`_ = ctx.ModelId`).
+
+**The system message is the prompt-cache prefix.** It sits at position 0 and is re-sent verbatim every
+turn; cached reads are roughly a tenth of the input price, and any change to that prefix throws the
+cache away for the rest of the conversation — the same argument `AgentContext`'s own doc makes about
+why the context must not be rebuilt per goal. Putting a value in there that varies between models, for
+no gain to the model's reasoning, is paying that cost for nothing.
+
+The date is the other field that could drift, and does not: the system message is built ONCE (the
+agent inserts it only when no system message is present) and is pinned above compression, so a session
+running past midnight keeps its original prefix. `Build_IsDeterministic_ForTheSameEnvironment` and
+`Build_NeverPutsTheModelIdInThePrompt` hold both properties.
+
+---
+
+## 9. Deliberately not copied
 
 - **~6 KB of capability description** for WebFetch/Task/skills/MCP we do not have — describing tools
   the model cannot call is worse than silence.
-- **Worked verbosity examples** (`user: what is 2+2?` → `assistant: 4`). Cheap in tokens and possibly
-  worth adding, but our prompt is re-sent every turn against a local window; add only if measured
-  verbosity justifies it.
+- **The verbosity block.** One directive plus SIX worked examples (`user: what is 2+2?` →
+  `assistant: 4`; `is 11 a prime number?` → `Yes`), ~1,900 chars — the largest single chunk of their
+  prompt, roughly 22% of it. Our one-line "be concise" carries most of the effect at 1% of the cost.
+  The prompt is re-sent in full every turn, so this is a recurring charge against a local window, not
+  a one-off. Revisit only if measured verbosity justifies it.
 - **The issue-reporting URL and product self-description.** opencode is a product with users to
   route; this is not.
