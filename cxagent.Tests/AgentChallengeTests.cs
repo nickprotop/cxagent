@@ -753,6 +753,106 @@ public class AgentChallengeTests
     }
 
     /// <summary>
+    /// THE REACTIVE FIRING MOMENT, copied from opencode: when the provider REFUSES a call for being
+    /// too long, compact and retry rather than surfacing the error.
+    ///
+    /// <para>The predictive check can be wrong — a misconfigured window, an endpoint serving less
+    /// than it advertises (a local llama.cpp splits n_ctx across slots), or a provider reporting no
+    /// usage at all. The refusal cannot be: it is the endpoint saying so directly. opencode treats
+    /// this as a second trigger (processor.ts, the ContextOverflowError branch of halt) and so does
+    /// this — otherwise the one case we KNOW the context is too big is the one we give up on.</para>
+    /// </summary>
+    [Fact]
+    public async Task AContextOverflowRefusal_CompactsAndRetries_RatherThanFailing()
+    {
+        var provider = new RefusesOnceThenAnswersProvider();
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+
+        var answer = await Build(provider, sink, panel: panel)
+            .SendAsync("summarise the file I gave you", CancellationToken.None);
+
+        // It compacted...
+        Assert.Contains(panel.Jobs, j => j.PluginType == "compress");
+        // ...and the request went on to succeed rather than dying on the refusal.
+        Assert.Contains("recovered", answer, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// ONCE, not forever. If compacting does not make the call fit, retrying the same refusal is an
+    /// infinite loop — the failure has to surface.
+    ///
+    /// <para>It surfaces as the exception propagating out of SendAsync, which AgentHost turns into a
+    /// visible error (AgentHost.cs, the catch around the send). Asserted here at the layer that
+    /// actually throws: the agent's job is to stop, not to render.</para>
+    /// </summary>
+    [Fact]
+    public async Task AContextOverflowThatKeepsRefusing_GivesUp_RatherThanLooping()
+    {
+        var provider = new AlwaysRefusesProvider();
+        var sink = new RecordingSink();
+
+        var send = Build(provider, sink).SendAsync("do something", CancellationToken.None);
+        var finished = await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(10)));
+
+        Assert.True(ReferenceEquals(finished, send), "the loop never stopped retrying the refusal");
+
+        var ex = await Assert.ThrowsAsync<LlmProviderException>(() => send);
+        Assert.Contains("too long", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Refuses the first call for length, then answers — the shape of a real recovery.</summary>
+    private sealed class RefusesOnceThenAnswersProvider : ILlmProvider
+    {
+        private int _calls;
+        public string ProviderId => "fake";
+        public string DisplayName => "Fake";
+        public string ModelId => "test-model";
+        public ILlmProvider WithModel(string model) => this;
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        // The summarising call goes through ChatAsync and must succeed, or compaction cannot happen.
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
+            => Task.FromResult(new LlmResponse { Text = "earlier: the file was read and discussed." });
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+                throw new LlmProviderException("fake", 400, null, "prompt is too long");
+
+            yield return new LlmStreamChunk("recovered after compaction", null, IsFinal: true);
+            await Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Refuses every call for length — compaction cannot save it.</summary>
+    private sealed class AlwaysRefusesProvider : ILlmProvider
+    {
+        public string ProviderId => "fake";
+        public string DisplayName => "Fake";
+        public string ModelId => "test-model";
+        public ILlmProvider WithModel(string model) => this;
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
+            => Task.FromResult(new LlmResponse { Text = "earlier: a summary of the conversation." });
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            throw new LlmProviderException("fake", 400, null, "prompt is too long");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
+    /// <summary>
     /// And a GARBAGE reading cannot trigger it either. The 17x-inflated readings measured on this
     /// machine would each have fired a compression of a nearly-empty context under the old
     /// token-driven trigger — summarising history away to free space that was never occupied.

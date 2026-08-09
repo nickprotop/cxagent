@@ -236,6 +236,10 @@ public sealed class Agent
         string? stuckOn = null;
         var stuckTimes = 0;
 
+        // Whether a length refusal has already been answered with a compaction this request. One
+        // attempt only — see the catch that sets it.
+        var overflowRecovered = false;
+
         // TWO COUNTERS, and they answer different questions. `turn` bounds THIS request against
         // _maxTurns; `_turn` numbers log files across the agent's whole life. Folding them into one
         // would silently tighten the cap on every prompt — the second message in a session would
@@ -311,6 +315,38 @@ public sealed class Agent
             try
             {
                 response = await StreamTurnAsync(messages, tools, ct, turnId);
+            }
+            catch (LlmProviderException ex) when (
+                !overflowRecovered &&
+                ContextOverflow.IsOverflow(ex.Message, ex.HttpStatus, ex.VendorBody))
+            {
+                // THE PROVIDER REFUSED IT FOR LENGTH — the second firing moment, and the only one
+                // that cannot be wrong. The predictive check ahead of the send works from a
+                // CONFIGURED window, which may not be what the endpoint actually serves (a local
+                // llama.cpp splits n_ctx across slots) and is silent entirely when no usage is
+                // reported. This is the endpoint saying so in its own words, so it is worth more
+                // than any estimate: compact and try the same turn again.
+                _sink.EndAssistantTurn(turnId);
+
+                // ONCE. If compacting did not make it fit, retrying the same refusal forever is
+                // worse than reporting it — the guard is a flag rather than a counter because a
+                // second overflow means compaction is not the answer, whatever the count.
+                overflowRecovered = true;
+
+                // The refused attempt already wrote its context-NNN log, so spend the number rather
+                // than letting the retry overwrite it — the refusal and what followed are two
+                // different states of the conversation and both are worth reading afterwards.
+                _turn++;
+
+                await CompressionRun.RunAsync(_context, _provider, _jobs, Id,
+                    "compress context · provider refused the request as too long",
+                    _ledger.Record, ct, compressed: (b, a) =>
+                    {
+                        ContextCompressed?.Invoke(b, a);
+                        if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
+                    });
+
+                continue;
             }
             catch (Exception)
             {
