@@ -4,7 +4,8 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Per-project instructions: AGENTS.md and friends, found by walking up from the working directory.
+/// Project and user instructions: CXAGENT.md / AGENTS.md / CLAUDE.md, found by walking up from the
+/// working directory, plus CXAGENT.md in cxagent's own config directory.
 ///
 /// <para>WHY THIS EXISTS. Some instructions are true of a REPO, not of agents in general, and cannot
 /// live in the universal system prompt. The example that forced it: opencode's prompt says "DO NOT
@@ -244,7 +245,7 @@ public class ProjectInstructionsTests : IDisposable
     public void Find_ReadsTheGlobalFile_WhenThereIsNoProjectOne()
     {
         var global = Dir("globalcfg");
-        Write(global, "AGENTS.md", "I always want British spelling.");
+        Write(global, "CXAGENT.md", "I always want British spelling.");
         var project = Dir("bare-project");
 
         var found = ProjectInstructions.Find(project, globalDirectory: global);
@@ -262,7 +263,7 @@ public class ProjectInstructionsTests : IDisposable
     public void Find_ReturnsGlobalThenProject_SoTheProjectWins()
     {
         var global = Dir("globalcfg");
-        Write(global, "AGENTS.md", "GLOBAL RULE");
+        Write(global, "CXAGENT.md", "GLOBAL RULE");
         var project = Dir("proj");
         Write(project, "AGENTS.md", "PROJECT RULE");
 
@@ -274,18 +275,24 @@ public class ProjectInstructionsTests : IDisposable
     }
 
     /// <summary>
-    /// THE GLOBAL FILE IS AGENTS.md ONLY.
+    /// THE GLOBAL FILE IS CXAGENT.md ONLY.
     ///
-    /// <para>A project's CLAUDE.md describes the PROJECT, so it is honoured wherever the project is.
-    /// A USER-level CLAUDE.md is another product's configuration, written for a different agent with
-    /// different tools — reading it would mean silently obeying instructions never addressed to this
-    /// app. opencode does read <c>~/.claude/CLAUDE.md</c>; this deliberately does not.</para>
+    /// <para>Only this app reads cxagent's config directory, so the shared names buy nothing there —
+    /// an AGENTS.md at that path would be a vendor-neutral name in a vendor-specific location. The
+    /// project directory is the opposite case, where several agents read one repo, and the shared
+    /// names are honoured.</para>
+    ///
+    /// <para>And no CLAUDE.md at this level: a USER-level one is another product's configuration,
+    /// written for a different agent with different tools. opencode reads <c>~/.claude/CLAUDE.md</c>;
+    /// this deliberately does not.</para>
     /// </summary>
-    [Fact]
-    public void Find_IgnoresAGlobalClaudeMd()
+    [Theory]
+    [InlineData("AGENTS.md")]
+    [InlineData("CLAUDE.md")]
+    public void Find_IgnoresAnyGlobalFileOtherThanCxagentMd(string name)
     {
         var global = Dir("globalcfg");
-        Write(global, "CLAUDE.md", "another product's user-level config");
+        Write(global, name, "not addressed to this app");
         var project = Dir("bare-project");
 
         Assert.Empty(ProjectInstructions.Find(project, globalDirectory: global));
@@ -309,7 +316,7 @@ public class ProjectInstructionsTests : IDisposable
     public void Render_EmitsEveryFile_InOrder()
     {
         var global = Dir("globalcfg");
-        Write(global, "AGENTS.md", "GLOBAL RULE");
+        Write(global, "CXAGENT.md", "GLOBAL RULE");
         var project = Dir("proj");
         Write(project, "AGENTS.md", "PROJECT RULE");
 

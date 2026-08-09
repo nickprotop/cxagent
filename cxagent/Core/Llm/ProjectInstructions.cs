@@ -4,8 +4,8 @@ namespace CxAgent.Core.Llm;
 public sealed record ProjectInstructionFile(string Path, string Text);
 
 /// <summary>
-/// Per-project instructions — <c>AGENTS.md</c> or <c>CLAUDE.md</c>, found by walking up from the
-/// working directory.
+/// Project and user instructions — <c>CXAGENT.md</c>, <c>AGENTS.md</c> or <c>CLAUDE.md</c> found by
+/// walking up from the working directory, plus <c>CXAGENT.md</c> in cxagent's own config directory.
 ///
 /// <para>WHY A SEPARATE FILE AT ALL. Some instructions are true of a REPO, not of agents in general,
 /// and they cannot live in the universal system prompt. The case that forced this: opencode's prompt
@@ -43,17 +43,19 @@ public static class ProjectInstructions
     /// per-OS (<c>%APPDATA%\cxagent</c>, <c>~/Library/Application Support/cxagent</c>,
     /// <c>$XDG_CONFIG_HOME/cxagent</c>).
     ///
-    /// <para>AGENTS.md, not CXAGENT.md: this directory is already cxagent's own, so the name does not
-    /// need to say so again — a file at <c>&lt;config&gt;/cxagent/CXAGENT.md</c> would be saying it
-    /// twice.</para>
+    /// <para>CXAGENT.md, and only that. This file is READ ONLY BY THIS APP — no other agent looks in
+    /// cxagent's config directory — so the shared names buy nothing here: an AGENTS.md at this path
+    /// would be a "vendor-neutral" name in a vendor-specific location, which is just a misleading
+    /// name. The project directory is the opposite case: several agents read the same repo, so the
+    /// shared names matter there and are honoured.</para>
     ///
-    /// <para>A project's CLAUDE.md describes the PROJECT, so it is honoured wherever the project is.
-    /// A user-level CLAUDE.md is a different thing entirely: it is another product's configuration,
-    /// written for a different agent with different tools, and reading it would mean silently
-    /// obeying instructions that were never addressed to this app. opencode does read
-    /// <c>~/.claude/CLAUDE.md</c>; this deliberately does not.</para>
+    /// <para>No CLAUDE.md either, at this level. A project's CLAUDE.md describes the PROJECT and is
+    /// honoured wherever the project is; a USER-level one is another product's configuration, written
+    /// for a different agent with different tools, and reading it would mean silently obeying
+    /// instructions never addressed to this app. opencode does read <c>~/.claude/CLAUDE.md</c>; this
+    /// deliberately does not.</para>
     /// </summary>
-    private const string GlobalFileName = "AGENTS.md";
+    private const string GlobalFileName = "CXAGENT.md";
 
     /// <summary>
     /// How much of the file is used.

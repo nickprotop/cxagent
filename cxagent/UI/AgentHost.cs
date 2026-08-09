@@ -33,7 +33,7 @@ public sealed class AgentHost : IDisposable
     private readonly LogFileManager? _logs;
 
     /// <summary>
-    /// cxagent's own config directory, where a user-level AGENTS.md may sit — or null when there is
+    /// cxagent's own config directory, where a user-level CXAGENT.md may sit — or null when there is
     /// none to read.
     ///
     /// <para>OUR CONFIG FOLDER ONLY — whatever <c>AppPaths.ConfigDir</c> resolves to on this OS, not a

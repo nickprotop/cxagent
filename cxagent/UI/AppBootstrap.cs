@@ -151,7 +151,7 @@ public static class AppBootstrap
                 contextWindow: res.ContextWindow,
                 // Every completed turn lands here, so a crash leaves something to resume from.
                 store: sessions,
-                // OUR config folder, so a user-level AGENTS.md applies wherever they work.
+                // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 globalInstructionsDir: paths.ConfigDir,
                 resume: System.Threading.Interlocked.Exchange(ref pendingResume, null))
             {
