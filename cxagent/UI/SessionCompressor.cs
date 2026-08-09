@@ -26,10 +26,9 @@ public static class SessionCompressor
     /// honest one.
     /// </param>
     /// <param name="CharsFreed">Characters reclaimed, for the row and the status bar.</param>
-    /// <param name="ResultsCleared">Tool results emptied; zero when this was a summarisation.</param>
-    /// <param name="Summary">The summary written, when one was; null for a prune.</param>
+    /// <param name="Summary">The summary the model wrote, when it answered.</param>
     public readonly record struct CompressResult(
-        bool Summarised, int CharsFreed = 0, int ResultsCleared = 0, string? Summary = null);
+        bool Summarised, int CharsFreed = 0, string? Summary = null);
 
     /// <summary>
     /// Where to split, so that summarising the head can never leave the tail holding a tool result
@@ -80,17 +79,31 @@ public static class SessionCompressor
         if (conversation.Count < 2)
             return new CompressResult(Summarised: false);
 
-        // THE CHEAP TIER FIRST. Emptying stale tool results costs nothing — no provider call, no
-        // seconds of waiting, and no reasoning discarded — and it reclaims the bulk of what fills a
-        // window, because a file read is thousands of characters and the oldest ones describe files
-        // that have since been edited. Only when that frees too little is it worth paying for a
-        // summary. Claude Code documents the same order ("clears older tool outputs first, then
-        // summarizes ... if needed"); opencode implements it the same way.
-        var pruned = ToolOutputPruner.Prune(conversation);
-        if (pruned.Pruned)
-            return new CompressResult(Summarised: true, CharsFreed: pruned.CharsFreed,
-                ResultsCleared: pruned.ResultsCleared, Summary: null);
-
+        // SUMMARISING IS THE ONLY TIER, deliberately.
+        //
+        // A cheaper one lived here: it emptied tool results whose file had since been read or written
+        // again, on the reasoning that a fresher copy of the same thing existed further down. It
+        // worked — measured live at −18% reclaimed instantly, against −24% for a ~25-second provider
+        // call — and it was removed anyway, because the evidence for it is thinner than the
+        // measurement suggests.
+        //
+        // Only Cline ever shipped content deduplication, and it is GONE from Cline's HEAD; the repo
+        // moved to compaction-based management. opencode has a pruner and ships it OFF by default
+        // ("Enable pruning of old tool outputs (default: false)"). Claude Code and Antigravity prune
+        // aggressively but PERSIST TO DISK FIRST, so nothing they drop is unrecoverable — an option
+        // not open to us, which is what made our rule have to be conservative in the first place.
+        //
+        // And the conservative rule had a hole. It keyed on the file PATH, but read_file takes offset
+        // and limit: reading lines 1-40 and later lines 200-240 are not copies of one another, and
+        // treating the second as superseding the first would have discarded content nothing else
+        // held. Fixable — but fixing an unsound optimisation nobody else ships, to save a provider
+        // call, is the wrong order of work.
+        //
+        // Summarisation READS what it discards and can carry a detail forward. That is the property
+        // worth having while the shape of real usage is still unknown. If sessions turn out to be
+        // dominated by re-read file content, this is the first thing to revisit — with persistence
+        // underneath it, or as Claude Code's forward-looking suppression, which declines the
+        // redundant read instead of erasing the old one.
         var cut = SafeCut(conversation);
         if (cut <= 0) return new CompressResult(Summarised: false);
         var oldTurns = conversation.GetRange(0, cut);

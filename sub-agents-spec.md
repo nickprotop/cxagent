@@ -65,9 +65,13 @@ context refactor it describes what is:
   against the agent's own context. This is now the ONLY automatic route: the between-goals check was
   deleted, because both read the same measurement and so both fired on it (two rows on a live drive,
   24.5s and 26.1s, the second summarising a context whose older half was already a summary).
-- **Its own compaction machinery.** `ToolOutputPruner` dedupes superseded file snapshots for free;
-  `SessionCompressor` summarises when that is not enough, splitting so a kept tool result always
-  keeps its call.
+- **Its own compaction.** `SessionCompressor` summarises the older half and keeps the newer verbatim,
+  splitting so a kept tool result always keeps its call. Summarisation is the ONLY tier: a cheaper
+  tool-output pruner was built, measured (−18% instantly, against −24% for a ~25-second call) and
+  removed — only Cline ever shipped content dedup and it is gone from their HEAD, opencode ships its
+  pruner off by default, and the two agents that prune hard (Claude Code, Antigravity) persist to
+  disk first, which we cannot. Summarisation READS what it discards; that is the property worth
+  having until real usage says otherwise.
 - **Continuity across tasks**, which is what "self-contained" actually requires. Verified live: after
   reading a file in goal 1, goal 2 answered from context with no tool call.
 
@@ -284,10 +288,11 @@ wall.
    if so by which of the two mechanisms in §1.
 3. **What fills an orchestrator's context.** Not a design question — an orchestrator is an agent like
    any other and needs nothing special — but worth knowing when thresholds are tuned. An ordinary
-   agent's context is mostly file reads and shell output, which `ToolOutputPruner` dedupes for free.
-   An orchestrator's is mostly sub-agent summaries, which are not snapshots of anything, so nothing
-   supersedes them, so dedup declines and compaction falls through to the expensive tier. Same
-   machinery, same threshold, different cost profile.
+   agent's context is mostly file reads and shell output — bulky, and often superseded. An
+   orchestrator's is mostly sub-agent summaries: already dense, already the compressed form of
+   something larger, and so far less compressible again. Same machinery, same threshold, but an
+   orchestrator gets less back per compaction. Worth watching once fan-out is real, since it is the
+   most likely place a cheap tier would earn its way back in.
 4. **Orchestrator hooks.** This spec covers what an agent IS. The tool surface an orchestrator drives
    sub-agents through — spawn, ask, examine, stop, collect (§1) — is deliberately out of scope, but
    note it cannot
