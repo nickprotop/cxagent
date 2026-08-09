@@ -206,7 +206,13 @@ public sealed class Agent
                             || File.Exists(Path.Combine(cwd, ".git")),
                     Platform: Environment.OSVersion.Platform.ToString(),
                     Today: DateOnly.FromDateTime(DateTime.Now),
-                    ModelId: _provider.ModelId)),
+                    ModelId: _provider.ModelId))
+                    // AFTER the general prompt, so a project can override it. Read ONCE here, with
+                    // the rest of the system message, which keeps the cache prefix stable: editing
+                    // AGENTS.md mid-session does not take effect until the next session, and that is
+                    // the right trade — a prefix that changes under the model costs the whole
+                    // conversation's cached reads.
+                    + ProjectInstructions.Render(ProjectInstructions.Find(cwd)),
                         // NO DEBUGGING ADVICE HERE. A paragraph on tracing a value between where it
                         // is set and where it is used lived here briefly, added after three drives
                         // failed to find one bug. It was generalised from a single case whose answer
