@@ -208,6 +208,7 @@ public static class AppBootstrap
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
+            runner.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
             runner.GoalStarted += (_, id) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionId = id;

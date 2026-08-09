@@ -1054,11 +1054,19 @@ public sealed class MainWindow : IDisposable
     /// measures (SingleAgentLoop), so the gauge and the trigger now agree. Null until a turn reports
     /// usage, which is why the percentage only appears once there is something real to divide.</para>
     /// </summary>
-    public void SetContextUsed(int inputTokens)
+    /// <param name="estimated">
+    /// True when the figure is arithmetic rather than a measurement — compaction scaling its last
+    /// reading by the size it just changed. Keeps the "~" and the delta on screen; a real measurement
+    /// clears both.
+    /// </param>
+    public void SetContextUsed(int inputTokens, bool estimated = false)
     {
         _contextUsed = inputTokens > 0 ? inputTokens : null;
-        _contextStale = false;
-        _contextDelta = null;   // a real measurement supersedes what the compression had to say
+        if (!estimated)
+        {
+            _contextStale = false;
+            _contextDelta = null;   // a real measurement supersedes what the compression had to say
+        }
         RefreshTokenItem();
     }
 
@@ -1082,6 +1090,10 @@ public sealed class MainWindow : IDisposable
         if (_contextUsed is null) return;
         _contextStale = true;
 
+        // The SCALED occupancy arrives separately, via SetContextUsed, because AgentContext owns both
+        // the reading and the size it was taken at — the only place the ratio can be computed
+        // correctly. This method says only what the compaction DID.
+
         // SAY WHICH WAY IT WENT. Compression can make a SHORT conversation bigger: the older half is
         // replaced by a summary, and summarising one already-short message produces more text than it
         // replaced (measured: 536→667 chars on a two-message session). Printing that as "compressed
@@ -1089,7 +1101,7 @@ public sealed class MainWindow : IDisposable
         var freed = PercentFreed(charsBefore, charsAfter);
         _contextDelta = charsAfter < charsBefore
             ? freed >= 1
-                ? $"compressed −{freed}% ({Compact(charsBefore)}→{Compact(charsAfter)} chars)"
+                ? $"compressed −{freed}%"
                 : $"compressed {Compact(charsBefore)}→{Compact(charsAfter)} chars"
             : "summarised, nothing to free";
 
@@ -1257,12 +1269,14 @@ public sealed class MainWindow : IDisposable
                 var colour = stale ? ColorScheme.MutedMarkup : ColorScheme.ThresholdMarkup(percent);
                 var tilde = stale ? "~" : "";
 
-                // WHILE STALE, THE DELTA TAKES THE FRACTION'S PLACE. "8,879/212,992" is precisely the
-                // part that is no longer true after a compression, and printing it beside a "~" gives
-                // a wrong number the appearance of precision. "compressed 12→7 msgs" is both true and
-                // the thing the user actually wants to know: that it worked, and by how much.
+                // BOTH, WHILE STALE. The fraction used to be dropped here because it was the
+                // pre-compression figure and printing it beside a "~" gave a wrong number the look of
+                // precision. It is no longer wrong: the reading is scaled by the character ratio
+                // compaction just measured, so it estimates the new occupancy rather than reporting
+                // the old one. The delta says what happened, the fraction says where that leaves us,
+                // and the "~" says the second is arithmetic rather than a measurement.
                 var detail = stale && delta is { Length: > 0 }
-                    ? delta
+                    ? $"{delta} · ~{u:N0}/{window.Value:N0}"
                     : $"{u:N0}/{window.Value:N0}";
 
                 parts.Add($"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{percent:N0}%[/] "

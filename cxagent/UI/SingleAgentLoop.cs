@@ -77,9 +77,13 @@ public sealed class SingleAgentLoop
     /// the readout can stop presenting its last measurement as current.</summary>
     public Action<int, int>? ContextCompressed { get; set; }
 
+    /// <summary>Raised with a SCALED occupancy figure after compaction — arithmetic, not a
+    /// measurement, so the readout marks it approximate until a real reading arrives.</summary>
+    public Action<int>? ContextEstimated { get; set; }
+
 
     /// <summary>
-    /// Input tokens past which the loop compresses its own message list, or null to never compress.
+    /// Input tokens past which the loop compresses its own context, or null to never compress.
     ///
     /// <para>THE BOUND THAT REPLACES THE TURN CAP. Single-agent has no turn ceiling by design — a
     /// number of turns has nothing to do with the task — and the comment at the construction site
@@ -128,10 +132,29 @@ public sealed class SingleAgentLoop
     ///
     /// <para>The <c>ToolCallId</c> hazard that justified discarding — a tool result outliving the call
     /// it belongs to, which providers reject — is now handled where it belongs: the compressor snaps
-    /// its split so a kept result always keeps its call, and the pruner empties result BODIES without
-    /// ever removing the messages.</para>
+    /// its split so a kept result always keeps its call.</para>
     /// </summary>
     public async Task<GoalState> RunAsync(string goalId, List<ChatMessage> conversation,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await RunCoreAsync(goalId, conversation, ct);
+        }
+        finally
+        {
+            // ALSO AT THE END OF THE GOAL, because the in-loop check only sees turns that have a
+            // NEXT one. A goal that finishes in a single turn — the common conversational case, and
+            // any goal whose last turn is the one that blows the threshold — would otherwise leave
+            // the context over its bound until the next goal happened to notice. Both checks share
+            // MaybeCompressAsync's own threshold test, so whichever runs first makes the other a
+            // no-op rather than compacting twice.
+            if (_context.ProjectedUsed is { } atEnd)
+                await MaybeCompressAsync(goalId, atEnd, CancellationToken.None);
+        }
+    }
+
+    private async Task<GoalState> RunCoreAsync(string goalId, List<ChatMessage> conversation,
         CancellationToken ct)
     {
         // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
@@ -219,6 +242,21 @@ public sealed class SingleAgentLoop
         {
             ct.ThrowIfCancellationRequested();
 
+            // COMPRESS ON PRESSURE, BEFORE SENDING — not after the response, which is where this used
+            // to sit and where it could not work. A turn's TOOL RESULTS are appended after the
+            // response is handled, so a check placed there tests the size of the conversation as it
+            // was BEFORE this turn's file reads landed: it fired on a reading that predated the growth
+            // it was meant to relieve, and the goal then ended with the grown context never
+            // re-measured. Measured live: compaction reported −32% while the token figure moved 20,
+            // because it had removed exactly the content that arrived after the last measurement.
+            //
+            // Here the previous turn's results are in, so the check describes what is about to be
+            // sent — but only because it uses ProjectedUsed rather than the raw reading: the
+            // measurement is always one turn behind the growth, so testing it directly let a context
+            // sent at 98,630 characters pass a threshold on a reading taken at 66,394.
+            if (_context.ProjectedUsed is { } occupancy)
+                await MaybeCompressAsync(goalId, occupancy, ct);
+
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
             // with a half-edited tree and no account of what happened or what remains.
@@ -258,6 +296,11 @@ public sealed class SingleAgentLoop
             // carried is the PREVIOUS turn's measurement, since this turn's has not happened yet.
             LogContext(goalId, turn, messages, _context.Used);
 
+            // THE SIZE THE PROVIDER IS ABOUT TO SEE. Captured here rather than after the response,
+            // because by then this turn's reply and tool results have been appended and the figure no
+            // longer describes what the reading covers.
+            var sentChars = _context.TotalChars();
+
             LlmResponse response;
             try
             {
@@ -273,19 +316,14 @@ public sealed class SingleAgentLoop
 
             _ledger.Record(response.Usage);
 
-            // BEFORE the compression check below, so the reading that TRIGGERS a compression is the
-            // one the user sees — the row that follows then explains the drop.
+            // RECORD IT ON THE CONTEXT, which needs both the reading and the size it was taken at to
+            // estimate honestly after a compaction. Published BEFORE the compression check below, so
+            // the reading that TRIGGERS a compression is the one the user sees; the row that follows
+            // then explains the drop.
+            _context.RecordUsage(response.Usage.InputTokens, sentChars);
             if (response.Usage.InputTokens > 0)
                 ContextUsed?.Invoke(response.Usage.InputTokens);
 
-            // COMPRESS ON PRESSURE, PER TURN. `messages` is what actually grows — tool results are
-            // the bulk of it — and it is what gets re-sent whole every turn, so it is what has to
-            // shrink. The session `conversation` GoalRunner compresses is a different, much smaller
-            // list; compressing that would leave this one untouched.
-            //
-            // InputTokens is the provider's own count of what it just received, so no estimator is
-            // needed and no drift is possible.
-            await MaybeCompressAsync(messages, goalId, response.Usage.InputTokens, ct);
 
             // LOG THE RAW RESPONSE. Only tool RESULTS were ever written, so the model's own output —
             // the prose, the reasoning, the markdown — existed nowhere once the screen scrolled. A
@@ -725,17 +763,22 @@ public sealed class SingleAgentLoop
     /// SessionCompressor falls back to truncation on a provider error, and its result says which
     /// happened so the transcript can be honest about it.</para>
     /// </summary>
-    private async Task MaybeCompressAsync(List<ChatMessage> messages, string goalId, int inputTokens,
-        CancellationToken ct)
+    private async Task MaybeCompressAsync(string goalId, int inputTokens, CancellationToken ct)
     {
         if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
 
         // The row itself lives in CompressionRun, which every compressing route now shares — this one,
         // GoalRunner's between-goals check, and the /compress command. The threshold test stays here
         // because only this caller measures per-turn pressure.
-        await CompressionRun.RunAsync(messages, _provider, _jobs, goalId,
+        await CompressionRun.RunAsync(_context, _provider, _jobs, goalId,
             $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
-            _ledger.Record, ct, compressed: (b, a) => ContextCompressed?.Invoke(b, a));
+            _ledger.Record, ct, compressed: (b, a) =>
+            {
+                ContextCompressed?.Invoke(b, a);
+                // The context re-estimated its own occupancy while compacting; publish it so the
+                // readout shows where that leaves us rather than the pre-compaction figure.
+                if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
+            });
     }
 
     private static bool IsWrite(string toolName) =>

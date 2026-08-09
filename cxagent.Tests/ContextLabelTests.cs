@@ -55,19 +55,19 @@ public class ContextLabelTests
     }
 
     /// <summary>
-    /// A compression must say something MEANINGFUL, not just cast doubt on the old number. The raw
-    /// fraction is the part that stopped being true, so the delta takes its place until a real
-    /// measurement arrives.
+    /// A compression must say something MEANINGFUL, not just cast doubt on the old number — and now
+    /// it can say both what happened AND where that leaves the context, because AgentContext scales
+    /// its own reading by the character ratio compaction measured. The fraction is marked approximate,
+    /// since it is arithmetic on a ratio rather than a measurement.
     /// </summary>
     [Fact]
-    public void StaleReadingShowsWhatTheCompressionDid()
+    public void StaleReadingShowsWhatTheCompressionDidAndAnEstimate()
     {
-        var label = MainWindow.ContextLabelForTest(used: 40_000, spent: 223_000, window: 208_000,
-            stale: true, delta: "compressed 42k→3.1k chars");
+        var label = MainWindow.ContextLabelForTest(used: 12_000, spent: 223_000, window: 208_000,
+            stale: true, delta: "compressed −70%");
 
-        Assert.Contains("compressed 42k→3.1k chars", label);
-        // The stale fraction is gone: printing it beside a "~" dresses a wrong number as precise.
-        Assert.DoesNotContain("40,000/208,000", label);
+        Assert.Contains("compressed −70%", label);
+        Assert.Contains("~12,000/208,000", label);
     }
 
     /// <summary>A stale reading with no delta still degrades to the fraction rather than showing nothing.</summary>

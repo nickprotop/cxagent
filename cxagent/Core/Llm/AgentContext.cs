@@ -95,20 +95,100 @@ public sealed class AgentContext
     /// Records what the provider reported it received. Ignores a non-positive count, which is an
     /// absent measurement rather than an empty context.
     /// </summary>
-    public void RecordUsage(int inputTokens)
+    /// <param name="atChars">
+    /// The size of the conversation THE PROVIDER SAW — captured before the call, not after.
+    ///
+    /// <para>Measuring it at record time is wrong and was wrong in practice: by then the assistant's
+    /// reply and every tool result of that turn have been appended, so the baseline includes tens of
+    /// thousands of characters the reading never covered. Measured live, that inflated baseline made
+    /// a −32% compaction move the estimate by 1%.</para>
+    /// </param>
+    public void RecordUsage(int inputTokens, int atChars = 0)
     {
-        if (inputTokens > 0) Used = inputTokens;
+        if (inputTokens <= 0) return;
+        Used = inputTokens;
+        UsedAtChars = atChars > 0 ? atChars : TotalChars();
+        IsEstimated = false;   // a real measurement supersedes any estimate
     }
 
     /// <summary>
-    /// Marks the occupancy reading as no longer describing the conversation — called after compaction
-    /// has rewritten it.
+    /// How large the conversation was when <see cref="Used"/> was measured.
     ///
-    /// <para>The true new figure is not knowable until the next call: occupancy is only ever read
-    /// from what a provider reports it RECEIVED, and after compaction no call has been made yet.
-    /// Estimating one locally would put a guess where every other number here is a measurement.</para>
+    /// <para>Needed to scale that reading honestly after a compaction. The obvious ratio —
+    /// chars-before-compaction to chars-after — is WRONG whenever the measurement predates the
+    /// growth: a reading taken at 66,394 chars, scaled by a compaction from 98,630 to 66,700, moved
+    /// the estimate by 1% while the context had actually shrunk by a third. The reading has to be
+    /// scaled against the size IT was taken at, not against whatever the size happened to be when
+    /// compaction started.</para>
     /// </summary>
-    public void InvalidateUsage() => Used = null;
+    public int UsedAtChars { get; private set; }
+
+    /// <summary>
+    /// What the NEXT call will carry, in tokens — the last measurement rescaled to the conversation
+    /// as it stands now.
+    ///
+    /// <para>THE MEASUREMENT IS ALWAYS ONE TURN BEHIND, and that is not a defect to fix but a fact to
+    /// work with: occupancy is only ever reported for a call that has already been made, while a
+    /// turn's tool results — the bulk of what fills a window — land after it. Checking pressure
+    /// against the raw reading therefore tests the size of the conversation BEFORE this turn's file
+    /// reads. Measured live: a context sent at 98,630 characters was checked against the 19,518-token
+    /// reading taken at 66,394, passed a 25,000 threshold, and never compacted — while the very next
+    /// measurement came back at 28,205, well over it.</para>
+    ///
+    /// <para>Rescaling by the measured token density closes that gap. It is an estimate and named as
+    /// one; the alternative is a threshold that cannot see the growth it exists to catch.</para>
+    /// </summary>
+    public int? ProjectedUsed
+    {
+        get
+        {
+            if (Used is not { } used || UsedAtChars <= 0) return Used;
+            return Math.Max(1, (int)(TotalChars() * ((double)used / UsedAtChars)));
+        }
+    }
+
+    /// <summary>
+    /// Re-estimates occupancy after the conversation has been rewritten, and marks it approximate.
+    ///
+    /// <para>The exact figure is not knowable until the next call — occupancy is only ever read from
+    /// what a provider reports it RECEIVED — but the exact SIZE is known, and tokens track characters
+    /// closely enough that scaling the last reading beats keeping it. Keeping it was the reported
+    /// bug: compress, and the gauge does not move.</para>
+    ///
+    /// <para>Scaled against <see cref="UsedAtChars"/> — the size the reading was TAKEN at — not
+    /// against the size when compaction started. Those differ whenever turns have been added since
+    /// the last measurement, which is the normal case: measured live, using the wrong baseline moved
+    /// the estimate 1% on a compaction that removed a third of the conversation.</para>
+    /// </summary>
+    public void EstimateUsageAfterCompaction()
+    {
+        if (Used is not { } used || UsedAtChars <= 0) { Used = null; return; }
+
+        // TOKENS PER CHARACTER, not a before/after ratio on the conversation.
+        //
+        // The ratio approach kept failing because the two sizes it compares are taken at different
+        // moments: the reading is measured when a turn is SENT, but the tool results of that turn are
+        // appended afterwards, so by the time compaction runs the conversation has grown by tens of
+        // thousands of characters the reading never covered. Measured live, that made a −32%
+        // compaction move the estimate by 1%, twice, on two different attempts to fix it.
+        //
+        // A density is stable across both moments. The provider counted `used` tokens for
+        // `UsedAtChars` characters; applying that rate to whatever survives compaction gives an
+        // estimate that does not care when either figure was taken.
+        var density = (double)used / UsedAtChars;
+        var now = TotalChars();
+
+        IsEstimated = true;
+        Used = Math.Max(1, (int)(now * density));
+        UsedAtChars = now;
+    }
+
+    /// <summary>
+    /// True when <see cref="Used"/> is arithmetic rather than a measurement — set by compaction,
+    /// cleared by the next real reading. The readout marks it so a scaled figure never poses as
+    /// measured.
+    /// </summary>
+    public bool IsEstimated { get; private set; }
 
     /// <summary>Total characters of message content — the size compaction actually changes.</summary>
     public int TotalChars()

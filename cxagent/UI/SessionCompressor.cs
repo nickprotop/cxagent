@@ -66,10 +66,24 @@ public static class SessionCompressor
     /// calls — when the summarising call throws, so `/compress` and auto-compression share one
     /// degradation path. A housekeeping failure must not kill a working session.
     /// </summary>
+    /// <remarks>
+    /// TAKES THE CONTEXT, NOT A LIST. Passing the bare <c>List&lt;ChatMessage&gt;</c> is how the
+    /// worst bug in this area happened: <c>/compress</c> was handed the session conversation while the
+    /// list that was actually full sat elsewhere, so it reported "nothing to free" on a session
+    /// measured at 58,000 tokens. A list detached from its owner can always be the wrong list. An
+    /// <see cref="AgentContext"/> cannot — there is exactly one per agent, and compressing it is by
+    /// definition compressing that agent's context.
+    ///
+    /// <para>It also lets this method invalidate the occupancy reading itself, which is the truth it
+    /// is in the best position to know: after rewriting the conversation, the last measurement no
+    /// longer describes it.</para>
+    /// </remarks>
     public static async Task<CompressResult> CompressAsync(
-        List<ChatMessage> conversation, ILlmProvider provider, CancellationToken ct,
+        AgentContext context, ILlmProvider provider, CancellationToken ct,
         Action<LlmUsage>? meter = null)
     {
+        var conversation = context.Messages;
+
         // NO MESSAGE-COUNT FLOOR — see SessionCommands.Compress for why. This ran only on an explicit
         // /compress or on measured TOKEN pressure, and neither is answered by counting messages: eight
         // messages carrying four large file reads is precisely the case that needs compressing, and
@@ -110,7 +124,7 @@ public static class SessionCompressor
 
         try
         {
-            var before = TotalChars(conversation);
+            var before = context.TotalChars();
             var summary = await SummariseAsync(oldTurns, provider, ct);
 
             meter?.Invoke(summary.Usage);
@@ -122,8 +136,13 @@ public static class SessionCompressor
                 Content = FormatSummary(summary.Text),
                 Timestamp = DateTimeOffset.UtcNow,
             });
+            // THE READING NO LONGER DESCRIBES THE CONVERSATION. Done here rather than left to the
+            // caller because this method is what invalidated it, and a caller that forgot would leave
+            // the status bar confidently reporting a number for a context that no longer exists.
+            context.EstimateUsageAfterCompaction();
+
             return new CompressResult(Summarised: true,
-                CharsFreed: Math.Max(0, before - TotalChars(conversation)),
+                CharsFreed: Math.Max(0, before - context.TotalChars()),
                 Summary: summary.Text);
         }
         catch (OperationCanceledException) { throw; }
@@ -131,20 +150,14 @@ public static class SessionCompressor
         {
             // Summarisation failed — fall back to the SAME truncation /compress uses, never a
             // second, divergent degradation path.
-            var beforeTruncate = TotalChars(conversation);
+            var beforeTruncate = context.TotalChars();
             SessionCommands.Compress(conversation);
+            context.EstimateUsageAfterCompaction();
             return new CompressResult(Summarised: false,
-                CharsFreed: Math.Max(0, beforeTruncate - TotalChars(conversation)));
+                CharsFreed: Math.Max(0, beforeTruncate - context.TotalChars()));
         }
     }
 
-    /// <summary>Total characters of message content — the size compaction actually changes.</summary>
-    internal static int TotalChars(IReadOnlyList<ChatMessage> messages)
-    {
-        var total = 0;
-        foreach (var m in messages) total += m.Content?.Length ?? 0;
-        return total;
-    }
 
     /// <summary>
     /// The summarising call itself: a plain ChatAsync with no tools — there is nothing to decide, only
@@ -154,7 +167,13 @@ public static class SessionCompressor
     private static Task<LlmResponse> SummariseAsync(
         List<ChatMessage> oldTurns, ILlmProvider provider, CancellationToken ct)
     {
-        var transcript = string.Join("\n", oldTurns.Select(m => $"{m.Role}: {m.Content}"));
+        // RENDER THE TOOL CALLS, NOT JUST Content. An assistant message that makes a tool call
+        // carries EMPTY Content — the call is in ToolCalls — so joining on Content alone handed the
+        // model blank lines exactly where the work was. Measured live: two compactions in one session
+        // produced 100-character "summaries" that were a bare tool name and nothing else, because
+        // that was all the transcript contained. The file contents were in the tool RESULTS, which
+        // rendered fine; what vanished was every trace of what had been asked and decided.
+        var transcript = string.Join("\n", oldTurns.Select(Render));
 
         var request = new List<ChatMessage>
         {
@@ -162,17 +181,83 @@ public static class SessionCompressor
             {
                 Role = "user",
                 Content =
-                    "Summarise the conversation below into a short, factual note for your own later "
-                    + "reference. Record FACTS AND OUTCOMES only — what was asked, what was found, "
-                    + "what was produced. No narrative, no commentary, no pleasantries. Prefer "
-                    + "concrete details (names, counts, paths, values) over vague description, since "
-                    + "a follow-up question may depend on exactly those details.\n\n"
+                    "You are compacting your own working memory. Everything below is about to be "
+                    + "REPLACED by what you write, and you will keep working from it — so write what "
+                    + "you would need to continue, not what you would tell someone about the past.\n\n"
+                    + "Record, when present:\n"
+                    + "- Files read or changed, by exact path, and what each contains or now contains.\n"
+                    + "- What was established as TRUE: findings, causes, measurements, decisions.\n"
+                    + "- Commands run and their outcome — especially builds and tests, with the exact "
+                    + "pass/fail counts and any error text still unresolved.\n"
+                    + "- Anything asked for and NOT yet done, and anything tried that did not work, "
+                    + "so it is not attempted again.\n\n"
+                    + "Keep concrete details verbatim — paths, identifiers, counts, values, error "
+                    + "messages. A vague summary is worse than a short one: \"fixed the parser\" is "
+                    + "useless where \"IndentShift.cs Refuse() now requires a 2-of-3 majority\" is not. "
+                    + "No narrative, no commentary, no pleasantries, and do not describe the "
+                    + "conversation itself. Facts only.\n\n"
+                    + "If some part of this history is uncertain or was never resolved, say so "
+                    + "plainly rather than inventing a resolution.\n\n"
+                    + "Reply with the note itself and nothing else. Do not call any tool — the "
+                    + "history below DESCRIBES tools that were already used; it is not a request "
+                    + "to use them again.\n\n"
                     + transcript,
             },
         };
 
         return provider.ChatAsync(request, tools: null, ct);
     }
+
+    /// <remarks>Test seam: this codebase has no InternalsVisibleTo grant, and the two defects this
+    /// rendering fixes were both invisible from unit tests until a live drive exposed them.</remarks>
+    public static string RenderForTest(ChatMessage m) => Render(m);
+
+    /// <summary>
+    /// One message as a line of transcript, with tool calls and results made visible.
+    /// </summary>
+    /// <remarks>
+    /// A tool RESULT is labelled as one rather than left as a bare "tool:" line, so the model can tell
+    /// the difference between what it asked for and what came back. Results are capped: the point of
+    /// summarising is to condense file contents, and re-sending a 35,000-character read in full to be
+    /// told about it costs the whole saving. The head is kept because a read's opening lines identify
+    /// the file.
+    /// </remarks>
+    private static string Render(ChatMessage m)
+    {
+        if (m.ToolCallId is not null)
+        {
+            var body = m.Content ?? "";
+            var clipped = body.Length <= ToolResultChars
+                ? body
+                : body[..ToolResultChars] + $"\n… [{body.Length - ToolResultChars:N0} more characters]";
+            return $"tool result: {clipped}";
+        }
+
+        var parts = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(m.Content)) parts.Add(m.Content);
+        if (m.ToolCalls is { Count: > 0 })
+            foreach (var c in m.ToolCalls)
+                // NAME AND TARGET ONLY, never the raw arguments. Rendering the full call gave the
+                // model something that looked like a call to MAKE: it answered a summarise request by
+                // emitting a tool-call block, which became the "summary". A description cannot be
+                // mistaken for an instruction.
+                parts.Add($"(used {c.Name}{Target(c)})");
+
+        return $"{m.Role}: {string.Join(" ", parts)}";
+    }
+
+    /// <summary>The path a call names, when it names one — enough to say WHICH file without handing
+    /// back a callable argument blob.</summary>
+    private static string Target(ToolCall call)
+    {
+        if (call.Arguments.ValueKind != System.Text.Json.JsonValueKind.Object) return "";
+        if (!call.Arguments.TryGetProperty("path", out var p)) return "";
+        return p.ValueKind == System.Text.Json.JsonValueKind.String ? $" on {p.GetString()}" : "";
+    }
+
+    /// <summary>How much of a tool result the summariser is shown. Enough to identify the file and
+    /// its shape; not so much that summarising costs what it saves.</summary>
+    private const int ToolResultChars = 2_000;
 
     private static string FormatSummary(string? text) =>
         $"[earlier conversation, summarised: {text}]";

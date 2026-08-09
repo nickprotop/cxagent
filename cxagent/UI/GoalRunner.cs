@@ -125,6 +125,9 @@ public sealed class GoalRunner : IDisposable
     /// </summary>
     public event EventHandler<(int Before, int After)>? ContextCompressed;
 
+    /// <summary>A scaled occupancy figure after compaction — arithmetic, not a measurement.</summary>
+    public event EventHandler<int>? ContextEstimatedUpdated;
+
     /// <summary>
     /// Records a turn's reported input tokens, if it is a real measurement.
     ///
@@ -490,6 +493,7 @@ public sealed class GoalRunner : IDisposable
                 // the context is half empty, and that cannot fall when compression frees space.
                 ContextUsed = RecordInputTokens,
                 ContextCompressed = (b, a) => ContextCompressed?.Invoke(this, (b, a)),
+                ContextEstimated = used => ContextEstimatedUpdated?.Invoke(this, used),
             };
             return await single.RunAsync(goalId, conversation, ct);
         }
@@ -837,7 +841,7 @@ public sealed class GoalRunner : IDisposable
         // THE AGENT'S CONTEXT, not the session conversation. That distinction is the whole bug: the
         // conversation holds only prompts and final answers, so compressing it freed nothing while
         // the list that was actually full went untouched.
-        CompressionRun.RunAsync(Context.Messages, _provider, _jobPanel, _currentGoalId ?? "session",
+        CompressionRun.RunAsync(Context, _provider, _jobPanel, _currentGoalId ?? "session",
             "compress context · requested", usage =>
             {
                 Ledger.Record(usage);

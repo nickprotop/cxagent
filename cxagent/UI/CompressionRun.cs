@@ -15,15 +15,14 @@ namespace CxAgent.UI;
 /// row, the spinner, the summary in an expandable body and the red-on-truncation treatment all
 /// existed; two of the three callers simply could not reach them.</para>
 ///
-/// <para>Threshold policy stays with the CALLERS, deliberately. Each route answers "should this run"
-/// differently — per-turn pressure, between-goals pressure, or the user asked outright — and folding
-/// that decision in here would mean re-deriving a threshold for a command whose whole point is to
-/// bypass it. This type answers only "run one, and show it".</para>
+/// <para>Threshold policy stays with the CALLERS, deliberately. The per-turn check measures pressure;
+/// <c>/compress</c> was asked outright and must not re-derive a threshold whose whole point it
+/// bypasses. This type answers only "run one, and show it".</para>
 /// </summary>
 public static class CompressionRun
 {
     /// <summary>
-    /// Compresses <paramref name="messages"/>, rendering the work as a job row on
+    /// Compresses <paramref name="context"/>, rendering the work as a job row on
     /// <paramref name="jobs"/>.
     /// </summary>
     /// <remarks>
@@ -31,7 +30,7 @@ public static class CompressionRun
     /// not end a session that is otherwise working. <see cref="SessionCompressor"/> falls back to
     /// truncation on a provider error and reports which happened, so the row can be honest about it.</para>
     /// </remarks>
-    /// <param name="messages">The conversation to shrink, mutated in place.</param>
+    /// <param name="context">The agent's context, mutated in place.</param>
     /// <param name="provider">The provider used to write the summary.</param>
     /// <param name="jobs">Where the row is rendered.</param>
     /// <param name="goalId">The goal the row belongs to.</param>
@@ -47,7 +46,7 @@ public static class CompressionRun
     /// Optional: callers with no UI to notify pass null.
     /// </param>
     public static async Task<SessionCompressor.CompressResult> RunAsync(
-        List<ChatMessage> messages, ILlmProvider provider, IJobPanel jobs, string goalId,
+        AgentContext context, ILlmProvider provider, IJobPanel jobs, string goalId,
         string title, Action<LlmUsage>? meter, CancellationToken ct, Action<int, int>? compressed = null)
     {
         // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
@@ -73,21 +72,21 @@ public static class CompressionRun
         jobs.SetJobs(new[] { job });
 
         var started = DateTimeOffset.UtcNow;
-        var before = messages.Count;
+        var before = context.Count;
 
         // CHARACTERS, NOT MESSAGES, for what the user is told. Compression replaces the older half
         // with ONE summary, so the COUNT barely moves and can be identical: a two-message
         // conversation removes one and inserts one, and the status bar read "compressed 2→2 msgs" —
         // a true statement that tells the user nothing and looks like a no-op. What actually shrank
         // is the text, often by an order of magnitude, and that is the number worth showing.
-        var charsBefore = TotalChars(messages);
+        var charsBefore = context.TotalChars();
 
-        var result = await SessionCompressor.CompressAsync(messages, provider, ct, meter);
+        var result = await SessionCompressor.CompressAsync(context, provider, ct, meter);
 
         // The summary the compressor wrote, which is now the first message. Read back rather than
-        // returned, so the compressor's contract stays "shrink this list" rather than growing a
+        // returned, so the compressor's contract stays "shrink this context" rather than growing a
         // reporting channel for one caller.
-        var summary = messages.Count > 0 ? messages[0].Content : "";
+        var summary = context.Count > 0 ? context.Messages[0].Content : "";
 
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened
@@ -104,7 +103,7 @@ public static class CompressionRun
                 : "summarisation failed — dropped the oldest messages unread",
             Output = new Dictionary<string, object?>
             {
-                ["content"] = $"{before} messages → {messages.Count}\n\n{summary}",
+                ["content"] = $"{before} messages → {context.Count}\n\n{summary}",
             },
         };
         jobs.UpdateJob(job);
@@ -117,16 +116,9 @@ public static class CompressionRun
         // fresh when it no longer describes the conversation at all.
         //
         // Summarised is the compressor's own answer to "did I do the work", which is the question.
-        if (result.Summarised) compressed?.Invoke(charsBefore, TotalChars(messages));
+        if (result.Summarised) compressed?.Invoke(charsBefore, context.TotalChars());
 
         return result;
     }
 
-    /// <summary>Total characters of message content — the size that compression actually changes.</summary>
-    private static int TotalChars(List<ChatMessage> messages)
-    {
-        var total = 0;
-        foreach (var m in messages) total += m.Content?.Length ?? 0;
-        return total;
-    }
 }

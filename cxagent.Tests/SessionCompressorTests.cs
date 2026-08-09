@@ -26,10 +26,11 @@ public class SessionCompressorTests
         // referent a follow-up needs: "earlier: listed ~/bin, 6 files, 4 ending .sh".
         var provider = new RecordingProvider(
             Usage(new LlmResponse { Text = "Earlier: listed ~/bin, found 6 files, 4 ending .sh." }));
-        var conversation = new List<ChatMessage>();
+        var context = new AgentContext();
+        var conversation = context.Messages;
         for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
 
-        await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
         var text = string.Concat(conversation.Select(m => m.Content));
         Assert.Contains("4 ending .sh", text);        // the FINDING survived
@@ -42,10 +43,11 @@ public class SessionCompressorTests
         // The newest turns are the likeliest referent. Summarising them too would lose the precision a
         // follow-up depends on.
         var provider = new RecordingProvider(Usage(new LlmResponse { Text = "summary" }));
-        var conversation = new List<ChatMessage>();
+        var context = new AgentContext();
+        var conversation = context.Messages;
         for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
 
-        await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
         Assert.Contains(conversation, m => m.Content.Contains("goal-11"));
     }
@@ -56,10 +58,11 @@ public class SessionCompressorTests
         // A housekeeping failure must not kill a working session — but it must not be silent either.
         // Truncation is the fallback, never the primary.
         var provider = new ThrowingProvider();
-        var conversation = new List<ChatMessage>();
+        var context = new AgentContext();
+        var conversation = context.Messages;
         for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
 
-        var result = await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+        var result = await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
         Assert.True(conversation.Count < 12);           // it still shrank
         Assert.False(result.Summarised);                 // ...but the caller can tell it degraded
@@ -76,9 +79,11 @@ public class SessionCompressorTests
         //
         // What remains is arithmetic: one message has no older half to summarise.
         var provider = new RecordingProvider();   // no scripted reply — a call would throw
-        var conversation = new List<ChatMessage> { Msg("user", "one") };
+        var context = new AgentContext();
+        context.Add(Msg("user", "one"));
+        var conversation = context.Messages;
 
-        await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
         Assert.Single(conversation);
     }
@@ -90,9 +95,11 @@ public class SessionCompressorTests
         // compressed. Two messages is the smallest thing that can be halved at all.
         var provider = new RecordingProvider(
             Usage(new LlmResponse { Text = "read Foo.cs, changed the parser" }));
-        var conversation = new List<ChatMessage> { Msg("user", "one"), Msg("assistant", "two") };
+        var context = new AgentContext();
+        context.AddRange([Msg("user", "one"), Msg("assistant", "two")]);
+        var conversation = context.Messages;
 
-        var result = await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+        var result = await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
 
         Assert.True(result.Summarised);
         Assert.Equal(2, conversation.Count);   // one summary + the newest half
