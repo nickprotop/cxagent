@@ -211,6 +211,44 @@ public sealed class AgentContext
     }
 
     /// <summary>
+    /// What the next call will carry, measured in CHARACTERS — the figure the compression trigger
+    /// acts on.
+    ///
+    /// <para>CHARACTERS, BECAUSE THEY ARE THE ONLY HONEST INPUT. Tokens come from the provider, and
+    /// the provider is not always right: measured on this machine, 2 of 25 readings were impossible
+    /// (31,060 characters reported as 132,495 tokens; 57,088 as 249,125 — about 17x more tokens than
+    /// characters, in independent sessions). Worse is the silent case: a local llama.cpp build often
+    /// reports no usage at all, so <see cref="Used"/> stays null forever, the token trigger never
+    /// fires, and the session grows until the endpoint rejects it outright. This number is counted
+    /// here, from the messages themselves, and cannot be wrong about the conversation it describes.
+    /// </para>
+    ///
+    /// <para>Tokens remain the DISPLAY figure — the status bar and the panel still report what the
+    /// provider said, because occupancy against a real window is what a user wants to see. Only the
+    /// TRIGGER moved, and only because a trigger must not depend on a number the endpoint may not
+    /// send.</para>
+    /// </summary>
+    public int ProjectedChars => TotalChars();
+
+    /// <summary>
+    /// Characters per token, for converting a token-denominated threshold into the character space
+    /// the trigger now works in.
+    ///
+    /// <para>THREE, not four. English prose runs about four, but an agent's context is dominated by
+    /// what tool calls return — source code, JSON, file listings, stack traces — all of which
+    /// tokenize denser than prose. Three keeps the converted threshold slightly CONSERVATIVE: the
+    /// trigger fires a little early rather than a little late, and firing late is the failure that
+    /// matters (a context that will not fit is a session that stops working, while an early
+    /// compaction costs one provider call).</para>
+    ///
+    /// <para>A fixed ratio rather than the measured density deliberately. The measured density is
+    /// derived from reported tokens, which is the very number this change exists to stop depending
+    /// on — deriving the threshold from it would reintroduce the dependency through the back door.
+    /// </para>
+    /// </summary>
+    public const int CharsPerToken = 3;
+
+    /// <summary>
     /// Re-estimates occupancy after the conversation has been rewritten, and marks it approximate.
     ///
     /// <para>The exact figure is not knowable until the next call — occupancy is only ever read from

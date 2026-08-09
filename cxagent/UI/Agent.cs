@@ -259,11 +259,11 @@ public sealed class Agent
             // because it had removed exactly the content that arrived after the last measurement.
             //
             // Here the previous turn's results are in, so the check describes what is about to be
-            // sent — but only because it uses ProjectedUsed rather than the raw reading: the
-            // measurement is always one turn behind the growth, so testing it directly let a context
-            // sent at 98,630 characters pass a threshold on a reading taken at 66,394.
-            if (_context.ProjectedUsed is { } occupancy)
-                await MaybeCompressAsync(Id, occupancy, ct);
+            // sent. It counts CHARACTERS rather than reported tokens: the provider's number is not
+            // always right (2 of 25 readings logged here were impossible) and is often not sent at
+            // all, and a trigger that silently never fires is the worse of the two failures. See
+            // AgentContext.ProjectedChars.
+            await MaybeCompressAsync(Id, _context.ProjectedChars, ct);
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
@@ -802,15 +802,23 @@ public sealed class Agent
     /// SessionCompressor falls back to truncation on a provider error, and its result says which
     /// happened so the transcript can be honest about it.</para>
     /// </summary>
-    private async Task MaybeCompressAsync(string agentId, int inputTokens, CancellationToken ct)
+    private async Task MaybeCompressAsync(string agentId, int chars, CancellationToken ct)
     {
-        if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
+        if (_compressAbove is not { } thresholdTokens) return;
 
-        // The row itself lives in CompressionRun, which every compressing route now shares — this one,
-        // AgentHost's between-goals check, and the /compress command. The threshold test stays here
-        // because only this caller measures per-turn pressure.
+        // THE THRESHOLD IS CONFIGURED IN TOKENS — it is a statement about a context window, and that
+        // is the unit windows are quoted in — but the measurement is in characters, so the
+        // comparison happens in character space. Converted with a fixed ratio, never the measured
+        // density: deriving it from reported tokens would put the dependency this change removes
+        // straight back in.
+        var thresholdChars = thresholdTokens * AgentContext.CharsPerToken;
+        if (chars <= thresholdChars) return;
+
+        // The row itself lives in CompressionRun, which every compressing route now shares — this one
+        // and the /compress command. The threshold test stays here because only this caller measures
+        // per-turn pressure.
         await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
-            $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
+            $"compress context · {chars:N0} chars over {thresholdChars:N0}",
             _ledger.Record, ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(b, a);

@@ -752,6 +752,77 @@ public class AgentChallengeTests
         Assert.Contains("messages", row.Result!.Output!["content"]!.ToString()!, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// THE TRIGGER COUNTS CHARACTERS, so it fires on a real context even when the provider never
+    /// reports usage at all.
+    ///
+    /// <para>Reported tokens were the only input, and they are not reliable: a local llama.cpp
+    /// splitting n_ctx across slots reported 249,125 tokens for a 371-character context on this
+    /// machine, and 2 of 25 logged readings were impossible. A provider that reports NOTHING is the
+    /// same problem in its silent form — occupancy stays null, the trigger never fires, and the
+    /// session grows until the endpoint rejects it. Characters are counted locally and are always
+    /// honest.</para>
+    /// </summary>
+    [Fact]
+    public async Task ContextOverTheThreshold_CompressesEvenWhenTheProviderReportsNoUsage()
+    {
+        var provider = new MockLlmProvider();
+
+        // NO USAGE ON ANY RESPONSE — the field is absent, as a llama.cpp build often leaves it.
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "looking",
+            ToolCalls = [new ToolCall
+            {
+                Id = "h1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { command = "echo hi" }),
+            }],
+        });
+        provider.EnqueueResponse(Prose("summary of the earlier work"));
+        for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+
+        // Threshold 1,000 TOKENS; the prompt alone is 30,000 characters, which is far past its
+        // character equivalent however the ratio is chosen.
+        var prompt = "do something long: " + new string('x', 30_000);
+        await Build(provider, sink, compressAbove: 1_000, panel: panel).SendAsync(prompt, CancellationToken.None);
+
+        Assert.Contains(panel.Jobs, j => j.PluginType == "compress" && j.State == JobState.Succeeded);
+    }
+
+    /// <summary>
+    /// And a GARBAGE reading cannot trigger it either. The 17x-inflated readings measured on this
+    /// machine would each have fired a compression of a nearly-empty context under the old
+    /// token-driven trigger — summarising history away to free space that was never occupied.
+    /// </summary>
+    [Fact]
+    public async Task AnImpossibleUsageReading_DoesNotTriggerCompression()
+    {
+        var provider = new MockLlmProvider();
+
+        // 249,125 tokens against a tiny conversation — the exact shape logged on this machine.
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "looking",
+            ToolCalls = [new ToolCall
+            {
+                Id = "h1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { command = "echo hi" }),
+            }],
+            Usage = new LlmUsage { InputTokens = 249_125 },
+        });
+        for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+        await Build(provider, sink, compressAbove: 1_000, panel: panel)
+            .SendAsync("short prompt", CancellationToken.None);
+
+        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+    }
+
     [Fact]
     public async Task ContextUnderTheThreshold_DoesNotCompress()
     {
