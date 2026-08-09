@@ -65,12 +65,19 @@ public class ProjectInstructionsTests : IDisposable
     }
 
     /// <summary>
-    /// FIRST MATCH WINS, and the nearest one is the match. opencode's comment: "so we don't stack
-    /// AGENTS.md/CLAUDE.md from every ancestor" — stacking is how a context fills with advice from a
-    /// parent directory that has nothing to do with the work.
+    /// ONE NAME, BUT EVERY LEVEL THAT HAS IT — matching opencode exactly.
+    ///
+    /// <para>Their comment "the first project-level match wins so we don't stack AGENTS.md/CLAUDE.md
+    /// from every ancestor" is about not stacking the two NAMES; their <c>findUp</c> collects every
+    /// directory from the start to the worktree root, and <c>matches.forEach</c> adds them all. The
+    /// monorepo case is why: a root file carries the house style and a package file carries what is
+    /// specific to that package, and both are true at once.</para>
+    ///
+    /// <para>ROOT FIRST, so the nearest file is rendered last and wins on a conflict — the more
+    /// specific claim.</para>
     /// </summary>
     [Fact]
-    public void Find_TakesTheNearestFile_NotEveryAncestor()
+    public void Find_TakesEveryLevelThatHasTheSameName_RootFirst()
     {
         var root = Dir("outer");
         Write(root, "AGENTS.md", "OUTER");
@@ -79,9 +86,27 @@ public class ProjectInstructionsTests : IDisposable
 
         var found = ProjectInstructions.Find(inner);
 
+        Assert.Equal(2, found.Count);
+        Assert.Contains("OUTER", found[0].Text, StringComparison.Ordinal);
+        Assert.Contains("INNER", found[1].Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// But only ONE name. A repo with AGENTS.md at the root and CLAUDE.md in a subdirectory gets the
+    /// AGENTS.md — the first name that matches anywhere wins, and the other is not mixed in.
+    /// </summary>
+    [Fact]
+    public void Find_DoesNotMixNames_AcrossLevels()
+    {
+        var root = Dir("outer");
+        Write(root, "AGENTS.md", "AGENTS at root");
+        var inner = Dir("outer", "inner");
+        Write(inner, "CLAUDE.md", "CLAUDE in subdir");
+
+        var found = ProjectInstructions.Find(inner);
+
         var only = Assert.Single(found);
-        Assert.Contains("INNER", only.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("OUTER", only.Text, StringComparison.Ordinal);
+        Assert.Contains("AGENTS at root", only.Text, StringComparison.Ordinal);
     }
 
     /// <summary>CLAUDE.md is read too — the same file under the name Claude Code uses, so a repo

@@ -96,22 +96,33 @@ public static class ProjectInstructions
 
         try
         {
-            var dir = new DirectoryInfo(startDirectory);
-            while (dir is not null)
-            {
-                // FIRST MATCH WINS, and the nearest directory is the match. opencode's comment on
-                // the same line: "so we don't stack AGENTS.md/CLAUDE.md from every ancestor" —
-                // stacking is how a context fills with advice from three levels up that has nothing
-                // to do with the work in hand.
-                if (ReadFirstProject(dir.FullName) is { } project)
-                {
-                    // A global file found at the same path is the same file; do not send it twice.
-                    if (found.All(f => !string.Equals(f.Path, project.Path, StringComparison.Ordinal)))
-                        found.Add(project);
-                    break;
-                }
+            // ONE NAME, EVERY LEVEL THAT HAS IT. opencode does the same: their findUp collects each
+            // directory from here to the worktree root and adds every hit for the first name that
+            // matched anywhere. Their comment about "not stacking from every ancestor" is about not
+            // mixing AGENTS.md with CLAUDE.md, not about taking only one directory.
+            //
+            // The monorepo case is why it matters: a root file carries the house style, a package
+            // file carries what is specific to that package, and both are true at the same time.
+            var dirs = new List<DirectoryInfo>();
+            for (var d = new DirectoryInfo(startDirectory); d is not null; d = d.Parent)
+                dirs.Add(d);
 
-                dir = dir.Parent;
+            foreach (var name in ProjectFileNames)
+            {
+                // ROOT FIRST, so the nearest file is rendered LAST and wins on a conflict — it is
+                // the more specific claim about the code being worked on.
+                var matches = new List<ProjectInstructionFile>();
+                for (var i = dirs.Count - 1; i >= 0; i--)
+                    if (Read(dirs[i].FullName, name) is { } file) matches.Add(file);
+
+                if (matches.Count == 0) continue;
+
+                foreach (var file in matches)
+                    // A global file at the same path is the same file; do not send it twice.
+                    if (found.All(f => !string.Equals(f.Path, file.Path, StringComparison.Ordinal)))
+                        found.Add(file);
+
+                break;
             }
         }
         catch (Exception)
@@ -120,15 +131,6 @@ public static class ProjectInstructions
         }
 
         return found;
-    }
-
-    /// <summary>The first readable, non-empty PROJECT instruction file in one directory, or null.</summary>
-    private static ProjectInstructionFile? ReadFirstProject(string directory)
-    {
-        foreach (var name in ProjectFileNames)
-            if (Read(directory, name) is { } file) return file;
-
-        return null;
     }
 
     /// <summary>One named file, or null when it is absent, empty or unreadable.</summary>
