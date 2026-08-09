@@ -144,12 +144,23 @@ public sealed class SessionPanel
     /// <summary>
     /// Repaints the panel from current state.
     /// </summary>
-    /// <param name="tokens">Tokens used this session.</param>
+    /// <param name="contextUsed">
+    /// How full the context is RIGHT NOW, in tokens, as the provider last reported it — or null when
+    /// no turn has reported usage yet.
+    ///
+    /// <para>TWO PARAMETERS, NOT ONE. This was a single <c>tokens</c> argument, and the caller passed
+    /// the cumulative ledger total into it: the panel then divided a SUM by the window and reported
+    /// the result as occupancy. Measured live, that read "19,559 tokens · 9%" on a context holding
+    /// 4,441 tokens — 4.4x over, and rising quadratically because every turn re-sends the whole
+    /// conversation. A slot that accepts either number is how the wrong one gets in.</para>
+    /// </param>
+    /// <param name="spentTokens">Cumulative tokens billed this session. A cost, never a size.</param>
     /// <param name="contextWindow">The provider's context window, when configured.</param>
     /// <param name="model">Model identifier, e.g. <c>qwen3.6-35b-a3b</c>.</param>
     /// <param name="endpoint">Where it runs, e.g. <c>local :8771</c>.</param>
     /// <param name="rules">Count of always-allow rules live for this folder.</param>
-    public void Refresh(int tokens, int? contextWindow, string model, string endpoint, int rules,
+    public void Refresh(int? contextUsed, int spentTokens, int? contextWindow, string model,
+        string endpoint, int rules,
         int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
         string sessionId = "")
     {
@@ -158,16 +169,34 @@ public sealed class SessionPanel
         // CONTEXT first: the one number that decides whether the next turn fits, and the reason the
         // panel exists at all. It was a cramped "ctx 46% · 94,102" in a status-bar corner.
         Section(lines, "Context");
-        lines.Add(Value($"{tokens:N0} tokens"));
-        if (contextWindow is > 0)
+
+        // OCCUPANCY, or nothing. Until a provider reports usage there is no measurement, and 0 reads
+        // as "empty" rather than "not known yet" — the one state where saying nothing is honest.
+        if (contextUsed is { } used)
         {
-            // THE CEILING, not just the fraction. "1% used" does not say what of, and the window is
-            // the number that makes a climbing count meaningful — 40k is nothing against 208k and
-            // most of the budget against 64k. Shown beside the percentage so one line answers both
-            // "how full" and "how big".
-            var percent = 100.0 * tokens / contextWindow.Value;
-            lines.Add($"[{ColorScheme.ThresholdMarkup(percent)}]{percent:N0}% of {Compact(contextWindow.Value)}[/]");
+            lines.Add(Value($"{used:N0} tokens"));
+
+            if (contextWindow is > 0)
+            {
+                // THE CEILING, not just the fraction. "1% used" does not say what of, and the window
+                // is the number that makes a climbing count meaningful — 40k is nothing against 208k
+                // and most of the budget against 64k. Shown beside the percentage so one line answers
+                // both "how full" and "how big".
+                var percent = 100.0 * used / contextWindow.Value;
+                lines.Add($"[{ColorScheme.ThresholdMarkup(percent)}]{percent:N0}% of {Compact(contextWindow.Value)}[/]");
+            }
         }
+        else if (contextWindow is > 0)
+        {
+            // The window is worth stating even with nothing in it yet — it is the size the session
+            // has to work within, and it does not depend on a measurement.
+            lines.Add(Muted($"window {Compact(contextWindow.Value)}"));
+        }
+
+        // THE SPEND, kept but demoted. It is a real figure answering a real question, and it used to
+        // be the one shown above as occupancy. Labelled, so it can never be read as "how full".
+        if (spentTokens > 0)
+            lines.Add(Muted($"{spentTokens:N0} spent"));
 
         // IN / OUT, because the two behave nothing alike and a single total hides which is growing.
         // Input dominates a long session — every turn re-sends the whole conversation — while output

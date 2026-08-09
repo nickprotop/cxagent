@@ -839,6 +839,11 @@ public sealed class MainWindow : IDisposable
         // provider will actually send. Both are shown because they differ often enough that seeing
         // only one leaves the question open.
         SessionPanel.Refresh(
+            // OCCUPANCY FIRST, and _lastTokens is NOT it. _lastTokens is Ledger.TotalTokens — a
+            // cumulative sum that only ever grows — and passing it as the context size is what put
+            // "9%" on a context measured at 2%, and what stopped the gauge falling after a
+            // compression. It goes in the `spent` slot, which is what it has always been.
+            _contextUsed,
             _lastTokens,
             _resolution.ContextWindow,
             // ModelId ONLY. DisplayName is "openai-compatible <the same model id>", so showing both
