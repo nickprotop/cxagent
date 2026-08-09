@@ -563,6 +563,59 @@ public class MainWindowTests
         Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The panel and the status bar answer the same question and must never disagree.
+    ///
+    /// <para>They did: RefreshTokenItem read _contextUsed while the panel was handed _lastTokens, so
+    /// one reported 2% and the other 9% of the same session. Both now derive from the same field —
+    /// this is the lock that keeps it that way.</para>
+    /// </summary>
+    [Fact]
+    public void PanelAndStatusBar_ReportTheSameOccupancy()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        {
+            ContextWindow = 200_000,
+        };
+        // WIDE: the panel hides itself below a width threshold, and a hidden panel renders nothing.
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+
+        mw.SetTokenTotal(96_500);      // the cumulative SPEND
+        mw.SetContextUsed(20_000);     // the OCCUPANCY — 10% of the window
+
+        // The panel's percentage is occupancy-derived, so the spend must not appear as one.
+        Assert.Contains("10% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("20,000 tokens", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("48%", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A new occupancy reading repaints the PANEL too, not only the status bar.
+    ///
+    /// <para>SetContextUsed refreshed the status-bar item alone, so after a compression — which
+    /// reaches the UI through exactly this method — the bar moved and the panel kept showing the
+    /// pre-compression figure. That is the reported "compress, and the gauge does not move" bug,
+    /// surviving in the surface that shows the number most prominently.</para>
+    /// </summary>
+    [Fact]
+    public void SetContextUsed_RepaintsThePanel_NotJustTheStatusBar()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        {
+            ContextWindow = 200_000,
+        };
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+
+        mw.SetContextUsed(100_000);
+        Assert.Contains("50% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+
+        mw.SetContextUsed(20_000);   // a compression freed most of it
+        Assert.Contains("10% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("50% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SessionPanel_ShowsTheAgentIdForLogCorrelation()
     {

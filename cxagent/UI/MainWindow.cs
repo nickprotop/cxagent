@@ -1073,6 +1073,12 @@ public sealed class MainWindow : IDisposable
             _contextDelta = null;   // a real measurement supersedes what the compression had to say
         }
         RefreshTokenItem();
+
+        // AND THE PANEL, which shows this same number larger and more prominently. It refreshed only
+        // from SetTokenTotal, so occupancy reached the status bar and not the panel — and compression
+        // arrives through THIS method, not that one. The result was the reported bug surviving in the
+        // surface that matters most: compress, and the panel's gauge does not move.
+        RefreshSessionPanel();
     }
 
     /// <summary>
