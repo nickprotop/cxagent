@@ -92,4 +92,35 @@ public class AgentHostTests
         Assert.True(afterFirst > 0);
         Assert.True(runner.Context.Messages.Count > afterFirst);
     }
+
+    /// <summary>
+    /// An unconfigured session is still bounded.
+    ///
+    /// <para><c>ConfiguredMaxWorkerTurns ?? int.MaxValue</c> meant the COMMON case — no orchestrator
+    /// block in config — had no ceiling at all. The reasoning that removed the invented 200 was
+    /// sound, but "no arbitrary limit" and "no limit" are different claims and only the first was
+    /// argued for.</para>
+    /// </summary>
+    [Fact]
+    public void TurnCeiling_IsBounded_WhenNothingIsConfigured()
+    {
+        var runner = NewRunner(new MockLlmProvider());
+
+        Assert.Equal(AgentHost.DefaultTurnCeiling, runner.TurnCeiling);
+        Assert.True(runner.TurnCeiling < int.MaxValue, "an unconfigured session must still be bounded");
+    }
+
+    /// <summary>Someone who sets a limit meant it — a configured value wins over the backstop, in
+    /// either direction.</summary>
+    [Fact]
+    public void TurnCeiling_HonoursAConfiguredValue()
+    {
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins())
+        {
+            ConfiguredMaxWorkerTurns = 25,
+        };
+
+        Assert.Equal(25, runner.TurnCeiling);
+    }
 }

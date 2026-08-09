@@ -270,29 +270,37 @@ public sealed class AgentHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// A backstop, not a budget. The user's configured value when they set one, otherwise
+    /// <see cref="DefaultTurnCeiling"/>.
+    ///
+    /// <para>NO LOW DEFAULT, and that reasoning is unchanged: MaxWorkerTurns existed to bound a
+    /// WORKER inside a fan-out — one job among many, where a runaway cost the whole plan. A session
+    /// is not that. The user is watching it and can stop it, and a ceiling in the low hundreds just
+    /// ends real work at a number that has nothing to do with the task. crush ships no step cap at
+    /// all; opencode's is <c>agent.steps ?? Infinity</c>. The invented 200 deserved to go.</para>
+    ///
+    /// <para>WHAT DID NOT FOLLOW is <c>int.MaxValue</c>. "No arbitrary limit" and "no limit" are
+    /// different claims, and the argument for the first was used to justify the second. The stated
+    /// replacement was stuck detection — which, until the change alongside this one, only ever
+    /// nudged. So the common case, an unconfigured session, had nothing bounding it at all.</para>
+    /// </summary>
+    public int TurnCeiling => ConfiguredMaxWorkerTurns ?? DefaultTurnCeiling;
+
+    /// <summary>
+    /// Turns a single request may take before it is stopped, absent configuration.
+    ///
+    /// <para>Chosen to be unreachable by real work and still finite. A live three-prompt drive used
+    /// four turns; a hard debugging session might use sixty. Five hundred is an order of magnitude
+    /// beyond that, so nothing legitimate meets it — while a loop that slips past stuck detection
+    /// (different arguments each time, so no repeat signature ever matches) still terminates instead
+    /// of running until the user notices.</para>
+    /// </summary>
+    public const int DefaultTurnCeiling = 500;
+
     private Agent BuildAgent() =>
         new(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
-            // NO DEFAULT CAP IN SINGLE-AGENT. MaxWorkerTurns exists to bound a WORKER inside a
-            // fan-out — one job among many, where a runaway costs the whole plan. Single-agent
-            // is the session itself: the user is watching it, can stop it, and a turn ceiling
-            // just ends real work at an arbitrary number that has nothing to do with the task.
-            //
-            // The field agrees. crush ships no step cap at all (loop detection and context
-            // pressure only); opencode's is `agent.steps ?? Infinity`, uncapped unless asked
-            // for. What replaces it here is what already exists: stuck detection catches the
-            // repeat loops a cap was standing in for, and the context window ends a session
-            // that genuinely cannot continue.
-            //
-            // An explicitly CONFIGURED value is still honoured — someone who sets a limit meant
-            // it. Only the invented 200 is gone.
-            // NOT `?? int.MaxValue`, which never fired: AppBootstrap substitutes
-            // OrchestratorSettings.Unbounded when the config has no orchestrator block, and that
-            // object carries MaxWorkerTurns = 200 from the RECORD's default. "Unbounded" is
-            // documented in its own source as describing "only the token fields" — so the null
-            // check was testing for a null that does not reach here.
-            //
-            // The user's explicitly configured value, or no cap at all.
-            ConfiguredMaxWorkerTurns ?? int.MaxValue,
+            TurnCeiling,
 
             // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
             // single-agent run ends when it runs out of room, not at an arbitrary turn number.
