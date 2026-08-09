@@ -28,6 +28,5 @@ public sealed class LatestChatSink : IChatSink
 
     public void EndAssistantTurn(ChatMessageId id) => Current?.EndAssistantTurn(id);
     public void ShowError(string message) => Current?.ShowError(message);
-    public void ShowApprovalRequest(string? detail = null) => Current?.ShowApprovalRequest(detail);
     public void ShowSystemMessage(string message) => Current?.ShowSystemMessage(message);
 }

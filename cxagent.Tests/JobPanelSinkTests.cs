@@ -46,29 +46,7 @@ public class JobPanelSinkTests : IDisposable
         {
             sink.SetJobs(new[] { J("a") });
             sink.UpdateJob(J("a"));
-            sink.SetDraftMode(true);
         });
         Assert.Null(ex);   // enqueue-only, no synchronous mutation, no throw
-    }
-
-    // ------------------------------------------------------------------ P9 Task 2: draft-mode visibility
-    //
-    // Marshalled-effect assertions (panel.IsDraftMode after the enqueue) don't work headlessly without
-    // a running UI pump — see Goal_RunsThroughRealShell_JobPanelGetsSetJobsAndUpdates in
-    // JobPanelE2ETests.cs, the established precedent for this. The synchronous "did the panel actually
-    // flip" assertion belongs on JobPanelControl directly (JobPanelControlTests.cs); this file only
-    // proves the sink enqueues rather than mutating synchronously off-thread, same shape as
-    // Sink_DoesNotThrow_WhenCalledOffUiThread above.
-
-    [Fact]
-    public async Task SetDraftMode_FromBackgroundThread_IsDeferred_NotAppliedSynchronously()
-    {
-        var panel = new JobPanelControl(_sys, _logs);
-        var sink = new JobPanelSink(_sys, panel);
-
-        await Task.Run(() => sink.SetDraftMode(true));
-
-        // Marshalled: nothing applied synchronously — IsDraftMode is still false (the call was enqueued).
-        Assert.False(panel.IsDraftMode);
     }
 }

@@ -31,6 +31,4 @@ public sealed class JobPanelSink : IJobPanel
     /// inline transcript (InlineJobSink) is where live text belongs — it has the width for it.</summary>
     public void AppendText(string jobId, string delta) { }
 
-    public void SetDraftMode(bool isDraft) =>
-        _system.EnqueueOnUIThread(() => _panel.SetDraftMode(isDraft));
 }

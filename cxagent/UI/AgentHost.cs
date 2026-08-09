@@ -184,46 +184,6 @@ public sealed class AgentHost : IDisposable
     /// knows a turn boundary.</summary>
     internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
 
-    /// <summary>
-    /// INERT. The copilot draft gate parked a compiled plan for approval before running it; there is
-    /// no plan and no gate now, so nothing ever arms this and it never fires.
-    ///
-    /// <para>Kept only because MainWindow's F9/Esc footer hint binds to it. Behaviour is unchanged
-    /// from before — with copilot off, which is the only state single-agent ever reached, F9 and Esc
-    /// were already no-ops. The whole seam (this, <see cref="HasPendingApproval"/>,
-    /// <see cref="ApproveDraft"/>, <see cref="DiscardDraft"/>) is dead weight for a later task.</para>
-    /// </summary>
-    public event EventHandler<bool>? DraftPending;
-
-
-    // Guarded the copilot approval gate. Nothing arms it now that planning is gone — see DraftPending.
-    private readonly object _stateLock = new();
-    private TaskCompletionSource<bool>? _pendingApproval;
-
-    /// <summary>Always false: nothing arms the approval gate any more. See <see cref="DraftPending"/>.</summary>
-    public bool HasPendingApproval { get { lock (_stateLock) return _pendingApproval is not null; } }
-
-    /// <summary>
-    /// No-op. Resolved the approval gate that no longer exists; nothing is ever awaiting it.
-    /// See <see cref="DraftPending"/>.
-    /// </summary>
-    public void ApproveDraft()
-    {
-        TaskCompletionSource<bool>? tcs;
-        lock (_stateLock) tcs = _pendingApproval;
-        tcs?.TrySetResult(true);
-    }
-
-    /// <summary>
-    /// No-op, for the same reason as <see cref="ApproveDraft"/>.
-    /// </summary>
-    public void DiscardDraft()
-    {
-        TaskCompletionSource<bool>? tcs;
-        lock (_stateLock) tcs = _pendingApproval;
-        tcs?.TrySetResult(false);
-    }
-
     /// <param name="store">
     /// Where completed turns are recorded so a crash is recoverable, or null for a session that is
     /// not worth persisting (every test that does not care, and any run whose store failed to open).

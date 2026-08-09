@@ -644,12 +644,6 @@ public class MainWindowTests
         single.Build();
         single.RefreshSessionPanel();
         Assert.DoesNotContain("200 turns", single.SessionPanel.RenderedText, StringComparison.Ordinal);
-
-        // In FAN-OUT it bounds a real worker, so it is shown.
-        var fan = new MainWindow(SysOfWidth(140), res, Logs()) { FanOut = true };
-        fan.Build();
-        fan.RefreshSessionPanel();
-        Assert.Contains("200 turns", fan.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]

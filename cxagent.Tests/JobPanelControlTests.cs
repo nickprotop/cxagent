@@ -70,43 +70,4 @@ public class JobPanelControlTests : IDisposable
     }
 
     // ------------------------------------------------------------------ P9 Task 2: draft-mode banner
-
-    [Fact]
-    public void SetDraftMode_True_SetsIsDraftMode()
-    {
-        var panel = new JobPanelControl(_sys, _logs);
-        panel.SetJobs(new[] { J("a", JobState.Queued) });
-
-        panel.SetDraftMode(true);
-
-        Assert.True(panel.IsDraftMode);
-    }
-
-    [Fact]
-    public void SetDraftMode_False_ClearsIsDraftMode()
-    {
-        var panel = new JobPanelControl(_sys, _logs);
-        panel.SetDraftMode(true);
-
-        panel.SetDraftMode(false);
-
-        Assert.False(panel.IsDraftMode);
-    }
-
-    /// <summary>
-    /// Task 2's whole point: a drafted plan must be unmistakably NOT running. SetJobs re-adds the
-    /// banner control after ClearContents() — this proves draft mode survives a SetJobs call that
-    /// happens WHILE drafting (AgentHost calls SetJobs, then SetDraftMode(true), in that order — but
-    /// nothing stops a future caller from re-running SetJobs during an active draft).
-    /// </summary>
-    [Fact]
-    public void SetDraftMode_SurvivesASubsequentSetJobsCall()
-    {
-        var panel = new JobPanelControl(_sys, _logs);
-        panel.SetDraftMode(true);
-
-        panel.SetJobs(new[] { J("a", JobState.Queued) });
-
-        Assert.True(panel.IsDraftMode);
-    }
 }

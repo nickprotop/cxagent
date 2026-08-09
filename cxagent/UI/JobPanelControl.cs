@@ -22,20 +22,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
     private Task? _tailTask;
     private MultilineEditControl? _tailBody;
 
-    // Copilot mode (P9 Task 2): a standing banner control, inserted first so it always sits above
-    // every job block regardless of when SetJobs last ran. Built once in the constructor (not
-    // lazily) so SetDraftMode can be called before the first SetJobs without a null check.
-    private readonly MarkupControl _draftBanner = new(new List<string> { "" }) { Visible = false };
-
     public int BlockCount => _blocks.Count;
-
-    /// <summary>
-    /// True while the work behind this panel is parked awaiting approval (P9 copilot mode)
-    /// awaiting F9/Esc. The whole point of Task 2: the user must be able to tell at a glance that
-    /// these blocks are shown-but-not-running, so this drives a standing banner rather than relying
-    /// on job state alone (Pending/Queued look identical whether copilot is on or off).
-    /// </summary>
-    public bool IsDraftMode { get; private set; }
 
     /// <summary>
     /// Raised when a job block's Diagnose/Retry/Skip button is clicked, carrying the owning
@@ -50,7 +37,6 @@ public sealed class JobPanelControl : ScrollablePanelControl
     {
         _system = system;
         _logs = logs;
-        AddControl(_draftBanner);
     }
 
     public bool TryGetBlock(string jobId, out JobBlockControl block) => _blocks.TryGetValue(jobId, out block!);
@@ -68,10 +54,6 @@ public sealed class JobPanelControl : ScrollablePanelControl
         // the first call site to invoke SetJobs a second time in one session (the I2 InsertBefore
         // re-sync), so it's the first time the stale reference was actually reachable.
         _expanded = null;
-        // ClearContents() just detached _draftBanner along with every job block above — re-add it
-        // FIRST so a draft's plan (SetJobs runs while still awaiting approval — see AgentHost) is
-        // shown with the banner already sitting above the blocks, not flashing in after the fact.
-        AddControl(_draftBanner);
         foreach (var job in jobs)
         {
             var block = new JobBlockControl();
@@ -89,21 +71,6 @@ public sealed class JobPanelControl : ScrollablePanelControl
     {
         if (_blocks.TryGetValue(job.Id, out var block))
             block.Update(job);
-    }
-
-    /// <summary>
-    /// Flips the standing draft banner (P9 Task 2). This is the ONLY thing that makes a drafted plan
-    /// look different from a running one — the blocks themselves are otherwise identical, since jobs
-    /// sit in ordinary Pending/Queued states whether copilot is on or off.
-    /// </summary>
-    public void SetDraftMode(bool isDraft)
-    {
-        IsDraftMode = isDraft;
-        _draftBanner.SetContent(new List<string>
-        {
-            isDraft ? "[yellow]▸ DRAFT — plan shown, nothing is running. F9 approve · Esc discard.[/]" : ""
-        });
-        _draftBanner.Visible = isDraft;
     }
 
     /// <summary>

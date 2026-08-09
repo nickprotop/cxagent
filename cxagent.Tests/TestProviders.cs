@@ -238,6 +238,4 @@ public sealed class NullJobPanel : IJobPanel
     public void UpdateJob(Job job) { _jobs[job.Id] = job; }
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
     public void AppendText(string jobId, string delta) { }
-    public bool AwaitingApproval { get; set; }
-    public void SetDraftMode(bool on) { }
 }

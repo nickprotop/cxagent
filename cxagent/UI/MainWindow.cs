@@ -110,14 +110,6 @@ public sealed class MainWindow : IDisposable
 
 
     /// <summary>
-    /// True in fan-out mode, where a DAG of jobs exists. Single-agent has no dag and no scheduler,
-    /// which decides what the status bar may offer: F6 Diagnose resolves a FAILED JOB through
-    /// AgentHost.TryGetSession, and single-agent never creates a session for it to find — the key
-    /// was advertised, pressed, and silently did nothing.
-    /// </summary>
-    public bool FanOut { get; init; }
-
-    /// <summary>
     /// This session's id — the directory its logs are written under.
     ///
     /// <para>Set by AppBootstrap, which mints it. Surfaced so a user can correlate what they are
@@ -145,8 +137,6 @@ public sealed class MainWindow : IDisposable
     /// the token readout for the same corner.
     /// </summary>
     private StatusBarItem? _composerHint;
-    private StatusBarItem? _approveItem;
-    private StatusBarItem? _discardItem;
 
     /// <summary>The composer's grid, promoted from a Build()-local so Show/RestorePermissionPrompt
     /// can swap the Input cell's content via ReplaceControl (GridControl.cs:381), which preserves
@@ -418,7 +408,7 @@ public sealed class MainWindow : IDisposable
             // the same thing, in the control the user is about to type into.
             Chat.AddMessage(ChatRole.System, Banner.Render(
                 _system.DesktopDimensions.Width,
-                $"{(FanOut ? "fan-out" : "single agent")} · {_resolution.DisplayName}"));
+                $"single agent · {_resolution.DisplayName}"));
         }
         else
         {
@@ -467,7 +457,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine($"[{ColorScheme.AccentMarkup}]{(FanOut ? "Fan-out" : "Single agent")}[/]"
+            .AddLine($"[{ColorScheme.AccentMarkup}]Single agent[/]"
                    + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]")
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
@@ -855,8 +845,8 @@ public sealed class MainWindow : IDisposable
             // The CONFIGURED cap only, supplied by AppBootstrap from the raw JSON. NOT read off
             // _resolution.Orchestrator: that property is non-nullable and defaults to Unbounded,
             // which carries MaxWorkerTurns = 200 — so it reports a ceiling for a session that has
-            // none, which is exactly the fiction this panel exists to stop.
-            ConfiguredMaxWorkerTurns ?? (FanOut ? 200 : 0),
+            // none, which is exactly the fiction this panel exists to stop. 0 means "say no cap".
+            ConfiguredMaxWorkerTurns ?? 0,
             _resolution.Orchestrator?.GoalTokenBudget,
             _lastInput,
             _lastOutput,
@@ -981,24 +971,6 @@ public sealed class MainWindow : IDisposable
     }
 
 
-
-    /// <summary>
-    /// Copilot mode (P9 Task 2): shows/hides the F9 Approve · Esc Discard footer hint. Wired by
-    /// AppBootstrap off AgentHost.DraftPending, same pattern as SetTokenTotal off TokensUpdated.
-    /// Offering the hint only while a draft is actually pending matters as much as offering it at
-    /// all — F9/Esc are no-ops (ApproveDraft/DiscardDraft self-guard) when nothing is drafting, and a
-    /// hint that's visible but inert would be worse than no hint.
-    /// </summary>
-    public void SetDraftPending(bool pending)
-    {
-        if (_approveItem is null)
-        {
-            _approveItem = StatusBar.AddLeft("F9", "Approve");
-            _discardItem = StatusBar.AddLeft("Esc", "Discard");
-        }
-        _approveItem.IsVisible = pending;
-        _discardItem!.IsVisible = pending;
-    }
 
     /// <summary>
     /// Updates the status-bar cost readout with the running orchestrator token total. Renders

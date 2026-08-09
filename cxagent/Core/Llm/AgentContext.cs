@@ -75,11 +75,6 @@ public sealed class AgentContext
     public void AddRange(IEnumerable<ChatMessage> messages) => _messages.AddRange(messages);
 
     /// <summary>
-    /// Inserts at the front — for the system preamble, which must lead the conversation.
-    /// </summary>
-    public void Prepend(ChatMessage message) => _messages.Insert(0, message);
-
-    /// <summary>
     /// How many leading messages are STRUCTURAL rather than conversational — the working-directory
     /// preamble, today. Compression starts below this.
     ///
@@ -94,9 +89,6 @@ public sealed class AgentContext
     /// and this is consulted precisely while the list is being rewritten.</para>
     /// </summary>
     public int PinnedHeadCount => _messages.Count > 0 && _messages[0].Role == "system" ? 1 : 0;
-
-    /// <summary>Whether any message is present.</summary>
-    public bool IsEmpty => _messages.Count == 0;
 
     /// <summary>Message count.</summary>
     public int Count => _messages.Count;

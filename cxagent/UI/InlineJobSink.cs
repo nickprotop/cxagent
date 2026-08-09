@@ -33,7 +33,6 @@ public sealed class InlineJobSink : IJobPanel
     /// </summary>
     private readonly ConcurrentDictionary<string, SharpConsoleUI.Controls.ChatMessageId> _lines = new();
 
-    private volatile bool _draft;
 
     
 
@@ -432,22 +431,6 @@ public sealed class InlineJobSink : IJobPanel
     private readonly HashSet<string> _streaming = new();
 
     /// <summary>
-    /// Copilot's draft gate. The jobs are already on screen (SetJobs ran); this marks them as shown-
-    /// but-not-running, so the same list cannot be mistaken for work in progress.
-    /// </summary>
-    public void SetDraftMode(bool isDraft) =>
-        _system.EnqueueOnUIThread(() =>
-        {
-            _draft = isDraft;
-            foreach (var (jobId, id) in _lines)
-            {
-                _ = jobId;
-                if (isDraft)
-                    _chat.SetStatus(id, "drafted — awaiting approval", NotificationSeverity.Warning);
-            }
-        });
-
-    /// <summary>
     /// The header label. "Job" was hardcoded, and it is the wrong word for most of what appears: the
     /// orchestrator plans an <c>llm_agent</c> for everything, including "Read HeuristicEngine.cs",
     /// which is a WORKER calling read_file internally. The user's own reading of the screen — "I
@@ -459,8 +442,6 @@ public sealed class InlineJobSink : IJobPanel
     /// produced. Verified: ChatTranscriptControl exposes no SetAuthor.</para>
     /// </summary>
     /// <summary>Test seam: the header label is a pure projection of the job.</summary>
-    /// <summary>Test seam for the visibility rule.</summary>
-    public static bool ShouldShowForTest(Job job) => ShouldShow(job);
 
     /// <summary>Every job belongs in the transcript. A succeeded PLANNER used to be hidden here;
     /// roles are gone, so there is no planner to hide.</summary>
@@ -686,8 +667,6 @@ public sealed class InlineJobSink : IJobPanel
 
     private string StatusText(Job job)
     {
-        if (_draft && !IsTerminal(job.State)) return "drafted — awaiting approval";
-
         var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
 
         return job.State switch

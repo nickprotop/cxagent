@@ -178,7 +178,6 @@ public static class AppBootstrap
                 mainWindow.SetTokenSplit(runner.Ledger.InputTokens, runner.Ledger.OutputTokens);
                 mainWindow.RefreshSessionPanel();
             });
-            runner.DraftPending += (_, pending) => system.EnqueueOnUIThread(() => mainWindow.SetDraftPending(pending));
             mainWindow.SetSubmissionEnabled(true);
         }
 
@@ -380,20 +379,18 @@ public static class AppBootstrap
         // Esc, not another F-key: this codebase has no OTHER Esc binding anywhere (grepped before
         // choosing it), so it's free, and Esc-to-cancel/dismiss is the universal convention — a
         // second F-key would be one more thing to memorize for no reason.
-        // Escape must reach `openDialog.Cancel()` BEFORE `runner?.DiscardDraft()` — this global fires
-        // at InputCoordinator.cs:131, well before active-window routing at :150, so a dialog window can
-        // never see Escape itself; routing it here is the only way it reaches Cancel at all. `openDialog`
-        // is cleared in OpenSettingsAsync's `finally`, so once the dialog closes Escape falls straight
-        // back through to DiscardDraft — permanently hijacking it here would be a one-way trapdoor.
+        // Escape reaches `openDialog.Cancel()` only from here: this global fires at
+        // InputCoordinator.cs:131, well before active-window routing at :150, so a dialog window can
+        // never see Escape itself. `openDialog` is cleared in OpenSettingsAsync's `finally`, so once
+        // the dialog closes Escape does nothing again — it used to fall through to DiscardDraft,
+        // which was a no-op from the moment the copilot draft gate was deleted.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape,
             () =>
             {
-                // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
-                // themselves (which need a live dialog and a live runner) stay here.
+                // Routed through EscapeRouting.For so the DECISION is unit-testable; the action
+                // itself (which needs a live dialog) stays here.
                 if (EscapeRouting.For(openDialog is not null) == EscapeTarget.CancelDialog)
                     openDialog!.Cancel();
-                else
-                    runner?.DiscardDraft();
             });
 
         // MainWindow stays independent of SettingsDialog/SetupWizard; AppBootstrap supplies the flow

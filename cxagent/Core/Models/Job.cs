@@ -42,21 +42,6 @@ public record Job
     public int RetryCount { get; set; }
     public int MaxRetries { get; init; } = 3;
 
-    /// <summary>
-    /// Set when someone deliberately stopped this job. Read by the scheduler's completion path to
-    /// report Cancelled rather than Failed — nothing is WRONG with a cancelled job, and calling it
-    /// Failed invites the diagnoser to spend a paid round repairing a decision someone made on
-    /// purpose. Mutable (not init) because it is set on a live job mid-flight.
-    /// </summary>
-    public bool CancelRequested { get; set; }
-
-    /// <summary>
-    /// How many times the orchestrator's feedback loop has edited/added jobs in response to this
-    /// job's outcome. Mutated in place by the loop, like RetryCount is by DagScheduler — bounded by
-    /// OrchestratorSettings.MaxEditsPerJob to stop a fail-edit-fail cycle on one job. Must survive a
-    /// restart (see SqliteGoalStore), or an interrupted goal resumes with a fresh budget every time.
-    /// </summary>
-    public int OrchestratorEditCount { get; set; }
     public double? Progress { get; set; }
     public string? ProgressMessage { get; set; }
 }

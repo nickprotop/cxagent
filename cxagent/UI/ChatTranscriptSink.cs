@@ -93,13 +93,4 @@ public sealed class ChatTranscriptSink : IChatSink
         _system.EnqueueOnUIThread(() =>
             _chat.AddMessage(ChatRole.System, message));
 
-    // The real affordance lives in the job panel banner (JobPanelControl.SetDraftMode) and the
-    // status-bar F9/Esc hint (MainWindow.SetDraftPending) — both driven directly off AgentHost, not
-    // through this sink. This transcript line is a secondary echo so the wait isn't silently
-    // invisible in a scrolled-back chat log.
-    public void ShowApprovalRequest(string? detail = null) =>
-        _system.EnqueueOnUIThread(() =>
-            _chat.AddMessage(ChatRole.System,
-                "[yellow]▸ " + (detail is null ? "Plan drafted" : detail)
-                + " — press F9 to approve, Esc to discard.[/]"));
 }

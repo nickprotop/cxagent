@@ -46,16 +46,4 @@ public interface IChatSink
     /// </summary>
     void ShowSystemMessage(string message);
 
-    /// <summary>
-    /// Copilot mode (P9): the plan has been shown (SetJobs already ran) and the goal is now sitting
-    /// parked for approval. Tells the UI to surface the approve/discard affordance
-    /// (Task 2's F9 binding). One-way — the answer comes back through
-    /// AgentHost.ApproveDraft/DiscardDraft, not through this interface.
-    ///
-    /// <para><paramref name="detail"/> names WHAT is being approved. Null for the initial plan (the
-    /// job panel already shows it in full). For P9b's mid-goal gate it lists the jobs the
-    /// orchestrator wants to ADD — "3 new jobs" is not reviewable, and the user is being asked to
-    /// approve THESE.</para>
-    /// </summary>
-    void ShowApprovalRequest(string? detail = null);
 }

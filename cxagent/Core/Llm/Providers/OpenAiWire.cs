@@ -164,8 +164,6 @@ public static class OpenAiWire
             public string? Id;
         }
 
-        /// <summary>True once any tool call has started arriving.</summary>
-        public bool HasPending => _calls.Values.Any(c => c.Name is not null);
 
         /// <summary>
         /// Feeds one parsed chunk. Returns EVERY completed call when <paramref name="finishReason"/>
