@@ -153,11 +153,11 @@ public static class AppBootstrap
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
             runner.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
-            runner.GoalStarted += (_, id) => system.EnqueueOnUIThread(() =>
-            {
-                mainWindow.SessionId = id;
-                mainWindow.RefreshSessionPanel();
-            });
+            // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
+            // and nothing to re-raise — this used to be a GoalStarted subscription that fired on every
+            // prompt because every prompt minted a new id.
+            mainWindow.SessionId = runner.SessionId;
+            mainWindow.RefreshSessionPanel();
             runner.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionPanel.RecordTurn(calls);

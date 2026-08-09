@@ -17,9 +17,9 @@ namespace CxAgent.Tests;
 /// catches a model that FORGOT to write; it does nothing about one that has stalled, which is the
 /// commoner case on a hard task.</para>
 /// </summary>
-public class SingleAgentLoopChallengeTests
+public class AgentChallengeTests
 {
-    private static SingleAgentLoop Build(ILlmProvider provider, RecordingSink sink,
+    private static Agent Build(ILlmProvider provider, RecordingSink sink,
         int? compressAbove = null, NullJobPanel? panel = null) =>
         new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null), sink,
             panel ?? new NullJobPanel(), logs: null, maxTurns: 50, compressAbove: compressAbove);
@@ -39,13 +39,13 @@ public class SingleAgentLoopChallengeTests
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose($"Here is what I found ({i})."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).RunAsync("g1", Goal("fix the rendering bug"),
+        var state = await Build(provider, sink).SendAsync("fix the rendering bug",
             CancellationToken.None);
 
         var challenges = provider.LastMessages!
             .Count(m => m.Role == "user" && m.Content.Contains("written", StringComparison.OrdinalIgnoreCase));
         Assert.True(challenges >= 2, $"expected repeated challenges, saw {challenges}");
-        Assert.Equal(GoalState.Failed, state);
+        Assert.Contains(sink.Errors, e => e.Contains("nothing was written", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -57,10 +57,9 @@ public class SingleAgentLoopChallengeTests
         for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("I have analysed the code."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).RunAsync("g2", Goal("fix the wrapping bug"),
+        var state = await Build(provider, sink).SendAsync("fix the wrapping bug",
             CancellationToken.None);
 
-        Assert.Equal(GoalState.Failed, state);
         Assert.Contains(sink.Errors, e => e.Contains("nothing was written", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -75,7 +74,7 @@ public class SingleAgentLoopChallengeTests
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("still cannot"));
 
         var sink = new RecordingSink();
-        await Build(provider, sink).RunAsync("g3", Goal("fix the parser"), CancellationToken.None);
+        await Build(provider, sink).SendAsync("fix the parser", CancellationToken.None);
 
         var challenges = provider.LastMessages!
             .Count(m => m.Role == "user" && m.Content.Contains("written", StringComparison.OrdinalIgnoreCase));
@@ -91,10 +90,9 @@ public class SingleAgentLoopChallengeTests
         provider.EnqueueResponse(Prose("Focus is decided by FocusManager."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).RunAsync("g4",
-            Goal("how does focus work in this codebase?"), CancellationToken.None);
+        var state = await Build(provider, sink).SendAsync("how does focus work in this codebase?", CancellationToken.None);
 
-        Assert.Equal(GoalState.Completed, state);
+        Assert.Empty(sink.Errors);
         Assert.Empty(sink.Errors);
     }
 
@@ -130,10 +128,9 @@ public class SingleAgentLoopChallengeTests
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("gb", Goal("fix the parser bug"),
+            var state = await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Failed, state);
             Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
         }
         finally { Directory.Delete(dir, recursive: true); }
@@ -162,10 +159,10 @@ public class SingleAgentLoopChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("gc", Goal("fix the parser bug"),
+            var state = await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Completed, state);
+            Assert.Empty(sink.Errors);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -194,10 +191,10 @@ public class SingleAgentLoopChallengeTests
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("gt", Goal("fix the parser bug"),
+            var state = await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Failed, state);
+            Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -222,10 +219,10 @@ public class SingleAgentLoopChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("gu", Goal("fix the parser bug"),
+            var state = await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Completed, state);
+            Assert.Empty(sink.Errors);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -247,10 +244,10 @@ public class SingleAgentLoopChallengeTests
             provider.EnqueueResponse(Prose("Updated the notes."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("gd", Goal("update the notes"),
+            var state = await Build(provider, sink).SendAsync("update the notes",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Completed, state);
+            Assert.Empty(sink.Errors);
             Assert.Empty(sink.Errors);
         }
         finally { Directory.Delete(dir, recursive: true); }
@@ -274,10 +271,10 @@ public class SingleAgentLoopChallengeTests
             provider.EnqueueResponse(Prose("Done."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).RunAsync("ge", Goal("fix the thing"),
+            var state = await Build(provider, sink).SendAsync("fix the thing",
                 CancellationToken.None);
 
-            Assert.Equal(GoalState.Completed, state);
+            Assert.Empty(sink.Errors);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -310,7 +307,7 @@ public class SingleAgentLoopChallengeTests
         provider.EnqueueResponse(Prose("Focus is decided by FocusManager."));
 
         var sink = new RecordingSink();
-        await Build(provider, sink).RunAsync("gs", Goal("how does focus work?"), CancellationToken.None);
+        await Build(provider, sink).SendAsync("how does focus work?", CancellationToken.None);
 
         Assert.True(sink.Begins > 0, "no assistant turn was ever opened");
         Assert.Equal(sink.Begins, sink.Ends);
@@ -324,7 +321,7 @@ public class SingleAgentLoopChallengeTests
         var sink = new RecordingSink();
 
         await Assert.ThrowsAnyAsync<Exception>(() =>
-            Build(provider, sink).RunAsync("gt", Goal("fix it"), CancellationToken.None));
+            Build(provider, sink).SendAsync("fix it", CancellationToken.None));
 
         Assert.Equal(sink.Begins, sink.Ends);
     }
@@ -372,7 +369,7 @@ public class SingleAgentLoopChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Here is what I found."));
 
             var sink = new RecordingSink();
-            await Build(provider, sink).RunAsync("gr", Goal("what does this say?"),
+            await Build(provider, sink).SendAsync("what does this say?",
                 CancellationToken.None);
 
             Assert.Contains(provider.LastMessages!, m =>
@@ -401,7 +398,7 @@ public class SingleAgentLoopChallengeTests
             provider.EnqueueResponse(Prose("Updated."));
 
             var sink = new RecordingSink();
-            await Build(provider, sink).RunAsync("gn", Goal("update the file"), CancellationToken.None);
+            await Build(provider, sink).SendAsync("update the file", CancellationToken.None);
 
             Assert.DoesNotContain(provider.LastMessages!, m =>
                 m.Role == "user" && m.Content.Contains("same arguments", StringComparison.OrdinalIgnoreCase));
@@ -431,21 +428,21 @@ public class SingleAgentLoopChallengeTests
         for (var i = 0; i < 40; i++) provider.EnqueueResponse(Prose("thinking"));
 
         var sink = new RecordingSink();
-        var loop = new SingleAgentLoop(provider, PluginRegistry.CreateWithBuiltins(),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
             new TokenLedger(null), sink, new NullJobPanel(), logs: null, maxTurns: 2);
 
-        var conversation = Goal("fix the parser");
-        var state = await loop.RunAsync("gcap", conversation, CancellationToken.None);
+        var answer = await agent.SendAsync("fix the parser", CancellationToken.None);
 
-        Assert.Equal(GoalState.Failed, state);
+        Assert.Contains(sink.Errors, e => e.Contains("stopped after 2 turns", StringComparison.OrdinalIgnoreCase));
 
         // The summary turn ran WITHOUT tools, so it cannot start work it has no budget to finish.
         Assert.Empty(provider.LastTools!);
         Assert.Contains(provider.LastMessages!, m =>
             m.Role == "user" && m.Content.Contains("maximum number of steps", StringComparison.OrdinalIgnoreCase));
 
-        // And what it said survives into the session, not just the transcript.
-        Assert.Contains(conversation, m => m.Role == "assistant" && m.Content.Contains("thinking"));
+        // The salvaged summary is RETURNED — it is the answer on this path, and the caller is what
+        // puts it on the transcript.
+        Assert.Contains("thinking", answer);
     }
 
 
@@ -462,10 +459,10 @@ public class SingleAgentLoopChallengeTests
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Here is the answer."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).RunAsync("gm", Goal("what does this do?"),
+        var state = await Build(provider, sink).SendAsync("what does this do?",
             CancellationToken.None);
 
-        Assert.Equal(GoalState.Completed, state);
+        Assert.Empty(sink.Errors);
         Assert.Contains(provider.LastMessages!, m =>
             m.Role == "user" && m.Content.Contains("cut off", StringComparison.OrdinalIgnoreCase));
     }
@@ -481,10 +478,10 @@ public class SingleAgentLoopChallengeTests
                 { Text = "done", ToolCalls = [], StopReason = "tool_use", Usage = new LlmUsage() });
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).RunAsync("gm2", Goal("what does this do?"),
+        var state = await Build(provider, sink).SendAsync("what does this do?",
             CancellationToken.None);
 
-        Assert.Equal(GoalState.Completed, state);   // gave up retrying and took it at face value
+        Assert.Empty(sink.Errors);   // gave up retrying and took it at face value
     }
 
 
@@ -502,8 +499,7 @@ public class SingleAgentLoopChallengeTests
         provider.EnqueueResponse(Prose("<think>weighing the options</think>The answer is 4."));
 
         var sink = new RecordingSink();
-        var conversation = Goal("what is 2+2?");
-        await Build(provider, sink).RunAsync("gh", conversation, CancellationToken.None);
+        var answer = await Build(provider, sink).SendAsync("what is 2+2?", CancellationToken.None);
 
         var body = string.Concat(sink.Appended);
         Assert.Contains("weighing the options", body, StringComparison.Ordinal);
@@ -518,8 +514,11 @@ public class SingleAgentLoopChallengeTests
         // The reasoning never became a header — the defect this replaced.
         Assert.DoesNotContain(sink.Headers, h => h.Contains("weighing", StringComparison.Ordinal));
 
-        Assert.DoesNotContain(conversation, m => m.Content.Contains("weighing", StringComparison.Ordinal));
-        Assert.Contains(conversation, m => m.Content.Contains("The answer is 4.", StringComparison.Ordinal));
+        // THE RETURNED ANSWER is what the caller puts on the transcript, so it is what must be clean
+        // of reasoning — a model that sees its own thinking replayed as content starts treating it as
+        // commitment.
+        Assert.DoesNotContain("weighing", answer, StringComparison.Ordinal);
+        Assert.Contains("The answer is 4.", answer, StringComparison.Ordinal);
     }
 
 
@@ -539,17 +538,19 @@ public class SingleAgentLoopChallengeTests
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(Prose("### A heading\n\n- **bold** item"));
 
-            var loop = new SingleAgentLoop(provider, PluginRegistry.CreateWithBuiltins(),
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
                 new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
 
-            await loop.RunAsync("goal-1", Goal("what is this?"), CancellationToken.None);
+            await agent.SendAsync("what is this?", CancellationToken.None);
 
+            // UNDER THE AGENT'S OWN ID — that is the directory a user is told to look in, and it is
+            // stable for the session rather than changing with each prompt.
             // The write is fire-and-forget, so poll briefly rather than racing it.
-            var goalDir = Path.GetDirectoryName(logs.PathFor("goal-1", "x", "log"))!;
-            for (var i = 0; i < 50 && !Directory.Exists(goalDir); i++) await Task.Delay(20);
-            for (var i = 0; i < 50 && Directory.GetFiles(goalDir).Length == 0; i++) await Task.Delay(20);
+            var agentDir = Path.GetDirectoryName(logs.PathFor(agent.Id, "x", "log"))!;
+            for (var i = 0; i < 50 && !Directory.Exists(agentDir); i++) await Task.Delay(20);
+            for (var i = 0; i < 50 && Directory.GetFiles(agentDir).Length == 0; i++) await Task.Delay(20);
 
-            var written = string.Concat(Directory.GetFiles(goalDir).Select(File.ReadAllText));
+            var written = string.Concat(Directory.GetFiles(agentDir).Select(File.ReadAllText));
 
             // The MARKDOWN SOURCE, verbatim — that is the whole point. A log holding only the
             // rendered form could not answer "what did the renderer receive?".
@@ -564,22 +565,24 @@ public class SingleAgentLoopChallengeTests
     [Fact]
     public async Task ContextOverTheThreshold_CompressesMidGoal_AndSaysSo()
     {
-        // THE LIVE FAILURE. GoalRunner's auto-compression sits in a `finally` around the whole GOAL,
-        // and a single-agent goal is ONE RunAsync that loops internally — so the check fired only
-        // after the run that blew past it. Measured live at 1.16M input tokens against a 40,000
-        // threshold, never once compressing. The bound has to be inside the loop.
+        // THE LIVE FAILURE. GoalRunner's auto-compression sat in a `finally` around the whole goal,
+        // and a request is ONE SendAsync that loops internally — so the check fired only after the
+        // run that blew past it. Measured live at 1.16M input tokens against a 40,000 threshold,
+        // never once compressing. The bound has to be inside the loop, which is what this pins.
         var provider = new MockLlmProvider();
 
-        // Two heavy turns: the first reports usage over the threshold, so compression runs before the
-        // second. A third response feeds the summarisation call itself.
-        provider.EnqueueResponse(Heavy("looking into it", inputTokens: 5_000));
+        // The first turn MUST CARRY A TOOL CALL, so the loop continues to a second turn and reaches
+        // its pre-send check. A prose turn would return immediately and there would be no "mid" for
+        // the compression to happen in the middle of — that case is now handled by the NEXT prompt's
+        // pre-send check, which compresses before anything over the threshold is ever sent.
+        provider.EnqueueResponse(HeavyWithCall("looking into it", inputTokens: 5_000));
         provider.EnqueueResponse(Prose("summary of the earlier work"));
         for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("done"));
 
         var sink = new RecordingSink();
         var panel = new NullJobPanel();
         await Build(provider, sink, compressAbove: 1_000, panel: panel)
-            .RunAsync("gc", Goal("do something long"), CancellationToken.None);
+            .SendAsync("do something long", CancellationToken.None);
 
         // A JOB ROW, so it carries the spinner, the one-line summary and an expandable body like any
         // other piece of work. Asserting on the JOB rather than on transcript text also pins the
@@ -603,7 +606,7 @@ public class SingleAgentLoopChallengeTests
         var sink = new RecordingSink();
         var panel = new NullJobPanel();
         await Build(provider, sink, compressAbove: 50_000, panel: panel)
-            .RunAsync("gd", Goal("do something short"), CancellationToken.None);
+            .SendAsync("do something short", CancellationToken.None);
 
         Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
     }
@@ -620,7 +623,7 @@ public class SingleAgentLoopChallengeTests
         var sink = new RecordingSink();
         var panel = new NullJobPanel();
         await Build(provider, sink, compressAbove: null, panel: panel)
-            .RunAsync("ge", Goal("do something"), CancellationToken.None);
+            .SendAsync("do something", CancellationToken.None);
 
         Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
     }
@@ -628,6 +631,22 @@ public class SingleAgentLoopChallengeTests
     /// <summary>A response reporting a given input-token count, which is what the trigger reads.</summary>
     private static LlmResponse Heavy(string text, int inputTokens) =>
         new() { Text = text, ToolCalls = [], Usage = new LlmUsage { InputTokens = inputTokens } };
+
+    /// <summary>
+    /// The same, but carrying a tool call so the loop runs ANOTHER turn. Needed to observe anything
+    /// that happens at the top of a subsequent turn: a response with no tool calls ends the request
+    /// there, so a check placed before the next send is never reached.
+    /// </summary>
+    private static LlmResponse HeavyWithCall(string text, int inputTokens) => new()
+    {
+        Text = text,
+        ToolCalls = [new ToolCall
+        {
+            Id = "h1", Name = "run_shell",
+            Arguments = System.Text.Json.JsonSerializer.SerializeToElement(new { command = "echo hi" }),
+        }],
+        Usage = new LlmUsage { InputTokens = inputTokens },
+    };
 
     private sealed class RecordingSink : IChatSink
     {
@@ -647,26 +666,4 @@ public class SingleAgentLoopChallengeTests
         public void ShowApprovalRequest(string? detail = null) { }
     }
 
-    private sealed class NullJobPanel : IJobPanel
-    {
-        /// <summary>
-        /// The latest state of every job the loop reported, keyed by id — compression renders as one
-        /// of these.
-        /// </summary>
-        /// <remarks>
-        /// BY ID, because Job is MUTATED IN PLACE: the loop hands the same instance to SetJobs while
-        /// running and to UpdateJob when it finishes, so appending to a list records one object twice
-        /// and both entries show the final state. A real panel keys by id for the same reason.
-        /// </remarks>
-        private readonly Dictionary<string, Job> _jobs = new();
-
-        public IReadOnlyCollection<Job> Jobs => _jobs.Values;
-
-        public void SetJobs(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
-        public void UpdateJob(Job job) { _jobs[job.Id] = job; }
-        public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
-        public void AppendText(string jobId, string delta) { }
-        public bool AwaitingApproval { get; set; }
-        public void SetDraftMode(bool on) { }
-    }
 }

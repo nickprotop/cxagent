@@ -8,21 +8,12 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// What GoalRunner still owns now that the dag is gone: the ledger, the events the status bar reads,
-/// the agent context that outlives a goal, and turning a provider fault into a visible error rather
-/// than an unobserved faulted task. The turn loop itself is SingleAgentLoop's, and is covered by
-/// SingleAgentLoopChallengeTests.
+/// the agent context that outlives a prompt, and turning a provider fault into a visible error rather
+/// than an unobserved faulted task. The turn loop itself is <see cref="CxAgent.UI.Agent"/>'s, and is
+/// covered by AgentChallengeTests and AgentTests.
 /// </summary>
 public class GoalRunnerTests
 {
-    private sealed class NullJobPanel : IJobPanel
-    {
-        public void SetJobs(IReadOnlyList<Job> jobs) { }
-        public void UpdateJob(Job job) { }
-        public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
-        public void AppendText(string jobId, string delta) { }
-        public void SetDraftMode(bool on) { }
-    }
-
     private static GoalRunner NewRunner(ILlmProvider provider, RecordingSink? sink = null) =>
         new(provider, sink ?? new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins());
@@ -77,9 +68,9 @@ public class GoalRunnerTests
     }
 
     /// <summary>
-    /// The context is the RUNNER's, not the loop's: a SingleAgentLoop is built per goal, so a context
-    /// owned only by the loop would die with it and goal N+1 would start blank. This pins the seam
-    /// /compress and the between-goal continuity both depend on.
+    /// One context across prompts. The runner constructs it and hands it to the agent, which now
+    /// outlives every prompt — so prompt N+1 begins with everything prompt N learned rather than
+    /// blank. This pins the seam /compress and the session's continuity both depend on.
     /// </summary>
     [Fact]
     public async Task Context_SurvivesAcrossGoals()

@@ -32,9 +32,9 @@ namespace CxAgent.UI;
 /// which is what makes this substitution safe.</para>
 ///
 /// <para>WHAT IS LOST, stated plainly: copilot's whole-plan pre-approval has no plan to approve, and
-/// the DAG's parallelism is gone. Both are fan-out's job now (<c>--fan-out</c>).</para>
+/// the DAG's parallelism is gone.</para>
 /// </summary>
-public sealed class SingleAgentLoop
+public sealed class Agent
 {
     private readonly ILlmProvider _provider;
     private readonly PluginRegistry _plugins;
@@ -45,13 +45,35 @@ public sealed class SingleAgentLoop
     private readonly int _maxTurns;
 
     /// <summary>
+    /// This agent's identity, for its whole life. Keys its log directory and its job rows.
+    ///
+    /// <para>ONE ID, NOT ONE PER PROMPT. A fresh id was minted on every user message, so one linear
+    /// session's diagnostics fragmented across directories with turn numbering restarting at 000 in
+    /// each — and the session id on screen churned every time the user typed.</para>
+    /// </summary>
+    public string Id { get; } = Helpers.UlidGenerator.NewId();
+
+    /// <summary>
+    /// The last build and test verdicts, and the turn counter — session state, NOT per-prompt state.
+    ///
+    /// <para>These were locals in the turn loop, so they reset on every user message. A broken build
+    /// is not forgotten because the user typed again: the tree is still broken, and the gate that
+    /// catches it has to see the verdict that outlived the prompt. <c>_turn</c> is monotonic for the
+    /// same reason the id is stable — log turn numbers that restart at 000 on each message make one
+    /// session's diagnostics unreadable.</para>
+    /// </summary>
+    private string? _lastBuild;
+    private string? _lastTest;
+    private int _turn;
+
+    /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
     /// <para>A field rather than a local inside <see cref="RunCoreAsync"/> because a context that
     /// exists only for the duration of one method cannot be owned by anything: not by a readout that
     /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
     /// target, and not by an agent that is supposed to carry what it learned into its next task. A
-    /// sub-agent gets its own <see cref="SingleAgentLoop"/> and therefore its own context, which is
+    /// sub-agent gets its own <see cref="Agent"/> and therefore its own context, which is
     /// precisely what the fan-out design assumes it already had.</para>
     /// </summary>
     private readonly AgentContext _context;
@@ -99,7 +121,7 @@ public sealed class SingleAgentLoop
     /// this agent a fresh one of its own, which is the right default: an agent that is not handed a
     /// context still HAS one, rather than borrowing the caller's list.
     /// </param>
-    public SingleAgentLoop(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
+    public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null)
     {
@@ -119,43 +141,24 @@ public sealed class SingleAgentLoop
     private static readonly IReadOnlyList<WorkerTool> AllTools = Enum.GetValues<WorkerTool>();
 
     /// <summary>
-    /// Runs the goal to completion and returns its final state.
-    ///
-    /// <para><paramref name="conversation"/> is the SESSION's history — what the TRANSCRIPT shows —
-    /// and is still appended to only twice: the user's goal (by the caller) and the final answer.
-    /// What the MODEL sees is <see cref="Context"/>, which persists across goals and keeps the
-    /// turn-by-turn working: tool calls, tool results, intermediate prose.</para>
-    ///
-    /// <para>Those were previously the same list, rebuilt per goal, which is why the working context
-    /// was discarded every time a goal ended. Keeping them separate lets the transcript stay a clean
-    /// record of the conversation while the agent keeps everything it actually needs to continue.</para>
-    ///
-    /// <para>The <c>ToolCallId</c> hazard that justified discarding — a tool result outliving the call
-    /// it belongs to, which providers reject — is now handled where it belongs: the compressor snaps
-    /// its split so a kept result always keeps its call.</para>
+    /// One exchange on the linear path: prompt → tools → answer.
     /// </summary>
-    public async Task<GoalState> RunAsync(string goalId, List<ChatMessage> conversation,
-        CancellationToken ct)
-    {
-        try
-        {
-            return await RunCoreAsync(goalId, conversation, ct);
-        }
-        finally
-        {
-            // ALSO AT THE END OF THE GOAL, because the in-loop check only sees turns that have a
-            // NEXT one. A goal that finishes in a single turn — the common conversational case, and
-            // any goal whose last turn is the one that blows the threshold — would otherwise leave
-            // the context over its bound until the next goal happened to notice. Both checks share
-            // MaybeCompressAsync's own threshold test, so whichever runs first makes the other a
-            // no-op rather than compacting twice.
-            if (_context.ProjectedUsed is { } atEnd)
-                await MaybeCompressAsync(goalId, atEnd, CancellationToken.None);
-        }
-    }
-
-    private async Task<GoalState> RunCoreAsync(string goalId, List<ChatMessage> conversation,
-        CancellationToken ct)
+    /// <remarks>
+    /// TAKES A PROMPT, RETURNS AN ANSWER. It used to take the caller's transcript list and mutate it,
+    /// which coupled the agent's context to the UI's record of the conversation. The transcript is the
+    /// UI's; <see cref="Context"/> is what the model sees. The caller appends both.
+    ///
+    /// <para>The <c>ToolCallId</c> hazard that justified rebuilding the context per prompt — a tool
+    /// result outliving the call it belongs to, which providers reject — is handled where it belongs:
+    /// the compressor snaps its split so a kept result always keeps its call.</para>
+    ///
+    /// <para>NO COMPRESSION CHECK AROUND THIS CALL. One used to run in a <c>finally</c> here, on the
+    /// reasoning that a single-turn exchange has no "next turn" for the in-loop check to catch. It was
+    /// a task-boundary trigger in a mode that no longer has task boundaries, it ran on
+    /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it, and the pre-send
+    /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
+    /// </remarks>
+    public async Task<string> SendAsync(string prompt, CancellationToken ct)
     {
         // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
         // `new List<ChatMessage>(conversation)` — a fresh working list built from the session history
@@ -171,17 +174,16 @@ public sealed class SingleAgentLoop
         // than it costs to rebuild.
         var messages = _context.Messages;
 
-        // The user's goal joins the agent's context. The caller has already put it on the session
-        // conversation for the transcript; this is the copy the MODEL sees.
-        if (messages.Count > 0)
-            messages.Add(new ChatMessage
-            {
-                Role = "user",
-                Content = conversation[^1].Content,
-                Timestamp = DateTimeOffset.UtcNow,
-            });
-        else
-            messages.AddRange(conversation);
+        // The user's prompt joins the agent's context. The caller puts its own copy on the session
+        // transcript; this is the one the MODEL sees. A plain append either way — the old branch on
+        // `messages.Count > 0` existed only because an empty context was seeded from the caller's
+        // list, and there is no caller list any more.
+        messages.Add(new ChatMessage
+        {
+            Role = "user",
+            Content = prompt,
+            Timestamp = DateTimeOffset.UtcNow,
+        });
 
 
         // WHERE IT IS. A fresh context has never seen a shell prompt, and measured across one
@@ -215,30 +217,23 @@ public sealed class SingleAgentLoop
         var wrote = false;
         var challenges = 0;
 
-        // The LAST build/test result seen this goal, or null if none was ever run. Tracked because a
-        // broken edit is not a finished goal, and the model will say it is: measured live, an agent
-        // wrote a correct diagnosis, its patch failed to compile (`error CS1612`), the transcript
-        // recorded "Build FAILED", and it reported success in the same breath. `wrote` was true, so
-        // the no-write challenge never fired — the goal was broken in a way the existing gate is
-        // structurally unable to see.
-        string? lastBuild = null;
+        // The last build and test verdicts are FIELDS (_lastBuild/_lastTest), not locals: see their
+        // declaration. A broken build outlives the prompt that broke it.
 
-        // TESTS ARE TRACKED SEPARATELY from compilation, because a passing build does not answer the
-        // question a failing test asked. One slot for both was measured wrong on a live drive: the
-        // agent ran `dotnet test` (1 failed), then rebuilt the test project to iterate, and that
-        // build SUCCEEDED — overwriting the failing verdict. The goal reported done over a tree whose
-        // own new test was red, which is precisely the "run says done, disk says otherwise" failure
-        // this gate exists to stop.
-        string? lastTest = null;
-
-        // Identical (call, arguments, result) triples seen this goal, for stuck detection below.
+        // Identical (call, arguments, result) triples seen this request, for stuck detection below.
+        // Per-request deliberately: a new user message is a genuine perturbation, and carrying the
+        // counts across it would nudge about repeats the user has already redirected.
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Times the server claimed "tool_use" while no call was parsed. Bounded so a server that
         // reports it on EVERY turn cannot spin the loop.
         var toolUseMismatches = 0;
 
-        for (var turn = 0; ; turn++)
+        // TWO COUNTERS, and they answer different questions. `turn` bounds THIS request against
+        // _maxTurns; `_turn` numbers log files across the agent's whole life. Folding them into one
+        // would silently tighten the cap on every prompt — the second message in a session would
+        // start with the first message's turns already counted against it.
+        for (var turn = 0; ; turn++, _turn++)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -255,7 +250,7 @@ public sealed class SingleAgentLoop
             // measurement is always one turn behind the growth, so testing it directly let a context
             // sent at 98,630 characters pass a threshold on a reading taken at 66,394.
             if (_context.ProjectedUsed is { } occupancy)
-                await MaybeCompressAsync(goalId, occupancy, ct);
+                await MaybeCompressAsync(Id, occupancy, ct);
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
@@ -272,12 +267,11 @@ public sealed class SingleAgentLoop
             if (turn >= _maxTurns)
             {
                 var summary = await SummariseAtCapAsync(messages, ct);
-                if (!string.IsNullOrWhiteSpace(summary))
-                    conversation.Add(new ChatMessage
-                        { Role = "assistant", Content = summary, Timestamp = DateTimeOffset.UtcNow });
-
                 _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
-                return GoalState.Failed;
+
+                // The salvaged summary IS the answer on this path — the caller puts it on the
+                // transcript, exactly as it does for an ordinary reply.
+                return summary;
             }
 
             // OPEN THE TURN BEFORE THE CALL, not after it. A turn is created with thinking:true and
@@ -294,7 +288,7 @@ public sealed class SingleAgentLoop
             // BEFORE the call, so what is recorded is what was actually sent — including on a turn
             // that then fails, which is the one you most want to look at afterwards. The token count
             // carried is the PREVIOUS turn's measurement, since this turn's has not happened yet.
-            LogContext(goalId, turn, messages, _context.Used);
+            LogContext(Id, _turn, messages, _context.Used);
 
             // THE SIZE THE PROVIDER IS ABOUT TO SEE. Captured here rather than after the response,
             // because by then this turn's reply and tool results have been appended and the figure no
@@ -332,7 +326,7 @@ public sealed class SingleAgentLoop
             //
             // Raw, before StripReasoning, because the reasoning block is part of what arrived and a
             // fault in the stripping itself would be invisible in stripped output.
-            LogTurn(goalId, turn, response);
+            LogTurn(Id, _turn, response);
             TurnCompleted?.Invoke(response.ToolCalls.Count);
 
             var text = ModelOutput.StripReasoning(response.Text);
@@ -382,12 +376,17 @@ public sealed class SingleAgentLoop
                 // proceed just burns turns to hear the same thing louder.
                 var refused = text.Contains("CANNOT:", StringComparison.OrdinalIgnoreCase);
 
-                // Two ways a change goal can finish badly, and they need different words: nothing was
-                // written at all, or something was written that does not build.
-                var brokenBuild = wrote && lastBuild is not null && BuildFailed(lastBuild);
-                var brokenTest = wrote && lastTest is not null && BuildFailed(lastTest);
+                // Two ways a change request can finish badly, and they need different words: nothing
+                // was written at all, or something was written that does not build.
+                var brokenBuild = wrote && _lastBuild is not null && BuildFailed(_lastBuild);
+                var brokenTest = wrote && _lastTest is not null && BuildFailed(_lastTest);
                 var broken = brokenBuild || brokenTest;
-                var unfinished = !wrote && AsksForAChange(conversation);
+
+                // THE PROMPT, not a scan back through the conversation. It used to take the last user
+                // message off the caller's transcript, which is the same thing by construction — this
+                // request's prompt — but only as long as the transcript's last user entry was the one
+                // being answered. Judging the argument says exactly what is meant.
+                var unfinished = !wrote && AsksForAChange(prompt);
 
                 if ((unfinished || broken) && !refused && challenges < MaxChallenges)
                 {
@@ -398,43 +397,36 @@ public sealed class SingleAgentLoop
                         // The FAILING one's output, and the build first when both are red: a test
                         // failure reported against a tree that does not compile is noise.
                         Content = broken
-                            ? BrokenBuildChallenge(brokenBuild ? lastBuild! : lastTest!)
+                            ? BrokenBuildChallenge(brokenBuild ? _lastBuild! : _lastTest!)
                             : ChallengeText(challenges),
                         Timestamp = DateTimeOffset.UtcNow,
                     });
                     continue;
                 }
 
-                // Already ON SCREEN — it streamed into the turn opened above. Only the session
-                // conversation still needs it.
-                if (!string.IsNullOrWhiteSpace(text))
-                    conversation.Add(new ChatMessage
-                        { Role = "assistant", Content = text, Timestamp = DateTimeOffset.UtcNow });
-
-                // NOT Completed when the goal wanted a change and none was made. Reporting success
-                // over an unchanged working tree is the same lie this mode was built to stop, one
-                // level up: the run says done, the disk says otherwise, and the user finds out later.
+                // NOT A SILENT SUCCESS when the request wanted a change and none was made. Reporting
+                // success over an unchanged working tree is the same lie this mode was built to stop,
+                // one level up: the run says done, the disk says otherwise, and the user finds out
+                // later. The error is the signal — the caller discarded the status enum this used to
+                // return, so the sink is what actually reaches anyone.
                 if (unfinished)
-                {
                     _sink.ShowError(
                         "you asked for a change, but nothing was written. Investigation ran to a "
                         + "stop without reaching an edit.");
-                    return GoalState.Failed;
-                }
 
-                // A BROKEN BUILD IS A FAILED GOAL. Measured live: a correct diagnosis, a patch that
+                // A BROKEN BUILD IS A FAILED REQUEST. Measured live: a correct diagnosis, a patch that
                 // did not compile, "Build FAILED" in the transcript, and a confident success summary
                 // in the same turn. Edits were made, so the no-write gate above saw nothing wrong —
                 // this is the one that has to catch it.
-                if (broken)
-                {
+                else if (broken)
                     _sink.ShowError(
                         "changes were written but the build did not succeed. The last build or test "
                         + "run reported a failure and it was not resolved.");
-                    return GoalState.Failed;
-                }
 
-                return GoalState.Completed;
+                // The answer, either way. It is already ON SCREEN — it streamed into the turn opened
+                // above — so this is for the caller's transcript, and it is returned rather than
+                // pushed onto a list the agent was handed.
+                return text;
             }
 
             // Prose that came WITH tool calls is narration ("let me check that file"). It has
@@ -449,7 +441,7 @@ public sealed class SingleAgentLoop
 
             foreach (var call in response.ToolCalls)
             {
-                var result = await InvokeAndShowAsync(goalId, call, ct);
+                var result = await InvokeAndShowAsync(Id, call, ct);
                 if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
 
                 // STUCK: the same call returning the same result, over and over. Measured on one
@@ -485,8 +477,8 @@ public sealed class SingleAgentLoop
                 // them together lets the answer to one erase the answer to the other — see lastTest.
                 if (call.Name == "run_shell" && LooksLikeBuildOrTest(call))
                 {
-                    if (LooksLikeTest(call)) lastTest = result;
-                    else lastBuild = result;
+                    if (LooksLikeTest(call)) _lastTest = result;
+                    else _lastBuild = result;
                 }
 
                 messages.Add(new ChatMessage
@@ -979,9 +971,9 @@ public sealed class SingleAgentLoop
     /// it decides whether "wrote nothing" is a failure, and failing a question that was only ever a
     /// question would be worse than missing one edit.
     /// </summary>
-    private static bool AsksForAChange(IReadOnlyList<ChatMessage> conversation)
+    private static bool AsksForAChange(string prompt)
     {
-        var last = conversation.LastOrDefault(m => m.Role == "user")?.Content ?? "";
+        var last = prompt ?? "";
         ReadOnlySpan<string> verbs =
         [
             "edit ", "modify ", "change ", "add ", "insert ", "replace ", "rewrite ", "fix ",

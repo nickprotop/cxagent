@@ -223,3 +223,30 @@ public sealed class AnswersWithUsageProvider : ILlmProvider
         await Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// An IJobPanel that records rather than renders. Shared here for the same reason the providers
+/// above are — there was one private copy per test file, and a third was about to be written.
+/// </summary>
+public sealed class NullJobPanel : IJobPanel
+{
+    /// <summary>
+    /// The latest state of every job the loop reported, keyed by id — compression renders as one
+    /// of these.
+    /// </summary>
+    /// <remarks>
+    /// BY ID, because Job is MUTATED IN PLACE: the loop hands the same instance to SetJobs while
+    /// running and to UpdateJob when it finishes, so appending to a list records one object twice
+    /// and both entries show the final state. A real panel keys by id for the same reason.
+    /// </remarks>
+    private readonly Dictionary<string, Job> _jobs = new();
+
+    public IReadOnlyCollection<Job> Jobs => _jobs.Values;
+
+    public void SetJobs(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
+    public void UpdateJob(Job job) { _jobs[job.Id] = job; }
+    public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
+    public void AppendText(string jobId, string delta) { }
+    public bool AwaitingApproval { get; set; }
+    public void SetDraftMode(bool on) { }
+}

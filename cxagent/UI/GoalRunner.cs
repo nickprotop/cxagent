@@ -47,13 +47,15 @@ public sealed class GoalRunner : IDisposable
     private int? _lastInputTokens;
 
     /// <summary>
-    /// The id of the goal currently running, for the between-goals compression row.
+    /// The agent this runner drives, built once and kept.
     ///
-    /// <para>A field rather than a parameter because that compression runs in <c>RunAsync</c>'s
-    /// <c>finally</c> — outside the scope where <c>RunCoreAsync</c> mints the id, and deliberately so
-    /// (see the call site: nine early returns, only one of which reached the old position).</para>
+    /// <para>ONE AGENT, NOT ONE PER PROMPT. It used to be constructed inside <c>RunCoreAsync</c> with
+    /// a freshly minted id, so every user message started a new identity: the log directory changed
+    /// under the user mid-session, turn numbering restarted at 000, and the only thing carried across
+    /// was the context handed in from here. The agent owns its id, its context and its session state
+    /// now, which is what makes it continuous rather than a loop that happens to be re-entered.</para>
     /// </summary>
-    private string? _currentGoalId;
+    private readonly Agent _agent;
 
 
     // The whole settings record, not just the token budget: OrchestratorLoop needs MaxConsults and
@@ -76,14 +78,17 @@ public sealed class GoalRunner : IDisposable
     public TokenLedger Ledger { get; }
 
     /// <summary>
-    /// The single agent's context, living across every goal this runner drives.
+    /// The agent's context, living across every prompt this runner drives.
     ///
-    /// <para>HELD HERE BECAUSE THE LOOP IS NOT. A <see cref="SingleAgentLoop"/> is constructed per
-    /// goal, so a context owned solely by the loop would still die with it — the rebuild-and-discard
-    /// this change exists to end, one level up. Owning it here is what actually makes the agent
-    /// continuous, and it is also what gives <c>/compress</c> something to compress between goals:
-    /// the session conversation holds only prompts and answers, so compressing it reported "nothing
-    /// to free" on a session measured at 58,000 tokens.</para>
+    /// <para>CONSTRUCTED HERE, OWNED BY THE AGENT. It used to be held here because the loop was built
+    /// per goal and a context owned solely by the loop would die with it. The <see cref="Agent"/> now
+    /// outlives every prompt, so it could own this outright; the property stays because
+    /// <c>/compress</c> and the status bar read it, and handing the agent a context at construction
+    /// keeps the runner's view of it identical to the agent's rather than a copy.</para>
+    ///
+    /// <para>It is also what gives <c>/compress</c> something to compress: the session transcript
+    /// holds only prompts and answers, so compressing that reported "nothing to free" on a session
+    /// measured at 58,000 tokens.</para>
     /// </summary>
     public AgentContext Context { get; }
 
@@ -142,8 +147,17 @@ public sealed class GoalRunner : IDisposable
     /// </summary>
     public event EventHandler<int>? TurnCompleted;
 
-    /// <summary>A goal began; the payload is its id, which is also the name of its log directory.</summary>
-    public event EventHandler<string>? GoalStarted;
+    /// <summary>
+    /// The agent's id, which is also the name of its log directory — what a user needs to find this
+    /// session again.
+    ///
+    /// <para>A PROPERTY, NOT AN EVENT. It was <c>GoalStarted</c>, raised on every prompt because every
+    /// prompt minted a new id; the status bar's session id therefore churned as the user typed. The id
+    /// is now fixed for the agent's life, so there is no event left to raise — the composition root
+    /// reads it once at wire-up. Firing it from the constructor instead would reach nobody: the
+    /// subscription happens after construction.</para>
+    /// </summary>
+    public string SessionId => _agent.Id;
 
     /// <summary>
     /// MaxWorkerTurns as the USER set it, or null when they did not.
@@ -222,6 +236,9 @@ public sealed class GoalRunner : IDisposable
         // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
         Ledger.Breached += (_, total) =>
             _sink.ShowError($"token budget exceeded: spent {total}, budget was {_goalTokenBudget}.");
+
+        // LAST: BuildAgent reads Ledger and Context, so both must already be assigned.
+        _agent = BuildAgent();
     }
 
     public async Task<GoalState> RunAsync(string goalText, List<ChatMessage> conversation, CancellationToken ct)
@@ -258,10 +275,9 @@ public sealed class GoalRunner : IDisposable
             // identical rows on a live drive, 24.5s and 26.1s, the second summarising a context whose
             // older half was already a summary.
             //
-            // Fan-out is not a reason to keep it. Sub-agents are self-contained — each owns a
-            // SingleAgentLoop and therefore its own context, its own threshold and its own
-            // compression — so there is no conversation left that grows a goal at a time with nobody
-            // watching it.
+            // Sub-agents are not a reason to keep it either. Each owns an Agent and therefore its own
+            // context, its own threshold and its own compression — so there is no conversation left
+            // that grows a prompt at a time with nobody watching it.
         }
     }
 
@@ -271,15 +287,21 @@ public sealed class GoalRunner : IDisposable
         conversation.Add(new ChatMessage { Role = "user", Content = goalText, Timestamp = DateTimeOffset.UtcNow });
         var assistantId = _sink.BeginAssistantTurn();
 
-        var goalId = UlidGenerator.NewId();
-        _currentGoalId = goalId;
-        // The log directory is named by THIS id, so it is what a user needs to find the run again.
-        GoalStarted?.Invoke(this, goalId);
+        // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
+        _sink.EndAssistantTurn(assistantId);   // the agent opens its own turns
 
-        // ONE AGENT WITH TOOLS. No plan, no dag: the session IS the agent, and this is the
-        // only path a goal can take.
-        _sink.EndAssistantTurn(assistantId);   // the loop opens its own turns
-        var single = new SingleAgentLoop(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
+        var answer = await _agent.SendAsync(goalText, ct);
+        if (!string.IsNullOrWhiteSpace(answer))
+            conversation.Add(new ChatMessage
+                { Role = "assistant", Content = answer, Timestamp = DateTimeOffset.UtcNow });
+
+        // The agent reports trouble through the sink (it has already shown any error). Nothing here
+        // consumes this value — AppBootstrap discards it — so it says only "the exchange happened".
+        return GoalState.Completed;
+    }
+
+    private Agent BuildAgent() =>
+        new(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
             // NO DEFAULT CAP IN SINGLE-AGENT. MaxWorkerTurns exists to bound a WORKER inside a
             // fan-out — one job among many, where a runaway costs the whole plan. Single-agent
             // is the session itself: the user is watching it, can stop it, and a turn ceiling
@@ -309,8 +331,8 @@ public sealed class GoalRunner : IDisposable
             compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
                 ?? OrchestratorSettings.DefaultCompressThreshold,
 
-            // THE SAME CONTEXT EVERY GOAL. The loop is rebuilt per goal; the context is not, so
-            // goal N+1 begins with everything goal N learned.
+            // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
+            // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
             context: Context)
         {
             TurnCompleted = calls =>
@@ -331,8 +353,6 @@ public sealed class GoalRunner : IDisposable
             ContextCompressed = (b, a) => ContextCompressed?.Invoke(this, (b, a)),
             ContextEstimated = used => ContextEstimatedUpdated?.Invoke(this, used),
         };
-        return await single.RunAsync(goalId, conversation, ct);
-    }
 
     /// <summary>
     /// Compresses <paramref name="conversation"/> now, unconditionally — what <c>/compress</c> calls.
@@ -350,7 +370,10 @@ public sealed class GoalRunner : IDisposable
         // THE AGENT'S CONTEXT, not the session conversation. That distinction is the whole bug: the
         // conversation holds only prompts and final answers, so compressing it freed nothing while
         // the list that was actually full went untouched.
-        CompressionRun.RunAsync(Context, _provider, _jobPanel, _currentGoalId ?? "session",
+        // THE AGENT'S ID. This used to be the id of whichever goal last ran, falling back to the
+        // literal "session" before the first one — so a /compress issued before any prompt filed its
+        // row under a name no log directory had. The agent has one id for its whole life.
+        CompressionRun.RunAsync(Context, _provider, _jobPanel, _agent.Id,
             "compress context · requested", usage =>
             {
                 Ledger.Record(usage);

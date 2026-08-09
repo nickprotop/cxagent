@@ -1051,7 +1051,7 @@ public sealed class MainWindow : IDisposable
     /// user with no evidence it had worked.</para>
     ///
     /// <para>Occupancy is one turn's <c>Usage.InputTokens</c>: exactly what the compression trigger
-    /// measures (SingleAgentLoop), so the gauge and the trigger now agree. Null until a turn reports
+    /// measures (Agent), so the gauge and the trigger now agree. Null until a turn reports
     /// usage, which is why the percentage only appears once there is something real to divide.</para>
     /// </summary>
     /// <param name="estimated">

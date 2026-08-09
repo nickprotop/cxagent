@@ -194,7 +194,7 @@ public static class WorkerToolset
 
         // Validate READS the parameters, so a type slip throws HERE, before the try/catch below.
         // `run_shell {"command": ["ls","-l"]}` — argv-array form, which many shell tools do take —
-        // threw a JsonException straight out of InvokeAsync, past both call sites (SingleAgentLoop
+        // threw a JsonException straight out of InvokeAsync, past both call sites (Agent
         // and LlmAgentJobPlugin, neither of which guards it) and killed the whole turn over one
         // correctable argument. That directly contradicts this method's "never throws" contract.
         JobValidation validation;
