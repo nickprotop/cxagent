@@ -31,7 +31,7 @@ Sizes: default 8.5 KB, anthropic 8.2, gpt 9.3, gemini 15.4, beast 11.1, copilot-
 | Following conventions | Mimic existing style; **never assume a library is available — check**; read neighbouring files and imports first |
 | Code style | "DO NOT ADD ***ANY*** COMMENTS unless asked" |
 | Doing tasks | Search extensively; implement; **verify with tests, NEVER assume the test framework**; run lint/typecheck when provided; never commit unless asked |
-| Tool usage policy | Prefer the Task tool for search (context economy); **batch independent tool calls in one message** |
+| Tool usage policy | Prefer the Task tool for search (context economy — **needs subagents, see §4**); **batch independent tool calls in one message** (we have this) |
 | Code References | Cite as `file_path:line_number` |
 
 ### Why nine variants
@@ -82,6 +82,11 @@ as proof and reported "all tests build and pass cleanly" over a file with a comp
 3.3 **Batching independent tool calls** — every turn is a round trip to a local model.
 
 3.4 **Commit discipline** — "do not commit unless the user asks".
+
+3.6 **Explain a shell command before running it.** opencode: "When you run a non-trivial bash
+command, you should explain what the command does and why you are running it." It matters MORE here:
+`run_shell` goes through a permission prompt that shows the command truncated and carries no reason,
+so the user approves a string they cannot fully read. Observed on the ConsoleEx drive.
 
 ### Still open
 

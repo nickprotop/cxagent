@@ -139,6 +139,21 @@ public class SystemPromptTests
         Assert.Contains("one round trip", Build(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// EXPLAIN A SHELL COMMAND BEFORE RUNNING IT. This matters more here than it does for opencode:
+    /// run_shell goes through a permission prompt, which shows the command TRUNCATED and carries no
+    /// reason. Observed on the ConsoleEx drive — two commands approved on their visible prefix
+    /// alone, one of which turned out to match zero tests.
+    /// </summary>
+    [Fact]
+    public void Build_AsksTheModelToExplainAShellCommandBeforeRunningIt()
+    {
+        var p = Build();
+
+        Assert.Contains("shell command", p, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("approve", p, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Committing is the user's decision. We hand the model run_shell, so nothing else
     /// stops it running `git commit`.</summary>
     [Fact]

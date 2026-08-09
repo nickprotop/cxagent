@@ -82,6 +82,13 @@ public static class SystemPrompt
         sb.AppendLine("Do not commit unless the user asks. Running the tests is expected; committing "
                     + "is theirs to decide.");
         sb.AppendLine();
+        // THE USER IS ASKED TO APPROVE run_shell, and the prompt shows the command truncated with no
+        // reason attached. Say what a non-obvious one does BEFORE calling it, or they are approving
+        // a string they cannot read.
+        sb.AppendLine("Before running a non-obvious shell command, say in one line what it does and "
+                    + "why — especially if it changes anything. The user is asked to approve it and "
+                    + "sees only the command.");
+        sb.AppendLine();
 
         sb.AppendLine("# Following conventions");
         sb.AppendLine();
