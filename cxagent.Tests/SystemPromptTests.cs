@@ -103,6 +103,51 @@ public class SystemPromptTests
     }
 
     /// <summary>
+    /// We ship an http_request tool and said nothing about it. A fetch tool plus an invented URL is
+    /// how an agent confidently reads a page that does not exist — which is why opencode's first
+    /// substantive line is this same guardrail.
+    /// </summary>
+    [Fact]
+    public void Build_ForbidsInventingAUrlForTheFetchTool()
+    {
+        var p = Build();
+
+        Assert.Contains("http_request", p, StringComparison.Ordinal);
+        Assert.Contains("never invent a url", p, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The model cannot run the slash commands — the app intercepts them before a turn starts — but
+    /// it should know they exist, so it can tell a user to run /compress when the context is tight
+    /// rather than answering a typed "/help" as if it were prose.
+    /// </summary>
+    [Fact]
+    public void Build_NamesTheCommandsTheAppHandles()
+    {
+        var p = Build();
+
+        Assert.Contains("/compress", p, StringComparison.Ordinal);
+        Assert.Contains("/help", p, StringComparison.Ordinal);
+        Assert.Contains("cannot run them", p, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Every turn is a round trip to a local model, so three serial reads cost three
+    /// waits. opencode says this twice — once in the default prompt and again for GPT.</summary>
+    [Fact]
+    public void Build_AsksForIndependentToolCallsInOneTurn()
+    {
+        Assert.Contains("one round trip", Build(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Committing is the user's decision. We hand the model run_shell, so nothing else
+    /// stops it running `git commit`.</summary>
+    [Fact]
+    public void Build_TellsTheModelNotToCommitUnasked()
+    {
+        Assert.Contains("do not commit", Build(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// ONE PROMPT, WITH A SEAM. opencode ships nine variants because it faces nine model families
     /// with real quirks; this app has one endpoint. The selector exists so a second prompt is a file
     /// rather than a refactor — but adding variants nobody has measured a need for is guessing.
