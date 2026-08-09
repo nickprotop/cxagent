@@ -6,7 +6,7 @@ namespace CxAgent.UI;
 /// <summary>Outcome of resolving a provider at startup: either a live provider, or the errors to show.</summary>
 /// <param name="Orchestrator">
 /// The orchestrator token budgets from config, threaded through so AppBootstrap can bound the live
-/// GoalRunner. Defaulted to null (= unbounded) so --mock and the no-provider paths need not supply it.
+/// AgentHost. Defaulted to null (= unbounded) so --mock and the no-provider paths need not supply it.
 /// Without this the budgets parse and round-trip but never reach the runner, leaving the cap unit-tested
 /// and unenforced — which is exactly what shipped before this parameter existed.
 /// </param>
@@ -18,7 +18,7 @@ namespace CxAgent.UI;
 /// </param>
 /// <param name="ContextWindow">
 /// The default provider instance's ProviderInstanceConfig.ContextWindow (P11 Task 1), threaded
-/// through so AppBootstrap can hand GoalRunner the real number to derive its compression threshold
+/// through so AppBootstrap can hand AgentHost the real number to derive its compression threshold
 /// from (P11 Task 2: OrchestratorSettings.EffectiveCompressThreshold). ILlmProvider itself carries no
 /// such property — it is config-only — so this is resolved here, once, from the same settings load as
 /// Provider, rather than re-read from config at every compression check. Null on the --mock and
@@ -96,7 +96,7 @@ public static class ProviderResolver
             var registry = ProviderRegistry.Build(settings);
             var provider = registry.Default;   // throws InvalidOperationException if defaultProvider unset/absent
             // Carry the orchestrator budgets through: AppBootstrap needs them to construct a BOUNDED
-            // GoalRunner. Dropping them here is what left the cap unenforced in production.
+            // AgentHost. Dropping them here is what left the cap unenforced in production.
             // settings.DefaultProvider names the SAME instance `registry.Default` just resolved
             // (ProviderRegistry.Build validates this pairing), so looking its config back up by that
             // name gets the window for the provider actually in use, not some other configured one.

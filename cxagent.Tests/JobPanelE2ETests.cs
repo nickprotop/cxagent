@@ -40,11 +40,12 @@ public class JobPanelE2ETests : IDisposable
 
         var chat = new ChatTranscriptSink(_sys, mw.Chat);
         var jobPanel = new JobPanelSink(_sys, mw.JobPanel);   // mw.JobPanel is now a JobPanelControl
-        var runner = new GoalRunner(provider, chat, jobPanel,
+        var runner = new AgentHost(provider, chat, jobPanel,
             PluginRegistry.CreateWithBuiltins(), _logs);
 
-        var state = await runner.RunAsync("do two steps", new List<ChatMessage>(), CancellationToken.None);
-        Assert.Equal(GoalState.Completed, state);
+        var conversation = new List<ChatMessage>();
+        await runner.SendAsync("do two steps", conversation, CancellationToken.None);
+        Assert.Contains(conversation, m => m.Role == "assistant");
 
         // Drive nothing else — the render landing is the tmux drive. We can't assert BlockCount
         // headlessly without a UI pump; instead assert the wiring compiles + the run completes

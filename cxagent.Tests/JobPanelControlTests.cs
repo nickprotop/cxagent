@@ -96,7 +96,7 @@ public class JobPanelControlTests : IDisposable
     /// <summary>
     /// Task 2's whole point: a drafted plan must be unmistakably NOT running. SetJobs re-adds the
     /// banner control after ClearContents() — this proves draft mode survives a SetJobs call that
-    /// happens WHILE drafting (GoalRunner calls SetJobs, then SetDraftMode(true), in that order — but
+    /// happens WHILE drafting (AgentHost calls SetJobs, then SetDraftMode(true), in that order — but
     /// nothing stops a future caller from re-running SetJobs during an active draft).
     /// </summary>
     [Fact]

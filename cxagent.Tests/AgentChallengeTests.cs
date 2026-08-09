@@ -39,7 +39,7 @@ public class AgentChallengeTests
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose($"Here is what I found ({i})."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).SendAsync("fix the rendering bug",
+        await Build(provider, sink).SendAsync("fix the rendering bug",
             CancellationToken.None);
 
         var challenges = provider.LastMessages!
@@ -57,7 +57,7 @@ public class AgentChallengeTests
         for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("I have analysed the code."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).SendAsync("fix the wrapping bug",
+        await Build(provider, sink).SendAsync("fix the wrapping bug",
             CancellationToken.None);
 
         Assert.Contains(sink.Errors, e => e.Contains("nothing was written", StringComparison.OrdinalIgnoreCase));
@@ -90,10 +90,11 @@ public class AgentChallengeTests
         provider.EnqueueResponse(Prose("Focus is decided by FocusManager."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).SendAsync("how does focus work in this codebase?", CancellationToken.None);
+        var answer = await Build(provider, sink).SendAsync("how does focus work in this codebase?",
+            CancellationToken.None);
 
         Assert.Empty(sink.Errors);
-        Assert.Empty(sink.Errors);
+        Assert.Contains("FocusManager", answer, StringComparison.Ordinal);
     }
 
 
@@ -128,7 +129,7 @@ public class AgentChallengeTests
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("fix the parser bug",
+            await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
             Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
@@ -159,7 +160,7 @@ public class AgentChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("fix the parser bug",
+            await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
             Assert.Empty(sink.Errors);
@@ -191,7 +192,7 @@ public class AgentChallengeTests
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("fix the parser bug",
+            await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
             Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
@@ -219,7 +220,7 @@ public class AgentChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("fix the parser bug",
+            await Build(provider, sink).SendAsync("fix the parser bug",
                 CancellationToken.None);
 
             Assert.Empty(sink.Errors);
@@ -244,7 +245,7 @@ public class AgentChallengeTests
             provider.EnqueueResponse(Prose("Updated the notes."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("update the notes",
+            await Build(provider, sink).SendAsync("update the notes",
                 CancellationToken.None);
 
             Assert.Empty(sink.Errors);
@@ -271,7 +272,7 @@ public class AgentChallengeTests
             provider.EnqueueResponse(Prose("Done."));
 
             var sink = new RecordingSink();
-            var state = await Build(provider, sink).SendAsync("fix the thing",
+            await Build(provider, sink).SendAsync("fix the thing",
                 CancellationToken.None);
 
             Assert.Empty(sink.Errors);
@@ -459,7 +460,7 @@ public class AgentChallengeTests
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Here is the answer."));
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).SendAsync("what does this do?",
+        await Build(provider, sink).SendAsync("what does this do?",
             CancellationToken.None);
 
         Assert.Empty(sink.Errors);
@@ -478,7 +479,7 @@ public class AgentChallengeTests
                 { Text = "done", ToolCalls = [], StopReason = "tool_use", Usage = new LlmUsage() });
 
         var sink = new RecordingSink();
-        var state = await Build(provider, sink).SendAsync("what does this do?",
+        await Build(provider, sink).SendAsync("what does this do?",
             CancellationToken.None);
 
         Assert.Empty(sink.Errors);   // gave up retrying and took it at face value
@@ -613,7 +614,7 @@ public class AgentChallengeTests
     [Fact]
     public async Task ContextOverTheThreshold_CompressesMidGoal_AndSaysSo()
     {
-        // THE LIVE FAILURE. GoalRunner's auto-compression sat in a `finally` around the whole goal,
+        // THE LIVE FAILURE. AgentHost's auto-compression sat in a `finally` around the whole goal,
         // and a request is ONE SendAsync that loops internally — so the check fired only after the
         // run that blew past it. Measured live at 1.16M input tokens against a 40,000 threshold,
         // never once compressing. The bound has to be inside the loop, which is what this pins.

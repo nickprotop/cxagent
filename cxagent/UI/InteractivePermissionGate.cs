@@ -11,7 +11,7 @@ namespace CxAgent.UI;
 /// the transcript.
 ///
 /// <para><see cref="RequestAsync"/> runs on a background scheduler thread (a job executor's
-/// thread, one per running job up to <c>maxParallel</c> — GoalRunner.cs:264 — currently 4). It
+/// thread, one per running job up to <c>maxParallel</c> — AgentHost.cs:264 — currently 4). It
 /// therefore never touches a control directly; it only ever reaches the UI through
 /// <c>system.EnqueueOnUIThread</c>, via the <see cref="_promptHook"/> seam below.</para>
 ///
@@ -22,7 +22,7 @@ namespace CxAgent.UI;
 /// to answer the one in front of it. That is not a deadlock, because the answer the user is being
 /// asked for never depends on any of the parked jobs finishing — nothing downstream of the parked
 /// `WaitAsync` needs to run for the prompt in front to resolve. It is the exact same shape as a
-/// copilot draft parking an entire goal today (GoalRunner's approval gate): the whole point of
+/// copilot draft parking an entire goal today (AgentHost's approval gate): the whole point of
 /// asking is that the app waits for a human, and waiting for a human is not progress-blocked on
 /// the app's own work.</para>
 /// </summary>
@@ -40,7 +40,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
     // MainWindow.ShowPermissionPrompt and RestoreComposer — GridControl.ReplaceControl matches by
     // ReferenceEquals (GridControl.cs:389), so a second BuildContent() call would throw from
     // inside the render loop. Tests implement this with a scripted TCS instead of a live window —
-    // the same trick IChatSink plays for GoalRunner.
+    // the same trick IChatSink plays for AgentHost.
     //
     // Takes `ct` too (not just request/offerTrust): the real implementation registers cancellation
     // directly against the CONTROL's own Completion, not just a gate-local TCS — see the class doc

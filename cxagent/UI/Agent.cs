@@ -82,7 +82,7 @@ public sealed class Agent
     public AgentContext Context => _context;
 
     /// <summary>Raised when a turn finishes, with its tool-call count. A callback rather than a
-    /// GoalRunner reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
+    /// AgentHost reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
     public Action<int>? TurnCompleted { get; set; }
 
     /// <summary>
@@ -109,7 +109,7 @@ public sealed class Agent
     ///
     /// <para>THE BOUND THAT REPLACES THE TURN CAP. Single-agent has no turn ceiling by design — a
     /// number of turns has nothing to do with the task — and the comment at the construction site
-    /// says the context window ends a session that cannot continue. It did not: GoalRunner's
+    /// says the context window ends a session that cannot continue. It did not: AgentHost's
     /// auto-compression sits in a `finally` around the whole GOAL, and a single-agent goal is ONE
     /// RunAsync that loops internally, so the check fired after the run that blew past it. Measured
     /// live at 1.16M input tokens against a 40,000 threshold, never once compressing.</para>
@@ -772,7 +772,7 @@ public sealed class Agent
         if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
 
         // The row itself lives in CompressionRun, which every compressing route now shares — this one,
-        // GoalRunner's between-goals check, and the /compress command. The threshold test stays here
+        // AgentHost's between-goals check, and the /compress command. The threshold test stays here
         // because only this caller measures per-turn pressure.
         await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
             $"compress context · {inputTokens:N0} tokens over {threshold:N0}",

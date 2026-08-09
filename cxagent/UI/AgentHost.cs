@@ -11,12 +11,19 @@ using CxAgent.Helpers;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Runs one goal from the UI: streams the decomposition turn into the chat sink, captures the
-/// create_plan tool call from that same stream, compiles it to a JobDag (PlanCompiler), and runs it
-/// via a DagScheduler + JobExecutor. One LLM call; P1 reused as libraries; all sink calls are the
-/// UI-update seam (marshalling is the sink's responsibility).
+/// The UI's side of one <see cref="Agent"/>: owns it for the session, feeds it what the user types,
+/// and republishes what it reports as the events the status bar and panels bind to.
+///
+/// <para>A HOST, NOT A RUNNER. It was <c>GoalRunner</c>, and it genuinely ran things — streaming a
+/// decomposition turn, compiling a create_plan call into a JobDag, driving a scheduler and executor.
+/// All of that is gone; what is left is composition and translation. It holds the ledger, the
+/// context and the token budget because those outlive any one prompt, and it turns a provider fault
+/// into a visible error rather than an unobserved faulted task.</para>
+///
+/// <para>Every sink call is the UI-update seam — marshalling is the sink's responsibility, not
+/// this type's.</para>
 /// </summary>
-public sealed class GoalRunner : IDisposable
+public sealed class AgentHost : IDisposable
 {
     private readonly ILlmProvider _provider;
     private readonly IChatSink _sink;
@@ -25,26 +32,7 @@ public sealed class GoalRunner : IDisposable
 
     private readonly LogFileManager? _logs;
 
-    private readonly int? _goalTokenBudget;
-
-    /// <summary>
-    /// The most recent InputTokens the provider reported — i.e. the live context size, exactly, for
-    /// free, straight off the wire (OpenAiWire's prompt_tokens / AnthropicWire's input_tokens).
-    /// Null means "no usage has been reported yet this runner's lifetime", which is DIFFERENT from a
-    /// reported 0: both wires fall back to 0 when a provider omits usage on a given call, and treating
-    /// that 0 as "plenty of room" would mean a provider that never reports usage silently NEVER
-    /// auto-compresses while the session grows until the provider rejects it outright.
-    ///
-    /// Decision (documented per the P10 Task 3 brief): a 0 is never treated as a measurement — it
-    /// never triggers compression (there is nothing to justify throwing history away) but it also
-    /// never resets or overrides the last REAL positive reading, so a provider that briefly omits
-    /// usage on one call doesn't erase the pressure signal from the call before it. A provider that
-    /// NEVER reports usage (this field stays null forever) simply never participates in
-    /// auto-compression — that is a documented limitation of relying on provider-reported usage
-    /// rather than a tokenizer (which this design deliberately does not add), not a silent "safe"
-    /// default; it is surfaced in the task report, not hidden behind a fake number.
-    /// </summary>
-    private int? _lastInputTokens;
+    private readonly int? _sessionTokenBudget;
 
     /// <summary>
     /// The agent this runner drives, built once and kept.
@@ -125,15 +113,19 @@ public sealed class GoalRunner : IDisposable
     public event EventHandler<int>? ContextEstimatedUpdated;
 
     /// <summary>
-    /// Records a turn's reported input tokens, if it is a real measurement.
+    /// Republishes a turn's reported input tokens, if it is a real measurement.
     ///
-    /// <para>A reported 0 is never a measurement (see <see cref="_lastInputTokens"/>): it must not
-    /// overwrite a real prior reading, and it must not read as "the context shrank".</para>
+    /// <para>A reported 0 is never a measurement: both wires fall back to 0 when a provider omits
+    /// usage, and forwarding that would read as "the context shrank" to every gauge downstream. It is
+    /// dropped rather than published, so the last REAL reading stands until another one arrives.</para>
+    ///
+    /// <para>Nothing is CACHED here any more. A <c>_lastInputTokens</c> field used to hold it for the
+    /// between-goals compression check; that check is gone, and the agent reads occupancy from its own
+    /// <see cref="AgentContext"/> — the only place that has a size to compare against.</para>
     /// </summary>
     private void RecordInputTokens(int inputTokens)
     {
         if (inputTokens <= 0) return;
-        _lastInputTokens = inputTokens;
         ContextUsedUpdated?.Invoke(this, inputTokens);
     }
 
@@ -177,7 +169,7 @@ public sealed class GoalRunner : IDisposable
     /// Copilot mode (P9 Task 2): fires true the instant the goal parks in GoalState.Draft (same point
     /// as IChatSink.ShowApprovalRequest — see RunCoreAsync) and false the instant the gate resolves,
     /// whichever way. This is the seam MainWindow's F9/Esc footer hint subscribes to; mirrors
-    /// TokensUpdated's "GoalRunner raises it itself at the point of truth" shape. Never fires at all
+    /// TokensUpdated's "AgentHost raises it itself at the point of truth" shape. Never fires at all
     /// when Copilot is off.
     /// </summary>
     public event EventHandler<bool>? DraftPending;
@@ -217,7 +209,7 @@ public sealed class GoalRunner : IDisposable
         tcs?.TrySetResult(false);
     }
 
-    public GoalRunner(ILlmProvider provider, IChatSink sink, IJobPanel jobPanel,
+    public AgentHost(ILlmProvider provider, IChatSink sink, IJobPanel jobPanel,
         PluginRegistry pluginRegistry, LogFileManager? logs = null,
         OrchestratorSettings? orchestrator = null,
         int? contextWindow = null)
@@ -229,75 +221,57 @@ public sealed class GoalRunner : IDisposable
         _logs = logs;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
-        _goalTokenBudget = _orchestrator.GoalTokenBudget;
-        Ledger = new TokenLedger(_goalTokenBudget);
+        _sessionTokenBudget = _orchestrator.GoalTokenBudget;
+        Ledger = new TokenLedger(_sessionTokenBudget);
         Context = new AgentContext(contextWindow);
         // On breach, pause and ask — never silently keep spending. For now (Task 4) that means
         // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
         Ledger.Breached += (_, total) =>
-            _sink.ShowError($"token budget exceeded: spent {total}, budget was {_goalTokenBudget}.");
+            _sink.ShowError($"token budget exceeded: spent {total}, budget was {_sessionTokenBudget}.");
 
         // LAST: BuildAgent reads Ledger and Context, so both must already be assigned.
         _agent = BuildAgent();
     }
 
-    public async Task<GoalState> RunAsync(string goalText, List<ChatMessage> conversation, CancellationToken ct)
+    /// <summary>
+    /// One user message: put it on the transcript, hand it to the agent, put the answer back.
+    ///
+    /// <para>NO STATUS RETURN. This was <c>RunAsync</c> returning a <c>GoalState</c> that nobody read
+    /// — the composition root calls it as <c>_ = host.SendAsync(...)</c> — while the thing a user
+    /// actually sees, an error, goes to the sink. Returning a status nothing consumes only invites a
+    /// caller to start branching on it.</para>
+    ///
+    /// <para>NO COMPRESSION AROUND THIS CALL either. One used to sit in a <c>finally</c> here, on the
+    /// reasoning that a request has "nine early returns" and only one reached the end. An agent
+    /// compresses its OWN context from inside its own turn loop, where the measurement that triggers
+    /// it is taken. Both routes read the same last-reported input-token figure, and occupancy only
+    /// refreshes when a provider reports it — so after the loop compressed, nothing had re-measured,
+    /// this guard saw the same over-threshold figure and compressed again: two identical rows on a
+    /// live drive, 24.5s and 26.1s, the second summarising a context whose older half was already a
+    /// summary.</para>
+    /// </summary>
+    public async Task SendAsync(string prompt, List<ChatMessage> conversation, CancellationToken ct)
     {
         try
         {
-            return await RunCoreAsync(goalText, conversation, ct);
+            _sink.AddUserTurn(prompt);
+            conversation.Add(new ChatMessage
+                { Role = "user", Content = prompt, Timestamp = DateTimeOffset.UtcNow });
+
+            // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
+            var assistantId = _sink.BeginAssistantTurn();
+            _sink.EndAssistantTurn(assistantId);   // the agent opens its own turns
+
+            var answer = await _agent.SendAsync(prompt, ct);
+            if (!string.IsNullOrWhiteSpace(answer))
+                conversation.Add(new ChatMessage
+                    { Role = "assistant", Content = answer, Timestamp = DateTimeOffset.UtcNow });
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             _sink.ShowError(ex.Message);   // residual fault → visible, not an unobserved faulted task
-            return GoalState.Failed;
         }
-        finally
-        {
-            // HERE, not at the end of RunCoreAsync, because RunCoreAsync has NINE early returns and
-            // only one of them reached the old call site. A conversational turn ("what is 2+2?")
-            // returns Completed at :385 before a DAG is ever built — so the goals that grow the
-            // conversation most cheaply were exactly the ones that never triggered compression.
-            //
-            // Measured: a live session at 16,241 tokens and 10 messages, against a threshold of 100,
-            // never auto-compressed. Both gates wide open, the call simply unreachable.
-            //
-            // In a finally so it also runs when a goal fails or is cancelled: the conversation grew
-            // regardless of how the goal ended, so the bound must apply regardless too.
-            // NO COMPRESSION HERE. An agent compresses its OWN context, from inside its own turn
-            // loop, where the measurement that triggers it is taken.
-            //
-            // This route used to run alongside that one, and both read the SAME number —
-            // `_lastInputTokens` is the very value the per-turn check acts on, and occupancy is only
-            // refreshed when a provider reports it. So after the loop compressed, nothing had
-            // re-measured, this guard saw the same over-threshold figure and compressed again: two
-            // identical rows on a live drive, 24.5s and 26.1s, the second summarising a context whose
-            // older half was already a summary.
-            //
-            // Sub-agents are not a reason to keep it either. Each owns an Agent and therefore its own
-            // context, its own threshold and its own compression — so there is no conversation left
-            // that grows a prompt at a time with nobody watching it.
-        }
-    }
-
-    private async Task<GoalState> RunCoreAsync(string goalText, List<ChatMessage> conversation, CancellationToken ct)
-    {
-        _sink.AddUserTurn(goalText);
-        conversation.Add(new ChatMessage { Role = "user", Content = goalText, Timestamp = DateTimeOffset.UtcNow });
-        var assistantId = _sink.BeginAssistantTurn();
-
-        // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
-        _sink.EndAssistantTurn(assistantId);   // the agent opens its own turns
-
-        var answer = await _agent.SendAsync(goalText, ct);
-        if (!string.IsNullOrWhiteSpace(answer))
-            conversation.Add(new ChatMessage
-                { Role = "assistant", Content = answer, Timestamp = DateTimeOffset.UtcNow });
-
-        // The agent reports trouble through the sink (it has already shown any error). Nothing here
-        // consumes this value — AppBootstrap discards it — so it says only "the exchange happened".
-        return GoalState.Completed;
     }
 
     private Agent BuildAgent() =>

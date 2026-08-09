@@ -16,7 +16,7 @@ namespace CxAgent.UI;
 /// is keyed by message id, so a job's line updates where it already sits rather than appending a new
 /// line per transition — which would bury the conversation under status spam on a seven-job goal.</para>
 ///
-/// <para>This exists at all because <see cref="IJobPanel"/> was already the seam between GoalRunner
+/// <para>This exists at all because <see cref="IJobPanel"/> was already the seam between AgentHost
 /// and the UI: the engine calls SetJobs/UpdateJob and never touches a control. Swapping the layout is
 /// therefore a UI-only change — no engine edits, and the copilot draft gate keeps working unchanged
 /// because it too speaks through this interface.</para>
@@ -27,7 +27,7 @@ public sealed class InlineJobSink : IJobPanel
     private readonly ChatTranscriptControl _chat;
 
     /// <summary>
-    /// Job id → the transcript message showing it. ConcurrentDictionary because GoalRunner raises
+    /// Job id → the transcript message showing it. ConcurrentDictionary because AgentHost raises
     /// JobTransitioned from whatever thread the finishing job's continuation resumed on — the same
     /// reason OrchestratorLoop's finished-queue is concurrent.
     /// </summary>

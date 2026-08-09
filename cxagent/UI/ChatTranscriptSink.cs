@@ -12,7 +12,7 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// The real IChatSink: marshals every update onto the UI thread via EnqueueOnUIThread and maps the
-/// P5a ChatMessageId to the framework's ChatTranscriptControl message ids. GoalRunner (which may run
+/// P5a ChatMessageId to the framework's ChatTranscriptControl message ids. AgentHost (which may run
 /// on a background thread) calls these; nothing here touches a control off the UI thread.
 /// </summary>
 public sealed class ChatTranscriptSink : IChatSink
@@ -123,7 +123,7 @@ public sealed class ChatTranscriptSink : IChatSink
             _chat.AddMessage(ChatRole.System, message));
 
     // The real affordance lives in the job panel banner (JobPanelControl.SetDraftMode) and the
-    // status-bar F9/Esc hint (MainWindow.SetDraftPending) — both driven directly off GoalRunner, not
+    // status-bar F9/Esc hint (MainWindow.SetDraftPending) — both driven directly off AgentHost, not
     // through this sink. This transcript line is a secondary echo so the wait isn't silently
     // invisible in a scrolled-back chat log.
     public void ShowApprovalRequest(string? detail = null) =>

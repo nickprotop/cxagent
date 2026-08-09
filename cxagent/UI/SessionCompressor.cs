@@ -17,7 +17,7 @@ namespace CxAgent.UI;
 public static class SessionCompressor
 {
     /// <summary>What actually happened. <see cref="Summarised"/> is false when the provider call
-    /// failed and truncation ran instead — the caller (GoalRunner) uses this to say so, because a
+    /// failed and truncation ran instead — the caller (AgentHost) uses this to say so, because a
     /// silent degradation to today's behaviour is worse than an honest one.</summary>
     /// <param name="Summarised">
     /// True when the work was done properly — either stale tool output was cleared or the model wrote

@@ -113,7 +113,7 @@ public readonly record struct ConfigLoad(ProviderSettings? Settings, IReadOnlyLi
 ///
 /// <para>What it does NOT do, stated because a drive expected otherwise: Escape has never cleared
 /// typed composer text, in any version of this app. <c>DiscardDraft</c> resolves a pending COPILOT
-/// approval (GoalRunner.cs — a TaskCompletionSource), which is a different thing that happens to
+/// approval (AgentHost.cs — a TaskCompletionSource), which is a different thing that happens to
 /// share the key.</para>
 /// </summary>
 public enum EscapeTarget

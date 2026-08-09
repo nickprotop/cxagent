@@ -51,7 +51,7 @@ public class ProviderResolutionTests : IDisposable
 
     /// <summary>
     /// Regression: orchestrator token budgets parsed and round-tripped correctly but were DEAD IN
-    /// PRODUCTION — `GoalRunner` accepts an `OrchestratorSettings?` and AppBootstrap never passed one,
+    /// PRODUCTION — `AgentHost` accepts an `OrchestratorSettings?` and AppBootstrap never passed one,
     /// because `ProviderResolution` dropped the `ProviderSettings` that `ProviderResolver.Resolve`
     /// already had in hand. The cap was unit-tested and unenforced: exactly the shape of bug that a
     /// green suite hides. The resolution must carry the settings so the live runner can be bounded.

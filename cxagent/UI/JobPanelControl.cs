@@ -69,7 +69,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         // re-sync), so it's the first time the stale reference was actually reachable.
         _expanded = null;
         // ClearContents() just detached _draftBanner along with every job block above — re-add it
-        // FIRST so a draft's plan (SetJobs runs while still in GoalState.Draft — see GoalRunner) is
+        // FIRST so a draft's plan (SetJobs runs while still in GoalState.Draft — see AgentHost) is
         // shown with the banner already sitting above the blocks, not flashing in after the fact.
         AddControl(_draftBanner);
         foreach (var job in jobs)

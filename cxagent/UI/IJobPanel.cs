@@ -3,9 +3,9 @@ using CxAgent.Core.Models;
 namespace CxAgent.UI;
 
 /// <summary>
-/// The job-panel UI seam GoalRunner writes to (parallel to IChatSink). SetJobs is called once when
+/// The job-panel UI seam AgentHost writes to (parallel to IChatSink). SetJobs is called once when
 /// the plan compiles; UpdateJob on each JobTransitioned. A real implementation (JobPanelSink) marshals
-/// each call onto the UI thread; tests use a recording fake. GoalRunner never touches a control.
+/// each call onto the UI thread; tests use a recording fake. AgentHost never touches a control.
 /// </summary>
 public interface IJobPanel
 {

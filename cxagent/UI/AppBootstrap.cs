@@ -12,7 +12,7 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// App entry: resolves the provider, builds the system + main window, wires goal submission to
-/// GoalRunner (only when a provider is configured), runs the loop, and disposes resources.
+/// AgentHost (only when a provider is configured), runs the loop, and disposes resources.
 /// </summary>
 public static class AppBootstrap
 {
@@ -75,7 +75,7 @@ public static class AppBootstrap
         // tracks alongside it — F6's diagnose closure must call the CURRENT provider, not whichever
         // one was resolved at startup, or a provider change via F5 mid-session would silently keep
         // diagnosing against the old (possibly now-invalid) one.
-        GoalRunner? runner = null;
+        AgentHost? runner = null;
         ILlmProvider? activeProvider = resolution.Provider;
 
         // The currently-open consolidated Settings dialog, or null when none is open. Captured by the
@@ -95,9 +95,9 @@ public static class AppBootstrap
             if (!res.HasProvider) return;
             activeProvider = res.Provider;
             // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
-            // The new GoalRunner below reads this field, not a startup copy.
+            // The new AgentHost below reads this field, not a startup copy.
             plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate);
-            // F5 rewiring mid-session replaces `runner` with a fresh GoalRunner — dispose the
+            // F5 rewiring mid-session replaces `runner` with a fresh AgentHost — dispose the
             // outgoing one rather than leaking it for the rest of the process's lifetime.
             runner?.Dispose();
             var sink = new ChatTranscriptSink(system, mainWindow.Chat);
@@ -117,8 +117,8 @@ public static class AppBootstrap
             // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
             // interleaved with the turns that caused them. JobPanelSink (and JobPanelControl) still
             // exist and still work; they are simply not wired. Both speak IJobPanel, so this line is
-            // the entire switch: GoalRunner never touches a control.
-            // The failed-job buttons. Delegates rather than a GoalRunner reference because `runner`
+            // the entire switch: AgentHost never touches a control.
+            // The failed-job buttons. Delegates rather than a AgentHost reference because `runner`
             // is assigned BELOW this line and REPLACED on every re-wire — capturing the instance
             // would pin whichever runner existed when this sink was built. Reading through the
             // closure is the same pattern every other handler here uses.
@@ -130,9 +130,9 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
-            // real: GoalRunner takes OrchestratorSettings? and defaults to unbounded, so omitting it
+            // real: AgentHost takes OrchestratorSettings? and defaults to unbounded, so omitting it
             // here silently disabled cost control in production while every unit test still passed.
-            runner = new GoalRunner(res.Provider!, sink, jobPanelSink, plugins, logs,
+            runner = new AgentHost(res.Provider!, sink, jobPanelSink, plugins, logs,
                 orchestrator: res.Orchestrator,
                 // P11 Task 2: the real window (when config told us one), so auto-compression derives
                 // its threshold from actual headroom instead of always falling back to the fixed
@@ -308,11 +308,11 @@ public static class AppBootstrap
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
             // Retire the hint HERE, at submission — not when tokens first arrive. Tied to the token
-            // readout it stayed on screen for the whole of a running goal, telling the user to type
-            // a goal while the agent was several tool calls into one.
+            // readout it stayed on screen for the whole of a running request, telling the user to type
+            // a prompt while the agent was several tool calls into one.
             mainWindow.RetireComposerHint();
 
-            _ = runner.RunAsync(goalText, conversation, cts.Token);
+            _ = runner.SendAsync(goalText, conversation, cts.Token);
         };
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
@@ -359,8 +359,8 @@ public static class AppBootstrap
         system.RegisterGlobalShortcut(ConsoleModifiers.Control, ConsoleKey.Q, () => { cts.Cancel(); system.Shutdown(); });
         // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. `runner` is read
         // through the closure (same pattern as every other handler here), so these track whichever
-        // GoalRunner WireRunner last installed. Both ApproveDraft/DiscardDraft are synchronous and
-        // self-guard to a no-op when nothing is currently drafting (GoalRunner.cs:162/174) — no
+        // AgentHost WireRunner last installed. Both ApproveDraft/DiscardDraft are synchronous and
+        // self-guard to a no-op when nothing is currently drafting (AgentHost.cs:162/174) — no
         // `runner.HasPendingApproval` pre-check needed here, and none of the other handlers in this
         // block pre-check their own preconditions either (F6 DiagnoseFocusedJob is the same shape).
         // Esc, not another F-key: this codebase has no OTHER Esc binding anywhere (grepped before
@@ -519,9 +519,9 @@ public static class AppBootstrap
         });
 
         int code = system.Run();
-        // I1 #1: GoalRunner.Dispose releases EVERY scheduler this session's runner ever created (each
+        // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's runner ever created (each
         // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
-        // the process's lifetime, since (as of review round 2's N2 fix) GoalRunner no longer disposes
+        // the process's lifetime, since (as of review round 2's N2 fix) AgentHost no longer disposes
         // schedulers one-at-a-time as goals swap; this is now the only release point.
         mainWindow.Dispose();   // stops the panel clock
         runner?.Dispose();
@@ -530,7 +530,7 @@ public static class AppBootstrap
 
     /// <summary>
     /// Runs the setup wizard (first-run launch or F5 settings), persists the result, and rewires the
-    /// live GoalRunner so the same session becomes usable immediately — no restart. On cancel (null
+    /// live AgentHost so the same session becomes usable immediately — no restart. On cancel (null
     /// result) or a wizard fault, this is a no-op beyond whatever the wizard itself already reported.
     /// </summary>
     private static async Task RunSetupFlowAsync(

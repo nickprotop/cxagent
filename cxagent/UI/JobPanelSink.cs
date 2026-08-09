@@ -4,7 +4,7 @@ using SharpConsoleUI;
 namespace CxAgent.UI;
 
 /// <summary>
-/// The real IJobPanel: marshals every update onto the UI thread via EnqueueOnUIThread. GoalRunner
+/// The real IJobPanel: marshals every update onto the UI thread via EnqueueOnUIThread. AgentHost
 /// (which may run on a background thread) calls these; nothing here mutates a control off the UI thread.
 /// </summary>
 public sealed class JobPanelSink : IJobPanel

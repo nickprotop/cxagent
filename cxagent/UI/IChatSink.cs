@@ -2,12 +2,12 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.UI;
 
-/// <summary>A P5a-owned message id (decouples GoalRunner from the framework's ChatTranscript ids).</summary>
+/// <summary>A P5a-owned message id (decouples AgentHost from the framework's ChatTranscript ids).</summary>
 public readonly record struct ChatMessageId(long Value);
 
 /// <summary>
-/// The UI-update seam GoalRunner writes to. A real implementation (ChatTranscriptSink) marshals each
-/// call onto the UI thread; tests use a recording fake. GoalRunner never touches a control directly.
+/// The UI-update seam AgentHost writes to. A real implementation (ChatTranscriptSink) marshals each
+/// call onto the UI thread; tests use a recording fake. AgentHost never touches a control directly.
 /// </summary>
 public interface IChatSink
 {
@@ -51,7 +51,7 @@ public interface IChatSink
     /// Copilot mode (P9): the plan has been shown (SetJobs already ran) and the goal is now sitting
     /// in GoalState.Draft awaiting approval. Tells the UI to surface the approve/discard affordance
     /// (Task 2's F9 binding). One-way — the answer comes back through
-    /// GoalRunner.ApproveDraft/DiscardDraft, not through this interface.
+    /// AgentHost.ApproveDraft/DiscardDraft, not through this interface.
     ///
     /// <para><paramref name="detail"/> names WHAT is being approved. Null for the initial plan (the
     /// job panel already shows it in full). For P9b's mid-goal gate it lists the jobs the

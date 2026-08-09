@@ -10,7 +10,7 @@ namespace CxAgent.Tests;
 /// Task 4: the interactive gate. Drives <see cref="InteractivePermissionGate"/> through its
 /// internal fake prompt-hook seam (an internal <c>Func&lt;PermissionRequest, bool,
 /// Task&lt;PermissionChoice&gt;&gt;</c>, the same trick <see cref="IChatSink"/> plays for
-/// GoalRunner) so the marshalling/serialisation/persistence logic is testable without a live
+/// AgentHost) so the marshalling/serialisation/persistence logic is testable without a live
 /// window — the UI path (PermissionPromptControl, MainWindow.ShowPermissionPrompt/RestoreComposer)
 /// is exercised for real only by AppBootstrap at runtime.
 /// </summary>

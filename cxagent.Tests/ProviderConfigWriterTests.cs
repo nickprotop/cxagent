@@ -69,7 +69,7 @@ public class ProviderConfigWriterTests : IDisposable
     [Fact]
     public void Write_OmitsUnconfiguredOrchestratorFields_SoNullStaysDistinctFromChosen()
     {
-        // ContextCompressThreshold null means "nobody said" (ProviderConfig.cs:46-58) and GoalRunner
+        // ContextCompressThreshold null means "nobody said" (ProviderConfig.cs:46-58) and AgentHost
         // derives from the context window or falls back. Writing an explicit number on the first Save
         // would permanently collapse that distinction for every config the dialog ever touches.
         ProviderConfigWriter.Write(Paths(),

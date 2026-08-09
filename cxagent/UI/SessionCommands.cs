@@ -3,13 +3,13 @@ using CxAgent.Core.Models;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Slash commands that manage the shared conversation directly, WITHOUT going through GoalRunner —
+/// Slash commands that manage the shared conversation directly, WITHOUT going through AgentHost —
 /// no goal, no provider call, no tokens spent. Deliberately UI-free (takes the raw conversation list,
 /// returns a reply string) so it's testable without ConsoleWindowSystem; AppBootstrap does the
 /// displaying.
 ///
 /// Only an exact leading-slash token counts as a command. "clear the build output" must fall through
-/// to GoalRunner as an ordinary goal — a false positive here would silently wipe a user's session
+/// to AgentHost as an ordinary goal — a false positive here would silently wipe a user's session
 /// memory instead of doing what they asked.
 /// </summary>
 public static class SessionCommands

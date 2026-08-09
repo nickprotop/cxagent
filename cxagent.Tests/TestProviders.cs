@@ -7,20 +7,20 @@ using CxAgent.UI;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Shared fake providers used by GoalRunnerTests and AppShellE2ETests.
+/// Shared fake providers used by AgentHostTests and AppShellE2ETests.
 /// Extracted here so there is exactly ONE copy — no duplication between test files.
 /// </summary>
 
 /// <summary>
 /// A fake IChatSink that records everything, so a run can be asserted without a real window.
-/// Promoted here from GoalRunnerTests (where it was private) when OrchestratorLoopTests needed it —
+/// Promoted here from AgentHostTests (where it was private) when OrchestratorLoopTests needed it —
 /// same "one copy only" reason this file exists.
 ///
 /// <para><see cref="Errors"/>/<see cref="Messages"/> are collections, not single values: the consult
 /// loop can report several things in one run (a cap hit, an unparseable decision, a failed
 /// modification) and a last-one-wins field would hide all but the last. <see cref="Error"/> and
 /// <see cref="Result"/> are kept as last-value convenience views over those collections so
-/// GoalRunnerTests' existing assertions keep working unchanged.</para>
+/// AgentHostTests' existing assertions keep working unchanged.</para>
 ///
 /// <para><see cref="Messages"/> collects EVERY user-visible line — assistant text appended via
 /// <see cref="AppendAssistant"/>, errors, and the goal result — because the loop's "say why you
@@ -94,7 +94,7 @@ public sealed class RecordingSink : IChatSink
 }
 
 /// <summary>
-/// A provider whose ChatAsync always throws. Promoted here (from GoalRunnerTests, where it was
+/// A provider whose ChatAsync always throws. Promoted here (from AgentHostTests, where it was
 /// private) for P11 Task 3's fallback test — SessionCompressor must degrade to truncation, not crash,
 /// when the summarising call fails. Not a stand-in for the other two ThrowingProviders in
 /// LlmAgentJobPluginTests/ProviderProbeTests: those assert on a SPECIFIC exception shape
@@ -192,7 +192,7 @@ public sealed class AnswersWithoutPlanningProvider : ILlmProvider
 
 /// <summary>
 /// Answers conversationally (no create_plan) AND reports InputTokens, so the context-pressure path
-/// has a real measurement to act on. Without usage, GoalRunner's `_lastInputTokens` stays null and
+/// has a real measurement to act on. Without usage, AgentHost's `_lastInputTokens` stays null and
 /// compression declines — correct behaviour, but it makes a compression test pass for the wrong reason.
 /// </summary>
 public sealed class AnswersWithUsageProvider : ILlmProvider

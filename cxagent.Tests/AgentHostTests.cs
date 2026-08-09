@@ -7,38 +7,38 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// What GoalRunner still owns now that the dag is gone: the ledger, the events the status bar reads,
+/// What AgentHost still owns now that the dag is gone: the ledger, the events the status bar reads,
 /// the agent context that outlives a prompt, and turning a provider fault into a visible error rather
 /// than an unobserved faulted task. The turn loop itself is <see cref="CxAgent.UI.Agent"/>'s, and is
 /// covered by AgentChallengeTests and AgentTests.
 /// </summary>
-public class GoalRunnerTests
+public class AgentHostTests
 {
-    private static GoalRunner NewRunner(ILlmProvider provider, RecordingSink? sink = null) =>
+    private static AgentHost NewRunner(ILlmProvider provider, RecordingSink? sink = null) =>
         new(provider, sink ?? new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins());
 
     [Fact]
-    public async Task RunAsync_RecordsTokenUsage_IntoTheLedger()
+    public async Task SendAsync_RecordsTokenUsage_IntoTheLedger()
     {
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
 
         var runner = NewRunner(mock);
-        await runner.RunAsync("goal", new List<ChatMessage>(), CancellationToken.None);
+        await runner.SendAsync("goal", new List<ChatMessage>(), CancellationToken.None);
 
         Assert.Equal(42, runner.Ledger.TotalTokens);
     }
 
     /// <summary>
     /// AppBootstrap's status-bar cost readout has no per-Record event on TokenLedger to subscribe to
-    /// (only Breached, which fires once) — so GoalRunner raises TokensUpdated itself at the same point
+    /// (only Breached, which fires once) — so AgentHost raises TokensUpdated itself at the same point
     /// it calls Ledger.Record, giving AppBootstrap a live hook without adding a public event to the
     /// ledger's own object model.
     /// </summary>
     [Fact]
-    public async Task RunAsync_RaisesTokensUpdated_MatchingLedgerTotal()
+    public async Task SendAsync_RaisesTokensUpdated_MatchingLedgerTotal()
     {
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
@@ -48,20 +48,23 @@ public class GoalRunnerTests
         var seen = new List<int>();
         runner.TokensUpdated += (_, total) => seen.Add(total);
 
-        await runner.RunAsync("goal", new List<ChatMessage>(), CancellationToken.None);
+        await runner.SendAsync("goal", new List<ChatMessage>(), CancellationToken.None);
 
         Assert.Contains(42, seen);
     }
 
     [Fact]
-    public async Task RunAsync_ProviderThrows_ShowsError_DoesNotLeakVendorBody()
+    public async Task SendAsync_ProviderThrows_ShowsError_DoesNotLeakVendorBody()
     {
         var sink = new RecordingSink();
         var runner = NewRunner(new ThrowingProvider(), sink);
 
-        var state = await runner.RunAsync("x", new List<ChatMessage>(), CancellationToken.None);
+        var conversation = new List<ChatMessage>();
+        await runner.SendAsync("x", conversation, CancellationToken.None);
 
-        Assert.NotEqual(GoalState.Completed, state);
+        // NO ANSWER on the transcript — the request produced an error, not a reply. That absence is
+        // what a failed exchange looks like now the status enum nothing consumed is gone.
+        Assert.DoesNotContain(conversation, m => m.Role == "assistant");
         Assert.NotNull(sink.Error);
         Assert.Contains("auth failed", sink.Error!);
         Assert.DoesNotContain("secret-vendor-body", sink.Error!);  // VendorBody never surfaced
@@ -73,7 +76,7 @@ public class GoalRunnerTests
     /// blank. This pins the seam /compress and the session's continuity both depend on.
     /// </summary>
     [Fact]
-    public async Task Context_SurvivesAcrossGoals()
+    public async Task Context_SurvivesAcrossPrompts()
     {
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(new LlmResponse { Text = "first", StopReason = "end_turn" });
@@ -82,9 +85,9 @@ public class GoalRunnerTests
         var runner = NewRunner(mock);
         var conversation = new List<ChatMessage>();
 
-        await runner.RunAsync("one", conversation, CancellationToken.None);
+        await runner.SendAsync("one", conversation, CancellationToken.None);
         var afterFirst = runner.Context.Messages.Count;
-        await runner.RunAsync("two", conversation, CancellationToken.None);
+        await runner.SendAsync("two", conversation, CancellationToken.None);
 
         Assert.True(afterFirst > 0);
         Assert.True(runner.Context.Messages.Count > afterFirst);

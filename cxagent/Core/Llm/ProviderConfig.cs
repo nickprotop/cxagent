@@ -46,7 +46,7 @@ public record RoutingTarget(string Provider, string Model);
 ///
 /// ContextCompressThreshold (P10 Task 3, reshaped by P11 Task 2) is a MEASURED trigger, not a cap: it
 /// names the live context size (LlmResponse.Usage.InputTokens — the provider's own count of what it
-/// just received) above which GoalRunner compresses the shared conversation after a goal completes.
+/// just received) above which AgentHost compresses the shared conversation after a goal completes.
 ///
 /// int?, null meaning "not configured" — NOT null-means-unbounded like the token fields above.
 /// Before P11 this was a plain int defaulting to 40,000, which made an explicit
@@ -55,7 +55,7 @@ public record RoutingTarget(string Provider, string Model);
 /// user chose this number" (honour it, even over a known context window) vs "nobody said" (derive
 /// something better if we can). Default null, both here and as parsed by
 /// <see cref="ProviderConfigLoader.LoadAndValidate"/> when the key is absent — the 40,000 constant
-/// only enters at the very end of the chain, in <see cref="GoalRunner"/>'s own fallback, once no
+/// only enters at the very end of the chain, in <see cref="AgentHost"/>'s own fallback, once no
 /// caller (neither this record nor a known window) had an opinion.
 /// </summary>
 public record OrchestratorSettings(
@@ -65,14 +65,14 @@ public record OrchestratorSettings(
     // NOTE: "Unbounded" only describes the token fields — MaxWorkerTurns always takes its real
     // (non-null, non-zero) default here too. ContextCompressThreshold
     // is unconfigured here too (null): Unbounded means "nothing was said," and EffectiveCompressThreshold
-    // (plus GoalRunner's own last-resort constant) decides what happens when nothing was said.
+    // (plus AgentHost's own last-resort constant) decides what happens when nothing was said.
     public static readonly OrchestratorSettings Unbounded = new(null, null);
 
     /// <summary>
     /// The fixed fallback trigger for a provider whose context window nobody has told us: sized
     /// against a small LOCAL model's window (many run at/under 32K-64K context), not a frontier
     /// model's much larger one, so the out-of-the-box behaviour protects the constrained case. Applied
-    /// by <see cref="GoalRunner"/> — the only caller of <see cref="EffectiveCompressThreshold"/> — as
+    /// by <see cref="AgentHost"/> — the only caller of <see cref="EffectiveCompressThreshold"/> — as
     /// its own last resort when that method has nothing to derive from (see its doc).
     /// </summary>
     public const int DefaultCompressThreshold = 40_000;
@@ -88,7 +88,7 @@ public record OrchestratorSettings(
     ///      instead of a guess;
     ///   3. else null — NEITHER an explicit number NOR a window is known, so this method has nothing
     ///      to derive from. It does not invent the 40,000 constant itself; that last-resort fallback
-    ///      lives one level up, in GoalRunner (the only caller), which is where "we truly know
+    ///      lives one level up, in AgentHost (the only caller), which is where "we truly know
     ///      nothing" must still yield a protective, non-null number.
     ///
     /// The fraction is 80%, not "just under 100%": compression fires so the NEXT goal's decomposition

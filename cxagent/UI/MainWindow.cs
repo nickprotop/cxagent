@@ -112,7 +112,7 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// True in fan-out mode, where a DAG of jobs exists. Single-agent has no dag and no scheduler,
     /// which decides what the status bar may offer: F6 Diagnose resolves a FAILED JOB through
-    /// GoalRunner.TryGetSession, and single-agent never creates a session for it to find — the key
+    /// AgentHost.TryGetSession, and single-agent never creates a session for it to find — the key
     /// was advertised, pressed, and silently did nothing.
     /// </summary>
     public bool FanOut { get; init; }
@@ -446,7 +446,7 @@ public sealed class MainWindow : IDisposable
         // This replaced a 50/50 split with a permanent job panel on the left. The panel held the full
         // width of half the screen whether or not a goal was running, and the conversation — the part
         // you actually read — was squeezed into the other half. JobPanelControl is still constructed
-        // and still works; it is simply not placed. Nothing in the engine changed: GoalRunner talks to
+        // and still works; it is simply not placed. Nothing in the engine changed: AgentHost talks to
         // IJobPanel, so swapping which implementation is wired is a UI-only decision.
         // A RULE BETWEEN THE TRANSCRIPT AND THE COMPOSER. Without it the two run together: the
         // conversation ends and the box you type into begins, with nothing saying which is which,
@@ -979,7 +979,7 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>
     /// Copilot mode (P9 Task 2): shows/hides the F9 Approve · Esc Discard footer hint. Wired by
-    /// AppBootstrap off GoalRunner.DraftPending, same pattern as SetTokenTotal off TokensUpdated.
+    /// AppBootstrap off AgentHost.DraftPending, same pattern as SetTokenTotal off TokensUpdated.
     /// Offering the hint only while a draft is actually pending matters as much as offering it at
     /// all — F9/Esc are no-ops (ApproveDraft/DiscardDraft self-guard) when nothing is drafting, and a
     /// hint that's visible but inert would be worse than no hint.
