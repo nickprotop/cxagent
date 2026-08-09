@@ -163,6 +163,63 @@ public class IndentShiftTests
     }
 
     [Fact]
+    public void ABlockRetypedOneLevelShortIsPlacedAtTheFilesDepth()
+    {
+        // THE THIRD LIVE FAILURE, from a drive against ColorResolver. The model retyped a five-line
+        // method one tab short — and short by TWO on its opening line, because it dropped the shared
+        // indent there as well. Outdent removes the MINIMUM indent, which that first line had made
+        // zero, so the rest kept an extra tab, the per-line offsets disagreed, and the shift refused.
+        // The method landed a level out, its doc comment at column 0 beside a neighbour at two tabs.
+        //
+        // Four of the five lines agree on a one-tab offset. That dominant offset is the evidence the
+        // model meant the file's shape, and it is what the shape check now looks for.
+        var result = IndentShift.Apply(
+            matched: "\t\t/// <summary>\n\t\tpublic static Color R(Color? e)\n\t\t\t=> A(e)\n\t\t\t?? B;",
+            pattern: "/// <summary>\n\tpublic static Color R(Color? e)\n\t\t=> A(e)\n\t\t?? B;",
+            replacement: "/// <summary>\n\tpublic static Color R(Color? e)\n\t\t=> A(e)\n\t\t?? C\n\t\t?? B;");
+
+        Assert.Equal(
+            "\t\t/// <summary>\n\t\tpublic static Color R(Color? e)\n\t\t\t=> A(e)\n\t\t\t?? C\n\t\t\t?? B;",
+            result);
+    }
+
+    [Fact]
+    public void ALineTheReplacementADDEDFollowsItsNeighbours()
+    {
+        // An added line has no pattern counterpart to correlate with, so the per-line rebase skipped
+        // it — and left it behind while every line around it moved. Measured live: a new `?? C`
+        // clause stayed a tab short of the expression it belongs to.
+        var result = IndentShift.Apply(
+            matched: "\t\tvar x = A()\n\t\t\t?? B;",
+            pattern: "\tvar x = A()\n\t\t?? B;",
+            replacement: "\tvar x = A()\n\t\t?? B\n\t\t?? C;");
+
+        // The added last line takes the same depth as the line before it, not the depth it was sent at.
+        Assert.EndsWith("\n\t\t\t?? C;", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AGenuinelyRESHAPEDBlockIsStillWrittenAsSent()
+    {
+        // The limit of the dominant-offset rule, and what keeps it from being a guess. When the
+        // offsets SCATTER the model restructured the block rather than mistyping its base, and
+        // reconstructing the file's shape over it would be the silent reshaping this design exists to
+        // prevent.
+        //
+        // Four lines, offsets +2, +2, -1, -1: a plurality but no MAJORITY, which is the line the rule
+        // draws. My first version of this test used three lines that happened to be 2-of-3 in
+        // agreement — a real majority — and it failed because the code was right and the example was
+        // not "reshaped" at all.
+        const string replacement = "if (x)\n\tGo();\n\t\t\t\t\tDeep();\n\t\t\tEnd();";
+        var result = IndentShift.Apply(
+            matched: "\t\tif (x)\n\t\t\tGo();\n\t\t\t\tDeep();\n\t\tEnd();",
+            pattern: "if (x)\n\tGo();\n\t\t\t\t\tDeep();\n\t\t\tEnd();",
+            replacement: replacement);
+
+        Assert.Equal(replacement, result);
+    }
+
+    [Fact]
     public void AMultiLineReplacementStillFallsBackToAsSent()
     {
         // The limit of the rule above. A one-line replacement has no SHAPE, so the file's line start

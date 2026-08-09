@@ -470,6 +470,11 @@ public sealed class InlineJobSink : IJobPanel
 
     private static string AuthorFor(Job job)
     {
+        // Compression is not a tool the model called — it is housekeeping the app did to its own
+        // context, and labelling it "Tool" would put it among the model's actions as though it had
+        // chosen to run it.
+        if (job.PluginType == "compress") return "Context";
+
         if (job.PluginType != "llm_agent") return "Tool";
 
         // Name the ROLE when the plan specified one — "Worker · reviewer" says which of the four

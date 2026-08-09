@@ -498,11 +498,25 @@ public static class AppBootstrap
                             .ContinueWith(t => system.EnqueueOnUIThread(() =>
                             {
                                 var r = t.IsCompletedSuccessfully ? t.Result : default;
+
+                                // REPORT ON WHAT HAPPENED, not on the message COUNT. A short
+                                // conversation halves to one summary plus one kept message — the same
+                                // count it started with — so counting made a real summarisation
+                                // report as "already short, nothing to compress". The user had just
+                                // asked for it and was told it was declined.
+                                //
+                                // Summarised is the compressor's own answer to "did I do the work",
+                                // and it is the honest thing to report. The counts still appear when
+                                // they moved, because that is the part worth seeing.
+                                var shrank = conversation.Count < beforeCount;
                                 mainWindow.Chat.AddMessage(ChatRole.System,
-                                    conversation.Count < beforeCount
-                                        ? $"{(r.Summarised ? "Summarised" : "Truncated (summary failed)")}: "
-                                          + $"{beforeCount} messages → {conversation.Count}."
-                                        : "Conversation is already short — nothing to compress.");
+                                    r.Summarised
+                                        ? shrank
+                                            ? $"Summarised: {beforeCount} messages → {conversation.Count}."
+                                            : "Summarised the earlier conversation."
+                                        : shrank
+                                            ? $"Truncated (summary failed): {beforeCount} messages → {conversation.Count}."
+                                            : "Nothing to compress — the conversation is a single message.");
                             }), TaskScheduler.Default);
                         return;
                 }

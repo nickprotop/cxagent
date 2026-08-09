@@ -100,8 +100,20 @@ public static class ProviderResolver
             // settings.DefaultProvider names the SAME instance `registry.Default` just resolved
             // (ProviderRegistry.Build validates this pairing), so looking its config back up by that
             // name gets the window for the provider actually in use, not some other configured one.
-            int? contextWindow = settings.DefaultProvider is { } dp && settings.Providers.TryGetValue(dp, out var cfg)
-                ? cfg.ContextWindow : null;
+            var cfg = settings.DefaultProvider is { } dp && settings.Providers.TryGetValue(dp, out var c)
+                ? c : null;
+
+            // CONFIGURED FIRST, PROBED SECOND. An explicit contextWindow is the user telling us
+            // something about their setup — a shared endpoint, a deliberately smaller budget — and a
+            // number read off the server must not override that. The probe only fills the silence,
+            // which is the common case: the field is optional and almost never set.
+            //
+            // Synchronous by design. Resolve() is called during startup before the UI exists, the
+            // probe is bounded at three seconds, and every failure returns null — so the worst case
+            // is the behaviour we had before it existed.
+            int? contextWindow = cfg?.ContextWindow
+                ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
+                    .GetAwaiter().GetResult();
             return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
                 settings.Orchestrator, registry, contextWindow);
         }

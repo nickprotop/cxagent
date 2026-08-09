@@ -66,15 +66,36 @@ public class SessionCompressorTests
     }
 
     [Fact]
-    public async Task Compress_OnAShortConversation_StillDoesNothing()
+    public async Task Compress_OnASingleMessage_DoesNothing()
     {
-        // The floor survives: compression is lossy even when it summarises, and a conversation that
-        // fits should not pay a provider call to shrink.
+        // REPLACES Compress_OnAShortConversation_StillDoesNothing, which pinned a message-count floor
+        // of eight. That floor was wrong for both callers: this runs on an explicit /compress or on
+        // measured TOKEN pressure, and a count of messages answers neither — eight messages carrying
+        // four large file reads is exactly the case that needs compressing, and the floor declined it
+        // silently, indistinguishable from a compression that found nothing to do.
+        //
+        // What remains is arithmetic: one message has no older half to summarise.
         var provider = new RecordingProvider();   // no scripted reply — a call would throw
-        var conversation = new List<ChatMessage> { Msg("user", "one"), Msg("assistant", "two") };
+        var conversation = new List<ChatMessage> { Msg("user", "one") };
 
         await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
 
-        Assert.Equal(2, conversation.Count);
+        Assert.Single(conversation);
+    }
+
+    [Fact]
+    public async Task Compress_OnAShortConversation_NowCompressesIt()
+    {
+        // The other half of removing the floor: a short conversation the user asked to compress IS
+        // compressed. Two messages is the smallest thing that can be halved at all.
+        var provider = new RecordingProvider(
+            Usage(new LlmResponse { Text = "read Foo.cs, changed the parser" }));
+        var conversation = new List<ChatMessage> { Msg("user", "one"), Msg("assistant", "two") };
+
+        var result = await SessionCompressor.CompressAsync(conversation, provider, CancellationToken.None);
+
+        Assert.True(result.Summarised);
+        Assert.Equal(2, conversation.Count);   // one summary + the newest half
+        Assert.Contains("changed the parser", conversation[0].Content, System.StringComparison.Ordinal);
     }
 }

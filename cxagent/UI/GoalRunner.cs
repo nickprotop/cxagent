@@ -390,7 +390,14 @@ public sealed class GoalRunner : IDisposable
                 // check was testing for a null that does not reach here.
                 //
                 // The user's explicitly configured value, or no cap at all.
-                ConfiguredMaxWorkerTurns ?? int.MaxValue)
+                ConfiguredMaxWorkerTurns ?? int.MaxValue,
+
+                // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
+                // single-agent run ends when it runs out of room, not at an arbitrary turn number.
+                // Same threshold as MaybeAutoCompressAsync uses between goals — one setting, derived
+                // once — because two numbers for the same question drift.
+                compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
+                    ?? OrchestratorSettings.DefaultCompressThreshold)
             {
                 TurnCompleted = calls =>
                 {
@@ -770,8 +777,8 @@ public sealed class GoalRunner : IDisposable
                 + $"{how} conversation from {before} to {conversation.Count} messages]");
             _sink.EndAssistantTurn(id);
         }
-        // else: SessionCompressor's own floor (SessionCommands.MinMessagesToCompress) declined to
-        // shrink a conversation too short to lose anything from — say nothing, since nothing happened.
+        // else: nothing shrank — a conversation of one message has no older half to summarise. Say
+        // nothing, since nothing happened.
     }
 
     /// <summary>

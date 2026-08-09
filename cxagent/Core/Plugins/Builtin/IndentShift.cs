@@ -154,18 +154,44 @@ public static class IndentShift
             quotesTheFile = quoted.Length > 0 && quoted == Indent(matchedLines[i]);
         }
 
-        if (!quotesTheFile) return replacement;
+        // OR THE SHAPE MATCHES, which is the same evidence by another route. A model that retypes a
+        // block one tab short quotes NOTHING verbatim — yet its lines sit at the same depths relative
+        // to each other as the file's do, which is exactly the claim "I meant your shape, I got the
+        // base wrong".
+        //
+        // Seen live: a five-line method sent with every line one tab short and the FIRST line short
+        // by two, because the model dropped the shared indent from line 0 as well. Outdent removes
+        // the MINIMUM indent, which line 0 had made zero, so the remaining lines kept an extra tab,
+        // the per-line offsets disagreed, and the shift refused. The block landed one level out —
+        // its doc comment at column 0 beside a neighbour at two tabs.
+        if (!quotesTheFile && !ShiftedByAConstant(matchedLines, patternLines)) return replacement;
 
         var placed = new string[replaceLines.Length];
         var changed = false;
+        string? lastShift = null;
 
         for (var i = 0; i < replaceLines.Length; i++)
         {
             placed[i] = replaceLines[i];
 
-            // Only lines with a counterpart on BOTH sides can be correlated; a replacement longer
-            // than the pattern has extra lines with nothing to take a depth from.
-            if (i >= patternLines.Length || i >= matchedLines.Length) continue;
+            // A LINE THE REPLACEMENT ADDED has no counterpart to correlate with — but it is being
+            // written into a block every other line of which just moved, so leaving it behind is the
+            // one outcome that is certainly wrong. Seen live: a new `?? c?.BackgroundColor` clause
+            // stayed a tab short of the expression it belongs to, while the lines above and below it
+            // were placed correctly.
+            //
+            // It takes the same shift as the last line that HAD a counterpart, which is what "the
+            // model wrote it at the depth it wrote its neighbours" means in practice.
+            if (i >= patternLines.Length || i >= matchedLines.Length)
+            {
+                if (lastShift is { } carry && !IsBlank(replaceLines[i]))
+                {
+                    var sent = Indent(replaceLines[i]);
+                    var moved = carry + replaceLines[i][sent.Length..];
+                    if (moved != placed[i]) { placed[i] = moved; changed = true; }
+                }
+                continue;
+            }
             if (IsBlank(replaceLines[i]) || IsBlank(matchedLines[i])) continue;
 
             // "Unchanged depth" is the signal for a given line: where the replacement's indent
@@ -174,7 +200,10 @@ public static class IndentShift
             var sentIndent = Indent(replaceLines[i]);
             if (sentIndent != Indent(patternLines[i])) continue;
 
-            var rebased = Indent(matchedLines[i]) + replaceLines[i][sentIndent.Length..];
+            // What this line's indent became, so an ADDED line after it can follow the same move.
+            lastShift = Indent(matchedLines[i]);
+
+            var rebased = lastShift + replaceLines[i][sentIndent.Length..];
             if (rebased == placed[i]) continue;
 
             placed[i] = rebased;
@@ -182,6 +211,39 @@ public static class IndentShift
         }
 
         return changed ? string.Join('\n', placed) : replacement;
+    }
+
+    /// <summary>
+    /// Whether MOST lines are short by the same amount — a block retyped at the wrong depth.
+    /// </summary>
+    /// <remarks>
+    /// <para>The evidence is a DOMINANT per-line offset, not a matching shape measured from the
+    /// first line. My first attempt anchored on line 0 and failed on the very case it was written
+    /// for: a model that retypes a method one tab short usually drops the shared indent from its
+    /// OPENING line entirely, so line 0 is short by two while every other line is short by one.
+    /// Anchored there, the block looks restructured; counted across all lines, four of five agree
+    /// and one is an outlier.</para>
+    ///
+    /// <para>A strict majority is required, so a genuinely reshaped block — where offsets scatter —
+    /// still refuses and is written as sent. Lengths rather than strings, because a model typing
+    /// spaces where the file has tabs is describing the same shape and refusing over notation would
+    /// send us back to writing a visibly broken block.</para>
+    /// </remarks>
+    private static bool ShiftedByAConstant(string[] matchedLines, string[] patternLines)
+    {
+        var offsets = new List<int>();
+        for (var i = 0; i < matchedLines.Length && i < patternLines.Length; i++)
+        {
+            if (IsBlank(matchedLines[i]) || IsBlank(patternLines[i])) continue;
+            offsets.Add(Indent(matchedLines[i]).Length - Indent(patternLines[i]).Length);
+        }
+
+        // TWO LINES MINIMUM. One line has nothing to be consistent WITH, and calling that "shifted
+        // by a constant" would make this an unconditional yes.
+        if (offsets.Count < 2) return false;
+
+        var best = offsets.GroupBy(o => o).OrderByDescending(g => g.Count()).First();
+        return best.Count() * 2 > offsets.Count;
     }
 
     private static string[] Split(string s) => s.Replace("\r\n", "\n").Split('\n');

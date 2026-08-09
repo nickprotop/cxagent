@@ -19,9 +19,10 @@ namespace CxAgent.Tests;
 /// </summary>
 public class SingleAgentLoopChallengeTests
 {
-    private static SingleAgentLoop Build(ILlmProvider provider, RecordingSink sink) =>
+    private static SingleAgentLoop Build(ILlmProvider provider, RecordingSink sink,
+        int? compressAbove = null, NullJobPanel? panel = null) =>
         new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null), sink,
-            new NullJobPanel(), logs: null, maxTurns: 50);
+            panel ?? new NullJobPanel(), logs: null, maxTurns: 50, compressAbove: compressAbove);
 
     private static List<ChatMessage> Goal(string text) =>
         [new ChatMessage { Role = "user", Content = text, Timestamp = DateTimeOffset.UtcNow }];
@@ -586,6 +587,76 @@ public class SingleAgentLoopChallengeTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    // --- Context pressure ------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ContextOverTheThreshold_CompressesMidGoal_AndSaysSo()
+    {
+        // THE LIVE FAILURE. GoalRunner's auto-compression sits in a `finally` around the whole GOAL,
+        // and a single-agent goal is ONE RunAsync that loops internally — so the check fired only
+        // after the run that blew past it. Measured live at 1.16M input tokens against a 40,000
+        // threshold, never once compressing. The bound has to be inside the loop.
+        var provider = new MockLlmProvider();
+
+        // Two heavy turns: the first reports usage over the threshold, so compression runs before the
+        // second. A third response feeds the summarisation call itself.
+        provider.EnqueueResponse(Heavy("looking into it", inputTokens: 5_000));
+        provider.EnqueueResponse(Prose("summary of the earlier work"));
+        for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+        await Build(provider, sink, compressAbove: 1_000, panel: panel)
+            .RunAsync("gc", Goal("do something long"), CancellationToken.None);
+
+        // A JOB ROW, so it carries the spinner, the one-line summary and an expandable body like any
+        // other piece of work. Asserting on the JOB rather than on transcript text also pins the
+        // thing that matters: silent memory loss is the failure, and a row the user can expand to
+        // read the summary is what makes a lossy step auditable.
+        var row = Assert.Single(panel.Jobs.Where(j => j.PluginType == "compress"
+                                                   && j.State == JobState.Succeeded));
+
+        Assert.Contains("over", row.DisplayName, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("messages", row.Result!.Output!["content"]!.ToString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ContextUnderTheThreshold_DoesNotCompress()
+    {
+        // The common case, and it must cost nothing: one comparison per turn and no provider call.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Heavy("all done", inputTokens: 100));
+        for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+        await Build(provider, sink, compressAbove: 50_000, panel: panel)
+            .RunAsync("gd", Goal("do something short"), CancellationToken.None);
+
+        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+    }
+
+    [Fact]
+    public async Task NoThreshold_NeverCompresses()
+    {
+        // A null threshold is "never", not "always" — a fan-out worker reaching this code path must
+        // not start summarising its own context because nobody configured a number.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Heavy("all done", inputTokens: 999_999));
+        for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var panel = new NullJobPanel();
+        await Build(provider, sink, compressAbove: null, panel: panel)
+            .RunAsync("ge", Goal("do something"), CancellationToken.None);
+
+        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+    }
+
+    /// <summary>A response reporting a given input-token count, which is what the trigger reads.</summary>
+    private static LlmResponse Heavy(string text, int inputTokens) =>
+        new() { Text = text, ToolCalls = [], Usage = new LlmUsage { InputTokens = inputTokens } };
+
     private sealed class RecordingSink : IChatSink
     {
         public readonly List<string> Errors = [];
@@ -606,8 +677,21 @@ public class SingleAgentLoopChallengeTests
 
     private sealed class NullJobPanel : IJobPanel
     {
-        public void SetJobs(IReadOnlyList<Job> jobs) { }
-        public void UpdateJob(Job job) { }
+        /// <summary>
+        /// The latest state of every job the loop reported, keyed by id — compression renders as one
+        /// of these.
+        /// </summary>
+        /// <remarks>
+        /// BY ID, because Job is MUTATED IN PLACE: the loop hands the same instance to SetJobs while
+        /// running and to UpdateJob when it finishes, so appending to a list records one object twice
+        /// and both entries show the final state. A real panel keys by id for the same reason.
+        /// </remarks>
+        private readonly Dictionary<string, Job> _jobs = new();
+
+        public IReadOnlyCollection<Job> Jobs => _jobs.Values;
+
+        public void SetJobs(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
+        public void UpdateJob(Job job) { _jobs[job.Id] = job; }
         public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
         public void AppendText(string jobId, string delta) { }
         public bool AwaitingApproval { get; set; }

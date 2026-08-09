@@ -48,8 +48,20 @@ public sealed class SingleAgentLoop
     /// GoalRunner reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
     public Action<int>? TurnCompleted { get; set; }
 
+    /// <summary>
+    /// Input tokens past which the loop compresses its own message list, or null to never compress.
+    ///
+    /// <para>THE BOUND THAT REPLACES THE TURN CAP. Single-agent has no turn ceiling by design — a
+    /// number of turns has nothing to do with the task — and the comment at the construction site
+    /// says the context window ends a session that cannot continue. It did not: GoalRunner's
+    /// auto-compression sits in a `finally` around the whole GOAL, and a single-agent goal is ONE
+    /// RunAsync that loops internally, so the check fired after the run that blew past it. Measured
+    /// live at 1.16M input tokens against a 40,000 threshold, never once compressing.</para>
+    /// </summary>
+    private readonly int? _compressAbove;
+
     public SingleAgentLoop(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
-        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns)
+        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null)
     {
         _provider = provider;
         _plugins = plugins;
@@ -58,6 +70,7 @@ public sealed class SingleAgentLoop
         _jobs = jobs;
         _logs = logs;
         _maxTurns = maxTurns;
+        _compressAbove = compressAbove;
     }
 
     /// <summary>Every tool, always. Roles used to slice this per worker name; that mechanism is gone
@@ -181,6 +194,15 @@ public sealed class SingleAgentLoop
             }
 
             _ledger.Record(response.Usage);
+
+            // COMPRESS ON PRESSURE, PER TURN. `messages` is what actually grows — tool results are
+            // the bulk of it — and it is what gets re-sent whole every turn, so it is what has to
+            // shrink. The session `conversation` GoalRunner compresses is a different, much smaller
+            // list; compressing that would leave this one untouched.
+            //
+            // InputTokens is the provider's own count of what it just received, so no estimator is
+            // needed and no drift is possible.
+            await MaybeCompressAsync(messages, goalId, response.Usage.InputTokens, ct);
 
             // LOG THE RAW RESPONSE. Only tool RESULTS were ever written, so the model's own output —
             // the prose, the reasoning, the markdown — existed nowhere once the screen scrolled. A
@@ -557,6 +579,79 @@ public sealed class SingleAgentLoop
         };
     }
 
+
+    /// <summary>
+    /// Summarises the older half of <paramref name="messages"/> when the last turn's input crossed
+    /// <see cref="_compressAbove"/>.
+    ///
+    /// <para>THROUGH THE MODEL, not by eviction. Dropping tool results and leaving receipts was the
+    /// obvious cheap fix and it is the wrong one: a file read is not dead weight once consumed — what
+    /// the model CONCLUDED from it is the value, and that lives nowhere else. Only the model can tell
+    /// "this defines the interface I am changing" from "this was irrelevant", and a size-based rule
+    /// loses both identically. Every agent in this space compacts by asking the model to write a
+    /// handoff, and SessionCompressor already does exactly that.</para>
+    ///
+    /// <para>Never throws: compression failing must not end a goal that is otherwise working.
+    /// SessionCompressor falls back to truncation on a provider error, and its result says which
+    /// happened so the transcript can be honest about it.</para>
+    /// </summary>
+    private async Task MaybeCompressAsync(List<ChatMessage> messages, string goalId, int inputTokens,
+        CancellationToken ct)
+    {
+        if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
+
+        // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
+        // its own, runs for seconds, and rewrites the conversation. As a row it gets the machinery
+        // every other tool call already has — a spinner while it runs (it looked like a hang before),
+        // a one-line summary when it lands, red if it degrades to truncation, and an expandable body.
+        //
+        // THE EXPANDABLE BODY IS THE POINT. Compression is the one operation that silently discards
+        // what the model knew, and the summary it wrote was previously visible nowhere: the user
+        // could see that memory had shrunk but never what survived. Putting the summary in the body
+        // makes a lossy step auditable.
+        var jobId = Helpers.UlidGenerator.NewId();
+        var job = new Job
+        {
+            Id = jobId,
+            PlanLocalId = "compress",
+            GoalId = goalId,
+            PluginType = "compress",
+            DisplayName = $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
+            State = JobState.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            StartedAt = DateTimeOffset.UtcNow,
+        };
+        _jobs.SetJobs(new[] { job });
+
+        var started = DateTimeOffset.UtcNow;
+        var before = messages.Count;
+        var result = await SessionCompressor.CompressAsync(messages, _provider, ct, _ledger.Record);
+
+        // The summary the compressor wrote, which is now the first message. Read back rather than
+        // returned, so the compressor's contract stays "shrink this list" rather than growing a
+        // reporting channel for one caller.
+        var summary = messages.Count > 0 ? messages[0].Content : "";
+
+        // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
+        // the oldest half was dropped unread — recoverable, but the user should see that it happened
+        // rather than find the gap later.
+        job.State = result.Summarised ? JobState.Succeeded : JobState.Failed;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        job.Result = new JobResult
+        {
+            Success = result.Summarised,
+            ExitCode = result.Summarised ? 0 : -1,
+            Duration = DateTimeOffset.UtcNow - started,
+            ErrorMessage = result.Summarised
+                ? null
+                : "summarisation failed — dropped the oldest messages unread",
+            Output = new Dictionary<string, object?>
+            {
+                ["content"] = $"{before} messages → {messages.Count}\n\n{summary}",
+            },
+        };
+        _jobs.UpdateJob(job);
+    }
 
     private static bool IsWrite(string toolName) =>
         toolName is "write_file" or "replace_in_file";

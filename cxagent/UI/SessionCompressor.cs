@@ -35,9 +35,13 @@ public static class SessionCompressor
         List<ChatMessage> conversation, ILlmProvider provider, CancellationToken ct,
         Action<LlmUsage>? meter = null)
     {
-        // Same floor as SessionCommands.Compress: below it, compression — lossy even when it
-        // summarises — costs the user context for nothing.
-        if (conversation.Count < SessionCommands.MinMessagesToCompress)
+        // NO MESSAGE-COUNT FLOOR — see SessionCommands.Compress for why. This ran only on an explicit
+        // /compress or on measured TOKEN pressure, and neither is answered by counting messages: eight
+        // messages carrying four large file reads is precisely the case that needs compressing, and
+        // the old floor of eight declined it silently.
+        //
+        // Two is arithmetic, not policy: below that there is no older half to summarise.
+        if (conversation.Count < 2)
             return new CompressResult(Summarised: false);
 
         var keep = conversation.Count / 2;

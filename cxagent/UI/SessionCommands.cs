@@ -119,23 +119,24 @@ public static class SessionCommands
         string.Join('\n', All.Select(c => $"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary));
 
     /// <summary>
-    /// Halves the conversation, dropping the OLDEST messages first and keeping the newest — the
-    /// referent of a follow-up ("now do X to that") is almost always recent. Reused as-is by Task 3's
-    /// automatic compression, which calls this same routine under measured context pressure rather
-    /// than a fixed size; the explicit `/compress` command is the only caller that halves
-    /// unconditionally in response to a user request.
+    /// Halves the conversation, dropping the OLDEST messages first.
     ///
-    /// Compression is LOSSY, so it must never fire on a conversation short enough not to need it —
-    /// below this floor it's a costless no-op instead of throwing away history for nothing.
+    /// <para>NO MESSAGE-COUNT FLOOR. There was one — eight — on the reasoning that compression is
+    /// lossy and a short conversation has nothing worth losing. But nothing here is automatic: this
+    /// runs because the USER typed /compress, or because the context crossed a threshold measured in
+    /// TOKENS. A count of messages says nothing about either. Eight messages carrying four large file
+    /// reads is exactly the case that needs compressing, and the floor silently declined it — a
+    /// no-op the user asked for and did not get, with no way to tell it apart from a compression that
+    /// found nothing to do.</para>
     ///
-    /// Internal, not private: <see cref="SessionCompressor"/> (P11 Task 3) shares this exact floor so
-    /// its own short-conversation no-op matches this one rather than drifting to a second constant.
+    /// <para>Token pressure is the honest trigger and it is applied by the caller. This routine now
+    /// does what it is told.</para>
     /// </summary>
-    internal const int MinMessagesToCompress = 8;
-
     public static void Compress(List<ChatMessage> conversation)
     {
-        if (conversation.Count < MinMessagesToCompress) return;
+        // Two messages is the smallest thing that can be halved at all; below that there is no older
+        // half to drop, which is arithmetic rather than a policy.
+        if (conversation.Count < 2) return;
 
         var keep = conversation.Count / 2;
         conversation.RemoveRange(0, conversation.Count - keep);

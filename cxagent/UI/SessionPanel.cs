@@ -161,8 +161,12 @@ public sealed class SessionPanel
         lines.Add(Value($"{tokens:N0} tokens"));
         if (contextWindow is > 0)
         {
+            // THE CEILING, not just the fraction. "1% used" does not say what of, and the window is
+            // the number that makes a climbing count meaningful — 40k is nothing against 208k and
+            // most of the budget against 64k. Shown beside the percentage so one line answers both
+            // "how full" and "how big".
             var percent = 100.0 * tokens / contextWindow.Value;
-            lines.Add($"[{ColorScheme.ThresholdMarkup(percent)}]{percent:N0}% used[/]");
+            lines.Add($"[{ColorScheme.ThresholdMarkup(percent)}]{percent:N0}% of {Compact(contextWindow.Value)}[/]");
         }
 
         // IN / OUT, because the two behave nothing alike and a single total hides which is growing.
