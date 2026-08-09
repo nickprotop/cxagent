@@ -819,7 +819,6 @@ public class AgentChallengeTests
         public void ShowError(string message) => Errors.Add(message);
         public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);
         public void ShowSystemMessage(string message) { }
-        public void ShowApprovalRequest(string? detail = null) { }
     }
 
 }

@@ -67,19 +67,6 @@ public sealed class RecordingSink : IChatSink
         MessageQueue.Enqueue(message);
     }
 
-    /// <summary>How many times copilot mode asked the UI to surface the approval affordance.</summary>
-    public int ApprovalRequests { get; private set; }
-
-    /// <summary>The detail text of each approval request — P9b's mid-goal gate NAMES the jobs it
-    /// is asking about, and a test that only counted requests could not tell the two gates apart.</summary>
-    public List<string?> ApprovalDetails { get; } = new();
-
-    public void ShowApprovalRequest(string? detail = null)
-    {
-        ApprovalRequests++;
-        ApprovalDetails.Add(detail);
-    }
-
     public void SetAssistantHeader(ChatMessageId id, string header) { }
     public void ShowSystemMessage(string message) => MessageQueue.Enqueue(message);
 }
