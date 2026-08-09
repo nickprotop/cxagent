@@ -1039,6 +1039,104 @@ public sealed class MainWindow : IDisposable
         if (_composerHint is not null) _composerHint.IsVisible = false;
     }
 
+    /// <summary>
+    /// What the LAST turn actually sent — the context readout's real numerator.
+    ///
+    /// <para>SEPARATE FROM THE CUMULATIVE TOTAL, because the two answer different questions and
+    /// conflating them was a live bug. <see cref="SetTokenTotal"/> carries
+    /// <see cref="TokenLedger.TotalTokens"/>, a running SUM of every turn's input and output; since
+    /// each turn re-sends the whole conversation, it grows quadratically and passes 100% of any
+    /// window while the context itself may be half empty. It also cannot go DOWN, so compressing —
+    /// the one operation whose entire purpose is to free context — left the readout unchanged and the
+    /// user with no evidence it had worked.</para>
+    ///
+    /// <para>Occupancy is one turn's <c>Usage.InputTokens</c>: exactly what the compression trigger
+    /// measures (SingleAgentLoop), so the gauge and the trigger now agree. Null until a turn reports
+    /// usage, which is why the percentage only appears once there is something real to divide.</para>
+    /// </summary>
+    public void SetContextUsed(int inputTokens)
+    {
+        _contextUsed = inputTokens > 0 ? inputTokens : null;
+        _contextStale = false;
+        _contextDelta = null;   // a real measurement supersedes what the compression had to say
+        RefreshTokenItem();
+    }
+
+    /// <summary>
+    /// Marks the context reading as no longer describing the conversation — called when compression
+    /// has just rewritten it.
+    ///
+    /// <para>WHY NOT SIMPLY RECOMPUTE. Occupancy is only ever known from what a provider reports it
+    /// RECEIVED, and after a compression no call has been made yet — so the true new figure does not
+    /// exist until the next turn. The alternatives were both worse than admitting that: keep showing
+    /// the pre-compression number (the reported bug — the user compresses, the gauge does not move,
+    /// and there is no way to tell whether anything happened), or estimate one locally, which puts a
+    /// guess where every other figure in this readout is a measurement.</para>
+    ///
+    /// <para>So the number is shown struck through with a <c>~</c> until the next turn replaces it
+    /// with a real reading. That is honest about the uncertainty AND visibly acknowledges the
+    /// compression, which is the feedback that was missing.</para>
+    /// </summary>
+    public void MarkContextStale(int charsBefore, int charsAfter)
+    {
+        if (_contextUsed is null) return;
+        _contextStale = true;
+
+        // SAY WHICH WAY IT WENT. Compression can make a SHORT conversation bigger: the older half is
+        // replaced by a summary, and summarising one already-short message produces more text than it
+        // replaced (measured: 536→667 chars on a two-message session). Printing that as "compressed
+        // 536→667" claims a win that did not happen, so the verb follows the arithmetic.
+        var freed = PercentFreed(charsBefore, charsAfter);
+        _contextDelta = charsAfter < charsBefore
+            ? freed >= 1
+                ? $"compressed −{freed}% ({Compact(charsBefore)}→{Compact(charsAfter)} chars)"
+                : $"compressed {Compact(charsBefore)}→{Compact(charsAfter)} chars"
+            : "summarised, nothing to free";
+
+        RefreshTokenItem();
+    }
+
+    /// <summary>
+    /// A character count at a glance: <c>128k</c> rather than <c>128,412</c>.
+    ///
+    /// <para>The status bar is read sideways, not studied, and this figure only has to convey an
+    /// ORDER of magnitude — that a compression took a lot out. Full precision spends a dozen columns
+    /// on digits nobody compares.</para>
+    /// </summary>
+    private static string Compact(int n) => n switch
+    {
+        >= 1_000_000 => $"{n / 1_000_000.0:0.#}M",
+        >= 1_000 => $"{n / 1_000.0:0.#}k",
+        _ => n.ToString(),
+    };
+
+    /// <summary>
+    /// How much a compression took out, as a percentage — the one figure that stays legible whatever
+    /// the scale.
+    ///
+    /// <para>Rounded absolute counts collide: a real 5,540→5,490 renders as "5.5k→5.5k", which reads
+    /// as nothing having happened. Adding decimal places would fix that pair and lose to the next
+    /// one, and precision is the wrong answer to a question about magnitude anyway.</para>
+    /// </summary>
+    private static int PercentFreed(int before, int after) =>
+        before <= 0 ? 0 : (int)Math.Round(100.0 * (before - after) / before);
+
+    private int? _contextUsed;
+    private bool _contextStale;
+
+    /// <summary>
+    /// What the last compression did, in messages — the one CONCRETE thing that can be said after
+    /// compressing.
+    ///
+    /// <para>The percentage cannot be restated: occupancy is only ever known from what a provider
+    /// reports it received, and no call has been made yet, so the figure beside it is a stale upper
+    /// bound wearing a "~". A bare tilde says "this number is now wrong" without saying anything
+    /// about what happened — which is barely better than the original bug, where the readout did not
+    /// move at all. The message counts are already known here for free, so they are what gets shown
+    /// until a real measurement replaces the whole thing.</para>
+    /// </summary>
+    private string? _contextDelta;
+
     public void SetTokenTotal(int total)
     {
         // THE PANEL IS UPDATED FIRST, and unconditionally. This method used to return early at zero
@@ -1055,17 +1153,32 @@ public sealed class MainWindow : IDisposable
             return;
         }
 
+        RefreshTokenItem();
+    }
+
+    /// <summary>
+    /// Redraws the bottom-right readout from whatever is currently known. Called by both
+    /// <see cref="SetTokenTotal"/> and <see cref="SetContextUsed"/>, since either can change it.
+    /// </summary>
+    private void RefreshTokenItem()
+    {
         // CONTEXT USED, not a bare token count. "94,102 tokens" is a number without a scale — it
         // says nothing about whether the next turn fits, which is the only question a user actually
-        // has. With the window known it reads "ctx 46% · 94,102", and the percentage is coloured by
-        // how alarming it is (cxtop's thresholds), so it can be read without being read.
+        // has. With the window known it reads "ctx 46% · 94,102 · 1.2M spent", and the percentage is
+        // coloured by how alarming it is (cxtop's thresholds), so it can be read without being read.
         //
         // Falls back to the plain count when the provider's context window is unknown: inventing a
         // denominator would put a confident percentage on a guess.
         // Read from the resolution rather than a copied field: it is already here, and one source
         // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
         // percentage needs a denominator, and a guessed one is worse than none.
-        var label = ContextLabel(total, _resolution.ContextWindow);
+        var label = ContextLabel(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
+            _contextDelta);
+        if (label.Length == 0)
+        {
+            if (_tokenItem is not null) _tokenItem.IsVisible = false;
+            return;
+        }
 
         if (_tokenItem is null)
             _tokenItem = StatusBar.AddRight(string.Empty, label);
@@ -1095,15 +1208,76 @@ public sealed class MainWindow : IDisposable
         catch (Exception) { return null; }
     }
 
-    /// <summary>The bottom-right readout: context used, as a percentage when the window is known.</summary>
-    private static string ContextLabel(int total, int? window)
-    {
-        if (window is not > 0) return $"{total:N0} tokens";
+    /// <summary>
+    /// The bottom-right readout: how full the context is, and what the session has spent.
+    ///
+    /// <para>THE PERCENTAGE IS OCCUPANCY, NOT SPEND. It used to divide the cumulative ledger total by
+    /// the window, which is wrong twice over: that total sums input AND output across every turn, and
+    /// every turn re-sends the whole conversation, so it climbs quadratically and sails past 100%
+    /// while the context may be nowhere near full. Worse, a cumulative counter never decreases — so
+    /// compressing, whose entire purpose is to free context, moved the number not at all. A user
+    /// watching "107%" after a successful compression had no way to tell it had worked.</para>
+    ///
+    /// <para>The numerator is now <paramref name="used"/> — the last turn's input tokens, the same
+    /// measurement the compression trigger acts on, so what the user sees and what the app decides
+    /// can no longer disagree. Cumulative spend is still shown, as its own clearly-labelled figure,
+    /// because "what has this session cost" is a real question; it just is not this percentage.</para>
+    /// </summary>
+    /// <param name="used">Last turn's input tokens; null before any turn has reported usage.</param>
+    /// <param name="spent">Cumulative tokens across the session.</param>
+    /// <param name="window">The provider's context window, when known.</param>
+    /// <param name="stale">
+    /// True once compression has rewritten the conversation, until the next turn measures it again.
+    /// Shown as a <c>~</c> prefix and muted throughout: the figure is now an upper bound, not a
+    /// reading, and dressing it as one would be the same category of lie this method was fixing.
+    /// </param>
+    /// <summary>
+    /// Test seam for <see cref="ContextLabel"/>. Public because this codebase has no
+    /// InternalsVisibleTo grant; the ForTest suffix follows the convention used elsewhere here.
+    /// </summary>
+    public static string ContextLabelForTest(int? used, int spent, int? window, bool stale = false,
+        string? delta = null)
+        => ContextLabel(used, spent, window, stale, delta);
 
-        var percent = 100.0 * total / window.Value;
-        var colour = ColorScheme.ThresholdMarkup(percent);
-        return $"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{percent:N0}%[/] "
-             + $"[{ColorScheme.MutedMarkup}]· {total:N0}[/]";
+    private static string ContextLabel(int? used, int spent, int? window, bool stale = false,
+        string? delta = null)
+    {
+        var parts = new List<string>(2);
+
+        if (used is { } u && u > 0)
+        {
+            // A percentage needs a denominator, and a guessed one is worse than none — so without a
+            // known window this degrades to the raw occupancy figure rather than inventing a scale.
+            if (window is > 0)
+            {
+                var percent = 100.0 * u / window.Value;
+                // A stale figure never gets the alarm colours: it is the number BEFORE the
+                // compression that was just performed, so colouring it red would raise an alarm about
+                // pressure the app has already relieved.
+                var colour = stale ? ColorScheme.MutedMarkup : ColorScheme.ThresholdMarkup(percent);
+                var tilde = stale ? "~" : "";
+
+                // WHILE STALE, THE DELTA TAKES THE FRACTION'S PLACE. "8,879/212,992" is precisely the
+                // part that is no longer true after a compression, and printing it beside a "~" gives
+                // a wrong number the appearance of precision. "compressed 12→7 msgs" is both true and
+                // the thing the user actually wants to know: that it worked, and by how much.
+                var detail = stale && delta is { Length: > 0 }
+                    ? delta
+                    : $"{u:N0}/{window.Value:N0}";
+
+                parts.Add($"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{percent:N0}%[/] "
+                        + $"[{ColorScheme.MutedMarkup}]· {detail}[/]");
+            }
+            else
+            {
+                parts.Add($"[{ColorScheme.MutedMarkup}]ctx {(stale ? "~" : "")}{u:N0}[/]");
+            }
+        }
+
+        if (spent > 0)
+            parts.Add($"[{ColorScheme.MutedMarkup}]{spent:N0} spent[/]");
+
+        return string.Join($"[{ColorScheme.MutedMarkup}] · [/]", parts);
     }
 
     /// <summary>

@@ -55,6 +55,16 @@ public sealed class GoalRunner : IDisposable
     /// </summary>
     private int? _lastInputTokens;
 
+    /// <summary>
+    /// The id of the goal currently running, for the between-goals compression row.
+    ///
+    /// <para>A field rather than a parameter because that compression runs in <c>RunAsync</c>'s
+    /// <c>finally</c> — outside the scope where <c>RunCoreAsync</c> mints the id, and deliberately so
+    /// (see the call site: nine early returns, only one of which reached the old position).</para>
+    /// </summary>
+    private string? _currentGoalId;
+
+
     // The whole settings record, not just the token budget: OrchestratorLoop needs MaxConsults and
     // MaxEditsPerJob too, and those are NOT null-means-unbounded (see OrchestratorSettings' doc) — an
     // absent 'orchestrator' config block must still hand the loop real caps.
@@ -75,12 +85,58 @@ public sealed class GoalRunner : IDisposable
     public TokenLedger Ledger { get; }
 
     /// <summary>
+    /// The single agent's context, living across every goal this runner drives.
+    ///
+    /// <para>HELD HERE BECAUSE THE LOOP IS NOT. A <see cref="SingleAgentLoop"/> is constructed per
+    /// goal, so a context owned solely by the loop would still die with it — the rebuild-and-discard
+    /// this change exists to end, one level up. Owning it here is what actually makes the agent
+    /// continuous, and it is also what gives <c>/compress</c> something to compress between goals:
+    /// the session conversation holds only prompts and answers, so compressing it reported "nothing
+    /// to free" on a session measured at 58,000 tokens.</para>
+    /// </summary>
+    public AgentContext Context { get; }
+
+    /// <summary>
     /// Raised every time Ledger.Record runs, carrying the new running total. TokenLedger itself only
     /// exposes Breached (fires once, on crossing the budget) — this gives the UI (the status-bar cost
     /// readout, Task 11) a live per-call hook without adding a general-purpose event to the ledger's
     /// own object model.
     /// </summary>
     public event EventHandler<int>? TokensUpdated;
+
+    /// <summary>
+    /// Raised with the last turn's INPUT tokens — how full the context actually is right now.
+    ///
+    /// <para>Distinct from <see cref="TokensUpdated"/>, which carries the cumulative session total.
+    /// Only this figure answers "will the next turn fit": it is one turn's measurement rather than a
+    /// sum, so it rises and FALLS, and in particular it falls after compression. The status bar drove
+    /// its context percentage off the cumulative total and so could show 107% of a window that was
+    /// half empty, and could not move at all when compression freed space.</para>
+    /// </summary>
+    public event EventHandler<int>? ContextUsedUpdated;
+
+    /// <summary>
+    /// Raised when a compression has actually shrunk the conversation.
+    ///
+    /// <para>The true new occupancy is not knowable until the next turn — it is only ever read from
+    /// what a provider reports it received — so this says "the last reading no longer describes the
+    /// conversation" rather than carrying a number. The alternative was to keep displaying the
+    /// pre-compression figure, which is the reported bug: compress, and the gauge does not move.</para>
+    /// </summary>
+    public event EventHandler<(int Before, int After)>? ContextCompressed;
+
+    /// <summary>
+    /// Records a turn's reported input tokens, if it is a real measurement.
+    ///
+    /// <para>A reported 0 is never a measurement (see <see cref="_lastInputTokens"/>): it must not
+    /// overwrite a real prior reading, and it must not read as "the context shrank".</para>
+    /// </summary>
+    private void RecordInputTokens(int inputTokens)
+    {
+        if (inputTokens <= 0) return;
+        _lastInputTokens = inputTokens;
+        ContextUsedUpdated?.Invoke(this, inputTokens);
+    }
 
     /// <summary>
     /// One model turn finished; the payload is how many tool calls it made.
@@ -315,6 +371,7 @@ public sealed class GoalRunner : IDisposable
         _contextWindow = contextWindow;
         _goalTokenBudget = _orchestrator.GoalTokenBudget;
         Ledger = new TokenLedger(_goalTokenBudget);
+        Context = new AgentContext(contextWindow);
         // On breach, pause and ask — never silently keep spending. For now (Task 4) that means
         // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
         Ledger.Breached += (_, total) =>
@@ -345,7 +402,20 @@ public sealed class GoalRunner : IDisposable
             //
             // In a finally so it also runs when a goal fails or is cancelled: the conversation grew
             // regardless of how the goal ended, so the bound must apply regardless too.
-            await MaybeAutoCompressAsync(conversation, ct);
+            // NO COMPRESSION HERE. An agent compresses its OWN context, from inside its own turn
+            // loop, where the measurement that triggers it is taken.
+            //
+            // This route used to run alongside that one, and both read the SAME number —
+            // `_lastInputTokens` is the very value the per-turn check acts on, and occupancy is only
+            // refreshed when a provider reports it. So after the loop compressed, nothing had
+            // re-measured, this guard saw the same over-threshold figure and compressed again: two
+            // identical rows on a live drive, 24.5s and 26.1s, the second summarising a context whose
+            // older half was already a summary.
+            //
+            // Fan-out is not a reason to keep it. Sub-agents are self-contained — each owns a
+            // SingleAgentLoop and therefore its own context, its own threshold and its own
+            // compression — so there is no conversation left that grows a goal at a time with nobody
+            // watching it.
         }
     }
 
@@ -356,6 +426,7 @@ public sealed class GoalRunner : IDisposable
         var assistantId = _sink.BeginAssistantTurn();
 
         var goalId = UlidGenerator.NewId();
+        _currentGoalId = goalId;
         // The log directory is named by THIS id, so it is what a user needs to find the run again.
         GoalStarted?.Invoke(this, goalId);
 
@@ -394,10 +465,14 @@ public sealed class GoalRunner : IDisposable
 
                 // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
                 // single-agent run ends when it runs out of room, not at an arbitrary turn number.
-                // Same threshold as MaybeAutoCompressAsync uses between goals — one setting, derived
-                // once — because two numbers for the same question drift.
+                // The agent's own bound: it compresses its own context from inside its turn loop,
+                // which is the only place the measurement that triggers it is taken.
                 compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
-                    ?? OrchestratorSettings.DefaultCompressThreshold)
+                    ?? OrchestratorSettings.DefaultCompressThreshold,
+
+                // THE SAME CONTEXT EVERY GOAL. The loop is rebuilt per goal; the context is not, so
+                // goal N+1 begins with everything goal N learned.
+                context: Context)
             {
                 TurnCompleted = calls =>
                 {
@@ -409,6 +484,12 @@ public sealed class GoalRunner : IDisposable
                     // default.
                     TokensUpdated?.Invoke(this, Ledger.TotalTokens);
                 },
+
+                // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has
+                // only the cumulative total to divide by the window — a sum that passes 100% while
+                // the context is half empty, and that cannot fall when compression frees space.
+                ContextUsed = RecordInputTokens,
+                ContextCompressed = (b, a) => ContextCompressed?.Invoke(this, (b, a)),
             };
             return await single.RunAsync(goalId, conversation, ct);
         }
@@ -431,10 +512,7 @@ public sealed class GoalRunner : IDisposable
                 {
                     Ledger.Record(usage);
                     TokensUpdated?.Invoke(this, Ledger.TotalTokens);
-                    // A reported 0 is never a measurement (see _lastInputTokens' doc) — it must not
-                    // overwrite a real prior reading, and it must not read as "context shrank".
-                    if (usage.InputTokens > 0)
-                        _lastInputTokens = usage.InputTokens;
+                    RecordInputTokens(usage.InputTokens);
                 }
             }
         }
@@ -743,43 +821,29 @@ public sealed class GoalRunner : IDisposable
     /// a reported 0 never counts as a measurement) means there is nothing to act on, so this is a
     /// deliberate no-op rather than a guess.
     /// </summary>
-    private async Task MaybeAutoCompressAsync(List<ChatMessage> conversation, CancellationToken ct)
-    {
-        // OrchestratorSettings.EffectiveCompressThreshold returns null when it has nothing to derive
-        // from (no explicit config, no known window) — the DefaultCompressThreshold fallback belongs
-        // here, not in that method, because "we truly know nothing" must still protect the session.
-        var threshold = _orchestrator.EffectiveCompressThreshold(_contextWindow)
-            ?? OrchestratorSettings.DefaultCompressThreshold;
-        if (_lastInputTokens is not { } tokens || tokens <= threshold)
-            return;
+    /// <summary>
+    /// Compresses <paramref name="conversation"/> now, unconditionally — what <c>/compress</c> calls.
+    ///
+    /// <para>NO THRESHOLD TEST, deliberately: the user asked. The pressure checks that guard the two
+    /// automatic routes exist to decide WHETHER to run, and re-applying one here would let the app
+    /// decline a command whose entire content is "do it".</para>
+    ///
+    /// <para>Lives here rather than in the command dispatcher because everything it needs — the
+    /// provider, the job panel to draw the row on, and the ledger to meter the call — is already held
+    /// by this type. The dispatcher previously reached for all three separately and, having no job
+    /// panel, could only print a line of prose after the fact.</para>
+    /// </summary>
+    public Task<SessionCompressor.CompressResult> CompressNowAsync(CancellationToken ct) =>
+        // THE AGENT'S CONTEXT, not the session conversation. That distinction is the whole bug: the
+        // conversation holds only prompts and final answers, so compressing it freed nothing while
+        // the list that was actually full went untouched.
+        CompressionRun.RunAsync(Context.Messages, _provider, _jobPanel, _currentGoalId ?? "session",
+            "compress context · requested", usage =>
+            {
+                Ledger.Record(usage);
+                TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+            }, ct, compressed: (b, a) => ContextCompressed?.Invoke(this, (b, a)));
 
-        var before = conversation.Count;
-
-        // Metered exactly like every other provider call (Ledger.Record + TokensUpdated) — an
-        // unmetered call is this project's recurring rot pattern, and this one is no exception just
-        // because it's housekeeping rather than a goal turn.
-        var result = await SessionCompressor.CompressAsync(conversation, _provider, ct, usage =>
-        {
-            Ledger.Record(usage);
-            TokensUpdated?.Invoke(this, Ledger.TotalTokens);
-        });
-
-        if (conversation.Count < before)
-        {
-            // Silent memory loss is exactly the surprise this plan exists to prevent — the user must
-            // be able to connect "it forgot my earlier goal" to a cause. Also says WHETHER it
-            // summarised or fell back to truncation — a silent degradation to the old behaviour would
-            // be worse than an honest one.
-            var how = result.Summarised ? "summarised" : "compressed (summarisation failed — truncated)";
-            var id = _sink.BeginAssistantTurn();
-            _sink.AppendAssistant(id,
-                $"[context at {tokens} tokens, over the {threshold} threshold — "
-                + $"{how} conversation from {before} to {conversation.Count} messages]");
-            _sink.EndAssistantTurn(id);
-        }
-        // else: nothing shrank — a conversation of one message has no older half to summarise. Say
-        // nothing, since nothing happened.
-    }
 
     /// <summary>
     /// P6's automatic post-failure diagnosis, relocated (not deleted) from its old position after
@@ -868,10 +932,7 @@ public sealed class GoalRunner : IDisposable
                 {
                     Ledger.Record(usage);
                     TokensUpdated?.Invoke(this, Ledger.TotalTokens);
-                    // A reported 0 is never a measurement (see _lastInputTokens' doc) — it must not
-                    // overwrite a real prior reading, and it must not read as "context shrank".
-                    if (usage.InputTokens > 0)
-                        _lastInputTokens = usage.InputTokens;
+                    RecordInputTokens(usage.InputTokens);
                 }
             }
         }

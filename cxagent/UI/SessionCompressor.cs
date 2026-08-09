@@ -19,7 +19,43 @@ public static class SessionCompressor
     /// <summary>What actually happened. <see cref="Summarised"/> is false when the provider call
     /// failed and truncation ran instead — the caller (GoalRunner) uses this to say so, because a
     /// silent degradation to today's behaviour is worse than an honest one.</summary>
-    public readonly record struct CompressResult(bool Summarised);
+    /// <param name="Summarised">
+    /// True when the work was done properly — either stale tool output was cleared or the model wrote
+    /// a summary. False means the summarising call failed and the oldest messages were dropped
+    /// unread, which the caller shows in red: a silent degradation to truncation is worse than an
+    /// honest one.
+    /// </param>
+    /// <param name="CharsFreed">Characters reclaimed, for the row and the status bar.</param>
+    /// <param name="ResultsCleared">Tool results emptied; zero when this was a summarisation.</param>
+    /// <param name="Summary">The summary written, when one was; null for a prune.</param>
+    public readonly record struct CompressResult(
+        bool Summarised, int CharsFreed = 0, int ResultsCleared = 0, string? Summary = null);
+
+    /// <summary>
+    /// Where to split, so that summarising the head can never leave the tail holding a tool result
+    /// whose call has been summarised away.
+    ///
+    /// <para>THE MIDPOINT ALONE IS NOT SAFE. <c>ToolCallId</c> is the only thing binding a tool result
+    /// to the assistant message that called for it, and providers reject a result whose call is
+    /// absent. A blind <c>Count / 2</c> cut lands mid-pair on any conversation with an even number of
+    /// tool pairs — simulated across list shapes, it orphaned a result in four of eight cases. That
+    /// hazard is why the single-agent loop discarded its whole working context at the end of every
+    /// goal rather than keeping tool messages at all; removing the hazard removes the reason.</para>
+    ///
+    /// <para>The fix is to walk the boundary back while the tail would begin on a tool result. At most
+    /// one step is ever needed — a result is always immediately preceded by its call — but the loop is
+    /// written as a loop rather than a single test so that a future provider allowing several results
+    /// per call does not silently reintroduce the bug. Aider arrives at the same rule from the same
+    /// pressure, walking its split back until the head ends on an assistant message.</para>
+    /// </summary>
+    /// <remarks>Public rather than internal: this codebase has no InternalsVisibleTo grant, and the
+    /// orphan hazard is exactly the kind of thing that must stay covered by a test.</remarks>
+    public static int SafeCut(IReadOnlyList<ChatMessage> conversation)
+    {
+        var cut = conversation.Count - conversation.Count / 2;
+        while (cut > 0 && conversation[cut].ToolCallId is not null) cut--;
+        return cut;
+    }
 
     /// <summary>
     /// Splits the conversation in two at the same midpoint <see cref="SessionCommands.Compress"/>
@@ -44,12 +80,24 @@ public static class SessionCompressor
         if (conversation.Count < 2)
             return new CompressResult(Summarised: false);
 
-        var keep = conversation.Count / 2;
-        var cut = conversation.Count - keep;
+        // THE CHEAP TIER FIRST. Emptying stale tool results costs nothing — no provider call, no
+        // seconds of waiting, and no reasoning discarded — and it reclaims the bulk of what fills a
+        // window, because a file read is thousands of characters and the oldest ones describe files
+        // that have since been edited. Only when that frees too little is it worth paying for a
+        // summary. Claude Code documents the same order ("clears older tool outputs first, then
+        // summarizes ... if needed"); opencode implements it the same way.
+        var pruned = ToolOutputPruner.Prune(conversation);
+        if (pruned.Pruned)
+            return new CompressResult(Summarised: true, CharsFreed: pruned.CharsFreed,
+                ResultsCleared: pruned.ResultsCleared, Summary: null);
+
+        var cut = SafeCut(conversation);
+        if (cut <= 0) return new CompressResult(Summarised: false);
         var oldTurns = conversation.GetRange(0, cut);
 
         try
         {
+            var before = TotalChars(conversation);
             var summary = await SummariseAsync(oldTurns, provider, ct);
 
             meter?.Invoke(summary.Usage);
@@ -61,16 +109,28 @@ public static class SessionCompressor
                 Content = FormatSummary(summary.Text),
                 Timestamp = DateTimeOffset.UtcNow,
             });
-            return new CompressResult(Summarised: true);
+            return new CompressResult(Summarised: true,
+                CharsFreed: Math.Max(0, before - TotalChars(conversation)),
+                Summary: summary.Text);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception)
         {
             // Summarisation failed — fall back to the SAME truncation /compress uses, never a
             // second, divergent degradation path.
+            var beforeTruncate = TotalChars(conversation);
             SessionCommands.Compress(conversation);
-            return new CompressResult(Summarised: false);
+            return new CompressResult(Summarised: false,
+                CharsFreed: Math.Max(0, beforeTruncate - TotalChars(conversation)));
         }
+    }
+
+    /// <summary>Total characters of message content — the size compaction actually changes.</summary>
+    internal static int TotalChars(IReadOnlyList<ChatMessage> messages)
+    {
+        var total = 0;
+        foreach (var m in messages) total += m.Content?.Length ?? 0;
+        return total;
     }
 
     /// <summary>

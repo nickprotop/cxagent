@@ -44,9 +44,39 @@ public sealed class SingleAgentLoop
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
 
+    /// <summary>
+    /// This agent's conversation, for its whole life — the thing that makes it self-contained.
+    ///
+    /// <para>A field rather than a local inside <see cref="RunCoreAsync"/> because a context that
+    /// exists only for the duration of one method cannot be owned by anything: not by a readout that
+    /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
+    /// target, and not by an agent that is supposed to carry what it learned into its next task. A
+    /// sub-agent gets its own <see cref="SingleAgentLoop"/> and therefore its own context, which is
+    /// precisely what the fan-out design assumes it already had.</para>
+    /// </summary>
+    private readonly AgentContext _context;
+
+    /// <summary>This agent's context — its messages, its occupancy, its window.</summary>
+    public AgentContext Context => _context;
+
     /// <summary>Raised when a turn finishes, with its tool-call count. A callback rather than a
     /// GoalRunner reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
     public Action<int>? TurnCompleted { get; set; }
+
+    /// <summary>
+    /// Raised after every turn with what the provider reported it RECEIVED — the live context size.
+    ///
+    /// <para>Separate from <see cref="TurnCompleted"/>, which carries only a tool-call count, and that
+    /// gap was a real defect: in single-agent mode nothing else observes usage, so the status bar had
+    /// no source for occupancy and fell back to the cumulative ledger total — a sum that outgrows any
+    /// window and never falls, least of all after the compression this same number triggers.</para>
+    /// </summary>
+    public Action<int>? ContextUsed { get; set; }
+
+    /// <summary>Raised when this loop's own per-turn compression actually shrank the conversation, so
+    /// the readout can stop presenting its last measurement as current.</summary>
+    public Action<int, int>? ContextCompressed { get; set; }
+
 
     /// <summary>
     /// Input tokens past which the loop compresses its own message list, or null to never compress.
@@ -60,8 +90,14 @@ public sealed class SingleAgentLoop
     /// </summary>
     private readonly int? _compressAbove;
 
+    /// <param name="context">
+    /// The agent's context. Optional so existing callers and tests keep working — omitting it gives
+    /// this agent a fresh one of its own, which is the right default: an agent that is not handed a
+    /// context still HAS one, rather than borrowing the caller's list.
+    /// </param>
     public SingleAgentLoop(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
-        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null)
+        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
+        AgentContext? context = null)
     {
         _provider = provider;
         _plugins = plugins;
@@ -71,6 +107,7 @@ public sealed class SingleAgentLoop
         _logs = logs;
         _maxTurns = maxTurns;
         _compressAbove = compressAbove;
+        _context = context ?? new AgentContext();
     }
 
     /// <summary>Every tool, always. Roles used to slice this per worker name; that mechanism is gone
@@ -80,23 +117,58 @@ public sealed class SingleAgentLoop
     /// <summary>
     /// Runs the goal to completion and returns its final state.
     ///
-    /// <para><paramref name="conversation"/> is the SESSION's history and is appended to only twice:
-    /// the user's goal (by the caller) and the final answer. The turn-by-turn working — tool calls,
-    /// tool results, intermediate prose — lives on a goal-local copy and is discarded. That is the
-    /// same rule the consult loop follows, and here it also avoids a concrete hazard: orphaned
-    /// <c>ToolCallId</c> pairings surviving into a later goal, which providers reject and the
-    /// session compressor does not understand.</para>
+    /// <para><paramref name="conversation"/> is the SESSION's history — what the TRANSCRIPT shows —
+    /// and is still appended to only twice: the user's goal (by the caller) and the final answer.
+    /// What the MODEL sees is <see cref="Context"/>, which persists across goals and keeps the
+    /// turn-by-turn working: tool calls, tool results, intermediate prose.</para>
+    ///
+    /// <para>Those were previously the same list, rebuilt per goal, which is why the working context
+    /// was discarded every time a goal ended. Keeping them separate lets the transcript stay a clean
+    /// record of the conversation while the agent keeps everything it actually needs to continue.</para>
+    ///
+    /// <para>The <c>ToolCallId</c> hazard that justified discarding — a tool result outliving the call
+    /// it belongs to, which providers reject — is now handled where it belongs: the compressor snaps
+    /// its split so a kept result always keeps its call, and the pruner empties result BODIES without
+    /// ever removing the messages.</para>
     /// </summary>
     public async Task<GoalState> RunAsync(string goalId, List<ChatMessage> conversation,
         CancellationToken ct)
     {
-        var messages = new List<ChatMessage>(conversation);
+        // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
+        // `new List<ChatMessage>(conversation)` — a fresh working list built from the session history
+        // at the start of every goal and dropped at the end, so goal N's tool calls, file reads and
+        // reasoning were gone before goal N+1 began (measured on a real run: 33 turns discarded, a
+        // session falling from 58,000 tokens to ~5,000 the moment the goal ended). "Read X and explain
+        // it" followed by "now change it" re-read X, because nothing of the first goal remained.
+        //
+        // Nobody else works that way: Claude Code, Codex, opencode, gemini-cli, Cline and goose all
+        // keep ONE growing list across prompts and compact on TOKEN pressure rather than at a task
+        // boundary. The rebuild also guaranteed a prompt-cache miss — those agents append to a stable
+        // prefix precisely so cached reads keep hitting, and discarding cached context saves far less
+        // than it costs to rebuild.
+        var messages = _context.Messages;
+
+        // The user's goal joins the agent's context. The caller has already put it on the session
+        // conversation for the transcript; this is the copy the MODEL sees.
+        if (messages.Count > 0)
+            messages.Add(new ChatMessage
+            {
+                Role = "user",
+                Content = conversation[^1].Content,
+                Timestamp = DateTimeOffset.UtcNow,
+            });
+        else
+            messages.AddRange(conversation);
+
 
         // WHERE IT IS. A fresh context has never seen a shell prompt, and measured across one
         // session, ten of twenty shell calls were `find`/`ls` hunting for paths that do not exist on
         // this machine — /Users/<someone>/…, /home/user, bare /.
+        //
+        // ONCE PER AGENT, not once per goal: the context now persists, so re-inserting this on every
+        // goal would stack a duplicate preamble at the front of a conversation that already has one.
         var cwd = TryGetWorkingDirectory();
-        if (cwd is not null)
+        if (cwd is not null && messages.All(m => m.Role != "system"))
             messages.Insert(0, new ChatMessage
             {
                 Role = "system",
@@ -180,6 +252,12 @@ public sealed class SingleAgentLoop
             // transcript sat completely still, with no way to tell a model that is thinking from one
             // that has died somewhere in the silicon.
             var turnId = _sink.BeginAssistantTurn();
+
+            // BEFORE the call, so what is recorded is what was actually sent — including on a turn
+            // that then fails, which is the one you most want to look at afterwards. The token count
+            // carried is the PREVIOUS turn's measurement, since this turn's has not happened yet.
+            LogContext(goalId, turn, messages, _context.Used);
+
             LlmResponse response;
             try
             {
@@ -194,6 +272,11 @@ public sealed class SingleAgentLoop
             }
 
             _ledger.Record(response.Usage);
+
+            // BEFORE the compression check below, so the reading that TRIGGERS a compression is the
+            // one the user sees — the row that follows then explains the drop.
+            if (response.Usage.InputTokens > 0)
+                ContextUsed?.Invoke(response.Usage.InputTokens);
 
             // COMPRESS ON PRESSURE, PER TURN. `messages` is what actually grows — tool results are
             // the bulk of it — and it is what gets re-sent whole every turn, so it is what has to
@@ -435,6 +518,53 @@ public sealed class SingleAgentLoop
     /// <para>Never throws and never awaits: logging is diagnostics, and a goal must not fail — or
     /// stall — because a disk did.</para>
     /// </summary>
+    /// <summary>
+    /// Records WHAT WAS SENT this turn — the context, one line per message.
+    ///
+    /// <para>The response was logged from the start; the input never was, and that is the half you
+    /// need to answer the questions that actually come up: why did the model not know something it
+    /// was told, what is occupying the window, did compaction drop the wrong thing. A tool result
+    /// that has been pruned shows as its tombstone here, so a gap in the model's knowledge can be
+    /// traced to the turn that created it.</para>
+    ///
+    /// <para>Sizes and roles rather than full content: the whole point is to see the SHAPE of a
+    /// context that may be hundreds of thousands of characters, and a log that reproduces all of it
+    /// on every turn is one nobody opens twice. The first line of each message is enough to
+    /// recognise it.</para>
+    /// </summary>
+    private void LogContext(string goalId, int turn, IReadOnlyList<ChatMessage> messages, int? inputTokens)
+    {
+        if (_logs is null) return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            var chars = 0;
+            foreach (var m in messages) chars += m.Content?.Length ?? 0;
+
+            sb.AppendLine($"=== turn {turn:D3} · {messages.Count} messages · {chars:N0} chars"
+                        + (inputTokens is { } t ? $" · {t:N0} input tokens" : "") + " ===");
+
+            for (var i = 0; i < messages.Count; i++)
+            {
+                var m = messages[i];
+                var role = m.ToolCallId is not null ? "tool" : m.Role;
+                var body = (m.Content ?? "").ReplaceLineEndings(" ");
+                var head = body.Length <= 120 ? body : body[..120] + "…";
+                var calls = m.ToolCalls is { Count: > 0 }
+                    ? " [calls: " + string.Join(", ", m.ToolCalls.Select(c => c.Name)) + "]"
+                    : "";
+                sb.AppendLine($"[{i:D3}] {role,-9} {(m.Content?.Length ?? 0),8:N0}ch{calls}  {head}");
+            }
+
+            _ = _logs.AppendAsync(goalId, $"context-{turn:D3}", "log", sb.ToString());
+        }
+        catch (Exception)
+        {
+            // Diagnostics must never take down the thing they are diagnosing.
+        }
+    }
+
     private void LogTurn(string goalId, int turn, LlmResponse response)
     {
         if (_logs is null) return;
@@ -600,57 +730,12 @@ public sealed class SingleAgentLoop
     {
         if (_compressAbove is not { } threshold || inputTokens <= threshold) return;
 
-        // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
-        // its own, runs for seconds, and rewrites the conversation. As a row it gets the machinery
-        // every other tool call already has — a spinner while it runs (it looked like a hang before),
-        // a one-line summary when it lands, red if it degrades to truncation, and an expandable body.
-        //
-        // THE EXPANDABLE BODY IS THE POINT. Compression is the one operation that silently discards
-        // what the model knew, and the summary it wrote was previously visible nowhere: the user
-        // could see that memory had shrunk but never what survived. Putting the summary in the body
-        // makes a lossy step auditable.
-        var jobId = Helpers.UlidGenerator.NewId();
-        var job = new Job
-        {
-            Id = jobId,
-            PlanLocalId = "compress",
-            GoalId = goalId,
-            PluginType = "compress",
-            DisplayName = $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
-            State = JobState.Running,
-            CreatedAt = DateTimeOffset.UtcNow,
-            StartedAt = DateTimeOffset.UtcNow,
-        };
-        _jobs.SetJobs(new[] { job });
-
-        var started = DateTimeOffset.UtcNow;
-        var before = messages.Count;
-        var result = await SessionCompressor.CompressAsync(messages, _provider, ct, _ledger.Record);
-
-        // The summary the compressor wrote, which is now the first message. Read back rather than
-        // returned, so the compressor's contract stays "shrink this list" rather than growing a
-        // reporting channel for one caller.
-        var summary = messages.Count > 0 ? messages[0].Content : "";
-
-        // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
-        // the oldest half was dropped unread — recoverable, but the user should see that it happened
-        // rather than find the gap later.
-        job.State = result.Summarised ? JobState.Succeeded : JobState.Failed;
-        job.CompletedAt = DateTimeOffset.UtcNow;
-        job.Result = new JobResult
-        {
-            Success = result.Summarised,
-            ExitCode = result.Summarised ? 0 : -1,
-            Duration = DateTimeOffset.UtcNow - started,
-            ErrorMessage = result.Summarised
-                ? null
-                : "summarisation failed — dropped the oldest messages unread",
-            Output = new Dictionary<string, object?>
-            {
-                ["content"] = $"{before} messages → {messages.Count}\n\n{summary}",
-            },
-        };
-        _jobs.UpdateJob(job);
+        // The row itself lives in CompressionRun, which every compressing route now shares — this one,
+        // GoalRunner's between-goals check, and the /compress command. The threshold test stays here
+        // because only this caller measures per-turn pressure.
+        await CompressionRun.RunAsync(messages, _provider, _jobs, goalId,
+            $"compress context · {inputTokens:N0} tokens over {threshold:N0}",
+            _ledger.Record, ct, compressed: (b, a) => ContextCompressed?.Invoke(b, a));
     }
 
     private static bool IsWrite(string toolName) =>

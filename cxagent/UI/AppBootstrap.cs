@@ -206,6 +206,8 @@ public static class AppBootstrap
                 ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
             };
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
+            runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
+            runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
             runner.GoalStarted += (_, id) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionId = id;
@@ -488,36 +490,14 @@ public static class AppBootstrap
                         // survives only as the fallback when that call fails. It is out here rather
                         // than in SessionCommands because that type is synchronous and provider-free
                         // by design — which is what keeps it testable without a window.
-                        var beforeCount = conversation.Count;
-                        _ = SessionCompressor.CompressAsync(conversation, activeProvider!, cts.Token, usage =>
-                            {
-                                runner?.Ledger.Record(usage);
-                                if (runner is not null)
-                                    system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(runner.Ledger.TotalTokens));
-                            })
-                            .ContinueWith(t => system.EnqueueOnUIThread(() =>
-                            {
-                                var r = t.IsCompletedSuccessfully ? t.Result : default;
-
-                                // REPORT ON WHAT HAPPENED, not on the message COUNT. A short
-                                // conversation halves to one summary plus one kept message — the same
-                                // count it started with — so counting made a real summarisation
-                                // report as "already short, nothing to compress". The user had just
-                                // asked for it and was told it was declined.
-                                //
-                                // Summarised is the compressor's own answer to "did I do the work",
-                                // and it is the honest thing to report. The counts still appear when
-                                // they moved, because that is the part worth seeing.
-                                var shrank = conversation.Count < beforeCount;
-                                mainWindow.Chat.AddMessage(ChatRole.System,
-                                    r.Summarised
-                                        ? shrank
-                                            ? $"Summarised: {beforeCount} messages → {conversation.Count}."
-                                            : "Summarised the earlier conversation."
-                                        : shrank
-                                            ? $"Truncated (summary failed): {beforeCount} messages → {conversation.Count}."
-                                            : "Nothing to compress — the conversation is a single message.");
-                            }), TaskScheduler.Default);
+                        // THROUGH THE RUNNER, which owns the provider, the ledger and the job panel.
+                        // This used to call the compressor directly and, having no job panel, could
+                        // only print one line of prose once the work was over — so a /compress looked
+                        // like nothing happening for several seconds, then a sentence. It now draws
+                        // the same spinner row, with the same expandable summary, as the two automatic
+                        // routes.
+                        if (runner is not null)
+                            _ = runner.CompressNowAsync(cts.Token);
                         return;
                 }
             }
@@ -527,6 +507,17 @@ public static class AppBootstrap
             // Costs nothing: no goal, no provider call, no tokens.
             if (SessionCommands.TryHandle(goalText, conversation, out var commandReply))
             {
+                // /clear MUST CLEAR BOTH LISTS. SessionCommands only sees the session conversation —
+                // the transcript's record — while what the MODEL carries is the agent's context, and
+                // that now persists across goals. Clearing one and not the other would empty the
+                // screen while the agent silently remembered everything, which is the opposite of
+                // what the command promises.
+                if (SessionCommands.Match(goalText)?.Name == "/clear")
+                {
+                    runner?.Context.Clear();
+                    mainWindow.SetContextUsed(0);
+                }
+
                 mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
                 return;
             }

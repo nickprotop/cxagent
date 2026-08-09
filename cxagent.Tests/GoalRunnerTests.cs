@@ -161,7 +161,10 @@ public class GoalRunnerTests
 
         await runner.RunAsync("new goal", conversation, CancellationToken.None);
 
-        Assert.True(conversation.Count < 30, "the conversation should have been compressed");
+        // THE AGENT'S CONTEXT is what compression targets now — the session conversation is the
+        // transcript's record and is deliberately left intact. On a first goal the context is seeded
+        // from the conversation, so it holds these 30 messages and must come back smaller.
+        Assert.True(runner.Context.Count < 30, "the context should have been compressed");
     }
 
     [Fact]
@@ -183,7 +186,10 @@ public class GoalRunnerTests
 
         await runner.RunAsync("new goal", conversation, CancellationToken.None);
 
-        Assert.True(conversation.Count < 30, "the conversation should have been compressed");
+        // THE AGENT'S CONTEXT is what compression targets now — the session conversation is the
+        // transcript's record and is deliberately left intact. On a first goal the context is seeded
+        // from the conversation, so it holds these 30 messages and must come back smaller.
+        Assert.True(runner.Context.Count < 30, "the context should have been compressed");
     }
 
     [Fact]
@@ -658,8 +664,13 @@ public class GoalRunnerTests
 
         await runner.RunAsync("hello", conversation, CancellationToken.None);
 
-        Assert.True(conversation.Count < before,
-            $"the conversation was never compressed on the no-dag path ({conversation.Count} messages)");
+        // ASSERTS ON THE AGENT'S CONTEXT, not the session conversation. Those were the same list when
+        // this test was written; they are not any more. The conversation is the TRANSCRIPT's record —
+        // prompts and final answers — and compressing it was the bug: it freed nothing while the list
+        // the model actually carries went untouched. Context is what compression now targets, so it
+        // is what "was it compressed?" has to ask about.
+        Assert.True(runner.Context.Count < before,
+            $"the context was never compressed on the no-dag path ({runner.Context.Count} messages)");
     }
 
     [Fact]
