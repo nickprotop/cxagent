@@ -193,6 +193,23 @@ public sealed class SqliteSessionStore
     /// is long enough to cover a holiday and short enough that the buffer stays a buffer.</summary>
     public static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
 
+    /// <summary>How many sessions are stored, finished or not. Diagnostic — it is what a retention
+    /// test can assert on without reaching past this type into the schema.</summary>
+    public int CountSessions()
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM agent_sessions;";
+            return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
     /// <summary>
     /// Round-tripping <see cref="ChatMessage"/> verbatim. <c>ToolCall.Arguments</c> is a
     /// <c>JsonElement</c>, which serialises as its own document and reads back as one — the

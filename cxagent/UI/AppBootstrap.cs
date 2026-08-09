@@ -35,6 +35,12 @@ public static class AppBootstrap
 
         var logs = new LogFileManager(paths);
 
+        // THE RESUME BUFFER. Built before the runner so it can be handed in at construction, and
+        // pruned once here rather than on a timer: startup is the only moment nothing is mid-turn,
+        // and finished sessions are the only rows old enough to be worth dropping.
+        var sessions = new SqliteSessionStore(paths);
+        sessions.Prune(SqliteSessionStore.DefaultRetention);
+
         var mainWindow = new MainWindow(system, resolution, logs)
         {
             ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
@@ -137,7 +143,9 @@ public static class AppBootstrap
                 // P11 Task 2: the real window (when config told us one), so auto-compression derives
                 // its threshold from actual headroom instead of always falling back to the fixed
                 // constant. Null on --mock/no-provider and whenever contextWindow isn't configured.
-                contextWindow: res.ContextWindow)
+                contextWindow: res.ContextWindow,
+                // Every completed turn lands here, so a crash leaves something to resume from.
+                store: sessions)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -519,6 +527,11 @@ public static class AppBootstrap
         });
 
         int code = system.Run();
+
+        // ENDED PROPERLY, so do not offer it back. Reaching this line is the only evidence available
+        // that the process was not killed mid-session — which is precisely what makes an unfinished
+        // row mean something.
+        runner?.MarkSessionFinished();
         // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's runner ever created (each
         // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
         // the process's lifetime, since (as of review round 2's N2 fix) AgentHost no longer disposes

@@ -156,6 +156,53 @@ public class SqliteSessionStoreTests : IDisposable
     }
 
     /// <summary>
+    /// Finished sessions are kept briefly, not forever. This is a resume buffer — persistence as
+    /// history is a different feature, and a store with no retention rule grows for the life of the
+    /// install.
+    /// </summary>
+    [Fact]
+    public void Prune_RemovesFinishedSessionsOlderThanTheWindow()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("old", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.MarkFinished("old");
+
+        // Everything finished, however recently, is older than a zero-length window.
+        store.Prune(TimeSpan.Zero);
+
+        Assert.Equal(0, store.CountSessions());
+    }
+
+    /// <summary>
+    /// An UNFINISHED session is never pruned by age. It is the only thing here that cannot be
+    /// reconstructed, and a machine left off over a weekend must not lose it.
+    /// </summary>
+    [Fact]
+    public void Prune_KeepsUnfinishedSessions_HoweverOld()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("crashed", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+
+        store.Prune(TimeSpan.Zero);
+
+        Assert.Equal(1, store.CountSessions());
+        Assert.NotNull(store.LoadLatestUnfinished());
+    }
+
+    /// <summary>A finished session inside the window stays — pruning is age-based, not a purge.</summary>
+    [Fact]
+    public void Prune_KeepsFinishedSessionsInsideTheWindow()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("recent", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.MarkFinished("recent");
+
+        store.Prune(TimeSpan.FromDays(7));
+
+        Assert.Equal(1, store.CountSessions());
+    }
+
+    /// <summary>
     /// A store over an unwritable path must not take the app down with it. Persistence is a
     /// convenience; a session that cannot be saved is degraded, not broken.
     /// </summary>

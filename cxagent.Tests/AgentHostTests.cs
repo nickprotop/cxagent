@@ -110,6 +110,62 @@ public class AgentHostTests
         Assert.True(runner.TurnCeiling < int.MaxValue, "an unconfigured session must still be bounded");
     }
 
+    /// <summary>
+    /// A crash is precisely when the exit path does not run, so the save cannot live there. Every
+    /// completed turn leaves the session recoverable.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_PersistsTheContext_AfterEachTurn()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-p3-" + Guid.NewGuid().ToString("N"));
+        var paths = new CxAgent.Core.Storage.AppPaths(dir);
+        paths.EnsureCreated();
+        try
+        {
+            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var mock = new MockLlmProvider();
+            mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+                PluginRegistry.CreateWithBuiltins(), store: store);
+
+            await runner.SendAsync("remember this", new List<ChatMessage>(), CancellationToken.None);
+
+            var snap = store.LoadLatestUnfinished();
+            Assert.NotNull(snap);
+            Assert.Equal(runner.SessionId, snap!.AgentId);
+            Assert.Contains(snap.Context, m => m.Content.Contains("remember this"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// A session that ended properly is not offered for resume. That distinction is the whole point
+    /// of the store: an unfinished row means the process never got to say goodbye.
+    /// </summary>
+    [Fact]
+    public async Task MarkSessionFinished_StopsItBeingOfferedForResume()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-p3f-" + Guid.NewGuid().ToString("N"));
+        var paths = new CxAgent.Core.Storage.AppPaths(dir);
+        paths.EnsureCreated();
+        try
+        {
+            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var mock = new MockLlmProvider();
+            mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+                PluginRegistry.CreateWithBuiltins(), store: store);
+            await runner.SendAsync("hello", new List<ChatMessage>(), CancellationToken.None);
+
+            runner.MarkSessionFinished();
+
+            Assert.Null(store.LoadLatestUnfinished());
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
     /// <summary>Someone who sets a limit meant it — a configured value wins over the backstop, in
     /// either direction.</summary>
     [Fact]

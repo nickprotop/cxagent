@@ -32,6 +32,15 @@ public sealed class AgentHost : IDisposable
 
     private readonly LogFileManager? _logs;
 
+    /// <summary>
+    /// The resume buffer, or null when this session is not persisted.
+    ///
+    /// <para>Written on the turn boundary rather than at exit — a crash is precisely when exit does
+    /// not happen. Every call into it is best-effort inside the store itself, so a disk that is full
+    /// or a database that is locked costs the ability to resume and nothing else.</para>
+    /// </summary>
+    private readonly SqliteSessionStore? _store;
+
     private readonly int? _sessionTokenBudget;
 
     /// <summary>
@@ -152,6 +161,16 @@ public sealed class AgentHost : IDisposable
     public string SessionId => _agent.Id;
 
     /// <summary>
+    /// Records that this session ended normally, so it is never offered for resume.
+    ///
+    /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did
+    /// not get to say goodbye — which is the only signal available that a session was interrupted
+    /// rather than completed. Called from the composition root after the run loop returns; if the
+    /// process dies before that, the row correctly stays unfinished.</para>
+    /// </summary>
+    public void MarkSessionFinished() => _store?.MarkFinished(_agent.Id);
+
+    /// <summary>
     /// MaxWorkerTurns as the USER set it, or null when they did not.
     ///
     /// <para>Distinct from <c>_orchestrator.MaxWorkerTurns</c>, which is 200 whenever the settings
@@ -205,16 +224,23 @@ public sealed class AgentHost : IDisposable
         tcs?.TrySetResult(false);
     }
 
+    /// <param name="store">
+    /// Where completed turns are recorded so a crash is recoverable, or null for a session that is
+    /// not worth persisting (every test that does not care, and any run whose store failed to open).
+    /// Optional because an agent without one is degraded, not broken.
+    /// </param>
     public AgentHost(ILlmProvider provider, IChatSink sink, IJobPanel jobPanel,
         PluginRegistry pluginRegistry, LogFileManager? logs = null,
         OrchestratorSettings? orchestrator = null,
-        int? contextWindow = null)
+        int? contextWindow = null,
+        SqliteSessionStore? store = null)
     {
         _provider = provider;
         _sink = sink;
         _jobPanel = jobPanel;
         _plugins = pluginRegistry;
         _logs = logs;
+        _store = store;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
         _sessionTokenBudget = _orchestrator.GoalTokenBudget;
@@ -322,6 +348,12 @@ public sealed class AgentHost : IDisposable
                 // session no matter how many tokens it burned, which is the mode that is the
                 // default.
                 TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+
+                // AND THE TURN IS RECORDED, here rather than at exit: a crash is exactly when exit
+                // does not happen. The whole context goes each time, because compression rewrites it
+                // wholesale and an append-only log would have to be reconciled against a list that no
+                // longer matches. The store swallows its own failures — see its class doc.
+                _store?.SaveTurn(_agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens);
             },
 
             // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has
