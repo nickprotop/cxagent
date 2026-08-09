@@ -56,8 +56,8 @@ public class ProviderConfigWriterTests : IDisposable
     [Fact]
     public void OrchestratorSettings_RoundTripThroughWriteAndLoad()
     {
-        var orch = new OrchestratorSettings(5000, 100_000, MaxConsults: 12, MaxEditsPerJob: 2,
-            MaxWorkerTurns: 6, Copilot: true, ContextCompressThreshold: 30_000);
+        var orch = new OrchestratorSettings(5000, 100_000,
+            MaxWorkerTurns: 6, ContextCompressThreshold: 30_000);
         ProviderConfigWriter.Write(Paths(),
             Settings(("claude", new ProviderInstanceConfig("anthropic", "claude-x", "sk-abc", null, null)))
                 with { Orchestrator = orch });
@@ -91,16 +91,16 @@ public class ProviderConfigWriterTests : IDisposable
         // Same contract the llmAgent block honours (ProviderConfigWriter.cs:62): own only the known
         // keys, merge into the existing object — a hand-edited future knob must survive a Save.
         File.WriteAllText(ConfigPath,
-            """{"providers":{},"defaultProvider":null,"orchestrator":{"futureKnob":1,"maxConsults":9}}""");
+            """{"providers":{},"defaultProvider":null,"orchestrator":{"futureKnob":1,"maxWorkerTurns":9}}""");
 
         ProviderConfigWriter.Write(Paths(),
             Settings(("local", new ProviderInstanceConfig("ollama", "llama3.1", null, "http://localhost:11434", null)))
-                with { Orchestrator = new OrchestratorSettings(null, null, MaxConsults: 12) });
+                with { Orchestrator = new OrchestratorSettings(null, null, MaxWorkerTurns: 12) });
 
         var orch = JsonNode.Parse(File.ReadAllText(ConfigPath))!
             .AsObject()["orchestrator"]!.AsObject();
         Assert.Equal(1, (int)orch["futureKnob"]!);
-        Assert.Equal(12, (int)orch["maxConsults"]!);
+        Assert.Equal(12, (int)orch["maxWorkerTurns"]!);
     }
 
     [Fact]

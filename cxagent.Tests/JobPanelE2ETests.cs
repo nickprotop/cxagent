@@ -33,7 +33,7 @@ public class JobPanelE2ETests : IDisposable
     [Fact]
     public async Task Goal_RunsThroughRealShell_JobPanelGetsSetJobsAndUpdates()
     {
-        var provider = new FakePlanProvider();   // shared helper (P5a TestProviders.cs)
+        var provider = new AnswersWithoutPlanningProvider();   // shared helper (P5a TestProviders.cs)
         var res = new ProviderResolution(provider, "Fake", System.Array.Empty<string>());
         var mw = new MainWindow(_sys, res, _logs);
         mw.Build();
@@ -46,9 +46,9 @@ public class JobPanelE2ETests : IDisposable
         var state = await runner.RunAsync("do two steps", new List<ChatMessage>(), CancellationToken.None);
         Assert.Equal(GoalState.Completed, state);
 
-        // The panel received the jobs (marshalled). Drive nothing else — the render landing is the tmux drive.
-        // Because SetJobs/UpdateJob were enqueued, we can't assert BlockCount headlessly without a UI pump;
-        // instead assert the wiring compiles + the run completes through the real MainWindow (JobPanelControl).
+        // Drive nothing else — the render landing is the tmux drive. We can't assert BlockCount
+        // headlessly without a UI pump; instead assert the wiring compiles + the run completes
+        // through the real MainWindow (JobPanelControl).
         Assert.NotNull(mw.JobPanel);
     }
 }

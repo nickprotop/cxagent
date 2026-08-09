@@ -26,16 +26,9 @@ public record RoutingTarget(string Provider, string Model);
 /// default, so cost control is opt-in and an absent 'orchestrator' block never makes a goal breach
 /// instantly on its first call.
 ///
-/// MaxConsults/MaxEditsPerJob are a DIFFERENT kind of cap — they bound the plan-edit feedback loop
-/// itself (a job fails, gets edited, fails again...), not token spend, and they are NOT optional:
-/// an absent 'orchestrator' block must still get real defaults, or a config that never mentions
-/// 'orchestrator' loops forever. Do not "consistency-fix" these to null-means-unbounded like the
-/// token fields above — that would reopen exactly the runaway these caps exist to stop.
-///
-/// MaxWorkerTurns is the same kind of cap one level DOWN: it bounds a single llm_agent worker's
-/// tool loop (call model → run tool → call model → ...), which without it can spend the goal's
-/// entire token budget inside one job. Same reasoning as the two above — a real non-zero default,
-/// never null-means-unbounded.
+/// MaxWorkerTurns bounds the agent's tool loop (call model → run tool → call model → ...), which
+/// without it can spend the whole token budget inside one session. A real non-zero default, never
+/// null-means-unbounded.
 ///
 /// THE VALUES ARE SET WHERE A LOOP LIVES, NOT WHERE WORK LIVES. They exist to stop a runaway, and a
 /// cap tight enough to bite ordinary work is worse than none: it fails silently, mid-task, with a
@@ -47,29 +40,9 @@ public record RoutingTarget(string Provider, string Model);
 /// ~25; 10 had no idea how many files the job named, and even 40 would bind a real refactor.
 ///
 /// NOT unbounded, though, and the reason is specific: the token budget that would otherwise be the
-/// backstop defaults to NULL — unbounded. Uncapped turns plus unbounded tokens means nothing stops a
-/// worker stuck in a read-loop from spending the whole session inside one job. 200 is far past any
-/// plausible piece of real work and still catches a loop.
-///
-/// FanOut is the execution MODE, and it is off by default.
-///
-/// Off, the orchestrator plans `file`/`shell`/`http` jobs and ONE llm_agent job per unit of work
-/// that needs judgement — and llm_agent is not registered at all, so it is absent from the type
-/// enum, the params reference and every worked example. It cannot be planned because it does not
-/// exist. On, llm_agent is registered and the orchestrator may fan work out across several workers.
-///
-/// The default is off because the ordering was wrong: this codebase had multi-worker fan-out before
-/// it had a dependable single-context edit. Every failure of one long session came from state that
-/// had to stay together being split — a read job feeding a replace job, a reviewer that could not
-/// write, two workers each crediting the other's edit to itself. The one drive that finally edited a
-/// file did it in ONE worker holding read and write in the same context. Claude Code shipped
-/// sub-agents years after its core loop worked, opt-in; the same order applies here.
-///
-/// Copilot (P9) is not a cap at all — it gates whether a freshly-planned goal starts executing
-/// automatically (false, today's behaviour) or sits in GoalState.Draft for the user to approve
-/// first. Trailing default for the same reason MaxWorkerTurns is: nothing recomputes or overwrites
-/// this record after construction, so appending a defaulted field here can't silently break an
-/// existing positional caller.
+/// backstop defaults to NULL — unbounded. Uncapped turns plus unbounded tokens means nothing stops an
+/// agent stuck in a read-loop from spending the whole session. 200 is far past any plausible piece of
+/// real work and still catches a loop.
 ///
 /// ContextCompressThreshold (P10 Task 3, reshaped by P11 Task 2) is a MEASURED trigger, not a cap: it
 /// names the live context size (LlmResponse.Usage.InputTokens — the provider's own count of what it
@@ -87,11 +60,10 @@ public record RoutingTarget(string Provider, string Model);
 /// </summary>
 public record OrchestratorSettings(
     int? MaxTokensPerCall, int? GoalTokenBudget,
-    int MaxConsults = 200, int MaxEditsPerJob = 10, int MaxWorkerTurns = 200, bool Copilot = false,
-    int? ContextCompressThreshold = null, bool FanOut = false)
+    int MaxWorkerTurns = 200, int? ContextCompressThreshold = null)
 {
-    // NOTE: "Unbounded" now only describes the token fields — it predates MaxConsults/MaxEditsPerJob,
-    // which always take their real (non-null, non-zero) defaults here too. ContextCompressThreshold
+    // NOTE: "Unbounded" only describes the token fields — MaxWorkerTurns always takes its real
+    // (non-null, non-zero) default here too. ContextCompressThreshold
     // is unconfigured here too (null): Unbounded means "nothing was said," and EffectiveCompressThreshold
     // (plus GoalRunner's own last-resort constant) decides what happens when nothing was said.
     public static readonly OrchestratorSettings Unbounded = new(null, null);
@@ -254,21 +226,14 @@ public static class ProviderConfigLoader
                     ? mtpc.GetInt32() : null;
                 int? goalTokenBudget = orch.TryGetProperty("goalTokenBudget", out var gtb) && gtb.ValueKind == JsonValueKind.Number
                     ? gtb.GetInt32() : null;
-                int maxConsults = orch.TryGetProperty("maxConsults", out var mc) && mc.ValueKind == JsonValueKind.Number
-                    ? mc.GetInt32() : OrchestratorSettings.Unbounded.MaxConsults;
-                int maxEditsPerJob = orch.TryGetProperty("maxEditsPerJob", out var mepj) && mepj.ValueKind == JsonValueKind.Number
-                    ? mepj.GetInt32() : OrchestratorSettings.Unbounded.MaxEditsPerJob;
                 int maxWorkerTurns = orch.TryGetProperty("maxWorkerTurns", out var mwt) && mwt.ValueKind == JsonValueKind.Number
                     ? mwt.GetInt32() : OrchestratorSettings.Unbounded.MaxWorkerTurns;
-                bool copilot = orch.TryGetProperty("copilot", out var cp) &&
-                    (cp.ValueKind == JsonValueKind.True || cp.ValueKind == JsonValueKind.False)
-                    ? cp.GetBoolean() : OrchestratorSettings.Unbounded.Copilot;
                 // int? now (P11 Task 2): null must stay distinguishable from "explicitly 40000" so
                 // EffectiveCompressThreshold's precedence can tell "the user chose this" apart from
                 // "nobody said" — an absent key here means the derived-from-window path stays live.
                 int? contextCompressThreshold = orch.TryGetProperty("contextCompressThreshold", out var cct) && cct.ValueKind == JsonValueKind.Number
                     ? cct.GetInt32() : null;
-                orchestrator = new OrchestratorSettings(maxTokensPerCall, goalTokenBudget, maxConsults, maxEditsPerJob, maxWorkerTurns, copilot, contextCompressThreshold);
+                orchestrator = new OrchestratorSettings(maxTokensPerCall, goalTokenBudget, maxWorkerTurns, contextCompressThreshold);
             }
 
             if (errors.Count > 0)

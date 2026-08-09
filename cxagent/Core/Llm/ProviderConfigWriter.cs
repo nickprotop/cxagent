@@ -65,10 +65,7 @@ public static class ProviderConfigWriter
             // Required fields with real (non-null) defaults are always written — the loader treats
             // absent and default identically for these, so this is safe and makes the file
             // self-documenting (ProviderConfig.cs:293-314).
-            orch["maxConsults"] = o.MaxConsults;
-            orch["maxEditsPerJob"] = o.MaxEditsPerJob;
             orch["maxWorkerTurns"] = o.MaxWorkerTurns;
-            orch["copilot"] = o.Copilot;
             // MaxTokensPerCall/GoalTokenBudget/ContextCompressThreshold are null-means-unconfigured
             // (ProviderConfig.cs:25-27,46-58) — omit the key entirely rather than writing null, so
             // "nobody said" survives a round-trip instead of collapsing into an explicit value.

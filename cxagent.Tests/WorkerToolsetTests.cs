@@ -129,35 +129,22 @@ public class WorkerToolsetTests
     [Fact]
     public async Task InvokeAsync_AWorkerCannotSpawnAnotherWorker()
     {
-        // No sub-sub-agents. The property holds STRUCTURALLY — llm_agent is simply absent from
+        // No sub-agents. The property holds STRUCTURALLY — llm_agent is simply absent from
         // WorkerToolset.Specs, so there is no WorkerTool value that maps to it — but nothing pinned
         // it, and an absence is exactly the kind of invariant that vanishes when someone later adds
         // "one more useful tool" to that table.
         //
-        // A worker that can spawn workers spawns them until the token budget dies, and each one is
-        // billed. Asserted here against the FULL tool set, so it cannot pass merely because the role
-        // under test happened to be read-only.
+        // Asserted against the FULL tool set, so it cannot pass merely because the role under test
+        // happened to be read-only.
         var all = new[] { WorkerTool.ReadFile, WorkerTool.WriteFile, WorkerTool.RunShell, WorkerTool.HttpRequest };
 
         Assert.DoesNotContain("llm_agent", WorkerToolset.NamesFor(all));
 
         var result = await WorkerToolset.InvokeAsync(
             Call("llm_agent", new { prompt = "spawn a helper", role = "implementer" }),
-            all, RegistryWithLlmAgent(), new TestJobContext(), CancellationToken.None);
+            all, PluginRegistry.CreateWithBuiltins(), new TestJobContext(), CancellationToken.None);
 
-        // Refused even though the plugin IS registered and reachable — the registry below has it.
         Assert.Contains("no such tool", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// A registry that DOES contain llm_agent, so the test above proves the refusal comes from the
-    /// tool table rather than from the plugin merely being absent.
-    /// </summary>
-    private static PluginRegistry RegistryWithLlmAgent()
-    {
-        var providers = ProviderRegistry.FromProviders(
-            new Dictionary<string, ILlmProvider> { ["local"] = new MockLlmProvider() }, "local");
-        return PluginRegistry.CreateWithBuiltins(providers, PermissionGate.AllowAll, fanOut: true);
     }
 
     [Fact]

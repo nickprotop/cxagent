@@ -2,7 +2,6 @@ using System.Text.Json;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Orchestrator;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Plugins;
 using Xunit;
@@ -10,10 +9,9 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Task 2: the twin-path closure. Both execution paths — JobExecutor.cs:84 (planned jobs) and
-/// WorkerToolset.cs:147 (worker tool calls) — dispatch through the SAME registry, and this
-/// registry wraps shell/file/http in <see cref="PermissionGatedPlugin"/> before either caller
-/// ever sees them. Neither caller changes; that is the property under test.
+/// The agent's tool calls dispatch through the SAME registry that wraps shell/file/http in
+/// <see cref="PermissionGatedPlugin"/> before the caller ever sees them. WorkerToolset does not
+/// change; that is the property under test.
 /// </summary>
 public class PermissionGatedPluginTests
 {
@@ -37,43 +35,12 @@ public class PermissionGatedPluginTests
         CreatedAt = DateTimeOffset.UtcNow,
     };
 
-    private static JobDag DagWithOneShellJob(string command)
-    {
-        var dag = new JobDag();
-        dag.AddJob(J("j1", "shell", Params(("command", command))));
-        return dag;
-    }
-
     private static ToolCall ToolCall(string name, string jsonArgs) => new()
     {
         Name = name,
         Arguments = JsonSerializer.Deserialize<JsonElement>(jsonArgs),
         Id = "call-1",
     };
-
-    private static Job FailedJobWithRetryHeadroom() => new()
-    {
-        Id = "j", GoalId = "g", PluginType = "shell", DisplayName = "j",
-        State = JobState.Failed, RetryCount = 0, MaxRetries = 3,
-    };
-
-    [Fact]
-    public async Task PlannedJobPath_ADeniedShellCommand_NeverExecutes()
-    {
-        // Chokepoint 1 of 2 (JobExecutor.cs:84). The marker file is the proof: a gate that runs
-        // the command and then reports failure would still have created it.
-        var marker = Path.Combine(TempDir(), "ran.txt");
-        var dag = DagWithOneShellJob($"touch {marker}");
-        var registry = PluginRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
-        var executor = new JobExecutor(registry, dag);
-
-        var result = await executor.RunJobAsync(dag.AllJobs[0], CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.True(result.PermissionDenied);
-        Assert.False(File.Exists(marker));
-        Assert.Contains("denied by the user", result.ErrorMessage);
-    }
 
     [Fact]
     public async Task WorkerToolPath_ADeniedWrite_ComesBackAsARefusalTheModelCanRead()
@@ -122,13 +89,4 @@ public class PermissionGatedPluginTests
         Assert.IsNotType<PermissionGatedPlugin>(wait);
     }
 
-    [Fact]
-    public void ShouldAutoDiagnose_SkipsAUserDenial()
-    {
-        // Diagnosis exists to repair broken jobs. "The user said no" is not broken, and a paid
-        // diagnosis round cannot change their mind.
-        var job = FailedJobWithRetryHeadroom();
-        job.Result = new JobResult { Success = false, PermissionDenied = true };
-        Assert.False(CxAgent.UI.GoalRunner.ShouldAutoDiagnose(job));
-    }
 }

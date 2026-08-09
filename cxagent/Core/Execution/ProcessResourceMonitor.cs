@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Orchestrator;
+namespace CxAgent.Core.Execution;
 
 /// <summary>
 /// Polls a running <see cref="Process"/> on a timer and accumulates a bounded history of

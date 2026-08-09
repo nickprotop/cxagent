@@ -1,6 +1,5 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Orchestrator;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
@@ -36,12 +35,8 @@ public static class AppBootstrap
 
         var logs = new LogFileManager(paths);
 
-        // FanOut decides what the status bar advertises (F6 Diagnose needs a dag). Computed here
-        // from the same expression the loop uses, so the key and the feature cannot disagree.
-        var fanOutMode = args.Contains("--fan-out");
         var mainWindow = new MainWindow(system, resolution, logs)
         {
-            FanOut = fanOutMode,
             ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
         };
         var window = mainWindow.Build();
@@ -89,58 +84,21 @@ public static class AppBootstrap
         // than opening a second dialog). Cleared in OpenSettingsAsync's `finally` — see its comment.
         SettingsDialog? openDialog = null;
 
-        // A tool-using worker makes SEVERAL paid provider calls per job, all of them inside the
-        // plugin, which reports to no ledger of its own. Without this they are invisible to both the
-        // status-bar readout and the goal token budget — the same hole I3 found in JobDiagnoser, one
-        // layer down and now multiplied by the turn count.
-        //
-        // Declared AFTER `runner` and `mainWindow` because it reads them: a local function may be
-        // CALLED before its captures are declared but may not REFERENCE them from above. It closes
-        // over the variables, not their current (null) values, exactly as onJobFailed and the
-        // diagnoser's own onUsage do — hence `runner?.`, which is null only for the window before the
-        // first WireRunner call.
-        void RecordWorkerUsage(LlmUsage usage)
-        {
-            runner?.Ledger.Record(usage);
-            if (runner is not null)
-                system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(runner.Ledger.TotalTokens));
-        }
-
-        // Rebuilt on every WireRunner call rather than fixed at startup: llm_agent closes over the
-        // RoleResolver, so a rebinding made in the F7 role editor (or a catalog change via F5/F8) must
-        // produce a registry carrying the NEW resolver. A single startup registry would keep
-        // dispatching through the bindings that existed at launch. Seeded here so the diagnosis path
-        // below has a registry before the first wire — nothing reads it between here and then.
-        //
-        // ?? Unbounded, not ?? 0: Orchestrator is null on the --mock and no-provider paths, and
-        // "Unbounded" names only the TOKEN fields — MaxWorkerTurns still carries its real default
-        // there. A 0 cap would make every worker return empty before its first provider call.
-        //
-        // --fan-out (or orchestrator.fanOut) is what registers llm_agent at all. Off by default: in
-        // single-agent mode the orchestrator plans file/shell/http jobs directly and there is no
-        // worker type for it to reach for.
-        var fanOut = args.Contains("--fan-out")
-                     || (resolution.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut;
-        var plugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate,
-            (resolution.Orchestrator ?? OrchestratorSettings.Unbounded).MaxWorkerTurns,
-            RecordWorkerUsage, fanOut);
+        // Rebuilt on every WireRunner call rather than fixed at startup: an F7 role rebinding (or a
+        // catalog change via F5/F8) must produce a registry carrying the NEW resolution. A single
+        // startup registry would keep dispatching through the bindings that existed at launch. Seeded
+        // here so there is a registry before the first wire — nothing reads it between here and then.
+        var plugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate);
 
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
             activeProvider = res.Provider;
             // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
-            // Both the new GoalRunner below and the diagnosis path read this field, not a startup copy.
-            // The worker turn cap and usage sink are re-threaded here too — an F5 settings change that
-            // edits orchestrator.maxWorkerTurns must take effect without a restart, and a registry
-            // rebuilt without RecordWorkerUsage would silently stop counting worker tokens mid-session.
-            plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate,
-                (res.Orchestrator ?? OrchestratorSettings.Unbounded).MaxWorkerTurns, RecordWorkerUsage,
-                args.Contains("--fan-out")
-                    || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut);
-            // F5 rewiring mid-session replaces `runner` with a fresh GoalRunner — dispose the outgoing
-            // one (I1 #1), which releases every scheduler IT ever created, rather than leaking them
-            // for the rest of the process's lifetime.
+            // The new GoalRunner below reads this field, not a startup copy.
+            plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate);
+            // F5 rewiring mid-session replaces `runner` with a fresh GoalRunner — dispose the
+            // outgoing one rather than leaking it for the rest of the process's lifetime.
             runner?.Dispose();
             var sink = new ChatTranscriptSink(system, mainWindow.Chat);
             // The permission gate is built once, above, before this sink exists — point it at the
@@ -176,24 +134,10 @@ public static class AppBootstrap
             // here silently disabled cost control in production while every unit test still passed.
             runner = new GoalRunner(res.Provider!, sink, jobPanelSink, plugins, logs,
                 orchestrator: res.Orchestrator,
-                // onJobFailed is deliberately NOT wired. It used to run the full
-                // diagnose→RecoveryFlow-modal→apply flow automatically on every failure, so a failed
-                // job interrupted the user with a blocking dialog they never asked for — and now that
-                // failed jobs carry inline Retry/Skip/Diagnose buttons, it was a second, louder route
-                // to the same three actions. It also spent a model call per failure whether or not the
-                // user wanted a diagnosis.
-                //
-                // Diagnosis is now PULL, not push: press Diagnose on the job (or F6 with it focused)
-                // and the same DiagnoseJobAsync flow runs, modal and all. GoalRunner.DrainAutoDiagnosis
-                // early-returns on a null delegate (GoalRunner.cs:713), so omitting it is a supported
-                // configuration, not a hole.
                 // P11 Task 2: the real window (when config told us one), so auto-compression derives
                 // its threshold from actual headroom instead of always falling back to the fixed
                 // constant. Null on --mock/no-provider and whenever contextWindow isn't configured.
-                contextWindow: res.ContextWindow,
-                // Single-agent unless fan-out was asked for: one agent with tools, no dag.
-                singleAgent: !(args.Contains("--fan-out")
-                               || (res.Orchestrator ?? OrchestratorSettings.Unbounded).FanOut))
+                contextWindow: res.ContextWindow)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -239,167 +183,6 @@ public static class AppBootstrap
         // for every new user is one they learn to ignore, and then the ones that matter are invisible
 
         WireRunner(resolution);   // startup path, unchanged in effect
-
-        // F6 — MANUAL diagnosis. Deliberately UNGATED: unlike the automatic post-failure trigger
-        // above (RetryCount < MaxRetries), the user is explicitly asking, so this must work on any
-        // Failed job regardless of retry headroom — gating it here would make F6 silently do nothing
-        // on exactly the exhausted jobs a user most wants explained.
-        // Diagnose ONE job by id — reached by the inline Diagnose button on a failed job's message,
-        // which knows exactly WHICH job it belongs to. It was once shared with an F6 "diagnose
-        // whatever has focus" key; that key is gone (see the shortcut registrations below), and
-        // resolving by focus was always the weaker addressing anyway.
-        async Task DiagnoseByIdAsync(string jobId)
-        {
-            if (runner is null) return;
-            // TryGetSession (review round 2, N2), not CurrentDag alone: DiagnoseJobAsync below spans
-            // an unbounded await on the recovery dialog. If a SECOND goal starts while that dialog is
-            // open, CurrentDag + a later RetryJobAsync call would re-read runner state at THAT point
-            // and silently retry through goal 2's scheduler instead of the dag actually being edited —
-            // this is C1's exact symptom, recreated one layer up. Capturing the matched (dag, scheduler)
-            // pair NOW and driving retry/skip through the CAPTURED scheduler closes that hole; GoalRunner
-            // no longer eagerly disposes a scheduler on swap either (see GoalRunner's _allSchedulers doc
-            // comment), so this captured reference also stays valid, not just correctly-targeted.
-            if (!runner.TryGetSession(out var dag, out var scheduler)) return;
-            var job = dag!.TryGet(jobId);
-            if (job is null || job.State != JobState.Failed) return;
-            if (activeProvider is null) return;
-
-            await DiagnoseJobAsync(job, dag, scheduler!, activeProvider, isManual: true, cts.Token);
-        }
-
-        // The same buttons already exist on every Failed job block (JobBlockControl) and were wired
-        // to re-raise as JobPanelControl.DiagnoseRequested/RetryRequested/SkipRequested — but nothing
-        // subscribed to them (Task 11 review I4), so pressing the visible on-block button did
-        // nothing while F6 on the same job worked. Diagnose is manual/ungated, same as F6 (a block's
-        // own Diagnose button is exactly as explicit a user request as the F6 key). Retry/Skip go
-        // straight to the scheduler — force: true on Retry for the same reason as F6: a user pressing
-        // a visible "Retry" button on an exhausted job must not silently no-op. Retry/Skip from the
-        // button are immediate (no intervening dialog), so re-reading via runner.RetryJobAsync/
-        // SkipJobAsync at call time is safe here — unlike the dialog-spanning DiagnoseJobAsync flow,
-        // there is no unbounded await between "user clicked" and "act", so the N2 hazard doesn't apply.
-        mainWindow.JobPanel.DiagnoseRequested += (_, jobId) =>
-        {
-            if (runner is null || activeProvider is null) return;
-            if (!runner.TryGetSession(out var dag, out var scheduler)) return;
-            var job = dag!.TryGet(jobId);
-            if (job is null || job.State != JobState.Failed) return;
-            _ = DiagnoseJobAsync(job, dag, scheduler!, activeProvider, isManual: true, cts.Token);
-        };
-        mainWindow.JobPanel.RetryRequested += (_, jobId) => _ = RetryLatestSessionWithReportAsync(jobId, force: true);
-        mainWindow.JobPanel.SkipRequested += (_, jobId) => _ = SkipLatestSessionWithReportAsync(jobId);
-
-        // Shared diagnose → confirm → apply flow for the automatic post-failure trigger, F6, and the
-        // block-level Diagnose button. Best-effort throughout: DiagnoseJobAsync never throws and
-        // returns null on any failure, in which case this says so plainly in chat and leaves the job
-        // Failed — it must never hang and never take down the goal (diagnosis is an enhancement, not
-        // an execution step). Takes the CAPTURED scheduler (review round 2, N2) rather than re-reading
-        // runner.CurrentDag/RetryJobAsync after the dialog await below — see the F6 handler's comment.
-        async Task DiagnoseJobAsync(Job job, JobDag dag, DagScheduler scheduler, ILlmProvider provider, bool isManual, CancellationToken diagCt)
-        {
-            // I3: diagnosis rounds spend real provider tokens that were previously recorded nowhere,
-            // invisible to both the status-bar readout and the goal token budget. Route them into the
-            // SAME ledger a goal's own planning call uses, and refresh the status bar immediately —
-            // this bypasses GoalRunner's own TokensUpdated raise point (diagnosis isn't part of a
-            // RunCoreAsync call), so the UI push has to happen here instead.
-            var diagnoser = new JobDiagnoser(provider, plugins, logs, onUsage: usage =>
-            {
-                runner?.Ledger.Record(usage);
-                if (runner is not null)
-                    system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(runner.Ledger.TotalTokens));
-            });
-            var diagnosis = await diagnoser.DiagnoseJobAsync(job, dag, diagCt);
-            if (diagnosis is null)
-            {
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"[yellow]Diagnosis unavailable for '{job.DisplayName}' — leaving it Failed.[/]"));
-                return;
-            }
-
-            // The unbounded await the whole N2 hazard is about: the user can take arbitrarily long to
-            // respond, or submit a brand new goal in the meantime. Everything AFTER this line must act
-            // on the `scheduler`/`dag` parameters captured before this await, never re-read runner state.
-            var chosen = await RecoveryFlow.RunAsync(system, mainWindow.Window, diagnosis, diagCt);
-            if (chosen is null) return;   // user declined — do not touch the dag
-
-            if (chosen == RecoveryAction.Skip)
-            {
-                await SkipWithReportAsync(job.Id, scheduler);
-                return;
-            }
-            if (chosen == RecoveryAction.AskUser)
-                return;   // the model explicitly declined to decide; nothing to apply
-
-            var mod = diagnosis.Modification ?? DagModification.Empty;
-            if (!DagModifier.TryApply(dag, mod, insertBeforeJobId: job.Id, out var error))
-            {
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System, $"[red]Could not apply recovery: {error}[/]"));
-                return;
-            }
-
-            // I2: TryApply may have added new jobs (InsertBefore) that JobPanelControl has never seen
-            // — SetJobs only ran once, at plan compile. Re-syncing here means the inserted job actually
-            // paints and updates as it runs, instead of executing invisibly while the failed block
-            // just sits there.
-            if (mod.JobsToAdd.Count > 0)
-                system.EnqueueOnUIThread(() => mainWindow.JobPanel.SetJobs(dag.AllJobs));
-
-            // C1: manual diagnosis (isManual — F6 or the block's own Diagnose button) must retry an
-            // exhausted job for real, not silently no-op at DagScheduler's RetryCount>=MaxRetries
-            // guard AFTER TryApply has already mutated the live dag above. Automatic diagnosis is
-            // never manual, so it stays subject to the normal cap.
-            await RetryWithReportAsync(job.Id, scheduler, force: isManual);
-        }
-
-        // C1 + "never silent": both wrap the scheduler call and report a false ("nothing happened")
-        // result as a chat message instead of letting it disappear — a false return after TryApply
-        // has already mutated the dag would otherwise leave it edited but unexecuted with no sign
-        // anything went wrong. Operates on the given scheduler directly (review round 2, N2) — the
-        // caller (DiagnoseJobAsync) has already captured it before its own dialog await, so this must
-        // NOT re-read runner._currentScheduler, which could by now belong to a different goal.
-        async Task RetryWithReportAsync(string jobId, DagScheduler scheduler, bool force)
-        {
-            bool queued = await scheduler.RetryAsync(jobId, force);
-            if (!queued)
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"[yellow]Could not retry job '{jobId}' — it may no longer be Failed, or it may have used up its retries.[/]"));
-        }
-
-        // No-captured-session variant for call sites with no intervening dialog (the block's own
-        // Retry button — re-reading runner.RetryJobAsync at call time is safe there; see the
-        // DiagnoseRequested handler's comment above). C# local functions can't be overloaded by
-        // signature, hence the distinct name rather than a second RetryWithReportAsync.
-        async Task RetryLatestSessionWithReportAsync(string jobId, bool force)
-        {
-            if (runner is null) return;
-            bool queued = await runner.RetryJobAsync(jobId, force);
-            if (!queued)
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"[yellow]Could not retry job '{jobId}' — it may no longer be Failed, or it may have used up its retries.[/]"));
-        }
-
-        async Task SkipWithReportAsync(string jobId, DagScheduler scheduler)
-        {
-            bool skipped = await scheduler.SkipAsync(jobId);
-            if (!skipped)
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"[yellow]Could not skip job '{jobId}' — it may already be Succeeded or Running.[/]"));
-        }
-
-        // No-captured-session variant — see RetryLatestSessionWithReportAsync's comment above.
-        async Task SkipLatestSessionWithReportAsync(string jobId)
-        {
-            if (runner is null) return;
-            bool skipped = await runner.SkipJobAsync(jobId);
-            if (!skipped)
-                system.EnqueueOnUIThread(() =>
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        $"[yellow]Could not skip job '{jobId}' — it may already be Succeeded or Running.[/]"));
-        }
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
         // next one — the shell's own convention, and Claude Code's.
@@ -722,13 +505,6 @@ public static class AppBootstrap
         // D10: same deferral, same reason. Adding a status-bar item calls Invalidate(Relayout),
         // which is a max-join at the render tick — inside BuildWindow there is no tick to join and
         // it blocks forever. On the first pump after Run() begins, there is.
-        // THE HINT IS FAN-OUT ONLY. It exists because a live-drive agent once read a collapsed
-        // transcript, concluded the app "does not accept typed input" and filed a blocking defect —
-        // but that was before the composer had a rule above it separating it from the conversation.
-        // In single-agent the composer is unmistakable, and the hint just occupies the corner the
-        // context readout wants.
-        if (fanOutMode) system.EnqueueOnUIThread(mainWindow.ShowComposerHint);
-
         // Seed the panel on the first pump, for the same reason as the hint above: it adds controls,
         // and doing that during BuildWindow joins a render tick that does not exist yet.
         system.EnqueueOnUIThread(() =>

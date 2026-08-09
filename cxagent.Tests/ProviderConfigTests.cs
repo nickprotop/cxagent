@@ -142,22 +142,6 @@ public class ProviderConfigTests : IDisposable
     }
 
     [Fact]
-    public void Orchestrator_ConsultCapsRoundTrip()
-    {
-        WriteConfig("""
-        {
-          "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local",
-          "orchestrator": { "maxConsults": 40, "maxEditsPerJob": 3 }
-        }
-        """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        // The values from the CONFIG above, not the defaults — this test is about round-tripping.
-        Assert.Equal(40, s.Orchestrator.MaxConsults);
-        Assert.Equal(3, s.Orchestrator.MaxEditsPerJob);
-    }
-
-    [Fact]
     public void Orchestrator_MaxWorkerTurnsRoundTrips()
     {
         // A setting that parses but is never read is the rot pattern this project has hit twice
@@ -176,10 +160,10 @@ public class ProviderConfigTests : IDisposable
     [Fact]
     public void Orchestrator_MaxWorkerTurns_DefaultsWhenAbsent()
     {
-        // Absent must mean the real default, never 0 — a 0 cap would make every worker return
-        // empty before its first provider call. All three loop-breakers are asserted together so a
-        // silent change to any of them fails HERE rather than on a drive: these caps are generous
-        // on purpose, and the one that was tight (MaxWorkerTurns at 10) silently broke real work.
+        // Absent must mean the real default, never 0 — a 0 cap would make the agent return
+        // empty before its first provider call. Asserted so a
+        // silent change fails HERE rather than on a drive: this cap is generous on purpose, and
+        // when it was tight (MaxWorkerTurns at 10) it silently broke real work.
         WriteConfig("""
         { "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
           "defaultProvider": "local" }
@@ -189,51 +173,6 @@ public class ProviderConfigTests : IDisposable
         // them (16 read_file calls, zero writes) and reported done. Set where a LOOP lives, not
         // where work lives -- editing N files costs ~2N turns before discovery or a retry.
         Assert.Equal(200, s.Orchestrator.MaxWorkerTurns);
-        Assert.Equal(200, s.Orchestrator.MaxConsults);
-        Assert.Equal(10, s.Orchestrator.MaxEditsPerJob);
-    }
-
-    [Fact]
-    public void Orchestrator_CapsHaveSafeDefaults_WhenAbsent()
-    {
-        // An absent block must not mean "unbounded" — this loop can spend real money.
-        WriteConfig("""
-        { "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local" }
-        """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.True(s.Orchestrator.MaxConsults > 0);
-        Assert.True(s.Orchestrator.MaxEditsPerJob > 0);
-    }
-
-    /// <summary>
-    /// A setting that parses but is never read is this project's recurring rot pattern
-    /// (llmAgent.routing, RoleDefinition.Tools, MaxWorkerTurns before it). Pin both the parse and the
-    /// default so P9's gate can never silently detach from config.json again.
-    /// </summary>
-    [Fact]
-    public void Orchestrator_CopilotRoundTrips()
-    {
-        WriteConfig("""
-        {
-          "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local",
-          "orchestrator": { "copilot": true }
-        }
-        """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.True(s.Orchestrator.Copilot);
-    }
-
-    [Fact]
-    public void Orchestrator_Copilot_DefaultsToFalse_WhenAbsent()
-    {
-        WriteConfig("""
-        { "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local" }
-        """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.False(s.Orchestrator.Copilot);
     }
 
     [Fact]

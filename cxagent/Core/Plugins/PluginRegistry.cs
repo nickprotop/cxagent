@@ -38,41 +38,21 @@ public class PluginRegistry
     public static PluginRegistry CreateWithBuiltins() => CreateWithBuiltins(null, PermissionGate.AllowAll);
 
     /// <summary>
-    /// As <see cref="CreateWithBuiltins()"/>, plus <c>llm_agent</c> when a resolver is supplied.
-    /// Registered conditionally because the plugin cannot dispatch without one, and advertising a
-    /// job type that always fails is worse than not advertising it — the orchestrator would plan
-    /// jobs that cannot run.
+    /// As <see cref="CreateWithBuiltins()"/>, taking the permission gate explicitly.
     /// </summary>
-    /// <param name="permissions">Wraps shell/file/http before registration, so BOTH execution
-    /// paths — JobExecutor (planned jobs) and WorkerToolset (a worker's tool calls) — are gated
-    /// by construction; neither caller needs, or gets, its own permission check. wait and
-    /// llm_agent register bare: llm_agent's own tools are already gated one level down (they
-    /// dispatch through this same registry), so gating it too would double-prompt; wait touches
-    /// nothing, so gating it would just be noise. Required (no default) so every composition root
-    /// must explicitly choose a gate — see PermissionGate.DenyAll/AllowAll.</param>
-    /// <param name="maxWorkerTurns">Cap on one worker's tool-loop round-trips (config.json's
-    /// <c>orchestrator.maxWorkerTurns</c>).</param>
-    /// <param name="onUsage">Routes each worker turn's token usage into the caller's ledger.</param>
-    /// <param name="fanOut">
-    /// Whether to register <c>llm_agent</c> at all. FALSE (the default) is single-agent mode, and
-    /// the absence is the WHOLE mechanism: with no plugin registered there is no type name in
-    /// create_plan's enum, no entry in the params reference, no worked example — the orchestrator
-    /// cannot plan a worker because, as far as every schema it is shown is concerned, workers do not
-    /// exist. A mode enforced by prompt wording is a mode the model can talk itself out of.
-    /// </param>
-    public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers, IPermissionGate permissions,
-        int maxWorkerTurns = 200, Action<LlmUsage>? onUsage = null, bool fanOut = false)
+    /// <param name="permissions">Wraps shell/file/http before registration, so the agent's tool
+    /// calls are gated by construction; <see cref="WorkerToolset"/> needs, and gets, no permission
+    /// check of its own. wait registers bare — it touches nothing, so gating it would just be noise.
+    /// Required (no default) so every composition root must explicitly choose a gate — see
+    /// PermissionGate.DenyAll/AllowAll.</param>
+    public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers, IPermissionGate permissions)
     {
+        _ = providers;   // kept in the signature: callers pass their resolution's registry
         var reg = new PluginRegistry();
         reg.Register(new PermissionGatedPlugin(new ShellJobPlugin(), permissions));
         reg.Register(new PermissionGatedPlugin(new FileJobPlugin(), permissions));
         reg.Register(new WaitJobPlugin());
         reg.Register(new PermissionGatedPlugin(new HttpJobPlugin(), permissions));
-        // `reg` itself is handed to the worker plugin so its tool calls dispatch through the SAME
-        // registry — that is how read_file reaches the (gated) FileJobPlugin. Registered last, so
-        // the four built-ins above are already present by the time a worker can call one.
-        if (providers is not null && fanOut)
-            reg.Register(new LlmAgentJobPlugin(providers, reg, maxWorkerTurns, onUsage));
         return reg;
     }
 }

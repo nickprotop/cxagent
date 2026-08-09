@@ -1,7 +1,7 @@
 using System.Text;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Orchestrator;
+namespace CxAgent.Core.Execution;
 
 /// <summary>
 /// What the orchestrator sees when a job finishes: bounded by construction, and carrying the job's

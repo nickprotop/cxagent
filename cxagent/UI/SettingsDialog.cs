@@ -243,7 +243,7 @@ public sealed class SettingsDialog
     /// state (unbounded / unbounded / derive-from-context-window — see the record's own doc
     /// comment), so an empty box parses to null rather than being rejected.
     ///
-    /// MaxConsults/MaxEditsPerJob/MaxWorkerTurns: never-null real defaults (ProviderConfig.cs:29-38)
+    /// MaxWorkerTurns: a never-null real default (see OrchestratorSettings' doc)
     /// — a blank or non-positive entry is rejected outright (the box's last-accepted value is kept)
     /// rather than silently coerced to some other number, so a mistyped field can't reopen the
     /// runaway loop these caps exist to stop.</summary>
@@ -259,21 +259,9 @@ public sealed class SettingsDialog
         AddNullableIntPrompt(panel, "Compress threshold (blank = derive from context window)", o.ContextCompressThreshold,
             v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { ContextCompressThreshold = v }));
 
-        panel.AddControl(Ctl.Markup().AddLine("[dim]The three below always need a real value (>= 1).[/]").Build());
-        AddPositiveIntPrompt(panel, "Max consults", o.MaxConsults,
-            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxConsults = v }));
-        AddPositiveIntPrompt(panel, "Max edits/job", o.MaxEditsPerJob,
-            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxEditsPerJob = v }));
+        panel.AddControl(Ctl.Markup().AddLine("[dim]The one below always needs a real value (>= 1).[/]").Build());
         AddPositiveIntPrompt(panel, "Max worker turns", o.MaxWorkerTurns,
             v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxWorkerTurns = v }));
-
-        var copilot = Ctl.Checkbox("Copilot (goals start as a draft for approval)")
-            .Checked(o.Copilot)
-            .WithMargin(1, 0, 1, 0)
-            .Build();
-        copilot.CheckedChanged += (_, isChecked) =>
-            _session.UpdateOrchestrator(_session.Working.Orchestrator with { Copilot = isChecked });
-        panel.AddControl(copilot);
     }
 
     /// <summary>A prompt whose blank input means "unconfigured" (null) rather than being rejected —
@@ -294,8 +282,8 @@ public sealed class SettingsDialog
         panel.AddControl(prompt);
     }
 
-    /// <summary>A prompt for a field that must always hold a real value >= 1 (MaxConsults/
-    /// MaxEditsPerJob/MaxWorkerTurns — never-null real defaults, ProviderConfig.cs:29-38). Blank or
+    /// <summary>A prompt for a field that must always hold a real value >= 1 (MaxWorkerTurns — a
+    /// never-null real default). Blank or
     /// non-positive input is rejected — the session keeps whatever value it already had — rather
     /// than silently substituting some other number, since these caps exist specifically to stop a
     /// runaway consult/edit/tool loop.</summary>
