@@ -609,6 +609,38 @@ public class AgentChallengeTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// EXACTLY ONE PREAMBLE, across a compression and the prompts on either side.
+    ///
+    /// <para>Two failures met here. Compression removed from index 0, deleting the working-directory
+    /// message; the agent's guard then saw no system message and re-inserted it — at index 0, above
+    /// the summary — so the head shuffled on every compaction. Pinning the head fixes the first, and
+    /// this pins the second: with the preamble surviving, the guard must never fire again.</para>
+    /// </summary>
+    [Fact]
+    public async Task ThePreamble_SurvivesCompression_AndIsNeverDuplicated()
+    {
+        var provider = new MockLlmProvider();
+        // A heavy first turn WITH a tool call, so the loop reaches a second turn's pre-send check and
+        // compresses; then a summary reply for the compressor; then ordinary answers.
+        provider.EnqueueResponse(HeavyWithCall("looking", inputTokens: 5_000));
+        provider.EnqueueResponse(Prose("summary of the earlier work"));
+        for (var i = 0; i < 8; i++) provider.EnqueueResponse(Prose("done"));
+
+        var sink = new RecordingSink();
+        var agent = Build(provider, sink, compressAbove: 1_000);
+
+        await agent.SendAsync("do something long", CancellationToken.None);
+        await agent.SendAsync("and now something else", CancellationToken.None);
+
+        var systems = agent.Context.Messages.Where(m => m.Role == "system").ToList();
+        Assert.Single(systems);
+        Assert.Contains("working directory", systems[0].Content);
+
+        // And it is still the HEAD — a preamble buried under a summary is not leading the conversation.
+        Assert.Equal("system", agent.Context.Messages[0].Role);
+    }
+
     // --- Context pressure ------------------------------------------------------------------------
 
     [Fact]

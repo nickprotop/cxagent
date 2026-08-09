@@ -37,6 +37,70 @@ public class SessionCompressorTests
         Assert.True(conversation.Count < 12);          // ...and the conversation actually shrank
     }
 
+    /// <summary>
+    /// The working-directory preamble outlives compression.
+    ///
+    /// <para>It is the message that stops the model guessing absolute paths — measured before it
+    /// existed, ten of twenty shell calls hunted for paths that do not exist on this machine
+    /// (/Users/&lt;someone&gt;/…, /home/user, bare /). Compression removed from index 0, which is
+    /// exactly where it sits, so the FIRST compaction of any session deleted it.</para>
+    /// </summary>
+    [Fact]
+    public async Task Compress_KeepsTheSystemPreamble_AtTheHead()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = "summary" }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(Msg("system", "Your working directory is /home/nick/source/cxagent."));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        Assert.Equal("system", conversation[0].Role);
+        Assert.Contains("working directory", conversation[0].Content);
+
+        // ...and the summary landed BELOW it, not on top of it.
+        Assert.Contains(conversation.Skip(1), m => m.Content.Contains("summary"));
+    }
+
+    /// <summary>
+    /// The truncation fallback must pin the head too. SessionCommands.Compress also removed from
+    /// index 0, so a summarisation failure destroyed the preamble by the other route — the same bug
+    /// reached by the path taken when things are already going wrong.
+    /// </summary>
+    [Fact]
+    public async Task Compress_WhenSummarisationFails_StillKeepsTheSystemPreamble()
+    {
+        var provider = new ThrowingProvider();
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(Msg("system", "Your working directory is /home/nick/source/cxagent."));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        Assert.Equal("system", conversation[0].Role);
+        Assert.Contains("working directory", conversation[0].Content);
+    }
+
+    /// <summary>
+    /// No preamble, no pin. A sub-agent or a test context that never had a system message must still
+    /// compress from the very front rather than mysteriously keeping its oldest user turn.
+    /// </summary>
+    [Fact]
+    public async Task Compress_WithNoSystemMessage_StillCompressesFromTheFront()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = "summary" }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        Assert.DoesNotContain(conversation, m => m.Content.Contains("goal-00"));
+        Assert.Contains("summary", conversation[0].Content);
+    }
+
     [Fact]
     public async Task Compress_KeepsTheMostRecentTurnsVERBATIM()
     {

@@ -79,6 +79,22 @@ public sealed class AgentContext
     /// </summary>
     public void Prepend(ChatMessage message) => _messages.Insert(0, message);
 
+    /// <summary>
+    /// How many leading messages are STRUCTURAL rather than conversational — the working-directory
+    /// preamble, today. Compression starts below this.
+    ///
+    /// <para>THE HEAD IS NOT HISTORY. Compression removed from index 0, which is where the preamble
+    /// sits, so the first compaction of any session deleted the instructions that keep the model on
+    /// real paths — measured before that preamble existed, ten of twenty shell calls hunted for
+    /// directories that do not exist on this machine. The agent re-inserts it when no system message
+    /// is present, so it then reappeared ABOVE the summary on the next turn, and again after every
+    /// later compaction: the head never settled.</para>
+    ///
+    /// <para>DERIVED, not stored. A stored count goes stale the moment anything else edits the list,
+    /// and this is consulted precisely while the list is being rewritten.</para>
+    /// </summary>
+    public int PinnedHeadCount => _messages.Count > 0 && _messages[0].Role == "system" ? 1 : 0;
+
     /// <summary>Whether any message is present.</summary>
     public bool IsEmpty => _messages.Count == 0;
 

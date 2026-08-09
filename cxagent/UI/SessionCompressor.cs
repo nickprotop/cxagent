@@ -118,9 +118,15 @@ public static class SessionCompressor
         // dominated by re-read file content, this is the first thing to revisit — with persistence
         // underneath it, or as Claude Code's forward-looking suppression, which declines the
         // redundant read instead of erasing the old one.
+        // BELOW THE PINNED HEAD. The system preamble leads the conversation and is not history:
+        // summarising it away deletes the instructions that keep the model on real paths, and the
+        // agent then re-inserts it above the summary on the next turn. Everything here is offset by
+        // the pin — SafeCut itself is untouched, and deliberately so: its tool-pair walk-back is
+        // verified sound and the orphan hazard it prevents has nothing to do with the head.
+        var pin = context.PinnedHeadCount;
         var cut = SafeCut(conversation);
-        if (cut <= 0) return new CompressResult(Summarised: false);
-        var oldTurns = conversation.GetRange(0, cut);
+        if (cut <= pin) return new CompressResult(Summarised: false);
+        var oldTurns = conversation.GetRange(pin, cut - pin);
 
         try
         {
@@ -129,8 +135,8 @@ public static class SessionCompressor
 
             meter?.Invoke(summary.Usage);
 
-            conversation.RemoveRange(0, cut);
-            conversation.Insert(0, new ChatMessage
+            conversation.RemoveRange(pin, cut - pin);
+            conversation.Insert(pin, new ChatMessage
             {
                 Role = "assistant",
                 Content = FormatSummary(summary.Text),
@@ -151,7 +157,7 @@ public static class SessionCompressor
             // Summarisation failed — fall back to the SAME truncation /compress uses, never a
             // second, divergent degradation path.
             var beforeTruncate = context.TotalChars();
-            SessionCommands.Compress(conversation);
+            SessionCommands.Compress(conversation, pin);
             context.EstimateUsageAfterCompaction();
             return new CompressResult(Summarised: false,
                 CharsFreed: Math.Max(0, beforeTruncate - context.TotalChars()));

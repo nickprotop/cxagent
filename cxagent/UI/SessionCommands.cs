@@ -132,13 +132,19 @@ public static class SessionCommands
     /// <para>Token pressure is the honest trigger and it is applied by the caller. This routine now
     /// does what it is told.</para>
     /// </summary>
-    public static void Compress(List<ChatMessage> conversation)
+    /// <param name="pinnedHead">
+    /// Leading messages that are structural rather than history — the system preamble — and must
+    /// survive. This dropped from index 0 unconditionally, so the fallback taken when summarisation
+    /// FAILS destroyed the working-directory instructions by the other route.
+    /// </param>
+    public static void Compress(List<ChatMessage> conversation, int pinnedHead = 0)
     {
         // Two messages is the smallest thing that can be halved at all; below that there is no older
-        // half to drop, which is arithmetic rather than a policy.
-        if (conversation.Count < 2) return;
+        // half to drop, which is arithmetic rather than a policy. Counted below the pin: a pinned
+        // head plus one turn is not a halvable conversation either.
+        if (conversation.Count - pinnedHead < 2) return;
 
-        var keep = conversation.Count / 2;
-        conversation.RemoveRange(0, conversation.Count - keep);
+        var keep = (conversation.Count - pinnedHead) / 2;
+        conversation.RemoveRange(pinnedHead, conversation.Count - pinnedHead - keep);
     }
 }
