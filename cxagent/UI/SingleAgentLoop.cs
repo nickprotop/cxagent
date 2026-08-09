@@ -461,7 +461,7 @@ public sealed class SingleAgentLoop
                 // OpenHands calls this "scenario 1: same action, same observation" and nudges once
                 // before killing, which is the right order — the model may simply have lost track,
                 // and telling it so is far cheaper than failing the goal.
-                var signature = call.Name + " " + call.Arguments.ToString() + " " + result;
+                var signature = call.Name + "\0" + call.Arguments.ToString() + "\0" + result;
                 seen.TryGetValue(signature, out var times);
                 seen[signature] = ++times;
 
