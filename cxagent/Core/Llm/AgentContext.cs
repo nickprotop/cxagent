@@ -211,17 +211,6 @@ public sealed class AgentContext
     }
 
     /// <summary>
-    /// Characters per token, for the fallback path only — see <see cref="IsUnderPressure"/>.
-    ///
-    /// <para>THREE, not four. English prose runs about four, but an agent's context is dominated by
-    /// what tool calls return — source code, JSON, file listings, stack traces — all of which
-    /// tokenize denser than prose. Three keeps the converted threshold CONSERVATIVE: it fires a
-    /// little early rather than a little late, and late is the failure that matters (a context that
-    /// will not fit is a session that stops working, while an early compaction costs one call).</para>
-    /// </summary>
-    public const int CharsPerToken = 3;
-
-    /// <summary>
     /// The share of the window left free, so a compaction happens BEFORE the next call would be
     /// refused rather than after.
     ///
@@ -241,13 +230,16 @@ public sealed class AgentContext
     /// known — it is configured per provider instance and shown in the panel — so the threshold is
     /// derived from it rather than from a separate setting that can disagree with it.</para>
     ///
-    /// <para>TOKENS WHEN WE HAVE THEM, CHARACTERS WHEN WE DO NOT. Reported usage is the honest
-    /// measure of what the provider received, so it is preferred. But a local llama.cpp build often
-    /// reports none at all — measured on this machine, whole turns with the field absent — and a
-    /// token-only rule then never fires while the session grows until the endpoint refuses it.
-    /// Characters are always countable, so they cover exactly that gap. Impossible readings never
-    /// reach here: <see cref="RecordUsage"/> rejects them, so <see cref="Used"/> holds either a
-    /// plausible measurement or the last one that was.</para>
+    /// <para>TOKENS ONLY. Reported usage is the provider's own count of what it received, and if it
+    /// does not send one there is nothing here to compensate with: a character estimate would be
+    /// guessing at the very number the endpoint declined to give. Measured across 52 logged turns on
+    /// this machine, every turn without a reading was turn 000 or 001 — the opening exchanges before
+    /// the first reading arrives, at a few hundred to ~10k characters — never a session that ran
+    /// blind. An endpoint that genuinely never reports usage is that endpoint's defect, and it
+    /// surfaces as a session that does not compact rather than as a wrong number acted on.</para>
+    ///
+    /// <para>Impossible readings never reach here: <see cref="RecordUsage"/> rejects them, so
+    /// <see cref="Used"/> holds either a plausible measurement or the last one that was.</para>
     /// </summary>
     public bool IsUnderPressure
     {
@@ -259,11 +251,9 @@ public sealed class AgentContext
             var budget = window * (1.0 - ReserveFraction);
 
             // ProjectedUsed, not Used: the measurement is always one turn behind the growth, so it is
-            // rescaled to the conversation as it stands now — see its own doc.
-            if (ProjectedUsed is { } tokens) return tokens >= budget;
-
-            // Nothing was ever reported. Fall back to what we can count ourselves.
-            return TotalChars() >= budget * CharsPerToken;
+            // rescaled to the conversation as it stands now — see its own doc. Null means no reading
+            // has arrived yet, which is not pressure — it is an absence of evidence either way.
+            return ProjectedUsed is { } tokens && tokens >= budget;
         }
     }
 

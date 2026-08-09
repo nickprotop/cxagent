@@ -807,29 +807,21 @@ public sealed class Agent
         // explicit threshold knows something about their endpoint that a window size does not capture
         // (a shared or rate-limited box, a provider that charges differently). Absent that, the
         // context's own window decides — the honest ceiling, and the one the panel already shows.
+        //
+        // BOTH READ REPORTED TOKENS, and neither substitutes anything when none arrive. See
+        // AgentContext.IsUnderPressure: a provider that does not report usage is that provider's
+        // defect, and estimating around it would mean acting on a guess at the exact number it
+        // declined to give.
         string reason;
         if (_compressAbove is { } thresholdTokens)
         {
-            if (_context.ProjectedUsed is { } used)
-            {
-                if (used <= thresholdTokens) return;
-                reason = $"{used:N0} tokens over {thresholdTokens:N0}";
-            }
-            else
-            {
-                // No reported usage — fall back to characters, as IsUnderPressure does.
-                var chars = _context.TotalChars();
-                var thresholdChars = thresholdTokens * AgentContext.CharsPerToken;
-                if (chars <= thresholdChars) return;
-                reason = $"{chars:N0} chars over {thresholdChars:N0}";
-            }
+            if (_context.ProjectedUsed is not { } configuredUsed || configuredUsed <= thresholdTokens) return;
+            reason = $"{configuredUsed:N0} tokens over {thresholdTokens:N0}";
         }
         else
         {
             if (!_context.IsUnderPressure) return;
-            reason = _context.ProjectedUsed is { } used
-                ? $"{used:N0} of {_context.Window:N0} tokens"
-                : $"{_context.TotalChars():N0} chars, window {_context.Window:N0}";
+            reason = $"{_context.ProjectedUsed:N0} of {_context.Window:N0} tokens";
         }
 
         // The row itself lives in CompressionRun, which every compressing route now shares — this one

@@ -281,22 +281,18 @@ public class AgentContextTests
     }
 
     /// <summary>
-    /// A provider that reports NO usage must still compress. This is the case tokens cannot cover:
-    /// occupancy stays null forever, so a token-only rule never fires and the session grows until the
-    /// endpoint rejects it — measured on this machine, turns reporting no usage at all. Characters are
-    /// the fallback, converted at a deliberately conservative ratio.
+    /// NO READING, NO PRESSURE. If the provider does not report usage there is nothing here to
+    /// compensate with — a character estimate would be guessing at the exact number it declined to
+    /// give. Measured across 52 logged turns, every turn without a reading was turn 000 or 001, the
+    /// opening exchanges before the first one arrives; a session never ran blind.
     /// </summary>
     [Fact]
-    public void IsUnderPressure_FallsBackToCharacters_WhenNoUsageIsEverReported()
+    public void IsUnderPressure_IsFalse_WhenNoUsageHasBeenReported()
     {
         var ctx = new AgentContext(window: 100_000);
+        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 5_000_000) });
 
-        // No RecordUsage call at all. 100k window x 3 chars/token x 85% ≈ 255k chars.
-        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 100_000) });
         Assert.False(ctx.IsUnderPressure);
-
-        ctx.Add(new ChatMessage { Role = "user", Content = new string('x', 200_000) });
-        Assert.True(ctx.IsUnderPressure);
     }
 
     /// <summary>With no window there is nothing to be under pressure against — a percentage needs a
