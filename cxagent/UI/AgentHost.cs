@@ -166,29 +166,27 @@ public sealed class AgentHost : IDisposable
     internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
 
     /// <summary>
-    /// Copilot mode (P9 Task 2): fires true the instant the goal parks in GoalState.Draft (same point
-    /// as IChatSink.ShowApprovalRequest — see RunCoreAsync) and false the instant the gate resolves,
-    /// whichever way. This is the seam MainWindow's F9/Esc footer hint subscribes to; mirrors
-    /// TokensUpdated's "AgentHost raises it itself at the point of truth" shape. Never fires at all
-    /// when Copilot is off.
+    /// INERT. The copilot draft gate parked a compiled plan for approval before running it; there is
+    /// no plan and no gate now, so nothing ever arms this and it never fires.
+    ///
+    /// <para>Kept only because MainWindow's F9/Esc footer hint binds to it. Behaviour is unchanged
+    /// from before — with copilot off, which is the only state single-agent ever reached, F9 and Esc
+    /// were already no-ops. The whole seam (this, <see cref="HasPendingApproval"/>,
+    /// <see cref="ApproveDraft"/>, <see cref="DiscardDraft"/>) is dead weight for a later task.</para>
     /// </summary>
     public event EventHandler<bool>? DraftPending;
 
 
-    // Guards the copilot approval gate. Kept as the UI seam MainWindow/AppBootstrap bind to;
-    // nothing arms it now that planning is gone, so F9/Esc are no-ops exactly as they were
-    // whenever copilot was off.
+    // Guarded the copilot approval gate. Nothing arms it now that planning is gone — see DraftPending.
     private readonly object _stateLock = new();
     private TaskCompletionSource<bool>? _pendingApproval;
 
-    /// <summary>True while a copilot-mode goal is sitting in GoalState.Draft, waiting on
-    /// ApproveDraft/DiscardDraft. This is the seam Task 2's F9 handler polls/binds against.</summary>
+    /// <summary>Always false: nothing arms the approval gate any more. See <see cref="DraftPending"/>.</summary>
     public bool HasPendingApproval { get { lock (_stateLock) return _pendingApproval is not null; } }
 
     /// <summary>
-    /// Approves the DAG currently on display and lets RunCoreAsync continue into the
-    /// OrchestratorLoop, executing that EXACT compiled dag — no re-plan. No-op if nothing is
-    /// currently awaiting approval (e.g. called twice, or after the goal already moved on).
+    /// No-op. Resolved the approval gate that no longer exists; nothing is ever awaiting it.
+    /// See <see cref="DraftPending"/>.
     /// </summary>
     public void ApproveDraft()
     {
@@ -198,9 +196,7 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>
-    /// Discards the drafted plan: RunCoreAsync returns GoalState.Cancelled without ever constructing
-    /// the OrchestratorLoop, so no job runs and no scheduler is left armed. No-op if nothing is
-    /// currently awaiting approval.
+    /// No-op, for the same reason as <see cref="ApproveDraft"/>.
     /// </summary>
     public void DiscardDraft()
     {

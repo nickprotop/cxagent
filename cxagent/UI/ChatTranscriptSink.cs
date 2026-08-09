@@ -85,35 +85,6 @@ public sealed class ChatTranscriptSink : IChatSink
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
         });
 
-    /// <summary>
-    /// The goal's outcome — expanded on arrival, unlike every other System message.
-    ///
-    /// <para>System is StartCollapsed by role (MainWindow's style), which is right for the noisy
-    /// ones: startup notes and diagnostics stay out of the way behind an "expand…". But the same
-    /// default hid the one line the user most needs, so a finished goal looked identical to a
-    /// stalled one.</para>
-    ///
-    /// <para>Collapse state is per-MESSAGE, not just per-role — <c>SetExpanded</c> was added to
-    /// SharpConsoleUI for exactly this. The capability already existed internally (every message
-    /// owns a CollapsiblePanel with a public IsExpanded); only the accessor was missing.</para>
-    /// </summary>
-    public void ShowGoalResult(GoalState state, int failedCount) =>
-        _system.EnqueueOnUIThread(() =>
-        {
-            // "JOB(S)" ONLY WHEN THERE ARE JOBS. Single-agent has no dag and no jobs, so a failed
-            // run announced itself as "Goal Failed (0 job(s) failed)" — a count of a thing that does
-            // not exist there, which reads as a bug in the app rather than a result of the work.
-            // The plural is also wrong at 1 either way.
-            var detail = failedCount > 0
-                ? $" ({failedCount} job{(failedCount == 1 ? "" : "s")} failed)"
-                : "";
-
-            var id = _chat.AddMessage(ChatRole.System,
-                state == GoalState.Completed ? "[green]▸ Done.[/]"
-                : $"[red]▸ {state}{detail}.[/]");
-            _chat.SetExpanded(id, true);
-        });
-
     public void ShowError(string message) =>
         _system.EnqueueOnUIThread(() =>
             _chat.AddMessage(ChatRole.System, $"[red]✗ {message}[/]"));

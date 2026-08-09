@@ -36,7 +36,6 @@ public interface IChatSink
     /// and it is where the job rows already put their status.</para>
     /// </summary>
     void SetAssistantHeader(ChatMessageId id, string header);
-    void ShowGoalResult(GoalState state, int failedCount);
     void ShowError(string message);
 
     /// <summary>
@@ -49,7 +48,7 @@ public interface IChatSink
 
     /// <summary>
     /// Copilot mode (P9): the plan has been shown (SetJobs already ran) and the goal is now sitting
-    /// in GoalState.Draft awaiting approval. Tells the UI to surface the approve/discard affordance
+    /// parked for approval. Tells the UI to surface the approve/discard affordance
     /// (Task 2's F9 binding). One-way — the answer comes back through
     /// AgentHost.ApproveDraft/DiscardDraft, not through this interface.
     ///

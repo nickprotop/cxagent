@@ -708,7 +708,6 @@ public class AgentChallengeTests
         public readonly List<string> Appended = [];
         public void AppendAssistant(ChatMessageId id, string token) => Appended.Add(token);
         public void EndAssistantTurn(ChatMessageId id) => Ends++;
-        public void ShowGoalResult(GoalState state, int failedCount) { }
         public void ShowError(string message) => Errors.Add(message);
         public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);
         public void ShowSystemMessage(string message) { }

@@ -23,7 +23,7 @@ public interface IJobPanel
     void AppendText(string jobId, string delta);
 
     /// <summary>
-    /// Copilot mode (P9 Task 2): true while the goal sits in GoalState.Draft awaiting F9/Esc — the
+    /// Copilot mode (P9 Task 2): true while a plan sits awaiting F9/Esc — the
     /// panel must make it UNMISTAKABLE that the jobs it is showing are not running. Set true right
     /// before IChatSink.ShowApprovalRequest() and false the instant the gate resolves (approve,
     /// discard, or a cancelled draft), so it can never be left on past the goal that raised it.

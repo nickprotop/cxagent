@@ -30,7 +30,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
     public int BlockCount => _blocks.Count;
 
     /// <summary>
-    /// True while the goal sitting behind this panel is parked in GoalState.Draft (P9 copilot mode)
+    /// True while the work behind this panel is parked awaiting approval (P9 copilot mode)
     /// awaiting F9/Esc. The whole point of Task 2: the user must be able to tell at a glance that
     /// these blocks are shown-but-not-running, so this drives a standing banner rather than relying
     /// on job state alone (Pending/Queued look identical whether copilot is on or off).
@@ -69,7 +69,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         // re-sync), so it's the first time the stale reference was actually reachable.
         _expanded = null;
         // ClearContents() just detached _draftBanner along with every job block above — re-add it
-        // FIRST so a draft's plan (SetJobs runs while still in GoalState.Draft — see AgentHost) is
+        // FIRST so a draft's plan (SetJobs runs while still awaiting approval — see AgentHost) is
         // shown with the banner already sitting above the blocks, not flashing in after the fact.
         AddControl(_draftBanner);
         foreach (var job in jobs)

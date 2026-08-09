@@ -35,14 +35,11 @@ public sealed class RecordingSink : IChatSink
     /// thread-pool thread (a JobTransitioned continuation with no SynchronizationContext installed).</summary>
     public readonly ConcurrentQueue<string> ErrorQueue = new();
 
-    /// <summary>Every user-visible line, in order — assistant text, errors, and the goal result.</summary>
+    /// <summary>Every user-visible line, in order — assistant text and errors.</summary>
     public readonly ConcurrentQueue<string> MessageQueue = new();
 
     public List<string> Errors => ErrorQueue.ToList();
     public List<string> Messages => MessageQueue.ToList();
-
-    /// <summary>The most recent goal result, or null if none was shown.</summary>
-    public GoalState? Result { get; private set; }
 
     /// <summary>The most recent error, or null if none was reported (a last-value view over
     /// <see cref="Errors"/>).</summary>
@@ -62,12 +59,6 @@ public sealed class RecordingSink : IChatSink
     {
         AssistantTokens.Enqueue(token);
         MessageQueue.Enqueue(token);
-    }
-
-    public void ShowGoalResult(GoalState state, int failedCount)
-    {
-        Result = state;
-        MessageQueue.Enqueue($"goal {state}, {failedCount} failed");
     }
 
     public void ShowError(string message)

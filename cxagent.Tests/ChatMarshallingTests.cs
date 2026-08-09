@@ -42,7 +42,7 @@ public class ChatMarshallingTests
         var ex = Record.Exception(() =>
         {
             var id = sink.AddUserTurn("hi");
-            sink.ShowGoalResult(GoalState.Completed, 0);
+            sink.ShowSystemMessage("a note");
             sink.ShowError("boom");
         });
         Assert.Null(ex);   // enqueue-only; no synchronous control mutation, no throw
