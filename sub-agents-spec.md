@@ -24,7 +24,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D4 | A sub-agent returns **the final assistant text**. No summarising round trip. | §2 |
 | D5 | The tool takes a **type name**, never a model id. A model cannot pick from a catalog it has never seen. | §2 |
 | D6 | Threading: `Task.Run` + marshal — but only once anything is concurrent. Step 1 runs the first child inline. | §1, §5 |
-| D7 | One shared, thread-safe `TokenLedger`. Per-agent ledgers deferred until a UI needs the attribution. | §1 |
+| D7 | **A ledger is GIVEN to an agent, not inherited by construction order.** Today the factory hands the child the parent's; when ledgers become per-model, the factory hands it one resolved by model and the call site does not change. Requires hoisting ledger creation out of `AgentHost` into `AppBootstrap`. | §1, §5.1d-i |
 | D8 | A sub-agent's transcript is a **buffered sink**, inspectable on demand, not rendered into the parent's view. | §3 |
 | D9 | **Three instruction channels, with precedence.** A type briefing (config, how to work) outranks spawn context (parent, what to know); the prompt (parent, what to do) is a user turn. | §2 |
 | D10 | **Foreground first.** The tool blocks and returns the result. Background is a different tool — a registry, a notification route, a lifetime rule — and is a later step. | §2, §5 |
@@ -33,6 +33,8 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D15 | **Dispatch is an `ISubAgentSpawner` consulted before `WorkerToolset`**, the MCP precedent — NOT a `WorkerTool` enum member, which would auto-offer spawn to every child and make the no-nesting exclusion false. | §5.1a |
 | D16 | **`state` = `completed \| capped \| stuck \| error \| cancelled`.** Cap is structural (the reporter counts turns); stuck reads the buffered error's prefix. An earlier draft said this was invisible to the tool — it is not, and shipping `completed` for a capped run is what D13 exists to prevent. | §5.1c |
 | D17 | **The spawn branch never throws** (except cancellation). An exception mid-`foreach` orphans tool calls in the parent's context and poisons every later turn. | §5.1b |
+| D18 | **Submitting during a turn QUEUES and APPENDS.** Several messages join newline-separated into one prompt at turn end; Escape stops the turn and moves the queue into the composer, above any text already there. Interrupt-and-rerun is deferred to when agents run in the background. | §5.1h |
+| D19 | **The spawn tool's `PluginType` is `llm_agent`**, a type the UI already understands at five sites — Worker author, no collapse on completion, stays expanded, own status, no output placeholdering. It was built for exactly this and is currently unused. | §5.1e-i |
 | D11 | **Telemetry is in step 1**, not later — a child that reports nothing is a frozen row, and retrofitting it means revisiting the factory, the row and the panel. `Agent` already exposes `Id`, `Context` and four callbacks; `Job.ProgressMessage` already renders; `SessionPanel` already takes optional sections. Missing: elapsed time (a periodic tick), and the waiting state (step 3). | §2, §5 |
 | D12 | **No general hook system.** A hook that can block IS the permission gate; one that cannot is telemetry, which the callbacks already give. Add named seams if a need appears. | §2 |
 
@@ -576,18 +578,24 @@ salvage summary as though it were a finished answer, which is exactly what D13 e
 Dropped from the old list: *"cancellation token, id"* — neither is factory work. `Agent` has no ct
 parameter (it arrives per `SendAsync`) and `Id` is minted internally and read-only.
 
-#### 1d-i. The construction-order blocker
+#### 1d-i. The construction-order blocker — DECIDED: hoist the ledger
 
 **`AgentHost` CREATES the ledger in its own constructor** (`AgentHost.cs:249`), before `BuildAgent()`.
 So a factory built in `AppBootstrap` and passed INTO `AgentHost` cannot close over the parent's
-ledger — it does not exist yet. Two ways out, and one must be chosen before writing code:
+ledger — it does not exist yet.
 
-- the factory takes `Func<TokenLedger>` and resolves lazily, or
-- ledger creation moves to `AppBootstrap` and is passed into `AgentHost`.
+**Ledger creation moves to `AppBootstrap`**, which passes it in. Not for tidiness: a ledger created
+inside `AgentHost`'s constructor can only ever be THE SESSION'S ONE LEDGER, and that is precisely the
+assumption per-model attribution has to break. Owning it at the composition root is what makes "which
+ledger does this agent get?" a question with an answer. `Func<TokenLedger>` would also unblock the
+ordering, but it defers the lifetime question rather than answering it.
 
-The same gap applies to `_contextWindow` and the `OrchestratorSettings`: both are private on
-`AgentHost`, and the table above uses them without saying where the factory gets them. `AppBootstrap`
-has both at composition time, which is another argument for the second option.
+The same move solves two more gaps: `_contextWindow` and the `OrchestratorSettings` are both private
+on `AgentHost` and both already available in `AppBootstrap` at composition time.
+
+**One consequence to decide WITH per-model, not now:** `TokenLedger.Breached` fires once ever and the
+status bar reads one total. With several ledgers, "the session total" becomes a sum and the breach
+becomes "which budget?".
 
 **Signature changes: three, not one.** `Agent` gains the spawner parameter (it must be a field —
 `InvokeAndShowAsync` is an instance method), `AgentHost` gains it too, AND `BuildAgent()` must forward
@@ -631,8 +639,13 @@ labelled a file operation — and worse, `InlineJobSink.IsCompactRow` treats any
 behind an `expand…`. The sink's own comment says this is deliberate for tools and wrong for workers:
 *"COLLAPSING it at the finish line snatches away the thing the user was reading."*
 
-One line: `"spawn_agent" => "llm_agent"` in that switch. It buys the "Worker" author label, the
-stays-expanded behaviour and the non-compact block together.
+One line: `"spawn_agent" => "llm_agent"` in that switch — and it is not a workaround. **`llm_agent`
+is already a first-class type in the UI**, tested at five sites: `AuthorFor` (`:463`) gives the row a
+**Worker** author instead of "Tool"; `IsCompactRow` (`:757`) keeps it out of the compact branch;
+`keepOpen` (`:270`) leaves it EXPANDED when it finishes; `StatusText` (`:596`) returns null so the
+worker's own content shows; and `JobDigest` (`:142`) does not placeholder-out its bulk output. The
+concept was built for exactly this and is currently unused, so a spawn tool is not adopting a label —
+it is the thing the label was for.
 
 #### 1f. Cancellation
 
@@ -683,6 +696,46 @@ if (turnCts is { IsCancellationRequested: false })
 **Not one line: a guard plus a lifetime.** `turnCts` is never nulled on completion, so the predicate
 latches true after the first turn and would block everything. The fire-and-forget `SendAsync` needs a
 continuation that clears it.
+
+**And a guard needs a BEHAVIOUR** — rejecting the keystroke is not enough. See §1h.
+
+#### 1h. Submitting while a turn runs — QUEUE AND APPEND
+
+The double-submit bug (§1g) needs a behaviour, not just a guard. Decided:
+
+**A message typed during a running turn is QUEUED, shown with a `[queued]` title, and submitted as
+one prompt when the turn ends.** Several queued messages are APPENDED, newline-separated, into a
+single prompt — not replaced, because two messages are usually one thought completed (a correction and
+its qualifier), and replacing would silently discard half of what someone said with no way to tell
+which half survived. Claude Code behaves this way, and it is the reason a mid-turn correction there
+does not get lost.
+
+Newline between them rather than a space: they were separate thoughts, and the break is structure a
+model reads.
+
+**ESCAPE STOPS THE TURN AND MOVES THE QUEUE INTO THE COMPOSER** — it does not discard it. The text was
+never sent, so cancelling a run must not eat what someone typed. If the composer already holds text,
+the queued messages go ABOVE it, preserving the order they were written in. The user then sees exactly
+what they said, editable, and decides.
+
+**Why queue rather than interrupt.** Interrupt-and-rerun — cancel the turn, fold the new message in,
+start again — is the better long-term behaviour and is what Claude Code does. It is deferred because
+it needs the turn to unwind cleanly mid-tool-call, which means the §1f orphan guard AND a way to await
+a cancellation that is currently fire-and-forget. It becomes worth building when agents run in the
+background and long tool calls are routine. Queue-and-append is the small correct version of the same
+intent, and Escape-then-type already covers redirection today.
+
+**What it needs, and it is genuinely small:**
+
+- the running turn must be TRACKABLE — `_ = runner.SendAsync(...)` (`AppBootstrap.cs:418`) is
+  fire-and-forget, so nothing knows when a turn ends
+- a `List<string>` for the queue, joined and cleared on submit
+- the `[queued]` title on the rendered message
+- Escape moves the queue into the composer, above any existing text
+
+**What it does NOT need, which is why it is preferred:** no cancellation mid-flight, so no orphaned
+tool calls, no unwinding, and `previousTurn?.Dispose()` is never called on a live token — the three
+hazards §1g identified all disappear rather than being handled.
 
 #### The rest of the scope
 
