@@ -37,6 +37,8 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D18 | **Submitting during a turn QUEUES and APPENDS.** Several messages join newline-separated into one prompt at turn end; Escape stops the turn and moves the queue into the composer, above any text already there. Interrupt-and-rerun is deferred to when agents run in the background. | §5.1h |
 | D20 | **`SendAsync` returns `SendResult { Text, Outcome }`** — `Completed \| Capped \| Stuck \| Failed \| Cancelled`. Three return sites; only four of ~73 call sites read the string. `state` must not rest on matching an error message's wording. | §5.1c |
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
+| D24 | **A child gets a DIFFERENT system prompt**: the `# The user's commands` block dropped (it has no composer), and a sub-agent block added saying its final message is the whole answer and there is no follow-up. Everything else kept. One init-only property, fixed at construction. | §5.1h-i |
+| D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
 | D22 | **Nothing of the child renders live except its row.** Its reasoning and answer stay in the buffer until expanded. A five-minute child shows one line of numbers — chosen, not discovered. | §5.1e |
 | D19 | **The spawn tool's `PluginType` is `llm_agent`**, a type the UI already understands at five sites — Worker author, no collapse on completion, stays expanded, own status, no output placeholdering. It was built for exactly this and is currently unused. | §5.1e-i |
@@ -819,6 +821,47 @@ latches true after the first turn and would block everything. The fire-and-forge
 continuation that clears it.
 
 **And a guard needs a BEHAVIOUR** — rejecting the keystroke is not enough. See §1h.
+
+#### 1h-i. The two system prompts — MISSED BY ALL FOUR REVIEW PASSES
+
+A child would today receive **the session system prompt unchanged**, which is wrong in a specific way
+and silent about the thing that matters most.
+
+**What is wrong for a child:** the `# The user's commands` block (`SystemPrompt.cs:133-141`) tells it
+about `/help`, `/clear`, `/compress`, `/mcp`, `/exit`. **A child has no user and no composer.** It is
+being told to suggest commands to someone who will never see them. The "Answering" guidance is aimed
+at a human reader too, where a child's reader is the parent's MODEL.
+
+**What is missing:** nothing tells it that it IS a sub-agent — that its final message is the entire
+answer, that nobody will ask a follow-up, and that offering next steps is therefore useless. A child
+that thinks it is in a conversation writes *"let me know if you'd like me to check the other files"*,
+and the parent receives a question nobody can answer.
+
+**The child's prompt:**
+- **drop** the commands section — the one block that is actively wrong
+- **add** a sub-agent block, in the same position and spirit as the briefing: *your final message is
+  the whole of what your caller receives; there will be no follow-up; do not ask questions or offer
+  next steps*
+- **keep** everything else: `<env>`, conventions, verifying, project instructions, MCP instructions —
+  all as relevant to a child as to a parent
+
+Mechanically this is one more init-only property on `SystemPromptContext`, exactly how
+`McpInstructions` was added, so the cache rules are unaffected: it is fixed at construction. **Two
+prompt prefixes per session rather than one** — correct, since they are different agents, and worth
+saying so it is not later mistaken for cache churn.
+
+**The parent's prompt: nothing.** When to spawn belongs in the TOOL DESCRIPTION, which is where
+opencode puts it (`task.txt`) — a tool the model can see and a description it reads at the moment of
+choosing. Putting it in the system prompt would spend prefix on every turn of every session, including
+the ones with no spawning in them, and would describe a capability the model can already see in its
+tool list.
+
+What the description must carry, following opencode's shape:
+- **when NOT to use it** — reading a known file, grepping a known symbol, anything in 2-3 files. This
+  is most of their text, and it is the part that stops a model delegating work it should just do
+- **that the result is not visible to the user**, so the parent must report it
+- **that the prompt should say exactly what to return**, since the briefing is what shapes the answer
+  (D9) and there is no follow-up
 
 #### 1h. Submitting while a turn runs — QUEUE AND APPEND
 
