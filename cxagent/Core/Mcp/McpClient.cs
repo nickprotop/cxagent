@@ -62,6 +62,12 @@ public sealed class McpClient : IMcpConnection
     /// <summary>The configured name, which prefixes every tool this server offers.</summary>
     public string Name => _name;
 
+    /// <summary>The version we asked for — the latest we support, per the spec's SHOULD.</summary>
+    public string RequestedProtocolVersion => McpProtocol.Latest;
+
+    /// <summary>What the handshake settled on, or null before it has run.</summary>
+    public string? NegotiatedProtocolVersion { get; private set; }
+
     /// <summary>Why the server is not usable, or null while it is. Shown to the user verbatim: a
     /// server that failed with "npx: command not found" is one they can fix in a second.</summary>
     public string? Error { get; private set; }
@@ -143,7 +149,7 @@ public sealed class McpClient : IMcpConnection
 
             var init = await SendAsync("initialize", new
             {
-                protocolVersion = "2024-11-05",
+                protocolVersion = McpProtocol.Latest,
                 capabilities = new { },
                 clientInfo = new { name = "cxagent", version = "1" },
             }, ct);
@@ -153,6 +159,22 @@ public sealed class McpClient : IMcpConnection
                 Error ??= "no response to initialize";
                 return false;
             }
+
+            // THE SERVER'S COUNTER-OFFER SETTLES IT. "If the server supports the requested version it
+            // MUST respond with the same version. Otherwise it MUST respond with another version it
+            // supports" — and if we cannot speak that one, we SHOULD disconnect. Carrying on anyway
+            // would mean talking a dialect the other end never agreed to, whose failures surface
+            // later as unexplained malformed replies rather than here, where the reason can be said.
+            var offered = init.Value.TryGetProperty("protocolVersion", out var pv)
+                       && pv.ValueKind == JsonValueKind.String ? pv.GetString() : null;
+
+            var (negotiated, versionError) = McpProtocol.Negotiate(offered);
+            if (versionError is not null)
+            {
+                Error = versionError;
+                return false;
+            }
+            NegotiatedProtocolVersion = negotiated;
 
             if (init.Value.TryGetProperty("instructions", out var instr)
                 && instr.ValueKind == JsonValueKind.String)

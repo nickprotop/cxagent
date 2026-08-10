@@ -25,25 +25,22 @@ namespace CxAgent.Core.Mcp;
 /// </summary>
 public sealed class McpHttpClient : IMcpConnection
 {
-    /// <summary>
-    /// The revision we ask for.
-    ///
-    /// <para>NOT <c>2024-11-05</c>, which is the oldest and pairs with the deprecated HTTP+SSE
-    /// transport. A server that disagrees counter-offers its own version and we accept it, so asking
-    /// high costs nothing and asking low would pin us to a transport this class does not speak.</para>
-    /// </summary>
-    private const string PreferredProtocolVersion = "2025-06-18";
-
     private readonly string _name;
     private readonly string _url;
     private readonly IReadOnlyDictionary<string, string>? _headers;
     private readonly HttpClient _http;
 
     private string? _sessionId;
-    private string _protocolVersion = PreferredProtocolVersion;
+    private string _protocolVersion = McpProtocol.Latest;
     private int _nextId;
 
     public string Name => _name;
+
+    /// <summary>The version we asked for — the latest we support, per the spec's SHOULD.</summary>
+    public string RequestedProtocolVersion => McpProtocol.Latest;
+
+    /// <summary>What the handshake settled on, or null before it has run.</summary>
+    public string? NegotiatedProtocolVersion { get; private set; }
     public string? Instructions { get; private set; }
     public string? Error { get; private set; }
     public IReadOnlyList<McpToolDef> Tools { get; private set; } = [];
@@ -67,7 +64,7 @@ public sealed class McpHttpClient : IMcpConnection
 
         var result = await SendAsync("initialize", new
         {
-            protocolVersion = PreferredProtocolVersion,
+            protocolVersion = McpProtocol.Latest,
             capabilities = new { },
             clientInfo = new { name = "cxagent", version = "1" },
         }, ct, isInitialize: true);
@@ -78,13 +75,20 @@ public sealed class McpHttpClient : IMcpConnection
             return false;
         }
 
-        // THE SERVER'S COUNTER-OFFER WINS. Legacy negotiation is "the server answers with a version
-        // it supports"; ignoring that and carrying on at ours is how a client ends up sending a
-        // dialect the other end never agreed to.
-        if (result.Value.TryGetProperty("protocolVersion", out var version)
-            && version.ValueKind == JsonValueKind.String
-            && version.GetString() is { Length: > 0 } negotiated)
-            _protocolVersion = negotiated;
+        // THE SERVER'S COUNTER-OFFER SETTLES IT, and one we cannot speak is a disconnect rather than
+        // something to paper over — the same rule and the same supported list as stdio, so a server
+        // can never be reachable one way and refused the other.
+        var offered = result.Value.TryGetProperty("protocolVersion", out var version)
+                   && version.ValueKind == JsonValueKind.String ? version.GetString() : null;
+
+        var (negotiated, versionError) = McpProtocol.Negotiate(offered);
+        if (versionError is not null)
+        {
+            Error = versionError;
+            return false;
+        }
+        _protocolVersion = negotiated!;
+        NegotiatedProtocolVersion = negotiated;
 
         if (result.Value.TryGetProperty("instructions", out var instr)
             && instr.ValueKind == JsonValueKind.String)

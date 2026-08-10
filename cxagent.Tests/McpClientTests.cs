@@ -37,7 +37,7 @@ public class McpClientTests : IDisposable
     /// </summary>
     private string[] Server(string toolsJson, string callResultJson, string? instructions = null,
         bool exitAfterInitialize = false, bool neverAnswerCalls = false,
-        string? reportEnv = null, bool reportCwd = false)
+        string? reportEnv = null, bool reportCwd = false, string? protocolVersion = null)
     {
         var path = Path.Combine(Path.GetTempPath(), "mcpsrv-" + Guid.NewGuid().ToString("N") + ".py");
         _scripts.Add(path);
@@ -65,7 +65,7 @@ public class McpClientTests : IDisposable
                 msg = json.loads(line)
                 method = msg.get("method")
                 if method == "initialize":
-                    result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
+                    result = {"protocolVersion": @@PROTO@@, "capabilities": {"tools": {}},
                               "serverInfo": {"name": "scripted", "version": "1"}}
                     if INSTRUCTIONS is not None:
                         result["instructions"] = INSTRUCTIONS
@@ -92,6 +92,7 @@ public class McpClientTests : IDisposable
             .Replace("@@INSTR@@", instr)
             .Replace("@@EXIT@@", exitAfterInitialize ? "True" : "False")
             .Replace("@@HANG@@", neverAnswerCalls ? "True" : "False")
+            .Replace("@@PROTO@@", JsonSerializer.Serialize(protocolVersion ?? "2025-06-18"))
             .Replace("@@REPORT@@",
                 reportCwd ? "os.getcwd()"
                 : reportEnv is not null ? $"os.environ.get({JsonSerializer.Serialize(reportEnv)}, \"\")"
@@ -359,4 +360,78 @@ public class McpClientTests : IDisposable
 
     private static JsonElement Args(object value) =>
         JsonSerializer.SerializeToElement(value);
+    // ---- protocol version ----------------------------------------------------------------------
+
+    /// <summary>
+    /// WE ASK FOR THE LATEST WE SUPPORT, not the oldest that exists. The spec: "the client MUST send
+    /// a protocol version it supports. This SHOULD be the LATEST version supported by the client."
+    ///
+    /// <para>It used to send 2024-11-05 — the very first revision, which pairs with the deprecated
+    /// HTTP+SSE transport. Asking low costs real capability and gains nothing, since a server that
+    /// cannot meet us counter-offers anyway.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_AsksForTheLatestVersionWeSupport()
+    {
+        if (!HavePython) return;
+
+        await using var client = new McpClient("scripted", Server(OneTool, TextResult));
+        await client.StartAsync(CancellationToken.None);
+
+        Assert.Equal(McpProtocol.Latest, client.RequestedProtocolVersion);
+    }
+
+    /// <summary>
+    /// A COUNTER-OFFER WE SUPPORT IS ACCEPTED AND USED. "If the server supports the requested version
+    /// it MUST respond with the same version. Otherwise it MUST respond with another version it
+    /// supports" — so an older server naming an older revision is the normal path, not a failure.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_AcceptsACounterOfferWeSupport()
+    {
+        if (!HavePython) return;
+
+        await using var client = new McpClient("scripted",
+            Server(OneTool, TextResult, protocolVersion: "2024-11-05"));
+
+        Assert.True(await client.StartAsync(CancellationToken.None));
+        Assert.Equal("2024-11-05", client.NegotiatedProtocolVersion);
+    }
+
+    /// <summary>
+    /// A COUNTER-OFFER WE CANNOT SUPPORT DISCONNECTS, naming BOTH versions.
+    ///
+    /// <para>"If the client does not support the version in the server's response, it SHOULD
+    /// disconnect." Carrying on would mean speaking a dialect the other end never agreed to — the
+    /// failures from that surface later, as unexplained malformed replies, rather than here where the
+    /// message can say exactly what happened.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_RejectsACounterOfferWeCannotSupport()
+    {
+        if (!HavePython) return;
+
+        await using var client = new McpClient("scripted",
+            Server(OneTool, TextResult, protocolVersion: "2099-01-01"));
+
+        Assert.False(await client.StartAsync(CancellationToken.None));
+        Assert.NotNull(client.Error);
+        Assert.Contains("2099-01-01", client.Error!, StringComparison.Ordinal);      // what it wanted
+        Assert.Contains(McpProtocol.Latest, client.Error!, StringComparison.Ordinal); // what we offer
+    }
+
+    /// <summary>A server that names no version at all is taken at ours rather than refused — the
+    /// field is technically required, but refusing over a missing string would break working servers
+    /// for a purely cosmetic omission.</summary>
+    [Fact]
+    public async Task StartAsync_WithNoVersionInTheReply_KeepsOurs()
+    {
+        if (!HavePython) return;
+
+        await using var client = new McpClient("scripted",
+            Server(OneTool, TextResult, protocolVersion: ""));
+
+        Assert.True(await client.StartAsync(CancellationToken.None));
+        Assert.Equal(McpProtocol.Latest, client.NegotiatedProtocolVersion);
+    }
 }

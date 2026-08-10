@@ -51,6 +51,9 @@ public class McpHttpClientTests : IDisposable
         /// <summary>Answers 500 to everything after the handshake.</summary>
         public bool FailCalls { get; init; }
 
+        /// <summary>What the server answers initialize with — a counter-offer when it differs.</summary>
+        public string ProtocolVersion { get; init; } = "2025-06-18";
+
         public FakeServer()
         {
             // Port 0 is not available to HttpListener, so take a free one by probing.
@@ -119,7 +122,10 @@ public class McpHttpClientTests : IDisposable
             }
 
             var result = isInitialize
-                ? """{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"},"instructions":"Be brief."}"""
+                // Placeholder substitution, not interpolation: the JSON is dense with braces
+                // ({"tools":{}}) and every raw-interpolation form ends up fighting them.
+                ? """{"protocolVersion":"@@PROTO@@","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"},"instructions":"Be brief."}"""
+                    .Replace("@@PROTO@@", ProtocolVersion)
                 : body.Contains("tools/list", StringComparison.Ordinal)
                     ? """{"tools":[{"name":"go","description":"Goes.","inputSchema":{"type":"object"}}]}"""
                     : """{"content":[{"type":"text","text":"hello over http"}]}""";
@@ -345,5 +351,32 @@ public class McpHttpClientTests : IDisposable
 
         Assert.Equal("go", Assert.Single(tools).Name);
         Assert.Equal("Be brief.", client.Instructions);
+    }
+    /// <summary>Both transports negotiate from ONE supported list, so a server can never be reachable
+    /// over stdio and refused over HTTP for a reason the user cannot see.</summary>
+    [Fact]
+    public async Task StartAsync_AcceptsACounterOfferWeSupport()
+    {
+        var server = NewServer(new FakeServer { ProtocolVersion = "2024-11-05" });
+        await using var client = new McpHttpClient("remote", server.Url);
+
+        Assert.True(await client.StartAsync(CancellationToken.None));
+        Assert.Equal("2024-11-05", client.NegotiatedProtocolVersion);
+
+        // And the header carries the NEGOTIATED version, not the one we asked for.
+        await client.CallToolAsync("go", NoArgs, CancellationToken.None);
+        Assert.Equal("2024-11-05",
+            server.Requests.Last().Headers.GetValueOrDefault("MCP-Protocol-Version"));
+    }
+
+    /// <summary>A version we cannot speak disconnects, naming both sides.</summary>
+    [Fact]
+    public async Task StartAsync_RejectsACounterOfferWeCannotSupport()
+    {
+        var server = NewServer(new FakeServer { ProtocolVersion = "2099-01-01" });
+        await using var client = new McpHttpClient("remote", server.Url);
+
+        Assert.False(await client.StartAsync(CancellationToken.None));
+        Assert.Contains("2099-01-01", client.Error!, StringComparison.Ordinal);
     }
 }
