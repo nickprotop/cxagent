@@ -120,17 +120,37 @@ public enum EscapeTarget
 {
     /// <summary>A Settings dialog is open: cancel it, discarding its unsaved working copy.</summary>
     CancelDialog,
-    /// <summary>No dialog: fall through to the copilot approve/discard gate.</summary>
-    DiscardPendingApproval,
+    /// <summary>
+    /// A turn is running: cancel it, leaving the session alive.
+    ///
+    /// <para>What Claude Code's Escape does, and what this app had no way to do at all — the only
+    /// cancellation wired up was Ctrl+Q and /exit, which take the whole process down. A long shell
+    /// command or a model that has started down the wrong path could not be stopped without losing
+    /// the conversation.</para>
+    /// </summary>
+    CancelTurn,
+
+    /// <summary>Nothing to cancel: Escape does nothing.</summary>
+    Nothing,
 }
 
 public static class EscapeRouting
 {
     /// <summary>
-    /// The dialog wins while one is open. `dialogIsOpen` MUST become false the moment the dialog
+    /// THE DIALOG WINS while one is open. `dialogIsOpen` MUST become false the moment the dialog
     /// closes — AppBootstrap clears it in a `finally`, because a value left set here points Escape
     /// at a dead dialog for the rest of the session and no unit test above this line would notice.
+    ///
+    /// <para>Then a running turn. Escape is the one key a user presses when something is going
+    /// wrong, and the ordering matters: cancelling a turn while a modal is open would leave them
+    /// looking at a dialog they cannot dismiss.</para>
+    ///
+    /// <para>Otherwise NOTHING. This used to return DiscardPendingApproval unconditionally, which
+    /// had been a no-op since the copilot draft gate was deleted — so Escape did nothing at all
+    /// whenever no dialog was open, silently.</para>
     /// </summary>
-    public static EscapeTarget For(bool dialogIsOpen) =>
-        dialogIsOpen ? EscapeTarget.CancelDialog : EscapeTarget.DiscardPendingApproval;
+    public static EscapeTarget For(bool dialogIsOpen, bool turnIsRunning = false) =>
+        dialogIsOpen ? EscapeTarget.CancelDialog
+        : turnIsRunning ? EscapeTarget.CancelTurn
+        : EscapeTarget.Nothing;
 }

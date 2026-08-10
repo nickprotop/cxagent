@@ -47,15 +47,31 @@ public class SettingsEntryTests
     }
 
     [Fact]
-    public void Escape_GoesToTheDialogWhileOpen_AndBackToTheDraftGateOnceClosed()
+    public void Escape_GoesToTheDialogWhileOpen_ThenToARunningTurn_ThenNowhere()
     {
         // The P14 drive reported "Escape no longer discards a draft" as a defect and blamed a missing
-        // `finally`. Both halves were wrong, and this test exists so the next reader does not repeat
-        // the diagnosis: the routing is a pure function of "is a dialog open", and AppBootstrap DOES
-        // clear that in a finally (verified). What the drive actually observed is that Escape does not
-        // clear typed COMPOSER TEXT -- which it never has, in any version. DiscardDraft resolves a
-        // pending COPILOT approval, a different thing that shares the key.
-        Assert.Equal(EscapeTarget.CancelDialog,           EscapeRouting.For(dialogIsOpen: true));
-        Assert.Equal(EscapeTarget.DiscardPendingApproval, EscapeRouting.For(dialogIsOpen: false));
+        // `finally`. Both halves were wrong, and this note stays so the next reader does not repeat
+        // the diagnosis: the routing is a pure function of its inputs, and AppBootstrap DOES clear
+        // the dialog flag in a finally (verified). What the drive actually observed is that Escape
+        // does not clear typed COMPOSER TEXT -- which it never has, in any version.
+        //
+        // The old third state, DiscardPendingApproval, had been a NO-OP since the copilot draft gate
+        // was deleted: Escape did nothing whenever no dialog was open, and nothing said so. It is now
+        // "cancel the running turn", which is what a user pressing Escape actually wants.
+        Assert.Equal(EscapeTarget.CancelDialog, EscapeRouting.For(dialogIsOpen: true));
+        Assert.Equal(EscapeTarget.CancelTurn,   EscapeRouting.For(dialogIsOpen: false, turnIsRunning: true));
+        Assert.Equal(EscapeTarget.Nothing,      EscapeRouting.For(dialogIsOpen: false, turnIsRunning: false));
+    }
+
+    /// <summary>
+    /// THE DIALOG WINS even mid-turn. Escape is the key someone presses when something is going
+    /// wrong, and cancelling the turn underneath an open modal would leave them looking at a dialog
+    /// they cannot dismiss.
+    /// </summary>
+    [Fact]
+    public void Escape_WithBothADialogAndARunningTurn_CancelsTheDialog()
+    {
+        Assert.Equal(EscapeTarget.CancelDialog,
+            EscapeRouting.For(dialogIsOpen: true, turnIsRunning: true));
     }
 }

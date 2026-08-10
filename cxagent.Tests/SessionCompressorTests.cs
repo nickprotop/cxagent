@@ -240,4 +240,70 @@ public class SessionCompressorTests
         Assert.Equal(2, conversation.Count);   // one summary + the newest half
         Assert.Contains("changed the parser", conversation[0].Content, System.StringComparison.Ordinal);
     }
+    // ---- the compaction prompt -----------------------------------------------------------------
+
+    /// <summary>
+    /// THE TEMPLATE'S SECTIONS ALL REACH THE MODEL. Ours asked for the right facts but left the form
+    /// open, and an open form is filled unevenly — sections with material get written and the rest
+    /// silently vanish, with no way to tell "nothing was blocked" from "it forgot to say".
+    /// </summary>
+    [Fact]
+    public void BuildPrompt_AsksForEverySection()
+    {
+        var prompt = SessionCompressor.BuildPrompt("some transcript");
+
+        foreach (var section in new[]
+                 { "## Objective", "## Important Details", "## Work State",
+                   "### Completed", "### Active", "### Blocked",
+                   "## Next Move", "## Relevant Files" })
+            Assert.Contains(section, prompt, StringComparison.Ordinal);
+
+        // And the rule that makes an empty section a recorded fact rather than an omission.
+        Assert.Contains("(none)", prompt, StringComparison.Ordinal);
+        Assert.Contains("Keep every section", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>The transcript is what is being summarised, so it has to be in there.</summary>
+    [Fact]
+    public void BuildPrompt_IncludesTheTranscript()
+    {
+        Assert.Contains("MARKER-TRANSCRIPT-TEXT",
+            SessionCompressor.BuildPrompt("MARKER-TRANSCRIPT-TEXT"), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A PREVIOUS SUMMARY IS FED BACK TO BE UPDATED, not re-summarised. Without it, the second
+    /// compaction reads only the first one's prose and detail decays geometrically across a long
+    /// session — which is what makes late compactions useless.
+    /// </summary>
+    [Fact]
+    public void BuildPrompt_WithAPreviousSummary_AsksForAnUpdateRatherThanAFreshSummary()
+    {
+        var prompt = SessionCompressor.BuildPrompt("new history", "OLD-SUMMARY-BODY");
+
+        Assert.Contains("<previous-summary>", prompt, StringComparison.Ordinal);
+        Assert.Contains("OLD-SUMMARY-BODY", prompt, StringComparison.Ordinal);
+        Assert.Contains("UPDATE", prompt, StringComparison.Ordinal);
+        Assert.Contains("still true", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>And the first pass says nothing about a previous summary — an empty
+    /// &lt;previous-summary&gt; block would ask the model to merge with nothing.</summary>
+    [Fact]
+    public void BuildPrompt_WithNoPreviousSummary_HasNoPreviousSummaryBlock()
+    {
+        var prompt = SessionCompressor.BuildPrompt("history");
+
+        Assert.DoesNotContain("<previous-summary>", prompt, StringComparison.Ordinal);
+    }
+
+    /// <summary>The no-tools instruction survives the rewrite. The call passes no tools, but a
+    /// provider that ignores an empty list would read a transcript full of tool calls as a request to
+    /// make them again.</summary>
+    [Fact]
+    public void BuildPrompt_TellsTheModelNotToCallTools()
+    {
+        Assert.Contains("Do not call any tool",
+            SessionCompressor.BuildPrompt("history"), StringComparison.Ordinal);
+    }
 }

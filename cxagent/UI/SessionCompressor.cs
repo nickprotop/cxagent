@@ -139,7 +139,13 @@ public static class SessionCompressor
         try
         {
             var before = context.TotalChars();
-            var summary = await SummariseAsync(oldTurns, provider, ct);
+
+            // A PREVIOUS SUMMARY IS UPDATED, NOT RE-SUMMARISED. Without this the second compaction
+            // reads only the first one's prose, and detail decays geometrically across a long
+            // session — which is exactly why late compactions become useless. Pulled out of the head
+            // so it is merged rather than condensed again.
+            var previousSummary = ExtractPreviousSummary(oldTurns);
+            var summary = await SummariseAsync(oldTurns, provider, ct, previousSummary);
 
             // METERED REGARDLESS. The call was made and billed whether or not its answer is usable;
             // not recording it would hide spend from the ledger.
@@ -184,12 +190,106 @@ public static class SessionCompressor
 
 
     /// <summary>
+    /// The structure the summary must have, adapted from opencode's compaction template.
+    ///
+    /// <para>A FIXED SHAPE BEATS A LIST OF TOPICS. Ours asked for the right facts but left the form
+    /// open, and an open form is one the model fills unevenly — the sections it happens to have
+    /// material for get written, the rest silently vanish, and there is no way to tell "nothing was
+    /// blocked" from "it forgot to say". Named sections with an explicit "(none)" make the absence
+    /// itself a recorded fact.</para>
+    ///
+    /// <para><c>Next Move</c> is the section we most lacked. We asked for "anything not yet done" — a
+    /// list — where what a resumed agent actually needs is an ORDERED first action.</para>
+    /// </summary>
+    public const string SummaryTemplate = """
+        Output exactly the Markdown structure shown inside <template> and keep the section order
+        unchanged. Do not include the <template> tags in your response.
+        <template>
+        ## Objective
+        - [one or two brief sentences describing what the user is trying to accomplish]
+
+        ## Important Details
+        - [constraints, decisions and why, facts established as true, measurements, exact context
+          needed to continue, or "(none)"]
+
+        ## Work State
+        ### Completed
+        - [finished work and verified facts: files changed by exact path, commands run with their
+          outcome, builds and tests with exact pass/fail counts; otherwise "(none)"]
+
+        ### Active
+        - [current work, partial changes, or investigation state; otherwise "(none)"]
+
+        ### Blocked
+        - [blockers, failing commands with their error text, unknowns, and anything tried that did
+          NOT work so it is not attempted again; otherwise "(none)"]
+
+        ## Next Move
+        1. [immediate concrete action, or "(none)"]
+        2. [next action if known, or "(none)"]
+
+        ## Relevant Files
+        - [file or directory path: why it matters, or "(none)"]
+        </template>
+
+        Rules:
+        - Keep every section, even when empty.
+        - Use terse bullets, not prose paragraphs.
+        - Preserve exact file paths, symbols, commands, error strings, URLs and identifiers verbatim.
+          A vague summary is worse than a short one: "fixed the parser" is useless where
+          "IndentShift.cs Refuse() now requires a 2-of-3 majority" is not.
+        - Where something is uncertain or was never resolved, say so plainly rather than inventing a
+          resolution.
+        - Do not mention the summary process or that context was compacted.
+        """;
+
+    /// <summary>
+    /// The whole compaction prompt: the framing, the template, any previous summary to merge, and the
+    /// transcript.
+    /// </summary>
+    /// <param name="previousSummary">
+    /// The summary a previous compaction produced, when there is one.
+    ///
+    /// <para>WITHOUT THIS, EACH COMPACTION SUMMARISES A SUMMARY. The second pass sees only the first
+    /// pass's prose, and detail decays geometrically across a long session — the exact failure that
+    /// makes late compactions useless. Feeding it back as something to UPDATE means still-true facts
+    /// are preserved rather than re-derived from an ever-thinner source.</para>
+    /// </param>
+    public static string BuildPrompt(string transcript, string? previousSummary = null)
+    {
+        var framing = string.IsNullOrWhiteSpace(previousSummary)
+            ? "You are compacting your own working memory. Everything below is about to be REPLACED "
+              + "by what you write, and you will keep working from it — so write what you would need "
+              + "to continue, not what you would tell someone about the past."
+            : "You are compacting your own working memory. Below is the summary you wrote earlier "
+              + "and the history since. UPDATE the summary: keep what is still true, drop what has "
+              + "been superseded, and merge in the new facts. Everything below is about to be "
+              + "REPLACED by what you write, and you will keep working from it.";
+
+        var previous = string.IsNullOrWhiteSpace(previousSummary)
+            ? ""
+            : $"<previous-summary>\n{previousSummary!.Trim()}\n</previous-summary>\n\n";
+
+        // The tool instruction stays even though the call passes no tools. Belt and braces: a
+        // provider that ignores an empty tool list would otherwise read a transcript full of tool
+        // calls as a request to make them again.
+        return framing + "\n\n"
+             + SummaryTemplate + "\n\n"
+             + "Reply with the note itself and nothing else. Do not call any tool — the history "
+             + "below DESCRIBES tools that were already used; it is not a request to use them "
+             + "again.\n\n"
+             + previous
+             + transcript;
+    }
+
+    /// <summary>
     /// The summarising call itself: a plain ChatAsync with no tools — there is nothing to decide, only
     /// text to condense. Uses the SAME provider the goal is using; no separate "summarising model"
     /// config knob (a real question, but a separate one — an unused knob is worse than none).
     /// </summary>
     private static Task<LlmResponse> SummariseAsync(
-        List<ChatMessage> oldTurns, ILlmProvider provider, CancellationToken ct)
+        List<ChatMessage> oldTurns, ILlmProvider provider, CancellationToken ct,
+        string? previousSummary = null)
     {
         // RENDER THE TOOL CALLS, NOT JUST Content. An assistant message that makes a tool call
         // carries EMPTY Content — the call is in ToolCalls — so joining on Content alone handed the
@@ -204,28 +304,7 @@ public static class SessionCompressor
             new()
             {
                 Role = "user",
-                Content =
-                    "You are compacting your own working memory. Everything below is about to be "
-                    + "REPLACED by what you write, and you will keep working from it — so write what "
-                    + "you would need to continue, not what you would tell someone about the past.\n\n"
-                    + "Record, when present:\n"
-                    + "- Files read or changed, by exact path, and what each contains or now contains.\n"
-                    + "- What was established as TRUE: findings, causes, measurements, decisions.\n"
-                    + "- Commands run and their outcome — especially builds and tests, with the exact "
-                    + "pass/fail counts and any error text still unresolved.\n"
-                    + "- Anything asked for and NOT yet done, and anything tried that did not work, "
-                    + "so it is not attempted again.\n\n"
-                    + "Keep concrete details verbatim — paths, identifiers, counts, values, error "
-                    + "messages. A vague summary is worse than a short one: \"fixed the parser\" is "
-                    + "useless where \"IndentShift.cs Refuse() now requires a 2-of-3 majority\" is not. "
-                    + "No narrative, no commentary, no pleasantries, and do not describe the "
-                    + "conversation itself. Facts only.\n\n"
-                    + "If some part of this history is uncertain or was never resolved, say so "
-                    + "plainly rather than inventing a resolution.\n\n"
-                    + "Reply with the note itself and nothing else. Do not call any tool — the "
-                    + "history below DESCRIBES tools that were already used; it is not a request "
-                    + "to use them again.\n\n"
-                    + transcript,
+                Content = BuildPrompt(transcript, previousSummary),
             },
         };
 
@@ -302,5 +381,31 @@ public static class SessionCompressor
     private static bool IsUsableSummary(string? text) => !string.IsNullOrWhiteSpace(text);
 
     private static string FormatSummary(string? text) =>
-        $"[earlier conversation, summarised: {text}]";
+        $"{SummaryMarker}{text}]";
+
+    /// <summary>The marker that makes a summary recognisable as one on the next compaction.</summary>
+    private const string SummaryMarker = "[earlier conversation, summarised: ";
+
+    /// <summary>
+    /// The summary a previous compaction left in the head, or null on the first pass.
+    ///
+    /// <para>Matched on the marker this class writes rather than on position: the head's shape
+    /// changes as the conversation grows, and a positional guess would silently pick up an ordinary
+    /// assistant message and feed it back as though it were a summary.</para>
+    /// </summary>
+    private static string? ExtractPreviousSummary(IReadOnlyList<ChatMessage> oldTurns)
+    {
+        // LAST, not first: if several ever accumulate, the newest is the one still true.
+        for (var i = oldTurns.Count - 1; i >= 0; i--)
+        {
+            var content = oldTurns[i].Content;
+            if (content is null || !content.StartsWith(SummaryMarker, StringComparison.Ordinal))
+                continue;
+
+            var inner = content[SummaryMarker.Length..];
+            if (inner.EndsWith(']')) inner = inner[..^1];
+            return inner.Trim();
+        }
+        return null;
+    }
 }

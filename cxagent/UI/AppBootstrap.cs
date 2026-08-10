@@ -104,6 +104,11 @@ public static class AppBootstrap
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
+        // The running turn's cancellation scope, or null when nothing is running. Replaced on every
+        // submission and read by the Escape handler — a field rather than a local because the handler
+        // is registered once and must see the CURRENT turn, not whichever existed at registration.
+        CancellationTokenSource? turnCts = null;
+
         // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
         // rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
         var mcpTokens = new Core.Mcp.Auth.TokenStore(paths);
@@ -472,7 +477,16 @@ public static class AppBootstrap
             // a prompt while the agent was several tool calls into one.
             mainWindow.RetireComposerHint();
 
-            _ = runner.SendAsync(goalText, conversation, cts.Token);
+            // A CANCELLATION SCOPE PER TURN, linked to the session's. Escape cancels THIS request;
+            // the session token still ends everything on Ctrl+Q or /exit. Before this the only token
+            // in existence was the session's, so there was no way to stop a turn without taking the
+            // whole app down with it.
+            var previousTurn = System.Threading.Interlocked.Exchange(ref turnCts,
+                CancellationTokenSource.CreateLinkedTokenSource(cts.Token));
+            previousTurn?.Dispose();
+            var turnToken = turnCts!.Token;
+
+            _ = runner.SendAsync(goalText, conversation, turnToken);
         };
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
@@ -534,10 +548,23 @@ public static class AppBootstrap
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape,
             () =>
             {
-                // Routed through EscapeRouting.For so the DECISION is unit-testable; the action
-                // itself (which needs a live dialog) stays here.
-                if (EscapeRouting.For(openDialog is not null) == EscapeTarget.CancelDialog)
-                    openDialog!.Cancel();
+                // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
+                // (which need a live dialog or a live turn) stay here.
+                var running = turnCts is { IsCancellationRequested: false };
+                switch (EscapeRouting.For(openDialog is not null, running))
+                {
+                    case EscapeTarget.CancelDialog:
+                        openDialog!.Cancel();
+                        break;
+
+                    case EscapeTarget.CancelTurn:
+                        // Cancelling the token unwinds the whole turn: the provider stream, the tool
+                        // loop, and any shell process, whose ProcessRunner kills its ENTIRE process
+                        // tree on cancellation. The session, its context and its MCP servers survive.
+                        turnCts!.Cancel();
+                        permissionSink.ShowSystemMessage("[yellow]Stopped.[/]");
+                        break;
+                }
             });
 
         // MainWindow stays independent of SettingsDialog/SetupWizard; AppBootstrap supplies the flow
