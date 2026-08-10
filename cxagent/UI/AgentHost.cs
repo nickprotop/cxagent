@@ -47,6 +47,10 @@ public sealed class AgentHost : IDisposable
     /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
     private readonly Core.Mcp.McpToolset? _mcp;
 
+    /// <summary>What this host's agent was created to do, or null for a plain session. Fixed here so
+    /// an F5 re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
+    private readonly string? _briefing;
+
     /// <summary>
     /// The subprocesses behind <see cref="_mcp"/>, held only so <see cref="Dispose"/> can end them.
     ///
@@ -221,8 +225,10 @@ public sealed class AgentHost : IDisposable
         SessionSnapshot? resume = null,
         string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
-        IReadOnlyList<IAsyncDisposable>? mcpServers = null)
+        IReadOnlyList<IAsyncDisposable>? mcpServers = null,
+        string? briefing = null)
     {
+        _briefing = briefing;
         _mcp = mcp;
         _mcpServers = mcpServers ?? [];
         _provider = provider;
@@ -347,6 +353,7 @@ public sealed class AgentHost : IDisposable
 
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
+            briefing: _briefing,
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.

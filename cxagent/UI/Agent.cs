@@ -88,6 +88,21 @@ public sealed class Agent
     private readonly Core.Mcp.McpToolset? _mcp;
 
     /// <summary>
+    /// What THIS agent was created to do, fixed at construction — null for a plain session.
+    ///
+    /// <para>The seam a caller uses to tell one agent something the others are not told: a
+    /// sub-agent's task, a skill's instructions, a role. Constructor-only ON PURPOSE. It becomes part
+    /// of the system message, which is the prompt-cache prefix; a mutable briefing would rewrite that
+    /// prefix mid-session and throw away every cached token at the moment the conversation is
+    /// longest. Fixed at construction, it is byte-identical on every turn for the agent's whole life,
+    /// so it costs one prefix and then nothing.</para>
+    ///
+    /// <para>An agent that needs a DIFFERENT briefing is a different agent. That is not a limitation
+    /// — it is the same self-containment rule the context follows.</para>
+    /// </summary>
+    private readonly string? _briefing;
+
+    /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
     /// <para>A field rather than a local inside <see cref="RunCoreAsync"/> because a context that
@@ -145,9 +160,11 @@ public sealed class Agent
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
-        Core.Mcp.McpToolset? mcp = null)
+        Core.Mcp.McpToolset? mcp = null,
+        string? briefing = null)
     {
         _mcp = mcp;
+        _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
         _plugins = plugins;
         _ledger = ledger;
@@ -246,7 +263,12 @@ public sealed class Agent
                                       ?? new Dictionary<string, string>(),
                 })
                 // AFTER the general prompt, so a project can override it.
-                + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir));
+                + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
+                // AND THE BRIEFING LAST, so what this agent was created to do outranks both the
+                // general prompt and the project's — it is the most specific instruction there is.
+                // Constant for the agent's life, so it extends the cache prefix rather than churning
+                // it.
+                + RenderBriefing(_briefing);
 
             var existing = messages.FirstOrDefault(m => m.Role == "system");
             if (existing is null)
@@ -1141,6 +1163,21 @@ public sealed class Agent
     /// unescaped one would open a style scope that never closes — corrupting every header after it.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The briefing as its own attributed block, or nothing at all.
+    ///
+    /// <para>NAMED, like the project instructions above it. An unattributed paragraph appended to a
+    /// system prompt reads as though the app said it, leaving the model no way to weigh "what I was
+    /// asked to do" against a general rule. Absent entirely when there is no briefing, so a plain
+    /// session's prompt — and therefore its cache prefix — is byte-identical to what it was before
+    /// this existed.</para>
+    /// </summary>
+    private static string RenderBriefing(string? briefing) =>
+        string.IsNullOrWhiteSpace(briefing)
+            ? ""
+            : "\n# Your task\n\nThis is what you were created to do. Where it disagrees with "
+              + "anything above, follow this.\n\n" + briefing + "\n";
+
     private static string Escape(string text) => text.Replace("[", "[[");
 
     /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>

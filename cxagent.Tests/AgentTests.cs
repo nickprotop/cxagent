@@ -230,4 +230,135 @@ public class AgentTests
         Assert.Contains(agent.Context.Messages,
             m => m.Content.Contains("restored from an earlier session", StringComparison.Ordinal));
     }
+    // ---- the briefing --------------------------------------------------------------------------
+
+    private static Agent BriefedAgent(string briefing, MockLlmProvider? provider = null) =>
+        new(provider ?? NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, briefing: briefing);
+
+    /// <summary>
+    /// A BRIEFING REACHES THE MODEL, in the agent's own system message. The seam a caller uses to
+    /// tell one agent something the others are not told — a sub-agent's task, a skill's instructions.
+    /// </summary>
+    [Fact]
+    public async Task ABriefing_ReachesTheSystemPrompt()
+    {
+        var agent = BriefedAgent("Find every call site of Foo() and list them.");
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Contains("Find every call site of Foo()", agent.Context.Messages[0].Content,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>Attributed, like the project instructions — an unattributed paragraph in a system
+    /// prompt reads as though the app said it, leaving the model no way to weigh "what I was asked to
+    /// do" against a general rule.</summary>
+    [Fact]
+    public async Task ABriefing_IsAttributedAndOutranksTheGeneralPrompt()
+    {
+        var agent = BriefedAgent("Only read files; never write.");
+        await agent.SendAsync("go", CancellationToken.None);
+
+        var system = agent.Context.Messages[0].Content;
+        Assert.Contains("# Your task", system, StringComparison.Ordinal);
+        Assert.Contains("follow this", system, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE BRIEFING IS BYTE-IDENTICAL ON EVERY TURN — this is the whole reason it is fixed at
+    /// construction.
+    ///
+    /// <para>The system message is the prompt-cache prefix. A briefing that could change mid-session
+    /// would rewrite that prefix and discard every cached token at the moment the conversation is
+    /// longest and the saving matters most. Constant for the agent's life, it costs one prefix and
+    /// then nothing.</para>
+    /// </summary>
+    [Fact]
+    public async Task ABriefing_KeepsTheSystemMessageStableAcrossTurns()
+    {
+        var agent = BriefedAgent("Summarise the build failures.");
+
+        await agent.SendAsync("first", CancellationToken.None);
+        var afterFirst = agent.Context.Messages[0].Content;
+        await agent.SendAsync("second", CancellationToken.None);
+        await agent.SendAsync("third", CancellationToken.None);
+
+        Assert.Equal(afterFirst, agent.Context.Messages[0].Content);
+
+        // And still exactly ONE system message: a second would read as a contradiction.
+        Assert.Single(agent.Context.Messages, m => m.Role == "system");
+    }
+
+    /// <summary>
+    /// NO BRIEFING, NO BLOCK. A plain session's prompt — and therefore its cache prefix — is
+    /// byte-identical to what it was before this feature existed.
+    /// </summary>
+    [Fact]
+    public async Task NoBriefing_LeavesTheSystemPromptUnchanged()
+    {
+        var plain = NewAgent();
+        await plain.SendAsync("go", CancellationToken.None);
+
+        Assert.DoesNotContain("# Your task", plain.Context.Messages[0].Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>Two agents, two briefings — neither sees the other's, which is what makes this usable
+    /// for fan-out at all.</summary>
+    [Fact]
+    public async Task TwoBriefedAgents_DoNotSeeEachOthersBriefing()
+    {
+        var reader = BriefedAgent("BRIEFING-ALPHA: read only.");
+        var writer = BriefedAgent("BRIEFING-BETA: write the report.");
+
+        await reader.SendAsync("go", CancellationToken.None);
+        await writer.SendAsync("go", CancellationToken.None);
+
+        Assert.DoesNotContain("BRIEFING-BETA", reader.Context.Messages[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("BRIEFING-ALPHA", writer.Context.Messages[0].Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>A blank briefing is no briefing — a caller passing "" or whitespace must not get an
+    /// empty heading, which would change the cache prefix to say nothing.</summary>
+    [Fact]
+    public async Task ABlankBriefing_IsTreatedAsNone()
+    {
+        var agent = BriefedAgent("   ");
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.DoesNotContain("# Your task", agent.Context.Messages[0].Content, StringComparison.Ordinal);
+    }
+    /// <summary>
+    /// THE SYSTEM MESSAGE CHANGES ONLY WHEN ITS INPUTS DO — the whole prompt-cache contract, pinned
+    /// in one place rather than left as an argument in comments.
+    ///
+    /// <para>Every value that reaches <c>SystemPrompt.Build</c> is either fixed for the agent's life
+    /// (working directory, git-ness, platform, the FROZEN start date, the briefing) or read fresh
+    /// from something the user controls (the instruction files, MCP instructions). Nothing varies on
+    /// its own: no clock read per turn, no model id, no turn counter, no token figure. So an
+    /// unchanged environment produces a byte-identical prefix for as many turns as the session
+    /// runs.</para>
+    ///
+    /// <para>This once was not true. <c>Today</c> read <c>DateTime.Now</c> per turn, which rewrote
+    /// the prefix at every midnight boundary — invisible in any short test and expensive in exactly
+    /// the long sessions where caching matters.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheSystemMessage_IsByteIdenticalAcrossManyTurns()
+    {
+        var provider = NewProvider();
+        for (var i = 0; i < 12; i++)
+            provider.EnqueueResponse(new LlmResponse { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
+
+        var agent = NewAgent(provider);
+
+        await agent.SendAsync("first", CancellationToken.None);
+        var first = agent.Context.Messages[0].Content;
+
+        for (var i = 0; i < 6; i++)
+            await agent.SendAsync($"turn {i}", CancellationToken.None);
+
+        Assert.Equal(first, agent.Context.Messages[0].Content);
+        Assert.Single(agent.Context.Messages, m => m.Role == "system");
+    }
 }
