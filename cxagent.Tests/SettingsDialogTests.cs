@@ -277,4 +277,39 @@ public class SettingsDialogTests
         Assert.True(window.Width < 58,
             $"a 60-col terminal must give the nav less than its 58-col expanded threshold, got {window.Width}");
     }
+    /// <summary>
+    /// AN MCP COMMAND IS ARBITRARY USER TEXT — flags, paths, package names — so the same escaping
+    /// defect bites harder here than on the Providers page. "[red]" is a REAL color-name tag, not an
+    /// arbitrary bracketed word: MarkupParser passes the latter through unchanged, which would make
+    /// this assertion pass whether or not escaping ran.
+    /// </summary>
+    [Fact]
+    public void McpRows_AreMarkupEscaped_SoBracketsStillRender()
+    {
+        var settings = OneProvider("p", "m1") with
+        {
+            McpServers = new Dictionary<string, McpServerConfig>
+            {
+                ["srv"] = new(["npx", "-y", "we[red]ird-server"]),
+            },
+        };
+
+        var rows = SettingsDialog.McpRowLabels(settings);
+        var visible = string.Concat(SharpConsoleUI.Parsing.MarkupParser
+            .Parse(rows[0], SharpConsoleUI.Color.White, SharpConsoleUI.Color.Black)
+            .Select(c => c.Character));
+
+        Assert.Contains("we[red]ird-server", visible);
+    }
+
+    /// <summary>
+    /// The MCP nav item is reachable from its enum value. SelectPage matches items[i].Text against
+    /// page.ToString(), so a page labelled "MCP" is unreachable from a value spelled "Mcp" — and F5
+    /// deep-linking goes through exactly that path, which would fail silently.
+    /// </summary>
+    [Fact]
+    public void TheMcpPage_IsReachableFromItsEnumValue()
+    {
+        Assert.Equal("MCP", SettingsPage.MCP.ToString());
+    }
 }

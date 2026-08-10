@@ -9,13 +9,19 @@ using Ctl = SharpConsoleUI.Builders.Controls;
 
 namespace CxAgent.UI;
 
-/// <summary>The three pages of the consolidated Settings dialog. Nav item order (Providers,
-/// Orchestrator, Permissions) mirrors the enum's declaration order.
+/// <summary>The pages of the consolidated Settings dialog. Nav item order (Providers,
+/// Orchestrator, Permissions, MCP) mirrors the enum's declaration order.
 ///
 /// <para>There was a fourth, Roles. Roles encoded capability as identity, and the orchestrator had
 /// to pick the identity before it knew what the work would need; it could not, and the failures
 /// came faster than they could be guarded.</para></summary>
-public enum SettingsPage { Providers, Orchestrator, Permissions }
+/// <remarks>
+/// MCP IS SPELLED IN CAPITALS ON PURPOSE. <see cref="SelectPage"/> matches an item by
+/// <c>items[i].Text == page.ToString()</c>, so the enum member has to equal the item's LABEL —
+/// a page shown as "MCP" is unreachable from a value spelled <c>Mcp</c>, and F5 deep-linking goes
+/// through exactly that path.
+/// </remarks>
+public enum SettingsPage { Providers, Orchestrator, Permissions, MCP }
 
 /// <summary>
 /// The consolidated Settings dialog: one NavigationView-based window replacing the three
@@ -31,7 +37,7 @@ public enum SettingsPage { Providers, Orchestrator, Permissions }
 /// exactly the signal the caller uses to skip a needless WireRunner re-wire (see SettingsSession's own
 /// doc comment for why that matters — a redundant re-wire tears down a running goal's schedulers).
 ///
-/// This task builds the SHELL only: the four pages are one-line Markup stubs. Tasks 4-5 fill them in
+/// This task builds the SHELL only: the pages are one-line Markup stubs. Tasks 4-5 fill them in
 /// via the same <c>panel =&gt; BuildXPage(panel)</c> seam OptionsModal uses; Task 6 wires the F5/F7/F8
 /// global shortcuts to construct this dialog and route to <see cref="SelectPage"/>.
 ///
@@ -88,7 +94,9 @@ public sealed class SettingsDialog
                 .AddItem("Orchestrator", subtitle: "Token budget and context limits",
                     content: panel => BuildOrchestratorPage(panel))
                 .AddItem("Permissions", subtitle: "Always-allow rules",
-                    content: panel => BuildPermissionsPage(panel)))
+                    content: panel => BuildPermissionsPage(panel))
+                .AddItem("MCP", subtitle: "Tool servers",
+                    content: panel => BuildMcpPage(panel)))
             .Fill()
             .Build();
         _nav = nav;
@@ -231,6 +239,85 @@ public sealed class SettingsDialog
             defaultBtn.Click += (_, _) => _ = HandleSetDefaultAsync();
             panel.AddControl(defaultBtn);
         }
+    }
+
+    /// <summary>
+    /// One escaped Markup-ready line per configured server — the pure half of the MCP page, split
+    /// out so row escaping is unit-testable without a live window.
+    ///
+    /// <para>A COMMAND IS THE REASON THIS MATTERS MORE HERE than on the Providers page: it is
+    /// arbitrary user text full of flags and paths, and one containing <c>[</c> would otherwise open
+    /// a style scope that eats the rest of the line.</para>
+    /// </summary>
+    public static IReadOnlyList<string> McpRowLabels(ProviderSettings settings) =>
+        McpServerEditor.DescribeRows(settings)
+            .Select(r => SharpConsoleUI.Parsing.MarkupParser.Escape(r.Line))
+            .ToList();
+
+    /// <summary>
+    /// The MCP page: one row per configured server, plus Add.
+    ///
+    /// <para>CONFIG ONLY. A row is name, command and enabled — never connected or failed. This dialog
+    /// takes no runtime state, and a server the user just typed has no connection to report by
+    /// definition. What is live belongs to the session panel and <c>/mcp</c>.</para>
+    /// </summary>
+    private void BuildMcpPage(ScrollablePanelControl panel)
+    {
+        var settings = _session.Working;
+        var rows = McpServerEditor.DescribeRows(settings);
+
+        foreach (var (name, line) in rows)
+        {
+            var btn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape(line))
+                .WithMargin(1, 0, 1, 0).Build();
+            btn.Click += (_, _) => _ = HandleEditMcpServerAsync(name);
+            panel.AddControl(btn);
+        }
+
+        if (rows.Count == 0)
+        {
+            // Says what the page is FOR rather than showing an empty box. Nobody arrives here
+            // knowing what an MCP server is unless something tells them.
+            panel.AddControl(Ctl.Markup(
+                    "[dim]No tool servers. An MCP server adds tools the agent can call — "
+                    + "documentation lookup, a database, a filesystem outside this folder.[/]")
+                .WithMargin(1, 0, 1, 1).Build());
+        }
+
+        var addBtn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape("[ Add MCP server… ]"))
+            .WithMargin(1, 0, 1, 0).Build();
+        addBtn.Click += (_, _) => _ = HandleAddMcpServerAsync();
+        panel.AddControl(addBtn);
+    }
+
+    /// <summary>Re-renders the MCP page after an edit, the same way the Providers page does.</summary>
+    private void RefreshMcpPage()
+    {
+        if (_nav is null) return;
+        var item = _nav.Items.FirstOrDefault(i => i.Text == nameof(SettingsPage.MCP));
+        if (item is not null) _nav.SetItemContent(item, BuildMcpPage);
+    }
+
+    private async Task HandleEditMcpServerAsync(string name)
+    {
+        var updated = await McpServerEditor.EditServerAsync(
+            _system, _window, _session.Working, name, CancellationToken.None);
+        if (updated is null) return;
+
+        // UpdateCatalog is the general "the working settings changed" path — it marks the session
+        // dirty so Save writes, which is what makes the Save/Cancel row mean anything here.
+        _session.UpdateCatalog(updated);
+        RefreshMcpPage();
+    }
+
+    private async Task HandleAddMcpServerAsync()
+    {
+        var updated = await McpServerEditor.AddServerAsync(
+            _system, _window, _session.Working, CancellationToken.None);
+        if (updated is null) return;
+
+        _session.UpdateCatalog(updated);
+        RefreshMcpPage();
     }
 
     /// <summary>Prompts + a checkbox over <c>session.Working.Orchestrator</c> — cxfiles'
