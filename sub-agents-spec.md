@@ -30,6 +30,9 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D10 | **Foreground first.** The tool blocks and returns the result. Background is a different tool — a registry, a notification route, a lifetime rule — and is a later step. | §2, §5 |
 | D13 | **The result is an envelope from step 1: `id`, `state`, `text`.** An id retrofitted later must be threaded through every surface that already exists; adding it now costs a field. `Agent.Id` already exists. | §5 |
 | D14 | **The child's id addresses its row.** Rows key on `job.Id`, minted per tool call; the spawn tool associates that with the child's `Agent.Id` so telemetry, and later background reporting and aggregation, all address the same row through one identifier. | §5 |
+| D15 | **Dispatch is an `ISubAgentSpawner` consulted before `WorkerToolset`**, the MCP precedent — NOT a `WorkerTool` enum member, which would auto-offer spawn to every child and make the no-nesting exclusion false. | §5.1a |
+| D16 | **`state` = `completed \| error \| cancelled`.** Cap and stuck report `completed` with their salvage text, because `Agent` has no outcome API. Stated rather than discovered: a `state` whose values are fiction is worse than none. | §5.1c |
+| D17 | **The spawn branch never throws** (except cancellation). An exception mid-`foreach` orphans tool calls in the parent's context and poisons every later turn. | §5.1b |
 | D11 | **Telemetry is in step 1**, not later — a child that reports nothing is a frozen row, and retrofitting it means revisiting the factory, the row and the panel. `Agent` already exposes `Id`, `Context` and four callbacks; `Job.ProgressMessage` already renders; `SessionPanel` already takes optional sections. Missing: elapsed time (a periodic tick), and the waiting state (step 3). | §2, §5 |
 | D12 | **No general hook system.** A hook that can block IS the permission gate; one that cannot is telemetry, which the callbacks already give. Add named seams if a need appears. | §2 |
 
@@ -54,6 +57,11 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 - *"An agent has its own working directory."* **False** — it is process-global.
 - *"A parent-written briefing is the mutable-briefing hazard."* **False** — a spawned child is
   constructed fresh, so its briefing is fixed for its life whoever wrote it (D9).
+- *"`Job.ProgressMessage` is already rendered."* **False, and it was a BLOCKER** — that citation
+  points at `JobBlockControl`, a control never placed in the grid. The live `InlineJobSink` reads
+  `ProgressMessage` nowhere, so telemetry wired perfectly would still show a frozen row (§5.1e).
+- *"The factory wires cancellation token and id."* **False** — `Agent` has no ct parameter and mints
+  its own read-only `Id`. Neither is factory work.
 
 ---
 
@@ -481,70 +489,127 @@ an earlier one. If a step fails, there is one candidate cause.
 
 ### STEP 1 — one child, foreground, sequential
 
-**Scope, stated as an exclusion list because that is what keeps it small.**
+Rewritten after a deep review found the previous version's telemetry claim rested on DEAD CODE and
+its failure story missing entirely. Both are recorded below rather than quietly fixed.
 
-Build:
-- a **factory**: constructs an `Agent` and wires what `AgentHost` wires today — sinks, context WINDOW
-  and compression threshold, cancellation token, id. See "What the factory must wire" (§2): three of
-  those fail SILENTLY if forgotten.
-- a **tool**: `spawn_agent { type, prompt, context? }` (D9). `type` is accepted and ignored beyond
-  validation — there is one, hard-coded to the parent's provider. `context` is the child's whole
-  briefing at this stage.
-- the child runs **INLINE** on the existing continuation. Not `Task.Run`: nothing is concurrent yet,
-  so the shared-state audit is not a precondition here.
-- the result carries the **child's id and its state**, alongside the answer. **The id is in from step
-  1, not retrofitted.** An identifier added later has to be threaded through every surface that
-  already exists — the tool result, the row, the buffered transcript, the log directory, any
-  aggregator — and each of those is a place to forget it. Adding it now costs a field; adding it in
-  step 3 costs an audit.
+#### 1a. Where the tool plugs in — DECIDED, not left open
 
-  The id needs no invention: `Agent.Id` is minted at construction (`Agent.cs:54`) and `Job.AgentId`
-  already carries one (`:813`). The tool result just has to SAY it.
+An `ISubAgentSpawner` consulted in `InvokeAndShowAsync` **before** `WorkerToolset`, exactly as the MCP
+branch already is (`Agent.cs:832-833`), returning null for names it does not own.
 
-  The state matters for the same reason it does in opencode: a parent that cannot distinguish
-  "answered" from "failed, and this is the error" will act on an error as though it were a finding.
-  So the result is the envelope (Q2 answered: yes) — `id`, `state`, `text` — from the start. It is
-  three fields, and every later step (resume, background, aggregate, stop) needs exactly those.
-- the child's sink is a **buffer** (D8) — nothing renders into the parent's transcript.
-- **TELEMETRY, in step 1 and for the same reason as the id.** A child that reports nothing is a
-  frozen row for however long it runs, and wiring the reporting afterwards means revisiting the
-  factory, the row and the panel once each. Both surfaces already exist and need no new mechanism:
+**Not a `WorkerTool` enum member.** `Agent.AllTools = Enum.GetValues<WorkerTool>()` (`Agent.cs:182`),
+so an enum member auto-offers spawn to EVERY agent including children — which makes "depth limits
+excluded" dishonest. A child constructed without a spawner structurally cannot nest, and that is what
+makes the exclusion true rather than aspirational. It also avoids hand-writing a schema the class's
+own doctrine forbids, and keeps `NamesFor` untouched.
 
-  | Surface | What exists | What step 1 adds |
-  |---|---|---|
-  | **The tool row** | `Job.ProgressMessage` is already rendered (`JobBlockControl.cs:76`) and `_jobs.UpdateJob` is the live path (`Agent.cs:846`) | the child's callbacks push turns and occupancy into the row it already has |
-  | **The right panel** | `SessionPanel.Refresh` takes an optional list and renders a section — exactly how MCP servers were added | a `SUB-AGENTS` section: id, turns, `used/window` |
+Two things must be done together or a typo'd name reports "no such tool": add the name to
+`alsoAvailable` (`Agent.cs:833`) AND its `ToolDefinition` to the request build (`Agent.cs:305`).
 
-  **THE ROW IS UPDATED BY THE CHILD'S ID, and that is the point of doing it now.** Rows key on
-  `job.Id` (`InlineJobSink.cs:61-66`), which is minted per tool call (`Agent.cs:806`); the child's own
-  `Agent.Id` is a different value. So the spawn tool must ASSOCIATE the two — hold the pair, and have
-  the child's callbacks find its row through it.
+#### 1b. The failure contract — a correctness precondition, not a later concern
 
-  With that association in place, everything later is a subscriber rather than a change: a background
-  child reports into the same row after the tool call has returned, an aggregator sums by child id,
-  and `/mcp`-style inspection finds a child by the id its result already carried. Without it, each of
-  those has to invent its own lookup — which is the retrofit D13 exists to avoid, in a second place.
+`InvokeAndShowAsync` has **no try/catch**, and the assistant message carrying the tool calls is
+appended BEFORE they run (`Agent.cs:573-578`). An exception from a child unwinds the `foreach`
+mid-turn, leaving tool calls with no matching results — the orphan the code itself documents
+(`Agent.cs:615-618`) — and every later parent prompt 400s until compaction happens to rewrite the
+head. It would present as a baffling, unrelated failure.
 
-  The child's factory wires `TurnCompleted`, `ContextUsed` and `ContextCompressed` (§2, D11) to a
-  per-child reporter rather than to the session's. Nothing new is invented; the callbacks are settable
-  properties on `Agent` and a spawned child is constructed by us.
+**The spawn branch catches everything except `OperationCanceledException`** and renders it as the
+`state: error` envelope, upholding the never-throws contract `WorkerToolset.InvokeAsync` already
+holds (`:246-249`). `McpToolset.TryInvokeAsync` has the same missing catch — a latent instance of this
+bug worth fixing while here.
 
-  **Elapsed time is the one genuinely missing piece** — a running row says `"running…"` and nothing
-  publishes a clock. A periodic `UpdateJob` tick is the whole of it, and it belongs here rather than
-  in step 3, because a child is the first thing that runs long enough for its absence to matter.
+#### 1c. `state` — define it honestly or do not ship the field
 
-Explicitly NOT in step 1: background, **resumption** (the id is reported, but nothing consumes it to
-continue a child), mid-run ask, model-initiated stop, spawn-gating, depth limits, parallel,
-configured types, per-agent providers, a session aggregator.
+`Agent.SendAsync` returns text on ALL THREE exits: normal, turn-cap salvage (`Agent.cs:376-381`) and
+stuck detection (`:653-658`). Cap and stuck announce only through `_sink.ShowError`, which for a child
+goes into the buffer — invisible to the tool.
 
-Note the id is IN — what is out is using it to resume. That is the point of D13: the identifier
-exists from the first version so nothing has to be threaded through later.
+So the derivable values are `completed | error | cancelled`, and **cap and stuck report as
+`completed`**, carrying the salvage or last text. That is stated here rather than discovered later,
+because a `state` field whose values are fiction is worse than no field. Adding `Agent.SendResult
+{ Text, Outcome }` would fix it properly and is a real API change — deferred, and named as the cost.
+
+#### 1d. The factory — the actual wiring, replacing a list that was wrong on its own terms
+
+| Wire | Value | If omitted |
+|---|---|---|
+| provider | the parent's | — |
+| plugins, `mcp` | the parent's (explicit yes for MCP) | child silently loses tools the parent has |
+| ledger | **the parent's shared one** (D7) | spend and the breach warning are lost |
+| `IChatSink` **and** `IJobPanel` | buffered, both | child rows leak into the parent's transcript (§3.3) |
+| `logs` | yes | no child log directory — the only "inspectable afterwards" surface step 1 has |
+| `maxTurns` | a real number, **never 0** | `AgentHost` maps 0 → `int.MaxValue`; `Agent` does NOT, so a child summarises at once and returns `""` — silently does nothing |
+| `compressAbove` | `orchestrator.EffectiveCompressThreshold(window) ?? 40_000` (`AgentHost.cs:356`) | never compacts |
+| context | `new AgentContext(contextWindow)` — `Window` is get-only, so it goes in at construction | no occupancy, `IsUnderPressure` always false, never compacts |
+| `globalInstructionsDir` | yes | user-level CXAGENT.md ignored |
+| briefing | the spawn `context` | — |
+| the four callbacks | a per-child reporter | frozen row |
+| **NOT** the session store | — | a persisted child is a permanently unfinished row that `OfferResumeAsync` offers as a crashed session next launch |
+| **NOT** a spawner | — | nesting |
+
+Dropped from the old list: *"cancellation token, id"* — neither is factory work. `Agent` has no ct
+parameter (it arrives per `SendAsync`) and `Id` is minted internally and read-only.
+
+**The factory is constructed in `AppBootstrap`**, because every value above is composition-root-only.
+`Agent` and `AgentHost` each gain one optional parameter to receive it — two signature changes the
+earlier version did not list.
+
+#### 1e. Telemetry — and the blocker the previous version missed
+
+**The renderer ignores `ProgressMessage`.** The old text cited `JobBlockControl.cs:76` as proof it was
+already rendered; that control is **never placed in the grid** (`AppBootstrap.cs:434-441`: "jobs
+render INLINE"). `InlineJobSink` reads `ProgressMessage` **nowhere**, and a Running row is the literal
+`"running…"` (`:687`). Wiring the callbacks perfectly would still produce a frozen spinner.
+
+So step 1 includes, as a first-class task: **`InlineJobSink` renders turns · occupancy · elapsed for
+non-terminal states.** Plus a tick owned by the spawn branch and disposed in its `finally` —
+`MainWindow._panelClock` cannot be borrowed, it refreshes nothing when the panel is hidden.
+
+The row is the primary surface. **The right-panel section is demoted to "if cheap after the row
+works"** — it needs a status record, a `Refresh` signature change, a `MainWindow` setter and a channel
+from the factory's reporter, which is genuinely new plumbing across three layers.
+
+#### 1f. Cancellation
+
+Token flow verified end to end. But on Escape the OCE propagates out of the spawn branch, so the code
+that closes the row (`Agent.cs:836-846`) never runs — the row spins forever while the transcript says
+"Stopped." **`try/finally`: mark the Job `Cancelled` (the state exists), dispose the tick, keep the
+buffer.**
+
+#### 1g. The submission guard — a bug today that a long child makes certain
+
+`SetSubmissionEnabled` is only ever called with `true` (`AppBootstrap.cs:215`); nothing disables it
+during a turn. Press Enter while a child runs and a second `runner.SendAsync` starts a second loop on
+the SAME `Agent` and the same live `Context.Messages`. Latent now; near-certain the moment a child
+runs for minutes. One line of prevention, and it belongs here.
+
+#### The rest of the scope
+
+- the child runs **INLINE** on the existing continuation, not `Task.Run`
+- the result is the envelope `{ id, state, text }` (D13), with the child's `Agent.Id`
+- the child's id **addresses its row** (D14) — a closure over `job` and `_jobs` inside
+  `InvokeAndShowAsync`, which is the only place both exist
+- the (childId → agent, buffer, job) record needs a **session-lived owner**. Small, but honestly the
+  first brick of background's registry, arriving here whether or not we name it
+- "inspectable afterwards" means **the child's log directory**; the buffer is retained for step 3's
+  transcript swap
+
+Explicitly NOT in step 1: background, resumption, mid-run ask, model-initiated stop, spawn-gating,
+depth limits, parallel, configured types, per-agent providers, a session aggregator.
 
 **Done when:** a parent spawns one child in a live drive, the child does real work, its answer reaches
-the parent's next turn, **its row shows live turns/occupancy/elapsed while it runs, the right panel
-lists it**, and its transcript is inspectable afterwards.
+the parent's next turn, its row shows live turns/occupancy/elapsed, a child failure returns
+`state: error` **without breaking the parent's next turn**, Escape leaves the row `Cancelled` rather
+than spinning, and the child's log directory is readable.
 
----
+**Headless before the drive** — most of this is testable with `MockLlmProvider`/`RecordingSink`:
+parent context grows by exactly 2 messages; envelope id equals the child's `Agent.Id`; child failure
+leaves the parent's turn intact; sink isolation (parent receives zero child tokens); no
+`SqliteSessionStore` row under the child id; the child's tool list lacks `spawn_agent`; cancellation
+marks the Job `Cancelled`. `InlineJobSink` has pure projection seams (`:511`, `:722`) so even the row
+rendering is headless-testable.
+
 
 ### STEP 2 — named types
 
