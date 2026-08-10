@@ -104,7 +104,15 @@ public static class AppBootstrap
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
-        var mcp = new Core.Mcp.McpManager(permissionGate);
+        // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
+        // rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
+        var mcpTokens = new Core.Mcp.Auth.TokenStore(paths);
+        using var httpForAuth = new HttpClient();
+
+        // The token is read per REQUEST through this delegate, so a login mid-session reaches a
+        // client that was built before it.
+        var mcp = new Core.Mcp.McpManager(permissionGate,
+            accessToken: name => mcpTokens.Get(name)?.AccessToken);
 
         // /mcp, including the reload that makes config LIVE.
         async Task HandleMcpCommandAsync(string arguments)
@@ -138,8 +146,59 @@ public static class AppBootstrap
                 mainWindow.SetMcpServers(mcp.Statuses());
             }
 
+            if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var verb, var target, ..]
+                && verb.Equals("login", StringComparison.OrdinalIgnoreCase))
+            {
+                await LoginToMcpServerAsync(target);
+                return;
+            }
+
             permissionSink.ShowSystemMessage(SessionCommands.DescribeMcp(
                 mcp.Statuses(), arguments, mcp.Toolset.Names().ToList()));
+        }
+
+        // THE ONLY PLACE A BROWSER OPENS, and only because the user typed /mcp login. A 401 during
+        // a turn sets a status and stops; opening a browser on the agent's own initiative, while its
+        // user may be away from the machine, asks for credentials at a moment nobody chose.
+        async Task LoginToMcpServerAsync(string serverName)
+        {
+            if (mcp.AuthMetadataUrlFor(serverName) is not { } metadataUrl)
+            {
+                permissionSink.ShowSystemMessage(
+                    $"[yellow]'{serverName}' has not asked for authorization. Only a remote server "
+                    + "that answered 401 can be logged in to — run /mcp to see the servers.[/]");
+                return;
+            }
+
+            permissionSink.ShowSystemMessage($"Opening a browser to log in to '{serverName}'…");
+
+            var result = await Core.Mcp.Auth.McpLogin.RunAsync(
+                httpForAuth, mcpTokens, serverName, metadataUrl,
+                // A PUBLIC CLIENT with no secret: cxagent runs on the user's machine, where anything
+                // shipped as a "secret" is readable by whoever has the binary. PKCE is what actually
+                // protects the exchange. Dynamic registration (RFC 7591) is out of scope — a server
+                // requiring a pre-registered id says so, and the error names it.
+                clientId: "cxagent", clientSecret: null,
+                openBrowser: url =>
+                {
+                    if (!TryOpenBrowser(url))
+                        // A headless or locked-down machine still gets its login: the URL is the
+                        // whole of what a browser would have been handed.
+                        permissionSink.ShowSystemMessage($"Open this URL to continue:\n{url}");
+                },
+                ct: CancellationToken.None);
+
+            permissionSink.ShowSystemMessage(
+                result.Succeeded ? result.Message : $"[yellow]{result.Message}[/]");
+
+            if (!result.Succeeded) return;
+
+            // RECONNECT, so the tools are usable NOW. A login that leaves the server still
+            // unauthorized until the next restart is a login the user would reasonably think failed.
+            permissionSink.ShowSystemMessage("Reconnecting…");
+            await mcp.ReloadAsync(mcp.Configured, CancellationToken.None);
+            mainWindow.SetMcpServers(mcp.Statuses());
+            permissionSink.ShowSystemMessage(SessionCommands.DescribeMcp(mcp.Statuses()));
         }
 
         void WireRunner(ProviderResolution res)
@@ -690,6 +749,25 @@ public static class AppBootstrap
         catch (Exception) { /* best effort: shutdown is not a place to hang */ }
 
         return code;
+    }
+
+    /// <summary>
+    /// Hands a URL to the platform's browser. False when there is none to hand it to.
+    ///
+    /// <para>UseShellExecute is what makes the OS resolve the default handler; without it this tries
+    /// to EXECUTE the URL as a program and fails on every platform. A headless box, a container or a
+    /// locked-down desktop has no handler at all, which is not an error — the caller prints the URL
+    /// instead, and that is the whole of what a browser would have received.</para>
+    /// </summary>
+    private static bool TryOpenBrowser(string url)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            return p is not null;
+        }
+        catch (Exception) { return false; }
     }
 
     /// <summary>

@@ -288,4 +288,27 @@ public class SessionCommandTableTests
         Assert.DoesNotContain("Reloading", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("2 tools", text, StringComparison.Ordinal);
     }
+    /// <summary>
+    /// NEEDS-AUTH IS NOT A FAILURE, and reads differently. Nothing is broken — the server is waiting
+    /// to be logged in to — and calling it "failed" sends someone to check their config instead of
+    /// typing the one command that fixes it. The line carries that command.
+    /// </summary>
+    [Fact]
+    public void DescribeMcp_AServerNeedingAuth_SaysHowToLogIn()
+    {
+        var text = SessionCommands.DescribeMcp(
+            [new CxAgent.Core.Mcp.McpServerStatus("remote", true, 0, "not authorized", NeedsAuth: true)], "");
+
+        Assert.Contains("/mcp login remote", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("failed", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The usage line offers login, so someone who mistypes learns it exists.</summary>
+    [Fact]
+    public void DescribeMcp_UsageMentionsLogin()
+    {
+        var text = SessionCommands.DescribeMcp([Server("c7")], "frobnicate");
+
+        Assert.Contains("login", text, StringComparison.OrdinalIgnoreCase);
+    }
 }

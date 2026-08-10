@@ -179,7 +179,7 @@ public static class SessionCommands
         // one. Two of the four cases here are a mistyped server name.
         var known = servers.Count == 0 ? "(none configured)" : string.Join(", ", servers.Select(s => s.Name));
         return $"Unknown: '{words[0]}'.\n"
-             + "Usage: /mcp [list | reload | <server>]\n"
+             + "Usage: /mcp [list | reload | login <server> | <server>]\n"
              + $"Servers: {known}";
     }
 
@@ -195,6 +195,9 @@ public static class SessionCommands
         {
             sb.Append(server.Name).Append(" — ");
             if (!server.Enabled) sb.Append("disabled");
+            // NEEDS AUTH IS NOT A FAILURE, and reads differently: nothing is broken, the server is
+            // waiting to be logged in to. Saying "failed" would send someone to check their config.
+            else if (server.NeedsAuth) sb.Append("not logged in — run /mcp login ").Append(server.Name);
             else if (server.Error is { } error) sb.Append("failed: ").Append(error);
             else if (server.ToolCount == 0) sb.Append("connected, but offers no tools");
             else sb.Append(server.ToolCount).Append(server.ToolCount == 1 ? " tool" : " tools");
@@ -217,6 +220,7 @@ public static class SessionCommands
         var sb = new System.Text.StringBuilder();
         sb.Append(server.Name).Append(" — ");
         if (!server.Enabled) sb.Append("disabled in config");
+        else if (server.NeedsAuth) sb.Append("not logged in — run /mcp login ").Append(server.Name);
         else if (server.Error is { } error) sb.Append("failed: ").Append(error);
         else sb.Append("connected");
         sb.Append('\n');

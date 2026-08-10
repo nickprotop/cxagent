@@ -27,8 +27,14 @@ public static class McpLauncher
     /// cannot say what it offers is not usable, and keeping it would put a permanently empty server
     /// in the panel with no explanation.</para>
     /// </summary>
+    /// <param name="accessToken">
+    /// A stored OAuth token for a server, by name. Read through a delegate on EVERY request rather
+    /// than captured once, so a login or a refresh that happens after startup takes effect without
+    /// rebuilding the client.
+    /// </param>
     public static async Task<Result> StartAsync(
-        IReadOnlyDictionary<string, McpServerConfig> configured, CancellationToken ct)
+        IReadOnlyDictionary<string, McpServerConfig> configured, CancellationToken ct,
+        Func<string, string?>? accessToken = null)
     {
         var servers = new List<IMcpConnection>();
         var messages = new List<string>();
@@ -44,16 +50,29 @@ public static class McpLauncher
             // THE CONFIG PICKED THE TRANSPORT, not this method: the loader already refused any
             // entry that was ambiguous about it, so a url here means remote and nothing else does.
             var timeout = cfg.TimeoutMs is { } ms ? TimeSpan.FromMilliseconds(ms) : (TimeSpan?)null;
-            IMcpConnection client = cfg.IsRemote
-                ? new McpHttpClient(name, cfg.Url!, timeout, cfg.Headers)
-                : new McpClient(name, [.. cfg.Command], timeout, cfg.Environment, cfg.WorkingDirectory);
+            IMcpConnection client;
+            if (cfg.IsRemote)
+            {
+                var http = new McpHttpClient(name, cfg.Url!, timeout, cfg.Headers);
+                if (accessToken is not null) http.AccessToken = () => accessToken(name);
+                client = http;
+            }
+            else client = new McpClient(name, [.. cfg.Command], timeout, cfg.Environment, cfg.WorkingDirectory);
 
             try
             {
                 if (!await client.StartAsync(ct))
                 {
-                    // The server's OWN error text — "npx: command not found" is something the user
-                    // can fix in seconds, and a generic "failed to start" is not.
+                    // A SERVER AWAITING LOGIN IS KEPT, not discarded. It offers no tools yet, but it
+                    // is the only thing holding the metadata URL its 401 named — dispose it and
+                    // `/mcp login` has nothing to act on, so the one recoverable failure would be
+                    // the one the user could not recover from.
+                    if (client is McpHttpClient { NeedsAuth: true })
+                        return (Client: (IMcpConnection?)client,
+                                Message: $"MCP server '{name}' needs authorization — run /mcp login {name}");
+
+                    // Otherwise the server's OWN error text — "npx: command not found" is something
+                    // the user can fix in seconds, and a generic "failed to start" is not.
                     await client.DisposeAsync();
                     return (Client: (IMcpConnection?)null,
                             Message: $"MCP server '{name}' did not start: {client.Error ?? "unknown error"}");
@@ -62,6 +81,12 @@ public static class McpLauncher
                 var tools = await client.ListToolsAsync(ct);
                 if (tools.Count == 0)
                 {
+                    // Same exception: a server that handshook but 401s on tools/list is awaiting
+                    // login, not broken.
+                    if (client is McpHttpClient { NeedsAuth: true })
+                        return (Client: (IMcpConnection?)client,
+                                Message: $"MCP server '{name}' needs authorization — run /mcp login {name}");
+
                     await client.DisposeAsync();
                     return (Client: (IMcpConnection?)null,
                             Message: $"MCP server '{name}' started but offers no tools"

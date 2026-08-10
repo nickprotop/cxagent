@@ -230,4 +230,54 @@ public class McpLauncherTests : IDisposable
         try { return !System.Diagnostics.Process.GetProcessById(pid).HasExited; }
         catch (ArgumentException) { return false; }   // no such process — it is gone
     }
+    /// <summary>
+    /// A SERVER AWAITING LOGIN IS KEPT, not discarded.
+    ///
+    /// <para>It offers no tools yet, but it is the only thing holding the metadata URL its 401 named
+    /// — dispose it and /mcp login has nothing to act on, making the one RECOVERABLE failure the one
+    /// the user cannot recover from.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_AServerThatNeedsAuth_IsKeptSoItCanBeLoggedInTo()
+    {
+        using var listener = new System.Net.HttpListener();
+        var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+
+        // Answers every request with the 401 an unauthorized MCP server sends.
+        _ = Task.Run(async () =>
+        {
+            while (listener.IsListening)
+            {
+                System.Net.HttpListenerContext ctx;
+                try { ctx = await listener.GetContextAsync(); } catch (Exception) { return; }
+                ctx.Response.StatusCode = 401;
+                ctx.Response.Headers.Add("WWW-Authenticate",
+                    $"Bearer resource_metadata=\"http://127.0.0.1:{port}/.well-known/oauth-protected-resource\"");
+                try { ctx.Response.Close(); } catch (Exception) { }
+            }
+        });
+
+        try
+        {
+            var result = await McpLauncher.StartAsync(
+                new Dictionary<string, McpServerConfig>
+                {
+                    ["remote"] = new([], true, null, null, null, Url: $"http://127.0.0.1:{port}/mcp"),
+                },
+                CancellationToken.None);
+
+            var kept = Assert.Single(result.Servers);
+            Assert.True(((McpHttpClient)kept).NeedsAuth);
+            Assert.NotNull(((McpHttpClient)kept).AuthMetadataUrl);
+            Assert.Contains(result.Messages, m => m.Contains("/mcp login remote", StringComparison.Ordinal));
+
+            await kept.DisposeAsync();
+        }
+        finally { listener.Stop(); listener.Close(); }
+    }
 }

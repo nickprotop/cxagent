@@ -26,11 +26,15 @@ namespace CxAgent.Core.Mcp;
 /// recently — now answers 404 on it. A whole second transport for that is not worth the surface it
 /// would add. What IS owed is a diagnosable failure, which <see cref="SendAsync"/> gives.</para>
 ///
-/// <para>AUTHORIZATION IS NOT IMPLEMENTED HERE, deliberately. The spec's OAuth flow is triggered by a
-/// 401 carrying <c>WWW-Authenticate</c>, and it is a whole stack — RFC 9728 discovery, RFC 8414
-/// metadata, OAuth 2.1 with PKCE and RFC 8707 resource indicators, a callback listener. A static
-/// <c>headers</c> block covers every server that takes an API key, which is most of them, and is why
-/// this ships useful without any of that.</para>
+/// <para>AUTHORIZATION IS NOT PERFORMED HERE, only DETECTED. A 401 sets <see cref="NeedsAuth"/> and
+/// records where the server said its metadata lives; the flow itself lives in
+/// <see cref="Auth.OAuthFlow"/> and is driven by <c>/mcp login</c>. NO BROWSER OPENS FROM A TURN:
+/// this code runs while the agent is working, possibly while the user is away, and an agent that
+/// silently opens a browser mid-task is hostile. Logging in is something they type.</para>
+///
+/// <para>A static <c>headers</c> block remains the simpler path and covers every server that takes an
+/// API key, which is most of them — the OAuth flow is only reachable by servers that actually
+/// answer 401.</para>
 /// </summary>
 public sealed class McpHttpClient : IMcpConnection
 {
@@ -50,6 +54,21 @@ public sealed class McpHttpClient : IMcpConnection
 
     /// <summary>What the handshake settled on, or null before it has run.</summary>
     public string? NegotiatedProtocolVersion { get; private set; }
+
+    /// <summary>True when the server answered 401 — it needs a login, not a fix.</summary>
+    public bool NeedsAuth { get; private set; }
+
+    /// <summary>Where the 401 said its authorization metadata lives, when it said.</summary>
+    public string? AuthMetadataUrl { get; private set; }
+
+    /// <summary>
+    /// The bearer token to send, re-read before EVERY request rather than captured once.
+    ///
+    /// <para>A delegate because a login happens after this client is built, and a refresh replaces
+    /// the token mid-session — a value captured at construction would be the one state that is
+    /// never current.</para>
+    /// </summary>
+    public Func<string?>? AccessToken { get; set; }
     public string? Instructions { get; private set; }
     public string? Error { get; private set; }
     public IReadOnlyList<McpToolDef> Tools { get; private set; } = [];
@@ -68,8 +87,10 @@ public sealed class McpHttpClient : IMcpConnection
     /// saying why.</summary>
     public async Task<bool> StartAsync(CancellationToken ct)
     {
-        // A fresh session: forget any id from a previous one, or the server will reject it.
+        // A fresh session: forget any id from a previous one, or the server will reject it. The
+        // auth state resets too — a retry after logging in must not report the previous 401.
         _sessionId = null;
+        NeedsAuth = false;
 
         var result = await SendAsync("initialize", new
         {
@@ -221,6 +242,19 @@ public sealed class McpHttpClient : IMcpConnection
                 return await SendAsync(method, parameters, ct, alreadyRetried: true);
             }
 
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                // A 401 IS NOT AN ORDINARY FAILURE. It is the server saying "authorize first", and
+                // the header tells us where — captured so /mcp login can act on it without the user
+                // having to find it. NO BROWSER OPENS HERE: this runs inside a turn, possibly while
+                // the user is away, and an agent that silently opens a browser mid-task is hostile.
+                // Login is a thing they type.
+                NeedsAuth = true;
+                AuthMetadataUrl = Auth.ProtectedResource.MetadataUrlFrom(response.Headers);
+                Error = "not authorized — run /mcp login " + _name;
+                return null;
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 // A HANDSHAKE REFUSED WITH 405/404 IS THE SIGNATURE OF AN SSE-ONLY SERVER: on the
@@ -288,6 +322,11 @@ public sealed class McpHttpClient : IMcpConnection
 
         if (_sessionId is not null) request.Headers.TryAddWithoutValidation("Mcp-Session-Id", _sessionId);
         request.Headers.TryAddWithoutValidation("MCP-Protocol-Version", _protocolVersion);
+
+        // The OAuth token, when we have one. In the HEADER, never a query string: the spec forbids
+        // it, and query strings land in server logs, proxy logs and browser history.
+        if (AccessToken?.Invoke() is { Length: > 0 } token)
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
         // Configured headers LAST, so a user who needs to override one of ours can.
         if (_headers is not null)

@@ -34,14 +34,30 @@ public sealed class McpManager : IAsyncDisposable
     public IReadOnlyDictionary<string, McpServerConfig> Configured { get; private set; } =
         new Dictionary<string, McpServerConfig>();
 
-    public McpManager(Permissions.IPermissionGate gate)
+    /// <param name="accessToken">
+    /// A stored OAuth token for a server, by name — supplied by the caller that owns the token store,
+    /// so this type never touches disk.
+    /// </param>
+    public McpManager(Permissions.IPermissionGate gate, Func<string, string?>? accessToken = null)
     {
         _gate = gate;
+        _accessToken = accessToken;
         Toolset = new McpToolset([], gate);
     }
 
+    private readonly Func<string, string?>? _accessToken;
+
     /// <summary>The live servers, for anything that needs to ask one something directly.</summary>
     public IReadOnlyList<IMcpConnection> Servers => _servers;
+
+    /// <summary>
+    /// Where a server said its authorization metadata lives, if it answered 401 and said.
+    ///
+    /// <para>Read from the server rather than derived, so <c>/mcp login</c> does not have to guess a
+    /// well-known path the server is entitled to have moved.</para>
+    /// </summary>
+    public string? AuthMetadataUrlFor(string name) =>
+        (_servers.FirstOrDefault(s => s.Name == name) as McpHttpClient)?.AuthMetadataUrl;
 
     /// <summary>
     /// Stops everything currently running and starts what the given config describes.
@@ -62,7 +78,7 @@ public sealed class McpManager : IAsyncDisposable
                 try { await server.DisposeAsync(); } catch (Exception) { /* it is going away */ }
             _servers.Clear();
 
-            var result = await McpLauncher.StartAsync(configured, ct);
+            var result = await McpLauncher.StartAsync(configured, ct, _accessToken);
             _servers.AddRange(result.Servers);
 
             Configured = configured;
@@ -94,7 +110,10 @@ public sealed class McpManager : IAsyncDisposable
                 client?.Tools.Count ?? 0,
                 !cfg.Enabled ? null
                     : client is null ? "did not start (see the messages above)"
-                    : client.Error));
+                    : client.Error,
+                // A 401 is carried through as its own state: the server is fine, it is waiting to be
+                // logged in to, and calling that a failure sends someone to check their config.
+                NeedsAuth: (client as McpHttpClient)?.NeedsAuth ?? false));
         }
         return list;
     }
