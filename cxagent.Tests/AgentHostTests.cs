@@ -238,6 +238,34 @@ public class AgentHostTests
         Assert.Equal(int.MaxValue, runner.TurnCeiling);
     }
 
+    /// <summary>Records that it was disposed, standing in for a subprocess we do not want to spawn
+    /// in a unit test.</summary>
+    private sealed class SpyDisposable : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
+    }
+
+    /// <summary>
+    /// DISPOSING THE HOST ENDS ITS MCP SUBPROCESSES.
+    ///
+    /// <para>The one failure that outlives the process. An F5 re-wire builds a fresh host on every
+    /// provider change and disposes the outgoing one; without this each re-wire leaves its servers
+    /// running for the life of the app, holding whatever they had open. Orphaned children are this
+    /// task's stated risk, so it does not ship on inspection alone.</para>
+    /// </summary>
+    [Fact]
+    public void Dispose_DisposesTheMcpServers()
+    {
+        var server = new SpyDisposable();
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), mcpServers: [server]);
+
+        runner.Dispose();
+
+        Assert.True(server.Disposed, "an F5 re-wire would leak this server's subprocess");
+    }
+
     /// <summary>Someone who sets a limit meant it — a configured value wins over the backstop, in
     /// either direction.</summary>
     [Fact]

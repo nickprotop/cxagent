@@ -48,6 +48,15 @@ public sealed class AgentHost : IDisposable
     private readonly Core.Mcp.McpToolset? _mcp;
 
     /// <summary>
+    /// The subprocesses behind <see cref="_mcp"/>, held only so <see cref="Dispose"/> can end them.
+    ///
+    /// <para>Separate from the toolset because ownership and use are different concerns: the toolset
+    /// is asked what tools exist and never asked to shut anything down, and the host is the thing
+    /// with a lifetime to match.</para>
+    /// </summary>
+    private readonly IReadOnlyList<IAsyncDisposable> _mcpServers = [];
+
+    /// <summary>
     /// The resume buffer, or null when this session is not persisted.
     ///
     /// <para>Written on the turn boundary rather than at exit — a crash is precisely when exit does
@@ -211,9 +220,11 @@ public sealed class AgentHost : IDisposable
         SqliteSessionStore? store = null,
         SessionSnapshot? resume = null,
         string? globalInstructionsDir = null,
-        Core.Mcp.McpToolset? mcp = null)
+        Core.Mcp.McpToolset? mcp = null,
+        IReadOnlyList<IAsyncDisposable>? mcpServers = null)
     {
         _mcp = mcp;
+        _mcpServers = mcpServers ?? [];
         _provider = provider;
         _sink = sink;
         _jobPanel = jobPanel;
@@ -400,5 +411,18 @@ public sealed class AgentHost : IDisposable
     /// Nothing to release: the schedulers this used to own died with the dag. Kept because the
     /// composition root disposes the outgoing runner on every F5 rewire.
     /// </summary>
-    public void Dispose() { }
+    /// <summary>
+    /// Releases the MCP subprocesses.
+    ///
+    /// <para>THE ONE FAILURE THAT OUTLIVES THE PROCESS. An F5 re-wire builds a fresh host on every
+    /// provider change and disposes the outgoing one; without this, each re-wire would leave its
+    /// servers running for the life of the app, holding whatever they had open. Best-effort and
+    /// synchronous: shutdown is not a place to throw or to wait.</para>
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (var server in _mcpServers)
+            try { server.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
+            catch (Exception) { /* it is going away regardless */ }
+    }
 }

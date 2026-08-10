@@ -101,6 +101,12 @@ public static class AppBootstrap
         // re-restore a context the user has already moved past.
         SessionSnapshot? pendingResume = null;
 
+        // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
+        // kill the servers. Assigned below, before the first WireRunner, and read by every host it
+        // builds thereafter.
+        IReadOnlyList<Core.Mcp.McpClient> mcpServers = [];
+        Core.Mcp.McpToolset? mcpToolset = null;
+
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -153,7 +159,11 @@ public static class AppBootstrap
                 store: sessions,
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 globalInstructionsDir: paths.ConfigDir,
-                resume: System.Threading.Interlocked.Exchange(ref pendingResume, null))
+                resume: System.Threading.Interlocked.Exchange(ref pendingResume, null),
+                // The toolset, but NOT the servers: ownership stays with the session. Handing them
+                // over would let an F5 re-wire dispose them, killing every server on a provider
+                // change and leaving the new host with a toolset over dead pipes.
+                mcp: mcpToolset)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -165,6 +175,12 @@ public static class AppBootstrap
                 // said nothing" at every layer above the file itself.
                 ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
             };
+
+            // Non-fatal config complaints — a server entry we could not read. Said once, here,
+            // because a skipped server the user never hears about is indistinguishable from one
+            // that is merely slow to connect.
+            foreach (var warning in res.Warnings)
+                permissionSink.ShowSystemMessage($"[yellow]{warning}[/]");
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
@@ -196,6 +212,35 @@ public static class AppBootstrap
         // On a HEALTHY config BindingWarnings() is empty and this posts NOTHING. Unbound roles are the
         // normal state of every fresh install and are deliberately not reported: a warning that fires
         // for every new user is one they learn to ignore, and then the ones that matter are invisible
+
+        // MCP SERVERS BEFORE THE FIRST WIRE-UP.
+        //
+        // Started here rather than inside WireRunner because they belong to the SESSION, not to the
+        // provider: an F5/F7/F8 re-wire swaps the model, and killing and re-spawning every server
+        // over a provider change would cost seconds and lose whatever state they hold. WireRunner
+        // reads these; they outlive each host it builds, and AppBootstrap ends them at exit.
+        //
+        // Before the first prompt, deliberately. The tools array is part of the prompt-cache prefix,
+        // so a server that connects LATER invalidates it — starting them up front keeps that to at
+        // most one invalidation instead of one per late arrival.
+        //
+        // Blocking is acceptable and bounded: every failure path inside returns rather than throws,
+        // and each server carries its own timeout. This runs before the UI loop begins, so there is
+        // no frame to drop — only a slower start for someone who configured a slow server.
+        if (resolution.McpServers.Count > 0)
+        {
+            var launched = Core.Mcp.McpLauncher
+                .StartAsync(resolution.McpServers, CancellationToken.None)
+                .GetAwaiter().GetResult();
+
+            mcpServers = launched.Servers;
+            mcpToolset = new Core.Mcp.McpToolset(launched.Servers, permissionGate);
+
+            // Each failure named once, plus any tool dropped for colliding — both are things the
+            // user configured and would otherwise watch silently not happen.
+            foreach (var message in launched.Messages.Concat(mcpToolset.Warnings))
+                permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
+        }
 
         WireRunner(resolution);   // startup path, unchanged in effect
 
@@ -596,6 +641,14 @@ public static class AppBootstrap
         // schedulers one-at-a-time as goals swap; this is now the only release point.
         mainWindow.Dispose();   // stops the panel clock
         runner?.Dispose();
+
+        // THE SESSION OWNS THE SERVERS, so this is where they end. An orphaned child outlives the
+        // app and holds whatever it had open — the only failure in this feature that survives the
+        // process. Best-effort: shutdown is not a place to throw or to wait indefinitely.
+        foreach (var server in mcpServers)
+            try { server.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
+            catch (Exception) { /* it is going away regardless */ }
+
         return code;
     }
 

@@ -33,6 +33,15 @@ public sealed record ProviderResolution(
     int? ContextWindow = null)
 {
     public bool HasProvider => Provider is not null;
+
+    /// <summary>Configured MCP servers, empty when none are — carried here because this is the one
+    /// place config.json is read, and the servers have to be started from what it said.</summary>
+    public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
+        new Dictionary<string, McpServerConfig>();
+
+    /// <summary>Non-fatal config complaints, for the transcript to show. A skipped server the user
+    /// never hears about is indistinguishable from one that is merely slow.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 /// <summary>
@@ -115,7 +124,11 @@ public static class ProviderResolver
                 ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
                     .GetAwaiter().GetResult();
             return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
-                settings.Orchestrator, registry, contextWindow);
+                settings.Orchestrator, registry, contextWindow)
+            {
+                McpServers = settings.McpServers,
+                Warnings = settings.Warnings,
+            };
         }
         catch (ProviderConfigException ex)
         {
