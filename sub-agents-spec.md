@@ -31,7 +31,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D13 | **The result is an envelope from step 1: `id`, `state`, `text`.** An id retrofitted later must be threaded through every surface that already exists; adding it now costs a field. `Agent.Id` already exists. | §5 |
 | D14 | **The child's id addresses its row.** Rows key on `job.Id`, minted per tool call; the spawn tool associates that with the child's `Agent.Id` so telemetry, and later background reporting and aggregation, all address the same row through one identifier. | §5 |
 | D15 | **Dispatch is an `ISubAgentSpawner` consulted before `WorkerToolset`**, the MCP precedent — NOT a `WorkerTool` enum member, which would auto-offer spawn to every child and make the no-nesting exclusion false. | §5.1a |
-| D16 | **`state` = `completed \| error \| cancelled`.** Cap and stuck report `completed` with their salvage text, because `Agent` has no outcome API. Stated rather than discovered: a `state` whose values are fiction is worse than none. | §5.1c |
+| D16 | **`state` = `completed \| capped \| stuck \| error \| cancelled`.** Cap is structural (the reporter counts turns); stuck reads the buffered error's prefix. An earlier draft said this was invisible to the tool — it is not, and shipping `completed` for a capped run is what D13 exists to prevent. | §5.1c |
 | D17 | **The spawn branch never throws** (except cancellation). An exception mid-`foreach` orphans tool calls in the parent's context and poisons every later turn. | §5.1b |
 | D11 | **Telemetry is in step 1**, not later — a child that reports nothing is a frozen row, and retrofitting it means revisiting the factory, the row and the panel. `Agent` already exposes `Id`, `Context` and four callbacks; `Job.ProgressMessage` already renders; `SessionPanel` already takes optional sections. Missing: elapsed time (a periodic tick), and the waiting state (step 3). | §2, §5 |
 | D12 | **No general hook system.** A hook that can block IS the permission gate; one that cannot is telemetry, which the callbacks already give. Add named seams if a need appears. | §2 |
@@ -62,6 +62,14 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
   `ProgressMessage` nowhere, so telemetry wired perfectly would still show a frozen row (§5.1e).
 - *"The factory wires cancellation token and id."* **False** — `Agent` has no ct parameter and mints
   its own read-only `Id`. Neither is factory work.
+- *"Cap and stuck are invisible to the spawn tool."* **False** — the factory owns the buffered sink,
+  and cap is derivable from the turn count with no string matching (§5.1c).
+- *"Hand-writing a tool schema violates the class's doctrine."* **False** — `McpToolset` already does
+  it; the doctrine is about plugin-schema drift, which a spawn tool has none of.
+- *"Add a `SetSubmissionEnabled(false)` guard."* **False** — that flag is tested before command
+  dispatch and would block `/exit` and `/clear` (§5.1g).
+- *"The orphaned-context failure recovers when compaction rewrites the head."* **False** — it does not
+  recover at all; the session is bricked until `/clear`.
 
 ---
 
@@ -500,19 +508,28 @@ branch already is (`Agent.cs:832-833`), returning null for names it does not own
 **Not a `WorkerTool` enum member.** `Agent.AllTools = Enum.GetValues<WorkerTool>()` (`Agent.cs:182`),
 so an enum member auto-offers spawn to EVERY agent including children — which makes "depth limits
 excluded" dishonest. A child constructed without a spawner structurally cannot nest, and that is what
-makes the exclusion true rather than aspirational. It also avoids hand-writing a schema the class's
-own doctrine forbids, and keeps `NamesFor` untouched.
+makes the exclusion true rather than aspirational. **The schema is hand-built, and that is normal here.** `ToolDefinition` is
+`(Name, Description, JsonElement InputSchema)` and `McpToolset.Definitions()` already constructs them
+directly (`McpToolset.cs:127`). `WorkerToolset.BuildDefinition` exists to stop a tool's advertised
+params drifting from a plugin's `JobSchema`; a spawn tool has neither, so the doctrine does not apply.
+An earlier draft called this a hazard — it is not, and the warning would have sent an implementer
+hunting for a generator that cannot exist.
 
-Two things must be done together or a typo'd name reports "no such tool": add the name to
-`alsoAvailable` (`Agent.cs:833`) AND its `ToolDefinition` to the request build (`Agent.cs:305`).
+**Two required sites:** the dispatch arm (`Agent.cs:832`) and the `ToolDefinition` in the request
+build (`Agent.cs:305`). Adding the name to `alsoAvailable` (`:833`) is a third, cosmetic one — it
+only feeds the "no such tool. Available:" string (`WorkerToolset.cs:182-184`), nothing else.
 
 #### 1b. The failure contract — a correctness precondition, not a later concern
 
 `InvokeAndShowAsync` has **no try/catch**, and the assistant message carrying the tool calls is
 appended BEFORE they run (`Agent.cs:573-578`). An exception from a child unwinds the `foreach`
 mid-turn, leaving tool calls with no matching results — the orphan the code itself documents
-(`Agent.cs:615-618`) — and every later parent prompt 400s until compaction happens to rewrite the
-head. It would present as a baffling, unrelated failure.
+(`Agent.cs:615-618`). **The session is then permanently bricked** — worse than the earlier draft said.
+An orphan 400 is not a length error, so `ContextOverflow.IsOverflow` does not match and the recovery
+path at `Agent.cs:410` never runs; compaction only fires on measured pressure, which a small
+orphaned context never reaches. Every later prompt shows the provider's 400 and does nothing, with no
+automatic recovery — only `/clear`. And it presents on the turn AFTER the failure, which is what makes
+it hard to diagnose.
 
 **The spawn branch catches everything except `OperationCanceledException`** and renders it as the
 `state: error` envelope, upholding the never-throws contract `WorkerToolset.InvokeAsync` already
@@ -525,10 +542,18 @@ bug worth fixing while here.
 stuck detection (`:653-658`). Cap and stuck announce only through `_sink.ShowError`, which for a child
 goes into the buffer — invisible to the tool.
 
-So the derivable values are `completed | error | cancelled`, and **cap and stuck report as
-`completed`**, carrying the salvage or last text. That is stated here rather than discovered later,
-because a `state` field whose values are fiction is worse than no field. Adding `Agent.SendResult
-{ Text, Outcome }` would fix it properly and is a real API change — deferred, and named as the cost.
+**Correcting an earlier draft: this information is NOT invisible.** The factory constructs the
+buffered sink, so the spawn branch holds it and can read what `ShowError` captured. Better, cap is
+structural: the per-child reporter already counts `TurnCompleted`, so `turns >= maxTurns` IS the cap,
+with no string matching.
+
+So `state` can be honest: **`completed | capped | stuck | error | cancelled`**, with cap from the turn
+count and stuck from the buffered error's stable `"stopped: "` prefix. The only genuinely brittle part
+is stuck's string match; if that is unacceptable, `Agent.SendResult { Text, Outcome }` is a three-site
+change (the three `return`s), not the API upheaval the earlier draft implied.
+
+What must NOT happen is shipping `completed` for a run that hit its cap — the parent then acts on a
+salvage summary as though it were a finished answer, which is exactly what D13 exists to prevent.
 
 #### 1d. The factory — the actual wiring, replacing a list that was wrong on its own terms
 
@@ -539,8 +564,8 @@ because a `state` field whose values are fiction is worse than no field. Adding 
 | ledger | **the parent's shared one** (D7) | spend and the breach warning are lost |
 | `IChatSink` **and** `IJobPanel` | buffered, both | child rows leak into the parent's transcript (§3.3) |
 | `logs` | yes | no child log directory — the only "inspectable afterwards" surface step 1 has |
-| `maxTurns` | a real number, **never 0** | `AgentHost` maps 0 → `int.MaxValue`; `Agent` does NOT, so a child summarises at once and returns `""` — silently does nothing |
-| `compressAbove` | `orchestrator.EffectiveCompressThreshold(window) ?? 40_000` (`AgentHost.cs:356`) | never compacts |
+| `maxTurns` | a real number, **never 0** | `AgentHost` maps 0 → `int.MaxValue`; `Agent` does NOT. With 0 the cap fires on iteration ZERO and `SummariseAtCapAsync` makes a **real paid provider call** (`Agent.cs:684-700`), returning a plausible summary of a run that never happened. Worse than doing nothing: the parent gets confident text. |
+| `compressAbove` | `_orchestrator.EffectiveCompressThreshold(_contextWindow) ?? OrchestratorSettings.DefaultCompressThreshold` (`AgentHost.cs:356`) — **the constant, never the literal 40000**, or it desynchronises | never compacts |
 | context | `new AgentContext(contextWindow)` — `Window` is get-only, so it goes in at construction | no occupancy, `IsUnderPressure` always false, never compacts |
 | `globalInstructionsDir` | yes | user-level CXAGENT.md ignored |
 | briefing | the spawn `context` | — |
@@ -551,9 +576,26 @@ because a `state` field whose values are fiction is worse than no field. Adding 
 Dropped from the old list: *"cancellation token, id"* — neither is factory work. `Agent` has no ct
 parameter (it arrives per `SendAsync`) and `Id` is minted internally and read-only.
 
-**The factory is constructed in `AppBootstrap`**, because every value above is composition-root-only.
-`Agent` and `AgentHost` each gain one optional parameter to receive it — two signature changes the
-earlier version did not list.
+#### 1d-i. The construction-order blocker
+
+**`AgentHost` CREATES the ledger in its own constructor** (`AgentHost.cs:249`), before `BuildAgent()`.
+So a factory built in `AppBootstrap` and passed INTO `AgentHost` cannot close over the parent's
+ledger — it does not exist yet. Two ways out, and one must be chosen before writing code:
+
+- the factory takes `Func<TokenLedger>` and resolves lazily, or
+- ledger creation moves to `AppBootstrap` and is passed into `AgentHost`.
+
+The same gap applies to `_contextWindow` and the `OrchestratorSettings`: both are private on
+`AgentHost`, and the table above uses them without saying where the factory gets them. `AppBootstrap`
+has both at composition time, which is another argument for the second option.
+
+**Signature changes: three, not one.** `Agent` gains the spawner parameter (it must be a field —
+`InvokeAndShowAsync` is an instance method), `AgentHost` gains it too, AND `BuildAgent()` must forward
+it.
+
+**The child must be built directly as an `Agent`, never via `AgentHost`.** That single rule is what
+makes two rows above true at once: no store row (only `AgentHost`'s `TurnCompleted` calls
+`SaveTurn`), and the four callbacks free for the child's reporter.
 
 #### 1e. Telemetry — and the blocker the previous version missed
 
@@ -562,27 +604,85 @@ already rendered; that control is **never placed in the grid** (`AppBootstrap.cs
 render INLINE"). `InlineJobSink` reads `ProgressMessage` **nowhere**, and a Running row is the literal
 `"running…"` (`:687`). Wiring the callbacks perfectly would still produce a frozen spinner.
 
-So step 1 includes, as a first-class task: **`InlineJobSink` renders turns · occupancy · elapsed for
-non-terminal states.** Plus a tick owned by the spawn branch and disposed in its `finally` —
-`MainWindow._panelClock` cannot be borrowed, it refreshes nothing when the panel is hidden.
+**And it is `CompactHeader`, not `StatusText`.** A running row always takes the compact branch
+(`InlineJobSink.cs:134`) which calls `ClearStatus` (`:145`) — so `StatusText`'s `"running…"` is never
+on screen. Someone changing `StatusText` would test it through its seam, see nothing, and lose an
+afternoon. The change goes in `CompactHeader`'s non-terminal branch (`:534`), escaping the text as
+`name` already is.
+
+**The tick must NOT go through `UpdateJob`.** That method force-expands the row (`SetExpanded(id,
+true)`, `:169`) and blanks its body (`UpdateMessage(id, "")`, `:211`) on every call — once a second,
+for minutes, a row that re-opens under a user who collapsed it and erases anything step 3 might stream
+into it. Add a header-only path instead: `UpdateProgress(job)` → store and `SetHeader`. Roughly eight
+lines, no side effects, and `UpdateJob` stays for real transitions.
+
+The tick is owned by the spawn branch and disposed in its `finally` — `MainWindow._panelClock` cannot
+be borrowed, it refreshes nothing when the panel is hidden.
 
 The row is the primary surface. **The right-panel section is demoted to "if cheap after the row
 works"** — it needs a status record, a `Refresh` signature change, a `MainWindow` setter and a channel
 from the factory's reporter, which is genuinely new plumbing across three layers.
 
+#### 1e-i. The row must be a WORKER, or it hides the answer
+
+`ToolPluginType` (`Agent.cs:1174-1183`) maps unknown names to `"file"`, so `spawn_agent` would be
+labelled a file operation — and worse, `InlineJobSink.IsCompactRow` treats anything that is not
+`"llm_agent"` as compact, so **the row collapses the moment the child finishes**, hiding the answer
+behind an `expand…`. The sink's own comment says this is deliberate for tools and wrong for workers:
+*"COLLAPSING it at the finish line snatches away the thing the user was reading."*
+
+One line: `"spawn_agent" => "llm_agent"` in that switch. It buys the "Worker" author label, the
+stays-expanded behaviour and the non-compact block together.
+
 #### 1f. Cancellation
 
 Token flow verified end to end. But on Escape the OCE propagates out of the spawn branch, so the code
 that closes the row (`Agent.cs:836-846`) never runs — the row spins forever while the transcript says
-"Stopped." **`try/finally`: mark the Job `Cancelled` (the state exists), dispose the tick, keep the
-buffer.**
+"Stopped." **ONE construct, not two.** §1b's catch and this `finally` are the same `try` around the spawn
+dispatch INSIDE `InvokeAndShowAsync` — written as two separate wrappings, the likely outcome is a
+catch that swallows the error but leaves the row `Running`, or a `finally` that closes the row while
+the exception still escapes the `foreach` and bricks the session (§1b):
+
+```csharp
+try            { … await child.SendAsync(…) … }
+catch (OperationCanceledException) { job.State = JobState.Cancelled; throw; }
+catch (Exception ex)               { return ErrorEnvelope(ex); }
+finally        { tick.Dispose(); }
+```
+
+The `try/finally` also fixes this for EVERY tool call, not just spawn — a cancelled `run_shell` leaves
+the same frozen row today.
 
 #### 1g. The submission guard — a bug today that a long child makes certain
 
 `SetSubmissionEnabled` is only ever called with `true` (`AppBootstrap.cs:215`); nothing disables it
 during a turn. Press Enter while a child runs and a second `runner.SendAsync` starts a second loop on
-the SAME `Agent` and the same live `Context.Messages`. Latent now; near-certain the moment a child
-runs for minutes. One line of prevention, and it belongs here.
+the SAME `Agent` and the same live `Context.Messages`.
+
+**And it is worse than two loops:** the second submit does
+`Interlocked.Exchange(ref turnCts, …); previousTurn?.Dispose()` (`:412-414`), **disposing the token
+the first run is still using** — so the first loop throws `ObjectDisposedException` on its next
+cancellation check.
+
+**`SetSubmissionEnabled(false)` is the WRONG lever**, and an earlier draft proposed it. That flag is
+tested at `SubmitComposer`'s FIRST line (`:327`), before command dispatch — so it would also disable
+`/exit`, `/clear`, `/mcp`, `/help` and `/compress`. The user could not quit while a child ran, and the
+composer would claim "no provider", which is a lie.
+
+**Guard the model dispatch only**, immediately before `:404`, reusing the predicate the Escape handler
+already trusts (`:481`) so "a turn is running" has one definition:
+
+```csharp
+if (turnCts is { IsCancellationRequested: false })
+{
+    // commands still work — /exit and /clear are exactly what someone wants here
+    return;   // with a system line saying Escape stops the run
+}
+```
+
+**Not one line: a guard plus a lifetime.** `turnCts` is never nulled on completion, so the predicate
+latches true after the first turn and would block everything. The fire-and-forget `SendAsync` needs a
+continuation that clears it.
 
 #### The rest of the scope
 
@@ -594,6 +694,15 @@ runs for minutes. One line of prevention, and it belongs here.
   first brick of background's registry, arriving here whether or not we name it
 - "inspectable afterwards" means **the child's log directory**; the buffer is retained for step 3's
   transcript swap
+- **the four callbacks are single-assignment `Action<T>` properties** (`Agent.cs:122-140`), not events.
+  The factory's reporter is the sole subscriber; a second consumer would silently overwrite it, with
+  no compiler warning
+- the envelope's `text` needs **no further stripping** — `SendAsync` already returns
+  `ModelOutput.StripReasoning(...)` on every exit
+- `ChatMessageId`s cannot collide: each sink mints its own and nothing compares them across sinks
+- **the shared ledger's `Breached` fires into the PARENT's transcript** (`AgentHost.cs`), and only
+  once ever. A child consuming the budget means the parent never hears about its own later overspend.
+  Arguably right — it is the session's budget — but decide it rather than inherit it
 
 Explicitly NOT in step 1: background, resumption, mid-run ask, model-initiated stop, spawn-gating,
 depth limits, parallel, configured types, per-agent providers, a session aggregator.
