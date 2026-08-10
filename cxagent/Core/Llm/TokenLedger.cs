@@ -8,6 +8,12 @@ namespace CxAgent.Core.Llm;
 /// calls out: many jobs each retrying and diagnosing within their own limits, where the aggregate is
 /// what the user cares about. A null budget means unbounded — the default, so cost control is opt-in
 /// and nobody's first run dies on a budget they never set.
+///
+/// <para>THREAD-SAFE, because it is already multi-writer and about to become more so. Every write
+/// goes through <see cref="Interlocked"/> and every read through <see cref="Volatile"/>: the counters
+/// were plain <c>+=</c>, which is a read-modify-write, so two agents recording at once silently lost
+/// one of their spends — and the failure is invisible, showing up only as a total that is quietly too
+/// low. Sub-agents make that likely rather than theoretical.</para>
 /// </summary>
 public sealed class TokenLedger
 {
@@ -15,7 +21,10 @@ public sealed class TokenLedger
     private int _total;
     private int _input;
     private int _output;
-    private bool _breachRaised;
+    /// <summary>0 until the breach event has fired, then 1. An int rather than a bool so the
+    /// check-and-set is ONE atomic operation — a bool tested and then assigned lets two threads both
+    /// see false and both raise, reporting one crossing twice.</summary>
+    private int _breachRaised;
 
     public TokenLedger(int? goalTokenBudget) => _budget = goalTokenBudget;
 
@@ -35,10 +44,10 @@ public sealed class TokenLedger
         _input = inputTokens;
         _output = outputTokens;
         _total = inputTokens + outputTokens;
-        _breachRaised = IsBreached;
+        _breachRaised = IsBreached ? 1 : 0;
     }
 
-    public int TotalTokens => _total;
+    public int TotalTokens => Volatile.Read(ref _total);
 
     /// <summary>
     /// Tokens SENT so far — the conversation, re-sent in full on every call.
@@ -48,28 +57,33 @@ public sealed class TokenLedger
     /// output is what the model actually produced. A single total hides which one is growing, and
     /// they have different remedies: compress the history, or ask for less.</para>
     /// </summary>
-    public int InputTokens => _input;
+    public int InputTokens => Volatile.Read(ref _input);
 
     /// <summary>Tokens GENERATED so far — the model's own production.</summary>
-    public int OutputTokens => _output;
-    public bool IsBreached => _budget is { } b && _total > b;
+    public int OutputTokens => Volatile.Read(ref _output);
+
+    public bool IsBreached => _budget is { } b && Volatile.Read(ref _total) > b;
 
     /// <summary>Raised ONCE, the first time the running total crosses the budget.</summary>
     public event EventHandler<int>? Breached;
 
     public void Record(LlmUsage usage)
     {
-        _input += usage.InputTokens;
-        _output += usage.OutputTokens;
-        _total += usage.InputTokens + usage.OutputTokens;
-        if (!_breachRaised && IsBreached)
-        {
-            _breachRaised = true;
-            Breached?.Invoke(this, _total);
-        }
+        Interlocked.Add(ref _input, usage.InputTokens);
+        Interlocked.Add(ref _output, usage.OutputTokens);
+
+        // The TOTAL from this add, not a re-read: between adding and reading, another thread may have
+        // recorded too, and the event should carry a total that actually existed.
+        var total = Interlocked.Add(ref _total, usage.InputTokens + usage.OutputTokens);
+
+        // COMPARE-AND-SWAP, so exactly one caller ever raises. Testing a flag and then setting it
+        // lets two threads both see "not yet" and both fire — announcing one budget crossing twice,
+        // which reads as two separate problems.
+        if (_budget is { } b && total > b && Interlocked.CompareExchange(ref _breachRaised, 1, 0) == 0)
+            Breached?.Invoke(this, total);
     }
 
     /// <summary>Would spending <paramref name="estimatedTokens"/> more cross the budget? Does not spend.</summary>
     public bool WouldBreach(int estimatedTokens) =>
-        _budget is { } b && _total + estimatedTokens > b;
+        _budget is { } b && Volatile.Read(ref _total) + estimatedTokens > b;
 }
