@@ -8,6 +8,10 @@ using SharpConsoleUI.Controls;
 // values keyed by our long id so we can forward Append calls to the right transcript slot.
 using FwChatId = SharpConsoleUI.Controls.ChatMessageId;
 
+using CxAgent.Core.Agent;
+// Ours, not SharpConsoleUI's — both exist and this file sees both namespaces.
+using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
+
 namespace CxAgent.UI;
 
 /// <summary>
@@ -79,11 +83,43 @@ public sealed class ChatTranscriptSink : IChatSink
             }
         });
 
+    /// <summary>
+    /// Body text, ESCAPED. The control parses markup, so an unescaped "[red]" in model output is
+    /// swallowed and an unclosed tag recolours everything after it — verified: "we[red]ird" renders
+    /// as "weird". This escape used to be missing here and present only on the reasoning path, which
+    /// is precisely the asymmetry that made the omission invisible.
+    /// </summary>
     public void AppendAssistant(ChatMessageId id, string token) =>
         _system.EnqueueOnUIThread(() =>
         {
-            if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
+            if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, Escape(token));
         });
+
+    /// <summary>
+    /// Reasoning text: escaped, then coloured HERE — the sink owns how a kind of text looks.
+    ///
+    /// <para>AMBER, not [dim]. Dim asks the terminal to render the SAME colour more faintly, which
+    /// many terminals ignore and none render identically; against a dark background the ones that
+    /// honour it produce grey mush. A colour of its own says "this is a different KIND of text"
+    /// rather than "this text matters less", which is what reasoning actually is.</para>
+    /// </summary>
+    public void AppendReasoning(ChatMessageId id, string text) =>
+        _system.EnqueueOnUIThread(() =>
+        {
+            if (_map.TryGetValue(id.Value, out var fwId))
+                _chat.Append(fwId, $"[{ColorScheme.ThinkingMarkup}]{Escape(text)}[/]");
+        });
+
+    /// <summary>
+    /// Makes model text safe to hand a markup parser.
+    ///
+    /// <para>Doubling '[' is the parser's own escape. It lives in the SINK because markup is the
+    /// sink's domain — the agent emits semantics and has no reason to know a tag syntax exists.</para>
+    /// </summary>
+    /// <remarks>Public so it is testable without a live ConsoleWindowSystem — the same seam
+    /// <c>SettingsDialog.ProviderRowLabels</c> uses. This codebase has no InternalsVisibleTo grant,
+    /// and an escape nobody can test is how the missing one survived.</remarks>
+    public static string Escape(string text) => text.Replace("[", "[[");
 
     public void ShowError(string message) =>
         _system.EnqueueOnUIThread(() =>

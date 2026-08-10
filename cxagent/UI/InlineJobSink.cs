@@ -5,6 +5,10 @@ using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Core;
 
+using CxAgent.Core.Agent;
+// Ours, not SharpConsoleUI's — both exist and this file sees both namespaces.
+using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
+
 namespace CxAgent.UI;
 
 /// <summary>

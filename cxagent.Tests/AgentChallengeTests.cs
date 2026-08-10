@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -486,15 +487,16 @@ public class AgentChallengeTests
         var sink = new RecordingSink();
         var answer = await Build(provider, sink).SendAsync("what is 2+2?", CancellationToken.None);
 
-        var body = string.Concat(sink.Appended);
-        Assert.Contains("weighing the options", body, StringComparison.Ordinal);
+        // SHOWN AS REASONING, which is a KIND, not a colour. The agent used to build the markup
+        // itself; how thinking looks is the sink's decision and is asserted where that decision now
+        // lives (ChatTranscriptSinkTests). What matters here is that the reasoning reached the user
+        // at all, and reached them as thinking rather than as body content.
+        var reasoning = string.Concat(sink.Reasoning);
+        Assert.Contains("weighing the options", reasoning, StringComparison.Ordinal);
 
-        // AMBER, not [dim]. Dim asks the terminal to render the same colour more faintly — a request
-        // many terminals ignore and none render identically, and against a dark background the ones
-        // that honour it produce grey mush. The colour comes from the shared palette, so the
-        // transcript and this text cannot drift apart.
-        Assert.Contains(CxAgent.UI.ColorScheme.ThinkingMarkup, body, StringComparison.Ordinal);
-        Assert.DoesNotContain("[dim]", body, StringComparison.Ordinal);
+        // AND NOT AS BODY. The body is what a reader takes as the model's answer; thinking mixed
+        // into it reads as commitment.
+        Assert.DoesNotContain("weighing", string.Concat(sink.Appended), StringComparison.Ordinal);
 
         // The reasoning never became a header — the defect this replaced.
         Assert.DoesNotContain(sink.Headers, h => h.Contains("weighing", StringComparison.Ordinal));
@@ -930,6 +932,8 @@ public class AgentChallengeTests
         /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
         public readonly List<string> Appended = [];
         public void AppendAssistant(ChatMessageId id, string token) => Appended.Add(token);
+        public readonly List<string> Reasoning = [];
+        public void AppendReasoning(ChatMessageId id, string text) => Reasoning.Add(text);
         public void EndAssistantTurn(ChatMessageId id) => Ends++;
         public void ShowError(string message) => Errors.Add(message);
         public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);

@@ -1,7 +1,7 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Agent;
 
 /// <summary>
 /// One compression, presented as a job row — the single implementation behind every route that

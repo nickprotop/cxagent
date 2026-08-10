@@ -5,7 +5,7 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Agent;
 
 /// <summary>
 /// The whole of single-agent mode: one model, its tools, and a turn loop. No plan, no DAG, no
@@ -892,21 +892,19 @@ public sealed class Agent
                 //
                 // The body can hold all of it, in order, where it scrolls with everything else.
                 //
-                // AMBER, not [dim]. Dim asks the terminal to render the SAME colour more faintly,
-                // which is a request many terminals ignore and none render identically — and against
-                // an already-dark background the ones that honour it produce grey mush. A colour of
-                // its own says "this is a different KIND of text" rather than "this text matters
-                // less", which is what reasoning actually is.
+                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks. This
+                // used to build the markup here — a colour decision inside the turn loop — and the
+                // sink could not then tell styled reasoning from unstyled body text on the same
+                // method, so only one of the two was ever escaped.
                 //
-                // The cost is the spinner: ChatTranscriptControl clears a message's thinking flag as
-                // soon as body content arrives. That is the right trade — the reasoning text itself
-                // is now the evidence the model is alive, and it is far better evidence than a
-                // spinner, because it says WHAT the model is doing.
+                // The semantic decision that DOES belong here: reasoning is worth showing at all.
+                // ChatTranscriptControl clears a message's thinking flag as soon as body content
+                // arrives, so this costs the spinner — the right trade, because the reasoning text
+                // is better evidence the model is alive than a spinner is: it says WHAT it is doing.
                 var reasoning = ModelOutput.ExtractReasoning(accumulated);
                 if (reasoning.Length > shownReasoning)
                 {
-                    _sink.AppendAssistant(turnId,
-                        $"[{ColorScheme.ThinkingMarkup}]{Escape(reasoning[shownReasoning..])}[/]");
+                    _sink.AppendReasoning(turnId, reasoning[shownReasoning..]);
                     shownReasoning = reasoning.Length;
                 }
             }
@@ -1157,13 +1155,6 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Escapes markup so reasoning text cannot be interpreted as tags.
-    ///
-    /// <para>A model reasoning ABOUT markup writes "[dim]" and "[/]" as ordinary words, and an
-    /// unescaped one would open a style scope that never closes — corrupting every header after it.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// The briefing as its own attributed block, or nothing at all.
     ///
     /// <para>NAMED, like the project instructions above it. An unattributed paragraph appended to a
@@ -1178,7 +1169,6 @@ public sealed class Agent
             : "\n# Your task\n\nThis is what you were created to do. Where it disagrees with "
               + "anything above, follow this.\n\n" + briefing + "\n";
 
-    private static string Escape(string text) => text.Replace("[", "[[");
 
     /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
     private string ToolPluginType(string toolName) => toolName switch

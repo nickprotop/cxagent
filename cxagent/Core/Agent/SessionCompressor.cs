@@ -1,10 +1,10 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Agent;
 
 /// <summary>
-/// P11 Task 3: the point of the plan. Truncation (<see cref="SessionCommands.Compress"/>) deleted four
+/// P11 Task 3: the point of the plan. Truncation (<see cref="Truncate"/>) deleted four
 /// goals' worth of findings outright on a live drive — nothing condensed, everything discarded. This
 /// asks the model to condense the OLDEST half into one factual message and keeps the newest half
 /// VERBATIM, so a follow-up ("now do X to that") still has its referent.
@@ -65,12 +65,12 @@ public static class SessionCompressor
     }
 
     /// <summary>
-    /// Splits the conversation in two at the same midpoint <see cref="SessionCommands.Compress"/>
+    /// Splits the conversation in two at the same midpoint <see cref="Truncate"/>
     /// uses (oldest half / newest half), asks <paramref name="provider"/> to condense the oldest half
     /// into one factual message, and replaces that half with it. The newest half is left byte-for-byte
     /// alone.
     ///
-    /// Falls back to <see cref="SessionCommands.Compress"/> — unchanged, the same routine `/compress`
+    /// Falls back to <see cref="Truncate"/> — unchanged, the same routine `/compress`
     /// calls — when the summarising call throws, so `/compress` and auto-compression share one
     /// degradation path. A housekeeping failure must not kill a working session.
     /// </summary>
@@ -92,7 +92,7 @@ public static class SessionCompressor
     {
         var conversation = context.Messages;
 
-        // NO MESSAGE-COUNT FLOOR — see SessionCommands.Compress for why. This ran only on an explicit
+        // NO MESSAGE-COUNT FLOOR — see Truncate for why. This ran only on an explicit
         // /compress or on measured TOKEN pressure, and neither is answered by counting messages: eight
         // messages carrying four large file reads is precisely the case that needs compressing, and
         // the old floor of eight declined it silently.
@@ -181,13 +181,48 @@ public static class SessionCompressor
             // Summarisation failed — fall back to the SAME truncation /compress uses, never a
             // second, divergent degradation path.
             var beforeTruncate = context.TotalChars();
-            SessionCommands.Compress(conversation, pin);
+            Truncate(conversation, pin);
             context.EstimateUsageAfterCompaction();
             return new CompressResult(Summarised: false,
                 CharsFreed: Math.Max(0, beforeTruncate - context.TotalChars()));
         }
     }
 
+
+    /// <summary>
+    /// Halves the conversation, dropping the OLDEST messages first — the FALLBACK when summarising
+    /// fails.
+    ///
+    /// <para>Lives here rather than with the slash commands: it is list arithmetic with no UI in it,
+    /// and its only caller is the catch block below. It was <c>SessionCommands.Compress</c>, which put
+    /// the kernel's degradation path in the presentation layer.</para>
+    ///
+    /// <para>NO MESSAGE-COUNT FLOOR. There was one — eight — on the reasoning that compression is
+    /// lossy and a short conversation has nothing worth losing. But nothing here is automatic: this
+    /// runs because the USER typed /compress, or because the context crossed a threshold measured in
+    /// TOKENS. A count of messages says nothing about either. Eight messages carrying four large file
+    /// reads is exactly the case that needs compressing, and the floor silently declined it — a
+    /// no-op the user asked for and did not get, with no way to tell it apart from a compression that
+    /// found nothing to do.</para>
+    ///
+    /// <para>Token pressure is the honest trigger and it is applied by the caller. This routine now
+    /// does what it is told.</para>
+    /// </summary>
+    /// <param name="pinnedHead">
+    /// Leading messages that are structural rather than history — the system preamble — and must
+    /// survive. This dropped from index 0 unconditionally, so the fallback taken when summarisation
+    /// FAILS destroyed the working-directory instructions by the other route.
+    /// </param>
+    public static void Truncate(List<ChatMessage> conversation, int pinnedHead = 0)
+    {
+        // Two messages is the smallest thing that can be halved at all; below that there is no older
+        // half to drop, which is arithmetic rather than a policy. Counted below the pin: a pinned
+        // head plus one turn is not a halvable conversation either.
+        if (conversation.Count - pinnedHead < 2) return;
+
+        var keep = (conversation.Count - pinnedHead) / 2;
+        conversation.RemoveRange(pinnedHead, conversation.Count - pinnedHead - keep);
+    }
 
     /// <summary>
     /// The structure the summary must have, adapted from opencode's compaction template.

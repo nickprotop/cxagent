@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -26,7 +27,7 @@ public class AgentHostTests
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
 
         var runner = NewRunner(mock);
-        await runner.SendAsync("goal", new List<ChatMessage>(), CancellationToken.None);
+        await runner.SendAsync("goal", CancellationToken.None);
 
         Assert.Equal(42, runner.Ledger.TotalTokens);
     }
@@ -48,7 +49,7 @@ public class AgentHostTests
         var seen = new List<int>();
         runner.TokensUpdated += (_, total) => seen.Add(total);
 
-        await runner.SendAsync("goal", new List<ChatMessage>(), CancellationToken.None);
+        await runner.SendAsync("goal", CancellationToken.None);
 
         Assert.Contains(42, seen);
     }
@@ -60,7 +61,7 @@ public class AgentHostTests
         var runner = NewRunner(new ThrowingProvider(), sink);
 
         var conversation = new List<ChatMessage>();
-        await runner.SendAsync("x", conversation, CancellationToken.None);
+        await runner.SendAsync("x", CancellationToken.None);
 
         // NO ANSWER on the transcript — the request produced an error, not a reply. That absence is
         // what a failed exchange looks like now the status enum nothing consumed is gone.
@@ -85,9 +86,9 @@ public class AgentHostTests
         var runner = NewRunner(mock);
         var conversation = new List<ChatMessage>();
 
-        await runner.SendAsync("one", conversation, CancellationToken.None);
+        await runner.SendAsync("one", CancellationToken.None);
         var afterFirst = runner.Context.Messages.Count;
-        await runner.SendAsync("two", conversation, CancellationToken.None);
+        await runner.SendAsync("two", CancellationToken.None);
 
         Assert.True(afterFirst > 0);
         Assert.True(runner.Context.Messages.Count > afterFirst);
@@ -129,7 +130,7 @@ public class AgentHostTests
             var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
                 PluginRegistry.CreateWithBuiltins(), store: store);
 
-            await runner.SendAsync("remember this", new List<ChatMessage>(), CancellationToken.None);
+            await runner.SendAsync("remember this", CancellationToken.None);
 
             var snap = store.LoadLatestUnfinished();
             Assert.NotNull(snap);
@@ -157,7 +158,7 @@ public class AgentHostTests
 
             var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
                 PluginRegistry.CreateWithBuiltins(), store: store);
-            await runner.SendAsync("hello", new List<ChatMessage>(), CancellationToken.None);
+            await runner.SendAsync("hello", CancellationToken.None);
 
             runner.MarkSessionFinished();
 

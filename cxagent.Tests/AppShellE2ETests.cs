@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
@@ -32,7 +33,6 @@ public class AppShellE2ETests
         var sink = new ChatTranscriptSink(system, mw.Chat);
         var jobPanelSink = new JobPanelSink(system, mw.JobPanel);
         var runner = new AgentHost(provider, sink, jobPanelSink, PluginRegistry.CreateWithBuiltins());
-        var conversation = new List<ChatMessage>();
 
         // Set the multi-line composer content (public get/set), exactly what the Ctrl+Enter handler reads.
         mw.Input.Input = "do two steps";
@@ -44,11 +44,14 @@ public class AppShellE2ETests
         // PreviewKeyPressed is an event that can't be raised externally. So the headless test drives
         // SendAsync directly (the handler's body); the real Ctrl+Enter → submit key path is verified by
         // the tmux smoke-drive (Step 3) on the real Run() loop.
-        await runner.SendAsync(mw.Input.Input, conversation, CancellationToken.None);
+        await runner.SendAsync(mw.Input.Input, CancellationToken.None);
 
-        // The exchange completed and its answer reached the transcript — the observable outcome now
-        // that there is no status enum to assert on (nothing consumed it; the sink carries errors).
-        Assert.Contains(conversation, m => m.Role == "assistant");
+        // THE PROMPT REACHED THE AGENT'S CONTEXT — the observable outcome now that there is no status
+        // enum to assert on. This used to assert an "assistant" entry on a session-side list that
+        // nothing ever read; the agent's context is the real thing, and what lands in it is the user
+        // turn plus whatever the provider produced (here a stub that streams no text).
+        Assert.Contains(runner.Context.Messages, m => m.Role == "user");
+        Assert.Equal("system", runner.Context.Messages[0].Role);
 
         // Re-render the real shell (public ProcessOnce renders without corruption at the narrow size).
         system.ProcessOnce();

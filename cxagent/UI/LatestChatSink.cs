@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 
 namespace CxAgent.UI;
@@ -24,6 +25,7 @@ public sealed class LatestChatSink : IChatSink
     public ChatMessageId AddUserTurn(string text) => Current?.AddUserTurn(text) ?? default;
     public ChatMessageId BeginAssistantTurn() => Current?.BeginAssistantTurn() ?? default;
     public void AppendAssistant(ChatMessageId id, string token) => Current?.AppendAssistant(id, token);
+    public void AppendReasoning(ChatMessageId id, string text) => Current?.AppendReasoning(id, text);
     public void SetAssistantHeader(ChatMessageId id, string header) { }
 
     public void EndAssistantTurn(ChatMessageId id) => Current?.EndAssistantTurn(id);

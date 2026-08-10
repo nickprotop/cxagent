@@ -99,7 +99,7 @@ public static class SessionCommands
     /// way, the caller must NOT treat it as a goal. <paramref name="reply"/> is the chat message to
     /// display.
     /// </summary>
-    public static bool TryHandle(string input, List<ChatMessage> conversation, out string reply)
+    public static bool TryHandle(string input, out string reply)
     {
         var trimmed = input.Trim();
 
@@ -126,7 +126,9 @@ public static class SessionCommands
         switch (command.Name)
         {
             case "/clear":
-                conversation.Clear();
+                // THE CALLER CLEARS THE CONTEXT. This type deliberately holds no session state — it
+                // used to be handed a List<ChatMessage> to empty here, but nothing ever read that
+                // list, so the clear was a no-op dressed as the command's whole purpose.
                 reply = "Conversation cleared.";
                 return true;
 
@@ -253,33 +255,4 @@ public static class SessionCommands
     public static string HelpLines(string markupColor) =>
         string.Join('\n', All.Select(c => $"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary));
 
-    /// <summary>
-    /// Halves the conversation, dropping the OLDEST messages first.
-    ///
-    /// <para>NO MESSAGE-COUNT FLOOR. There was one — eight — on the reasoning that compression is
-    /// lossy and a short conversation has nothing worth losing. But nothing here is automatic: this
-    /// runs because the USER typed /compress, or because the context crossed a threshold measured in
-    /// TOKENS. A count of messages says nothing about either. Eight messages carrying four large file
-    /// reads is exactly the case that needs compressing, and the floor silently declined it — a
-    /// no-op the user asked for and did not get, with no way to tell it apart from a compression that
-    /// found nothing to do.</para>
-    ///
-    /// <para>Token pressure is the honest trigger and it is applied by the caller. This routine now
-    /// does what it is told.</para>
-    /// </summary>
-    /// <param name="pinnedHead">
-    /// Leading messages that are structural rather than history — the system preamble — and must
-    /// survive. This dropped from index 0 unconditionally, so the fallback taken when summarisation
-    /// FAILS destroyed the working-directory instructions by the other route.
-    /// </param>
-    public static void Compress(List<ChatMessage> conversation, int pinnedHead = 0)
-    {
-        // Two messages is the smallest thing that can be halved at all; below that there is no older
-        // half to drop, which is arithmetic rather than a policy. Counted below the pin: a pinned
-        // head plus one turn is not a halvable conversation either.
-        if (conversation.Count - pinnedHead < 2) return;
-
-        var keep = (conversation.Count - pinnedHead) / 2;
-        conversation.RemoveRange(pinnedHead, conversation.Count - pinnedHead - keep);
-    }
 }

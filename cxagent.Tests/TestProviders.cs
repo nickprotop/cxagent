@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using CxAgent.Core.Llm;
@@ -60,6 +61,12 @@ public sealed class RecordingSink : IChatSink
         AssistantTokens.Enqueue(token);
         MessageQueue.Enqueue(token);
     }
+
+    /// <summary>Kept SEPARATE from AssistantTokens: reasoning is a different kind of text, and a fake
+    /// that merged the two would let a test assert on body content that was actually thinking.</summary>
+    public readonly System.Collections.Concurrent.ConcurrentQueue<string> ReasoningTokens = new();
+
+    public void AppendReasoning(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
 
     public void ShowError(string message)
     {

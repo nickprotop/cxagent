@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
@@ -43,9 +44,11 @@ public class JobPanelE2ETests : IDisposable
         var runner = new AgentHost(provider, chat, jobPanel,
             PluginRegistry.CreateWithBuiltins(), _logs);
 
-        var conversation = new List<ChatMessage>();
-        await runner.SendAsync("do two steps", conversation, CancellationToken.None);
-        Assert.Contains(conversation, m => m.Role == "assistant");
+        await runner.SendAsync("do two steps", CancellationToken.None);
+
+        // The prompt reached the agent's context. This used to assert an "assistant" entry on a
+        // session-side list nothing read — which passed whether or not the run happened at all.
+        Assert.Contains(runner.Context.Messages, m => m.Role == "user");
 
         // Drive nothing else — the render landing is the tmux drive. We can't assert BlockCount
         // headlessly without a UI pump; instead assert the wiring compiles + the run completes

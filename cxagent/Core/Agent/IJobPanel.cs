@@ -1,6 +1,6 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Agent;
 
 /// <summary>
 /// The job-panel UI seam AgentHost writes to (parallel to IChatSink). SetJobs is called once when

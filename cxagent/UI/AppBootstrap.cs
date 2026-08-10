@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
@@ -72,7 +73,6 @@ public static class AppBootstrap
         // re-wire would just be noise about an event that already happened and was already told.
         var permissionLoadErrorReported = false;
 
-        var conversation = new List<ChatMessage>();
         using var cts = new CancellationTokenSource();
 
         // Mutable so first-run setup (and F5 settings) can install a runner that didn't exist at
@@ -119,92 +119,9 @@ public static class AppBootstrap
         var mcp = new Core.Mcp.McpManager(permissionGate,
             accessToken: name => mcpTokens.Get(name)?.AccessToken);
 
-        // /mcp, including the reload that makes config LIVE.
-        async Task HandleMcpCommandAsync(string arguments)
-        {
-            if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var first, ..]
-                && first.Equals("reload", StringComparison.OrdinalIgnoreCase))
-            {
-                permissionSink.ShowSystemMessage("Reloading MCP servers…");
+        // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
+        var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, permissionSink, mainWindow);
 
-                // RE-READ FROM DISK, not from the startup resolution. The whole point is to pick up
-                // a change made since launch — in Settings, or by hand-editing config.json.
-                IReadOnlyDictionary<string, McpServerConfig> configured;
-                try
-                {
-                    configured = ProviderConfigLoader.LoadAndValidate(paths, env).McpServers;
-                }
-                catch (ProviderConfigException ex)
-                {
-                    // An unrelated config error must not silently leave the old servers in place
-                    // without saying why the reload did nothing.
-                    permissionSink.ShowSystemMessage(
-                        $"[yellow]config.json could not be read: {string.Join("; ", ex.Errors)}[/]");
-                    return;
-                }
-
-                await mcp.ReloadAsync(configured, CancellationToken.None);
-
-                foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                    permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
-
-                mainWindow.SetMcpServers(mcp.Statuses());
-            }
-
-            if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var verb, var target, ..]
-                && verb.Equals("login", StringComparison.OrdinalIgnoreCase))
-            {
-                await LoginToMcpServerAsync(target);
-                return;
-            }
-
-            permissionSink.ShowSystemMessage(SessionCommands.DescribeMcp(
-                mcp.Statuses(), arguments, mcp.Toolset.Names().ToList()));
-        }
-
-        // THE ONLY PLACE A BROWSER OPENS, and only because the user typed /mcp login. A 401 during
-        // a turn sets a status and stops; opening a browser on the agent's own initiative, while its
-        // user may be away from the machine, asks for credentials at a moment nobody chose.
-        async Task LoginToMcpServerAsync(string serverName)
-        {
-            if (mcp.AuthMetadataUrlFor(serverName) is not { } metadataUrl)
-            {
-                permissionSink.ShowSystemMessage(
-                    $"[yellow]'{serverName}' has not asked for authorization. Only a remote server "
-                    + "that answered 401 can be logged in to — run /mcp to see the servers.[/]");
-                return;
-            }
-
-            permissionSink.ShowSystemMessage($"Opening a browser to log in to '{serverName}'…");
-
-            var result = await Core.Mcp.Auth.McpLogin.RunAsync(
-                httpForAuth, mcpTokens, serverName, metadataUrl,
-                // A PUBLIC CLIENT with no secret: cxagent runs on the user's machine, where anything
-                // shipped as a "secret" is readable by whoever has the binary. PKCE is what actually
-                // protects the exchange. Dynamic registration (RFC 7591) is out of scope — a server
-                // requiring a pre-registered id says so, and the error names it.
-                clientId: "cxagent", clientSecret: null,
-                openBrowser: url =>
-                {
-                    if (!TryOpenBrowser(url))
-                        // A headless or locked-down machine still gets its login: the URL is the
-                        // whole of what a browser would have been handed.
-                        permissionSink.ShowSystemMessage($"Open this URL to continue:\n{url}");
-                },
-                ct: CancellationToken.None);
-
-            permissionSink.ShowSystemMessage(
-                result.Succeeded ? result.Message : $"[yellow]{result.Message}[/]");
-
-            if (!result.Succeeded) return;
-
-            // RECONNECT, so the tools are usable NOW. A login that leaves the server still
-            // unauthorized until the next restart is a login the user would reasonably think failed.
-            permissionSink.ShowSystemMessage("Reconnecting…");
-            await mcp.ReloadAsync(mcp.Configured, CancellationToken.None);
-            mainWindow.SetMcpServers(mcp.Statuses());
-            permissionSink.ShowSystemMessage(SessionCommands.DescribeMcp(mcp.Statuses()));
-        }
 
         void WireRunner(ProviderResolution res)
         {
@@ -394,8 +311,19 @@ public static class AppBootstrap
                 return;
             }
 
-            // Plain Enter → submit.
-            e.Handled = true;   // consume it so the MLE doesn't also insert a newline
+            // Plain Enter → submit. What a submitted line MEANS is SubmitComposer's.
+            e.Handled = true;   // consume it so the MLE does not also insert a newline
+            SubmitComposer();
+        };
+
+        // THE SUBMISSION PATH, lifted out of the key handler.
+        //
+        // What stayed there is genuinely about KEYS — is this Enter, does the composer have focus,
+        // does the line continue. Everything here is about what a submitted line MEANS, and the two
+        // were interleaved in one 115-line lambda, and only the first ten lines of it had anything
+        // to do with a keystroke.
+        void SubmitComposer()
+        {
             if (runner is null || !mainWindow.SubmissionEnabled) return;
             var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
@@ -427,7 +355,7 @@ public static class AppBootstrap
                         // /help, the live servers for /mcp.
                         if (command.Name == "/mcp")
                         {
-                            _ = HandleMcpCommandAsync(SessionCommands.Arguments(goalText));
+                            _ = mcpCommand.HandleAsync(SessionCommands.Arguments(goalText));
                             return;
                         }
                         mainWindow.ShowHelp();
@@ -454,13 +382,13 @@ public static class AppBootstrap
             // Everything else that begins with a slash — /clear, and any unrecognised command, which
             // gets the "available commands" reply rather than being sent to the model as a task.
             // Costs nothing: no goal, no provider call, no tokens.
-            if (SessionCommands.TryHandle(goalText, conversation, out var commandReply))
+            if (SessionCommands.TryHandle(goalText, out var commandReply))
             {
-                // /clear MUST CLEAR BOTH LISTS. SessionCommands only sees the session conversation —
-                // the transcript's record — while what the MODEL carries is the agent's context, and
-                // that now persists across goals. Clearing one and not the other would empty the
-                // screen while the agent silently remembered everything, which is the opposite of
-                // what the command promises.
+                // /clear CLEARS THE AGENT'S CONTEXT, which is the whole operation: that list is what
+                // the model is sent on every turn. It used to clear a second list as well, on the
+                // reasoning that one held the transcript and the other what the model carries — but
+                // nothing ever read the second one, so the extra clear did nothing and the comment
+                // implied a hazard that did not exist.
                 if (SessionCommands.Match(goalText)?.Name == "/clear")
                 {
                     runner?.Context.Clear();
@@ -486,8 +414,8 @@ public static class AppBootstrap
             previousTurn?.Dispose();
             var turnToken = turnCts!.Token;
 
-            _ = runner.SendAsync(goalText, conversation, turnToken);
-        };
+            _ = runner.SendAsync(goalText, turnToken);
+        }
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
         // Ctrl+<letter> as a single ASCII control byte, so several Ctrl combos are physically
@@ -778,24 +706,6 @@ public static class AppBootstrap
         return code;
     }
 
-    /// <summary>
-    /// Hands a URL to the platform's browser. False when there is none to hand it to.
-    ///
-    /// <para>UseShellExecute is what makes the OS resolve the default handler; without it this tries
-    /// to EXECUTE the URL as a program and fails on every platform. A headless box, a container or a
-    /// locked-down desktop has no handler at all, which is not an error — the caller prints the URL
-    /// instead, and that is the whole of what a browser would have received.</para>
-    /// </summary>
-    private static bool TryOpenBrowser(string url)
-    {
-        try
-        {
-            using var p = System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            return p is not null;
-        }
-        catch (Exception) { return false; }
-    }
 
     /// <summary>
     /// Runs the setup wizard (first-run launch or F5 settings), persists the result, and rewires the

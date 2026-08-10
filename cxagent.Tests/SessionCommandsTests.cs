@@ -10,13 +10,14 @@ public class SessionCommandsTests
         new() { Role = role, Content = content };
 
     [Fact]
-    public void Clear_EmptiesTheConversation_AndSaysSo()
+    public void Clear_IsHandled_AndSaysSo()
     {
-        var conversation = new List<ChatMessage> { Msg("user", "old goal"), Msg("assistant", "old answer") };
+        // WHAT /clear ACTUALLY CLEARS is the agent's context, and the CALLER does that — this type
+        // holds no session state. It used to be handed a List<ChatMessage> to empty here, and this
+        // test asserted the list came back empty; nothing ever read that list, so both the clear and
+        // the assertion were theatre. AgentTests covers the context, which is the real thing.
+        Assert.True(SessionCommands.TryHandle("/clear", out var reply));
 
-        Assert.True(SessionCommands.TryHandle("/clear", conversation, out var reply));
-
-        Assert.Empty(conversation);
         Assert.Contains("cleared", reply, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -30,15 +31,11 @@ public class SessionCommandsTests
         //
         // Truncation (SessionCommands.Compress, still below) survives only as the FALLBACK when the
         // summarisation call fails.
-        var conversation = new List<ChatMessage>();
-        for (int i = 0; i < 20; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
-
+        // TryHandle must not DO anything for /compress — the outcome says the caller services it,
+        // because summarising needs a provider. Handling it here would race the caller's
+        // summarisation and delete the very turns the summary is about to be built from.
         Assert.Equal(CommandOutcome.NeedsProvider, SessionCommands.Match("/compress")?.Outcome);
-        Assert.True(SessionCommands.TryHandle("/compress", conversation, out _));
-
-        // TryHandle must NOT truncate it — that would race the caller's summarisation and delete the
-        // very turns the summary is about to be built from.
-        Assert.Equal(20, conversation.Count);
+        Assert.True(SessionCommands.TryHandle("/compress", out _));
     }
 
     [Fact]
@@ -56,7 +53,7 @@ public class SessionCommandsTests
         // the user context for nothing. Nothing should be dropped just because the command was typed.
         var conversation = new List<ChatMessage> { Msg("user", "one goal"), Msg("assistant", "one answer") };
 
-        SessionCommands.TryHandle("/compress", conversation, out _);
+        SessionCommands.TryHandle("/compress", out _);
 
         Assert.Equal(2, conversation.Count);
     }
@@ -68,15 +65,15 @@ public class SessionCommandsTests
         // counts, or a user loses work to a false positive.
         var conversation = new List<ChatMessage>();
 
-        Assert.False(SessionCommands.TryHandle("clear the build output", conversation, out _));
-        Assert.False(SessionCommands.TryHandle("what does /clear do?", conversation, out _));
+        Assert.False(SessionCommands.TryHandle("clear the build output", out _));
+        Assert.False(SessionCommands.TryHandle("what does /clear do?", out _));
     }
 
     [Fact]
     public void AnUnknownSlashCommandIsReported_NotRunAsAGoal()
     {
         // A typo'd command must not become a goal — "/claer" would otherwise be planned and executed.
-        Assert.True(SessionCommands.TryHandle("/claer", new List<ChatMessage>(), out var reply));
+        Assert.True(SessionCommands.TryHandle("/claer", out var reply));
         Assert.Contains("/clear", reply);   // names the real commands
     }
 }

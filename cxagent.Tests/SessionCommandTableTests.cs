@@ -43,7 +43,7 @@ public class SessionCommandTableTests
     [Fact]
     public void AnUnknownCommandListsTheRealOnes()
     {
-        var handled = SessionCommands.TryHandle("/celar", new List<ChatMessage>(), out var reply);
+        var handled = SessionCommands.TryHandle("/celar", out var reply);
 
         Assert.True(handled, "an unrecognised slash is a command attempt, not a goal");
         foreach (var c in SessionCommands.All)

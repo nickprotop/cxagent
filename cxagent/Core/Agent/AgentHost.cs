@@ -8,7 +8,7 @@ using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
 using CxAgent.Helpers;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Agent;
 
 /// <summary>
 /// The UI's side of one <see cref="Agent"/>: owns it for the session, feeds it what the user types,
@@ -278,22 +278,27 @@ public sealed class AgentHost : IDisposable
     /// live drive, 24.5s and 26.1s, the second summarising a context whose older half was already a
     /// summary.</para>
     /// </summary>
-    public async Task SendAsync(string prompt, List<ChatMessage> conversation, CancellationToken ct)
+    /// <remarks>
+    /// NO CONVERSATION PARAMETER. There was one — a List&lt;ChatMessage&gt; owned by AppBootstrap that
+    /// this method appended the prompt and the answer to, and that NOTHING ever read. What the model
+    /// sees is the agent's own context; what the user sees is the transcript control. This third list
+    /// was a leftover from before the agent owned its context, and it is this codebase's recurring rot
+    /// pattern: a value written and never read.
+    ///
+    /// <para>It also made /clear's comment wrong — "MUST CLEAR BOTH LISTS" — implying the model would
+    /// otherwise remember. Clearing the agent's context is the whole operation.</para>
+    /// </remarks>
+    public async Task SendAsync(string prompt, CancellationToken ct)
     {
         try
         {
             _sink.AddUserTurn(prompt);
-            conversation.Add(new ChatMessage
-                { Role = "user", Content = prompt, Timestamp = DateTimeOffset.UtcNow });
 
             // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
             var assistantId = _sink.BeginAssistantTurn();
             _sink.EndAssistantTurn(assistantId);   // the agent opens its own turns
 
-            var answer = await _agent.SendAsync(prompt, ct);
-            if (!string.IsNullOrWhiteSpace(answer))
-                conversation.Add(new ChatMessage
-                    { Role = "assistant", Content = answer, Timestamp = DateTimeOffset.UtcNow });
+            await _agent.SendAsync(prompt, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
