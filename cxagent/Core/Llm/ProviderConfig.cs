@@ -386,6 +386,14 @@ public static class ProviderConfigLoader
                                 headers[h.Name] = h.Value.GetString() ?? "";
                     }
 
+                    // {env:…} and {file:…} expand in header and environment VALUES only — never in
+                    // the command, where interpolating into an argv that spawns a process would turn
+                    // a config file into a code-execution seam.
+                    headers = (Dictionary<string, string>?)ConfigVariable.SubstituteValues(
+                        headers, warnings, $"mcp.{entry.Name}.headers", StringComparer.OrdinalIgnoreCase);
+                    environment = (Dictionary<string, string>?)ConfigVariable.SubstituteValues(
+                        environment, warnings, $"mcp.{entry.Name}.env", StringComparer.Ordinal);
+
                     mcpServers[entry.Name] =
                         new McpServerConfig(command, enabled, timeoutMs, environment, cwd, url, headers);
                 }

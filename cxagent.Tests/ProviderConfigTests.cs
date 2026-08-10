@@ -483,4 +483,92 @@ public class ProviderConfigTests : IDisposable
         Assert.Empty(s.McpServers);
         Assert.Contains(s.Warnings, w => w.Contains("empty", StringComparison.Ordinal));
     }
+    /// <summary>
+    /// SUBSTITUTION NEVER TOUCHES `command`.
+    ///
+    /// <para>Interpolating into an argv that spawns a process turns a config file into a
+    /// code-execution seam, and "my API key ended up as a process argument — and in ps output"
+    /// is a far worse failure than "I had to type the command out". env and headers are the
+    /// credential channels; the command line is not one.</para>
+    /// </summary>
+    [Fact]
+    public void Load_DoesNotSubstitutePlaceholdersIntoTheCommand()
+    {
+        Environment.SetEnvironmentVariable("CXA_CFG_TEST", "expanded-value");
+        try
+        {
+            WriteConfig("""
+            {
+              "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+              "defaultProvider": "p",
+              "mcp": {
+                "srv": {
+                  "command": ["npx", "{env:CXA_CFG_TEST}"],
+                  "env": { "TOKEN": "{env:CXA_CFG_TEST}" }
+                }
+              }
+            }
+            """);
+
+            var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["srv"];
+
+            // The env value expanded...
+            Assert.Equal("expanded-value", server.Environment!["TOKEN"]);
+            // ...and the command did NOT.
+            Assert.Equal(["npx", "{env:CXA_CFG_TEST}"], server.Command);
+        }
+        finally { Environment.SetEnvironmentVariable("CXA_CFG_TEST", null); }
+    }
+
+    /// <summary>A header placeholder expands, which is how an API key reaches a remote server without
+    /// being written into config.json.</summary>
+    [Fact]
+    public void Load_SubstitutesIntoHeaderValues()
+    {
+        Environment.SetEnvironmentVariable("CXA_CFG_KEY", "sk-from-env");
+        try
+        {
+            WriteConfig("""
+            {
+              "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+              "defaultProvider": "p",
+              "mcp": {
+                "remote": {
+                  "url": "https://example.test/mcp",
+                  "headers": { "Authorization": "Bearer {env:CXA_CFG_KEY}" }
+                }
+              }
+            }
+            """);
+
+            var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["remote"];
+
+            Assert.Equal("Bearer sk-from-env", server.Headers!["Authorization"]);
+        }
+        finally { Environment.SetEnvironmentVariable("CXA_CFG_KEY", null); }
+    }
+
+    /// <summary>An unset placeholder warns and loads — never fatal, per the MCP block's whole
+    /// contract.</summary>
+    [Fact]
+    public void Load_WithAnUnsetPlaceholder_WarnsRatherThanFailing()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "remote": {
+              "url": "https://example.test/mcp",
+              "headers": { "Authorization": "Bearer {env:CXA_DEFINITELY_UNSET}" }
+            }
+          }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Single(s.McpServers);                                    // still loaded
+        Assert.Contains(s.Warnings, w => w.Contains("CXA_DEFINITELY_UNSET", StringComparison.Ordinal));
+    }
 }
