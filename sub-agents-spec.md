@@ -39,6 +39,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: the `# The user's commands` block dropped (it has no composer), and a sub-agent block added saying its final message is the whole answer and there is no follow-up. Everything else kept. One init-only property, fixed at construction. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
 | D22 | **Nothing of the child renders live except its row.** Its reasoning and answer stay in the buffer until expanded. A five-minute child shows one line of numbers — chosen, not discovered. | §5.1e |
 | D19 | **The spawn tool's `PluginType` is `llm_agent`**, a type the UI already understands at five sites — Worker author, no collapse on completion, stays expanded, own status, no output placeholdering. It was built for exactly this and is currently unused. | §5.1e-i |
@@ -862,6 +863,52 @@ What the description must carry, following opencode's shape:
 - **that the result is not visible to the user**, so the parent must report it
 - **that the prompt should say exactly what to return**, since the briefing is what shapes the answer
   (D9) and there is no follow-up
+
+**BUT "NOTHING" IS TOO STRONG — AND D25 STILL STANDS.** D25 is about *spawn guidance*, and that
+belongs in the description. What the parent's prompt is missing is different: **three lines that are
+correct for a lone agent and become WRONG the moment it has a child.** None of them says when to
+spawn. They are a parent's obligations towards work it did not do itself, they cost three sentences,
+and each has a named failure without it.
+
+**D26. Three lines, appended to the sections that already own the topic — no new heading.**
+
+- **Under `# Verifying`** — *"A sub-agent's report is a claim, not a verification. If it says the
+  build passes, the build has not been verified until you have seen the output yourself."*
+
+  Without this the entire `# Verifying` section is DEAD on the delegated path. Every rule in it — "a
+  command that exits 0 has not verified anything", "confirm the count", "confirm your filter matched"
+  — is written about output *the model read*. A child's summary is neither the output nor the model's
+  own reading of it, so a parent can satisfy every line of that section while verifying nothing.
+  **This is the live-drive failure exactly** — the one the section was written to fix
+  (`SystemPrompt.cs:114`, reporting a pass over a file that did not compile) — reintroduced through a
+  layer the text does not reach. Most valuable of the three, and the one this codebase has already
+  paid for once.
+
+- **Under `# Answering`** — *"The user cannot see a sub-agent's work. Anything from one that they
+  need is only in your reply."*
+
+  The tool description says this too, and the duplication is deliberate: the description is read when
+  CHOOSING to spawn, this applies when ANSWERING, often many turns and several tool calls later.
+  Different moment, different section. D22 is what makes it true — nothing of the child renders but
+  its row — so the parent is the only channel there is.
+
+- **Under `# Doing the work`** — *"You are accountable for a sub-agent's work as if it were your own.
+  If its report is thin or does not answer what you asked, say so or check yourself — do not pass it
+  on as fact."*
+
+  Stops the parent laundering a child's uncertainty into its own confident prose. Without it a hedged
+  child answer becomes a flat parental assertion, and the user cannot tell which part of the reply
+  nobody actually stands behind.
+
+**Rejected for the parent's prompt, deliberately:** how to phrase a briefing (tool description, and
+D9's schema), how many to run at once (step 1 is one), and anything naming the tool — the model reads
+its own tool list, and a prompt that names a tool goes stale when the tool is renamed.
+
+**Cache cost, stated.** Fixed text, no runtime input: it costs prefix length once and never churns.
+**Appended UNCONDITIONALLY**, not gated on "has spawned" — for the same reason `/mcp` is listed for
+users with no servers (`SystemPrompt.cs:135-138`). Gating would remove the guidance from the exact
+turn that needs it, the FIRST spawn, and would change the prefix mid-session, which is the churn this
+whole design exists to avoid.
 
 #### 1h. Submitting while a turn runs — QUEUE AND APPEND
 
