@@ -17,6 +17,15 @@ namespace CxAgent.Core.Mcp;
 /// a DNS failure or a hang produces a false or an error string, and the session carries on without
 /// those tools.</para>
 ///
+/// <para>THE DEPRECATED 2024-11-05 HTTP+SSE TRANSPORT IS NOT IMPLEMENTED, and that is a decision
+/// rather than an omission. It is not a variation on this one: replies arrive on a long-lived GET
+/// stream that must be held open for the session, correlated to requests by id, with the POST
+/// endpoint discovered from an <c>endpoint</c> event — a reader loop closer to the stdio client than
+/// to anything here. Measured before deciding: of 50 servers in the MCP registry, 42 remotes are
+/// <c>streamable-http</c> and 1 is <c>sse</c>, and context7 — which served the old endpoint until
+/// recently — now answers 404 on it. A whole second transport for that is not worth the surface it
+/// would add. What IS owed is a diagnosable failure, which <see cref="SendAsync"/> gives.</para>
+///
 /// <para>AUTHORIZATION IS NOT IMPLEMENTED HERE, deliberately. The spec's OAuth flow is triggered by a
 /// 401 carrying <c>WWW-Authenticate</c>, and it is a whole stack — RFC 9728 discovery, RFC 8414
 /// metadata, OAuth 2.1 with PKCE and RFC 8707 resource indicators, a callback listener. A static
@@ -214,7 +223,21 @@ public sealed class McpHttpClient : IMcpConnection
 
             if (!response.IsSuccessStatusCode)
             {
-                Error = $"HTTP {(int)response.StatusCode}";
+                // A HANDSHAKE REFUSED WITH 405/404 IS THE SIGNATURE OF AN SSE-ONLY SERVER: on the
+                // deprecated 2024-11-05 transport the connect endpoint takes GET, not POST, so our
+                // POST is rejected as the wrong method or an unknown path.
+                //
+                // We do not implement that transport (see the class note), so the one thing owed to
+                // someone pointing us at such a server is a message naming the cause. "HTTP 405"
+                // sends them to debug their network; naming the transport sends them to the server's
+                // docs for a Streamable HTTP url. Other statuses are NOT blamed on it — a 500 is a
+                // broken server, and this advice would send them the wrong way.
+                Error = isInitialize && response.StatusCode is HttpStatusCode.MethodNotAllowed
+                                                            or HttpStatusCode.NotFound
+                    ? $"HTTP {(int)response.StatusCode} on the MCP endpoint. This server may only "
+                      + "speak the deprecated HTTP+SSE transport, which cxagent does not support — "
+                      + "check its documentation for a Streamable HTTP url."
+                    : $"HTTP {(int)response.StatusCode}";
                 return null;
             }
 

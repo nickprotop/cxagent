@@ -54,6 +54,9 @@ public class McpHttpClientTests : IDisposable
         /// <summary>What the server answers initialize with — a counter-offer when it differs.</summary>
         public string ProtocolVersion { get; init; } = "2025-06-18";
 
+        /// <summary>Rejects the handshake with this status — how an SSE-only server answers a POST.</summary>
+        public int? RejectInitializeWith { get; init; }
+
         public FakeServer()
         {
             // Port 0 is not available to HttpListener, so take a free one by probing.
@@ -103,6 +106,13 @@ public class McpHttpClientTests : IDisposable
             }
 
             var isInitialize = body.Contains("\"initialize\"", StringComparison.Ordinal);
+
+            if (isInitialize && RejectInitializeWith is { } reject)
+            {
+                ctx.Response.StatusCode = reject;
+                ctx.Response.Close();
+                return;
+            }
             var id = JsonDocument.Parse(body).RootElement.TryGetProperty("id", out var idEl)
                 ? idEl.GetRawText() : "null";
 
@@ -378,5 +388,41 @@ public class McpHttpClientTests : IDisposable
 
         Assert.False(await client.StartAsync(CancellationToken.None));
         Assert.Contains("2099-01-01", client.Error!, StringComparison.Ordinal);
+    }
+    /// <summary>
+    /// A SERVER SPEAKING ONLY THE DEPRECATED TRANSPORT SAYS SO, rather than failing with a bare
+    /// status code.
+    ///
+    /// <para>We do not implement the 2024-11-05 HTTP+SSE transport — see McpHttpClient's note on why
+    /// — so the one thing owed to someone pointing us at such a server is a message that names the
+    /// cause. "HTTP 405" sends them to debug their network; naming the transport sends them to the
+    /// server's docs for a Streamable HTTP url.</para>
+    ///
+    /// <para>405 and 404 on a POST are what an SSE-only server answers, since its POST endpoint is
+    /// not the one you connect to — the connect endpoint only accepts GET.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(405)]
+    [InlineData(404)]
+    public async Task StartAsync_AgainstAnSseOnlyServer_NamesTheDeprecatedTransport(int status)
+    {
+        var server = NewServer(new FakeServer { RejectInitializeWith = status });
+        await using var client = new McpHttpClient("old", server.Url);
+
+        Assert.False(await client.StartAsync(CancellationToken.None));
+        Assert.Contains("HTTP+SSE", client.Error!, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(), client.Error!, StringComparison.Ordinal);
+    }
+
+    /// <summary>Other statuses are NOT blamed on the transport — a 500 is a broken server, and
+    /// telling the user to look for a Streamable url would send them the wrong way.</summary>
+    [Fact]
+    public async Task StartAsync_OnAnUnrelatedStatus_DoesNotBlameTheTransport()
+    {
+        var server = NewServer(new FakeServer { RejectInitializeWith = 500 });
+        await using var client = new McpHttpClient("broken", server.Url);
+
+        Assert.False(await client.StartAsync(CancellationToken.None));
+        Assert.DoesNotContain("HTTP+SSE", client.Error!, StringComparison.Ordinal);
     }
 }
