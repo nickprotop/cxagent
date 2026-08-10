@@ -564,7 +564,7 @@ salvage summary as though it were a finished answer, which is exactly what D13 e
 | ledger | **the parent's shared one** (D7) | spend and the breach warning are lost |
 | `IChatSink` **and** `IJobPanel` | buffered, both | child rows leak into the parent's transcript (§3.3) |
 | `logs` | yes | no child log directory — the only "inspectable afterwards" surface step 1 has |
-| `maxTurns` | a real number, **never 0** | `AgentHost` maps 0 → `int.MaxValue`; `Agent` does NOT. With 0 the cap fires on iteration ZERO and `SummariseAtCapAsync` makes a **real paid provider call** (`Agent.cs:684-700`), returning a plausible summary of a run that never happened. Worse than doing nothing: the parent gets confident text. |
+| `maxTurns` | anything; **0 now means unbounded** | FIXED IN THE AGENT rather than left as a factory rule: `_maxTurns = maxTurns <= 0 ? int.MaxValue : maxTurns`. It used to fire the cap on iteration ZERO, making a real paid provider call and returning a plausible summary of a run that never happened. A factory constructing an `Agent` directly would have inherited the trap. |
 | `compressAbove` | `_orchestrator.EffectiveCompressThreshold(_contextWindow) ?? OrchestratorSettings.DefaultCompressThreshold` (`AgentHost.cs:356`) — **the constant, never the literal 40000**, or it desynchronises | never compacts |
 | context | `new AgentContext(contextWindow)` — `Window` is get-only, so it goes in at construction | no occupancy, `IsUnderPressure` always false, never compacts |
 | `globalInstructionsDir` | yes | user-level CXAGENT.md ignored |
@@ -694,9 +694,10 @@ continuation that clears it.
   first brick of background's registry, arriving here whether or not we name it
 - "inspectable afterwards" means **the child's log directory**; the buffer is retained for step 3's
   transcript swap
-- **the four callbacks are single-assignment `Action<T>` properties** (`Agent.cs:122-140`), not events.
-  The factory's reporter is the sole subscriber; a second consumer would silently overwrite it, with
-  no compiler warning
+- **the four callbacks are now EVENTS** (`Agent.cs:122-140`). They were settable `Action<T>`
+  properties, where `TurnCompleted = x` then `= y` lost x with no warning — and a child's telemetry
+  reporter plus a session aggregator are exactly two consumers of one signal. `AgentHost` subscribes
+  with `+=` now instead of assigning in an object initialiser
 - the envelope's `text` needs **no further stripping** — `SendAsync` already returns
   `ModelOutput.StripReasoning(...)` on every exit
 - `ChatMessageId`s cannot collide: each sink mints its own and nothing compares them across sinks

@@ -119,7 +119,7 @@ public sealed class Agent
 
     /// <summary>Raised when a turn finishes, with its tool-call count. A callback rather than a
     /// AgentHost reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
-    public Action<int>? TurnCompleted { get; set; }
+    public event Action<int>? TurnCompleted;
 
     /// <summary>
     /// Raised after every turn with what the provider reported it RECEIVED — the live context size.
@@ -129,15 +129,15 @@ public sealed class Agent
     /// no source for occupancy and fell back to the cumulative ledger total — a sum that outgrows any
     /// window and never falls, least of all after the compression this same number triggers.</para>
     /// </summary>
-    public Action<int>? ContextUsed { get; set; }
+    public event Action<int>? ContextUsed;
 
     /// <summary>Raised when this loop's own per-turn compression actually shrank the conversation, so
     /// the readout can stop presenting its last measurement as current.</summary>
-    public Action<int, int>? ContextCompressed { get; set; }
+    public event Action<int, int>? ContextCompressed;
 
     /// <summary>Raised with a SCALED occupancy figure after compaction — arithmetic, not a
     /// measurement, so the readout marks it approximate until a real reading arrives.</summary>
-    public Action<int>? ContextEstimated { get; set; }
+    public event Action<int>? ContextEstimated;
 
 
     /// <summary>
@@ -171,7 +171,16 @@ public sealed class Agent
         _sink = sink;
         _jobs = jobs;
         _logs = logs;
-        _maxTurns = maxTurns;
+        // ZERO MEANS NO CAP, the same meaning AgentHost's ConfiguredMaxWorkerTurns already carries
+        // and opencode's `agent.steps ?? Infinity`. Taken literally 0 is a ceiling of zero turns: the
+        // agent stops before its first call — and NOT harmlessly, because the cap path makes a real
+        // provider call to salvage a summary, so it costs a request and returns a plausible-sounding
+        // summary of a run that never happened. Nobody configures that on purpose, so the number is
+        // free to carry the meaning someone actually intends by it.
+        //
+        // Translated HERE rather than only in AgentHost, because a sub-agent factory constructs an
+        // Agent directly and would otherwise inherit the trap.
+        _maxTurns = maxTurns <= 0 ? int.MaxValue : maxTurns;
         _compressAbove = compressAbove;
         _context = context ?? new AgentContext();
         _globalInstructionsDir = globalInstructionsDir;

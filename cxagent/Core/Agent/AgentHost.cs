@@ -345,8 +345,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public const int DefaultTurnCeiling = 500;
 
-    private Agent BuildAgent() =>
-        new(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
+    private Agent BuildAgent()
+    {
+        var agent = new Agent(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
             TurnCeiling,
 
             // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
@@ -362,32 +363,37 @@ public sealed class AgentHost : IDisposable
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
-            context: Context)
+            context: Context);
+
+        // SUBSCRIBED, not assigned. These are events (Agent.cs:122-140), so a second consumer — a
+        // sub-agent's telemetry reporter, an aggregator — adds itself rather than silently replacing
+        // whoever came first. As settable Action<T> properties, `TurnCompleted = x` followed by
+        // `TurnCompleted = y` lost x with no compiler warning.
+        agent.TurnCompleted += calls =>
         {
-            TurnCompleted = calls =>
-            {
-                OnTurnCompleted(calls);
-                // TOKENS TOO. Single-agent records to the Ledger itself and never raised
-                // TokensUpdated — that event fires only inside the fan-out driver's stream loop.
-                // So the ctx readout and the panel both sat at 0 for an entire single-agent
-                // session no matter how many tokens it burned, which is the mode that is the
-                // default.
-                TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+            OnTurnCompleted(calls);
+            // TOKENS TOO. Single-agent records to the Ledger itself and never raised TokensUpdated —
+            // that event fires only inside the fan-out driver's stream loop. So the ctx readout and
+            // the panel both sat at 0 for an entire single-agent session no matter how many tokens it
+            // burned, which is the mode that is the default.
+            TokensUpdated?.Invoke(this, Ledger.TotalTokens);
 
-                // AND THE TURN IS RECORDED, here rather than at exit: a crash is exactly when exit
-                // does not happen. The whole context goes each time, because compression rewrites it
-                // wholesale and an append-only log would have to be reconciled against a list that no
-                // longer matches. The store swallows its own failures — see its class doc.
-                _store?.SaveTurn(_agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens);
-            },
-
-            // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has
-            // only the cumulative total to divide by the window — a sum that passes 100% while
-            // the context is half empty, and that cannot fall when compression frees space.
-            ContextUsed = RecordInputTokens,
-            ContextCompressed = (b, a) => ContextCompressed?.Invoke(this, (b, a)),
-            ContextEstimated = used => ContextEstimatedUpdated?.Invoke(this, used),
+            // AND THE TURN IS RECORDED, here rather than at exit: a crash is exactly when exit does
+            // not happen. The whole context goes each time, because compression rewrites it wholesale
+            // and an append-only log would have to be reconciled against a list that no longer
+            // matches. The store swallows its own failures — see its class doc.
+            _store?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens);
         };
+
+        // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the
+        // cumulative total to divide by the window — a sum that passes 100% while the context is half
+        // empty, and that cannot fall when compression frees space.
+        agent.ContextUsed += RecordInputTokens;
+        agent.ContextCompressed += (b, a) => ContextCompressed?.Invoke(this, (b, a));
+        agent.ContextEstimated += used => ContextEstimatedUpdated?.Invoke(this, used);
+
+        return agent;
+    }
 
     /// <summary>
     /// Compresses <paramref name="conversation"/> now, unconditionally — what <c>/compress</c> calls.

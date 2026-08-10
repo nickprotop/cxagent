@@ -362,4 +362,51 @@ public class AgentTests
         Assert.Equal(first, agent.Context.Messages[0].Content);
         Assert.Single(agent.Context.Messages, m => m.Role == "system");
     }
+    /// <summary>
+    /// ZERO MEANS NO CAP, not a cap of zero.
+    ///
+    /// <para>Taken literally it stops the agent before its first call — and not harmlessly: the cap
+    /// path makes a REAL provider call to salvage a summary, so a child constructed with 0 costs a
+    /// request and returns a plausible-sounding summary of a run that never happened. The parent then
+    /// acts on confident text describing nothing.</para>
+    ///
+    /// <para>Translated in the AGENT, not only in AgentHost, because a sub-agent factory constructs an
+    /// Agent directly and would otherwise inherit the trap.</para>
+    /// </summary>
+    [Fact]
+    public async Task MaxTurnsOfZero_MeansUnbounded_NotAnImmediateCap()
+    {
+        // ASSERTED ON THE SINK, not the answer: the mock returns the same text for an ordinary turn
+        // and for the salvage call, so the returned string cannot tell them apart. What CAN is the
+        // error the cap path announces before returning.
+        var sink = new RecordingSink();
+        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            sink, new NullJobPanel(), logs: null, maxTurns: 0);
+
+        await agent.SendAsync("hello", CancellationToken.None);
+
+        Assert.DoesNotContain(sink.Errors, e => e.Contains("stopped after", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// THE FOUR CALLBACKS ARE EVENTS, so a second consumer ADDS itself.
+    ///
+    /// <para>They were settable `Action&lt;T&gt;` properties: `TurnCompleted = x` then
+    /// `TurnCompleted = y` silently lost x, with no compiler warning. A sub-agent's telemetry reporter
+    /// and a session aggregator are exactly two consumers of the same signal.</para>
+    /// </summary>
+    [Fact]
+    public async Task TurnCompleted_SupportsMoreThanOneSubscriber()
+    {
+        var agent = NewAgent();
+        var first = 0;
+        var second = 0;
+        agent.TurnCompleted += _ => first++;
+        agent.TurnCompleted += _ => second++;
+
+        await agent.SendAsync("hello", CancellationToken.None);
+
+        Assert.True(first > 0, "the first subscriber was replaced rather than added to");
+        Assert.Equal(first, second);
+    }
 }
