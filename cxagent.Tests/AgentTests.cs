@@ -127,17 +127,107 @@ public class AgentTests
     /// <c>TestProviders.cs</c>. Enough responses queued that a prompt-per-test never runs the mock
     /// dry — an empty queue is a different failure and would hide the one being tested.
     /// </summary>
+    /// <summary>A stub provider with enough queued answers that a test never runs it dry — an empty
+    /// queue is a different failure and would hide the one being tested.</summary>
+    private static MockLlmProvider NewProvider()
+    {
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 8; i++)
+            provider.EnqueueResponse(new LlmResponse
+                { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
+        return provider;
+    }
+
     private static Agent NewAgent(MockLlmProvider? provider = null)
     {
-        if (provider is null)
-        {
-            provider = new MockLlmProvider();
-            for (var i = 0; i < 8; i++)
-                provider.EnqueueResponse(new LlmResponse
-                    { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
-        }
+        provider ??= NewProvider();
 
         return new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+    }
+    // ---- self-containment ----------------------------------------------------------------------
+
+    /// <summary>
+    /// TWO AGENTS DO NOT SHARE A CONTEXT. The whole point of the refactor: an agent constructed
+    /// without one gets its OWN, so a sub-agent can never append to its caller's conversation.
+    ///
+    /// <para>The constructor takes an optional AgentContext, and an optional shared-mutable
+    /// parameter is exactly the shape that becomes accidental sharing — a call site that forgets it
+    /// would otherwise get the caller's list by default. It gets a fresh one instead.</para>
+    /// </summary>
+    [Fact]
+    public async Task TwoAgents_DoNotShareAContext()
+    {
+        var first = NewAgent();
+        var second = NewAgent();
+
+        await first.SendAsync("only the first agent hears this", CancellationToken.None);
+
+        Assert.Contains(first.Context.Messages,
+            m => m.Content.Contains("only the first agent", StringComparison.Ordinal));
+        Assert.DoesNotContain(second.Context.Messages,
+            m => m.Content.Contains("only the first agent", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// EVERY AGENT GETS ITS OWN SYSTEM PROMPT, at position 0 of its own context.
+    ///
+    /// <para>A sub-agent that inherited none would be a model told nothing about its working
+    /// directory, its platform or how to verify — and the failure would be silent, showing up as an
+    /// agent that behaves subtly worse than its caller for no visible reason.</para>
+    /// </summary>
+    [Fact]
+    public async Task EveryAgent_GetsItsOwnSystemPromptAtPositionZero()
+    {
+        var first = NewAgent();
+        var second = NewAgent();
+
+        await first.SendAsync("hello", CancellationToken.None);
+        await second.SendAsync("hello", CancellationToken.None);
+
+        foreach (var agent in new[] { first, second })
+        {
+            Assert.Equal("system", agent.Context.Messages[0].Role);
+            Assert.Contains("Working directory", agent.Context.Messages[0].Content,
+                StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// The system message is PINNED, so compaction can never summarise it away.
+    ///
+    /// <para>Losing it mid-session would leave the agent working without the instructions that keep
+    /// it on real paths — and it would happen precisely on the longest sessions, where the damage is
+    /// worst.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheSystemPrompt_IsPinnedAgainstCompaction()
+    {
+        var agent = NewAgent();
+        await agent.SendAsync("hello", CancellationToken.None);
+
+        Assert.Equal(1, agent.Context.PinnedHeadCount);
+    }
+
+    /// <summary>
+    /// An agent HANDED a context adopts it rather than starting fresh — which is what makes resume
+    /// work, and is the one case where sharing is deliberate rather than accidental.
+    /// </summary>
+    [Fact]
+    public async Task AnAgentGivenAContext_UsesThatOne()
+    {
+        var context = new CxAgent.Core.Llm.AgentContext();
+        context.Add(new CxAgent.Core.Models.ChatMessage
+        {
+            Role = "user", Content = "restored from an earlier session",
+        });
+
+        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, context: context);
+
+        await agent.SendAsync("carry on", CancellationToken.None);
+
+        Assert.Contains(agent.Context.Messages,
+            m => m.Content.Contains("restored from an earlier session", StringComparison.Ordinal));
     }
 }
