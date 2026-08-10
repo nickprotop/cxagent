@@ -104,8 +104,43 @@ public static class AppBootstrap
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
-        IReadOnlyList<Core.Mcp.IMcpConnection> mcpServers = [];
-        Core.Mcp.McpToolset? mcpToolset = null;
+        var mcp = new Core.Mcp.McpManager(permissionGate);
+
+        // /mcp, including the reload that makes config LIVE.
+        async Task HandleMcpCommandAsync(string arguments)
+        {
+            if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var first, ..]
+                && first.Equals("reload", StringComparison.OrdinalIgnoreCase))
+            {
+                permissionSink.ShowSystemMessage("Reloading MCP servers…");
+
+                // RE-READ FROM DISK, not from the startup resolution. The whole point is to pick up
+                // a change made since launch — in Settings, or by hand-editing config.json.
+                IReadOnlyDictionary<string, McpServerConfig> configured;
+                try
+                {
+                    configured = ProviderConfigLoader.LoadAndValidate(paths, env).McpServers;
+                }
+                catch (ProviderConfigException ex)
+                {
+                    // An unrelated config error must not silently leave the old servers in place
+                    // without saying why the reload did nothing.
+                    permissionSink.ShowSystemMessage(
+                        $"[yellow]config.json could not be read: {string.Join("; ", ex.Errors)}[/]");
+                    return;
+                }
+
+                await mcp.ReloadAsync(configured, CancellationToken.None);
+
+                foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
+                    permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
+
+                mainWindow.SetMcpServers(mcp.Statuses());
+            }
+
+            permissionSink.ShowSystemMessage(SessionCommands.DescribeMcp(
+                mcp.Statuses(), arguments, mcp.Toolset.Names().ToList()));
+        }
 
         void WireRunner(ProviderResolution res)
         {
@@ -163,7 +198,7 @@ public static class AppBootstrap
                 // The toolset, but NOT the servers: ownership stays with the session. Handing them
                 // over would let an F5 re-wire dispose them, killing every server on a provider
                 // change and leaving the new host with a toolset over dead pipes.
-                mcp: mcpToolset)
+                mcp: mcp.Toolset)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -229,22 +264,16 @@ public static class AppBootstrap
         // no frame to drop — only a slower start for someone who configured a slow server.
         if (resolution.McpServers.Count > 0)
         {
-            var launched = Core.Mcp.McpLauncher
-                .StartAsync(resolution.McpServers, CancellationToken.None)
-                .GetAwaiter().GetResult();
-
-            mcpServers = launched.Servers;
-            mcpToolset = new Core.Mcp.McpToolset(launched.Servers, permissionGate);
+            mcp.ReloadAsync(resolution.McpServers, CancellationToken.None).GetAwaiter().GetResult();
 
             // Each failure named once, plus any tool dropped for colliding — both are things the
             // user configured and would otherwise watch silently not happen.
-            foreach (var message in launched.Messages.Concat(mcpToolset.Warnings))
+            foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
                 permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
         }
 
-        // The panel shows what is live, including servers that failed — set once, since the fleet is
-        // owned by the session and does not change with an F5 re-wire.
-        mainWindow.SetMcpServers(McpStatuses(resolution.McpServers, mcpServers));
+        // The panel shows what is live, including servers that failed.
+        mainWindow.SetMcpServers(mcp.Statuses());
 
         WireRunner(resolution);   // startup path, unchanged in effect
 
@@ -333,10 +362,11 @@ public static class AppBootstrap
                         // something SessionCommands deliberately does not hold — the window for
                         // /help, the live servers for /mcp.
                         if (command.Name == "/mcp")
-                            permissionSink.ShowSystemMessage(
-                                SessionCommands.DescribeMcp(McpStatuses(resolution.McpServers, mcpServers)));
-                        else
-                            mainWindow.ShowHelp();
+                        {
+                            _ = HandleMcpCommandAsync(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+                        mainWindow.ShowHelp();
                         return;
 
                     case CommandOutcome.NeedsProvider:
@@ -656,42 +686,10 @@ public static class AppBootstrap
         // THE SESSION OWNS THE SERVERS, so this is where they end. An orphaned child outlives the
         // app and holds whatever it had open — the only failure in this feature that survives the
         // process. Best-effort: shutdown is not a place to throw or to wait indefinitely.
-        foreach (var server in mcpServers)
-            try { server.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
-            catch (Exception) { /* it is going away regardless */ }
+        try { mcp.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
+        catch (Exception) { /* best effort: shutdown is not a place to hang */ }
 
         return code;
-    }
-
-    /// <summary>
-    /// Pairs what was CONFIGURED with what actually came up.
-    ///
-    /// <para>Both halves are needed and neither alone is enough: the live clients know their tool
-    /// counts and errors but a server that failed to spawn was disposed and is not among them, while
-    /// config knows every server that should exist but nothing about whether it does. Walking the
-    /// configured list and looking each one up is what lets a missing server be reported as failed
-    /// rather than silently vanish.</para>
-    /// </summary>
-    private static IReadOnlyList<Core.Mcp.McpServerStatus> McpStatuses(
-        IReadOnlyDictionary<string, Core.Llm.McpServerConfig> configured,
-        IReadOnlyList<Core.Mcp.IMcpConnection> live)
-    {
-        var list = new List<Core.Mcp.McpServerStatus>();
-        foreach (var (name, cfg) in configured)
-        {
-            var client = live.FirstOrDefault(c => c.Name == name);
-            list.Add(new Core.Mcp.McpServerStatus(
-                name,
-                cfg.Enabled,
-                client?.Tools.Count ?? 0,
-                // A configured, enabled server that is not among the live ones did not survive
-                // startup. Its own error text went with it when it was disposed, so say the honest
-                // general thing rather than inventing a specific one.
-                !cfg.Enabled ? null
-                    : client is null ? "did not start (see the messages above)"
-                    : client.Error));
-        }
-        return list;
     }
 
     /// <summary>

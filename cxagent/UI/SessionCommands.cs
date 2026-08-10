@@ -29,7 +29,7 @@ public static class SessionCommands
         // NeedsWindow, not Handled: the live server state belongs to the session, and this type
         // deliberately holds nothing but the conversation. The caller has the servers and formats
         // them through DescribeMcp below.
-        new("/mcp", "show MCP servers and why any failed", CommandOutcome.NeedsWindow),
+        new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow),
         new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
         new("/exit", "quit cxagent", CommandOutcome.Quit),
     ];
@@ -64,10 +64,27 @@ public static class SessionCommands
     }
 
     /// <summary>
-    /// True when <paramref name="input"/> was a recognized (or unrecognized) slash command — either
-    /// way, the caller must NOT treat it as a goal. <paramref name="reply"/> is the chat message to
-    /// display.
+    /// Everything after the command name, trimmed — empty when there is nothing.
+    ///
+    /// <para><see cref="Match"/> splits on the first space and returns the command; the remainder used
+    /// to be dropped on the floor. That was invisible while no command took an argument, and it is
+    /// this codebase's recurring rot pattern: a value that parses and is never read.</para>
+    ///
+    /// <para>Empty rather than null on purpose. A caller that must null-check before splitting is a
+    /// caller that will forget once, and the forgetting produces a NullReferenceException in a
+    /// command handler rather than an unrecognised subcommand.</para>
     /// </summary>
+    public static string Arguments(string input)
+    {
+        var trimmed = input.Trim();
+        var end = trimmed.IndexOf(' ');
+        return end < 0 ? "" : trimmed[(end + 1)..].Trim();
+    }
+
+    /// <summary>The arguments as words — a subcommand and its target. Empty runs are dropped, so
+    /// double spaces do not produce a phantom argument.</summary>
+    public static IReadOnlyList<string> ArgumentWords(string input) =>
+        Arguments(input).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
     private static string FirstToken(string input)
     {
@@ -77,6 +94,11 @@ public static class SessionCommands
         return end < 0 ? trimmed : trimmed[..end];
     }
 
+    /// <summary>
+    /// True when <paramref name="input"/> was a recognized (or unrecognized) slash command — either
+    /// way, the caller must NOT treat it as a goal. <paramref name="reply"/> is the chat message to
+    /// display.
+    /// </summary>
     public static bool TryHandle(string input, List<ChatMessage> conversation, out string reply)
     {
         var trimmed = input.Trim();
@@ -129,7 +151,40 @@ public static class SessionCommands
     /// BECAUSE a tool they expected is missing, so "it is switched off" is the answer they came
     /// for; omitting it sends them to read config for nothing.</para>
     /// </summary>
-    public static string DescribeMcp(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
+    public static string DescribeMcp(
+        IReadOnlyList<Core.Mcp.McpServerStatus> servers,
+        string arguments = "",
+        IReadOnlyList<string>? toolNames = null)
+    {
+        var words = arguments.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+        // BARE AND `list` ARE THE SAME. Someone who guesses at a subcommand should not be told they
+        // guessed wrong for using the obvious word.
+        if (words.Length == 0 || words[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            return List(servers);
+
+        // A SERVER NAME IS THE OTHER NATURAL GUESS. "/mcp context7" reads as "tell me about
+        // context7", so it means that rather than being an unknown subcommand.
+        var named = servers.FirstOrDefault(s =>
+            s.Name.Equals(words[0], StringComparison.OrdinalIgnoreCase));
+        if (named is not null) return Detail(named, toolNames);
+
+        // `reload` falls through to the LIST. The caller performs the reload — it owns the servers
+        // and the config — and then calls this to report the result, so returning a second
+        // "reloading…" here would echo the same announcement twice.
+        if (words[0].Equals("reload", StringComparison.OrdinalIgnoreCase))
+            return List(servers);
+
+        // Naming what IS understood, including the servers: a wrong guess should teach the right
+        // one. Two of the four cases here are a mistyped server name.
+        var known = servers.Count == 0 ? "(none configured)" : string.Join(", ", servers.Select(s => s.Name));
+        return $"Unknown: '{words[0]}'.\n"
+             + "Usage: /mcp [list | reload | <server>]\n"
+             + $"Servers: {known}";
+    }
+
+    /// <summary>Every server, one line each: the summary <c>/mcp</c> opens with.</summary>
+    private static string List(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
     {
         if (servers.Count == 0)
             return "No MCP servers configured. Add one in Settings (F5), or in the \"mcp\" block of "
@@ -145,7 +200,49 @@ public static class SessionCommands
             else sb.Append(server.ToolCount).Append(server.ToolCount == 1 ? " tool" : " tools");
             sb.Append('\n');
         }
+        sb.Append("\n/mcp <server> for its tools · /mcp reload to re-read config");
         return sb.ToString().TrimEnd('\n');
+    }
+
+    /// <summary>
+    /// One server in detail: its state and the tools it actually contributed.
+    ///
+    /// <para>The tool NAMES, not just a count, because "why did the model not use my server" is
+    /// usually answered by seeing what it was offered — a tool dropped for a name collision is
+    /// invisible in the summary and absent here, which is the same fact stated where it can be
+    /// noticed.</para>
+    /// </summary>
+    private static string Detail(Core.Mcp.McpServerStatus server, IReadOnlyList<string>? toolNames)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(server.Name).Append(" — ");
+        if (!server.Enabled) sb.Append("disabled in config");
+        else if (server.Error is { } error) sb.Append("failed: ").Append(error);
+        else sb.Append("connected");
+        sb.Append('\n');
+
+        var mine = (toolNames ?? [])
+            .Where(n => n.StartsWith(Sanitize(server.Name) + "_", StringComparison.Ordinal))
+            .ToList();
+
+        if (mine.Count == 0)
+            sb.Append(server.Enabled && server.Error is null
+                ? "  no tools reached the model"
+                : "  no tools (the server is not running)");
+        else
+            foreach (var name in mine) sb.Append("  ").Append(name).Append('\n');
+
+        return sb.ToString().TrimEnd('\n');
+    }
+
+    /// <summary>The same sanitisation the toolset applies when composing a tool name, so a server
+    /// whose name needed cleaning still matches its own tools.</summary>
+    private static string Sanitize(string text)
+    {
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (var c in text)
+            sb.Append(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' ? c : '_');
+        return sb.ToString();
     }
 
     /// <summary>The command list as help text, one indented line each.</summary>

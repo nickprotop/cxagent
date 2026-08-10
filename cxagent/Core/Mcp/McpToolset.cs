@@ -22,7 +22,15 @@ namespace CxAgent.Core.Mcp;
 /// </summary>
 public sealed class McpToolset
 {
-    private readonly IReadOnlyList<IMcpServer> _servers;
+    /// <summary>
+    /// The connected servers, REPLACEABLE at runtime.
+    ///
+    /// <para>Mutable because the agent reads <see cref="Definitions"/> and
+    /// <see cref="InstructionsByServer"/> fresh on every prompt, so swapping the list here is all it
+    /// takes for a server added or removed mid-session to reach the model on the next turn — no
+    /// restart, and no plumbing to push an update through.</para>
+    /// </summary>
+    private IReadOnlyList<IMcpServer> _servers;
 
     /// <summary>
     /// The permission gate every call goes through.
@@ -36,9 +44,9 @@ public sealed class McpToolset
     private readonly Permissions.IPermissionGate _gate;
 
     /// <summary>Composed name → the server and the tool's own name on it.</summary>
-    private readonly Dictionary<string, (IMcpServer Server, string Tool)> _byName = new(StringComparer.Ordinal);
+    private Dictionary<string, (IMcpServer Server, string Tool)> _byName = new(StringComparer.Ordinal);
 
-    private readonly List<string> _warnings = [];
+    private List<string> _warnings = [];
 
     /// <summary>Tools dropped for colliding, and with what. Shown by <c>/mcp</c>: a tool that silently
     /// never appears is indistinguishable from a broken server.</summary>
@@ -54,8 +62,23 @@ public sealed class McpToolset
     /// </param>
     public McpToolset(IReadOnlyList<IMcpServer> servers, Permissions.IPermissionGate? gate = null)
     {
-        _servers = servers;
         _gate = gate ?? Permissions.PermissionGate.DenyAll;
+        Replace(servers);
+    }
+
+    /// <summary>
+    /// Swaps in a new set of servers and recomputes every composed name.
+    ///
+    /// <para>A FULL REBUILD, not an incremental add. Names collide across servers and against the
+    /// built-ins, and which tool wins depends on the order everything was claimed in — patching one
+    /// server into an existing map would make the winner depend on the order servers happened to be
+    /// added, so the same config could produce different tools depending on history.</para>
+    /// </summary>
+    public void Replace(IReadOnlyList<IMcpServer> servers)
+    {
+        _servers = servers;
+        var byName = new Dictionary<string, (IMcpServer Server, string Tool)>(StringComparer.Ordinal);
+        var warnings = new List<string>();
 
         // Built-in names are claimed FIRST, so a server can never take one. Order matters: whoever
         // is in the map when a duplicate arrives keeps the name.
@@ -73,12 +96,17 @@ public sealed class McpToolset
                 // uniqueness check could have caught it).
                 if (!taken.Add(name))
                 {
-                    _warnings.Add($"'{server.Name}' offers '{tool.Name}' as '{name}', which is already taken; skipped.");
+                    warnings.Add($"'{server.Name}' offers '{tool.Name}' as '{name}', which is already taken; skipped.");
                     continue;
                 }
 
-                _byName[name] = (server, tool.Name);
+                byName[name] = (server, tool.Name);
             }
+
+        // Assigned at the END, so a caller reading tools concurrently sees either the old set or the
+        // new one — never a half-built map with some servers' tools missing.
+        _byName = byName;
+        _warnings = warnings;
     }
 
     /// <summary>

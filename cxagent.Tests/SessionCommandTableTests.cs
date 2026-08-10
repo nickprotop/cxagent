@@ -172,4 +172,120 @@ public class SessionCommandTableTests
         Assert.Contains("no mcp servers", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("settings", text, StringComparison.OrdinalIgnoreCase);
     }
+    // ---- arguments -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE REST OF THE LINE IS AVAILABLE, not discarded.
+    ///
+    /// <para>Match splits on the first space and returns the command; everything after it used to be
+    /// dropped on the floor. That was invisible while no command took an argument, and it is exactly
+    /// this codebase's recurring rot pattern — a value that parses and is never read. <c>/mcp login
+    /// &lt;server&gt;</c> needs it.</para>
+    /// </summary>
+    [Fact]
+    public void Arguments_ReturnsTheRestOfTheLine()
+    {
+        Assert.Equal("context7", SessionCommands.Arguments("/mcp context7"));
+        Assert.Equal("login context7", SessionCommands.Arguments("/mcp login context7"));
+    }
+
+    /// <summary>No argument is empty, never null — a caller that has to null-check before splitting
+    /// is a caller that will forget once.</summary>
+    [Fact]
+    public void Arguments_WithNoArgument_IsEmpty()
+    {
+        Assert.Equal("", SessionCommands.Arguments("/mcp"));
+        Assert.Equal("", SessionCommands.Arguments("  /mcp   "));
+    }
+
+    /// <summary>Surrounding whitespace is the user's typing, not their intent.</summary>
+    [Fact]
+    public void Arguments_AreTrimmed()
+    {
+        Assert.Equal("context7", SessionCommands.Arguments("/mcp    context7   "));
+    }
+
+    /// <summary>Split into words for a subcommand plus its target, with the empty run dropped so
+    /// double spaces do not produce a phantom argument.</summary>
+    [Fact]
+    public void ArgumentWords_SplitsOnWhitespace()
+    {
+        Assert.Equal(["login", "context7"], SessionCommands.ArgumentWords("/mcp  login   context7"));
+        Assert.Empty(SessionCommands.ArgumentWords("/mcp"));
+    }
+    // ---- /mcp subcommands ----------------------------------------------------------------------
+
+    /// <summary>Bare /mcp still lists servers — the common case must not require a subcommand.</summary>
+    [Fact]
+    public void DescribeMcp_BareCommand_ListsServers()
+    {
+        var text = SessionCommands.DescribeMcp([Server("context7", tools: 2)], "");
+
+        Assert.Contains("context7", text, StringComparison.Ordinal);
+        Assert.Contains("2 tools", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>`/mcp list` is the explicit form of the same thing, so someone who guesses at a
+    /// subcommand is not told they are wrong for guessing.</summary>
+    [Fact]
+    public void DescribeMcp_List_IsTheSameAsBare()
+    {
+        Assert.Equal(SessionCommands.DescribeMcp([Server("c7")], ""),
+                     SessionCommands.DescribeMcp([Server("c7")], "list"));
+    }
+
+    /// <summary>
+    /// `/mcp <server>` shows ONE server in detail — its tools by name.
+    ///
+    /// <para>The list answers "is it running"; this answers "what can it actually do", which is the
+    /// question behind "why did the model not use my server". A tool that never appears because its
+    /// name collided is invisible in the summary and named here.</para>
+    /// </summary>
+    [Fact]
+    public void DescribeMcp_WithAServerName_ShowsThatServersTools()
+    {
+        var text = SessionCommands.DescribeMcp(
+            [Server("context7", tools: 2)], "context7",
+            toolNames: ["context7_resolve-library-id", "context7_query-docs"]);
+
+        Assert.Contains("context7_query-docs", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>An unknown server says so and lists the real ones, rather than printing nothing.</summary>
+    [Fact]
+    public void DescribeMcp_WithAnUnknownServer_SaysSoAndListsTheRealOnes()
+    {
+        var text = SessionCommands.DescribeMcp([Server("context7")], "typo");
+
+        Assert.Contains("typo", text, StringComparison.Ordinal);
+        Assert.Contains("context7", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>An unrecognised subcommand names what IS understood — a wrong guess should teach the
+    /// right one, not just fail — and lists the real servers, since a mistyped server name is one of
+    /// the likeliest ways to get here.</summary>
+    [Fact]
+    public void DescribeMcp_WithAnUnknownSubcommand_ShowsUsage()
+    {
+        var text = SessionCommands.DescribeMcp([Server("c7")], "frobnicate the thing");
+
+        Assert.Contains("reload", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("c7", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// `reload` reports the RESULT, not a second announcement.
+    ///
+    /// <para>The caller owns the servers, so it performs the reload and says "Reloading…" itself,
+    /// then calls this to show what came back. Returning another "reloading" here printed the same
+    /// sentence twice — caught on a live drive, where it read as the reload having run twice.</para>
+    /// </summary>
+    [Fact]
+    public void DescribeMcp_Reload_ReportsTheResultRatherThanAnnouncingAgain()
+    {
+        var text = SessionCommands.DescribeMcp([Server("c7", tools: 2)], "reload");
+
+        Assert.DoesNotContain("Reloading", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("2 tools", text, StringComparison.Ordinal);
+    }
 }

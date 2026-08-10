@@ -147,4 +147,87 @@ public class McpLauncherTests : IDisposable
 
         foreach (var s in result.Servers) await s.DisposeAsync();
     }
+    // ---- live reload ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// A SERVER ADDED AFTER STARTUP REACHES THE MODEL WITHOUT A RESTART.
+    ///
+    /// <para>This is the whole point of the manager. The agent asks the toolset for tools on every
+    /// prompt, so replacing the toolset's servers is enough — but only if the SAME toolset instance
+    /// is updated. Handing out a new object would leave the agent reading the old one for the rest of
+    /// the session, which looks identical to the reload having done nothing.</para>
+    /// </summary>
+    [Fact]
+    public async Task ReloadAsync_AddingAServer_MakesItsToolsVisibleImmediately()
+    {
+        if (!HavePython) return;
+
+        await using var mcp = new McpManager(CxAgent.Core.Permissions.PermissionGate.AllowAll);
+        var toolset = mcp.Toolset;                       // the reference the agent would hold
+
+        await mcp.ReloadAsync(new Dictionary<string, McpServerConfig>(), CancellationToken.None);
+        Assert.Empty(toolset.Definitions());
+
+        await mcp.ReloadAsync(Config(("added", WorkingServer())), CancellationToken.None);
+
+        // The SAME instance now offers the new server's tools.
+        Assert.Equal("added_go", Assert.Single(toolset.Definitions()).Name);
+    }
+
+    /// <summary>And a server REMOVED from config stops being offered — otherwise the model keeps
+    /// choosing a tool whose server is gone.</summary>
+    [Fact]
+    public async Task ReloadAsync_RemovingAServer_WithdrawsItsTools()
+    {
+        if (!HavePython) return;
+
+        await using var mcp = new McpManager(CxAgent.Core.Permissions.PermissionGate.AllowAll);
+        await mcp.ReloadAsync(Config(("gone", WorkingServer())), CancellationToken.None);
+        Assert.NotEmpty(mcp.Toolset.Definitions());
+
+        await mcp.ReloadAsync(new Dictionary<string, McpServerConfig>(), CancellationToken.None);
+
+        Assert.Empty(mcp.Toolset.Definitions());
+        Assert.Empty(mcp.Servers);
+    }
+
+    /// <summary>
+    /// A reload ENDS the old subprocesses. Leaving them behind would leak one process per reload —
+    /// the same orphan risk as an F5 re-wire, on a path the user can trigger repeatedly.
+    /// </summary>
+    [Fact]
+    public async Task ReloadAsync_DisposesTheServersItReplaces()
+    {
+        if (!HavePython) return;
+
+        await using var mcp = new McpManager(CxAgent.Core.Permissions.PermissionGate.AllowAll);
+        await mcp.ReloadAsync(Config(("first", WorkingServer())), CancellationToken.None);
+
+        var before = ((McpClient)mcp.Servers.Single()).ProcessId;
+        Assert.NotNull(before);
+
+        await mcp.ReloadAsync(Config(("second", WorkingServer())), CancellationToken.None);
+
+        Assert.False(ProcessIsAlive(before!.Value), $"pid {before} survived the reload");
+    }
+
+    /// <summary>Statuses pair config against what is running, so a failed server is REPORTED rather
+    /// than merely absent.</summary>
+    [Fact]
+    public async Task Statuses_ReportAFailedServerRatherThanOmittingIt()
+    {
+        await using var mcp = new McpManager(CxAgent.Core.Permissions.PermissionGate.AllowAll);
+        await mcp.ReloadAsync(Config(("ghost", ["definitely-not-a-real-binary-xyz"])), CancellationToken.None);
+
+        var status = Assert.Single(mcp.Statuses());
+        Assert.Equal("ghost", status.Name);
+        Assert.False(status.IsConnected);
+        Assert.NotNull(status.Error);
+    }
+
+    private static bool ProcessIsAlive(int pid)
+    {
+        try { return !System.Diagnostics.Process.GetProcessById(pid).HasExited; }
+        catch (ArgumentException) { return false; }   // no such process — it is gone
+    }
 }

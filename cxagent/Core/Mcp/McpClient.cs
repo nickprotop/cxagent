@@ -68,6 +68,22 @@ public sealed class McpClient : IMcpConnection
     /// <summary>What the handshake settled on, or null before it has run.</summary>
     public string? NegotiatedProtocolVersion { get; private set; }
 
+    /// <summary>
+    /// The child's process id while it is running, else null.
+    ///
+    /// <para>Exposed so a test can assert the process is actually GONE after a reload rather than
+    /// trusting that Dispose was called. An orphaned subprocess is the one failure in this feature
+    /// that outlives the app, and a reload is a path the user can trigger repeatedly.</para>
+    /// </summary>
+    public int? ProcessId
+    {
+        get
+        {
+            try { return _process is { HasExited: false } p ? p.Id : null; }
+            catch (Exception) { return null; }
+        }
+    }
+
     /// <summary>Why the server is not usable, or null while it is. Shown to the user verbatim: a
     /// server that failed with "npx: command not found" is one they can fix in a second.</summary>
     public string? Error { get; private set; }
