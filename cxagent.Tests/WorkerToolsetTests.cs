@@ -109,10 +109,11 @@ public class WorkerToolsetTests
     }
 
     [Fact]
-    public async Task InvokeAsync_RefusesATOOLTheRoleDoesNotHave()
+    public async Task InvokeAsync_RefusesAToolThatWasNotOffered()
     {
-        // The enforcement point. A reviewer that talks its way into write_file must be refused HERE,
-        // not merely un-offered — a model can emit a call for a tool it was never shown.
+        // THE ENFORCEMENT POINT, and it outlives roles. Nothing withholds tools today — every agent
+        // is offered all of them — but a model can emit a call for a tool it was never shown, and
+        // being un-offered is not the same as being refused. This is what refuses it.
         var result = await WorkerToolset.InvokeAsync(
             Call("write_file", new { action = "write", path = "/tmp/nope.txt", content = "x" }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
@@ -121,7 +122,7 @@ public class WorkerToolsetTests
         Assert.Contains("not available", result, StringComparison.OrdinalIgnoreCase);
         Assert.False(File.Exists("/tmp/nope.txt"));
 
-        // The refusal names what the role CAN use, so the model can correct itself in one turn
+        // The refusal names what IS available, so the model can correct itself in one turn
         // instead of guessing another name and burning turns against the cap.
         Assert.Contains("read_file", result);
     }

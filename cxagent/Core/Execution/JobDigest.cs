@@ -25,7 +25,6 @@ public record JobDigest(
     string PlanLocalId,
     string DisplayName,
     string PluginType,
-    string? Role,
     JobState State,
     TimeSpan? Duration,
     int? ExitCode,
@@ -71,9 +70,6 @@ public record JobDigest(
             PlanLocalId: job.PlanLocalId ?? "",
             DisplayName: job.DisplayName,
             PluginType: job.PluginType,
-            // Read through JobParameters rather than a cast: values become JsonElement after a
-            // SQLite round-trip, so a blind (string) throws on every reload.
-            Role: job.Parameters.Get<string?>("role", null),
             State: job.State,
             Duration: result?.Duration,
             ExitCode: result?.ExitCode,
@@ -117,7 +113,6 @@ public record JobDigest(
         var sb = new StringBuilder();
         var label = string.IsNullOrEmpty(PlanLocalId) ? Id : PlanLocalId;
         sb.Append($"[{label}] {DisplayName} ({PluginType}");
-        if (!string.IsNullOrWhiteSpace(Role)) sb.Append($", role={Role}");
         sb.AppendLine($") — {State}");
 
         // Immediately after the state line, before params/output — a "truncated: True" line buried

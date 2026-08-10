@@ -64,10 +64,9 @@ public static class WorkerToolset
     {
         (WorkerTool.ReadFile, new ToolSpec("read_file", "file", "read",
             Params: ["path", "offset", "limit"], Required: ["path"])),
-        // list/search are READ-ONLY and go to every role, including the judges. Through run_shell
-        // they are `find` and `grep`, which raise a permission prompt for an operation that reads
-        // nothing the role could not already read -- live drives stalled repeatedly on exactly
-        // those approvals.
+        // list/search are READ-ONLY. Through run_shell they are `find` and `grep`, which raise a
+        // permission prompt for an operation that reads nothing the agent could not already read --
+        // live drives stalled repeatedly on exactly those approvals.
         (WorkerTool.ListFiles, new ToolSpec("list_files", "file", "list",
             Params: ["path", "pattern", "limit"], Required: ["path"])),
         (WorkerTool.SearchFiles, new ToolSpec("search_files", "file", "search",
@@ -87,9 +86,9 @@ public static class WorkerToolset
     };
 
     /// <summary>
-    /// The tool NAMES a role's tools are exposed under, in the fixed order above.
+    /// The tool NAMES, in the fixed order above.
     ///
-    /// <para>Exists so <c>CreatePlanTool</c> can tell the orchestrator which tools a role has without
+    /// <para>Exists so a caller can name the available tools without
     /// keeping its own copy of the enum→name mapping. The names the orchestrator is TOLD about and the
     /// names a worker is actually OFFERED must be the same strings — two mappings would drift, and the
     /// failure is silent: the orchestrator plans against a tool name the worker cannot call.</para>
@@ -178,20 +177,26 @@ public static class WorkerToolset
     {
         // Three DIFFERENT conditions, three different messages. The text goes back to the model as a
         // tool result and is the only thing it can act on: "no such tool" should make it pick a real
-        // one, whereas a role refusal should make it STOP asking rather than retry variations. A
-        // shared string invites exactly that retry loop, and burns turns against the cap.
+        // one, whereas a configuration fault should make it STOP asking rather than retry
+        // variations. A shared string invites exactly that retry loop, and burns turns against the cap.
         var entry = Specs.FirstOrDefault(s => s.Spec.Name == call.Name);
         if (entry.Spec is null)
             return $"no such tool '{call.Name}'. Available to this role: "
                 + $"{string.Join(", ", NamesFor(allowed).Concat(alsoAvailable ?? []))}";
 
+        // THE ENFORCEMENT POINT, and it stays even though roles are gone. `allowed` is every tool at
+        // today's only call site, so this cannot fire in production — but a model can emit a call for
+        // a tool it was never shown, and this is what refuses it rather than letting an un-offered
+        // tool run. Removing it because the current caller happens to pass everything would delete a
+        // guard on the grounds that nothing is currently exercising it.
+        //
+        // The WORDING no longer says "role": that mechanism is gone, and the phrase would send
+        // whoever read it hunting for a system that does not exist.
         if (!allowed.Contains(entry.Tool))
-            return $"tool '{call.Name}' is not available to this role. Available: "
+            return $"tool '{call.Name}' is not available. Available: "
                 + $"{string.Join(", ", NamesFor(allowed))}";
 
-        // NOT a role restriction — the plugin backing this tool is missing from the registry, which
-        // is a configuration fault. Saying "not available to this role" here would send whoever reads
-        // it hunting through the role system for what is actually a registry problem.
+        // A missing plugin is a CONFIGURATION fault, not a restriction, and says so.
         if (!plugins.TryGet(entry.Spec.PluginType, out var plugin) || plugin is null)
             return $"tool '{call.Name}' is unavailable: no '{entry.Spec.PluginType}' plugin is registered";
 
