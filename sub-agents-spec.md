@@ -172,6 +172,22 @@ compression, id, cancellation, and a thread-safe ledger.
 - **Nested spawning.** A sub-agent that can spawn is an orchestrator; nothing structurally prevents
   it, and nothing should encourage it until one fan-out level is proven.
 - **Per-agent ledgers and cost attribution** — deferred deliberately (§1).
-- **Kernel/presentation separation.** `Agent` and `AgentHost` live in `UI/` and should not; that move
-  is worth doing, but AFTER sub-agents, which are the first real consumer of the kernel as a service
-  and will say what shape it needs.
+- **Kernel/presentation separation.** `Agent` and `AgentHost` live in `UI/` and should not. The move
+  itself is nearly mechanical — both import only `Core.*` and `Helpers`, and `IChatSink`/`IJobPanel`
+  are ports that belong beside `IPermissionGate` in `Core`.
+
+  **One coupling blocks it, and it is carrying a bug.** `Agent.cs:909` emits
+  `[{ColorScheme.ThinkingMarkup}]…[/]` — the kernel choosing a colour — and escapes that text on the
+  way. Twenty-eight lines earlier, `Agent.cs:881` passes body text to the same `AppendAssistant`
+  UNESCAPED, and neither `ChatTranscriptSink` nor the control escapes downstream. Verified against
+  `MarkupParser`: `we[red]ird` renders as `weird`, so any model output containing a recognised tag
+  name is silently swallowed, and an unclosed tag recolours everything after it. `ShowError` and
+  `ShowSystemMessage` have the same hole — they wrap an unescaped argument in `[red]…[/]`, and
+  `McpLauncher` feeds them server names and command lines straight from config.
+
+  The asymmetry is almost certainly not a decision: the reasoning line HAD to build markup, so
+  escaping was obvious there; line 881 only forwards a token, so the hazard was invisible.
+
+  **The fix is the boundary, not a patch.** The agent emits semantics — "this is reasoning", "this is
+  body" — and the UI chooses colour and does the escaping. Then both paths are covered by
+  construction rather than by remembering. To be done WITH the move, not before it.
