@@ -1,0 +1,229 @@
+using System.Text.Json;
+using CxAgent.Core.Mcp;
+using CxAgent.Core.Models;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// The seam where a third-party server's tools become tools the model can call.
+///
+/// <para>Driven against a FAKE server rather than a subprocess: the wire is <see cref="McpClient"/>'s
+/// job and is covered by <see cref="McpClientTests"/> against a real one. What is at risk here is
+/// naming, collision and dispatch — all of it pure logic, and testing it through a live pipe would
+/// only make the failures slower and less specific.</para>
+/// </summary>
+public class McpToolsetTests
+{
+    /// <summary>
+    /// A server standing in for a real one. Records what it was asked to call, so dispatch can be
+    /// asserted on rather than inferred from a result string.
+    /// </summary>
+    private sealed class FakeServer(string name, params McpToolDef[] tools) : IMcpServer
+    {
+        public string Name { get; } = name;
+        public string? Instructions { get; init; }
+        public string? Error => null;
+        public string Result { get; set; } = "ok";
+        public string? CalledTool { get; private set; }
+
+        public IReadOnlyList<McpToolDef> Tools { get; } = tools;
+
+        public Task<string> CallToolAsync(string tool, JsonElement args, CancellationToken ct)
+        {
+            CalledTool = tool;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private static McpToolDef Tool(string name, string description = "Does a thing.",
+        string schema = """{"type":"object","properties":{}}""") =>
+        new(name, description, JsonDocument.Parse(schema).RootElement.Clone());
+
+    private static ToolCall Call(string name) =>
+        new() { Id = "1", Name = name, Arguments = JsonDocument.Parse("{}").RootElement.Clone() };
+
+    /// <summary>Names are prefixed by server, so two servers offering "read" cannot collide.
+    /// opencode's rule: sanitize(server) + "_" + sanitize(tool).</summary>
+    [Fact]
+    public void Definitions_PrefixEachToolWithItsServerName()
+    {
+        var toolset = new McpToolset([new FakeServer("files", Tool("read"))]);
+
+        Assert.Equal("files_read", Assert.Single(toolset.Definitions()).Name);
+    }
+
+    /// <summary>
+    /// Non-identifier characters are sanitised — a server named "my server" must not produce a tool
+    /// name the provider will reject.
+    ///
+    /// <para>HYPHENS SURVIVE. Providers accept <c>[a-zA-Z0-9_-]</c>, and opencode's rule is exactly
+    /// <c>value.replace(/[^a-zA-Z0-9_-]/g, "_")</c> (<c>mcp/catalog.ts:117</c>) — so "read-file" stays
+    /// "read-file". Replacing them anyway would mangle the many real tool names that use them, for no
+    /// gain.</para>
+    /// </summary>
+    [Fact]
+    public void Definitions_SanitiseNamesTheProviderWouldReject()
+    {
+        var toolset = new McpToolset([new FakeServer("my server!", Tool("read-file"))]);
+
+        Assert.Equal("my_server__read-file", Assert.Single(toolset.Definitions()).Name);
+    }
+
+    /// <summary>The schema is passed through as the server gave it.</summary>
+    [Fact]
+    public void Definitions_PassTheServersSchemaThrough()
+    {
+        var server = new FakeServer("db", Tool("query",
+            schema: """{"type":"object","properties":{"sql":{"type":"string"}},"required":["sql"]}"""));
+
+        var schema = Assert.Single(new McpToolset([server]).Definitions()).InputSchema.GetRawText();
+
+        Assert.Contains("\"sql\"", schema, StringComparison.Ordinal);
+        Assert.Contains("required", schema, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE DESCRIPTION, which is the half a schema cannot carry. Our own tools set one, and each
+    /// parameter carries its own; a third-party tool arriving with an empty description would be
+    /// strictly worse off than a built-in for no reason.
+    /// </summary>
+    [Fact]
+    public void Definitions_CarryEachToolsDescriptionIntoTheToolDefinition()
+    {
+        var server = new FakeServer("db", Tool("query", description: "Runs read-only SQL."));
+
+        Assert.Equal("Runs read-only SQL.", Assert.Single(new McpToolset([server]).Definitions()).Description);
+    }
+
+    /// <summary>Per-parameter descriptions survive too — they live inside the server's schema, so it
+    /// must be passed through whole rather than rebuilt from its property names.</summary>
+    [Fact]
+    public void Definitions_KeepPerParameterDescriptionsInsideTheSchema()
+    {
+        var server = new FakeServer("db", Tool("query",
+            schema: """{"type":"object","properties":{"sql":{"type":"string","description":"The query to run."}}}"""));
+
+        Assert.Contains("The query to run.",
+            Assert.Single(new McpToolset([server]).Definitions()).InputSchema.GetRawText(),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>A disabled server offers nothing. It is configured, so it is not an error — it is off.</summary>
+    [Fact]
+    public void Definitions_SkipAServerThatIsNotConnected()
+    {
+        Assert.Empty(new McpToolset([]).Definitions());
+    }
+
+    /// <summary>The call reaches the right server under the tool's ORIGINAL name — the prefix is ours,
+    /// and a server asked to run "files_read" would rightly say it has no such tool.</summary>
+    [Fact]
+    public async Task TryInvokeAsync_CallsTheServerWithTheUnprefixedName()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "file contents" };
+        var toolset = new McpToolset([server]);
+
+        var result = await toolset.TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Equal("file contents", result);
+        Assert.Equal("read", server.CalledTool);
+    }
+
+    /// <summary>A name no server owns is a MISS, not an error — the caller falls through to the
+    /// built-ins, whose "no such tool" text stays the single fallback for a name nobody owns.</summary>
+    [Fact]
+    public async Task TryInvokeAsync_AnUnknownName_ReturnsNullSoTheCallerFallsThrough()
+    {
+        var toolset = new McpToolset([new FakeServer("files", Tool("read"))]);
+
+        Assert.Null(await toolset.TryInvokeAsync(Call("read_file"), CancellationToken.None));
+    }
+
+    /// <summary>An MCP result is truncated like any other, or one call fills the context window.</summary>
+    [Fact]
+    public async Task TryInvokeAsync_TruncatesAHugeMcpResult()
+    {
+        var server = new FakeServer("files", Tool("read"))
+        {
+            Result = new string('x', CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars + 10_000),
+        };
+
+        var result = await new McpToolset([server]).TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result!.Length <= CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars,
+            $"an MCP result escaped the cap at {result.Length} chars");
+        Assert.Contains("elided", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A COMPOSED NAME THAT SHADOWS A BUILT-IN IS DROPPED.
+    ///
+    /// <para>Prefixing gives <c>server_tool</c>, so a server named "read" offering "file" composes to
+    /// <c>read_file</c> — ours. Dispatch order would protect the CALL, but the tools array handed to
+    /// the model would still carry two <c>read_file</c> entries, which providers reject outright.</para>
+    /// </summary>
+    [Fact]
+    public void Definitions_SkipAToolThatWouldShadowABuiltIn()
+    {
+        var toolset = new McpToolset([new FakeServer("read", Tool("file"))]);
+
+        Assert.Empty(toolset.Definitions());
+        Assert.Contains(toolset.Warnings, w => w.Contains("read_file", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// AND TWO SERVERS COLLIDING WITH EACH OTHER. "my server" and "my_server" both sanitise to
+    /// <c>my_server</c>, a collision that exists only AFTER sanitisation — so no config-level
+    /// uniqueness check can see it. First one wins; the loser is named in a warning.
+    /// </summary>
+    [Fact]
+    public void Definitions_SkipASecondServersCollidingToolAndSaysSo()
+    {
+        var toolset = new McpToolset([
+            new FakeServer("my server", Tool("go")),
+            new FakeServer("my_server", Tool("go")),
+        ]);
+
+        Assert.Single(toolset.Definitions());
+        Assert.Contains(toolset.Warnings, w => w.Contains("my_server_go", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// THE UNKNOWN-TOOL MESSAGE NAMES MCP TOOLS TOO.
+    ///
+    /// <para>Otherwise a model that mis-typed one is told the available tools are the built-ins,
+    /// hiding every tool it can actually reach. Worst after a RESUME: the restored context is
+    /// replayed verbatim, so a model that used <c>files_read</c> last session calls it again — and if
+    /// that server is gone it gets a list omitting the servers still running.</para>
+    /// </summary>
+    [Fact]
+    public async Task InvokeAsync_UnknownTool_ListsMcpToolsAsWellAsBuiltIns()
+    {
+        var toolset = new McpToolset([new FakeServer("files", Tool("read"))]);
+
+        var result = await CxAgent.Core.Plugins.WorkerToolset.InvokeAsync(
+            Call("totally_made_up"), Enum.GetValues<CxAgent.Core.Llm.WorkerTool>(),
+            CxAgent.Core.Plugins.PluginRegistry.CreateWithBuiltins(),
+            new TestJobContext(), CancellationToken.None, toolset.Names());
+
+        Assert.Contains("no such tool", result, StringComparison.Ordinal);
+        Assert.Contains("files_read", result, StringComparison.Ordinal);   // the MCP tool is offered
+        Assert.Contains("read_file", result, StringComparison.Ordinal);    // and the built-ins remain
+    }
+
+    /// <summary>The server's own usage prose is carried, for the system prompt to show.</summary>
+    [Fact]
+    public void Instructions_AreCarriedPerServer()
+    {
+        var toolset = new McpToolset([
+            new FakeServer("db", Tool("query")) { Instructions = "Call list_tables first." },
+            new FakeServer("files", Tool("read")),
+        ]);
+
+        var only = Assert.Single(toolset.InstructionsByServer());
+        Assert.Equal("db", only.Key);
+        Assert.Equal("Call list_tables first.", only.Value);
+    }
+}

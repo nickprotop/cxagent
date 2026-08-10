@@ -24,8 +24,19 @@ public sealed record McpToolDef(string Name, string Description, JsonElement Inp
 /// third-party code on the end of a pipe, and it must not be able to take the app down — the same
 /// contract <see cref="Storage.LogFileManager"/> and <see cref="Storage.SqliteSessionStore"/> hold.</para>
 /// </summary>
-public sealed class McpClient : IAsyncDisposable
+public sealed class McpClient : IMcpServer, IAsyncDisposable
 {
+    /// <summary>
+    /// The tools from the last <see cref="ListToolsAsync"/>, so <see cref="IMcpServer"/> can expose
+    /// them without an await.
+    ///
+    /// <para>Cached rather than fetched on demand because the tool list is read while BUILDING a
+    /// request — a synchronous path, on every prompt. Re-asking the server there would put a pipe
+    /// round-trip in front of every turn, and a server that had gone slow would stall the session
+    /// rather than merely lose its tools.</para>
+    /// </summary>
+    public IReadOnlyList<McpToolDef> Tools { get; private set; } = [];
+
     private readonly string _name;
     private readonly string[] _command;
     private readonly TimeSpan _timeout;
@@ -143,7 +154,14 @@ public sealed class McpClient : IAsyncDisposable
         var result = await SendAsync("tools/list", new { }, ct);
         if (result is null || !result.Value.TryGetProperty("tools", out var tools)
             || tools.ValueKind != JsonValueKind.Array)
+        {
+            // A FAILED REFRESH CLEARS THE CACHE rather than leaving the last good answer in place.
+            // Keeping it would offer the model tools of a server that has stopped answering, and
+            // every call would fail one turn later — worse than the tools being gone, because the
+            // model would keep choosing them.
+            Tools = [];
             return [];
+        }
 
         var list = new List<McpToolDef>();
         foreach (var tool in tools.EnumerateArray())
@@ -163,6 +181,8 @@ public sealed class McpClient : IAsyncDisposable
 
             list.Add(new McpToolDef(name!, description, schema));
         }
+
+        Tools = list;
         return list;
     }
 

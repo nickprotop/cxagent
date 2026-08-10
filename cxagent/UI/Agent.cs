@@ -83,6 +83,10 @@ public sealed class Agent
     /// </summary>
     private readonly string? _globalInstructionsDir;
 
+    /// <summary>Connected MCP servers, or null when none are configured — which is the common case
+    /// and must cost nothing.</summary>
+    private readonly Core.Mcp.McpToolset? _mcp;
+
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
@@ -140,8 +144,10 @@ public sealed class Agent
     /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
-        AgentContext? context = null, string? globalInstructionsDir = null)
+        AgentContext? context = null, string? globalInstructionsDir = null,
+        Core.Mcp.McpToolset? mcp = null)
     {
+        _mcp = mcp;
         _provider = provider;
         _plugins = plugins;
         _ledger = ledger;
@@ -262,7 +268,13 @@ public sealed class Agent
             }
         }
 
-        var tools = WorkerToolset.For(AllTools, _plugins).ToList();
+        // MCP tools join the built-ins here, at the point the request is built, so a server that
+        // connected since the last prompt is picked up with no restart. Mid-request the list is
+        // fixed, which is correct: a tool appearing between two turns of one request would be a
+        // moving target for the model.
+        var tools = WorkerToolset.For(AllTools, _plugins)
+            .Concat(_mcp?.Definitions() ?? [])
+            .ToList();
         var wrote = false;
         var challenges = 0;
 
@@ -779,7 +791,16 @@ public sealed class Agent
 
         var started = DateTimeOffset.UtcNow;
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
-        var result = await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct);
+        // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
+        // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
+        // sources each producing their own version is how a model gets told a tool does not exist by
+        // one and nothing by the other.
+        //
+        // Inside the job wrapper deliberately: an MCP call gets the same transcript row, the same
+        // result rendering and the same ct as a built-in. Composed around it, a slow server would
+        // show a frozen spinner with no indication of what was being waited on.
+        var result = (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
+            ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
 
         var failed = LooksLikeFailure(result);
         job.State = failed ? JobState.Failed : JobState.Succeeded;

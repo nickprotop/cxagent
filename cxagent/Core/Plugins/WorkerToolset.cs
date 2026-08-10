@@ -163,8 +163,18 @@ public static class WorkerToolset
     /// "'path' is required" instead of an opaque failure; (3) execute inside try/catch, since Validate
     /// does not cover I/O failures; (4) render and truncate.</para>
     /// </summary>
+    /// <param name="alsoAvailable">
+    /// Tool names that exist but are not in this table — today, MCP tools.
+    ///
+    /// <para>Without it the unknown-tool message below lists the built-ins only, so a model that
+    /// mis-typed an MCP tool is told the available tools are the seven built-ins, hiding every live
+    /// MCP tool. It bites hardest after a RESUME: the restored context is replayed verbatim, so a
+    /// model that used <c>fs_read</c> last session will call it again, and if that server was since
+    /// removed it gets a list omitting the servers still running.</para>
+    /// </param>
     public static async Task<string> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
-        PluginRegistry plugins, IJobContext ctx, CancellationToken ct)
+        PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
+        IEnumerable<string>? alsoAvailable = null)
     {
         // Three DIFFERENT conditions, three different messages. The text goes back to the model as a
         // tool result and is the only thing it can act on: "no such tool" should make it pick a real
@@ -173,7 +183,7 @@ public static class WorkerToolset
         var entry = Specs.FirstOrDefault(s => s.Spec.Name == call.Name);
         if (entry.Spec is null)
             return $"no such tool '{call.Name}'. Available to this role: "
-                + $"{string.Join(", ", NamesFor(allowed))}";
+                + $"{string.Join(", ", NamesFor(allowed).Concat(alsoAvailable ?? []))}";
 
         if (!allowed.Contains(entry.Tool))
             return $"tool '{call.Name}' is not available to this role. Available: "

@@ -44,6 +44,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     private readonly string? _globalInstructionsDir;
 
+    /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
+    private readonly Core.Mcp.McpToolset? _mcp;
+
     /// <summary>
     /// The resume buffer, or null when this session is not persisted.
     ///
@@ -207,8 +210,10 @@ public sealed class AgentHost : IDisposable
         int? contextWindow = null,
         SqliteSessionStore? store = null,
         SessionSnapshot? resume = null,
-        string? globalInstructionsDir = null)
+        string? globalInstructionsDir = null,
+        Core.Mcp.McpToolset? mcp = null)
     {
+        _mcp = mcp;
         _provider = provider;
         _sink = sink;
         _jobPanel = jobPanel;
@@ -330,6 +335,7 @@ public sealed class AgentHost : IDisposable
                 ?? OrchestratorSettings.DefaultCompressThreshold,
 
             globalInstructionsDir: _globalInstructionsDir,
+            mcp: _mcp,
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
