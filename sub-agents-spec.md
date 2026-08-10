@@ -37,7 +37,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D18 | **Submitting during a turn QUEUES and APPENDS.** Several messages join newline-separated into one prompt at turn end; Escape stops the turn and moves the queue into the composer, above any text already there. Interrupt-and-rerun is deferred to when agents run in the background. | §5.1h |
 | D20 | **`SendAsync` returns `SendResult { Text, Outcome }`** — `Completed \| Capped \| Stuck \| Failed \| Cancelled`. Three return sites; only four of ~73 call sites read the string. `state` must not rest on matching an error message's wording. | §5.1c |
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
-| D24 | **A child gets a DIFFERENT system prompt**: the `# The user's commands` block dropped (it has no composer), and a sub-agent block added saying its final message is the whole answer and there is no follow-up. Everything else kept. One init-only property, fixed at construction. | §5.1h-i |
+| D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
 | D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
@@ -504,11 +504,16 @@ an earlier one. If a step fails, there is one candidate cause.
 
 ---
 
-### STEP 0 — three fixes worth making whether or not sub-agents ship
+### STEP 0 — four fixes worth making whether or not sub-agents ship
 
-Found by planning against the code, not by planning sub-agents. Two are LIVE BUGS today; the third is
-wanted by per-model ledgers independently. None of them needs a sub-agent to be worth doing, and all
-three are preconditions of step 1 — so they come first and can be judged on their own.
+Found by planning against the code, not by planning sub-agents. **Three are LIVE BUGS today** (0a, 0b,
+0d); the fourth (0c) is wanted by per-model ledgers independently. None needs a sub-agent to be worth
+doing, and all four are preconditions of step 1 — so they come first and can be judged on their own.
+
+**Order: 0c FIRST.** It is the only one that is pure refactor with no behaviour change, and 0a's
+lifetime work sits in the same `WireRunner` body — doing the hoist first means touching that method
+once. 0a, 0b and 0d are independent of each other and can land in any order. **0d is written below
+between 0b and 0c** because it shares 0a's predicate, not because it runs third.
 
 **0a. The double-submit corruption.** Press Enter while a turn is running and `SubmitComposer`
 (`AppBootstrap.cs:404-418`) starts a second `runner.SendAsync` on the SAME `Agent` — two `foreach`
@@ -571,8 +576,12 @@ creation to `AppBootstrap` makes "which ledger does this agent get?" a question 
 hands the composition root the `_contextWindow` and `OrchestratorSettings` that a factory would
 otherwise have no way to reach.
 
-**Done when:** a second Enter during a turn queues instead of corrupting; Escape during `run_shell`
-leaves a `Cancelled` row; the suite is green and a live drive shows both.
+**Done when:** a second Enter during a turn queues instead of corrupting (0a); Escape during a
+running tool leaves a `Cancelled` row (0b); `/compress` mid-turn is declined with a line saying why,
+and still works when idle (0d); the ledger is constructed in `WireRunner` and an F5 provider change
+STILL RESETS IT TO ZERO exactly as today (0c — that is the regression test, since SURVIVING the
+rewire is the plausible accident and would silently break `Breached` and the budget); the suite is
+green and a live drive shows all four.
 
 ---
 
@@ -781,11 +790,33 @@ catch that swallows the error but leaves the row `Running`, or a `finally` that 
 the exception still escapes the `foreach` and bricks the session (§1b):
 
 ```csharp
-try            { … await child.SendAsync(…) … }
+// INSIDE the spawn branch of InvokeAndShowAsync. `result` is the tool-result string the existing
+// path already appends as the Role="tool" message — the catch FILLS IT IN rather than returning.
+string result;
+try
+{
+    var send = await child.SendAsync(prompt, ct);
+    result = Envelope(child.Id, send.Outcome, send.Text);
+}
 catch (OperationCanceledException) { job.State = JobState.Cancelled; throw; }
-catch (Exception ex)               { return ErrorEnvelope(ex); }
-finally        { tick.Dispose(); }
+catch (Exception ex)               { result = Envelope(child.Id, SendOutcome.Failed, ex.Message); }
+finally                            { tick.Dispose(); }
 ```
+
+**The two `catch` arms are deliberately asymmetric, and the asymmetry is the whole contract.**
+Cancellation RETHROWS: the turn is over, the parent will not send another request, so there is nobody
+to hand a tool result to and unwinding the `foreach` is correct. Any other exception does NOT rethrow,
+because the parent's next request IS still coming and an orphaned tool call bricks the session (§1b).
+
+An earlier version of this block wrote `catch (Exception ex) { return ErrorEnvelope(ex); }`, which
+reads naturally and is WRONG: an early return leaves `InvokeAndShowAsync` before the
+`messages.Add(Role="tool", …)` that the envelope exists to become — producing exactly the orphan §1b
+says never to produce, in the code §1b wrote to prevent it. Recorded rather than silently corrected,
+because it is the second time this document has stated the contract correctly in prose and broken it
+in the sample.
+
+`job.State = JobState.Cancelled` is redundant once 0b's own `finally` lands, and is written anyway so
+the spawn branch is correct when read on its own.
 
 The `try/finally` also fixes this for EVERY tool call, not just spawn — a cancelled `run_shell` leaves
 the same frozen row today.
@@ -840,9 +871,10 @@ and the parent receives a question nobody can answer.
 
 **The child's prompt:**
 - **drop** the commands section — the one block that is actively wrong
-- **add** a sub-agent block, in the same position and spirit as the briefing: *your final message is
-  the whole of what your caller receives; there will be no follow-up; do not ask questions or offer
-  next steps*
+- **REPLACE `# Answering`** — not "add a block", as an earlier draft had it. The section's guidance is
+  written for a human reading a terminal, and a child's reader is a model; leaving it in place and
+  appending a second one gives the child two sets of answering instructions that disagree. The
+  replacement text is written verbatim below.
 - **keep** everything else: `<env>`, conventions, verifying, project instructions, MCP instructions —
   all as relevant to a child as to a parent
 
@@ -851,8 +883,9 @@ Mechanically this is one more init-only property on `SystemPromptContext`, exact
 prompt prefixes per session rather than one** — correct, since they are different agents, and worth
 saying so it is not later mistaken for cache churn.
 
-**The parent's prompt: nothing.** When to spawn belongs in the TOOL DESCRIPTION, which is where
-opencode puts it (`task.txt`) — a tool the model can see and a description it reads at the moment of
+**The parent's prompt: nothing ABOUT SPAWNING** (D25) — it does gain three lines about a parent's
+obligations towards a child's work (D26, below), which is a different subject. When to spawn belongs
+in the TOOL DESCRIPTION, which is where opencode puts it (`task.txt`) — a tool the model can see and a description it reads at the moment of
 choosing. Putting it in the system prompt would spend prefix on every turn of every session, including
 the ones with no spawning in them, and would describe a capability the model can already see in its
 tool list.
