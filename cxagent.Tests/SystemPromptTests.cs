@@ -14,6 +14,14 @@ namespace CxAgent.Tests;
 /// </summary>
 public class SystemPromptTests
 {
+    private static SystemPromptContext Context(string model = "qwen3.6-35b") =>
+        new(
+            WorkingDirectory: "/tmp/project",
+            IsGitRepo: true,
+            Platform: "linux",
+            Today: new DateOnly(2026, 8, 10),
+            ModelId: model);
+
     private static string Build(string model = "qwen3.6-35b") =>
         SystemPrompt.Build(new SystemPromptContext(
             WorkingDirectory: "/tmp/project",
@@ -248,5 +256,78 @@ public class SystemPromptTests
     public void Build_StaysUnderAReasonableSize()
     {
         Assert.True(Build().Length < 4_000, $"the system prompt grew to {Build().Length} chars");
+    }
+    // ---- MCP server instructions ---------------------------------------------------------------
+
+    /// <summary>
+    /// A SERVER'S OWN INSTRUCTIONS REACH THE MODEL.
+    ///
+    /// <para>Two channels, not one. A tool's description rides on the tool definition and answers
+    /// "what does this one call do". The server's instructions answer "how do I use this server at
+    /// all" — ordering, roots, conventions — which the author wrote precisely BECAUSE no per-tool
+    /// schema could carry it. Shipping the schema and dropping the prose gives the model the shape of
+    /// the tools and none of the guidance.</para>
+    /// </summary>
+    [Fact]
+    public void Build_IncludesEachConnectedServersInstructions()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            McpInstructions = new Dictionary<string, string>
+            {
+                ["db"] = "Call list_tables before querying.",
+                ["docs"] = "Resolve the library id first.",
+            },
+        });
+
+        Assert.Contains("Call list_tables before querying.", p, StringComparison.Ordinal);
+        Assert.Contains("Resolve the library id first.", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>Attributed to the server that said it. An unattributed paragraph in a system prompt
+    /// reads as though the app itself said it — the same rule project instructions follow.</summary>
+    [Fact]
+    public void Build_AttributesInstructionsToTheServerThatSentThem()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            McpInstructions = new Dictionary<string, string> { ["db"] = "Call list_tables first." },
+        });
+
+        var line = p.Split('\n').First(l => l.Contains("db", StringComparison.Ordinal)
+                                          && l.Contains("server", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("db", line, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// WITH NO SERVERS THE PROMPT IS BYTE-IDENTICAL TO TODAY'S.
+    ///
+    /// <para>The system message is the prompt-cache prefix. A block that appeared even when empty
+    /// would change it for every user who has no MCP configured at all — paying a cache miss for a
+    /// feature they are not using.</para>
+    /// </summary>
+    [Fact]
+    public void Build_WithNoServers_IsUnchanged()
+    {
+        var withNone = SystemPrompt.Build(Context() with
+        {
+            McpInstructions = new Dictionary<string, string>(),
+        });
+
+        Assert.Equal(Build(), withNone);
+        Assert.DoesNotContain("MCP", withNone, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A server that sent no instructions contributes nothing — most servers send none, and
+    /// an empty heading per server would be noise in every prompt.</summary>
+    [Fact]
+    public void Build_AServerWithNoInstructions_ContributesNoBlock()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            McpInstructions = new Dictionary<string, string> { ["quiet"] = "   " },
+        });
+
+        Assert.Equal(Build(), p);
     }
 }

@@ -12,7 +12,19 @@ public readonly record struct SystemPromptContext(
     bool IsGitRepo,
     string Platform,
     DateOnly Today,
-    string ModelId);
+    string ModelId)
+{
+    /// <summary>
+    /// Each connected MCP server's own usage prose from its <c>initialize</c> response, by server
+    /// name. Empty — the common case — contributes nothing at all.
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, not a sixth positional field. Every construction site would
+    /// otherwise have to name it, including the ones that have no idea what MCP is; this way a caller
+    /// that has servers says so and nobody else changes.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string> McpInstructions { get; init; } =
+        new Dictionary<string, string>();
+}
 
 /// <summary>
 /// What the agent is told before it starts.
@@ -146,6 +158,39 @@ public static class SystemPrompt
         sb.AppendLine();
         sb.AppendLine("Never write code that logs or hard-codes a secret, and never put one in a "
                     + "file you create.");
+
+        // MCP SERVERS LAST, and only when there are any.
+        //
+        // Nothing is appended when no server sent instructions — which is both the common case and a
+        // cache concern: the system message is the prompt-cache prefix, and a heading that appeared
+        // even when empty would change it for every user with no MCP configured, charging them a miss
+        // for a feature they are not using.
+        //
+        // Attributed to the server that said it, the same rule project instructions follow: an
+        // unattributed paragraph appended to a system prompt reads as though the app itself said it,
+        // leaving the model no way to weigh a server's advice against a general instruction.
+        var servers = ctx.McpInstructions
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)   // stable order, or the prefix churns
+            .ToList();
+
+        if (servers.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# MCP servers");
+            sb.AppendLine();
+            sb.AppendLine("These tools come from external servers. Each server's own guidance follows; "
+                        + "it describes how to use that server, which its individual tool descriptions "
+                        + "cannot.");
+
+            foreach (var (name, text) in servers)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"From the '{name}' server:");
+                sb.AppendLine();
+                sb.AppendLine(text.Trim());
+            }
+        }
 
         return sb.ToString();
     }

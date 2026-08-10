@@ -236,7 +236,15 @@ public sealed class Agent
                             || File.Exists(Path.Combine(cwd, ".git")),
                     Platform: Environment.OSVersion.Platform.ToString(),
                     Today: _startedOn,
-                    ModelId: _provider.ModelId))
+                    ModelId: _provider.ModelId)
+                {
+                    // Read fresh each prompt, like the instruction files above: a server that
+                    // connected since the last turn contributes its guidance from the next one, with
+                    // no restart. Empty when nothing is connected, which leaves the prompt — and so
+                    // the cache prefix — byte-identical for anyone without MCP.
+                    McpInstructions = _mcp?.InstructionsByServer()
+                                      ?? new Dictionary<string, string>(),
+                })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir));
 
