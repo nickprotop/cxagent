@@ -175,4 +175,86 @@ public class ProviderConfigWriterTests : IDisposable
         Assert.False(provs.TryGetProperty("a", out _));   // replaced, not merged
         Assert.True(provs.TryGetProperty("b", out _));
     }
+    // ---- MCP servers -------------------------------------------------------------------------
+
+    /// <summary>
+    /// The writer OWNS "mcp" once the editor can change it. A server the user deleted in Settings has
+    /// to actually disappear from the file, which means writing the block wholesale rather than
+    /// merging into whatever was there.
+    /// </summary>
+    [Fact]
+    public void Write_ThenLoad_RoundTripsMcpServers()
+    {
+        var s = Settings(("claude", new ProviderInstanceConfig("anthropic", "claude-x", "sk", null, null)))
+            with
+            {
+                McpServers = new Dictionary<string, McpServerConfig>
+                {
+                    ["context7"] = new(["npx", "-y", "@upstash/context7-mcp"], Enabled: true, TimeoutMs: null),
+                    ["sqlite"] = new(["uvx", "mcp-server-sqlite"], Enabled: false, TimeoutMs: 60_000),
+                },
+            };
+
+        ProviderConfigWriter.Write(Paths(), s);
+        var loaded = ProviderConfigLoader.LoadAndValidate(Paths(), new Dictionary<string, string>());
+
+        Assert.Equal(["npx", "-y", "@upstash/context7-mcp"], loaded.McpServers["context7"].Command);
+        Assert.True(loaded.McpServers["context7"].Enabled);
+        Assert.False(loaded.McpServers["sqlite"].Enabled);
+        Assert.Equal(60_000, loaded.McpServers["sqlite"].TimeoutMs);
+    }
+
+    /// <summary>
+    /// Per-server keys we do not model — a future knob, a hand-added field — are merged back, the way
+    /// the orchestrator block already does it. Owning the block is not licence to discard what is in
+    /// it.
+    /// </summary>
+    [Fact]
+    public void Write_PreservesUnknownPerServerKeys()
+    {
+        File.WriteAllText(ConfigPath, """
+        {
+          "providers": {},
+          "mcp": { "context7": { "command": ["old"], "env": { "TOKEN": "abc" } } }
+        }
+        """);
+
+        ProviderConfigWriter.Write(Paths(),
+            Settings(("claude", new ProviderInstanceConfig("anthropic", "m", "k", null, null)))
+                with
+                {
+                    McpServers = new Dictionary<string, McpServerConfig>
+                    {
+                        ["context7"] = new(["npx", "-y", "@upstash/context7-mcp"], true, null),
+                    },
+                });
+
+        var root = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
+        var server = root["mcp"]!["context7"]!.AsObject();
+        Assert.Equal("abc", server["env"]!["TOKEN"]!.GetValue<string>());
+        Assert.Equal("npx", server["command"]![0]!.GetValue<string>());   // and ours won on the key we own
+    }
+
+    /// <summary>A server removed in Settings is gone from the file, not resurrected by the merge.</summary>
+    [Fact]
+    public void Write_RemovesAServerThatIsNoLongerConfigured()
+    {
+        File.WriteAllText(ConfigPath, """
+        {
+          "providers": {},
+          "mcp": { "gone": { "command": ["x"] }, "kept": { "command": ["y"] } }
+        }
+        """);
+
+        ProviderConfigWriter.Write(Paths(),
+            Settings(("claude", new ProviderInstanceConfig("anthropic", "m", "k", null, null)))
+                with
+                {
+                    McpServers = new Dictionary<string, McpServerConfig> { ["kept"] = new(["y"], true, null) },
+                });
+
+        var mcp = JsonNode.Parse(File.ReadAllText(ConfigPath))!["mcp"]!.AsObject();
+        Assert.False(mcp.ContainsKey("gone"));
+        Assert.True(mcp.ContainsKey("kept"));
+    }
 }

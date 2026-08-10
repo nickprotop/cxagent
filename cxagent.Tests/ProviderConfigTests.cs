@@ -261,4 +261,79 @@ public class ProviderConfigTests : IDisposable
         var settings = new OrchestratorSettings(null, null, ContextCompressThreshold: 5_000);
         Assert.Equal(5_000, settings.EffectiveCompressThreshold(contextWindow: 200_000));
     }
+    // ---- MCP servers -------------------------------------------------------------------------
+
+    [Fact]
+    public void Load_ReadsMcpServers()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "filesystem": { "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+            "sqlite":     { "command": ["uvx", "mcp-server-sqlite"], "enabled": false, "timeoutMs": 60000 }
+          }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(2, s.McpServers.Count);
+        Assert.Equal(["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                     s.McpServers["filesystem"].Command);
+
+        // Enabled defaults to TRUE: a server someone bothered to configure is one they want, and
+        // requiring "enabled": true on every entry is a footgun that reads as a broken config.
+        Assert.True(s.McpServers["filesystem"].Enabled);
+        Assert.False(s.McpServers["sqlite"].Enabled);
+        Assert.Equal(60_000, s.McpServers["sqlite"].TimeoutMs);
+    }
+
+    /// <summary>The common case — no mcp block at all — is not an error and not a null.</summary>
+    [Fact]
+    public void Load_WithNoMcpBlock_YieldsNoServers()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p"
+        }
+        """);
+
+        Assert.Empty(ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers);
+    }
+
+    /// <summary>
+    /// A MALFORMED SERVER ENTRY IS SKIPPED, NOT FATAL.
+    ///
+    /// <para>Every other validation failure in this loader is collected into a
+    /// <see cref="ProviderConfigException"/>, and an unloadable config refuses Settings outright and
+    /// routes to the repair wizard. Putting MCP on that list would mean one typo'd command line takes
+    /// the whole app down — no providers, no session, over an optional third-party tool server.</para>
+    ///
+    /// <para>So the bad entry is dropped, the rest of the config loads, and the reason is carried out
+    /// on <see cref="ProviderSettings.Warnings"/> where the UI can say it. Silently ignoring it would
+    /// be its own bug: the user would see a server that simply never appears.</para>
+    /// </summary>
+    [Fact]
+    public void Load_WithAnEmptyCommand_SkipsThatServer_AndStillLoadsTheRest()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "broken": { "command": [] },
+            "good":   { "command": ["python3", "-m", "server"] }
+          }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(["good"], s.McpServers.Keys);
+        Assert.Single(s.Providers);                                    // the rest of the config survived
+        Assert.Contains(s.Warnings, w => w.Contains("broken", StringComparison.Ordinal));
+    }
 }

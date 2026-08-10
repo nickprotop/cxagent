@@ -102,6 +102,18 @@ public record OrchestratorSettings(
         ?? (contextWindow is { } window ? (int)(window * 0.8) : (int?)null);
 }
 
+/// <summary>
+/// One MCP server to run as a child process.
+///
+/// <para><paramref name="Enabled"/> defaults to TRUE: a server someone bothered to configure is one
+/// they want. Requiring <c>"enabled": true</c> on every entry is a footgun — the server silently
+/// never appears and the config reads as though it should.</para>
+///
+/// <para><paramref name="TimeoutMs"/> is null-means-use-the-default rather than a number invented
+/// here, so <see cref="Mcp.McpClient"/> keeps ownership of what that default is.</para>
+/// </summary>
+public record McpServerConfig(IReadOnlyList<string> Command, bool Enabled = true, int? TimeoutMs = null);
+
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
     string? DefaultProvider,
@@ -110,6 +122,21 @@ public record ProviderSettings(
     OrchestratorSettings? Orchestrator = null)
 {
     public OrchestratorSettings Orchestrator { get; init; } = Orchestrator ?? OrchestratorSettings.Unbounded;
+
+    /// <summary>Configured MCP servers, empty when the block is absent — which is the common case.</summary>
+    public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
+        new Dictionary<string, McpServerConfig>();
+
+    /// <summary>
+    /// Non-fatal complaints from the load, for the UI to show.
+    ///
+    /// <para>Everything else this loader dislikes goes into <see cref="ProviderConfigException"/> and
+    /// stops the app. That is right for a provider — there is no session without one — and wrong for
+    /// an optional tool server, where it would mean a typo'd command line takes down providers,
+    /// session and all. Warnings are the middle ground the MCP block needs: drop the bad entry, keep
+    /// going, and still SAY so, because a server that silently never appears is its own bug.</para>
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
 public sealed class ProviderConfigException : Exception
@@ -236,10 +263,49 @@ public static class ProviderConfigLoader
                 orchestrator = new OrchestratorSettings(maxTokensPerCall, goalTokenBudget, maxWorkerTurns, contextCompressThreshold);
             }
 
+            // MCP SERVERS ARE NEVER FATAL. A bad entry is skipped with a warning naming it; the rest
+            // of the config — every provider, the whole session — loads regardless. See
+            // ProviderSettings.Warnings for why this one block is not on the errors list.
+            var warnings = new List<string>();
+            var mcpServers = new Dictionary<string, McpServerConfig>();
+            if (root.TryGetProperty("mcp", out var mcp) && mcp.ValueKind == JsonValueKind.Object)
+                foreach (var entry in mcp.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        warnings.Add($"mcp.{entry.Name} is not an object; skipped.");
+                        continue;
+                    }
+
+                    var command = new List<string>();
+                    if (entry.Value.TryGetProperty("command", out var cmd) && cmd.ValueKind == JsonValueKind.Array)
+                        foreach (var part in cmd.EnumerateArray())
+                            if (part.ValueKind == JsonValueKind.String && part.GetString() is { } s
+                                && !string.IsNullOrWhiteSpace(s))
+                                command.Add(s);
+
+                    if (command.Count == 0)
+                    {
+                        warnings.Add($"mcp.{entry.Name} has no 'command'; skipped.");
+                        continue;
+                    }
+
+                    var enabled = !entry.Value.TryGetProperty("enabled", out var en)
+                               || en.ValueKind != JsonValueKind.False;
+                    int? timeoutMs = entry.Value.TryGetProperty("timeoutMs", out var tm)
+                                  && tm.ValueKind == JsonValueKind.Number ? tm.GetInt32() : null;
+
+                    mcpServers[entry.Name] = new McpServerConfig(command, enabled, timeoutMs);
+                }
+
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);
 
-            return new ProviderSettings(providers, defaultProvider, allowed, routing, orchestrator);
+            return new ProviderSettings(providers, defaultProvider, allowed, routing, orchestrator)
+            {
+                McpServers = mcpServers,
+                Warnings = warnings,
+            };
         }
     }
 }

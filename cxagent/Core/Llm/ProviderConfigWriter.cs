@@ -11,7 +11,7 @@ namespace CxAgent.Core.Llm;
 ///  * ATOMIC — serialize to a .tmp then File.Move(overwrite:true). A crash mid-write leaves the old
 ///    config intact rather than a truncated file the loader would reject at next startup.
 ///  * 0600 — the file holds API keys (spec §Config &amp; data location). Unix only; no-op elsewhere.
-///  * PRESERVING — only 'providers', 'defaultProvider', 'llmAgent' and 'orchestrator' are cxagent's
+///  * PRESERVING — only 'providers', 'defaultProvider', 'llmAgent', 'orchestrator' and 'mcp' are cxagent's
 ///    to own here. Every other top-level key (jobs/ui/plugins, plus anything a future version adds)
 ///    is read from the existing file and written back untouched, so the wizard never destroys
 ///    hand-edits. Within an owned block, only the sub-keys the loader reads are ours — anything else
@@ -73,6 +73,34 @@ public static class ProviderConfigWriter
             if (o.GoalTokenBudget is { } gtb) orch["goalTokenBudget"] = gtb; else orch.Remove("goalTokenBudget");
             if (o.ContextCompressThreshold is { } cct) orch["contextCompressThreshold"] = cct; else orch.Remove("contextCompressThreshold");
             root["orchestrator"] = orch;
+        }
+
+        {
+            // THE BLOCK IS WRITTEN WHOLESALE, not merged key-by-key, because a server the user
+            // deleted in Settings has to actually disappear. Merging into the existing object would
+            // resurrect it on every save.
+            var existing = root["mcp"]?.AsObject();
+            var mcp = new JsonObject();
+            foreach (var (name, cfg) in settings.McpServers)
+            {
+                // Per-server keys we do not model (a future knob, a hand-added "env") are carried
+                // over from the old entry, same as the orchestrator block does. Owning the block is
+                // not licence to discard what is inside it.
+                var o = existing?[name] is JsonObject prev
+                    ? prev.DeepClone().AsObject()
+                    : new JsonObject();
+
+                var command = new JsonArray();
+                foreach (var part in cfg.Command) command.Add(part);
+                o["command"] = command;
+                o["enabled"] = cfg.Enabled;
+                // Null-means-use-the-default, so omit rather than write a number nobody chose.
+                if (cfg.TimeoutMs is { } ms) o["timeoutMs"] = ms; else o.Remove("timeoutMs");
+
+                mcp[name] = o;
+            }
+
+            if (mcp.Count > 0) root["mcp"] = mcp; else root.Remove("mcp");
         }
 
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
