@@ -497,7 +497,81 @@ an earlier one. If a step fails, there is one candidate cause.
 
 ---
 
-### STEP 1 — one child, foreground, sequential
+### STEP 0 — three fixes worth making whether or not sub-agents ship
+
+Found by planning against the code, not by planning sub-agents. Two are LIVE BUGS today; the third is
+wanted by per-model ledgers independently. None of them needs a sub-agent to be worth doing, and all
+three are preconditions of step 1 — so they come first and can be judged on their own.
+
+**0a. The double-submit corruption.** Press Enter while a turn is running and `SubmitComposer`
+(`AppBootstrap.cs:404-418`) starts a second `runner.SendAsync` on the SAME `Agent` — two `foreach`
+loops appending to one live `Context.Messages`. Worse, `previousTurn?.Dispose()` (`:414`) disposes the
+RUNNING turn's token, so the first loop throws `ObjectDisposedException` at its next cancellation
+check rather than cancelling. Invisible today only because turns last seconds. Fix: queue-and-append
+(§5.1h), which needs the turn to be trackable — it is fire-and-forget now.
+
+**0b. The frozen row on a cancelled MCP call.** `InvokeAndShowAsync` (`Agent.cs:806-848`) is
+straight-line with no `finally`, so an `OperationCanceledException` skips the code that closes the row.
+
+**CORRECTED: it is NOT reproducible with `run_shell`**, which an earlier draft claimed as the
+flagship evidence. `ProcessRunner` CATCHES the OCE, kills the tree and returns a result
+(`ProcessRunner.cs:117-124`), and `WorkerToolset.InvokeAsync`'s `catch (Exception)` (`:246`) catches
+OCE too — so built-in tools come back as strings and their rows close as **Failed**. That matches the
+live drive: Escape during `sleep 400` gave exit code 137 and a finished row.
+
+The path that genuinely escapes is `_mcp.TryInvokeAsync` (`Agent.cs:833`), which has **no catch at
+all**. Cancel during a slow MCP tool call and the row spins for the rest of the session — nothing
+sweeps it.
+
+Stating this precisely matters: an implementer who tries to reproduce it with `run_shell`, fails, and
+concludes the fix is unnecessary would drop it — or worse, "fix" `ProcessRunner` to rethrow and CREATE
+the bug the spec describes.
+
+Two changes, not one:
+- `try/finally` in `InvokeAndShowAsync` marking the job `Cancelled` — this is also what makes the
+  spawn branch safe, which is the real reason step 1 needs it
+- `catch (OperationCanceledException) { throw; }` ahead of `WorkerToolset.cs:246`, or the `finally`
+  guards a path nothing reaches. Today Escape becomes a tool result the model reasons about
+  ("error: The operation was canceled") and keeps looping from.
+
+**0d. `/compress` during a running turn — the same corruption as 0a, and 0a makes it MORE likely.**
+`/compress` is dispatched at `AppBootstrap.cs:377`, inside the command block and therefore BEFORE any
+guard at `:404` — deliberately, since §1g argues commands must keep working. But `CompressNowAsync`
+calls `CompressionRun.RunAsync(Context, …)`, which replaces `Context.Messages` wholesale while the
+agent's `foreach` is appending tool results to that same list. Best case the results are lost; likely
+case is a torn `List<T>` and an `InvalidOperationException` mid-request.
+
+Live today — and after 0a lands, `/compress` becomes one of the few things a user CAN press during a
+long run, so the guard makes it more probable rather than less. Cheapest fix: decline it with a system
+line while a turn is running.
+
+**0c. Hoist the ledger.** `AgentHost` creates it in its own constructor (`:249`), which means it can
+only ever be THE SESSION'S ONE LEDGER — the assumption per-model attribution has to break. Moving
+creation to `AppBootstrap` makes "which ledger does this agent get?" a question with an answer, and
+hands the composition root the `_contextWindow` and `OrchestratorSettings` that a factory would
+otherwise have no way to reach.
+
+**Done when:** a second Enter during a turn queues instead of corrupting; Escape during `run_shell`
+leaves a `Cancelled` row; the suite is green and a live drive shows both.
+
+---
+
+
+### STEP 1 — one child, foreground, sequential (needs step 0)
+
+**What this is FOR, stated plainly so it is not judged as a feature.** One foreground blocking child
+buys a user very little that a second session does not already give them — and the "second context"
+benefit is smaller than it sounds: the parent blocks for the whole run and then absorbs the child's
+full answer as a tool result, so what it actually saves is only the child's INTERMEDIATE tool
+results. Real on "read 40 files and tell me X"; near-nil otherwise.
+
+Step 1 is **seam validation for step 3**, plus two independent bug fixes on the way. Everything it
+touches — the spawner, the buffered sink pair, the factory, the envelope, the per-child reporter — is
+load-bearing for concurrency and is currently ASSERTED to work rather than exercised. Three review
+passes found roughly a dozen errors in this document, several in the fixes for earlier ones; the only
+thing that reliably kills that class of error is running code.
+
+**If step 3 is not going to be built, step 1 is not worth it.** Do step 0 and stop.
 
 Rewritten after a deep review found the previous version's telemetry claim rested on DEAD CODE and
 its failure story missing entirely. Both are recorded below rather than quietly fixed.
@@ -549,10 +623,20 @@ buffered sink, so the spawn branch holds it and can read what `ShowError` captur
 structural: the per-child reporter already counts `TurnCompleted`, so `turns >= maxTurns` IS the cap,
 with no string matching.
 
-So `state` can be honest: **`completed | capped | stuck | error | cancelled`**, with cap from the turn
-count and stuck from the buffered error's stable `"stopped: "` prefix. The only genuinely brittle part
-is stuck's string match; if that is unacceptable, `Agent.SendResult { Text, Outcome }` is a three-site
-change (the three `return`s), not the API upheaval the earlier draft implied.
+**But cap is NOT derivable from the turn count alone**, as an earlier draft claimed. `_maxTurns` is
+private with no accessor, so the reporter cannot read it — the FACTORY knows the value it passed and
+must hand it over. Worse, the counter reads exactly `maxTurns` both when the cap fires AND when a run
+finishes naturally on its last turn, so `count >= maxTurns` gives a false `capped`. The salvage turn
+does not raise `TurnCompleted` either.
+
+So the honest options are:
+- `count == maxTurns` **AND** the buffered sink saw `"stopped after "` — two conditions, one of them a
+  string match, or
+- **`Agent.SendResult { Text, Outcome }`** — a three-site change (the three `return`s) that removes
+  both string matches and the counting entirely.
+
+**Take the second.** It is smaller than the accounting needed to make the first correct, and `state`
+is the one field the parent's model acts on.
 
 What must NOT happen is shipping `completed` for a run that hit its cap — the parent then acts on a
 salvage summary as though it were a finished answer, which is exactly what D13 exists to prevent.
@@ -578,13 +662,26 @@ salvage summary as though it were a finished answer, which is exactly what D13 e
 Dropped from the old list: *"cancellation token, id"* — neither is factory work. `Agent` has no ct
 parameter (it arrives per `SendAsync`) and `Id` is minted internally and read-only.
 
-#### 1d-i. The construction-order blocker — DECIDED: hoist the ledger
+#### 1d-i. The construction-order blocker — the hoist is STEP 0c
 
 **`AgentHost` CREATES the ledger in its own constructor** (`AgentHost.cs:249`), before `BuildAgent()`.
 So a factory built in `AppBootstrap` and passed INTO `AgentHost` cannot close over the parent's
 ledger — it does not exist yet.
 
-**Ledger creation moves to `AppBootstrap`**, which passes it in. Not for tidiness: a ledger created
+**Ledger creation moves into `WireRunner`, immediately above the `new AgentHost(...)` call** — not to
+the top of `AppBootstrap`. The distinction matters: `WireRunner` re-runs on every F5 provider change,
+and today that RESETS the ledger to zero. Hoisting to the top would make it survive the rewire, which
+sounds better but changes user-visible behaviour and breaks two things quietly — `Breached` fires once
+per ledger, so a surviving one can never warn again; and the budget comes from the NEW provider's
+settings, which a surviving ledger never adopts. Constructing it in `WireRunner` preserves today's
+semantics exactly and still satisfies D7, because the composition root owns it and can hand a
+different one to a factory.
+
+`Breached` stays subscribed in `AgentHost` (`:257`) — it owns the sink, and moving it out would mean
+re-subscribing on every rewire against a ledger that outlives the host, accumulating handlers.
+
+`AgentHost` gains a defaulted `TokenLedger? ledger = null` parameter, so the ~10 test construction
+sites are untouched. Not for tidiness: a ledger created
 inside `AgentHost`'s constructor can only ever be THE SESSION'S ONE LEDGER, and that is precisely the
 assumption per-model attribution has to break. Owning it at the composition root is what makes "which
 ledger does this agent get?" a question with an answer. `Func<TokenLedger>` would also unblock the
@@ -647,7 +744,7 @@ worker's own content shows; and `JobDigest` (`:142`) does not placeholder-out it
 concept was built for exactly this and is currently unused, so a spawn tool is not adopting a label —
 it is the thing the label was for.
 
-#### 1f. Cancellation
+#### 1f. Cancellation — the `try/finally` is STEP 0b
 
 Token flow verified end to end. But on Escape the OCE propagates out of the spawn branch, so the code
 that closes the row (`Agent.cs:836-846`) never runs — the row spins forever while the transcript says
@@ -666,7 +763,7 @@ finally        { tick.Dispose(); }
 The `try/finally` also fixes this for EVERY tool call, not just spawn — a cancelled `run_shell` leaves
 the same frozen row today.
 
-#### 1g. The submission guard — a bug today that a long child makes certain
+#### 1g. The submission guard — MOVED TO STEP 0a, kept here for context
 
 `SetSubmissionEnabled` is only ever called with `true` (`AppBootstrap.cs:215`); nothing disables it
 during a turn. Press Enter while a child runs and a second `runner.SendAsync` starts a second loop on
@@ -743,8 +840,10 @@ hazards §1g identified all disappear rather than being handled.
 - the result is the envelope `{ id, state, text }` (D13), with the child's `Agent.Id`
 - the child's id **addresses its row** (D14) — a closure over `job` and `_jobs` inside
   `InvokeAndShowAsync`, which is the only place both exist
-- the (childId → agent, buffer, job) record needs a **session-lived owner**. Small, but honestly the
-  first brick of background's registry, arriving here whether or not we name it
+- the (childId → agent, buffer, job) record needs a **session-lived owner**, and an **eviction rule**.
+  A registry with no removal is the wrong first brick — a cancelled or errored child would hold its
+  whole context for the session's life. For step 1 the answer may be "never, there is one child", but
+  it has to be stated
 - "inspectable afterwards" means **the child's log directory**; the buffer is retained for step 3's
   transcript swap
 - **the four callbacks are now EVENTS** (`Agent.cs:122-140`). They were settable `Action<T>`
