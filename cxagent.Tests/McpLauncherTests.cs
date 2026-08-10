@@ -9,6 +9,8 @@ namespace CxAgent.Tests;
 /// catching here — a command that does not exist, a server that dies mid-handshake — are process
 /// failures, and a fake would model our assumptions about them rather than the behaviour.
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class McpLauncherTests : IDisposable
 {
     private readonly List<string> _scripts = [];

@@ -14,6 +14,8 @@ namespace CxAgent.Tests;
 /// object OR an SSE stream at the server's choice. A mocked HttpClient would model our assumptions
 /// about those and pass while the framing was wrong.</para>
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class McpHttpClientTests : IDisposable
 {
     private readonly List<FakeServer> _servers = [];

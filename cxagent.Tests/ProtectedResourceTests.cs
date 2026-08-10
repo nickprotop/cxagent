@@ -13,6 +13,8 @@ namespace CxAgent.Tests;
 /// testing on its own: four steps that can each fail, and a failure that does not say WHICH step is
 /// a failure nobody can act on.</para>
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class ProtectedResourceTests : IDisposable
 {
     private readonly List<FakeHost> _hosts = [];

@@ -14,6 +14,8 @@ namespace CxAgent.Tests;
 /// <para>The browser is injected rather than opened, which is what makes this testable — and is the
 /// same seam that lets a headless caller print the URL instead.</para>
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class McpLoginTests : IDisposable
 {
     private readonly List<FakeAuthHost> _hosts = [];
