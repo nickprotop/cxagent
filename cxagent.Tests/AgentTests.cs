@@ -1,5 +1,6 @@
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.UI;
 using Xunit;
@@ -408,5 +409,185 @@ public class AgentTests
 
         Assert.True(first > 0, "the first subscriber was replaced rather than added to");
         Assert.Equal(first, second);
+    }
+
+    // ---- 0b: a cancelled tool call closes its row ------------------------------------------------
+
+    /// <summary>Blocks until the token is cancelled, standing in for a slow tool — an MCP call, or a
+    /// shell command someone pressed Escape on.</summary>
+    private sealed class BlockingPlugin : IJobPlugin
+    {
+        public string TypeName => "shell";   // takes over run_shell: AllTools is a fixed enum
+        public string DisplayName => "Blocking";
+        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
+        {
+            // MUST MATCH the real shell plugin's params: WorkerToolset.BuildDefinition throws if a
+            // tool advertises a param its plugin does not accept, which is the drift guard doing
+            // its job — a stub with no params is itself a drift.
+            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
+            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
+            new JobParamSpec("env", "object", Required: false, "Environment variables"),
+            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
+        });
+        public JobValidation Validate(JobParameters p) => JobValidation.Valid();
+
+        public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);   // only cancellation ends this
+            return new JobResult { Success = true };
+        }
+    }
+
+    /// <summary>
+    /// ESCAPE DURING A TOOL CALL LEAVES A CLOSED ROW, NOT A SPINNER.
+    ///
+    /// <para><c>InvokeAndShowAsync</c> was straight-line with no <c>finally</c>, so an
+    /// <c>OperationCanceledException</c> skipped the code that closes the row and the job stayed
+    /// <c>Running</c> — for the rest of the session, because nothing sweeps them.</para>
+    ///
+    /// <para>WORTH KNOWING WHY THIS TEST USES A CUSTOM PLUGIN: the bug is NOT reproducible through
+    /// <c>run_shell</c>. <c>ProcessRunner</c> catches the OCE, kills the tree and returns a result, so
+    /// a cancelled shell call comes back as a string and its row closes as <c>Failed</c>. Anyone
+    /// reproducing with <c>run_shell</c>, finding a closed row, and concluding the guard is
+    /// unnecessary would be reading the one path that never had the bug.</para>
+    /// </summary>
+    [Fact]
+    public async Task CancelledToolCall_ClosesTheRowAsCancelled()
+    {
+        // FIRST-WINS: register before the builtins so run_shell dispatches to the blocker.
+        var plugins = new PluginRegistry();
+        plugins.Register(new BlockingPlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "call-1", Name = "run_shell", Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"sleep 999"}""").RootElement }],
+        });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        using var cts = new CancellationTokenSource();
+        var run = agent.SendAsync("go", cts.Token);
+
+        // Let the loop reach the tool call before stopping it.
+        var row = await WaitForRunningJobAsync(jobs);
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+
+        Assert.Equal(JobState.Cancelled, jobs.Jobs.Single().State);
+        Assert.NotNull(jobs.Jobs.Single().CompletedAt);
+    }
+
+    /// <summary>
+    /// CANCELLATION IS NOT A TOOL RESULT.
+    ///
+    /// <para><c>WorkerToolset.InvokeAsync</c>'s catch-all turned Escape into the string
+    /// <c>"error: The operation was canceled"</c> and handed it back as though the tool had answered —
+    /// so the model reasoned about it and kept looping, after the user had pressed stop. It also made
+    /// the row guard above unreachable for built-ins: nothing threw, so the row closed as
+    /// <c>Failed</c> and the built-in and MCP paths disagreed about what stopping looks like.</para>
+    /// </summary>
+    [Fact]
+    public async Task CancelledToolCall_DoesNotBecomeAToolResultTheModelSees()
+    {
+        // FIRST-WINS: register before the builtins so run_shell dispatches to the blocker.
+        var plugins = new PluginRegistry();
+        plugins.Register(new BlockingPlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "call-1", Name = "run_shell", Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"sleep 999"}""").RootElement }],
+        });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        using var cts = new CancellationTokenSource();
+        var run = agent.SendAsync("go", cts.Token);
+        await WaitForRunningJobAsync(jobs);
+        await cts.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+
+        // No tool message at all — the turn unwound rather than answering itself.
+        Assert.DoesNotContain(agent.Context.Messages,
+            m => m.Role == "tool" && (m.Content ?? "").Contains("canceled", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// A PLUGIN'S OWN TIMEOUT IS STILL A TOOL FAILURE. The rethrow above is guarded on
+    /// <c>ct.IsCancellationRequested</c> precisely so an OCE raised when the user did NOT press stop
+    /// keeps its old behaviour — it is a fault the model should see and can act on, not a stop.
+    /// </summary>
+    [Fact]
+    public async Task PluginTimeout_WithoutUserCancellation_IsStillReportedToTheModel()
+    {
+        var plugins = new PluginRegistry();
+        plugins.Register(new SelfCancellingPlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "call-1", Name = "run_shell", Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"sleep 999"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Contains(agent.Context.Messages, m => m.Role == "tool");
+        Assert.NotEqual(JobState.Cancelled, jobs.Jobs.Single().State);
+    }
+
+    /// <summary>Throws OCE on a token of its OWN, never the caller's — a plugin-side timeout.</summary>
+    private sealed class SelfCancellingPlugin : IJobPlugin
+    {
+        public string TypeName => "shell";   // same reason as BlockingPlugin
+        public string DisplayName => "Self cancelling";
+        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
+        {
+            // MUST MATCH the real shell plugin's params: WorkerToolset.BuildDefinition throws if a
+            // tool advertises a param its plugin does not accept, which is the drift guard doing
+            // its job — a stub with no params is itself a drift.
+            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
+            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
+            new JobParamSpec("env", "object", Required: false, "Environment variables"),
+            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
+        });
+        public JobValidation Validate(JobParameters p) => JobValidation.Valid();
+
+        public Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
+        {
+            using var mine = new CancellationTokenSource();
+            mine.Cancel();
+            mine.Token.ThrowIfCancellationRequested();
+            return Task.FromResult(new JobResult { Success = true });
+        }
+    }
+
+    /// <summary>Waits for the loop to report a Running row, so cancellation lands DURING the tool
+    /// call rather than before it starts.</summary>
+    private static async Task<Job> WaitForRunningJobAsync(NullJobPanel jobs)
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            var running = jobs.Jobs.FirstOrDefault(j => j.State == JobState.Running);
+            if (running is not null) return running;
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException("the tool call never reported a Running row");
     }
 }

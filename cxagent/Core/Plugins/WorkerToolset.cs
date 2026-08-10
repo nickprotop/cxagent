@@ -243,6 +243,21 @@ public static class WorkerToolset
             // Same treatment as Validate's: name the argument, not the JSON path.
             return Truncate(DescribeBadArguments(call, ex), MaxToolResultChars);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // CANCELLATION IS NOT A TOOL RESULT. The catch-all below would turn Escape into the
+            // string "error: The operation was canceled", hand it back as though the tool had
+            // answered, and let the model reason about it and keep looping — the user pressed stop
+            // and the turn carried on.
+            //
+            // It also made Agent.InvokeAndShowAsync's cancellation guard unreachable for built-ins:
+            // nothing threw, so the row closed as Failed rather than Cancelled and the two paths
+            // (built-in, MCP) disagreed about what stopping looks like.
+            //
+            // GUARDED ON ct: an OCE when cancellation was NOT requested is a plugin's own timeout or
+            // a bug, and that IS a tool failure the model should see — it falls through below.
+            throw;
+        }
         catch (Exception ex)
         {
             return Truncate($"error: {ex.Message}", MaxToolResultChars);

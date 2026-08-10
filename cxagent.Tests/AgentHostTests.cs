@@ -198,6 +198,110 @@ public class AgentHostTests
         Assert.Equal(435, runner.Ledger.OutputTokens);
     }
 
+    // ---- 0c: the ledger is the composition root's ------------------------------------------------
+
+    /// <summary>
+    /// A GIVEN LEDGER IS USED, not shadowed by one of the host's own.
+    ///
+    /// <para>The point of the parameter (D7): a ledger built inside this constructor can only ever be
+    /// the session's ONE ledger, which is the assumption per-model attribution and the sub-agent
+    /// factory both have to break. Handing one in is how a caller answers "which ledger does this
+    /// agent get?" — and the answer has to actually take effect, so a recorded turn must land in the
+    /// caller's instance and nowhere else.</para>
+    /// </summary>
+    [Fact]
+    public async Task Ledger_WhenGiven_IsTheOneUsed()
+    {
+        var mine = new TokenLedger(null);
+        var mock = new MockLlmProvider();
+        mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
+            with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
+
+        var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), ledger: mine);
+
+        Assert.Same(mine, runner.Ledger);
+
+        await runner.SendAsync("goal", CancellationToken.None);
+
+        Assert.Equal(42, mine.TotalTokens);
+    }
+
+    /// <summary>
+    /// Omitting it keeps today's behaviour exactly — which is what leaves the ~10 other construction
+    /// sites in this suite untouched by the hoist.
+    /// </summary>
+    [Fact]
+    public void Ledger_WhenNotGiven_IsStillMadeHere()
+    {
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins());
+
+        Assert.NotNull(runner.Ledger);
+        Assert.Equal(0, runner.Ledger.TotalTokens);
+    }
+
+    /// <summary>
+    /// AN F5 PROVIDER CHANGE STILL RESETS THE SPEND TO ZERO. This is a REGRESSION test, and it is the
+    /// whole reason ledger construction moved into <c>WireRunner</c> rather than to the top of
+    /// <c>AppBootstrap</c>.
+    ///
+    /// <para>Hoisting it to startup would make one ledger SURVIVE the re-wire, which sounds like an
+    /// improvement and quietly breaks two things: <c>Breached</c> fires once per ledger, so a
+    /// surviving one can never warn again; and the budget comes from the NEW provider's settings,
+    /// which a surviving ledger would never adopt. Since <c>WireRunner</c> constructs a fresh
+    /// <c>AgentHost</c> per re-wire, this asserts the seam it uses — a new host with a new ledger
+    /// starts at zero however much the outgoing one had spent.</para>
+    /// </summary>
+    [Fact]
+    public async Task Rewire_StartsANewLedgerAtZero_AsItDidBeforeTheHoist()
+    {
+        var mock = new MockLlmProvider();
+        mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
+            with { Usage = new LlmUsage { InputTokens = 900, OutputTokens = 100 } });
+
+        var before = new TokenLedger(null);
+        var first = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), ledger: before);
+        await first.SendAsync("spend something", CancellationToken.None);
+        Assert.Equal(1_000, before.TotalTokens);
+
+        // What WireRunner does on F5: dispose the outgoing host, build a fresh ledger, build a fresh
+        // host over it.
+        first.Dispose();
+        var second = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), ledger: new TokenLedger(null));
+
+        Assert.Equal(0, second.Ledger.TotalTokens);
+    }
+
+    /// <summary>
+    /// A RESUMED SESSION GETS ITS SPEND BACK THROUGH THE GIVEN LEDGER TOO.
+    ///
+    /// <para>The trap this pins is in <c>WireRunner</c>, not here. <c>pendingResume</c> is consumed by
+    /// an <c>Interlocked.Exchange</c>, and both the ledger's seed and the host's context now read it.
+    /// Exchanging in the argument list while also reading it for the ledger hands the second reader a
+    /// null — seeding the ledger and silently discarding the whole restored conversation, with every
+    /// test still green. The fix is one local; this asserts the shape that local has to produce.</para>
+    /// </summary>
+    [Fact]
+    public void Resume_WithAGivenLedger_RestoresBothContextAndSpend()
+    {
+        var snapshot = new CxAgent.Core.Storage.SessionSnapshot(
+            "old-agent", [new ChatMessage { Role = "user", Content = "read Foo.cs" }],
+            InputTokens: 5_397, OutputTokens: 435, UpdatedAt: DateTimeOffset.UtcNow);
+
+        // Seeded from the SAME snapshot that is passed as `resume` — the invariant WireRunner keeps
+        // by reading one local twice.
+        var seeded = new TokenLedger(null, snapshot.InputTokens, snapshot.OutputTokens);
+
+        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), resume: snapshot, ledger: seeded);
+
+        Assert.Single(runner.Context.Messages);      // the conversation, NOT discarded
+        Assert.Equal(5_397 + 435, runner.Ledger.TotalTokens);
+    }
+
     /// <summary>
     /// A restored ledger must not fire Breached. The budget was already crossed in the previous
     /// process and the user was already told; re-announcing it on resume reports as new an error

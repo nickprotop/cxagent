@@ -838,8 +838,40 @@ public sealed class Agent
         // Inside the job wrapper deliberately: an MCP call gets the same transcript row, the same
         // result rendering and the same ct as a built-in. Composed around it, a slow server would
         // show a frozen spinner with no indication of what was being waited on.
-        var result = (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
-            ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
+        string result;
+        try
+        {
+            result = (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
+                ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
+        }
+        catch (OperationCanceledException)
+        {
+            // THE ROW MUST CLOSE EVEN THOUGH THE TURN IS ENDING. Without this the method was
+            // straight-line, so a cancellation skipped everything below and left the job Running —
+            // a row that spins for the rest of the session, because nothing sweeps them.
+            //
+            // NOT REPRODUCIBLE WITH run_shell, and that is worth stating precisely: ProcessRunner
+            // catches the OCE, kills the tree and returns a result, so a cancelled shell call comes
+            // back as a string and closes as Failed. The path that genuinely escapes is
+            // _mcp.TryInvokeAsync, which has no catch at all — cancel during a slow MCP tool call
+            // and the row never closes. Anyone who tries to reproduce this with run_shell will
+            // fail, and must not conclude the guard is unnecessary.
+            job.State = JobState.Cancelled;
+            job.CompletedAt = DateTimeOffset.UtcNow;
+            job.Result = new JobResult
+            {
+                Success = false,
+                ExitCode = -1,
+                Duration = DateTimeOffset.UtcNow - started,
+                ErrorMessage = "cancelled",
+            };
+            _jobs.UpdateJob(job);
+
+            // RETHROWN, NOT SWALLOWED. The turn is over: the loop is unwinding and there is no next
+            // request, so there is nobody to hand a tool result to. Returning a string here would
+            // feed "cancelled" back as though the tool had answered.
+            throw;
+        }
 
         var failed = LooksLikeFailure(result);
         job.State = failed ? JobState.Failed : JobState.Succeeded;

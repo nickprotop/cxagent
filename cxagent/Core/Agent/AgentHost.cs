@@ -226,7 +226,8 @@ public sealed class AgentHost : IDisposable
         string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
         IReadOnlyList<IAsyncDisposable>? mcpServers = null,
-        string? briefing = null)
+        string? briefing = null,
+        TokenLedger? ledger = null)
     {
         _briefing = briefing;
         _mcp = mcp;
@@ -242,13 +243,23 @@ public sealed class AgentHost : IDisposable
         _contextWindow = contextWindow;
         _sessionTokenBudget = _orchestrator.GoalTokenBudget;
 
-        // RESTORED, OR FRESH. A resumed session carries the spend it already incurred — a ledger
-        // restarting at zero would report a long session as costing nothing — and its context is
-        // rehydrated rather than replayed, so the next turn continues from what the agent knew
-        // instead of re-reading what it had already read.
-        Ledger = resume is null
+        // GIVEN, OR MADE HERE. A ledger constructed inside this constructor can only ever be THE
+        // SESSION'S ONE LEDGER — and that is exactly the assumption per-model attribution has to
+        // break. Taking it as a parameter makes "which ledger does this agent get?" a question with
+        // an answer, owned by the composition root, without disturbing the ~10 construction sites
+        // (every test) that have no opinion: they pass nothing and get today's behaviour.
+        //
+        // RESTORED, OR FRESH, when we make it. A resumed session carries the spend it already
+        // incurred — a ledger restarting at zero would report a long session as costing nothing —
+        // and its context is rehydrated rather than replayed, so the next turn continues from what
+        // the agent knew instead of re-reading what it had already read.
+        //
+        // A CALLER THAT PASSES ONE OWNS THE SEEDING TOO. `resume` is still read here for Context, so
+        // a caller handing in a ledger for a resumed session must seed it from the same snapshot —
+        // see WireRunner, where both come off one local for exactly that reason.
+        Ledger = ledger ?? (resume is null
             ? new TokenLedger(_sessionTokenBudget)
-            : new TokenLedger(_sessionTokenBudget, resume.InputTokens, resume.OutputTokens);
+            : new TokenLedger(_sessionTokenBudget, resume.InputTokens, resume.OutputTokens));
 
         Context = new AgentContext(contextWindow);
         if (resume is not null) Context.Replace(resume.Context);

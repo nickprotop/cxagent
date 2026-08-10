@@ -109,6 +109,22 @@ public static class AppBootstrap
         // is registered once and must see the CURRENT turn, not whichever existed at registration.
         CancellationTokenSource? turnCts = null;
 
+        // IS A TURN RUNNING — ONE DEFINITION, THREE CONSUMERS: the submission guard, /compress, and
+        // Escape. They were about to grow three subtly different answers to the same question.
+        //
+        // `turnCts` alone is NOT that predicate, and this is the trap the spec called out. It is
+        // never nulled when a turn ENDS, only replaced when the next one starts — so
+        // `turnCts is { IsCancellationRequested: false }` LATCHES TRUE after the first completed
+        // turn and would block every submission for the rest of the session. Escape got away with
+        // reading it because cancelling an already-finished turn is harmless. A guard cannot.
+        var turnRunning = false;
+        bool IsTurnRunning() => turnRunning && turnCts is { IsCancellationRequested: false };
+
+        // Messages typed while a turn was running, in the order they were typed. Joined into ONE
+        // prompt when the turn ends (D18) — appended, never replaced: two messages are usually one
+        // thought completed, and dropping either half is silent data loss the user cannot see.
+        var queuedPrompts = new List<string>();
+
         // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
         // rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
         var mcpTokens = new Core.Mcp.Auth.TokenStore(paths);
@@ -162,6 +178,31 @@ public static class AppBootstrap
             // orchestrator believed had run. The failure and its reason reach the model on the next
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
+
+            // CONSUMED ONCE, READ TWICE. `pendingResume` is a one-shot: the Exchange nulls it so a
+            // later F5 re-wire does not resurrect a session the user already resumed. But BOTH the
+            // ledger's seed and the host's context now come from it, and calling Exchange in the
+            // argument list (as this used to) while also reading it for the ledger would hand the
+            // second reader a null — seeding the ledger and silently discarding the entire restored
+            // conversation, with every test still green. One local, both uses.
+            var resumeSnapshot = System.Threading.Interlocked.Exchange(ref pendingResume, null);
+
+            // THE LEDGER IS THE COMPOSITION ROOT'S NOW (D7), not AgentHost's. Constructed here so
+            // "which ledger does this agent get?" has an answer — the question per-model attribution
+            // and sub-agent factories both have to ask.
+            //
+            // IN WireRunner, NOT AT THE TOP OF AppBootstrap, and the distinction is behavioural.
+            // This method re-runs on every F5 provider change and today that RESETS the spend to
+            // zero. Hoisting it to startup would make the ledger SURVIVE the re-wire — which sounds
+            // like an improvement and quietly breaks two things: Breached fires once per ledger, so
+            // a surviving one can never warn again; and the budget below comes from the NEW
+            // provider's settings, which a surviving ledger would never adopt. Constructing it here
+            // preserves today's semantics exactly and still satisfies D7.
+            var sessionBudget = (res.Orchestrator ?? OrchestratorSettings.Unbounded).GoalTokenBudget;
+            var ledger = resumeSnapshot is null
+                ? new TokenLedger(sessionBudget)
+                : new TokenLedger(sessionBudget, resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens);
+
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
             // real: AgentHost takes OrchestratorSettings? and defaults to unbounded, so omitting it
             // here silently disabled cost control in production while every unit test still passed.
@@ -175,11 +216,14 @@ public static class AppBootstrap
                 store: sessions,
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 globalInstructionsDir: paths.ConfigDir,
-                resume: System.Threading.Interlocked.Exchange(ref pendingResume, null),
+                resume: resumeSnapshot,
                 // The toolset, but NOT the servers: ownership stays with the session. Handing them
                 // over would let an F5 re-wire dispose them, killing every server on a provider
                 // change and leaving the new host with a toolset over dead pipes.
-                mcp: mcp.Toolset)
+                mcp: mcp.Toolset,
+                // Built above from the same snapshot `resume` came from, so a resumed session gets
+                // its spend back exactly as it did when AgentHost made this itself.
+                ledger: ledger)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -373,6 +417,29 @@ public static class AppBootstrap
                         // like nothing happening for several seconds, then a sentence. It now draws
                         // the same spinner row, with the same expandable summary, as the two automatic
                         // routes.
+                        //
+                        // DECLINED WHILE A TURN RUNS (0d), and declined rather than queued.
+                        // CompressNowAsync REPLACES Context.Messages wholesale while the agent's
+                        // tool loop is appending results to that same list: best case the results
+                        // are lost, likely case a torn List<T> and an InvalidOperationException
+                        // mid-request. Live today — a parent doing three read_file calls is exposed,
+                        // no sub-agent needed — and 0a's queue makes it MORE reachable, since
+                        // /compress becomes one of the few things a user CAN press during a long
+                        // run.
+                        //
+                        // NOT QUEUED, and the difference from an ordinary prompt is real: a prompt
+                        // is still valid when the turn ends, but /compress is a measurement-and-
+                        // rewrite of a context that is actively changing — running it later is a
+                        // DIFFERENT operation from the one that was asked for. Nothing is lost by
+                        // refusing: the automatic route already compresses on measured pressure, so
+                        // this costs a keystroke, not a compaction.
+                        if (IsTurnRunning())
+                        {
+                            mainWindow.Chat.AddMessage(ChatRole.System,
+                                "[yellow]A turn is running — press Escape to stop it first.[/]");
+                            return;
+                        }
+
                         if (runner is not null)
                             _ = runner.CompressNowAsync(cts.Token);
                         return;
@@ -399,6 +466,27 @@ public static class AppBootstrap
                 return;
             }
 
+            // A TURN IS ALREADY RUNNING: QUEUE, do not start a second one.
+            //
+            // Two SendAsync calls on the same Agent append to ONE live Context.Messages from two
+            // loops — and worse, the Exchange below would dispose the RUNNING turn's token, so the
+            // first loop throws ObjectDisposedException at its next cancellation check instead of
+            // cancelling. Invisible today only because turns last seconds; a sub-agent turn lasts
+            // minutes.
+            //
+            // GUARDING HERE, NOT AT SubmissionEnabled: that flag is tested on SubmitComposer's FIRST
+            // line, before command dispatch, so using it would also disable /exit, /clear, /mcp,
+            // /help and /compress — the user could not quit while a turn ran, and the composer would
+            // claim "no provider", which is a lie. Commands reach this point already handled; only
+            // the model dispatch is blocked.
+            if (IsTurnRunning())
+            {
+                queuedPrompts.Add(goalText);
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    $"[dim]queued[/] {ChatTranscriptSink.Escape(goalText)}");
+                return;
+            }
+
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
             // Retire the hint HERE, at submission — not when tokens first arrive. Tied to the token
             // readout it stayed on screen for the whole of a running request, telling the user to type
@@ -411,10 +499,57 @@ public static class AppBootstrap
             // whole app down with it.
             var previousTurn = System.Threading.Interlocked.Exchange(ref turnCts,
                 CancellationTokenSource.CreateLinkedTokenSource(cts.Token));
+            // SAFE ONLY BECAUSE OF THE GUARD ABOVE. This disposes the PREVIOUS turn's token, which
+            // was a live one whenever a second submission landed mid-turn. Now a second submission
+            // queues and never reaches here, so whatever this disposes is always a finished turn.
             previousTurn?.Dispose();
             var turnToken = turnCts!.Token;
 
-            _ = runner.SendAsync(goalText, turnToken);
+            turnRunning = true;
+            RunTurnAsync(goalText, turnToken);
+        }
+
+        // Runs one turn and, when it ends, drains anything typed while it was running.
+        //
+        // FIRE-AND-FORGET WITH A CONTINUATION, not `_ = runner.SendAsync(...)`. Nothing previously
+        // knew when a turn ENDED, which is why the running flag could only ever latch. The await
+        // here is what gives it a falling edge.
+        async void RunTurnAsync(string prompt, CancellationToken token)
+        {
+            try
+            {
+                await runner!.SendAsync(prompt, token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Escape. Already reported by the Escape handler; nothing to add.
+            }
+            catch (Exception ex)
+            {
+                // A turn that dies must still release the flag, or the session accepts no further
+                // prompts and looks hung — the failure mode this whole guard exists to avoid.
+                permissionSink.ShowError(ex.Message);
+            }
+            finally
+            {
+                turnRunning = false;
+            }
+
+            // THE QUEUE GOES IN AS ONE PROMPT (D18). Several messages are APPENDED
+            // newline-separated, never replaced: two messages are usually one thought completed — a
+            // correction and its qualifier — and replacing silently discards half of what someone
+            // said with no way to tell which half survived. The newline (rather than a space) is
+            // structure a model reads: they were separate thoughts.
+            //
+            // NOT drained on cancellation: Escape moves the queue back to the composer instead (see
+            // the Escape handler), because the user stopping the run is the user changing their
+            // mind, not confirming what they typed.
+            if (queuedPrompts.Count == 0 || token.IsCancellationRequested) return;
+
+            var joined = PromptQueue.Join(queuedPrompts);
+            queuedPrompts.Clear();
+            mainWindow.Input.Input = joined;
+            SubmitComposer();
         }
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
@@ -491,6 +626,19 @@ public static class AppBootstrap
                         // tree on cancellation. The session, its context and its MCP servers survive.
                         turnCts!.Cancel();
                         permissionSink.ShowSystemMessage("[yellow]Stopped.[/]");
+
+                        // ANYTHING QUEUED GOES BACK TO THE COMPOSER, not to the bin. That text was
+                        // never sent, so cancelling a run must not eat what someone typed — they can
+                        // now edit it, resend it, or clear it, which is the whole point of stopping.
+                        //
+                        // ABOVE any text already in the composer, preserving the order things were
+                        // written in: the queued lines were typed first.
+                        if (queuedPrompts.Count > 0)
+                        {
+                            mainWindow.Input.Input =
+                                PromptQueue.Restore(queuedPrompts, mainWindow.Input.Input);
+                            queuedPrompts.Clear();
+                        }
                         break;
                 }
             });
