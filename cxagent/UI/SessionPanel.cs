@@ -162,7 +162,8 @@ public sealed class SessionPanel
     public void Refresh(int? contextUsed, int spentTokens, int? contextWindow, string model,
         string endpoint, int rules,
         int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
-        string sessionId = "")
+        string sessionId = "",
+        IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null)
     {
         var lines = new List<string>();
 
@@ -249,6 +250,26 @@ public sealed class SessionPanel
         {
             Section(lines, "Session id");
             lines.Add(Muted(sessionId));
+        }
+
+        // MCP SERVERS, when any are configured and switched on.
+        //
+        // A DISABLED server is absent: it is off on purpose, and a line reporting a decision the
+        // user already made is noise. A FAILED one is shown, because hiding it is indistinguishable
+        // from never having configured it — and they did configure it, so silence is the one outcome
+        // that leaves them nothing to act on. The reason itself needs more room than 24 columns, so
+        // this says THAT it failed and /mcp says why.
+        //
+        // Absent entirely when there is nothing to say, like the session-id block above rather than
+        // a heading over an empty list.
+        var servers = (mcpServers ?? []).Where(s => s.Enabled).ToList();
+        if (servers.Count > 0)
+        {
+            Section(lines, "MCP");
+            foreach (var server in servers)
+                lines.Add(server.IsConnected
+                    ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
+                    : Muted($"{server.Name} · failed"));
         }
 
         // PERMISSIONS as a COUNT. What was granted is a security surface, and it was invisible

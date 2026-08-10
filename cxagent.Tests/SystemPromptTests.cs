@@ -315,7 +315,11 @@ public class SystemPromptTests
         });
 
         Assert.Equal(Build(), withNone);
-        Assert.DoesNotContain("MCP", withNone, StringComparison.OrdinalIgnoreCase);
+
+        // The SECTION specifically, not the string "MCP": /mcp is listed among the user's commands
+        // for every user, servers or not, so a bare substring check reads as a regression the moment
+        // that line exists.
+        Assert.DoesNotContain("# MCP servers", withNone, StringComparison.Ordinal);
     }
 
     /// <summary>A server that sent no instructions contributes nothing — most servers send none, and

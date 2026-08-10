@@ -117,4 +117,59 @@ public class SessionCommandTableTests
         Assert.All(SessionCommands.All, c => Assert.Contains(c.Outcome, dispatched));
     }
 
+    // ---- /mcp ----------------------------------------------------------------------------------
+
+    /// <summary>/mcp is a real command with a description, like the others — it joins the table
+    /// rather than being special-cased, so help and any future palette list it for free.</summary>
+    [Fact]
+    public void McpIsInTheCommandTable()
+    {
+        var mcp = Assert.Single(SessionCommands.All.Where(c => c.Name == "/mcp"));
+        Assert.False(string.IsNullOrWhiteSpace(mcp.Summary));
+    }
+
+    private static CxAgent.Core.Mcp.McpServerStatus Server(string name, bool enabled = true,
+        int tools = 2, string? error = null) => new(name, enabled, tools, error);
+
+    /// <summary>
+    /// It reports each server's state and tool count — AND the error when one failed, which is the
+    /// whole reason to have the command rather than reading the panel. A panel row is 24 columns and
+    /// cannot carry "npx: command not found".
+    /// </summary>
+    [Fact]
+    public void Mcp_ReportsEachServersStateAndError()
+    {
+        var text = SessionCommands.DescribeMcp([
+            Server("context7", tools: 2),
+            Server("broken", tools: 0, error: "npx: command not found"),
+        ]);
+
+        Assert.Contains("context7", text, StringComparison.Ordinal);
+        Assert.Contains("2 tools", text, StringComparison.Ordinal);
+        Assert.Contains("broken", text, StringComparison.Ordinal);
+        Assert.Contains("npx: command not found", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A disabled server is reported as disabled rather than omitted. Unlike the panel,
+    /// this command is what someone runs BECAUSE a tool is missing — "it is switched off" is the
+    /// answer they came for, and omitting it sends them to read config for no reason.</summary>
+    [Fact]
+    public void Mcp_ReportsADisabledServerAsDisabled()
+    {
+        var text = SessionCommands.DescribeMcp([Server("off", enabled: false, tools: 0)]);
+
+        Assert.Contains("off", text, StringComparison.Ordinal);
+        Assert.Contains("disabled", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>With nothing configured it says so and points at Settings, rather than printing an
+    /// empty list that reads like a bug.</summary>
+    [Fact]
+    public void Mcp_WithNoServers_SaysHowToAddOne()
+    {
+        var text = SessionCommands.DescribeMcp([]);
+
+        Assert.Contains("no mcp servers", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("settings", text, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -242,6 +242,10 @@ public static class AppBootstrap
                 permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
         }
 
+        // The panel shows what is live, including servers that failed — set once, since the fleet is
+        // owned by the session and does not change with an F5 re-wire.
+        mainWindow.SetMcpServers(McpStatuses(resolution.McpServers, mcpServers));
+
         WireRunner(resolution);   // startup path, unchanged in effect
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
@@ -325,7 +329,14 @@ public static class AppBootstrap
                         return;
 
                     case CommandOutcome.NeedsWindow:
-                        mainWindow.ShowHelp();
+                        // Two commands share this outcome now, so dispatch on the name. Both need
+                        // something SessionCommands deliberately does not hold — the window for
+                        // /help, the live servers for /mcp.
+                        if (command.Name == "/mcp")
+                            permissionSink.ShowSystemMessage(
+                                SessionCommands.DescribeMcp(McpStatuses(resolution.McpServers, mcpServers)));
+                        else
+                            mainWindow.ShowHelp();
                         return;
 
                     case CommandOutcome.NeedsProvider:
@@ -650,6 +661,37 @@ public static class AppBootstrap
             catch (Exception) { /* it is going away regardless */ }
 
         return code;
+    }
+
+    /// <summary>
+    /// Pairs what was CONFIGURED with what actually came up.
+    ///
+    /// <para>Both halves are needed and neither alone is enough: the live clients know their tool
+    /// counts and errors but a server that failed to spawn was disposed and is not among them, while
+    /// config knows every server that should exist but nothing about whether it does. Walking the
+    /// configured list and looking each one up is what lets a missing server be reported as failed
+    /// rather than silently vanish.</para>
+    /// </summary>
+    private static IReadOnlyList<Core.Mcp.McpServerStatus> McpStatuses(
+        IReadOnlyDictionary<string, Core.Llm.McpServerConfig> configured,
+        IReadOnlyList<Core.Mcp.McpClient> live)
+    {
+        var list = new List<Core.Mcp.McpServerStatus>();
+        foreach (var (name, cfg) in configured)
+        {
+            var client = live.FirstOrDefault(c => c.Name == name);
+            list.Add(new Core.Mcp.McpServerStatus(
+                name,
+                cfg.Enabled,
+                client?.Tools.Count ?? 0,
+                // A configured, enabled server that is not among the live ones did not survive
+                // startup. Its own error text went with it when it was disposed, so say the honest
+                // general thing rather than inventing a specific one.
+                !cfg.Enabled ? null
+                    : client is null ? "did not start (see the messages above)"
+                    : client.Error));
+        }
+        return list;
     }
 
     /// <summary>

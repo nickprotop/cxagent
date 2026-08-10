@@ -132,8 +132,13 @@ public static class SystemPrompt
         // a command the app handles rather than answered as prose.
         sb.AppendLine("# The user's commands");
         sb.AppendLine();
+        // /mcp is listed unconditionally, like the rest: it is a real command for every user
+        // whether or not they have servers, and it is the answer to "a tool I expected is missing" —
+        // which the model is the first to notice. Naming it only when servers exist would hide it in
+        // exactly the case where the user has configured one that failed to start.
         sb.AppendLine("The app handles these itself, before you see anything: /help, /clear, "
-                    + "/compress (summarise the conversation to free room), /exit. You cannot run "
+                    + "/compress (summarise the conversation to free room), "
+                    + "/mcp (list MCP servers and why any failed), /exit. You cannot run "
                     + "them — mention one only to suggest it.");
         sb.AppendLine();
 

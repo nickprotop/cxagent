@@ -75,4 +75,68 @@ public class SessionPanelTests
         Assert.Contains("4,441", panel.RenderedText, StringComparison.Ordinal);
         Assert.DoesNotContain("%", panel.RenderedText, StringComparison.Ordinal);
     }
+
+    // ---- MCP servers ---------------------------------------------------------------------------
+
+    private static CxAgent.Core.Mcp.McpServerStatus Server(string name, bool enabled = true,
+        int tools = 2, string? error = null) => new(name, enabled, tools, error);
+
+    /// <summary>Connected servers are named with their tool count — the count is what tells the user
+    /// the server actually handshook rather than merely started.</summary>
+    [Fact]
+    public void Refresh_NamesEachConnectedServer_AndItsToolCount()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            mcpServers: [Server("context7", tools: 2)]);
+
+        Assert.Contains("context7", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("2 tools", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A server that FAILED is shown, not hidden. Hiding it is indistinguishable from not having
+    /// configured it, and the user configured it — silence is the one outcome that gives them
+    /// nothing to act on.
+    /// </summary>
+    [Fact]
+    public void Refresh_ShowsAFailedServer_RatherThanOmittingIt()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            mcpServers: [Server("broken", tools: 0, error: "npx: command not found")]);
+
+        Assert.Contains("broken", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("failed", panel.RenderedText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A DISABLED server is absent. It is off on purpose; a line saying so every session is
+    /// noise about a decision already made.</summary>
+    [Fact]
+    public void Refresh_OmitsADisabledServer()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            mcpServers: [Server("off", enabled: false, tools: 0)]);
+
+        Assert.DoesNotContain("off", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NO SERVERS, NO SECTION. The common case is no MCP configured at all, and a heading over an
+    /// empty list costs two lines of a panel measured in lines — the same rule the session-id guard
+    /// already follows.
+    /// </summary>
+    [Fact]
+    public void Refresh_OmitsTheSectionEntirely_WhenNoServersAreConfigured()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0);
+
+        Assert.DoesNotContain("MCP", panel.RenderedText, StringComparison.OrdinalIgnoreCase);
+    }
 }

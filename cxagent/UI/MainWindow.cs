@@ -264,6 +264,16 @@ public sealed class MainWindow : IDisposable
         RefreshSessionPanel();
     }
 
+    /// <summary>The MCP servers this session configured, for the panel. Set by AppBootstrap, which
+    /// owns them — the same pattern as the permission-rule count above.</summary>
+    private IReadOnlyList<Core.Mcp.McpServerStatus> _mcpServers = [];
+
+    public void SetMcpServers(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
+    {
+        _mcpServers = servers;
+        RefreshSessionPanel();
+    }
+
     /// <summary>Whichever control currently occupies the composer's grid cell in place of
     /// <see cref="Input"/> — null when the composer itself is there. Tracked so a second
     /// ShowPermissionPrompt (a caller bug in Task 4's serialisation) can no-op instead of crashing
@@ -850,7 +860,8 @@ public sealed class MainWindow : IDisposable
             _resolution.Orchestrator?.GoalTokenBudget,
             _lastInput,
             _lastOutput,
-            SessionId);
+            SessionId,
+            _mcpServers);
     }
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>

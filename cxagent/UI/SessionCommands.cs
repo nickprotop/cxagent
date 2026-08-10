@@ -26,6 +26,10 @@ public static class SessionCommands
     [
         new("/clear", "wipe the conversation", CommandOutcome.Handled),
         new("/compress", "summarise the conversation to free up room", CommandOutcome.NeedsProvider),
+        // NeedsWindow, not Handled: the live server state belongs to the session, and this type
+        // deliberately holds nothing but the conversation. The caller has the servers and formats
+        // them through DescribeMcp below.
+        new("/mcp", "show MCP servers and why any failed", CommandOutcome.NeedsWindow),
         new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
         new("/exit", "quit cxagent", CommandOutcome.Quit),
     ];
@@ -112,6 +116,36 @@ public static class SessionCommands
                 reply = "";
                 return true;
         }
+    }
+
+    /// <summary>
+    /// The reply for <c>/mcp</c>: every configured server, its state, and the ERROR when it failed.
+    ///
+    /// <para>THE ERROR IS THE POINT. The session panel is ~24 columns and can only say a server
+    /// failed; this is the surface that says "npx: command not found" — the difference between a
+    /// user who fixes it in ten seconds and one who assumes the feature is broken.</para>
+    ///
+    /// <para>A DISABLED server is listed here, unlike in the panel. This is what someone runs
+    /// BECAUSE a tool they expected is missing, so "it is switched off" is the answer they came
+    /// for; omitting it sends them to read config for nothing.</para>
+    /// </summary>
+    public static string DescribeMcp(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
+    {
+        if (servers.Count == 0)
+            return "No MCP servers configured. Add one in Settings (F5), or in the \"mcp\" block of "
+                 + "config.json.";
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var server in servers)
+        {
+            sb.Append(server.Name).Append(" — ");
+            if (!server.Enabled) sb.Append("disabled");
+            else if (server.Error is { } error) sb.Append("failed: ").Append(error);
+            else if (server.ToolCount == 0) sb.Append("connected, but offers no tools");
+            else sb.Append(server.ToolCount).Append(server.ToolCount == 1 ? " tool" : " tools");
+            sb.Append('\n');
+        }
+        return sb.ToString().TrimEnd('\n');
     }
 
     /// <summary>The command list as help text, one indented line each.</summary>
