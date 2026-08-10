@@ -35,17 +35,20 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D17 | **The spawn branch never throws** (except cancellation). An exception mid-`foreach` orphans tool calls in the parent's context and poisons every later turn. | §5.1b |
 | D18a | **`/compress` is DECLINED while a turn is running**, not queued: it measures and rewrites a context that is actively changing, so running it later is a different operation and running it now corrupts the list. Not sub-agent-specific — a parent doing three tool calls is exposed today. | §5.0d |
 | D18 | **Submitting during a turn QUEUES and APPENDS.** Several messages join newline-separated into one prompt at turn end; Escape stops the turn and moves the queue into the composer, above any text already there. Interrupt-and-rerun is deferred to when agents run in the background. | §5.1h |
+| D20 | **`SendAsync` returns `SendResult { Text, Outcome }`** — `Completed \| Capped \| Stuck \| Failed \| Cancelled`. Three return sites; only four of ~73 call sites read the string. `state` must not rest on matching an error message's wording. | §5.1c |
+| D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
+| D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
+| D22 | **Nothing of the child renders live except its row.** Its reasoning and answer stay in the buffer until expanded. A five-minute child shows one line of numbers — chosen, not discovered. | §5.1e |
 | D19 | **The spawn tool's `PluginType` is `llm_agent`**, a type the UI already understands at five sites — Worker author, no collapse on completion, stays expanded, own status, no output placeholdering. It was built for exactly this and is currently unused. | §5.1e-i |
 | D11 | **Telemetry is in step 1**, not later — a child that reports nothing is a frozen row, and retrofitting it means revisiting the factory, the row and the panel. `Agent` already exposes `Id`, `Context` and four callbacks; `Job.ProgressMessage` already renders; `SessionPanel` already takes optional sections. Missing: elapsed time (a periodic tick), and the waiting state (step 3). | §2, §5 |
 | D12 | **No general hook system.** A hook that can block IS the permission gate; one that cannot is telemetry, which the callbacks already give. Add named seams if a need appears. | §2 |
 
-### Open — and these block work
+### Open — none of these block step 0 or step 1
 
 | # | Question | Blocks |
 |---|---|---|
 | Q3 | Where does per-call requester identity come from? BOTH request-construction sites lack it — `IJobContext` hides the agent id, and the shared `McpToolset` never receives one. | Permission attribution (step 4) |
 | Q4 | Does a sub-agent get its own working directory? It cannot today — cwd is process-global. | A worker in a worktree |
-| Q5 | Is spawning itself permission-gated? opencode asks before spawning; we have not considered it. | §4 |
 | Q6 | Shared-policy semantics: one worker's "Always" instantly widens policy for all of them. Deliberate or not? | Step 6 |
 
 ### Corrected after review — claims this document previously made and got wrong
@@ -643,14 +646,16 @@ must hand it over. Worse, the counter reads exactly `maxTurns` both when the cap
 finishes naturally on its last turn, so `count >= maxTurns` gives a false `capped`. The salvage turn
 does not raise `TurnCompleted` either.
 
-So the honest options are:
-- `count == maxTurns` **AND** the buffered sink saw `"stopped after "` — two conditions, one of them a
-  string match, or
-- **`Agent.SendResult { Text, Outcome }`** — a three-site change (the three `return`s) that removes
-  both string matches and the counting entirely.
+**DECIDED: `Agent.SendAsync` returns `SendResult { string Text, SendOutcome Outcome }`.** `state` is
+the one field the parent's model acts on, and it must not rest on matching the wording of a
+human-facing error message.
 
-**Take the second.** It is smaller than the accounting needed to make the first correct, and `state`
-is the one field the parent's model acts on.
+Cost, measured rather than guessed: three `return` sites (`Agent.cs:390`, `:576`, `:667`), and of ~73
+call sites only **four** actually read the returned string — the rest await and discard. So the churn
+is small and mechanical.
+
+`SendOutcome`: `Completed | Capped | Stuck | Failed | Cancelled`. The kernel knows all five at the
+point it returns; nothing downstream has to infer them.
 
 What must NOT happen is shipping `completed` for a run that hit its cap — the parent then acts on a
 salvage summary as though it were a finished answer, which is exactly what D13 exists to prevent.
@@ -660,11 +665,11 @@ salvage summary as though it were a finished answer, which is exactly what D13 e
 | Wire | Value | If omitted |
 |---|---|---|
 | provider | the parent's | — |
-| plugins, `mcp` | the parent's (explicit yes for MCP) | child silently loses tools the parent has |
+| plugins, `mcp` | the parent's — **MCP yes, decided** | a search-type child that cannot reach the docs server is crippled for the obvious use case. It is also the first thing that makes step 3's shared-state audit non-optional: `McpClient.WriteAsync` is unlocked, which is fine while sequential and not after |
 | ledger | **the parent's shared one** (D7) | spend and the breach warning are lost |
 | `IChatSink` **and** `IJobPanel` | buffered, both | child rows leak into the parent's transcript (§3.3) |
 | `logs` | yes | no child log directory — the only "inspectable afterwards" surface step 1 has |
-| `maxTurns` | anything; **0 now means unbounded** | FIXED IN THE AGENT rather than left as a factory rule: `_maxTurns = maxTurns <= 0 ? int.MaxValue : maxTurns`. It used to fire the cap on iteration ZERO, making a real paid provider call and returning a plausible summary of a run that never happened. A factory constructing an `Agent` directly would have inherited the trap. |
+| `maxTurns` | **inherit the parent's ceiling** (500 today); 0 now means unbounded | FIXED IN THE AGENT rather than left as a factory rule: `_maxTurns = maxTurns <= 0 ? int.MaxValue : maxTurns`. It used to fire the cap on iteration ZERO, making a real paid provider call and returning a plausible summary of a run that never happened. **Inherited rather than given a smaller number of its own**: a figure invented here is the same mistake as the old `MaxWorkerTurns: 10`, which capped mid-work and returned a salvage summary the caller read as an answer. |
 | `compressAbove` | `_orchestrator.EffectiveCompressThreshold(_contextWindow) ?? OrchestratorSettings.DefaultCompressThreshold` (`AgentHost.cs:356`) — **the constant, never the literal 40000**, or it desynchronises | never compacts |
 | context | `new AgentContext(contextWindow)` — `Window` is get-only, so it goes in at construction | no occupancy, `IsUnderPressure` always false, never compacts |
 | `globalInstructionsDir` | yes | user-level CXAGENT.md ignored |
@@ -737,6 +742,11 @@ lines, no side effects, and `UpdateJob` stays for real transitions.
 
 The tick is owned by the spawn branch and disposed in its `finally` — `MainWindow._panelClock` cannot
 be borrowed, it refreshes nothing when the panel is hidden.
+
+**Nothing else of the child renders live.** Its reasoning and its answer stay in the buffer until
+someone expands the row (step 3's swap). Interleaving a child's stream into the parent's transcript is
+what makes fan-out illegible, and the row plus the tick is what stops it looking frozen. The
+consequence, chosen rather than discovered: **a five-minute child shows one line of numbers.**
 
 The row is the primary surface. **The right-panel section is demoted to "if cheap after the row
 works"** — it needs a status record, a `Refresh` signature change, a `MainWindow` setter and a channel
@@ -854,10 +864,10 @@ hazards §1g identified all disappear rather than being handled.
 - the result is the envelope `{ id, state, text }` (D13), with the child's `Agent.Id`
 - the child's id **addresses its row** (D14) — a closure over `job` and `_jobs` inside
   `InvokeAndShowAsync`, which is the only place both exist
-- the (childId → agent, buffer, job) record needs a **session-lived owner**, and an **eviction rule**.
-  A registry with no removal is the wrong first brick — a cancelled or errored child would hold its
-  whole context for the session's life. For step 1 the answer may be "never, there is one child", but
-  it has to be stated
+- the (childId → agent, buffer, job) record has a **session-lived owner** and, **decided, NO eviction
+  in step 1**: entries live for the session. Inspection after the fact is a stated done-when, and one
+  child's context is nothing. Stated as a decision rather than left as an omission, because a registry
+  with no removal RULE is the wrong first brick for background — where eviction becomes real.
 - "inspectable afterwards" means **the child's log directory**; the buffer is retained for step 3's
   transcript swap
 - **the four callbacks are now EVENTS** (`Agent.cs:122-140`). They were settable `Action<T>`
