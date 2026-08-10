@@ -97,6 +97,19 @@ public static class ProviderConfigWriter
                 // Null-means-use-the-default, so omit rather than write a number nobody chose.
                 if (cfg.TimeoutMs is { } ms) o["timeoutMs"] = ms; else o.Remove("timeoutMs");
 
+                // Same rule for env and cwd: absent means "inherit ours", which an empty object or
+                // an empty string would NOT mean.
+                if (cfg.Environment is { Count: > 0 })
+                {
+                    var env = new JsonObject();
+                    foreach (var (k, v) in cfg.Environment) env[k] = v;
+                    o["env"] = env;
+                }
+                else o.Remove("env");
+
+                if (!string.IsNullOrWhiteSpace(cfg.WorkingDirectory)) o["cwd"] = cfg.WorkingDirectory;
+                else o.Remove("cwd");
+
                 mcp[name] = o;
             }
 

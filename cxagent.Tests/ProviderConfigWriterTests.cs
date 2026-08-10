@@ -212,10 +212,13 @@ public class ProviderConfigWriterTests : IDisposable
     [Fact]
     public void Write_PreservesUnknownPerServerKeys()
     {
+        // "env" was this test's stand-in for an unmodelled key until env became a real option, at
+        // which point the writer rightly started owning it. Use a key we genuinely do not model, or
+        // the test asserts the opposite of what it means.
         File.WriteAllText(ConfigPath, """
         {
           "providers": {},
-          "mcp": { "context7": { "command": ["old"], "env": { "TOKEN": "abc" } } }
+          "mcp": { "context7": { "command": ["old"], "someFutureKnob": { "depth": 3 } } }
         }
         """);
 
@@ -231,8 +234,32 @@ public class ProviderConfigWriterTests : IDisposable
 
         var root = JsonNode.Parse(File.ReadAllText(ConfigPath))!.AsObject();
         var server = root["mcp"]!["context7"]!.AsObject();
-        Assert.Equal("abc", server["env"]!["TOKEN"]!.GetValue<string>());
+        Assert.Equal(3, server["someFutureKnob"]!["depth"]!.GetValue<int>());
         Assert.Equal("npx", server["command"]![0]!.GetValue<string>());   // and ours won on the key we own
+    }
+
+    /// <summary>Environment and working directory survive a save — they are how a server gets its
+    /// credentials and finds the right tree, so losing them on an unrelated Settings save would break
+    /// a working server silently.</summary>
+    [Fact]
+    public void Write_ThenLoad_RoundTripsEnvironmentAndWorkingDirectory()
+    {
+        var s = Settings(("claude", new ProviderInstanceConfig("anthropic", "m", "k", null, null)))
+            with
+            {
+                McpServers = new Dictionary<string, McpServerConfig>
+                {
+                    ["context7"] = new(["npx", "-y", "@upstash/context7-mcp"], true, null,
+                        Environment: new Dictionary<string, string> { ["CONTEXT7_API_KEY"] = "secret" },
+                        WorkingDirectory: "/srv/project"),
+                },
+            };
+
+        ProviderConfigWriter.Write(Paths(), s);
+        var loaded = ProviderConfigLoader.LoadAndValidate(Paths(), new Dictionary<string, string>());
+
+        Assert.Equal("secret", loaded.McpServers["context7"].Environment!["CONTEXT7_API_KEY"]);
+        Assert.Equal("/srv/project", loaded.McpServers["context7"].WorkingDirectory);
     }
 
     /// <summary>A server removed in Settings is gone from the file, not resurrected by the merge.</summary>

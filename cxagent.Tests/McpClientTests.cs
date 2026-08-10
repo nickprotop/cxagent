@@ -36,7 +36,8 @@ public class McpClientTests : IDisposable
     /// transports do.
     /// </summary>
     private string[] Server(string toolsJson, string callResultJson, string? instructions = null,
-        bool exitAfterInitialize = false, bool neverAnswerCalls = false)
+        bool exitAfterInitialize = false, bool neverAnswerCalls = false,
+        string? reportEnv = null, bool reportCwd = false)
     {
         var path = Path.Combine(Path.GetTempPath(), "mcpsrv-" + Guid.NewGuid().ToString("N") + ".py");
         _scripts.Add(path);
@@ -47,8 +48,14 @@ public class McpClientTests : IDisposable
         // dense with braces — `{"tools": {}}` — and every raw-string interpolation form ends up
         // fighting them: doubling for the holes breaks the JSON, and not doubling breaks the C#.
         const string template = """
-            import sys, json
+            import sys, json, os
             TOOLS = json.loads(r'''@@TOOLS@@''')
+            # Reported back through the protocol so the assertion fails on a WRONG value, not just on
+            # a dead process.
+            REPORT = @@REPORT@@
+            if REPORT is not None:
+                for t in TOOLS:
+                    t["description"] = t["description"].replace("@@VALUE@@", REPORT)
             CALL = json.loads(r'''@@CALL@@''')
             INSTRUCTIONS = @@INSTR@@
             for line in sys.stdin:
@@ -84,10 +91,32 @@ public class McpClientTests : IDisposable
             .Replace("@@CALL@@", callResultJson.Trim())
             .Replace("@@INSTR@@", instr)
             .Replace("@@EXIT@@", exitAfterInitialize ? "True" : "False")
-            .Replace("@@HANG@@", neverAnswerCalls ? "True" : "False"));
+            .Replace("@@HANG@@", neverAnswerCalls ? "True" : "False")
+            .Replace("@@REPORT@@",
+                reportCwd ? "os.getcwd()"
+                : reportEnv is not null ? $"os.environ.get({JsonSerializer.Serialize(reportEnv)}, \"\")"
+                : "None"));
 
         return ["python3", path];
     }
+
+    /// <summary>
+    /// A server that reports an environment variable back as its tool DESCRIPTION.
+    ///
+    /// <para>Reporting it through the protocol rather than, say, exiting non-zero means the assertion
+    /// fails if the value is missing OR wrong — not merely if the process died, which a dozen
+    /// unrelated faults would also cause.</para>
+    /// </summary>
+    private string[] EnvReportingServer(string variable = "MY_SECRET") =>
+        Server("""
+            [{"name": "report", "description": "@@VALUE@@", "inputSchema": {"type": "object"}}]
+            """, TextResult, reportEnv: variable);
+
+    /// <summary>The same trick for the working directory.</summary>
+    private string[] CwdReportingServer() =>
+        Server("""
+            [{"name": "report", "description": "@@VALUE@@", "inputSchema": {"type": "object"}}]
+            """, TextResult, reportCwd: true);
 
     private const string OneTool = """
         [{"name": "echo", "description": "Echoes what it is given.",
@@ -215,6 +244,75 @@ public class McpClientTests : IDisposable
         var result = await client.CallToolAsync("echo", Args(new { text = "x" }), CancellationToken.None);
 
         Assert.Contains("users", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A SERVER'S OWN ENVIRONMENT REACHES IT. This is the spec's prescribed credential channel for
+    /// stdio — <i>"retrieve credentials from the environment"</i> — so a config option that never
+    /// arrives at the child would be worse than none: it would look like the key was supplied.
+    ///
+    /// <para>Proved by having the server report the variable back as its tool description, which
+    /// means the assertion fails if the value is missing OR wrong, rather than merely if the process
+    /// died.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_PassesTheConfiguredEnvironmentToTheServer()
+    {
+        if (!HavePython) return;
+
+        await using var client = new McpClient("scripted", EnvReportingServer(),
+            environment: new Dictionary<string, string> { ["MY_SECRET"] = "hunter2" });
+        await client.StartAsync(CancellationToken.None);
+
+        var only = Assert.Single(await client.ListToolsAsync(CancellationToken.None));
+        Assert.Equal("hunter2", only.Description);
+    }
+
+    /// <summary>The child still INHERITS our environment; the configured block is an overlay, not a
+    /// replacement. Wiping it would break servers relying on PATH, HOME or a proxy variable.</summary>
+    [Fact]
+    public async Task StartAsync_StillInheritsTheParentEnvironment()
+    {
+        if (!HavePython) return;
+
+        Environment.SetEnvironmentVariable("CXAGENT_TEST_INHERITED", "yes");
+        try
+        {
+            await using var client = new McpClient("scripted",
+                EnvReportingServer("CXAGENT_TEST_INHERITED"),
+                environment: new Dictionary<string, string> { ["OTHER"] = "x" });
+            await client.StartAsync(CancellationToken.None);
+
+            var only = Assert.Single(await client.ListToolsAsync(CancellationToken.None));
+            Assert.Equal("yes", only.Description);
+        }
+        finally { Environment.SetEnvironmentVariable("CXAGENT_TEST_INHERITED", null); }
+    }
+
+    /// <summary>
+    /// The server starts in its configured directory. Servers that take a path argument resolve it
+    /// relative to their cwd, so one launched from wherever cxagent happened to start reads a
+    /// different tree than the user meant.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_StartsTheServerInItsConfiguredDirectory()
+    {
+        if (!HavePython) return;
+
+        var dir = Path.Combine(Path.GetTempPath(), "mcp-cwd-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await using var client = new McpClient("scripted", CwdReportingServer(), workingDirectory: dir);
+            await client.StartAsync(CancellationToken.None);
+
+            var only = Assert.Single(await client.ListToolsAsync(CancellationToken.None));
+
+            // Resolved on both sides: macOS hands out /var paths that resolve to /private/var.
+            Assert.Equal(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar),
+                         Path.GetFullPath(only.Description).TrimEnd(Path.DirectorySeparatorChar));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }
 
     /// <summary>A command that does not exist is a dead server, not a crash.</summary>

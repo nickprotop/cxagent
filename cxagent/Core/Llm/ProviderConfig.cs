@@ -112,7 +112,34 @@ public record OrchestratorSettings(
 /// <para><paramref name="TimeoutMs"/> is null-means-use-the-default rather than a number invented
 /// here, so <see cref="Mcp.McpClient"/> keeps ownership of what that default is.</para>
 /// </summary>
-public record McpServerConfig(IReadOnlyList<string> Command, bool Enabled = true, int? TimeoutMs = null);
+/// <param name="Command">
+/// argv, NOT a shell line. <c>["npx", "-y", "pkg"]</c> — first element the executable, the rest
+/// arguments passed through untouched. A single string would have to be split by us, and every
+/// splitter either mishandles quoting or invites a shell, which turns a config file into a
+/// code-execution seam.
+/// </param>
+/// <param name="Environment">
+/// Variables for the child, merged OVER what it inherits from us.
+///
+/// <para>THE SPEC'S PRESCRIBED CREDENTIAL CHANNEL for stdio: <i>"Implementations using an STDIO
+/// transport SHOULD NOT follow this specification, and instead retrieve credentials from the
+/// environment."</i> A child already inherits our environment, so an exported variable reaches it —
+/// but that is process-wide, and two servers needing different values for the same name cannot both
+/// be served by it. This is the per-server override.</para>
+/// </param>
+/// <param name="WorkingDirectory">
+/// Where to start the server, or null to inherit ours.
+///
+/// <para>Servers that take a path argument resolve it relative to their cwd, so one launched from
+/// wherever cxagent happened to start reads a different tree than the user meant. Relative values
+/// resolve against the project directory, matching opencode (<c>mcp/index.ts:346</c>).</para>
+/// </param>
+public record McpServerConfig(
+    IReadOnlyList<string> Command,
+    bool Enabled = true,
+    int? TimeoutMs = null,
+    IReadOnlyDictionary<string, string>? Environment = null,
+    string? WorkingDirectory = null);
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -295,7 +322,25 @@ public static class ProviderConfigLoader
                     int? timeoutMs = entry.Value.TryGetProperty("timeoutMs", out var tm)
                                   && tm.ValueKind == JsonValueKind.Number ? tm.GetInt32() : null;
 
-                    mcpServers[entry.Name] = new McpServerConfig(command, enabled, timeoutMs);
+                    // Null, not an empty dictionary, when absent: "inherit ours" must stay
+                    // distinguishable from "start with nothing".
+                    Dictionary<string, string>? environment = null;
+                    if (entry.Value.TryGetProperty("env", out var envBlock)
+                        && envBlock.ValueKind == JsonValueKind.Object)
+                    {
+                        environment = new Dictionary<string, string>(StringComparer.Ordinal);
+                        foreach (var v in envBlock.EnumerateObject())
+                            if (v.Value.ValueKind == JsonValueKind.String)
+                                environment[v.Name] = v.Value.GetString() ?? "";
+                    }
+
+                    var cwd = entry.Value.TryGetProperty("cwd", out var wd)
+                           && wd.ValueKind == JsonValueKind.String
+                           && !string.IsNullOrWhiteSpace(wd.GetString())
+                        ? wd.GetString() : null;
+
+                    mcpServers[entry.Name] =
+                        new McpServerConfig(command, enabled, timeoutMs, environment, cwd);
                 }
 
             if (errors.Count > 0)

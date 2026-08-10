@@ -66,11 +66,23 @@ public sealed class McpClient : IMcpServer, IAsyncDisposable
     /// server that failed with "npx: command not found" is one they can fix in a second.</summary>
     public string? Error { get; private set; }
 
-    public McpClient(string name, string[] command, TimeSpan? timeout = null)
+    private readonly IReadOnlyDictionary<string, string>? _environment;
+    private readonly string? _workingDirectory;
+
+    /// <param name="environment">
+    /// Variables for the child, merged OVER what it inherits. This is the spec's prescribed
+    /// credential channel for stdio: <i>"Implementations using an STDIO transport SHOULD NOT follow
+    /// this specification, and instead retrieve credentials from the environment."</i>
+    /// </param>
+    /// <param name="workingDirectory">Where to start it, or null to inherit ours.</param>
+    public McpClient(string name, string[] command, TimeSpan? timeout = null,
+        IReadOnlyDictionary<string, string>? environment = null, string? workingDirectory = null)
     {
         _name = name;
         _command = command;
         _timeout = timeout ?? TimeSpan.FromSeconds(30);
+        _environment = environment;
+        _workingDirectory = workingDirectory;
     }
 
     /// <summary>
@@ -96,6 +108,19 @@ public sealed class McpClient : IMcpServer, IAsyncDisposable
                 UseShellExecute = false,
             };
             foreach (var arg in _command.Skip(1)) psi.ArgumentList.Add(arg);
+
+            // MERGED OVER THE INHERITED ENVIRONMENT, not replacing it. ProcessStartInfo seeds
+            // psi.Environment from ours, so assigning only adds and overrides — which is what a
+            // server needs: wiping it would take PATH, HOME and any proxy variable with it, and most
+            // servers would simply fail to launch.
+            if (_environment is not null)
+                foreach (var (key, value) in _environment)
+                    psi.Environment[key] = value;
+
+            // Servers that take a path argument resolve it against their cwd, so one started from
+            // wherever cxagent happened to launch reads a different tree than the user meant.
+            if (!string.IsNullOrWhiteSpace(_workingDirectory))
+                psi.WorkingDirectory = _workingDirectory;
 
             _process = Process.Start(psi);
             if (_process is null)

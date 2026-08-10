@@ -290,6 +290,60 @@ public class ProviderConfigTests : IDisposable
         Assert.Equal(60_000, s.McpServers["sqlite"].TimeoutMs);
     }
 
+    /// <summary>
+    /// A server can be given its own environment and working directory.
+    ///
+    /// <para><c>env</c> is the spec's prescribed credential channel for stdio — <i>"retrieve
+    /// credentials from the environment"</i>. A child already inherits ours, but that is
+    /// process-wide: two servers needing different values for the same variable cannot both be served
+    /// by an export, and a key meant for one server should not be visible to all of them.</para>
+    ///
+    /// <para><c>cwd</c> matters because servers that take a path argument resolve it relative to
+    /// where they were started — from the wrong directory a filesystem server reads the wrong
+    /// tree.</para>
+    /// </summary>
+    [Fact]
+    public void Load_ReadsPerServerEnvironmentAndWorkingDirectory()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "context7": {
+              "command": ["npx", "-y", "@upstash/context7-mcp"],
+              "env": { "CONTEXT7_API_KEY": "secret" },
+              "cwd": "/srv/project"
+            }
+          }
+        }
+        """);
+
+        var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["context7"];
+
+        Assert.Equal("secret", server.Environment!["CONTEXT7_API_KEY"]);
+        Assert.Equal("/srv/project", server.WorkingDirectory);
+    }
+
+    /// <summary>Both are optional, and absent means null rather than an empty dictionary — "inherit
+    /// ours" has to stay distinguishable from "start with nothing".</summary>
+    [Fact]
+    public void Load_WithNoEnvOrCwd_LeavesThemNull()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": { "plain": { "command": ["x"] } }
+        }
+        """);
+
+        var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["plain"];
+
+        Assert.Null(server.Environment);
+        Assert.Null(server.WorkingDirectory);
+    }
+
     /// <summary>The common case — no mcp block at all — is not an error and not a null.</summary>
     [Fact]
     public void Load_WithNoMcpBlock_YieldsNoServers()
