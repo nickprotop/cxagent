@@ -904,6 +904,99 @@ and each has a named failure without it.
 D9's schema), how many to run at once (step 1 is one), and anything naming the tool — the model reads
 its own tool list, and a prompt that names a tool goes stale when the tool is renamed.
 
+### THE THREE TEXTS, VERBATIM — phase 1, no roles
+
+The decisions above say what each must carry. This is the text itself, so implementation is
+transcription rather than re-derivation. **One child type in phase 1. Roles come later** (D5 already
+takes a type name, so a per-role prompt is a lookup where this constant sits, not a redesign).
+
+---
+
+**1. THE PARENT'S SYSTEM PROMPT — three lines, appended into existing sections (D26).**
+
+Into `# Doing the work`, after the "Do not commit" line:
+
+> You are accountable for a sub-agent's work as if it were your own. If its report is thin or does
+> not answer what you asked, say so or check it yourself — do not pass it on as fact.
+
+Into `# Verifying`, after the three exit-0 bullets:
+
+> A sub-agent's report is a claim, not a verification. If it says the build passes, the build is not
+> verified until you have seen the output yourself.
+
+Into `# Answering`, after the "Talk to the user in your reply" line:
+
+> The user cannot see a sub-agent's work. Anything from one that they need is only in your reply.
+
+Nothing else. No heading, no tool name, no when-to-spawn (D25).
+
+---
+
+**2. THE TOOL DESCRIPTION — where all spawn guidance lives (D25).**
+
+> Run a prompt in a separate agent that has its own context, and get back what it found.
+>
+> Use it when finding the answer would fill this conversation with material you do not need to keep —
+> searching a large codebase for where something is done, reading through many files to answer one
+> question, or any open-ended hunt whose intermediate steps are noise once it is over.
+>
+> Do NOT use it when you already know what to read. A known file, a known symbol, or anything that is
+> two or three tool calls away is faster and more reliable done yourself — a sub-agent starts with no
+> knowledge of this conversation, so a task you could finish now costs a full briefing and a full run.
+>
+> It cannot ask you anything. It runs once, with only what you write in the prompt, and returns one
+> message. Say in the prompt exactly what you want back, and what "done" means.
+>
+> Its work is NOT shown to the user — they see only a status row. Anything from its answer that they
+> need must appear in your reply.
+>
+> It cannot spawn sub-agents of its own.
+
+The last line is stated because the child genuinely cannot (below), and a model that assumes it can
+delegate onwards writes prompts that instruct the child to do so.
+
+---
+
+**3. THE SUB-AGENT'S SYSTEM PROMPT — one type, phase 1.**
+
+Same prompt as the parent (D24's mechanism: one init-only flag on `SystemPromptContext`) with two
+differences and nothing else:
+
+**DROP** `# The user's commands` in full. It names `/help`, `/clear`, `/compress`, `/mcp` and `/exit`
+to an agent with no user and no composer.
+
+**REPLACE** `# Answering` — its guidance is aimed at a human reading a terminal, and a child's reader
+is a model:
+
+> # Answering
+>
+> You are a sub-agent. Another agent gave you this task and is waiting for one message back.
+>
+> Your final message is the whole of what it receives — nothing else you do is visible to it. Put the
+> answer there, with the specifics: file paths as file_path:line_number, names, and what you actually
+> observed. A summary that omits where you looked cannot be checked or used.
+>
+> There is no follow-up. Nobody will answer a question, approve a plan, or ask you to continue — so do
+> not ask one, do not offer next steps, and do not close by describing what you could do instead.
+>
+> If you could not do what was asked, say that plainly and say how far you got. A partial answer
+> marked partial is useful; a confident answer that is not backed by what you saw is not.
+>
+> Be brief in the way a report is brief, not the way a chat message is. No preamble.
+
+**KEEP** everything else exactly: `<env>`, `# Doing the work`, `# Following conventions`,
+`# Verifying`, project instructions, MCP server instructions. All are as true for a child as for a
+parent — and `# Verifying` especially, since the child is the one actually running the commands.
+
+**The three lines from D26 are NOT added to a child's prompt.** A child cannot spawn, so all three
+are about a capability it does not have.
+
+**The child does not get the spawn tool** — the ONLY tool it is denied. D15 gets this structurally:
+`ISubAgentSpawner` is consulted before `WorkerToolset` for the parent only, so the child is never
+offered it rather than being offered it and refused.
+
+---
+
 **Cache cost, stated.** Fixed text, no runtime input: it costs prefix length once and never churns.
 **Appended UNCONDITIONALLY**, not gated on "has spawned" — for the same reason `/mcp` is listed for
 users with no servers (`SystemPrompt.cs:135-138`). Gating would remove the guidance from the exact
