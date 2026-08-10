@@ -90,9 +90,29 @@ public static class ProviderConfigWriter
                     ? prev.DeepClone().AsObject()
                     : new JsonObject();
 
-                var command = new JsonArray();
-                foreach (var part in cfg.Command) command.Add(part);
-                o["command"] = command;
+                // ONE TRANSPORT KEY, never both — the loader skips an entry carrying both, so
+                // writing both would produce a file this same writer's config cannot load back.
+                if (cfg.IsRemote)
+                {
+                    o["url"] = cfg.Url;
+                    o.Remove("command");
+                }
+                else
+                {
+                    var command = new JsonArray();
+                    foreach (var part in cfg.Command) command.Add(part);
+                    o["command"] = command;
+                    o.Remove("url");
+                }
+
+                if (cfg.Headers is { Count: > 0 })
+                {
+                    var headers = new JsonObject();
+                    foreach (var (k, v) in cfg.Headers) headers[k] = v;
+                    o["headers"] = headers;
+                }
+                else o.Remove("headers");
+
                 o["enabled"] = cfg.Enabled;
                 // Null-means-use-the-default, so omit rather than write a number nobody chose.
                 if (cfg.TimeoutMs is { } ms) o["timeoutMs"] = ms; else o.Remove("timeoutMs");

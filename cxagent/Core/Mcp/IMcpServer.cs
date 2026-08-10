@@ -35,3 +35,20 @@ public interface IMcpServer
     /// <summary>Runs one tool and returns its output as text for the model to read.</summary>
     Task<string> CallToolAsync(string tool, JsonElement arguments, CancellationToken ct);
 }
+
+/// <summary>
+/// A server that has to be brought up before it can be used, and taken down afterwards.
+///
+/// <para>Separate from <see cref="IMcpServer"/> because the two audiences differ:
+/// <see cref="McpToolset"/> only ever ASKS a server things and must not be able to start or stop
+/// one, while the launcher and the session own the lifetime. Splitting them is what stops a
+/// tool-dispatch path from accidentally killing a subprocess.</para>
+/// </summary>
+public interface IMcpConnection : IMcpServer, IAsyncDisposable
+{
+    /// <summary>Brings the server up and completes the handshake. False means it is not usable.</summary>
+    Task<bool> StartAsync(CancellationToken ct);
+
+    /// <summary>Asks the server what it offers, refreshing <see cref="IMcpServer.Tools"/>.</summary>
+    Task<IReadOnlyList<McpToolDef>> ListToolsAsync(CancellationToken ct);
+}

@@ -104,7 +104,7 @@ public static class AppBootstrap
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
-        IReadOnlyList<Core.Mcp.McpClient> mcpServers = [];
+        IReadOnlyList<Core.Mcp.IMcpConnection> mcpServers = [];
         Core.Mcp.McpToolset? mcpToolset = null;
 
         void WireRunner(ProviderResolution res)
@@ -674,7 +674,7 @@ public static class AppBootstrap
     /// </summary>
     private static IReadOnlyList<Core.Mcp.McpServerStatus> McpStatuses(
         IReadOnlyDictionary<string, Core.Llm.McpServerConfig> configured,
-        IReadOnlyList<Core.Mcp.McpClient> live)
+        IReadOnlyList<Core.Mcp.IMcpConnection> live)
     {
         var list = new List<Core.Mcp.McpServerStatus>();
         foreach (var (name, cfg) in configured)

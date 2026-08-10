@@ -284,4 +284,57 @@ public class ProviderConfigWriterTests : IDisposable
         Assert.False(mcp.ContainsKey("gone"));
         Assert.True(mcp.ContainsKey("kept"));
     }
+    /// <summary>
+    /// A remote server round-trips as a url with its headers, and NEVER also as a command — the
+    /// loader skips an entry carrying both, so writing both would produce a file this same writer's
+    /// config could not load back.
+    /// </summary>
+    [Fact]
+    public void Write_ThenLoad_RoundTripsARemoteServer()
+    {
+        var s = Settings(("claude", new ProviderInstanceConfig("anthropic", "m", "k", null, null)))
+            with
+            {
+                McpServers = new Dictionary<string, McpServerConfig>
+                {
+                    ["remote"] = new([], true, null, null, null,
+                        Url: "https://mcp.context7.com/mcp",
+                        Headers: new Dictionary<string, string> { ["Authorization"] = "Bearer abc" }),
+                },
+            };
+
+        ProviderConfigWriter.Write(Paths(), s);
+
+        var written = JsonNode.Parse(File.ReadAllText(ConfigPath))!["mcp"]!["remote"]!.AsObject();
+        Assert.False(written.ContainsKey("command"), "a remote server must not also be written as a command");
+
+        var loaded = ProviderConfigLoader.LoadAndValidate(Paths(), new Dictionary<string, string>());
+        Assert.Equal("https://mcp.context7.com/mcp", loaded.McpServers["remote"].Url);
+        Assert.Equal("Bearer abc", loaded.McpServers["remote"].Headers!["Authorization"]);
+        Assert.True(loaded.McpServers["remote"].IsRemote);
+    }
+
+    /// <summary>And a server switched from remote back to local loses its url, or the loader would
+    /// skip it as ambiguous on the next launch.</summary>
+    [Fact]
+    public void Write_ALocalServer_ClearsAnyPreviousUrl()
+    {
+        File.WriteAllText(ConfigPath, """
+        {
+          "providers": {},
+          "mcp": { "srv": { "url": "https://old.example/mcp" } }
+        }
+        """);
+
+        ProviderConfigWriter.Write(Paths(),
+            Settings(("claude", new ProviderInstanceConfig("anthropic", "m", "k", null, null)))
+                with
+                {
+                    McpServers = new Dictionary<string, McpServerConfig> { ["srv"] = new(["npx", "y"]) },
+                });
+
+        var written = JsonNode.Parse(File.ReadAllText(ConfigPath))!["mcp"]!["srv"]!.AsObject();
+        Assert.False(written.ContainsKey("url"));
+        Assert.Equal("npx", written["command"]![0]!.GetValue<string>());
+    }
 }

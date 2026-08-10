@@ -13,7 +13,7 @@ public static class McpLauncher
 {
     /// <summary>What came up, and what to tell the user about what did not.</summary>
     public sealed record Result(
-        IReadOnlyList<McpClient> Servers,
+        IReadOnlyList<IMcpConnection> Servers,
         IReadOnlyList<string> Messages);
 
     /// <summary>
@@ -30,7 +30,7 @@ public static class McpLauncher
     public static async Task<Result> StartAsync(
         IReadOnlyDictionary<string, McpServerConfig> configured, CancellationToken ct)
     {
-        var servers = new List<McpClient>();
+        var servers = new List<IMcpConnection>();
         var messages = new List<string>();
 
         // A disabled server is a deliberate off switch, not a failure: no attempt, and nothing said
@@ -41,12 +41,12 @@ public static class McpLauncher
         var started = await Task.WhenAll(enabled.Select(async kv =>
         {
             var (name, cfg) = (kv.Key, kv.Value);
-            var client = new McpClient(
-                name,
-                [.. cfg.Command],
-                cfg.TimeoutMs is { } ms ? TimeSpan.FromMilliseconds(ms) : null,
-                cfg.Environment,
-                cfg.WorkingDirectory);
+            // THE CONFIG PICKED THE TRANSPORT, not this method: the loader already refused any
+            // entry that was ambiguous about it, so a url here means remote and nothing else does.
+            var timeout = cfg.TimeoutMs is { } ms ? TimeSpan.FromMilliseconds(ms) : (TimeSpan?)null;
+            IMcpConnection client = cfg.IsRemote
+                ? new McpHttpClient(name, cfg.Url!, timeout, cfg.Headers)
+                : new McpClient(name, [.. cfg.Command], timeout, cfg.Environment, cfg.WorkingDirectory);
 
             try
             {
@@ -55,7 +55,7 @@ public static class McpLauncher
                     // The server's OWN error text — "npx: command not found" is something the user
                     // can fix in seconds, and a generic "failed to start" is not.
                     await client.DisposeAsync();
-                    return (Client: (McpClient?)null,
+                    return (Client: (IMcpConnection?)null,
                             Message: $"MCP server '{name}' did not start: {client.Error ?? "unknown error"}");
                 }
 
@@ -63,12 +63,12 @@ public static class McpLauncher
                 if (tools.Count == 0)
                 {
                     await client.DisposeAsync();
-                    return (Client: (McpClient?)null,
+                    return (Client: (IMcpConnection?)null,
                             Message: $"MCP server '{name}' started but offers no tools"
                                    + (client.Error is null ? "" : $": {client.Error}"));
                 }
 
-                return (Client: (McpClient?)client, Message: (string?)null);
+                return (Client: (IMcpConnection?)client, Message: (string?)null);
             }
             catch (Exception ex)
             {
@@ -76,7 +76,7 @@ public static class McpLauncher
                 // surprise here would take the app down before the first paint — the one failure
                 // this whole design exists to prevent.
                 await client.DisposeAsync();
-                return (Client: (McpClient?)null, Message: $"MCP server '{name}' failed: {ex.Message}");
+                return (Client: (IMcpConnection?)null, Message: $"MCP server '{name}' failed: {ex.Message}");
             }
         }));
 

@@ -134,12 +134,34 @@ public record OrchestratorSettings(
 /// wherever cxagent happened to start reads a different tree than the user meant. Relative values
 /// resolve against the project directory, matching opencode (<c>mcp/index.ts:346</c>).</para>
 /// </param>
+/// <param name="Url">
+/// The endpoint of a REMOTE server, or null for a local one.
+///
+/// <para>THE TRANSPORT IS INFERRED FROM WHICH KEY IS PRESENT, not declared in a third field. A
+/// command is a process and a url is an endpoint; they are never both meaningful, and asking the
+/// user to also state which is a way to end up with a config that contradicts itself. An entry
+/// carrying both — or neither — is skipped rather than guessed at, because picking one silently
+/// could spawn a process for someone who meant to reach an endpoint.</para>
+/// </param>
+/// <param name="Headers">
+/// Headers sent on every request to a remote server — the HTTP credential channel.
+///
+/// <para>A static <c>Authorization: Bearer …</c> or vendor API-key header covers most real servers
+/// with no OAuth at all. The spec's OAuth flow only begins when a server answers 401, which is why
+/// this alone makes the HTTP transport useful.</para>
+/// </param>
 public record McpServerConfig(
     IReadOnlyList<string> Command,
     bool Enabled = true,
     int? TimeoutMs = null,
     IReadOnlyDictionary<string, string>? Environment = null,
-    string? WorkingDirectory = null);
+    string? WorkingDirectory = null,
+    string? Url = null,
+    IReadOnlyDictionary<string, string>? Headers = null)
+{
+    /// <summary>True when this server is reached over HTTP rather than spawned.</summary>
+    public bool IsRemote => !string.IsNullOrWhiteSpace(Url);
+}
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -311,9 +333,24 @@ public static class ProviderConfigLoader
                                 && !string.IsNullOrWhiteSpace(s))
                                 command.Add(s);
 
-                    if (command.Count == 0)
+                    var url = entry.Value.TryGetProperty("url", out var u)
+                           && u.ValueKind == JsonValueKind.String
+                           && !string.IsNullOrWhiteSpace(u.GetString())
+                        ? u.GetString()!.Trim() : null;
+
+                    // EXACTLY ONE OF command / url. Both is ambiguous and neither is nothing to
+                    // start; either way the entry is skipped with the reason named, rather than
+                    // silently resolved into whichever transport we happened to prefer.
+                    if (command.Count > 0 && url is not null)
                     {
-                        warnings.Add($"mcp.{entry.Name} has no 'command'; skipped.");
+                        warnings.Add($"mcp.{entry.Name} has both 'command' and 'url'; skipped — "
+                                   + "a server is either a local command or a remote url.");
+                        continue;
+                    }
+
+                    if (command.Count == 0 && url is null)
+                    {
+                        warnings.Add($"mcp.{entry.Name} has no 'command' or 'url'; skipped.");
                         continue;
                     }
 
@@ -339,8 +376,18 @@ public static class ProviderConfigLoader
                            && !string.IsNullOrWhiteSpace(wd.GetString())
                         ? wd.GetString() : null;
 
+                    Dictionary<string, string>? headers = null;
+                    if (entry.Value.TryGetProperty("headers", out var headerBlock)
+                        && headerBlock.ValueKind == JsonValueKind.Object)
+                    {
+                        headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var h in headerBlock.EnumerateObject())
+                            if (h.Value.ValueKind == JsonValueKind.String)
+                                headers[h.Name] = h.Value.GetString() ?? "";
+                    }
+
                     mcpServers[entry.Name] =
-                        new McpServerConfig(command, enabled, timeoutMs, environment, cwd);
+                        new McpServerConfig(command, enabled, timeoutMs, environment, cwd, url, headers);
                 }
 
             if (errors.Count > 0)

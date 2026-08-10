@@ -24,7 +24,7 @@ public sealed record McpToolDef(string Name, string Description, JsonElement Inp
 /// third-party code on the end of a pipe, and it must not be able to take the app down — the same
 /// contract <see cref="Storage.LogFileManager"/> and <see cref="Storage.SqliteSessionStore"/> hold.</para>
 /// </summary>
-public sealed class McpClient : IMcpServer, IAsyncDisposable
+public sealed class McpClient : IMcpConnection
 {
     /// <summary>
     /// The tools from the last <see cref="ListToolsAsync"/>, so <see cref="IMcpServer"/> can expose

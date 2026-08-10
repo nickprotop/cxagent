@@ -23,7 +23,7 @@ namespace CxAgent.Core.Mcp;
 /// <c>headers</c> block covers every server that takes an API key, which is most of them, and is why
 /// this ships useful without any of that.</para>
 /// </summary>
-public sealed class McpHttpClient : IMcpServer, IAsyncDisposable
+public sealed class McpHttpClient : IMcpConnection
 {
     /// <summary>
     /// The revision we ask for.

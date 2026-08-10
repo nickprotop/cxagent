@@ -390,4 +390,97 @@ public class ProviderConfigTests : IDisposable
         Assert.Single(s.Providers);                                    // the rest of the config survived
         Assert.Contains(s.Warnings, w => w.Contains("broken", StringComparison.Ordinal));
     }
+    // ---- transport selection -------------------------------------------------------------------
+
+    /// <summary>
+    /// A `url` server is an HTTP one. The transport is inferred from which key is present rather than
+    /// from a `"type"` field, because the two are never both meaningful: a command is a process and a
+    /// url is an endpoint, and asking the user to say which in a third place is a way to get a config
+    /// that contradicts itself.
+    /// </summary>
+    [Fact]
+    public void Load_ReadsARemoteServerAndItsHeaders()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "remote": {
+              "url": "https://mcp.context7.com/mcp",
+              "headers": { "Authorization": "Bearer abc" }
+            }
+          }
+        }
+        """);
+
+        var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["remote"];
+
+        Assert.Equal("https://mcp.context7.com/mcp", server.Url);
+        Assert.Equal("Bearer abc", server.Headers!["Authorization"]);
+        Assert.True(server.IsRemote);
+        Assert.Empty(server.Command);
+    }
+
+    /// <summary>A `command` server is still a local one, and says so.</summary>
+    [Fact]
+    public void Load_ALocalServer_IsNotRemote()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": { "local": { "command": ["npx", "thing"] } }
+        }
+        """);
+
+        var server = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).McpServers["local"];
+
+        Assert.False(server.IsRemote);
+        Assert.Null(server.Url);
+    }
+
+    /// <summary>
+    /// BOTH is ambiguous and is SKIPPED rather than guessed at. Picking one silently would run
+    /// whichever we happened to prefer — possibly spawning a process for someone who meant to reach a
+    /// remote endpoint, which is a security-relevant difference, not a cosmetic one.
+    /// </summary>
+    [Fact]
+    public void Load_WithBothCommandAndUrl_SkipsThatServerWithAWarning()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": {
+            "confused": { "command": ["npx", "x"], "url": "https://example.com/mcp" },
+            "fine":     { "command": ["npx", "y"] }
+          }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(["fine"], s.McpServers.Keys);
+        Assert.Contains(s.Warnings, w => w.Contains("confused", StringComparison.Ordinal));
+    }
+
+    /// <summary>And NEITHER is nothing to start at all — the same skip, so a half-written entry never
+    /// becomes a server that silently does nothing.</summary>
+    [Fact]
+    public void Load_WithNeitherCommandNorUrl_SkipsThatServerWithAWarning()
+    {
+        WriteConfig("""
+        {
+          "providers": { "p": { "kind": "anthropic", "model": "m", "apiKey": "k" } },
+          "defaultProvider": "p",
+          "mcp": { "empty": { "enabled": true } }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Empty(s.McpServers);
+        Assert.Contains(s.Warnings, w => w.Contains("empty", StringComparison.Ordinal));
+    }
 }
