@@ -33,6 +33,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D15 | **Dispatch is an `ISubAgentSpawner` consulted before `WorkerToolset`**, the MCP precedent — NOT a `WorkerTool` enum member, which would auto-offer spawn to every child and make the no-nesting exclusion false. | §5.1a |
 | D16 | **`state` = `completed \| capped \| stuck \| error \| cancelled`.** Cap is structural (the reporter counts turns); stuck reads the buffered error's prefix. An earlier draft said this was invisible to the tool — it is not, and shipping `completed` for a capped run is what D13 exists to prevent. | §5.1c |
 | D17 | **The spawn branch never throws** (except cancellation). An exception mid-`foreach` orphans tool calls in the parent's context and poisons every later turn. | §5.1b |
+| D18a | **`/compress` is DECLINED while a turn is running**, not queued: it measures and rewrites a context that is actively changing, so running it later is a different operation and running it now corrupts the list. Not sub-agent-specific — a parent doing three tool calls is exposed today. | §5.0d |
 | D18 | **Submitting during a turn QUEUES and APPENDS.** Several messages join newline-separated into one prompt at turn end; Escape stops the turn and moves the queue into the composer, above any text already there. Interrupt-and-rerun is deferred to when agents run in the background. | §5.1h |
 | D19 | **The spawn tool's `PluginType` is `llm_agent`**, a type the UI already understands at five sites — Worker author, no collapse on completion, stays expanded, own status, no output placeholdering. It was built for exactly this and is currently unused. | §5.1e-i |
 | D11 | **Telemetry is in step 1**, not later — a child that reports nothing is a frozen row, and retrofitting it means revisiting the factory, the row and the panel. `Agent` already exposes `Id`, `Context` and four callbacks; `Job.ProgressMessage` already renders; `SessionPanel` already takes optional sections. Missing: elapsed time (a periodic tick), and the waiting state (step 3). | §2, §5 |
@@ -542,8 +543,21 @@ agent's `foreach` is appending tool results to that same list. Best case the res
 case is a torn `List<T>` and an `InvalidOperationException` mid-request.
 
 Live today — and after 0a lands, `/compress` becomes one of the few things a user CAN press during a
-long run, so the guard makes it more probable rather than less. Cheapest fix: decline it with a system
-line while a turn is running.
+long run, so the guard makes it more probable rather than less.
+
+**Fix: decline it while a turn is running**, with a line saying why — *"a turn is running; press
+Escape to stop it first."*
+
+**Not only when a sub-agent is running.** The corruption needs no child: a parent doing three
+`read_file` calls is exposed today. The condition is the same "is a turn running" predicate 0a needs
+and the Escape handler already uses (`AppBootstrap.cs:481`) — ONE definition, three consumers.
+
+**Declining rather than queueing, and this one is not arbitrary.** For an ordinary prompt, queueing is
+right (§1h) because the text is still valid when the turn ends. `/compress` is different: it is a
+measurement-and-rewrite of a context that is actively changing, so running it later is a different
+operation from the one the user asked for, and running it now cannot work at all. There is also
+nothing to lose — the automatic route already compresses on measured pressure, so declining costs the
+user a keystroke, not a compaction.
 
 **0c. Hoist the ledger.** `AgentHost` creates it in its own constructor (`:249`), which means it can
 only ever be THE SESSION'S ONE LEDGER — the assumption per-model attribution has to break. Moving
