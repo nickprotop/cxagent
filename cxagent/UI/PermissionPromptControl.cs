@@ -78,6 +78,12 @@ public sealed class PermissionPromptControl
             ? "Write a file in this (untrusted) folder?"
             : "Write a file outside the working folder?",
         PermissionKind.Http => "Allow an HTTP request?",
+
+        // NAMES WHAT IT ACTUALLY IS. Falling through to the generic "Allow this action?" would ask
+        // someone to approve a call into code we cannot inspect without telling them that is what
+        // they are doing — the one fact that should change how carefully they read the rest.
+        PermissionKind.Mcp => "Run a tool on an external MCP server?",
+
         _ => "Allow this action?",
     };
 

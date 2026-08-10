@@ -173,6 +173,12 @@ public class PermissionPolicy
         // Neither is a filesystem path, so there is nothing to resolve — the stored rule IS the
         // subject.
         PermissionKind.Shell or PermissionKind.Http => request.AlwaysRule,
+
+        // Nor is an MCP call. Its subject is the SERVER AND TOOL ("mcp:files_read"), never the
+        // arguments: those follow a schema written by a third party, and we cannot tell which of them
+        // name a path, a URL or a credential. Generalising over something we cannot read would be
+        // inventing a guarantee — so a rule covers "this tool on this server" and nothing narrower.
+        PermissionKind.Mcp => request.AlwaysRule,
     };
 
     /// <summary>Public wrapper over the same boundary check <see cref="IsSilentlyAllowed"/> uses

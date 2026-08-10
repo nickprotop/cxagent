@@ -1,6 +1,16 @@
 namespace CxAgent.Core.Permissions;
 
-public enum PermissionKind { Shell, FileRead, FileWrite, Http }
+/// <summary>
+/// What is being asked for. <c>Mcp</c> is a call into a third-party MCP server — code we did not
+/// write, running locally with the user's credentials, whose arguments follow a schema we cannot
+/// interpret.
+///
+/// <para>PERSISTED BY NAME (<c>JsonStringEnumConverter</c>), so adding a value is a one-way change to
+/// permissions.json: an older binary reading a file containing an <c>"Mcp"</c> rule throws, treats
+/// the whole file as empty — losing every rule and all folder trust — and clobbers it on the next
+/// save. Acceptable, but a downgrade hazard worth knowing about.</para>
+/// </summary>
+public enum PermissionKind { Shell, FileRead, FileWrite, Http, Mcp }
 
 /// <summary>Per-folder trust-on-first-use state. Unknown (never asked) behaves as Untrusted for
 /// the silent class — an unanswered question must never behave like a yes.</summary>

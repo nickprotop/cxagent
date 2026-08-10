@@ -122,7 +122,7 @@ public class McpToolsetTests
     public async Task TryInvokeAsync_CallsTheServerWithTheUnprefixedName()
     {
         var server = new FakeServer("files", Tool("read")) { Result = "file contents" };
-        var toolset = new McpToolset([server]);
+        var toolset = new McpToolset([server], new RecordingGate(allow: true));
 
         var result = await toolset.TryInvokeAsync(Call("files_read"), CancellationToken.None);
 
@@ -149,7 +149,8 @@ public class McpToolsetTests
             Result = new string('x', CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars + 10_000),
         };
 
-        var result = await new McpToolset([server]).TryInvokeAsync(Call("files_read"), CancellationToken.None);
+        var result = await new McpToolset([server], new RecordingGate(allow: true))
+            .TryInvokeAsync(Call("files_read"), CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.True(result!.Length <= CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars,
@@ -211,6 +212,123 @@ public class McpToolsetTests
         Assert.Contains("no such tool", result, StringComparison.Ordinal);
         Assert.Contains("files_read", result, StringComparison.Ordinal);   // the MCP tool is offered
         Assert.Contains("read_file", result, StringComparison.Ordinal);    // and the built-ins remain
+    }
+
+    // ---- the permission gate -------------------------------------------------------------------
+
+    /// <summary>A gate that records what it was asked and answers a fixed way.</summary>
+    private sealed class RecordingGate(bool allow) : CxAgent.Core.Permissions.IPermissionGate
+    {
+        public List<CxAgent.Core.Permissions.PermissionRequest> Asked { get; } = [];
+
+        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
+        {
+            Asked.Add(request);
+            return Task.FromResult(allow);
+        }
+    }
+
+    /// <summary>
+    /// EVERY MCP CALL IS GATED. The built-in file, shell and http plugins are wrapped in
+    /// <c>PermissionGatedPlugin</c>; third-party code running on the user's machine with the user's
+    /// credentials gets no weaker treatment.
+    /// </summary>
+    [Fact]
+    public async Task AnMcpCall_IsRefused_WhenTheGateSaysNo()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "SECRET CONTENTS" };
+        var gate = new RecordingGate(allow: false);
+
+        var result = await new McpToolset([server], gate).TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Null(server.CalledTool);                                        // never reached the server
+        Assert.DoesNotContain("SECRET", result!, StringComparison.Ordinal);
+    }
+
+    /// <summary>A denial comes back as a refusal the MODEL can read, not an exception — the same
+    /// contract the built-in tools hold, and it tells the model not to retry.</summary>
+    [Fact]
+    public async Task ADeniedMcpCall_ReadsAsARefusal_NotACrash()
+    {
+        var toolset = new McpToolset([new FakeServer("files", Tool("read"))], new RecordingGate(allow: false));
+
+        var result = await toolset.TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Contains("permission denied", result!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Do not retry", result!, StringComparison.Ordinal);
+    }
+
+    /// <summary>An allowed call runs, so the gate is a gate and not a wall.</summary>
+    [Fact]
+    public async Task AnAllowedMcpCall_Runs()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "contents" };
+
+        var result = await new McpToolset([server], new RecordingGate(allow: true))
+            .TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Equal("contents", result);
+        Assert.Equal("read", server.CalledTool);
+    }
+
+    /// <summary>
+    /// "Always" remembers the SERVER AND TOOL, not the arguments. A file rule keys on a path because
+    /// a path is the thing being risked; an MCP tool's arguments are a schema we did not write and
+    /// cannot interpret, so the tool itself is the only subject we can honestly generalise.
+    /// </summary>
+    [Fact]
+    public async Task TheAlwaysRule_IsTheServerAndToolName()
+    {
+        var gate = new RecordingGate(allow: true);
+
+        await new McpToolset([new FakeServer("files", Tool("read"))], gate)
+            .TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        var asked = Assert.Single(gate.Asked);
+        Assert.Equal(CxAgent.Core.Permissions.PermissionKind.Mcp, asked.Kind);
+        Assert.Equal("mcp:files_read", asked.AlwaysRule);
+    }
+
+    /// <summary>
+    /// The prompt shows the server, the tool AND the arguments. The user is approving a call into
+    /// code we cannot inspect; showing less than the whole call is not honest.
+    /// </summary>
+    [Fact]
+    public async Task ThePrompt_ShowsTheServerTheToolAndTheArguments()
+    {
+        var gate = new RecordingGate(allow: true);
+        var call = new ToolCall
+        {
+            Id = "1",
+            Name = "files_read",
+            Arguments = JsonDocument.Parse("""{"path":"/etc/passwd"}""").RootElement.Clone(),
+        };
+
+        await new McpToolset([new FakeServer("files", Tool("read"))], gate)
+            .TryInvokeAsync(call, CancellationToken.None);
+
+        var display = Assert.Single(gate.Asked).Display;
+        Assert.Contains("files", display, StringComparison.Ordinal);
+        Assert.Contains("read", display, StringComparison.Ordinal);
+        Assert.Contains("/etc/passwd", display, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NO GATE MEANS NO CALL, not a free pass.
+    ///
+    /// <para>The gate is optional in the constructor so existing call sites compile, which is exactly
+    /// the shape that turns into a silent bypass. A toolset built without one refuses rather than
+    /// allowing — the same reasoning as the headless default gate that can never say yes.</para>
+    /// </summary>
+    [Fact]
+    public async Task WithNoGateConfigured_TheCallIsRefusedRatherThanAllowed()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "SECRET" };
+
+        var result = await new McpToolset([server]).TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Null(server.CalledTool);
+        Assert.Contains("permission", result!, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>The server's own usage prose is carried, for the system prompt to show.</summary>

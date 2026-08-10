@@ -24,6 +24,17 @@ public sealed class McpToolset
 {
     private readonly IReadOnlyList<IMcpServer> _servers;
 
+    /// <summary>
+    /// The permission gate every call goes through.
+    ///
+    /// <para>NOT VIA <c>PermissionGatedPlugin</c>, which is the obvious route and silently allows:
+    /// it asks <c>PermissionPolicy.RequestsFor(TypeName, …)</c>, whose <c>default:</c> arm returns an
+    /// EMPTY list for any plugin type it does not know, and then loops over zero requests and runs
+    /// the inner code with no prompt at all. Third-party code would execute ungated while LOOKING
+    /// gated — the worst of both. So the request is built here and handed to the gate directly.</para>
+    /// </summary>
+    private readonly Permissions.IPermissionGate _gate;
+
     /// <summary>Composed name → the server and the tool's own name on it.</summary>
     private readonly Dictionary<string, (IMcpServer Server, string Tool)> _byName = new(StringComparer.Ordinal);
 
@@ -33,9 +44,18 @@ public sealed class McpToolset
     /// never appears is indistinguishable from a broken server.</summary>
     public IReadOnlyList<string> Warnings => _warnings;
 
-    public McpToolset(IReadOnlyList<IMcpServer> servers)
+    /// <param name="gate">
+    /// Omitted means DENY, never allow.
+    ///
+    /// <para>An optional gate is exactly the shape that becomes a silent bypass — a call site that
+    /// forgets it would run third-party code unprompted. Defaulting to the refusing gate makes the
+    /// omission fail loudly and safely instead, the same reasoning as the headless default gate that
+    /// can never say yes.</para>
+    /// </param>
+    public McpToolset(IReadOnlyList<IMcpServer> servers, Permissions.IPermissionGate? gate = null)
     {
         _servers = servers;
+        _gate = gate ?? Permissions.PermissionGate.DenyAll;
 
         // Built-in names are claimed FIRST, so a server can never take one. Order matters: whoever
         // is in the map when a duplicate arrives keeps the name.
@@ -92,6 +112,25 @@ public sealed class McpToolset
     public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct)
     {
         if (!_byName.TryGetValue(call.Name, out var found)) return null;
+
+        // GATED BEFORE THE SERVER IS TOUCHED. An MCP server is third-party code running on the user's
+        // machine with the user's credentials; the built-in file, shell and http plugins all prompt,
+        // and this gets no weaker treatment.
+        //
+        // The whole call is shown — server, tool AND arguments — because the user is approving a call
+        // into code we cannot inspect, and showing less than all of it is not honest. The rule,
+        // though, generalises only to the tool: see PermissionPolicy.RuleSubject.
+        var request = new Permissions.PermissionRequest(
+            Permissions.PermissionKind.Mcp,
+            $"{found.Server.Name} → {found.Tool} {call.Arguments}",
+            $"mcp:{call.Name}");
+
+        if (!await _gate.RequestAsync(request, ct))
+            // The same shape as a denied built-in: a refusal the MODEL reads, not an exception, and
+            // one that tells it not to try again. Retrying a denial burns turns against the cap and
+            // re-prompts the user for something they already said no to.
+            return $"permission denied by the user: {request.Display}. "
+                 + "Do not retry this operation or plan it again unless the user explicitly asks.";
 
         // THE SERVER'S OWN NAME, not the composed one. The prefix is ours, and a server asked to run
         // "files_read" would rightly say it has no such tool.

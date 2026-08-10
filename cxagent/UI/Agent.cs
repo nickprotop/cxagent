@@ -995,6 +995,14 @@ public sealed class Agent
     /// back as a STRING — so "did that write land" cannot be answered by exception handling. Matched
     /// on the two shapes the plugins actually produce.
     /// </summary>
+    /// <remarks>
+    /// THIS CATCHES MCP RESULTS TOO, and that is intended rather than incidental.
+    /// <see cref="Core.Mcp.McpClient.CallToolAsync"/> returns an <c>isError</c> result as text
+    /// beginning "error: ", so a failed third-party tool marks its job row failed and shows red —
+    /// which is what the user should see. The cost of the heuristic is a server whose SUCCESSFUL
+    /// output happens to start with "error" being mislabelled; that is a cosmetic row state, not a
+    /// behaviour change, and the model reads the text either way.
+    /// </remarks>
     private static bool LooksLikeFailure(string result) =>
         result.StartsWith("error", StringComparison.OrdinalIgnoreCase)
         || result.Contains("was not found", StringComparison.Ordinal)
@@ -1128,10 +1136,16 @@ public sealed class Agent
     private static string Escape(string text) => text.Replace("[", "[[");
 
     /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
-    private static string ToolPluginType(string toolName) => toolName switch
+    private string ToolPluginType(string toolName) => toolName switch
     {
         "run_shell" => "shell",
         "http_request" => "http",
+
+        // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
+        // operation — a row claiming a third-party server call was a local file read. "mcp" is the
+        // honest label; the server's own name is already in DisplayName.
+        _ when _mcp is not null && _mcp.Names().Contains(toolName) => "mcp",
+
         _ => "file",
     };
 
