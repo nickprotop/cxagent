@@ -79,12 +79,36 @@ Reading and writing inside the working folder is free. Anything else — a path 
 command — stops and asks, with **Allow once**, **Always allow**, or **Deny**. "Always" is remembered
 per folder, because a folder is a project.
 
-### Fan-out mode
+### Sub-agents
 
-`cxagent --fan-out` plans a DAG of jobs instead, running several workers in parallel with the
-dependency graph as the record. Useful when work genuinely decomposes — reviewing many files at once.
-Single-agent is the default: for read-then-edit work, one context holding the real bytes is more
-reliable than coordinating several that do not.
+**Fan-out is the default.** The agent can delegate a job to a sub-agent: a second agent with its own
+context, its own conversation, and its own compaction. It runs, returns one message, and stops.
+
+What that buys is room. A search that reads thirty files to answer one question fills a context with
+material nobody needs afterwards — delegated, the parent keeps the conclusion and not the file dumps.
+Measured on a real repo: 23k characters in the parent instead of 213k, for the same answer.
+
+A sub-agent's work is not shown in the transcript. It gets one row, showing live turns, context
+occupancy and elapsed time; expand it to see what the child is doing, or its report once it has
+finished.
+
+`/mode single` turns delegation off for a session, `/mode fan-out` turns it back on, and
+`--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed —
+turning it off really does turn it off.
+
+**Named types** let you say how a delegated job should be done. See
+[`config.sample.json`](config.sample.json) for the `agents` block, and [COMMANDS.md](COMMANDS.md) for
+`/mode`.
+
+**Honest about the limits**, because they are the sort you would otherwise find out the hard way:
+
+- The model delegates readily when you ask it to and rarely on its own judgement. Say "use a
+  sub-agent to…" and it will; leave the choice to it and it will usually do the work inline.
+- One sub-agent runs at a time, in the foreground, and the parent waits. Parallel is not built.
+- A sub-agent cannot spawn its own — not a rule it is asked to follow, a tool it is never given.
+- **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
+  agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
+  and they apply to sub-agents exactly as they apply to the main one.
 
 ## Configuration
 
@@ -101,24 +125,67 @@ reliable than coordinating several that do not.
 
 Provider kinds: `ollama`, `openai-compatible` (requires `baseUrl`), `anthropic`.
 
+Set `contextWindow` on a provider when you know it — it is the denominator for the occupancy
+readout and the trigger for compaction. Left unset, cxagent asks the endpoint at startup.
+
 Optional `orchestrator` block:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `maxWorkerTurns` | 200 | Cap on tool-loop round-trips for one goal |
-| `goalTokenBudget` | unset | Stop a goal past this many tokens |
-| `copilot` | false | Ask before running a freshly planned goal |
+| `maxWorkerTurns` | 500 | Turns per request before the agent stops and summarises what it has. `0` means no cap. Sub-agents inherit it. |
+| `goalTokenBudget` | unset | Warn once past this many tokens for the session |
+| `maxTokensPerCall` | unset | Per-request cap; unset means the provider's own |
+| `contextCompressThreshold` | 80% of the window | Compact above this many tokens |
+
+Optional `agents` block for sub-agent types, and `mcp` for MCP servers.
+[`config.sample.json`](config.sample.json) documents every key, including what each one's absence
+means.
 
 ## Keys
 
 | Key | Action |
 |-----|--------|
-| `F2` | New goal |
-| `F4` | Chat |
+| `Enter` | Send. During a running turn, queues instead — several queued messages go as one prompt |
+| `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost |
 | `F1` | Help |
+| `F3` | Session panel (show / hide / automatic) |
 | `F5` | Settings |
-| `F6` | Diagnose a failed job |
 | `Ctrl+Q` | Quit |
+
+Commands are typed in the composer — see [COMMANDS.md](COMMANDS.md).
+
+## What this thing actually does to your machine
+
+Read this once. It is short, and every line of it is something the software genuinely does.
+
+**It edits your files.** Inside the working folder it writes without asking — that is the point of
+it, and it is why you should run it in a git repository with your work committed. `git diff` is the
+review step. There is no undo inside cxagent.
+
+**It runs shell commands.** Anything outside the working folder, and every shell command, asks first
+— **Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder. Read what you are
+approving: the command is shown in full, and *"always allow"* means the next one like it will not
+ask. A model can propose a command that deletes things, and if you approve it, it runs.
+
+**It spends your money.** Every turn is a request to whichever provider you configured, and a
+sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand
+tokens — the session panel shows the running total, and `goalTokenBudget` warns once past a figure
+you set. Neither stops a bill. If you point cxagent at a paid API, **you are paying for what it
+does**, including work that turns out to be wrong.
+
+**It talks to whatever you configure.** Your prompts, your file contents and your shell output go to
+your chosen model provider, and to any MCP server you have enabled. What they do with it is between
+you and them.
+
+**A sub-agent is an agent.** It has the same tools and the same permission gate as the main one.
+A type's briefing — "never edit files" — is a request written into its prompt, not a sandbox. Models
+do not reliably follow instructions they are given. **Permissions are the mechanism that constrains
+an agent; prose is not.**
+
+**Nobody is responsible for the results but you.** cxagent is provided as-is under the MIT licence,
+with no warranty of any kind. The authors are not liable for lost work, deleted files, broken builds,
+leaked secrets, provider bills, or anything an agent does with the access you granted it. Review the
+diff. Keep backups. Do not run it against anything you cannot afford to have changed.
 
 ## Uninstall
 

@@ -499,12 +499,20 @@ Queue order is arrival order.
 
 ## 5. The steps
 
+**STATUS: steps 0, 1 and 2 are BUILT and driven. Step 3 is not.** Each section below keeps the
+reasoning it was planned with AND records where the plan was wrong — the corrections are the useful
+part, and deleting them would leave a document that looks like it predicted everything.
+
+Beyond the numbered steps, and not planned here: **AgentMode** (`/mode single|fan-out`, `--mode`,
+fan-out by default), per-model spend attribution, and the config `agents` block. Those came out of
+using the thing.
+
 Each step ends with something that WORKS and is driven live. Nothing in a later step is designed into
 an earlier one. If a step fails, there is one candidate cause.
 
 ---
 
-### STEP 0 — four fixes worth making whether or not sub-agents ship
+### STEP 0 — four fixes worth making whether or not sub-agents ship — **BUILT** (11e9dc7)
 
 Found by planning against the code, not by planning sub-agents. **Three are LIVE BUGS today** (0a, 0b,
 0d); the fourth (0c) is wanted by per-model ledgers independently. None needs a sub-agent to be worth
@@ -586,7 +594,7 @@ green and a live drive shows all four.
 ---
 
 
-### STEP 1 — one child, foreground, sequential (needs step 0)
+### STEP 1 — one child, foreground, sequential (needs step 0) — **BUILT** (3656041, 11e07c8, 1a06b09, af2abeb, 38d633b)
 
 **What this is FOR, stated plainly so it is not judged as a feature.** One foreground blocking child
 buys a user very little that a second session does not already give them — and the "second context"
@@ -1113,18 +1121,55 @@ marks the Job `Cancelled`. `InlineJobSink` has pure projection seams (`:511`, `:
 rendering is headless-testable.
 
 
-### STEP 2 — named types
+### STEP 2 — named types — **BUILT** (a629c92, 8b6cb0c, fe515eb)
 
-Types in config beside `mcp`: a name, a briefing, optionally a provider instance. The tool's schema
-does NOT change — only what a type name resolves to.
+Types in config beside `mcp`: a name, a briefing, optionally a provider instance and a turn cap.
 
-Closes the provider gap: `ProviderRegistry` reaches neither `AgentHost` nor `PluginRegistry`, which
-DISCARDS it (`PluginRegistry.cs:50`, `_ = providers;`).
+**What shipped, and where it differs from what this section predicted:**
 
-Precedence becomes real here: the type's briefing outranks the parent's `context` (D9).
+- The tool's schema DID change — it gained an optional `type`. The prediction that "the schema does
+  not change, only what a name resolves to" was wrong: a model cannot pass a name it has no parameter
+  for.
+- `general` IS ALWAYS IN THE CATALOG, supplied implicitly and overridable in config. Not planned
+  here, and it earned its place twice: it collapses "no type given" and "type given" into one code
+  path (`Resolve(type ?? "general")` never returns null), and it means the catalog is never empty, so
+  the description never says "valid types: (none)" and an error always names something.
+- A type also carries `maxTurns`. Null inherits the session ceiling, 0 is unbounded. This makes the
+  CAPPED path reachable in ordinary use for the first time — until now only a deliberately low
+  session ceiling reached it — which is why D13's envelope matters more than it did.
+- The tool DESCRIPTION is generated from the catalog. A model cannot pick from a catalog it has never
+  seen (D5), and the catalog is per-config, so a `const` could not carry it.
 
-**Done when:** two types with different briefings produce visibly different child behaviour, and one
-of them runs on a different configured model.
+**The provider gap is closed**, and the fix was not the one this section implied. `PluginRegistry`'s
+`_ = providers;` was a symptom; the blocker was that NOTHING exposed a per-instance context window.
+`ILlmProvider` deliberately does not carry one, `ProviderRegistry` mapped name → provider only, and
+`Build()` RECEIVED the windows in `settings.Providers` and dropped them. `ProviderRegistry` now
+exposes `InstanceWindows`. Without it a child gets provider A with provider B's window, and
+`AgentContext` returns `IsUnderPressure = false` for a MISSING window but never for a WRONG one — so
+it never compacts and dies on a provider overflow. Silent, in the dangerous direction.
+
+**Precedence is real**: briefing (config, how to work) above `callerContext` (parent, what to know)
+above prompt (parent, what to do). The briefing slot had been deliberately null since `ea97fbd`
+because the only legitimate author of the highest-authority text in a prompt is a human writing
+config. Step 2 is that human.
+
+**The done-when was changed before it was used.** This section asked for "two types with different
+briefings produce visibly different child behaviour" — a judgement about model output, and by then
+three prompt interventions had produced two nulls and one win. It was gated instead on what can be
+asserted: the type's briefing appears in the child's own `context-000.log` under `# Your task`, two
+types differ, a bare spawn and an explicit `general` are byte-identical, an unknown type is refused
+naming the valid ones, and a type's `maxTurns` produces `state="capped"`.
+
+**Driven live.** Asked to "use the explore agent to explore this repository", the parent made ONE
+tool call — the spawn, carrying `"type":"explore"` — and the child made 42 across 9 turns. Child
+context 229,870 chars; parent context 8,684. That is the tool description's promise working
+literally, at a 26x ratio.
+
+**What did NOT change: the model still does not delegate on its own judgement.** Asked the same
+open-ended question with no mention of agents, it made 19 tool calls and spawned nothing, with
+`explore` listed in its tool description. Measured four ways now — tool description, a system-prompt
+rule, worked examples, and opencode's own four nudges on the identical task. It is the model's
+ceiling, not this design's.
 
 ---
 
