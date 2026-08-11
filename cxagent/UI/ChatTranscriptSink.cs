@@ -84,15 +84,27 @@ public sealed class ChatTranscriptSink : IChatSink
         });
 
     /// <summary>
-    /// Body text, ESCAPED. The control parses markup, so an unescaped "[red]" in model output is
-    /// swallowed and an unclosed tag recolours everything after it — verified: "we[red]ird" renders
-    /// as "weird". This escape used to be missing here and present only on the reasoning path, which
-    /// is precisely the asymmetry that made the omission invisible.
+    /// Body text, NOT escaped — the Assistant role renders as MARKDOWN, which escapes for itself.
+    ///
+    /// <para>FOUND ON A LIVE DRIVE, in the model's own words. It wrote <c>`[abc]`</c> in backticks and
+    /// the screen showed <c>[[abc]</c>; it wrote <c>`segments[0].Length`</c> and the screen showed
+    /// <c>segments[[0].Length</c>. INSIDE AN INLINE-CODE SPAN the markdown converter treats content
+    /// as literal — it neither re-escapes nor unescapes it — so a bracket this sink had already
+    /// doubled passed straight through to the screen. Outside code spans the doubling is invisible,
+    /// which is exactly why it survived: every existing test here used plain text.</para>
+    ///
+    /// <para>THE ASYMMETRY WITH <see cref="AppendReasoning"/> IS CORRECT, and is the thing to
+    /// understand before "fixing" it back. Reasoning is wrapped in a colour scope BY THIS SINK, which
+    /// makes it markup, and markup must be escaped or a model writing "[red]" opens a style scope.
+    /// Body text goes to a role whose <c>Markdown = true</c> (MainWindow.cs:330-335) routes it through
+    /// a converter that already handles brackets. Two paths, two rules — escaping both identically is
+    /// what produced the doubling, and escaping neither would swallow tags in the reasoning stream.
+    /// </para>
     /// </summary>
     public void AppendAssistant(ChatMessageId id, string token) =>
         _system.EnqueueOnUIThread(() =>
         {
-            if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, Escape(token));
+            if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
         });
 
     /// <summary>
