@@ -164,7 +164,8 @@ public sealed class SessionPanel
         int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
         string sessionId = "",
         IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null,
-        IReadOnlyList<string>? agentTypes = null)
+        IReadOnlyList<string>? agentTypes = null,
+        IReadOnlyDictionary<string, int>? spendByModel = null)
     {
         var lines = new List<string>();
 
@@ -271,6 +272,27 @@ public sealed class SessionPanel
                 lines.Add(server.IsConnected
                     ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
                     : Muted($"{server.Name} · failed"));
+        }
+
+        // SPEND PER MODEL, when more than one model has spent anything.
+        //
+        // ONE MODEL NEEDS NO BREAKDOWN: the session total already says it, and a section repeating
+        // that number under a heading is a line that costs space to say nothing. It appears the
+        // moment a second model is involved — which today means a sub-agent type on another provider
+        // instance, the case where "what did that cost" stops having an obvious answer.
+        //
+        // MODEL ID, NOT INSTANCE NAME. Two instances can serve the same model (a shared endpoint, a
+        // second base URL), and what a user is deciding about when they read this is the MODEL —
+        // instance names would split one cost across two lines for no reason they could act on.
+        var byModel = (spendByModel ?? new Dictionary<string, int>())
+            .Where(kv => kv.Value > 0)
+            .OrderByDescending(kv => kv.Value)
+            .ToList();
+        if (byModel.Count > 1)
+        {
+            Section(lines, "Spend by model");
+            foreach (var (modelId, spent) in byModel)
+                lines.Add(Value($"{Short(modelId)} · {spent:N0}"));
         }
 
         // AGENT TYPES, when any are CONFIGURED — and `general` alone does not count as configured.
@@ -432,6 +454,30 @@ public sealed class SessionPanel
     /// <c>~</c>-relative path, trimmed from the LEFT when too long: the tail of a path identifies it
     /// and the head repeats for every project on the machine.
     /// </summary>
+    /// <summary>
+    /// A model id trimmed to fit a 24-column panel.
+    ///
+    /// <para>Real ids run long — "qwen3.6-35b-a3b-ud-iq4_xs.gguf" is 30 characters before the panel
+    /// adds a bullet and a number — and a wrapped id costs three lines to say one thing. The FRONT is
+    /// what distinguishes two models; the quantisation suffix rarely does, so the tail is what goes.
+    /// </para>
+    /// </summary>
+    private static string Short(string modelId)
+    {
+        // A trailing file extension is noise here: every local model has one and none of them tells
+        // a user which model they are looking at.
+        var name = modelId.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)
+            ? modelId[..^5] : modelId;
+        if (name.Length <= 17) return name;
+
+        // KEEP BOTH ENDS. Trimming only the tail was tried and is wrong on exactly the ids this
+        // section exists for: "qwen3.6-35b-a3b-ud-iq4_xs" and "…-iq4_xs-alt" share their first
+        // sixteen characters, so two rows rendered IDENTICALLY and the breakdown told the reader
+        // nothing. What distinguishes local model ids is usually the suffix — the quantisation, a
+        // variant tag — which is precisely what a tail-trim throws away.
+        return name[..9] + "…" + name[^7..];
+    }
+
     private static string ShortPath(string path)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

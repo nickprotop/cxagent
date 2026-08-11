@@ -175,4 +175,81 @@ public class SessionPanelTests
 
         Assert.DoesNotContain("Agent types", panel.RenderedText, StringComparison.Ordinal);
     }
+
+    // ---- spend by model -------------------------------------------------------------------------
+
+    /// <summary>
+    /// TWO MODELS EARN A BREAKDOWN. It appears the moment a second model is involved — today that
+    /// means a sub-agent type on another provider instance, which is exactly when "what did that
+    /// cost" stops having an obvious answer.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithTwoModels_ShowsSpendForEach()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 4_500, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 });
+
+        Assert.Contains("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("qwen3.6-35b", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("qwen3-1b", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// ONE MODEL NEEDS NO BREAKDOWN. The session total already says it, and a section repeating that
+    /// number under a heading costs space to say nothing — the same rule the MCP and agent-type
+    /// blocks follow.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithOneModel_ShowsNoBreakdown()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 });
+
+        Assert.DoesNotContain("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// TWO SIMILAR IDS MUST STILL READ AS TWO. Found live: trimming only the tail rendered
+    /// "qwen3.6-35b-a3b-ud-iq4_xs" and "…-iq4_xs-alt" as the SAME string, so the breakdown showed two
+    /// rows that told the reader nothing. Local model ids share long prefixes and differ in the
+    /// suffix — the quantisation, a variant tag — which is exactly what a tail-trim throws away.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithSimilarModelIds_KeepsThemDistinguishable()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 900, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int>
+            {
+                ["qwen3.6-35b-a3b-ud-iq4_xs.gguf"] = 600,
+                ["qwen3.6-35b-a3b-ud-iq4_xs-alt.gguf"] = 300,
+            });
+
+        var lines = panel.RenderedText.Split('\n')
+            .Where(l => l.Contains('·') && (l.Contains("600") || l.Contains("300")))
+            .Select(l => l.Trim()).ToList();
+
+        Assert.Equal(2, lines.Count);
+        Assert.NotEqual(lines[0].Split('·')[0], lines[1].Split('·')[0]);
+    }
+
+    /// <summary>A model that spent nothing is not a model that was used — it is a configured type
+    /// nobody spawned, and listing it at zero invites the reader to wonder what went wrong.</summary>
+    [Fact]
+    public void Refresh_IgnoresModelsThatSpentNothing()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["used.gguf"] = 4_000, ["unused.gguf"] = 0 });
+
+        Assert.DoesNotContain("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("unused", panel.RenderedText, StringComparison.Ordinal);
+    }
 }

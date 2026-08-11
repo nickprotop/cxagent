@@ -67,8 +67,40 @@ public sealed class TokenLedger
     /// <summary>Raised ONCE, the first time the running total crosses the budget.</summary>
     public event EventHandler<int>? Breached;
 
-    public void Record(LlmUsage usage)
+    /// <summary>
+    /// Spend so far, per model id — for the models that actually spent something.
+    ///
+    /// <para>ONE LEDGER, TALLIED BY MODEL, rather than a ledger per model. The BUDGET is a property
+    /// of the session: a user who sets one means "this conversation may cost this much", not "each
+    /// model may". Splitting the ledger would give each model its own budget and its own
+    /// <see cref="Breached"/>, so a session could cross the user's real limit several times over
+    /// without ever raising — and the total the status bar shows would become a sum of things nobody
+    /// asked to be summed.</para>
+    ///
+    /// <para>So attribution is added here and the budget is untouched. A caller that does not name a
+    /// model still records into the totals; it simply does not appear in this map.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ByModel
     {
+        get { lock (_byModel) return new Dictionary<string, int>(_byModel, StringComparer.Ordinal); }
+    }
+
+    // A LOCK, NOT A CONCURRENT DICTIONARY. Two agents on one ledger is already the normal case, and
+    // the read is a snapshot the UI takes a few times a second — a dictionary that is internally
+    // thread-safe would still let a reader see a torn view across several keys.
+    private readonly Dictionary<string, int> _byModel = new(StringComparer.Ordinal);
+
+    /// <param name="modelId">
+    /// Which model spent it, or null when the caller does not know. Null records into the totals and
+    /// nothing else — better than inventing a bucket named "unknown", which would look like a model.
+    /// </param>
+    public void Record(LlmUsage usage, string? modelId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(modelId))
+            lock (_byModel)
+                _byModel[modelId] = _byModel.GetValueOrDefault(modelId)
+                                  + usage.InputTokens + usage.OutputTokens;
+
         Interlocked.Add(ref _input, usage.InputTokens);
         Interlocked.Add(ref _output, usage.OutputTokens);
 

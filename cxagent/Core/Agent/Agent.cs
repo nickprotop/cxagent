@@ -558,7 +558,11 @@ public sealed class Agent
 
                 await CompressionRun.RunAsync(_context, _provider, _jobs, Id,
                     "compress context · provider refused the request as too long",
-                    _ledger.Record, ct, compressed: (b, a) =>
+                    // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
+            // model, and a summarisation turn that vanished from the per-model tally
+            // would make the numbers disagree with the session total for no reason a
+            // reader could work out.
+            u => _ledger.Record(u, _provider.ModelId), ct, compressed: (b, a) =>
                     {
                         ContextCompressed?.Invoke(b, a);
                         if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
@@ -574,7 +578,7 @@ public sealed class Agent
                 throw;
             }
 
-            _ledger.Record(response.Usage);
+            _ledger.Record(response.Usage, _provider.ModelId);
 
             // RECORD IT ON THE CONTEXT, which needs both the reading and the size it was taken at to
             // estimate honestly after a compaction. Published BEFORE the compression check below, so
@@ -823,7 +827,7 @@ public sealed class Agent
         try
         {
             var response = await StreamTurnAsync(ask, tools, ct, turnId);
-            _ledger.Record(response.Usage);
+            _ledger.Record(response.Usage, _provider.ModelId);
             return ModelOutput.StripReasoning(response.Text);
         }
         catch (Exception)
@@ -1273,7 +1277,11 @@ public sealed class Agent
         // per-turn pressure.
         await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
             $"compress context · {reason}",
-            _ledger.Record, ct, compressed: (b, a) =>
+            // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
+            // model, and a summarisation turn that vanished from the per-model tally
+            // would make the numbers disagree with the session total for no reason a
+            // reader could work out.
+            u => _ledger.Record(u, _provider.ModelId), ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(b, a);
                 // The context re-estimated its own occupancy while compacting; publish it so the

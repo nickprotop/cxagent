@@ -298,7 +298,14 @@ public static class AppBootstrap
             // that is merely slow to connect.
             foreach (var warning in res.Warnings)
                 permissionSink.ShowSystemMessage($"[yellow]{warning}[/]");
-            runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() => mainWindow.SetTokenTotal(total));
+            runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
+            {
+                mainWindow.SetTokenTotal(total);
+                // THE SAME EVENT, so the breakdown and the number it breaks down can never disagree.
+                // Pushed rather than pulled: the panel refreshes on a clock too, and a stale tally
+                // beside a live total is the kind of small inconsistency nobody can explain later.
+                mainWindow.SetSpendByModel(runner!.Ledger.ByModel);
+            });
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
             runner.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));

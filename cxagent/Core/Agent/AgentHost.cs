@@ -474,7 +474,7 @@ public sealed class AgentHost : IDisposable
         CompressionRun.RunAsync(Context, _provider, _jobPanel, _agent.Id,
             "compress context · requested", usage =>
             {
-                Ledger.Record(usage);
+                Ledger.Record(usage, _provider.ModelId);
                 TokensUpdated?.Invoke(this, Ledger.TotalTokens);
             }, ct, compressed: (b, a) => ContextCompressed?.Invoke(this, (b, a)));
 

@@ -117,4 +117,59 @@ public class TokenLedgerTests
 
         Assert.True(reported > 100, $"reported {reported}, which is not over the budget it breached");
     }
+
+    // ---- per-model attribution ------------------------------------------------------------------
+
+    /// <summary>
+    /// ONE LEDGER, TALLIED BY MODEL — not a ledger per model. The BUDGET is a property of the
+    /// session: a user who sets one means "this conversation may cost this much", not "each model
+    /// may". Splitting would give each model its own budget and its own Breached, so a session could
+    /// cross the real limit several times over without ever raising.
+    /// </summary>
+    [Fact]
+    public void Record_TalliesByModel_WhileTotalsStaySessionWide()
+    {
+        var ledger = new TokenLedger(null);
+
+        ledger.Record(new LlmUsage { InputTokens = 100, OutputTokens = 20 }, "big-model");
+        ledger.Record(new LlmUsage { InputTokens = 30, OutputTokens = 5 }, "small-model");
+        ledger.Record(new LlmUsage { InputTokens = 10, OutputTokens = 2 }, "big-model");
+
+        Assert.Equal(132, ledger.ByModel["big-model"]);
+        Assert.Equal(35, ledger.ByModel["small-model"]);
+
+        // The session total is unchanged by attribution — it is still every token spent.
+        Assert.Equal(167, ledger.TotalTokens);
+    }
+
+    /// <summary>
+    /// A CALLER THAT DOES NOT NAME A MODEL STILL RECORDS. It simply does not appear in the map —
+    /// better than a bucket named "unknown", which would read as a model.
+    /// </summary>
+    [Fact]
+    public void Record_WithNoModel_CountsTowardTheTotalButNotTheBreakdown()
+    {
+        var ledger = new TokenLedger(null);
+
+        ledger.Record(new LlmUsage { InputTokens = 50, OutputTokens = 10 });
+
+        Assert.Equal(60, ledger.TotalTokens);
+        Assert.Empty(ledger.ByModel);
+    }
+
+    /// <summary>The budget is untouched by attribution: it still fires once, on the session total.</summary>
+    [Fact]
+    public void Breached_StillFiresOnce_OnTheSessionTotal_NotPerModel()
+    {
+        var ledger = new TokenLedger(100);
+        var fired = 0;
+        ledger.Breached += (_, _) => fired++;
+
+        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "a");
+        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "b");
+        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "a");
+
+        // Neither model alone crossed 100; the SESSION did, once.
+        Assert.Equal(1, fired);
+    }
 }

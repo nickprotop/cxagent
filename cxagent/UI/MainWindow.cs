@@ -255,6 +255,21 @@ public sealed class MainWindow : IDisposable
     private int _lastInput;
     private int _lastOutput;
 
+    /// <summary>
+    /// Spend per model id, for the panel's breakdown. Empty until something is recorded, and it stays
+    /// empty for a session that never touches a second model — the panel hides the section then,
+    /// because the session total already says everything there is to say.
+    /// </summary>
+    private IReadOnlyDictionary<string, int> _spendByModel = new Dictionary<string, int>();
+
+    /// <summary>Records what each model has spent. Pushed from AgentHost on the same event as the
+    /// total, so the breakdown and the number it breaks down can never disagree.</summary>
+    public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel)
+    {
+        _spendByModel = byModel;
+        RefreshSessionPanel();
+    }
+
     /// <summary>Records the input/output split. Separate from SetTokenTotal because the total
     /// arrives through an event that predates the split and is raised from two different paths.</summary>
     public void SetTokenSplit(int input, int output)
@@ -873,7 +888,8 @@ public sealed class MainWindow : IDisposable
             _mcpServers,
             // STRAIGHT OFF THE RESOLUTION — no new plumbing. It already carries the parsed types for
             // AppBootstrap to build the catalog from, and the panel only wants their names.
-            [.. _resolution.AgentTypes.Keys]);
+            [.. _resolution.AgentTypes.Keys],
+            _spendByModel);
     }
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
