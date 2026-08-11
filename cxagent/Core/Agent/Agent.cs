@@ -858,9 +858,17 @@ public sealed class Agent
     /// that has been pruned shows as its tombstone here, so a gap in the model's knowledge can be
     /// traced to the turn that created it.</para>
     ///
-    /// <para>Sizes and roles rather than full content: the whole point is to see the SHAPE of a
-    /// context that may be hundreds of thousands of characters, and a log that reproduces all of it
-    /// on every turn is one nobody opens twice. The first line of each message is enough to
+    /// <para>AN INDEX, THEN THE BODIES. The summary block came first and is still what you read to
+    /// see the SHAPE of a context — sizes, roles, which turn made which tool call. But a preview-only
+    /// log cannot answer "was that instruction actually in the prompt", and the truncation is
+    /// invisible when you grep it: a search for text that IS in the context returns nothing, which
+    /// reads as absence rather than as truncation. That cost a wrong diagnosis — a system-prompt line
+    /// was reported missing from a live run when it had been there all along.</para>
+    ///
+    /// <para>So the index stays, and the full text follows it under a marker. Scanning is unchanged;
+    /// grepping now answers the question it appeared to answer before.</para>
+    ///
+    /// <para>The first line of each message is enough to
     /// recognise it.</para>
     /// </summary>
     private void LogContext(string agentId, int turn, IReadOnlyList<ChatMessage> messages, int? inputTokens)
@@ -880,12 +888,35 @@ public sealed class Agent
             {
                 var m = messages[i];
                 var role = m.ToolCallId is not null ? "tool" : m.Role;
+                // ONE LINE PER MESSAGE for the index, so newlines are flattened HERE and only here —
+                // the full text below keeps its own.
                 var body = (m.Content ?? "").ReplaceLineEndings(" ");
                 var head = body.Length <= 120 ? body : body[..120] + "…";
                 var calls = m.ToolCalls is { Count: > 0 }
                     ? " [calls: " + string.Join(", ", m.ToolCalls.Select(c => c.Name)) + "]"
                     : "";
                 sb.AppendLine($"[{i:D3}] {role,-9} {(m.Content?.Length ?? 0),8:N0}ch{calls}  {head}");
+            }
+
+            // THE FULL TEXT, VERBATIM, UNDER THE INDEX. Nothing is elided: this is the file you open
+            // to find out what the model was actually sent, and a log that answers "roughly what" is
+            // the one that sends you looking for a bug that is not there.
+            //
+            // Tool ARGUMENTS are included too. A call rendered as its name alone tells you a search
+            // happened but not what it searched for, which is exactly the detail that explains why a
+            // model went the way it did.
+            sb.AppendLine();
+            sb.AppendLine("=== full messages ===");
+            for (var i = 0; i < messages.Count; i++)
+            {
+                var m = messages[i];
+                var role = m.ToolCallId is not null ? "tool" : m.Role;
+                sb.AppendLine();
+                sb.AppendLine($"--- [{i:D3}] {role} ---");
+                if (!string.IsNullOrEmpty(m.Content)) sb.AppendLine(m.Content);
+                if (m.ToolCalls is { Count: > 0 })
+                    foreach (var c in m.ToolCalls)
+                        sb.AppendLine($"[tool call] {c.Name} {c.Arguments}");
             }
 
             _ = _logs.AppendAsync(agentId, $"context-{turn:D3}", "log", sb.ToString());

@@ -638,6 +638,53 @@ public class AgentTests
             $"the 250ms approval wait leaked into the reported duration ({duration.TotalMilliseconds:0}ms)");
     }
 
+    // ---- the context log keeps the full text ----------------------------------------------------
+
+    /// <summary>
+    /// THE CONTEXT LOG IS NOT TRUNCATED.
+    ///
+    /// <para>It used to store a 120-character preview of each message, flattened onto one line. That
+    /// is a fine INDEX and a trap as a record: grepping it for text that IS in the context returns
+    /// nothing, and nothing reads as absence rather than as truncation. It cost a wrong diagnosis —
+    /// a system-prompt line was reported missing from a live run when it had been there throughout,
+    /// and the run was re-driven twice before the log itself turned out to be the liar.</para>
+    ///
+    /// <para>The index is still written; the full text now follows it.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheContextLog_KeepsEveryMessageInFull()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-ctxlog-" + Guid.NewGuid().ToString("N"));
+        var paths = new CxAgent.Core.Storage.AppPaths(dir);
+        paths.EnsureCreated();
+        try
+        {
+            var logs = new CxAgent.Core.Storage.LogFileManager(paths);
+            var provider = new MockLlmProvider();
+            provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+            // Comfortably past the old 120-char cut, and with a newline, since the index also
+            // flattened those.
+            var prompt = "REMEMBER THIS MARKER: " + new string('x', 300) + "\nand a second line.";
+
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+                new RecordingSink(), new NullJobPanel(), logs, maxTurns: 50);
+            await agent.SendAsync(prompt, CancellationToken.None);
+            await Task.Delay(300);   // AppendAsync is fire-and-forget
+
+            var file = Path.Combine(paths.LogsDir, agent.Id, "context-000.log");
+            var text = await File.ReadAllTextAsync(file);
+
+            // The whole prompt, not its first 120 characters.
+            Assert.Contains(prompt.Replace("\r\n", "\n"), text.Replace("\r\n", "\n"), StringComparison.Ordinal);
+
+            // And the index is still there — this adds to the log rather than replacing it.
+            Assert.Contains("=== full messages ===", text, StringComparison.Ordinal);
+            Assert.Contains("[000] system", text, StringComparison.Ordinal);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
     // ---- 1c: the outcome is a field, not something to infer ------------------------------------
 
     /// <summary>An ordinary answer reports <see cref="SendOutcome.Completed"/>.</summary>
