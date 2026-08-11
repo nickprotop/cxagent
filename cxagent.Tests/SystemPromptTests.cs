@@ -338,7 +338,12 @@ public class SystemPromptTests
     // ---- D24/D26: the two prompts ----------------------------------------------------------
 
     private static string Child() => SystemPrompt.Build(Context() with { IsSubAgent = true });
-    private static string Parent() => SystemPrompt.Build(Context());
+
+    /// <summary>A parent that CAN delegate — fan-out mode. The obligation lines are for this agent.</summary>
+    private static string Parent() => SystemPrompt.Build(Context() with { CanSpawn = true });
+
+    /// <summary>A parent in SINGLE mode: no spawn tool, so no spawn machinery in its prompt.</summary>
+    private static string SingleModeParent() => SystemPrompt.Build(Context());
 
     /// <summary>
     /// THE COMMANDS BLOCK IS DROPPED FOR A CHILD — the one part of the session prompt that is
@@ -427,6 +432,29 @@ public class SystemPromptTests
     /// description, read at the moment of choosing rather than paid for on every turn of every
     /// session — including the ones that never spawn.
     /// </summary>
+    /// <summary>
+    /// A SINGLE-MODE PARENT IS TOLD NOTHING ABOUT SUB-AGENTS AT ALL.
+    ///
+    /// <para>It has no spawn tool, so all three obligation lines describe machinery it cannot reach —
+    /// the same argument that keeps them off a CHILD, which also cannot spawn. A prompt discussing
+    /// capabilities the reader does not have is noise, and noise in a system prompt is what teaches a
+    /// model to skim it.</para>
+    ///
+    /// <para>The useful consequence: single mode's prompt is byte-identical to what shipped before
+    /// sub-agents existed, so turning the feature off really does turn it off.</para>
+    /// </summary>
+    [Fact]
+    public void SingleMode_SaysNothingAboutSubAgentsAtAll()
+    {
+        var single = SingleModeParent();
+
+        Assert.DoesNotContain("sub-agent", single, StringComparison.OrdinalIgnoreCase);
+
+        // ...while the same prompt in fan-out mode does carry them, so this is a difference between
+        // modes rather than the lines having been deleted.
+        Assert.Contains("sub-agent", Parent(), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Parent_IsNotToldWhenToSpawn()
     {

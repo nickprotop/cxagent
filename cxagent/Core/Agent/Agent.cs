@@ -97,6 +97,30 @@ public sealed class Agent
     private readonly ISubAgentSpawner? _spawner;
 
     /// <summary>
+    /// Whether this agent works alone or may delegate — SETTABLE, and the only mutable thing about
+    /// how this agent is configured.
+    ///
+    /// <para>MUTABLE BECAUSE IT COSTS NOTHING TO BE. Both things a mode changes are rebuilt on every
+    /// prompt anyway: the tool list at the request build, and the system message reconciled at index 0
+    /// (replaced only when its text differs). So the next <c>SendAsync</c> simply reads this and acts
+    /// on it — no rebuilt agent, no re-wire, and the conversation is not even involved, since it
+    /// belongs to <see cref="AgentHost"/> and is handed in.</para>
+    ///
+    /// <para>Contrast the briefing, which is constructor-only: that IS the cache prefix and rewriting
+    /// it mid-session would throw away every cached token at the moment a conversation is longest. A
+    /// mode change costs exactly one prefix miss, which is what the user asked for by changing it.</para>
+    ///
+    /// <para>NOT read mid-request. The tool list is fixed once a request begins (see the request
+    /// build), so a change between two turns of one request cannot make the model chase a tool that
+    /// vanished underneath it.</para>
+    /// </summary>
+    public AgentMode Mode { get; set; } = AgentMode.Single;
+
+    /// <summary>True when this agent can actually spawn: fan-out mode AND a spawner to do it with.
+    /// A child has no spawner whatever its mode says, which is what makes no-nesting structural.</summary>
+    private bool CanSpawn => Mode == AgentMode.FanOut && _spawner is not null;
+
+    /// <summary>
     /// Whether this agent is a CHILD, fixed at construction.
     ///
     /// <para>Not derived from <c>_spawner is null</c>, which would be the tempting shortcut and is
@@ -350,6 +374,10 @@ public sealed class Agent
                     // — two prefixes per session rather than one, which is correct because they are
                     // two different agents.
                     IsSubAgent = _isSubAgent,
+
+                    // The three parent-obligation lines are for an agent that can actually delegate.
+                    // In single mode they describe machinery it does not have.
+                    CanSpawn = CanSpawn,
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
@@ -397,9 +425,10 @@ public sealed class Agent
         // moving target for the model.
         var tools = WorkerToolset.For(AllTools, _plugins)
             .Concat(_mcp?.Definitions() ?? [])
-            // THE SPAWN TOOL, only when this agent has a spawner. A child has none, so its tool list
-            // simply does not contain it — which is the whole no-nesting mechanism, visible here.
-            .Concat(_spawner is null ? [] : new[] { _spawner.Definition })
+            // THE SPAWN TOOL, only when this agent CAN spawn — fan-out mode, and a spawner to do it
+            // with. Two independent reasons not to offer it, and both matter: a child has no spawner
+            // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
+            .Concat(CanSpawn ? new[] { _spawner!.Definition } : [])
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1011,7 +1040,10 @@ public sealed class Agent
             // own, so the chain is one ?? per source and "no such tool" stays WorkerToolset's single
             // message. Spawn leads because it is the only name that could otherwise be shadowed: an
             // MCP server is free to advertise anything.
-            result = (_spawner is null ? null : await _spawner.TryInvokeAsync(call, OnChildSpawned, ct))
+            // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
+            // spawn_agent in an earlier fan-out turn could still call it by name after a switch to
+            // single, and the branch would happily run a child the user had just turned off.
+            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct) : null)
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
         }

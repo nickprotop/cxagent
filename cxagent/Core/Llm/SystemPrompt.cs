@@ -42,6 +42,23 @@ public readonly record struct SystemPromptContext(
     /// two different agents.</para>
     /// </summary>
     public bool IsSubAgent { get; init; }
+
+    /// <summary>
+    /// True when this agent MAY SPAWN sub-agents — false in single mode, and false for a child.
+    ///
+    /// <para>Gates the three obligation lines a parent has towards work it did not do itself (D26).
+    /// They are correct only for an agent that can actually delegate: in single mode the agent has no
+    /// spawn tool, so "a sub-agent's report is a claim, not a verification" describes a capability it
+    /// does not have — exactly the argument that keeps those lines off a CHILD, which cannot spawn
+    /// either. A prompt that discusses machinery the reader has no access to is noise, and noise in a
+    /// system prompt is what trains a model to skim it.</para>
+    ///
+    /// <para>SEPARATE FROM <see cref="IsSubAgent"/> rather than derived from it. A child is never a
+    /// spawner, so one implies the other in ONE direction only — a single-mode parent is not a
+    /// sub-agent and still cannot spawn. Collapsing them into one flag would make that case
+    /// unrepresentable.</para>
+    /// </summary>
+    public bool CanSpawn { get; init; }
 }
 
 /// <summary>
@@ -118,7 +135,7 @@ public static class SystemPrompt
         // child. Appended unconditionally, for the same reason /mcp is listed for users with no
         // servers: gating them on "has spawned" would remove them from the first spawn, the one turn
         // that needs them, and would change the prefix mid-session.
-        if (!ctx.IsSubAgent)
+        if (ctx.CanSpawn)
         {
             sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
                         + "report is thin or does not answer what you asked, say so or check it "
@@ -163,7 +180,7 @@ public static class SystemPrompt
         // every line here while verifying nothing. That is the live-drive failure this section was
         // written to fix ("all tests build and pass cleanly" over a file that did not compile),
         // arriving through a layer the text does not reach.
-        if (!ctx.IsSubAgent)
+        if (ctx.CanSpawn)
         {
             sb.AppendLine("A sub-agent's report is a claim, not a verification. If it says the build "
                         + "passes, the build is not verified until you have seen the output "
@@ -244,9 +261,12 @@ public static class SystemPrompt
         // that is read when CHOOSING to spawn, this applies when ANSWERING, often many turns and
         // several tool calls later. D22 is what makes it true — nothing of the child renders but its
         // row — so the parent is the only channel there is.
-        sb.AppendLine("The user cannot see a sub-agent's work. Anything from one that they need is "
-                    + "only in your reply.");
-        sb.AppendLine();
+        if (ctx.CanSpawn)
+        {
+            sb.AppendLine("The user cannot see a sub-agent's work. Anything from one that they need "
+                        + "is only in your reply.");
+            sb.AppendLine();
+        }
         sb.AppendLine("If you will not do something, say so in a sentence and offer what you can do. "
                     + "Do not explain at length why it was refused.");
         sb.AppendLine();

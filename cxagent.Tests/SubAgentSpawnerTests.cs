@@ -250,7 +250,12 @@ public class SubAgentSpawnerTests
 
         var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new ThrowingSpawner());
+            spawner: new ThrowingSpawner())
+        {
+            // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
+            // point of the mode: a session holding a spawner it is not using offers no spawn tool.
+            Mode = AgentMode.FanOut,
+        };
 
         // The turn completes rather than throwing.
         var first = await parent.SendAsync("delegate something", CancellationToken.None);
@@ -324,7 +329,12 @@ public class SubAgentSpawnerTests
         var jobs = new NullJobPanel();
         var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(childProvider)));
+            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        {
+            // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
+            // point of the mode: a session holding a spawner it is not using offers no spawn tool.
+            Mode = AgentMode.FanOut,
+        };
 
         await parent.SendAsync("delegate", CancellationToken.None);
 
@@ -367,7 +377,12 @@ public class SubAgentSpawnerTests
         var jobs = new NullJobPanel();
         var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))));
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        {
+            // A SPAWNER IS NO LONGER ENOUGH — the agent must also be in fan-out mode. That is the
+            // point of the mode: a session holding a spawner it is not using offers no spawn tool.
+            Mode = AgentMode.FanOut,
+        };
 
         await parent.SendAsync("delegate", CancellationToken.None);
 
@@ -453,5 +468,116 @@ public class SubAgentSpawnerTests
         var shellRequest = Assert.Single(gate.Seen,
             r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Shell);
         Assert.Null(shellRequest.Requester);
+    }
+
+    // ---- mode gates the whole capability --------------------------------------------------------
+
+    /// <summary>
+    /// SINGLE MODE OFFERS NO SPAWN TOOL, even when a spawner is wired.
+    ///
+    /// <para>The seam is the same one that makes no-nesting structural for a child: a model cannot
+    /// call a tool it was never sent. Here it is a session-level switch rather than a construction
+    /// fact, which is what lets it change mid-session.</para>
+    /// </summary>
+    [Fact]
+    public async Task SingleMode_DoesNotOfferTheSpawnTool_EvenWithASpawnerWired()
+    {
+        var provider = Answering("done");
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        {
+            Mode = AgentMode.Single,
+        };
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.NotNull(provider.LastTools);
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "spawn_agent");
+    }
+
+    /// <summary>Fan-out offers it — the difference is the mode, not the wiring.</summary>
+    [Fact]
+    public async Task FanOutMode_OffersTheSpawnTool()
+    {
+        var provider = Answering("done");
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Contains(provider.LastTools!, t => t.Name == "spawn_agent");
+    }
+
+    /// <summary>
+    /// SWITCHING MODE TAKES EFFECT ON THE NEXT PROMPT, WITHOUT REBUILDING ANYTHING — and the
+    /// conversation survives.
+    ///
+    /// <para>Both things a mode changes are rebuilt every prompt anyway: the tool list at the request
+    /// build, and the system message reconciled at index 0. The conversation belongs to the host and
+    /// is handed to the agent, so a switch cannot disturb it — messages 1..N are untouched and only
+    /// index 0 is replaced.</para>
+    /// </summary>
+    [Fact]
+    public async Task SwitchingMode_TakesEffectNextPrompt_AndKeepsTheConversation()
+    {
+        var provider = Answering("one", "two", "three");
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await agent.SendAsync("remember this word: pelican", CancellationToken.None);
+        Assert.Contains(provider.LastTools!, t => t.Name == "spawn_agent");
+        var messagesBefore = agent.Context.Messages.Count;
+
+        agent.Mode = AgentMode.Single;
+        await agent.SendAsync("and now?", CancellationToken.None);
+
+        // The tool is gone...
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "spawn_agent");
+        // ...and everything said before the switch is still there.
+        Assert.True(agent.Context.Messages.Count > messagesBefore);
+        Assert.Contains(agent.Context.Messages, m => m.Content.Contains("pelican", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A SPAWN CALL IN SINGLE MODE IS REFUSED, not quietly honoured.
+    ///
+    /// <para>A model that saw <c>spawn_agent</c> in an earlier fan-out turn can call it by name after
+    /// a switch — the conversation still contains the evidence that the tool once existed. Gating only
+    /// the tool LIST would leave the dispatch branch happily running a child the user had just turned
+    /// off.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnCallInSingleMode_IsRefused()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child ran!"))))
+        {
+            Mode = AgentMode.Single,
+        };
+
+        await agent.SendAsync("delegate something", CancellationToken.None);
+
+        // It fell through to "no such tool" rather than running a child.
+        var toolResult = Assert.Single(agent.Context.Messages, m => m.Role == "tool");
+        Assert.DoesNotContain("child ran!", toolResult.Content, StringComparison.Ordinal);
     }
 }

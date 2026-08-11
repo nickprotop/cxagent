@@ -93,6 +93,10 @@ public sealed class AgentHost : IDisposable
     /// constructor body.</summary>
     private readonly ISubAgentSpawner? _spawner;
 
+    /// <summary>The mode this session starts in — from the command line. Applied to the agent in
+    /// BuildAgent, after which <see cref="Mode"/> is the live value.</summary>
+    private readonly AgentMode _mode;
+
     /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
     /// P11 Task 1), threaded through from ProviderResolution at construction time rather than read off
@@ -103,6 +107,16 @@ public sealed class AgentHost : IDisposable
     /// and falls back to the fixed constant, per its own precedence.
     /// </summary>
     private readonly int? _contextWindow;
+
+    /// <summary>
+    /// Whether this session works alone or may delegate. Forwarded straight to the agent, which reads
+    /// it on the next prompt — no rebuild, and the conversation is untouched.
+    /// </summary>
+    public AgentMode Mode
+    {
+        get => _agent.Mode;
+        set => _agent.Mode = value;
+    }
 
     /// <summary>Cumulative orchestrator token spend for this runner's goal(s), against the configured budget.</summary>
     public TokenLedger Ledger { get; }
@@ -233,8 +247,10 @@ public sealed class AgentHost : IDisposable
         IReadOnlyList<IAsyncDisposable>? mcpServers = null,
         string? briefing = null,
         TokenLedger? ledger = null,
-        ISubAgentSpawner? spawner = null)
+        ISubAgentSpawner? spawner = null,
+        AgentMode mode = AgentMode.Single)
     {
+        _mode = mode;
         _spawner = spawner;
         _briefing = briefing;
         _mcp = mcp;
@@ -386,7 +402,13 @@ public sealed class AgentHost : IDisposable
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
-            context: Context);
+            context: Context)
+        {
+            // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
+            // settable property precisely so it can change later, and an initialiser says that more
+            // plainly than a constructor argument would.
+            Mode = _mode,
+        };
 
         // SUBSCRIBED, not assigned. These are events (Agent.cs:122-140), so a second consumer — a
         // sub-agent's telemetry reporter, an aggregator — adds itself rather than silently replacing
