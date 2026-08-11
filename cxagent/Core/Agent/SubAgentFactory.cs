@@ -115,7 +115,12 @@ public sealed class SubAgentFactory
             context: new AgentContext(_contextWindow),
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
-            briefing: briefing);
+            briefing: briefing,
+
+            // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
+            // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
+            // not have, and never told that its final message is the entire answer.
+            isSubAgent: true);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //

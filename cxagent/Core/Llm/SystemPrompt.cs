@@ -24,6 +24,24 @@ public readonly record struct SystemPromptContext(
     /// </summary>
     public IReadOnlyDictionary<string, string> McpInstructions { get; init; } =
         new Dictionary<string, string>();
+
+    /// <summary>
+    /// True when this prompt is for a SUB-AGENT rather than the session's own agent.
+    ///
+    /// <para>A child would otherwise receive the session prompt unchanged, which is wrong in one
+    /// specific way and silent about the thing that matters most. Wrong: the commands section names
+    /// /help, /clear, /compress, /mcp and /exit to an agent with NO USER AND NO COMPOSER — it is being
+    /// told to suggest commands to someone who will never see them. Silent: nothing tells it that its
+    /// final message is the entire answer, so a child that believes it is in a conversation closes
+    /// with "let me know if you'd like me to check the other files" and the parent receives a question
+    /// nobody can answer.</para>
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, like <see cref="McpInstructions"/>, and FIXED AT CONSTRUCTION. It
+    /// cannot vary within an agent's life, so each agent still produces a byte-identical prefix for
+    /// its whole session — two prefixes per session rather than one, which is correct because they are
+    /// two different agents.</para>
+    /// </summary>
+    public bool IsSubAgent { get; init; }
 }
 
 /// <summary>
@@ -94,6 +112,19 @@ public static class SystemPrompt
         sb.AppendLine("Do not commit unless the user asks. Running the tests is expected; committing "
                     + "is theirs to decide.");
         sb.AppendLine();
+        // D26, ONE OF THREE. Not spawn guidance — when to spawn lives in the tool description, read
+        // at the moment of choosing. These three lines are a parent's obligations towards work it did
+        // not do itself, and each is a line that is correct for a lone agent and WRONG once it has a
+        // child. Appended unconditionally, for the same reason /mcp is listed for users with no
+        // servers: gating them on "has spawned" would remove them from the first spawn, the one turn
+        // that needs them, and would change the prefix mid-session.
+        if (!ctx.IsSubAgent)
+        {
+            sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
+                        + "report is thin or does not answer what you asked, say so or check it "
+                        + "yourself — do not pass it on as fact.");
+            sb.AppendLine();
+        }
         // THE USER IS ASKED TO APPROVE run_shell, and the prompt shows the command truncated with no
         // reason attached. Say what a non-obvious one does BEFORE calling it, or they are approving
         // a string they cannot read.
@@ -126,10 +157,28 @@ public static class SystemPrompt
         sb.AppendLine("If you cannot verify a change, say so plainly. Reporting success you have not "
                     + "confirmed is worse than reporting that you could not confirm it.");
         sb.AppendLine();
+        // D26, THE MOST VALUABLE OF THE THREE. Without it this ENTIRE SECTION is dead on the
+        // delegated path: every rule above is written about output THE MODEL READ, and a child's
+        // summary is neither the output nor the model's own reading of it — so a parent can satisfy
+        // every line here while verifying nothing. That is the live-drive failure this section was
+        // written to fix ("all tests build and pass cleanly" over a file that did not compile),
+        // arriving through a layer the text does not reach.
+        if (!ctx.IsSubAgent)
+        {
+            sb.AppendLine("A sub-agent's report is a claim, not a verification. If it says the build "
+                        + "passes, the build is not verified until you have seen the output "
+                        + "yourself.");
+            sb.AppendLine();
+        }
 
         // THE MODEL CANNOT RUN THESE — the app intercepts them before a turn starts. It is told
         // about them so it can point the user at one, and so a "/help" typed at it is recognised as
         // a command the app handles rather than answered as prose.
+        // DROPPED FOR A CHILD — the one block that is actively WRONG rather than merely unhelpful.
+        // It names /help, /clear, /compress, /mcp and /exit to an agent with no user and no composer,
+        // instructing it to suggest commands to someone who will never see them.
+        if (!ctx.IsSubAgent)
+        {
         sb.AppendLine("# The user's commands");
         sb.AppendLine();
         // /mcp is listed unconditionally, like the rest: it is a real command for every user
@@ -141,6 +190,39 @@ public static class SystemPrompt
                     + "/mcp (list MCP servers and why any failed), /exit. You cannot run "
                     + "them — mention one only to suggest it.");
         sb.AppendLine();
+        }
+
+        // REPLACED FOR A CHILD, not appended to. Everything below addresses a HUMAN READING A
+        // TERMINAL — be concise for a terminal, render markdown, talk to the user in your reply — and
+        // a child's reader is a model. Adding a second block instead of replacing would leave the
+        // child with two sets of answering instructions that disagree.
+        if (ctx.IsSubAgent)
+        {
+            sb.AppendLine("# Answering");
+            sb.AppendLine();
+            sb.AppendLine("You are a sub-agent. Another agent gave you this task and is waiting for "
+                        + "one message back.");
+            sb.AppendLine();
+            sb.AppendLine("Your final message is the whole of what it receives — nothing else you do "
+                        + "is visible to it. Put the answer there, with the specifics: file paths as "
+                        + "file_path:line_number, names, and what you actually observed. A summary "
+                        + "that omits where you looked cannot be checked or used.");
+            sb.AppendLine();
+            sb.AppendLine("There is no follow-up. Nobody will answer a question, approve a plan, or "
+                        + "ask you to continue — so do not ask one, do not offer next steps, and do "
+                        + "not close by describing what you could do instead.");
+            sb.AppendLine();
+            sb.AppendLine("If you could not do what was asked, say that plainly and say how far you "
+                        + "got. A partial answer marked partial is useful; a confident answer that is "
+                        + "not backed by what you saw is not.");
+            sb.AppendLine();
+            sb.AppendLine("Be brief in the way a report is brief, not the way a chat message is. No "
+                        + "preamble.");
+            sb.AppendLine();
+
+            AppendMcpInstructions(sb, ctx);
+            return sb.ToString();
+        }
 
         sb.AppendLine("# Answering");
         sb.AppendLine();
@@ -158,45 +240,59 @@ public static class SystemPrompt
         sb.AppendLine("Talk to the user in your reply, never through a tool. Do not echo messages "
                     + "from run_shell or leave notes in code comments to be read.");
         sb.AppendLine();
+        // D26, THREE OF THREE. The tool description says this too, and the duplication is the point:
+        // that is read when CHOOSING to spawn, this applies when ANSWERING, often many turns and
+        // several tool calls later. D22 is what makes it true — nothing of the child renders but its
+        // row — so the parent is the only channel there is.
+        sb.AppendLine("The user cannot see a sub-agent's work. Anything from one that they need is "
+                    + "only in your reply.");
+        sb.AppendLine();
         sb.AppendLine("If you will not do something, say so in a sentence and offer what you can do. "
                     + "Do not explain at length why it was refused.");
         sb.AppendLine();
         sb.AppendLine("Never write code that logs or hard-codes a secret, and never put one in a "
                     + "file you create.");
 
-        // MCP SERVERS LAST, and only when there are any.
-        //
-        // Nothing is appended when no server sent instructions — which is both the common case and a
-        // cache concern: the system message is the prompt-cache prefix, and a heading that appeared
-        // even when empty would change it for every user with no MCP configured, charging them a miss
-        // for a feature they are not using.
-        //
-        // Attributed to the server that said it, the same rule project instructions follow: an
-        // unattributed paragraph appended to a system prompt reads as though the app itself said it,
-        // leaving the model no way to weigh a server's advice against a general instruction.
+        AppendMcpInstructions(sb, ctx);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// MCP SERVERS LAST, and only when there are any. Shared by both prompts — a child gets its
+    /// parent's toolset (D21), so a server's guidance is exactly as relevant to it.
+    ///
+    /// <para>Nothing is appended when no server sent instructions, which is both the common case and a
+    /// cache concern: the system message is the prompt-cache prefix, and a heading that appeared even
+    /// when empty would change it for every user with no MCP configured, charging them a miss for a
+    /// feature they are not using.</para>
+    ///
+    /// <para>Attributed to the server that said it, the same rule project instructions follow: an
+    /// unattributed paragraph appended to a system prompt reads as though the app itself said it,
+    /// leaving the model no way to weigh a server's advice against a general instruction.</para>
+    /// </summary>
+    private static void AppendMcpInstructions(StringBuilder sb, SystemPromptContext ctx)
+    {
         var servers = ctx.McpInstructions
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)   // stable order, or the prefix churns
             .ToList();
 
-        if (servers.Count > 0)
+        if (servers.Count == 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("# MCP servers");
+        sb.AppendLine();
+        sb.AppendLine("These tools come from external servers. Each server's own guidance follows; "
+                    + "it describes how to use that server, which its individual tool descriptions "
+                    + "cannot.");
+
+        foreach (var (name, text) in servers)
         {
             sb.AppendLine();
-            sb.AppendLine("# MCP servers");
+            sb.AppendLine($"From the '{name}' server:");
             sb.AppendLine();
-            sb.AppendLine("These tools come from external servers. Each server's own guidance follows; "
-                        + "it describes how to use that server, which its individual tool descriptions "
-                        + "cannot.");
-
-            foreach (var (name, text) in servers)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"From the '{name}' server:");
-                sb.AppendLine();
-                sb.AppendLine(text.Trim());
-            }
+            sb.AppendLine(text.Trim());
         }
-
-        return sb.ToString();
     }
 }

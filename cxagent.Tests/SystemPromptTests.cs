@@ -334,4 +334,138 @@ public class SystemPromptTests
 
         Assert.Equal(Build(), p);
     }
+
+    // ---- D24/D26: the two prompts ----------------------------------------------------------
+
+    private static string Child() => SystemPrompt.Build(Context() with { IsSubAgent = true });
+    private static string Parent() => SystemPrompt.Build(Context());
+
+    /// <summary>
+    /// THE COMMANDS BLOCK IS DROPPED FOR A CHILD — the one part of the session prompt that is
+    /// actively WRONG rather than merely unhelpful. It names /help, /clear, /compress, /mcp and /exit
+    /// to an agent with NO USER AND NO COMPOSER, telling it to suggest commands to someone who will
+    /// never see them.
+    /// </summary>
+    [Fact]
+    public void Child_IsNotToldAboutCommandsItCannotRunForAUserItDoesNotHave()
+    {
+        var child = Child();
+
+        Assert.DoesNotContain("/clear", child, StringComparison.Ordinal);
+        Assert.DoesNotContain("/compress", child, StringComparison.Ordinal);
+        Assert.DoesNotContain("/exit", child, StringComparison.Ordinal);
+        Assert.DoesNotContain("The user's commands", child, StringComparison.Ordinal);
+
+        // The parent still gets them: this is a difference between the two prompts, not a deletion.
+        Assert.Contains("/clear", Parent(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A CHILD IS TOLD IT IS ONE, which nothing did before. A child that believes it is in a
+    /// conversation closes with "let me know if you'd like me to check the other files" — and the
+    /// parent receives a question nobody can answer.
+    /// </summary>
+    [Fact]
+    public void Child_IsToldItsFinalMessageIsTheWholeAnswer()
+    {
+        var child = Child();
+
+        Assert.Contains("You are a sub-agent", child, StringComparison.Ordinal);
+        Assert.Contains("There is no follow-up", child, StringComparison.Ordinal);
+        Assert.Contains("do not offer next steps", child, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// # Answering is REPLACED, not appended to. Two Answering sections would give the child two sets
+    /// of instructions that disagree — one written for a person reading a terminal, one for the model
+    /// that is actually reading it.
+    /// </summary>
+    [Fact]
+    public void Child_HasExactlyOneAnsweringSection()
+    {
+        var child = Child();
+
+        Assert.Equal(1, CountOf(child, "# Answering"));
+        // And the human-facing guidance is gone rather than sitting alongside it.
+        Assert.DoesNotContain("goes to a terminal", child, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EVERYTHING ELSE IS KEPT. env, conventions and verifying are as true for a child as for a
+    /// parent — verifying MORE so, since the child is the one actually running the commands.
+    /// </summary>
+    [Fact]
+    public void Child_KeepsTheEnvironmentConventionsAndVerifying()
+    {
+        var child = Child();
+
+        Assert.Contains("<env>", child, StringComparison.Ordinal);
+        Assert.Contains("# Following conventions", child, StringComparison.Ordinal);
+        Assert.Contains("# Verifying", child, StringComparison.Ordinal);
+        Assert.Contains("A command that exits 0 has not necessarily verified anything",
+            child, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE PARENT GETS THE THREE OBLIGATION LINES (D26). The verifying one matters most: without it
+    /// that entire section is dead on the delegated path, because every rule in it is written about
+    /// output THE MODEL READ, and a child's summary is neither the output nor the model's reading of
+    /// it.
+    /// </summary>
+    [Fact]
+    public void Parent_IsToldAChildsReportIsAClaimNotAVerification()
+    {
+        var parent = Parent();
+
+        Assert.Contains("A sub-agent's report is a claim, not a verification", parent, StringComparison.Ordinal);
+        Assert.Contains("accountable for a sub-agent's work", parent, StringComparison.Ordinal);
+        Assert.Contains("The user cannot see a sub-agent's work", parent, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE PARENT IS TOLD NOTHING ABOUT WHEN TO SPAWN (D25). That belongs in the tool
+    /// description, read at the moment of choosing rather than paid for on every turn of every
+    /// session — including the ones that never spawn.
+    /// </summary>
+    [Fact]
+    public void Parent_IsNotToldWhenToSpawn()
+    {
+        var parent = Parent();
+
+        Assert.DoesNotContain("spawn_agent", parent, StringComparison.Ordinal);
+        Assert.DoesNotContain("Do NOT use it", parent, StringComparison.Ordinal);
+    }
+
+    /// <summary>A child is not given the three obligation lines: it cannot spawn, so all three concern
+    /// a capability it does not have.</summary>
+    [Fact]
+    public void Child_IsNotGivenTheParentsObligationLines()
+    {
+        var child = Child();
+
+        Assert.DoesNotContain("accountable for a sub-agent's work", child, StringComparison.Ordinal);
+        Assert.DoesNotContain("is a claim, not a verification", child, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EACH PROMPT IS STABLE FOR ITS OWN AGENT'S LIFE. IsSubAgent is fixed at construction, so a
+    /// child's prefix is byte-identical turn after turn exactly as a parent's is — two prefixes per
+    /// session rather than one, which is correct because they are two different agents.
+    /// </summary>
+    [Fact]
+    public void BothPrompts_AreStableAcrossRepeatedBuilds()
+    {
+        Assert.Equal(Child(), Child());
+        Assert.Equal(Parent(), Parent());
+        Assert.NotEqual(Child(), Parent());
+    }
+
+    private static int CountOf(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+            count++;
+        return count;
+    }
 }

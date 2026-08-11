@@ -97,6 +97,16 @@ public sealed class Agent
     private readonly ISubAgentSpawner? _spawner;
 
     /// <summary>
+    /// Whether this agent is a CHILD, fixed at construction.
+    ///
+    /// <para>Not derived from <c>_spawner is null</c>, which would be the tempting shortcut and is
+    /// wrong: a session with sub-agents disabled also has no spawner, and it would then be told it is
+    /// a sub-agent with no user to talk to. The two facts are independent and are stated
+    /// independently.</para>
+    /// </summary>
+    private readonly bool _isSubAgent;
+
+    /// <summary>
     /// What THIS agent was created to do, fixed at construction — null for a plain session.
     ///
     /// <para>The seam a caller uses to tell one agent something the others are not told: a
@@ -171,10 +181,12 @@ public sealed class Agent
         AgentContext? context = null, string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
         string? briefing = null,
-        ISubAgentSpawner? spawner = null)
+        ISubAgentSpawner? spawner = null,
+        bool isSubAgent = false)
     {
         _mcp = mcp;
         _spawner = spawner;
+        _isSubAgent = isSubAgent;
         _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
         _plugins = plugins;
@@ -281,6 +293,13 @@ public sealed class Agent
                     // the cache prefix — byte-identical for anyone without MCP.
                     McpInstructions = _mcp?.InstructionsByServer()
                                       ?? new Dictionary<string, string>(),
+
+                    // A CHILD GETS A DIFFERENT PROMPT (D24): the commands block dropped, and
+                    // # Answering replaced with one written for a model rather than a person at a
+                    // terminal. Fixed for this agent's whole life, so its prefix stays byte-identical
+                    // — two prefixes per session rather than one, which is correct because they are
+                    // two different agents.
+                    IsSubAgent = _isSubAgent,
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
