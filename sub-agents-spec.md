@@ -39,6 +39,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D28 | **The parent must be TOLD several agents can run at once** — one line in the system prompt (gated on CanSpawn), and the mechanism plus "independent work" in the tool description, which today says "It runs once… returns one message". Both references state the mechanism explicitly rather than trusting inference. Ship them separately so each can be attributed. | §5 STEP 3 |
 | D27 | **Concurrency is a BARRIER, not background.** N children in one assistant message, all resolved before the parent's loop resumes. Forced by the message format — an unmatched tool call 400s the session — and it is what both references ship. It also dodges the unsolved problem: with a barrier the user is still watching, so a child's permission prompt has someone to answer it. | §5 STEP 3 |
 | D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
@@ -1234,6 +1235,20 @@ order nobody chose.
 interfere. Two `dotnet build` invocations in one directory can, and the model has no idea it launched
 them together.
 
+**AN AGENT IS A TOOL — and the one place it is not is why this partition exists.**
+
+Structurally there is no difference and that is deliberate: `spawn_agent` is a `ToolDefinition` in
+the same array as `read_file`, arrives as a `ToolCall`, resolves through the same `??` chain, and
+returns a string that becomes a `Role="tool"` message with a `ToolCallId`. The model cannot tell them
+apart, and nothing in the loop treats them differently. That sameness is why step 1 was mostly
+plumbing rather than new machinery.
+
+The asymmetry is DURATION AND VISIBILITY. A `read_file` is milliseconds and its result is already
+inline; a child is minutes and its forty-odd intermediate calls are invisible by design (D22). Same
+interface, three orders of magnitude apart. If an agent were a tool in every respect the right answer
+would be to parallelise all of them or none — the partition exists precisely because that one
+property differs.
+
 **SO: PARALLELISE THE SPAWNS, NOT THE TOOLS.** Partition the turn's calls — spawns run under
 `Task.WhenAll`, everything else keeps today's sequential `foreach`, and results are reassembled in
 call order before any is appended.
@@ -1278,6 +1293,50 @@ Only then: `Task.WhenAll` over the spawn partition, sinks marshalling as they al
 implementations go through `EnqueueOnUIThread`), and the results reassembled in call order.
 
 #### 6. THE PROMPTING MUST CHANGE TOO — the one easiest to forget
+
+**D28. The parent's SYSTEM PROMPT gains one line saying several agents may run at once, and the TOOL
+DESCRIPTION gains the mechanism.** Both, because they answer different questions at different
+moments — the split D25 already draws.
+
+Nothing today tells the model that more than one child is possible. The tool description says the
+opposite in as many words: *"It cannot ask you anything. It runs once, with only what you write in
+the prompt, and returns one message"* (`SubAgentSpawner.cs:58`) — every sentence written for a single
+blocking child. The system prompt's two spawn lines are singular throughout ("send a sub-agent",
+"use it"). A model reading either will keep spawning one at a time however parallel the runtime
+becomes, and the parallelism will be a feature nobody exercises.
+
+**THE MECHANISM MUST BE STATED, NOT IMPLIED.** This is the part both references make explicit, and
+the reason is mechanical rather than motivational: a model that wants to parallelise and does not
+know HOW will emit the spawns in successive turns and wait for each. opencode: *"to do that, use a
+single message with multiple tool uses."* Claude Code: *"send them in a single message with multiple
+tool uses so they run concurrently."* Neither trusts the model to infer it.
+
+Where each part goes:
+
+| Change | Where | Why there |
+|---|---|---|
+| several agents can run at once, in one message | tool DESCRIPTION | read at the moment of choosing (D25) |
+| "independent work" as the test for splitting | tool DESCRIPTION | a property of the tasks, weighed when picking them |
+| drop "It runs once… returns one message" | tool DESCRIPTION | it becomes false |
+| one line that several may run at once | SYSTEM prompt, gated on CanSpawn | an obligation about how to use the capability, beside D26's three |
+
+**AND THE OBLIGATION THAT ONLY APPEARS WITH SEVERAL:** two children given overlapping work will edit
+the same files. opencode says it outright — *"avoid working with the same files or topics it is
+using"*, *"Work on non-overlapping tasks"* — and it is a CORRECTNESS rule, not an efficiency one. It
+belongs in the description beside the concurrency instruction.
+
+**MEASURE IT, AND SHIP THE CHANGES SEPARATELY.** Today's record on prompting is three interventions
+for one usable result, and the difference every time was whether a change could be ATTRIBUTED. The
+worked examples moved a pure search from 0 spawns to 1 with a 9x context saving because nothing else
+changed in that run. Landing the description and the system-prompt line together would change two
+things at once and explain neither.
+
+**What the drive must observe:** does the model issue two spawns in ONE message, or two messages? A
+unit test cannot answer that — it is a property of what the model emits, and the only instrument is
+the parent's own context log, where an assistant message either carries two `spawn_agent` calls or
+does not.
+
+
 
 The machinery running two children at once does not make a model USE two. Every wording in the tool
 description today is written for a single blocking child ("It runs once… and returns one message"),
