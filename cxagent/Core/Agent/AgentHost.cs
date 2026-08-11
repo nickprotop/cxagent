@@ -88,6 +88,11 @@ public sealed class AgentHost : IDisposable
     // absent 'orchestrator' config block must still hand the loop real caps.
     private readonly OrchestratorSettings _orchestrator;
 
+    /// <summary>How this session's agent spawns children, or null when sub-agents are not wired.
+    /// Forwarded to the agent in BuildAgent — a field it must be, since BuildAgent runs after the
+    /// constructor body.</summary>
+    private readonly ISubAgentSpawner? _spawner;
+
     /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
     /// P11 Task 1), threaded through from ProviderResolution at construction time rather than read off
@@ -227,8 +232,10 @@ public sealed class AgentHost : IDisposable
         Core.Mcp.McpToolset? mcp = null,
         IReadOnlyList<IAsyncDisposable>? mcpServers = null,
         string? briefing = null,
-        TokenLedger? ledger = null)
+        TokenLedger? ledger = null,
+        ISubAgentSpawner? spawner = null)
     {
+        _spawner = spawner;
         _briefing = briefing;
         _mcp = mcp;
         _mcpServers = mcpServers ?? [];
@@ -371,6 +378,11 @@ public sealed class AgentHost : IDisposable
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
             briefing: _briefing,
+
+            // FORWARDED, and this is the third of the three signature changes the spec counted:
+            // Agent takes it, AgentHost takes it, and BuildAgent must PASS it. Omitting this line
+            // compiles perfectly and produces a session whose agent silently has no spawn tool.
+            spawner: _spawner,
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.

@@ -203,6 +203,29 @@ public static class AppBootstrap
                 ? new TokenLedger(sessionBudget)
                 : new TokenLedger(sessionBudget, resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens);
 
+            // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
+            // it: the provider, the plugin registry, the ledger just built above, the context window
+            // and the orchestrator settings. That is exactly what the ledger hoist was for — those
+            // last two are private on AgentHost and were unreachable from any factory before it.
+            var orchestrator = res.Orchestrator ?? OrchestratorSettings.Unbounded;
+            var subAgents = new SubAgentSpawner(new SubAgentFactory(
+                res.Provider!,
+                plugins,
+                // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
+                ledger,
+                logs,
+                // THE PARENT'S CEILING, not a number invented for children.
+                maxTurns: mainWindow.ConfiguredMaxWorkerTurns is { } configured and > 0
+                    ? configured
+                    : AgentHost.DefaultTurnCeiling,
+                // THE CONSTANT, never the literal — two copies of this number desynchronise the
+                // moment either moves, and a child that never compresses dies on an overflow.
+                compressAbove: orchestrator.EffectiveCompressThreshold(res.ContextWindow)
+                    ?? OrchestratorSettings.DefaultCompressThreshold,
+                contextWindow: res.ContextWindow,
+                globalInstructionsDir: paths.ConfigDir,
+                mcp: mcp.Toolset));
+
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
             // real: AgentHost takes OrchestratorSettings? and defaults to unbounded, so omitting it
             // here silently disabled cost control in production while every unit test still passed.
@@ -223,7 +246,8 @@ public static class AppBootstrap
                 mcp: mcp.Toolset,
                 // Built above from the same snapshot `resume` came from, so a resumed session gets
                 // its spend back exactly as it did when AgentHost made this itself.
-                ledger: ledger)
+                ledger: ledger,
+                spawner: subAgents)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200

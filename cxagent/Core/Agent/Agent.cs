@@ -88,6 +88,15 @@ public sealed class Agent
     private readonly Core.Mcp.McpToolset? _mcp;
 
     /// <summary>
+    /// How this agent spawns children, or NULL — and null is what makes no-nesting structural.
+    ///
+    /// <para>A field rather than a parameter because <see cref="InvokeAndShowAsync"/> is an instance
+    /// method. A child is constructed without one and therefore cannot spawn: not a rule it is asked
+    /// to follow, a tool it was never given.</para>
+    /// </summary>
+    private readonly ISubAgentSpawner? _spawner;
+
+    /// <summary>
     /// What THIS agent was created to do, fixed at construction — null for a plain session.
     ///
     /// <para>The seam a caller uses to tell one agent something the others are not told: a
@@ -161,9 +170,11 @@ public sealed class Agent
         IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
-        string? briefing = null)
+        string? briefing = null,
+        ISubAgentSpawner? spawner = null)
     {
         _mcp = mcp;
+        _spawner = spawner;
         _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
         _plugins = plugins;
@@ -313,6 +324,9 @@ public sealed class Agent
         // moving target for the model.
         var tools = WorkerToolset.For(AllTools, _plugins)
             .Concat(_mcp?.Definitions() ?? [])
+            // THE SPAWN TOOL, only when this agent has a spawner. A child has none, so its tool list
+            // simply does not contain it — which is the whole no-nesting mechanism, visible here.
+            .Concat(_spawner is null ? [] : new[] { _spawner.Definition })
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -831,6 +845,47 @@ public sealed class Agent
         _jobs.SetJobs(new[] { job });
 
         var started = DateTimeOffset.UtcNow;
+
+        // THE CHILD'S ID ADDRESSES THIS ROW (D14). Rows key on job.Id, minted per tool call above;
+        // the child mints its own Agent.Id. Associating them HERE — the one place both exist — is
+        // what lets telemetry, and later background reporting and aggregation, all address the same
+        // row through one identifier.
+        // The child's id, once it exists. NOT written onto job.AgentId, which is `required init` and
+        // already carries the SPAWNING agent's id — the row belongs to the parent's turn, and
+        // overwriting that would misattribute it. Held alongside instead, which is what a later
+        // expand-the-row swap keys on.
+        string? childId = null;
+
+        void OnChildSpawned(SubAgent child)
+        {
+            childId = child.Agent.Id;
+            job.ProgressMessage = "starting…";
+            _jobs.UpdateJob(job);
+
+            // The child's own events, straight onto the row. These are EVENTS now rather than
+            // settable callbacks, which is what lets a per-child reporter and a later session
+            // aggregator both subscribe to one signal.
+            var turns = 0;
+            child.Agent.TurnCompleted += _ =>
+            {
+                turns++;
+                Report(child, turns);
+            };
+            child.Agent.ContextUsed += _ => Report(child, turns);
+        }
+
+        void Report(SubAgent child, int turns)
+        {
+            // UsedFraction is null until the provider first reports usage, so an early tick shows
+            // turns alone rather than "0% ctx", which would read as a measurement rather than as the
+            // absence of one.
+            var occupancy = child.Agent.Context.UsedFraction is { } f
+                ? $" · {f:P0} ctx"
+                : "";
+            job.ProgressMessage = $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}";
+            _jobs.UpdateJob(job);
+        }
+
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
         // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
         // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
@@ -843,8 +898,39 @@ public sealed class Agent
         string result;
         try
         {
-            result = (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
+            // SPAWN FIRST, then MCP, then the built-ins — each returning null for a name it does not
+            // own, so the chain is one ?? per source and "no such tool" stays WorkerToolset's single
+            // message. Spawn leads because it is the only name that could otherwise be shadowed: an
+            // MCP server is free to advertise anything.
+            result = (_spawner is null ? null : await _spawner.TryInvokeAsync(call, OnChildSpawned, ct))
+                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // NEVER THROW FOR ANYTHING BUT CANCELLATION, and the reason is severe enough to spell
+            // out. The assistant message carrying the tool calls is appended BEFORE they run, so an
+            // exception unwinding the foreach leaves tool calls with no matching results — and an
+            // orphan 400 is NOT a length error, so ContextOverflow.IsOverflow does not match, the
+            // recovery path never runs, and compaction only fires on measured pressure that a small
+            // orphaned context never reaches. Every later prompt in the session then fails with the
+            // provider's 400 and nothing recovers it but /clear. Worse, it presents on the turn
+            // AFTER the failure, which is what makes it hard to diagnose.
+            //
+            // So the error becomes the tool RESULT and falls through to the messages.Add below.
+            // WorkerToolset.InvokeAsync already holds this contract for built-ins; this extends it to
+            // the two sources that did not — the spawn branch and _mcp.TryInvokeAsync.
+            //
+            // NOTE THE FALL-THROUGH RATHER THAN A RETURN. An early `return ErrorEnvelope(ex)` reads
+            // naturally and is exactly wrong: it leaves the method before the messages.Add that the
+            // result exists to become, producing the orphan this catch was written to prevent.
+            //
+            // A FAILED SPAWN KEEPS THE ENVELOPE SHAPE. The parent's model was told to expect
+            // <sub_agent id state>; handing it a bare "error:" string for the one case that matters
+            // most means the failure arrives in a shape it was never told about.
+            result = childId is null
+                ? $"error: {ex.Message}"
+                : SubAgentEnvelope.Render(childId, SendOutcome.Failed, ex.Message);
         }
         catch (OperationCanceledException)
         {
@@ -1218,6 +1304,19 @@ public sealed class Agent
     {
         "run_shell" => "shell",
         "http_request" => "http",
+
+        // A WORKER, NOT A FILE OPERATION. Without this the `_ => "file"` below labels a spawn a file
+        // op — and worse, InlineJobSink.IsCompactRow treats anything that is not "llm_agent" as
+        // compact, so THE ROW COLLAPSES THE MOMENT THE CHILD FINISHES, hiding the answer behind an
+        // "expand…". The sink's own comment says so: collapsing at the finish line snatches away the
+        // thing the user was reading.
+        //
+        // NOT A WORKAROUND. llm_agent is already first-class at five sites in InlineJobSink —
+        // AuthorFor gives the row a Worker author, IsCompactRow keeps it out of the compact branch,
+        // keepOpen leaves it expanded, StatusText returns null so the worker's own content shows, and
+        // JobDigest does not placeholder its bulk output. The concept was built for exactly this and
+        // was, until now, unused.
+        "spawn_agent" => "llm_agent",
 
         // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
