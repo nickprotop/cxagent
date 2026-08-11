@@ -14,8 +14,17 @@ namespace CxAgent.Core.Agent;
 public sealed class SubAgentSpawner : ISubAgentSpawner
 {
     private readonly SubAgentFactory _factory;
+    private readonly AgentTypeCatalog _types;
 
-    public SubAgentSpawner(SubAgentFactory factory) => _factory = factory;
+    /// <param name="types">
+    /// The catalog a `type` argument resolves against. Never empty — it always holds at least
+    /// `general` — so an error can always name something valid.
+    /// </param>
+    public SubAgentSpawner(SubAgentFactory factory, AgentTypeCatalog? types = null)
+    {
+        _factory = factory;
+        _types = types ?? new AgentTypeCatalog(new Dictionary<string, Llm.AgentTypeConfig>(), null);
+    }
 
     public string ToolName => "spawn_agent";
 
@@ -113,11 +122,23 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         //
         // `context` is the parent's channel: facts the child cannot discover, in the system message
         // so they survive compaction, below the briefing so they carry no authority.
+        // AN UNKNOWN TYPE IS REFUSED, NOT SILENTLY DEFAULTED. The model will invent "researcher".
+        // Substituting `general` means the user's briefing did not apply and nobody was told — the
+        // same class of silent-wrong as a mode that quietly stays single. A blank or absent name IS
+        // `general`, which is what makes a bare spawn ordinary rather than special.
+        var requested = Read(call, "type");
+        var type = _types.Resolve(requested);
+        if (type is null)
+            return $"error: unknown agent type '{requested?.Trim()}'. Valid: {_types.Names}.";
+
         var child = _factory.Create(
+            // THE BRIEFING COMES FROM THE TYPE, never from the parent (D9). Config is the only
+            // legitimate author of the highest-authority text in a child's prompt.
             briefing: null,
             callerContext: Read(call, "context"),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
-            label: Read(call, "description"));
+            label: Read(call, "description"),
+            type: type);
         onChild?.Invoke(child);
 
         var result = await child.Agent.SendAsync(prompt, ct);

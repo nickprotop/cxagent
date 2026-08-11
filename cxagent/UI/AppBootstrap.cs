@@ -224,6 +224,11 @@ public static class AppBootstrap
             // and the orchestrator settings. That is exactly what the ledger hoist was for — those
             // last two are private on AgentHost and were unreachable from any factory before it.
             var orchestrator = res.Orchestrator ?? OrchestratorSettings.Unbounded;
+            // THE TYPE CATALOG. Built per re-wire, like everything else here: an F5 provider change
+            // must re-resolve every type's instance against the NEW registry, or a type would keep a
+            // provider the session no longer uses.
+            var agentTypes = new AgentTypeCatalog(res.AgentTypes, res.Providers);
+
             var subAgents = new SubAgentSpawner(new SubAgentFactory(
                 res.Provider!,
                 plugins,
@@ -240,7 +245,14 @@ public static class AppBootstrap
                     ?? OrchestratorSettings.DefaultCompressThreshold,
                 contextWindow: res.ContextWindow,
                 globalInstructionsDir: paths.ConfigDir,
-                mcp: mcp.Toolset));
+                mcp: mcp.Toolset,
+                // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
+                // has a different window, so the threshold must be re-derived from it — and a second
+                // copy of "80% of the window" in the factory would desynchronise the moment either
+                // moved.
+                thresholdFor: w => orchestrator.EffectiveCompressThreshold(w)
+                    ?? OrchestratorSettings.DefaultCompressThreshold),
+                agentTypes);
 
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
             // real: AgentHost takes OrchestratorSettings? and defaults to unbounded, so omitting it

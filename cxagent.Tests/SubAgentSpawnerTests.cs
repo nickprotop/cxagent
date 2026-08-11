@@ -608,4 +608,144 @@ public class SubAgentSpawnerTests
         var toolResult = Assert.Single(agent.Context.Messages, m => m.Role == "tool");
         Assert.DoesNotContain("child ran!", toolResult.Content, StringComparison.Ordinal);
     }
+
+    // ---- 2b: named types ------------------------------------------------------------------------
+
+    private static AgentTypeCatalog Catalog(params (string Name, string Briefing)[] types)
+    {
+        var cfg = types.ToDictionary(t => t.Name,
+            t => new CxAgent.Core.Llm.AgentTypeConfig(t.Briefing), StringComparer.Ordinal);
+        return new AgentTypeCatalog(cfg, null);
+    }
+
+    private static ToolCall TypedSpawn(string? type, string prompt = "find it") =>
+        new()
+        {
+            Id = "call-1",
+            Name = "spawn_agent",
+            Arguments = System.Text.Json.JsonDocument.Parse(
+                System.Text.Json.JsonSerializer.Serialize(
+                    type is null ? new { description = "d", prompt }
+                                 : (object)new { description = "d", prompt, type })).RootElement,
+        };
+
+    /// <summary>
+    /// A TYPE'S BRIEFING REACHES THE CHILD'S SYSTEM MESSAGE — D9's precedence working for the first
+    /// time. The briefing slot was left deliberately null since ea97fbd, on the grounds that the only
+    /// legitimate author of the highest-authority text in a prompt is a human writing config. This is
+    /// that human.
+    /// </summary>
+    [Fact]
+    public async Task AType_PutsItsBriefingInTheChildsSystemMessage()
+    {
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("done")),
+            Catalog(("explore", "You search and report. Never edit files.")));
+
+        SubAgent? child = null;
+        await spawner.TryInvokeAsync(TypedSpawn("explore"), c => child = c, CancellationToken.None);
+
+        var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system"));
+        Assert.Contains("You search and report", system.Content, StringComparison.Ordinal);
+        // Under the briefing heading, which is what makes it outrank everything above it.
+        Assert.Contains("# Your task", system.Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// TWO TYPES PRODUCE TWO DIFFERENT PROMPTS. Asserted rather than driven: a judgement about
+    /// "visibly different behaviour" is exactly the kind of signal that proved unreliable when three
+    /// prompt interventions produced two nulls and one win.
+    /// </summary>
+    [Fact]
+    public async Task TwoTypes_ProduceDifferentChildPrompts()
+    {
+        var catalog = Catalog(("explore", "You search and report."), ("review", "You judge correctness."));
+
+        SubAgent? a = null, b = null;
+        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+            .TryInvokeAsync(TypedSpawn("explore"), c => a = c, CancellationToken.None);
+        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+            .TryInvokeAsync(TypedSpawn("review"), c => b = c, CancellationToken.None);
+
+        var pa = a!.Agent.Context.Messages.First(m => m.Role == "system").Content;
+        var pb = b!.Agent.Context.Messages.First(m => m.Role == "system").Content;
+
+        Assert.Contains("search and report", pa, StringComparison.Ordinal);
+        Assert.Contains("judge correctness", pb, StringComparison.Ordinal);
+        Assert.NotEqual(pa, pb);
+    }
+
+    /// <summary>
+    /// A BARE SPAWN AND AN EXPLICIT `general` ARE THE SAME THING, byte for byte. This is the property
+    /// that makes "general" mean what the word says, and the one that proves the implicit default did
+    /// not quietly acquire a briefing — a briefing being the highest-authority text in the prompt,
+    /// acquiring one by accident is the failure worth guarding.
+    /// </summary>
+    [Fact]
+    public async Task ABareSpawn_AndExplicitGeneral_ProduceIdenticalPrompts()
+    {
+        var catalog = Catalog(("explore", "Search."));
+
+        SubAgent? bare = null, general = null;
+        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+            .TryInvokeAsync(TypedSpawn(null), c => bare = c, CancellationToken.None);
+        await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
+            .TryInvokeAsync(TypedSpawn("general"), c => general = c, CancellationToken.None);
+
+        Assert.Equal(
+            bare!.Agent.Context.Messages.First(m => m.Role == "system").Content,
+            general!.Agent.Context.Messages.First(m => m.Role == "system").Content);
+    }
+
+    /// <summary>
+    /// AN UNKNOWN TYPE IS REFUSED AND THE ERROR NAMES WHAT IS VALID. The model will invent
+    /// "researcher"; silently substituting `general` means the user's briefing did not apply and
+    /// nobody was told. `general` is always in the catalog, so the list is never empty.
+    /// </summary>
+    [Fact]
+    public async Task AnUnknownType_IsRefused_WithTheValidNames()
+    {
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("explore", "Search.")));
+
+        var result = await spawner.TryInvokeAsync(TypedSpawn("researcher"), null, CancellationToken.None);
+
+        Assert.Contains("unknown agent type", result!, StringComparison.Ordinal);
+        Assert.Contains("researcher", result!, StringComparison.Ordinal);
+        Assert.Contains("general", result!, StringComparison.Ordinal);
+        Assert.Contains("explore", result!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A TYPE'S maxTurns CAPS THE CHILD, and the envelope says `capped` rather than `completed`.
+    ///
+    /// <para>A per-type limit makes this path reachable in ordinary use for the first time — until now
+    /// only a deliberately low session ceiling could reach it. A cap that reports `completed` hands
+    /// the parent a salvage summary of unfinished work as though it were an answer, which is the
+    /// failure D13 exists to prevent.</para>
+    /// </summary>
+    [Fact]
+    public async Task ATypesMaxTurns_CapsTheChild_AndTheEnvelopeSaysCapped()
+    {
+        var provider = new MockLlmProvider();
+        for (var i = 0; i < 6; i++)
+            provider.EnqueueResponse(new LlmResponse
+            {
+                Text = "",
+                StopReason = "tool_use",
+                ToolCalls = [new ToolCall { Id = $"t{i}", Name = "read_file",
+                    Arguments = System.Text.Json.JsonDocument.Parse($$"""{"path":"f{{i}}.txt"}""").RootElement }],
+            });
+        provider.EnqueueResponse(new LlmResponse { Text = "got partway", StopReason = "end_turn" });
+
+        var catalog = new AgentTypeCatalog(
+            new Dictionary<string, CxAgent.Core.Llm.AgentTypeConfig>
+            {
+                ["quick"] = new("Be quick.", Provider: null, MaxTurns: 2),
+            }, null);
+
+        var result = await new SubAgentSpawner(FactoryOver(provider), catalog)
+            .TryInvokeAsync(TypedSpawn("quick"), null, CancellationToken.None);
+
+        Assert.Contains("state=\"capped\"", result!, StringComparison.Ordinal);
+        Assert.Contains("NOT a completed answer", result!, StringComparison.Ordinal);
+    }
 }

@@ -33,6 +33,20 @@ public sealed class SubAgentFactory
     private readonly int _maxTurns;
     private readonly int? _compressAbove;
     private readonly int? _contextWindow;
+
+    /// <summary>
+    /// Derives a compaction threshold from a context window — the caller's own rule, injected rather
+    /// than reimplemented.
+    ///
+    /// <para>The session's threshold is computed once in AppBootstrap from the ACTIVE provider's
+    /// window (EffectiveCompressThreshold, which is 80% of it unless config states a figure). A type
+    /// naming a different instance has a different window, so the derivation has to run again — and
+    /// a second copy of "80%" here would desynchronise the moment either moved.</para>
+    ///
+    /// <para>Null for callers that never use per-type providers, which then keep the session's
+    /// threshold unchanged.</para>
+    /// </summary>
+    private readonly Func<int?, int?>? _thresholdFor;
     private readonly string? _globalInstructionsDir;
     private readonly Core.Mcp.McpToolset? _mcp;
 
@@ -70,7 +84,8 @@ public sealed class SubAgentFactory
     /// </param>
     public SubAgentFactory(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         LogFileManager? logs, int maxTurns, int? compressAbove, int? contextWindow,
-        string? globalInstructionsDir, Core.Mcp.McpToolset? mcp)
+        string? globalInstructionsDir, Core.Mcp.McpToolset? mcp,
+        Func<int?, int?>? thresholdFor = null)
     {
         _provider = provider;
         _plugins = plugins;
@@ -79,6 +94,7 @@ public sealed class SubAgentFactory
         _maxTurns = maxTurns;
         _compressAbove = compressAbove;
         _contextWindow = contextWindow;
+        _thresholdFor = thresholdFor;
         _globalInstructionsDir = globalInstructionsDir;
         _mcp = mcp;
     }
@@ -108,13 +124,38 @@ public sealed class SubAgentFactory
     /// A few words naming this child FOR THE USER — the status row, and the "asked for by:" line on
     /// its permission prompts. Never sent to the model.
     /// </param>
-    public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null)
+    /// <param name="type">
+    /// The resolved type, or null for a plain child on the parent's wiring.
+    ///
+    /// <para>EVERYTHING A TYPE DECIDES IS RESOLVED TOGETHER HERE — provider, window, threshold and
+    /// turn cap. They cannot be split: a child given one provider and another's window sees
+    /// IsUnderPressure as permanently false (AgentContext returns false for a MISSING window, never
+    /// for a wrong one), never compacts, and dies on a provider overflow instead.</para>
+    /// </param>
+    public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
+        AgentType? type = null)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
 
+        // A TYPE'S PROVIDER BRINGS ITS OWN WINDOW, or neither is used. Falling back per-field would
+        // pair provider A with the session's window, which is the exact failure above.
+        var provider = type?.Provider ?? _provider;
+        var window = type?.Provider is not null ? type.ContextWindow : _contextWindow;
+
+        // AND THE THRESHOLD FOLLOWS THE WINDOW. It is derived from the window (80% of it when config
+        // states no explicit figure), so a window that moves and a threshold that does not is a child
+        // compacting against the wrong ceiling.
+        var compressAbove = type?.Provider is not null
+            ? _thresholdFor?.Invoke(window) ?? _compressAbove
+            : _compressAbove;
+
+        // NULL INHERITS, 0 IS UNBOUNDED — and Agent already translates 0, so this passes it through
+        // rather than re-implementing the rule in a second place.
+        var maxTurns = type?.MaxTurns ?? _maxTurns;
+
         var agent = new Agent(
-            _provider,
+            provider,
             _plugins,
             _ledger,
             // BOTH BUFFERED, and both are required. A buffered chat sink with the parent's job panel
@@ -124,14 +165,16 @@ public sealed class SubAgentFactory
             // ITS OWN LOG DIRECTORY, keyed by the child's id. The only surface on which a finished
             // child is inspectable after the fact.
             _logs,
-            _maxTurns,
-            compressAbove: _compressAbove,
+            maxTurns,
+            compressAbove: compressAbove,
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
             // is the failure the whole design exists to prevent.
-            context: new AgentContext(_contextWindow),
+            context: new AgentContext(window),
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
-            briefing: briefing,
+            // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what
+            // this child is for, and a type is a human in config saying how that work is done (D9).
+            briefing: string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,
             callerContext: callerContext,
             label: label,
 

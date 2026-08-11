@@ -36,6 +36,12 @@ public sealed record ProviderResolution(
 
     /// <summary>Configured MCP servers, empty when none are — carried here because this is the one
     /// place config.json is read, and the servers have to be started from what it said.</summary>
+    /// <summary>Configured sub-agent types, empty when none are. Carried for the same reason
+    /// McpServers is: AppBootstrap composes from this record, and a setting that stops here is a
+    /// setting the session never gets.</summary>
+    public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes { get; init; } =
+        new Dictionary<string, AgentTypeConfig>();
+
     public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
         new Dictionary<string, McpServerConfig>();
 
@@ -127,6 +133,7 @@ public static class ProviderResolver
                 settings.Orchestrator, registry, contextWindow)
             {
                 McpServers = settings.McpServers,
+                AgentTypes = settings.AgentTypes,
                 Warnings = settings.Warnings,
             };
         }
