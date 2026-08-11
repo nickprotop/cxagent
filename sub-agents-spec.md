@@ -39,6 +39,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D29 | **Audit every prompt line against the four combinations (single/fan-out x parent/child) BEFORE step 3 adds more.** They were written one finding at a time and never read together; one of D26's three lines was ungated and reaching CHILDREN until the mode work caught it by accident. Deliverable is a table — line, home, gate, evidence it is earned. | §5 STEP 2.5 |
 | D28 | **The parent must be TOLD several agents can run at once** — one line in the system prompt (gated on CanSpawn), and the mechanism plus "independent work" in the tool description, which today says "It runs once… returns one message". Both references state the mechanism explicitly rather than trusting inference. Ship them separately so each can be attributed. | §5 STEP 3 |
 | D27 | **Concurrency is a BARRIER, not background.** N children in one assistant message, all resolved before the parent's loop resumes. Forced by the message format — an unmatched tool call 400s the session — and it is what both references ship. It also dodges the unsolved problem: with a barrier the user is still watching, so a child's permission prompt has someone to answer it. | §5 STEP 3 |
 | D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
@@ -511,6 +512,81 @@ using the thing.
 
 Each step ends with something that WORKS and is driven live. Nothing in a later step is designed into
 an earlier one. If a step fails, there is one candidate cause.
+
+---
+
+### What driving the prompts actually measured
+
+Four interventions, one result. Recorded because the ratio is the finding, and because a later reader
+will otherwise assume every line in these prompts earned its place.
+
+| # | Change | Result |
+|---|---|---|
+| 1 | Sharpened the tool description: stated the BENEFIT ("keep the conclusion, not the file dumps"), changed the test from tool-call count to "do you already know the file", added "do not also do it yourself" | **no change** — 19 tool calls, 0 spawns on an open-ended question |
+| 2 | Added a delegation RULE to the fan-out system prompt, phrased about where the reading lands | **no change** — 37 tool calls, 0 spawns, 212k chars burned |
+| 3 | Added four `<example>` blocks — three positives and a counter-example — in opencode's shape | **WORKED.** 26 read_file → 0, 0 spawns → 1, context 212,917 → 23,091 chars. A 9x saving |
+| 4 | A fifth example for the MIXED task (find X and fix the safe ones) | **no change** — still 0 spawns; context fell but across different turn counts, which one pair of runs cannot separate from variance |
+
+**WHY 3 WORKED WHERE 1 AND 2 DID NOT**, as far as this evidence goes: a rule asserts a policy and an
+example shows the SHAPE of the decision at the moment of choosing. The model does not have to infer
+whether its situation is the one the rule meant.
+
+**THE CONTROL THAT MATTERS MOST.** opencode was driven on the IDENTICAL task with the IDENTICAL model
+and did not delegate either — zero Task calls, with four system-prompt nudges (including an all-caps
+CRITICAL) and two worked examples. **The ceiling is the model, not our prompting.** Without that
+measurement the honest conclusion would have been "our prompts are deficient", and the next move
+would have been more prose.
+
+**WHAT REMAINS TRUE AFTER ALL FOUR:** the model delegates when TOLD to and rarely on its own
+judgement. A pure lookup ("where is X?") it will now delegate. A mixed task (find X, then fix it) it
+does inline. Four examples is the ceiling — opencode ships two, ours carries a counter-example and a
+split, and past four they stop being a pattern and become a list nobody reads.
+
+**AND THE PARAMETER THAT WAS INVISIBLE UNTIL THE DESCRIPTION EARNED IT.** `context` shipped with
+passing end-to-end tests and no model ever used it — it folded the fact into the prompt instead. Four
+lines of prose in the tool description fixed it, and the fix was verified by driving, not asserting.
+A capability nobody is told about is a capability nobody has, and a test suite cannot detect that.
+
+---
+
+### STEP 2.5 — REVIEW EVERY PROMPT, AND WHERE EACH ONE GOES
+
+**D29. Before step 3 adds more prompt text, audit what is there.** The prompts were written one
+finding at a time across a single long session, each addition correct in isolation and none of them
+read together since. That is exactly how a prompt accumulates lines that contradict, repeat, or reach
+an agent they were never meant for.
+
+**THE MATRIX THAT HAS NEVER BEEN CHECKED.** Four combinations exist and each gets a different prompt:
+
+| | single mode | fan-out mode |
+|---|---|---|
+| **parent** | no spawn tool, no sub-agent text | spawn tool, D26's three lines, four examples, the type line |
+| **child** | n/a — a child is never in single mode | no spawn tool (no spawner), `# Answering` replaced, commands dropped |
+
+Known already, and the reason this is worth a step of its own: ONE OF D26'S THREE LINES WAS UNGATED
+AND WAS REACHING CHILDREN until the mode work caught it. That was found by accident while doing
+something else. Nobody has since read all four combinations end to end.
+
+**WHAT THE AUDIT MUST ANSWER, per line of every prompt:**
+- which of the four combinations is it TRUE for, and is it gated to exactly those?
+- does it contradict another line? (`# Answering` was REPLACED for a child rather than appended for
+  exactly this reason — two answering sections would have disagreed)
+- does it describe a capability the reader has? A single-mode parent told about sub-agents, or a
+  child told about `/clear`, is being asked to skim its own instructions.
+- is it EARNED? Three of today's prompt changes moved nothing measurable. A line that has never
+  changed behaviour is a line whose removal costs nothing and whose presence costs prefix.
+
+**AND THE SAME FOR THE TOOL DESCRIPTION**, which is generated now: the prose, the four examples, the
+type catalog, and the `context`/`prompt`/`type` parameter blurbs. It says "It runs once… returns one
+message", which step 3 makes false.
+
+**THE DELIVERABLE IS A TABLE**, not an opinion: every line, its home (system prompt or tool
+description), its gate (`CanSpawn`, `IsSubAgent`, always), and the evidence it is earned. Anything
+with no evidence is a candidate for deletion, and deleting it is cheaper than defending it later.
+
+**DO THIS BEFORE STEP 3'S PROMPT WORK (D28), NOT AFTER.** Adding parallel-agent guidance to a prompt
+nobody has audited means the audit then has to disentangle new text from old, and the attribution
+discipline that produced today's one usable result depends on changing one thing at a time.
 
 ---
 
