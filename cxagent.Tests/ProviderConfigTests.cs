@@ -571,4 +571,119 @@ public class ProviderConfigTests : IDisposable
         Assert.Single(s.McpServers);                                    // still loaded
         Assert.Contains(s.Warnings, w => w.Contains("CXA_DEFINITELY_UNSET", StringComparison.Ordinal));
     }
+
+    // ---- agents: sub-agent types ----------------------------------------------------------------
+
+    private const string TwoProviders = """
+        "providers": {
+          "local": { "kind": "ollama", "model": "llama3.3" },
+          "fast":  { "kind": "ollama", "model": "llama3.2-1b" }
+        },
+        "defaultProvider": "local"
+        """;
+
+    [Fact]
+    public void Agents_ParsesBriefingProviderAndMaxTurns()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": {
+            "explore": { "briefing": "Search and report.", "provider": "fast", "maxTurns": 30 },
+            "review":  { "briefing": "Review for correctness." }
+          }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(2, s.AgentTypes.Count);
+        Assert.Equal("Search and report.", s.AgentTypes["explore"].Briefing);
+        Assert.Equal("fast", s.AgentTypes["explore"].Provider);
+        Assert.Equal(30, s.AgentTypes["explore"].MaxTurns);
+
+        // Omitted provider and maxTurns are null — INHERIT, not a default invented here.
+        Assert.Null(s.AgentTypes["review"].Provider);
+        Assert.Null(s.AgentTypes["review"].MaxTurns);
+    }
+
+    /// <summary>
+    /// AN ABSENT BLOCK IS THE COMMON CASE AND COSTS NOTHING. Empty here does not mean "no types" —
+    /// the implicit `general` is supplied downstream, so config only ever gets to OVERRIDE it.
+    /// </summary>
+    [Fact]
+    public void Agents_AbsentBlock_IsEmpty_AndNotAnError()
+    {
+        WriteConfig($$"""{ {{TwoProviders}} }""");
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Empty(s.AgentTypes);
+        Assert.Empty(s.Warnings);
+    }
+
+    /// <summary>
+    /// A BAD TYPE IS DROPPED WITH A WARNING, NOT AN ERROR — the same rule the MCP block follows, and
+    /// for the same reason: everything that stops the app is something there is no session without,
+    /// and a type is an optional convenience. A typo'd briefing must not take providers down.
+    /// </summary>
+    [Fact]
+    public void Agents_MissingBriefing_IsDroppedWithAWarning()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": { "broken": { "provider": "fast" }, "good": { "briefing": "Fine." } }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.False(s.AgentTypes.ContainsKey("broken"));
+        Assert.True(s.AgentTypes.ContainsKey("good"));
+        Assert.Contains(s.Warnings, w => w.Contains("broken", StringComparison.Ordinal)
+                                      && w.Contains("briefing", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A PROVIDER THAT IS NOT CONFIGURED IS CAUGHT AT LOAD. Found three turns into a child's run it
+    /// reads as a sub-agent bug; found here it reads as what it is. The type survives on the parent's
+    /// provider rather than being dropped — the briefing is still useful.
+    /// </summary>
+    [Fact]
+    public void Agents_UnknownProvider_WarnsAndFallsBackToTheParents()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": { "explore": { "briefing": "Search.", "provider": "typo" } }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Null(s.AgentTypes["explore"].Provider);
+        Assert.Contains(s.Warnings, w => w.Contains("typo", StringComparison.Ordinal));
+        // The message names what IS valid, not only what was wrong.
+        Assert.Contains(s.Warnings, w => w.Contains("fast", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// ZERO IS MEANINGFUL, NEGATIVE IS A TYPO. Zero is the same explicit opt-out AgentHost.TurnCeiling
+    /// gives the session, so it cannot be lumped in with invalid values and clamped away.
+    /// </summary>
+    [Fact]
+    public void Agents_MaxTurnsZero_IsKept_AndNegativeIsIgnored()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": {
+            "unbounded": { "briefing": "Runs long.", "maxTurns": 0 },
+            "typo":      { "briefing": "Oops.", "maxTurns": -1 }
+          }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(0, s.AgentTypes["unbounded"].MaxTurns);
+        Assert.Null(s.AgentTypes["typo"].MaxTurns);   // ignored, so it inherits
+        Assert.Contains(s.Warnings, w => w.Contains("maxTurns", StringComparison.Ordinal));
+    }
 }

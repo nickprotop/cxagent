@@ -163,6 +163,32 @@ public record McpServerConfig(
     public bool IsRemote => !string.IsNullOrWhiteSpace(Url);
 }
 
+/// <summary>
+/// One configured sub-agent type: what it is for, and optionally which model runs it and how long
+/// it may run.
+///
+/// <para>A BRIEFING IS A REQUEST, NOT A PERMISSION. It becomes the highest-authority text in the
+/// child's system prompt — above the general prompt and above anything the parent says — but it does
+/// not remove a tool. "Never edit files" asks; enforcement is a separate mechanism that does not
+/// exist yet, and treating a briefing as a sandbox would be trusting prose to do a gate's job.</para>
+/// </summary>
+/// <param name="Briefing">HOW this agent works. Required — a type with nothing to say is the default
+/// child under another name, and naming it invites the model to believe it picked something.</param>
+/// <param name="Provider">
+/// An instance name from <c>providers</c>, or null for the parent's. NOT a free-text model id: the
+/// catalog already exists and a name that is not in it is caught at load rather than at spawn.
+/// </param>
+/// <param name="MaxTurns">
+/// Turns before this type stops and summarises what it has. Null inherits the session ceiling, which
+/// is what every child got before this existed. Zero means unbounded, matching
+/// <c>AgentHost.TurnCeiling</c> and <c>Agent</c>'s own <c>maxTurns &lt;= 0</c> translation.
+///
+/// <para>A CAP THAT FIRES MID-WORK DOES NOT FAIL LOUDLY — it returns a salvage summary of unfinished
+/// work. The envelope marks it (<c>state="capped"</c>), but a number set too low turns every run of
+/// that type into a half-answer. Set it only where the job has a knowable shape.</para>
+/// </param>
+public record AgentTypeConfig(string Briefing, string? Provider = null, int? MaxTurns = null);
+
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
     string? DefaultProvider,
@@ -175,6 +201,17 @@ public record ProviderSettings(
     /// <summary>Configured MCP servers, empty when the block is absent — which is the common case.</summary>
     public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
         new Dictionary<string, McpServerConfig>();
+
+    /// <summary>
+    /// Configured sub-agent types, empty when the block is absent — the common case.
+    ///
+    /// <para>Empty does NOT mean no types: the implicit <c>general</c> is supplied downstream, so a
+    /// user with no <c>agents</c> block still has a catalog of one. Holding it here rather than
+    /// seeding it in would make config the place that decides what <c>general</c> is, and it is not —
+    /// config only gets to OVERRIDE it.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes { get; init; } =
+        new Dictionary<string, AgentTypeConfig>();
 
     /// <summary>
     /// Non-fatal complaints from the load, for the UI to show.
@@ -398,12 +435,70 @@ public static class ProviderConfigLoader
                         new McpServerConfig(command, enabled, timeoutMs, environment, cwd, url, headers);
                 }
 
+            // SUB-AGENT TYPES. Warnings rather than errors, for the reason the MCP block gives:
+            // everything that stops the app is something there is no session without, and a type is
+            // an optional convenience. A typo'd briefing must not take providers down with it.
+            //
+            // The one difference from MCP: a bad type is DROPPED, and dropping it is visible — the
+            // model is offered a catalog, so a type that silently never appears is a type the user
+            // watches the model fail to use.
+            var agentTypes = new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal);
+            if (root.TryGetProperty("agents", out var agents) && agents.ValueKind == JsonValueKind.Object)
+                foreach (var entry in agents.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        warnings.Add($"agents.{entry.Name} is not an object; skipped.");
+                        continue;
+                    }
+
+                    // REQUIRED. A type with nothing to say is the default child under another name,
+                    // and naming it invites the model to believe it picked something.
+                    var briefing = entry.Value.TryGetProperty("briefing", out var b)
+                                && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(briefing))
+                    {
+                        warnings.Add($"agents.{entry.Name} has no 'briefing'; skipped.");
+                        continue;
+                    }
+
+                    // NAMES AN INSTANCE FROM `providers`, checked HERE rather than at spawn time. A
+                    // typo found three turns into a child's run reads as a sub-agent bug; found at
+                    // load it reads as what it is.
+                    string? typeProvider = null;
+                    if (entry.Value.TryGetProperty("provider", out var pv) && pv.ValueKind == JsonValueKind.String)
+                    {
+                        var name = pv.GetString();
+                        if (string.IsNullOrWhiteSpace(name) || !providers.ContainsKey(name))
+                        {
+                            warnings.Add($"agents.{entry.Name}.provider '{name}' is not a configured "
+                                       + $"provider (known: {string.Join(", ", providers.Keys)}); "
+                                       + "using the parent's.");
+                        }
+                        else typeProvider = name;
+                    }
+
+                    // NULL INHERITS, 0 IS UNBOUNDED, NEGATIVE IS A TYPO. Zero carries meaning here —
+                    // it is the same explicit opt-out AgentHost.TurnCeiling gives the session — so it
+                    // cannot be lumped in with the invalid values and clamped away.
+                    int? maxTurns = null;
+                    if (entry.Value.TryGetProperty("maxTurns", out var mt) && mt.ValueKind == JsonValueKind.Number)
+                    {
+                        var value = mt.GetInt32();
+                        if (value < 0) warnings.Add($"agents.{entry.Name}.maxTurns is negative; ignored.");
+                        else maxTurns = value;
+                    }
+
+                    agentTypes[entry.Name] = new AgentTypeConfig(briefing.Trim(), typeProvider, maxTurns);
+                }
+
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);
 
             return new ProviderSettings(providers, defaultProvider, allowed, routing, orchestrator)
             {
                 McpServers = mcpServers,
+                AgentTypes = agentTypes,
                 Warnings = warnings,
             };
         }
