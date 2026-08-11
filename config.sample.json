@@ -56,6 +56,19 @@
     "provider: an instance name from `providers` above. Omit to use the parent's. A name that",
     "  is not in `providers` is a startup error, not a surprise at spawn time.",
     "",
+    "maxTurns: how many turns this type gets before it stops and summarises what it has. Omit",
+    "  to inherit the session ceiling (`orchestrator.maxWorkerTurns`), which is the right",
+    "  default and what every child got before this key existed.",
+    "",
+    "  SET IT ONLY WHEN THE JOB HAS A KNOWN SHAPE. A search that should take four turns and",
+    "  takes forty is worth stopping; open-ended work is not. The failure mode is specific and",
+    "  has bitten this project before: a cap that fires mid-work does not fail loudly, it",
+    "  returns a SALVAGE SUMMARY of unfinished work, and a caller that cannot tell that from a",
+    "  finished answer acts on it. cxagent marks it (state=\"capped\" in the result) — but a",
+    "  number set too low turns every run of that type into a half-answer.",
+    "",
+    "  0 means no cap, as it does for the session.",
+    "",
     "A BRIEFING IS A REQUEST, NOT A PERMISSION. 'Never edit files' asks the agent not to; it",
     "does not remove the tool. Enforcement is a separate mechanism and does not exist yet, so",
     "do not rely on a briefing to contain an agent.",
@@ -68,7 +81,8 @@
   ],
   "agents": {
     "explore": {
-      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything."
+      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything.",
+      "maxTurns": 30
     },
     "review": {
       "briefing": "You review code for correctness. Look for logic that is wrong rather than style that is unusual, and say plainly when something is fine. An objection with no failing case behind it is noise."
