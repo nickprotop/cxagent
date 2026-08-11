@@ -210,6 +210,16 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private MarkupControl _modeLine = null!;
 
+    /// <summary>
+    /// The mode shown on the row under the composer.
+    ///
+    /// <para>IT USED TO BE THE LITERAL "Single agent", and it had always said that — a hardcoded
+    /// string that was true only until fan-out shipped, after which it would have claimed single mode
+    /// while the agent held a spawn tool. A status line that lies is worse than no status line,
+    /// because it is the one thing a user checks INSTEAD of asking.</para>
+    /// </summary>
+    private string _mode = "single";
+
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
     public SessionPanel SessionPanel { get; } = new();
 
@@ -467,8 +477,7 @@ public sealed class MainWindow : IDisposable
             // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
             // the background form, so it painted nothing. Each run carries its own background, and
             // [fillwidth] carries the last one to the end of the row.
-            .AddLine($"[{ColorScheme.AccentMarkup}]Single agent[/]"
-                   + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]")
+            .AddLine(ModeLineText(_mode, model))
             // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
             // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
             // the last character — the fill was working, it simply had nothing to cross.
@@ -1047,6 +1056,31 @@ public sealed class MainWindow : IDisposable
     /// reading by the size it just changed. Keeps the "~" and the delta on screen; a real measurement
     /// clears both.
     /// </param>
+    /// <summary>
+    /// Updates the mode shown under the composer. Called at startup and again on every accepted
+    /// <c>/mode</c> — the row is the only place the mode is visible, so it has to move when the mode
+    /// does or the command has no observable effect.
+    /// </summary>
+    public void SetMode(string mode)
+    {
+        _mode = mode;
+        var model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "no provider";
+        // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
+        // it would detach the instance the layout holds.
+        _modeLine?.SetContent([ModeLineText(_mode, model)]);
+    }
+
+    /// <summary>
+    /// The row's text: mode accented, model muted.
+    ///
+    /// <para>Mode first because it is a property of the SESSION and the model is a detail of it —
+    /// reading them the other way round invites a user to think the model is what they chose. The
+    /// model name is escaped (it comes from config); the mode word is ours.</para>
+    /// </summary>
+    private static string ModeLineText(string mode, string model) =>
+        $"[{ColorScheme.AccentMarkup}]{mode}[/]"
+      + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]";
+
     public void SetContextUsed(int inputTokens, bool estimated = false)
     {
         _contextUsed = inputTokens > 0 ? inputTokens : null;

@@ -30,6 +30,9 @@ public static class SessionCommands
         // deliberately holds nothing but the conversation. The caller has the servers and formats
         // them through DescribeMcp below.
         new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow),
+        // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
+        // this type deliberately holds nothing but the conversation.
+        new("/mode", "show or set the agent mode: single, fan-out", CommandOutcome.NeedsWindow),
         new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
         new("/exit", "quit cxagent", CommandOutcome.Quit),
     ];

@@ -20,6 +20,10 @@ public static class AppBootstrap
     public static int Run(string[] args)
     {
         bool useMock = args.Contains("--mock");
+
+        // TASK 15 replaces this with a parsed --mode argument. Single until then, which is also the
+        // default the parser will use: delegation is a choice a user makes, not one they discover.
+        var startupMode = AgentMode.Single;
         var paths = new AppPaths();
         paths.EnsureCreated();
 
@@ -154,6 +158,9 @@ public static class AppBootstrap
             // CURRENT transcript sink so a permission echo always lands in the visible transcript,
             // even after an F5/F7/F8 re-wire replaces it.
             permissionSink.Current = sink;
+            // The row and the agent must agree from the first frame — a status line that is right
+            // only after the user touches something is a status line nobody trusts.
+            mainWindow.SetMode(AgentModes.Name(startupMode));
             // I3: permissionRules.Load ran at construction, before any sink existed to tell the
             // user. Echo a load failure here, once — a bad hand-edit to permissions.json silently
             // dropped every rule and all folder trust, and the user needs to know before they grant
@@ -247,7 +254,8 @@ public static class AppBootstrap
                 // Built above from the same snapshot `resume` came from, so a resumed session gets
                 // its spend back exactly as it did when AgentHost made this itself.
                 ledger: ledger,
-                spawner: subAgents)
+                spawner: subAgents,
+                mode: startupMode)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -424,6 +432,31 @@ public static class AppBootstrap
                         if (command.Name == "/mcp")
                         {
                             _ = mcpCommand.HandleAsync(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+
+                        if (command.Name == "/mode")
+                        {
+                            if (runner is null)
+                            {
+                                mainWindow.Chat.AddMessage(ChatRole.System,
+                                    "[yellow]No provider configured — there is no agent to set a mode on.[/]");
+                                return;
+                            }
+
+                            var decision = ModeCommand.Decide(
+                                SessionCommands.Arguments(goalText), runner.Mode, IsTurnRunning());
+
+                            // LIVE, NO RESTART. Both things a mode changes are rebuilt on the next
+                            // prompt anyway — the tool list and the system message — so this is one
+                            // assignment rather than a re-wire, and the conversation is untouched.
+                            if (decision.NewMode is { } next)
+                            {
+                                runner.Mode = next;
+                                mainWindow.SetMode(AgentModes.Name(next));
+                            }
+
+                            mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
                             return;
                         }
                         mainWindow.ShowHelp();
