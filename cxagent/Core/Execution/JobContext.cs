@@ -40,6 +40,15 @@ public sealed class JobContext : IJobContext
     }
 
     /// <summary>
+    /// Raised when a plugin's real work begins, after any permission prompt has been answered. The
+    /// caller uses it to start the duration clock, so a row reports how long the WORK took rather
+    /// than how long the user took to approve it.
+    /// </summary>
+    public event Action? WorkStarted;
+
+    public void WorkStarting() => WorkStarted?.Invoke();
+
+    /// <summary>
     /// Raised whenever a plugin reports a resource sample. ProcessRunner subscribes its
     /// ProcessResourceMonitor.Updated to ReportResources, which re-raises it here; the UI
     /// (Task 10 wiring) subscribes this event and marshals onto the UI thread itself — this

@@ -19,6 +19,21 @@ public interface IJobPlugin
 public interface IJobContext
 {
     void ReportProgress(double percent, string? message = null);
+
+    /// <summary>
+    /// The work is ACTUALLY STARTING NOW — everything before this was preamble.
+    ///
+    /// <para>WHY THIS EXISTS. A row's duration was measured from the moment the row appeared, which
+    /// is before the permission gate has asked the user anything. Seen live: a shell command whose
+    /// own timeout fired at 15s reported <c>failed · 270.8s</c>, because the user spent four minutes
+    /// deciding whether to approve it. The number described how long the HUMAN took and was presented
+    /// as how long the COMMAND took — and it is worse than merely wrong, because "270s" invites
+    /// someone to go looking for a slow command that does not exist.</para>
+    ///
+    /// <para>Best-effort, like the other reporting methods: a plugin that never calls it keeps the
+    /// old behaviour, and a caller that ignores it loses nothing.</para>
+    /// </summary>
+    void WorkStarting();
     void Log(string line);
     void Log(JobLogLevel level, string line);
     /// <summary>

@@ -577,6 +577,67 @@ public class AgentTests
         }
     }
 
+    // ---- duration excludes the permission wait --------------------------------------------------
+
+    /// <summary>Blocks in ExecuteAsync exactly as a permission prompt does — the user thinking —
+    /// then reports that the real work is starting.</summary>
+    private sealed class SlowToApprovePlugin : IJobPlugin
+    {
+        public string TypeName => "shell";
+        public string DisplayName => "Slow to approve";
+        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
+        {
+            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
+            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
+            new JobParamSpec("env", "object", Required: false, "Environment variables"),
+            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
+        });
+        public JobValidation Validate(JobParameters p) => JobValidation.Valid();
+
+        public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
+        {
+            await Task.Delay(250, ct);   // the user staring at the prompt
+            c.WorkStarting();            // they clicked Allow; the work begins NOW
+            return new JobResult { Success = true };
+        }
+    }
+
+    /// <summary>
+    /// A ROW REPORTS HOW LONG THE WORK TOOK, NOT HOW LONG THE USER TOOK TO APPROVE IT.
+    ///
+    /// <para>Found on a live drive: a shell command whose own timeout fired at 15 seconds rendered as
+    /// <c>failed · 270.8s</c>, because the duration was stamped when the ROW appeared and the user
+    /// spent four minutes deciding. The number described the human and was presented as the command —
+    /// worse than merely wrong, since it sends whoever reads it hunting for a slow command that never
+    /// existed.</para>
+    /// </summary>
+    [Fact]
+    public async Task ToolDuration_ExcludesTimeSpentWaitingForPermission()
+    {
+        var plugins = new PluginRegistry();
+        plugins.Register(new SlowToApprovePlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "c1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"echo hi"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        await agent.SendAsync("run it", CancellationToken.None);
+
+        var duration = Assert.Single(jobs.Jobs).Result!.Duration;
+        Assert.True(duration < TimeSpan.FromMilliseconds(200),
+            $"the 250ms approval wait leaked into the reported duration ({duration.TotalMilliseconds:0}ms)");
+    }
+
     // ---- 1c: the outcome is a field, not something to infer ------------------------------------
 
     /// <summary>An ordinary answer reports <see cref="SendOutcome.Completed"/>.</summary>

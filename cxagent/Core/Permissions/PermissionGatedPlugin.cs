@@ -56,6 +56,10 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             }
         }
 
+        // EVERY GATE HAS CLEARED — the work starts now. Before this line the elapsed time is the
+        // user reading a prompt, which belongs to nobody's stopwatch.
+        context.WorkStarting();
+
         return await _inner.ExecuteAsync(parameters, context, ct);
     }
 }

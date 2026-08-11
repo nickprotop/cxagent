@@ -863,7 +863,7 @@ public sealed class Agent
         };
         _jobs.SetJobs(new[] { job });
 
-        var started = DateTimeOffset.UtcNow;
+        var started = DateTimeOffset.UtcNow;   // rebased by ctx.WorkStarted below
 
         // THE CHILD'S ID ADDRESSES THIS ROW (D14). Rows key on job.Id, minted per tool call above;
         // the child mints its own Agent.Id. Associating them HERE — the one place both exist — is
@@ -928,6 +928,16 @@ public sealed class Agent
         }
 
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
+
+        // THE CLOCK RESTARTS WHEN THE WORK DOES. `started` above is stamped when the ROW appears,
+        // which is before the permission gate has asked the user anything — so a command the user
+        // took four minutes to approve reported four minutes of runtime. Seen live: a shell call
+        // whose own timeout fired at 15s rendered as `failed · 270.8s`, a number that sends whoever
+        // reads it hunting for a slow command that never existed.
+        //
+        // Rebasing rather than replacing: a plugin that never reports (no gate, no
+        // WorkStarting call) keeps the original stamp and the old behaviour exactly.
+        ctx.WorkStarted += () => started = DateTimeOffset.UtcNow;
         // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
         // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
         // sources each producing their own version is how a model gets told a tool does not exist by

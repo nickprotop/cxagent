@@ -23,6 +23,8 @@ public sealed class TestJobContext : IJobContext
     /// <summary>Just the text, for assertions that do not care about level.</summary>
     public IEnumerable<string> LogLines => Logs.Select(l => l.Line);
 
+    public void WorkStarting() { }
+
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Logs.Add((JobLogLevel.Info, line));
     public void Log(JobLogLevel level, string line) => Logs.Add((level, line));
