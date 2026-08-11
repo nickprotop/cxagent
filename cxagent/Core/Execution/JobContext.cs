@@ -48,6 +48,10 @@ public sealed class JobContext : IJobContext
 
     public void WorkStarting() => WorkStarted?.Invoke();
 
+    /// <summary>Set by the spawn branch to the child's description; null for the parent's own work.
+    /// Settable rather than a constructor parameter so the ~20 construction sites are untouched.</summary>
+    public string? Requester { get; set; }
+
     /// <summary>
     /// Raised whenever a plugin reports a resource sample. ProcessRunner subscribes its
     /// ProcessResourceMonitor.Updated to ReportResources, which re-raises it here; the UI

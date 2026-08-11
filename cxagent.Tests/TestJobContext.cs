@@ -25,6 +25,8 @@ public sealed class TestJobContext : IJobContext
 
     public void WorkStarting() { }
 
+    public string? Requester => null;
+
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Logs.Add((JobLogLevel.Info, line));
     public void Log(JobLogLevel level, string line) => Logs.Add((level, line));

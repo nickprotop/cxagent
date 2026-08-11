@@ -13,6 +13,8 @@ internal sealed class CollectingContext : IJobContext
     public ConcurrentQueue<ResourceSnapshot> Resources { get; } = new();
     public void WorkStarting() { }
 
+    public string? Requester => null;
+
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Lines.Enqueue(line);
     public void Log(JobLogLevel level, string line) => Lines.Enqueue(line);

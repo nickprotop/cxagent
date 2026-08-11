@@ -47,6 +47,44 @@ public class PermissionPromptControlTests
         new(new HeadlessConsoleDriver(80, 24),
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
 
+    // ---- who is asking -------------------------------------------------------------------------
+
+    /// <summary>
+    /// A SUB-AGENT'S REQUEST SAYS SO. Observed on a live drive: a child spawned to analyse a test
+    /// failure asked to run shell commands repeatedly, and the prompt was indistinguishable from the
+    /// parent asking — same heading, same command, nothing naming the delegated agent.
+    ///
+    /// <para>The user is being asked to take responsibility for a command, and which agent decided to
+    /// run it changes the answer: a command their own request implies is different from one a
+    /// sub-agent invented several steps away.</para>
+    /// </summary>
+    [Fact]
+    public void ASubAgentsRequest_NamesTheAgentThatAskedForIt()
+    {
+        var request = ShellRequest("rm -rf build") with { Requester = "Analyze TextWrapping failures" };
+        var text = string.Join("\n", FindMarkupLines(
+            new PermissionPromptControl(request, offerTrust: false).BuildContent()));
+
+        Assert.Contains("Analyze TextWrapping failures", text, StringComparison.Ordinal);
+        // The heading still names the KIND of action; requester is a qualifier, not a replacement.
+        Assert.Contains("Run shell command?", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE PARENT'S REQUESTS STAY UNATTRIBUTED, and that is a decision rather than an omission.
+    /// Prefixing every prompt in an ordinary session with "the main agent wants to…" is noise that
+    /// teaches people to stop reading the heading — the opposite of what attribution is for.
+    /// </summary>
+    [Fact]
+    public void TheSessionsOwnAgent_AddsNoAttributionLine()
+    {
+        var text = string.Join("\n", FindMarkupLines(
+            new PermissionPromptControl(ShellRequest("ls -l"), offerTrust: false).BuildContent()));
+
+        Assert.DoesNotContain("asked for by", text, StringComparison.Ordinal);
+        Assert.Contains("Run shell command?", text, StringComparison.Ordinal);
+    }
+
     /// <summary>Builds the prompt's content ONCE and hosts that same tree in a live, shown window —
     /// buttons need a real window (FocusManager, hit-testing) to accept a simulated click, and a
     /// second BuildContent() call would produce a detached tree the click could never reach.</summary>

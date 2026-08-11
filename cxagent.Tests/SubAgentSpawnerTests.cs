@@ -300,4 +300,85 @@ public class SubAgentSpawnerTests
 
         Assert.Equal("llm_agent", Assert.Single(jobs.Jobs).PluginType);
     }
+
+    // ---- the permission prompt names the child --------------------------------------------------
+
+    /// <summary>Captures the requests a gate is asked to approve, so a test can read who was named.</summary>
+    private sealed class RecordingGate : CxAgent.Core.Permissions.IPermissionGate
+    {
+        public List<CxAgent.Core.Permissions.PermissionRequest> Seen { get; } = [];
+
+        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
+        {
+            Seen.Add(request);
+            return Task.FromResult(true);
+        }
+    }
+
+    /// <summary>
+    /// A CHILD'S PERMISSION REQUEST CARRIES ITS DESCRIPTION, END TO END.
+    ///
+    /// <para>Observed live: a child asked to run shell commands and the prompt looked exactly like
+    /// the parent asking. This pins the whole chain — spawn description becomes the child's briefing,
+    /// the briefing becomes its requester label, the label rides on its JobContext, and the gated
+    /// plugin stamps it onto every request it raises.</para>
+    ///
+    /// <para>A LABEL, NOT AN ID: "01KZQ…" in a prompt is unanswerable, where the phrase the parent's
+    /// model wrote to name the task is something a user can weigh.</para>
+    /// </summary>
+    [Fact]
+    public async Task AChildsPermissionRequest_NamesTheChild()
+    {
+        var gate = new RecordingGate();
+        var plugins = PluginRegistry.CreateWithBuiltins(null, gate);
+
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"ls -l"}""").RootElement }],
+        });
+        childProvider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
+
+        var factory = new SubAgentFactory(childProvider, plugins, new TokenLedger(null),
+            logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
+            globalInstructionsDir: null, mcp: null);
+
+        await new SubAgentSpawner(factory).TryInvokeAsync(
+            SpawnCall(description: "Analyze TextWrapping failures"), null, CancellationToken.None);
+
+        var shellRequest = Assert.Single(gate.Seen,
+            r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Shell);
+        Assert.Equal("Analyze TextWrapping failures", shellRequest.Requester);
+    }
+
+    /// <summary>The parent's own requests stay unattributed — see PermissionPromptControlTests for
+    /// why that is a decision rather than an omission.</summary>
+    [Fact]
+    public async Task TheParentsOwnPermissionRequest_HasNoRequester()
+    {
+        var gate = new RecordingGate();
+        var plugins = PluginRegistry.CreateWithBuiltins(null, gate);
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"ls -l"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
+
+        var parent = new Agent(provider, plugins, new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        await parent.SendAsync("list the files", CancellationToken.None);
+
+        var shellRequest = Assert.Single(gate.Seen,
+            r => r.Kind == CxAgent.Core.Permissions.PermissionKind.Shell);
+        Assert.Null(shellRequest.Requester);
+    }
 }

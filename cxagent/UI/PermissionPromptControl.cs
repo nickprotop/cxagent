@@ -111,6 +111,25 @@ public sealed class PermissionPromptControl
 
         var markup = Ctl.Markup();
         markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request.Kind, _offerTrust))}[/]");
+
+        // WHO IS ASKING, when it is not the session's own agent.
+        //
+        // OBSERVED ON A LIVE DRIVE: a child spawned to analyse a test failure asked to run shell
+        // commands repeatedly, and the prompt was INDISTINGUISHABLE from the parent asking — same
+        // heading, same command, nothing saying a delegated agent wanted it. The user is being asked
+        // to take responsibility for a command, and "which agent decided to run this" changes the
+        // answer: a command the user's own request implies is different from one a sub-agent
+        // invented three delegation steps away.
+        //
+        // ON ITS OWN LINE, under the heading rather than folded into it. The heading names the KIND
+        // of thing being allowed and is what someone reads first; requester is a qualifier, and
+        // rewriting the heading per requester would give the same action two different names.
+        //
+        // NOTHING IS ADDED for the parent — see PermissionRequest.Requester for why an unattributed
+        // prompt is correct there rather than merely convenient.
+        if (!string.IsNullOrWhiteSpace(_request.Requester))
+            markup.AddLine($"[{ColorScheme.ThinkingMarkup}]asked for by: "
+                         + $"{SharpConsoleUI.Parsing.MarkupParser.Escape(_request.Requester!)}[/]");
         // One AddLine per source line, same reasoning as ChoiceStepContent: a multi-line Display
         // (e.g. a shell command plus its working_dir) would otherwise paint its "\n" literally.
         foreach (var line in displayed.Replace("\r\n", "\n").Split('\n'))

@@ -42,7 +42,10 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters);
         foreach (var request in requests)
         {
-            var allowed = await _gate.RequestAsync(request, ct);
+            // STAMPED HERE, not built into RequestsFor. That method is a pure policy function over
+            // (pluginType, parameters) — it has no idea which agent is running and should not learn.
+            // This is the one layer that sees both the request and the context it was made in.
+            var allowed = await _gate.RequestAsync(request with { Requester = context.Requester }, ct);
             if (!allowed)
             {
                 return new JobResult

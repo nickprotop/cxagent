@@ -22,4 +22,22 @@ public enum TrustState { Unknown, Trusted, Untrusted }
 /// the stored rule can never diverge. NULL AlwaysRule = this request cannot be truthfully
 /// generalised (e.g. a shell job carrying a custom env — Decisions §3): no Always button is
 /// offered, and no stored rule ever matches it.</summary>
-public sealed record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule);
+public sealed record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule)
+{
+    /// <summary>
+    /// WHO IS ASKING — null for the session's own agent, a short label for a sub-agent.
+    ///
+    /// <para>OBSERVED ON A LIVE DRIVE. A child spawned to analyse a test failure asked to run shell
+    /// commands repeatedly, and the prompt was INDISTINGUISHABLE from the parent asking: same
+    /// heading, same command, nothing saying a delegated agent wanted this. With one foreground
+    /// child that is merely unhelpful — the user knows what they started. It stops being cosmetic
+    /// the moment two children run at once, because prompts follow the COMPOSER, not the view: you
+    /// can be reading one child's transcript and approving another child's write, with nothing on
+    /// screen to tell you so.</para>
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, not a fourth positional field, so the ~15 construction sites in
+    /// PermissionPolicy and the tests are untouched — the same reason McpInstructions was added that
+    /// way. A caller that knows who is asking says so; nobody else changes.</para>
+    /// </summary>
+    public string? Requester { get; init; }
+}

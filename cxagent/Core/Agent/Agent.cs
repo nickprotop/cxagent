@@ -107,6 +107,16 @@ public sealed class Agent
     private readonly bool _isSubAgent;
 
     /// <summary>
+    /// How this agent identifies itself when it asks the user for permission — null for the
+    /// session's own agent, which needs no attribution because it IS the session.
+    ///
+    /// <para>Derived from the briefing (what this agent was created to do) rather than from its id: a
+    /// prompt saying "01KZQN97XT8DA… wants to run rm -rf" is unanswerable, where "the sub-agent you
+    /// asked to analyse the test failure wants to run rm -rf" is a decision someone can make.</para>
+    /// </summary>
+    private readonly string? _requesterLabel;
+
+    /// <summary>
     /// What THIS agent was created to do, fixed at construction — null for a plain session.
     ///
     /// <para>The seam a caller uses to tell one agent something the others are not told: a
@@ -184,6 +194,12 @@ public sealed class Agent
         ISubAgentSpawner? spawner = null,
         bool isSubAgent = false)
     {
+        // ONLY A CHILD LABELS ITSELF. The parent's requests are unattributed on purpose: prefixing
+        // every prompt in an ordinary session with "the main agent wants to…" is noise that trains
+        // people to stop reading the heading, which is the opposite of what attribution is for.
+        _requesterLabel = isSubAgent
+            ? (string.IsNullOrWhiteSpace(briefing) ? "a sub-agent" : briefing.Trim())
+            : null;
         _mcp = mcp;
         _spawner = spawner;
         _isSubAgent = isSubAgent;
@@ -927,7 +943,11 @@ public sealed class Agent
             _jobs.UpdateProgress(job);
         }
 
-        var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
+        var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs)
+        {
+            // Rides with every tool call this agent makes, so the gate can say who is asking.
+            Requester = _requesterLabel,
+        };
 
         // THE CLOCK RESTARTS WHEN THE WORK DOES. `started` above is stamped when the ROW appears,
         // which is before the permission gate has asked the user anything — so a command the user

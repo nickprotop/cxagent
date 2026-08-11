@@ -34,6 +34,20 @@ public interface IJobContext
     /// old behaviour, and a caller that ignores it loses nothing.</para>
     /// </summary>
     void WorkStarting();
+
+    /// <summary>
+    /// WHO THIS WORK IS FOR, in words a user can act on — null for the session's own agent.
+    ///
+    /// <para>A LABEL, NOT AN ID. The permission prompt is the only place this surfaces, and a ULID
+    /// there ("01KZQN97XT8DA…") tells the user nothing they can weigh: what they need is "the
+    /// sub-agent you asked to analyse the test failure". So the spawn branch sets the child's
+    /// DESCRIPTION here, which is the phrase the parent's model already wrote to name the task.</para>
+    ///
+    /// <para>It lives on the context rather than on the gate because the gate is one per SESSION —
+    /// built once in AppBootstrap, shared by parent and child alike — while the context is built per
+    /// tool call, which is exactly the granularity "who is asking" needs.</para>
+    /// </summary>
+    string? Requester { get; }
     void Log(string line);
     void Log(JobLogLevel level, string line);
     /// <summary>
