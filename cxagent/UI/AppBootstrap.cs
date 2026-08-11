@@ -19,11 +19,20 @@ public static class AppBootstrap
 {
     public static int Run(string[] args)
     {
-        bool useMock = args.Contains("--mock");
+        var options = CommandLine.Parse(args);
 
-        // TASK 15 replaces this with a parsed --mode argument. Single until then, which is also the
-        // default the parser will use: delegation is a choice a user makes, not one they discover.
-        var startupMode = AgentMode.Single;
+        // A BAD ARGUMENT STOPS THE APP. Ignoring it would start a session that is not the one the
+        // user asked for — and `--mode fanout` silently becoming single mode is how someone concludes
+        // sub-agents do not work. Written to stderr and returned as a non-zero exit, since at this
+        // point there is no window to show anything in.
+        if (options.Error is { } error)
+        {
+            Console.Error.WriteLine($"cxagent: {error}");
+            return 2;
+        }
+
+        bool useMock = options.UseMock;
+        var startupMode = options.Mode;
         var paths = new AppPaths();
         paths.EnsureCreated();
 
