@@ -68,11 +68,15 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
               "properties": {
                 "description": {
                   "type": "string",
-                  "description": "3-5 words naming the task, for the status row the user sees."
+                  "description": "3-5 words naming the task, for the status row the user sees. Not sent to the agent."
                 },
                 "prompt": {
                   "type": "string",
-                  "description": "What the agent should do, and exactly what it should return. It has none of this conversation's context, so include everything it needs."
+                  "description": "What the agent should DO, and exactly what it should return. This is its task."
+                },
+                "context": {
+                  "type": "string",
+                  "description": "Optional. What you already know that it would otherwise have to rediscover, or would get wrong: a file that is currently broken, an approach already tried and failed, a convention this repo follows. Facts, not instructions."
                 }
               },
               "required": ["description", "prompt"]
@@ -87,10 +91,26 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         if (string.IsNullOrWhiteSpace(prompt))
             return "error: 'prompt' is required — say what the agent should do and what to return.";
 
-        // THE BRIEFING IS THE PARENT'S DESCRIPTION of the task (D9). Step 1 has one child type, so
-        // there is no configured briefing to outrank it; step 2 introduces types and the precedence
-        // that goes with them.
-        var child = _factory.Create(briefing: Read(call, "description"));
+        // THREE CHANNELS, AND description IS NOT ONE OF THEM (D9).
+        //
+        // `description` is a UI LABEL — 3-5 words for the status row and the permission prompt. It
+        // used to be passed as the briefing, which put "Analyze TextWrapping failures" into the
+        // highest-authority position in the child's system message under the heading "this is what
+        // you were created to do; where it disagrees with anything above, follow this". Harmless
+        // because it is contentless, and structurally the wrong thing in the wrong slot.
+        //
+        // `briefing` STAYS EMPTY until step 2 supplies config types. It is the one channel that
+        // outranks everything else in the prompt, and the only legitimate author of it is a human
+        // writing config — letting the parent model fill it would rank generated text above the
+        // config that does not exist yet.
+        //
+        // `context` is the parent's channel: facts the child cannot discover, in the system message
+        // so they survive compaction, below the briefing so they carry no authority.
+        var child = _factory.Create(
+            briefing: null,
+            callerContext: Read(call, "context"),
+            // The label the USER sees — status row and permission prompts. Never sent to the model.
+            label: Read(call, "description"));
         onChild?.Invoke(child);
 
         var result = await child.Agent.SendAsync(prompt, ct);

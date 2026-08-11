@@ -89,10 +89,26 @@ public sealed class SubAgentFactory
     /// caller's conversation.
     /// </summary>
     /// <param name="briefing">
-    /// What this child was created to do. It becomes part of the system message, last, after the
-    /// general prompt and the project instructions — the most specific instruction wins.
+    /// HOW to work — the config type's standing instructions, and the highest-authority text in the
+    /// child's prompt (see <c>Agent.RenderBriefing</c>: "where it disagrees with anything above,
+    /// follow this").
+    ///
+    /// <para>EMPTY UNTIL STEP 2, deliberately. There are no configured types yet, so there is nothing
+    /// human-written to put here — and letting the parent fill it instead would rank a
+    /// model-generated instruction above the config that does not exist yet, which is exactly the
+    /// escalation D9's precedence rule exists to prevent. A parent with something to say uses
+    /// <paramref name="callerContext"/>.</para>
     /// </param>
-    public SubAgent Create(string? briefing = null)
+    /// <param name="callerContext">
+    /// WHAT TO KNOW — situational facts the parent has and the child cannot discover: "the build is
+    /// broken in IndentShift.cs, ignore it", "the regex approach was already tried". Renders below the
+    /// briefing and claims no authority.
+    /// </param>
+    /// <param name="label">
+    /// A few words naming this child FOR THE USER — the status row, and the "asked for by:" line on
+    /// its permission prompts. Never sent to the model.
+    /// </param>
+    public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
@@ -116,6 +132,8 @@ public sealed class SubAgentFactory
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
             briefing: briefing,
+            callerContext: callerContext,
+            label: label,
 
             // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
             // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
