@@ -281,6 +281,67 @@ public class SubAgentSpawnerTests
         Assert.Equal("a later answer", second.Text);
     }
 
+    // ---- 2c: the description lists the catalog --------------------------------------------------
+
+    /// <summary>
+    /// WITH NO TYPES CONFIGURED THE CATALOG IS STILL NOT EMPTY — `general` is always there, which is
+    /// what stops the description ever having to say "valid types: (none)" and what makes adding a
+    /// second type look like an addition rather than a section materialising from nothing.
+    /// </summary>
+    [Fact]
+    public void Definition_WithNoConfiguredTypes_ListsGeneralOnly()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
+
+        Assert.Contains("- general: same model as you", d, StringComparison.Ordinal);
+        Assert.DoesNotContain("- explore:", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// CONFIGURED TYPES APPEAR WITH WHAT THEY ARE FOR. A model cannot pick from a catalog it has never
+    /// seen (D5), and a type's briefing IS its description — nothing extra needs writing in config.
+    /// </summary>
+    [Fact]
+    public void Definition_ListsConfiguredTypes_WithTheirBriefings()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")),
+            Catalog(("explore", "You search and report. Never edit files."))).Definition.Description;
+
+        Assert.Contains("- explore: You search and report.", d, StringComparison.Ordinal);
+        // The second sentence is dropped: a briefing is written for the CHILD and can run long; the
+        // parent needs enough to choose by.
+        Assert.DoesNotContain("Never edit files", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// SAY THE PARAMETER IS OPTIONAL. A model that suddenly sees a catalog may infer it MUST choose,
+    /// and choose badly where `general` was right — a helpful list turned into a forced decision.
+    /// </summary>
+    [Fact]
+    public void Definition_SaysTypeIsOptional()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
+
+        Assert.Contains("Omit `type` for a general-purpose agent", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE TUNED PROSE SURVIVES. Everything above the catalog was tuned across three live drives and
+    /// is load-bearing; types are an ADDITION to that text, not a rewrite of it.
+    /// </summary>
+    [Fact]
+    public void Definition_KeepsTheTunedGuidance_AboveTheCatalog()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("explore", "Search."))).Definition.Description;
+
+        Assert.Contains("the conclusion, not the file dumps", d, StringComparison.Ordinal);
+        Assert.Contains("single-fact lookup", d, StringComparison.Ordinal);
+        Assert.Contains("do not also do it yourself", d, StringComparison.Ordinal);
+        // And the catalog is BELOW it, so the guidance is read first.
+        Assert.True(d.IndexOf("single-fact lookup", StringComparison.Ordinal)
+                  < d.IndexOf("- explore:", StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// THE TOOL DESCRIPTION CARRIES THE WHEN-NOT-TO (D25), because that is the part that stops a model
     /// delegating work it should simply do. Asserted rather than assumed: the description is the only

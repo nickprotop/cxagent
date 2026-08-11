@@ -76,7 +76,55 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
     /// so the doctrine does not apply and looking for a generator would be looking for something that
     /// cannot exist.
     /// </summary>
-    public ToolDefinition Definition => new(ToolName, Description,
+    /// <summary>
+    /// The description the model reads, with the type catalog appended.
+    ///
+    /// <para>GENERATED, because a model cannot pick from a catalog it has never seen (D5) and the
+    /// catalog is per-config. The prose above it is a constant and is NOT rewritten here: it was
+    /// tuned across three live drives and the wording is load-bearing — the when-not-to, the benefit,
+    /// and "do not also do it yourself". Types are an addition to that text.</para>
+    ///
+    /// <para>THE PROMPT-CACHE PREFIX NOW DEPENDS ON CONFIG. The description is part of the tool
+    /// schema, which is part of every request. Config is stable within a session, so the prefix is
+    /// stable within a session — the same guarantee everything else here has.</para>
+    /// </summary>
+    private string DescriptionWithTypes()
+    {
+        var sb = new System.Text.StringBuilder(Description);
+
+        sb.AppendLine();
+        sb.AppendLine();
+        // SAY IT IS OPTIONAL AND WHAT OMITTING IT MEANS. A model that suddenly sees a catalog may
+        // infer it MUST choose, and choose badly on the tasks where `general` was right — turning a
+        // helpful list into a forced decision. This is the `context` failure from the other side: a
+        // parameter whose purpose is unstated is either ignored or misused, never used well.
+        sb.AppendLine("Agent types. Omit `type` for a general-purpose agent; name one when it fits "
+                    + "what you need done.");
+
+        foreach (var type in _types.All)
+        {
+            // ONE LINE EACH. A catalog that dwarfs the guidance above it buries the guidance, and
+            // that guidance is already hard enough for a model to act on.
+            var what = string.IsNullOrWhiteSpace(type.Briefing)
+                ? "same model as you, no special instructions"
+                : Summarise(type.Briefing);
+            sb.AppendLine($"- {type.Name}: {what}");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>First sentence of a briefing, bounded. A briefing is written for the CHILD and can run
+    /// long; what the parent needs is enough to choose by.</summary>
+    private static string Summarise(string briefing)
+    {
+        var text = briefing.ReplaceLineEndings(" ").Trim();
+        var stop = text.IndexOf(". ", StringComparison.Ordinal);
+        if (stop > 0) text = text[..(stop + 1)];
+        return text.Length <= 140 ? text : text[..140].TrimEnd() + "…";
+    }
+
+    public ToolDefinition Definition => new(ToolName, DescriptionWithTypes(),
         JsonDocument.Parse(
             """
             {
@@ -93,6 +141,10 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
                 "context": {
                   "type": "string",
                   "description": "Optional. What you already know that it would otherwise have to rediscover, or would get wrong: a file that is currently broken, an approach already tried and failed, a convention this repo follows. Facts, not instructions."
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Optional. Which agent type to use — see the list in this tool's description. Omit for a general-purpose agent."
                 }
               },
               "required": ["description", "prompt"]
