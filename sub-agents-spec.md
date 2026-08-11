@@ -1202,26 +1202,82 @@ Cost, stated: no child survives its turn, so "start this and tell me later" is n
 is a real capability given up, and it is the one background would buy. Revisit only if a concrete
 need appears — not because it sounds more advanced.
 
+#### A MIXED TURN: 2 spawns and 3 tools in one message
+
+The obvious reading of "run the children concurrently" is wrong, and it is worth stating before
+anyone writes `Task.WhenAll(response.ToolCalls.Select(...))`.
+
+A model does not emit a turn of only spawns. It emits `[spawn A, spawn B, read_file, run_shell,
+search_files]` — a mixture — and today `Agent.cs:711` runs all five through ONE sequential `foreach`.
+Parallelising that loop wholesale breaks four things, three of them silently:
+
+**1. Four pieces of state are mutated per iteration**, and none is thread-safe:
+
+| Line | State | What breaks |
+|---|---|---|
+| `:714` | `wrote` | a lost update means the build-verification gate does not fire |
+| `:728` | `seen[signature]` | plain `Dictionary` — concurrent writes corrupt it |
+| `:765-766` | `_lastBuild`, `_lastTest` | two commands racing leaves the wrong verdict for the session |
+| `:731` | `messages.Add` for the stuck nudge | appends to the LIVE list mid-iteration |
+
+**2. Results must land in call order.** The `tool` messages are matched to the assistant message's
+calls by `ToolCallId`, and while order is not strictly required by the wire format, an out-of-order
+list is a needless divergence from what every provider sees in its own examples. Collect, then append
+in the original order.
+
+**3. Permission prompts serialise anyway.** `InteractivePermissionGate` holds a semaphore — the
+composer cell can show ONE prompt at a time. Three shell commands launched concurrently produce three
+prompts that queue, so the "parallelism" is a queue with extra steps, and the user answers them in an
+order nobody chose.
+
+**4. run_shell in parallel is a different proposition from read_file in parallel.** Two reads cannot
+interfere. Two `dotnet build` invocations in one directory can, and the model has no idea it launched
+them together.
+
+**SO: PARALLELISE THE SPAWNS, NOT THE TOOLS.** Partition the turn's calls — spawns run under
+`Task.WhenAll`, everything else keeps today's sequential `foreach`, and results are reassembled in
+call order before any is appended.
+
+That is not a compromise; it is where the benefit actually is. A child is minutes and its
+intermediate work is invisible, so overlapping two saves minutes. A `read_file` is milliseconds and
+its result is already inline — overlapping it saves nothing and costs the four hazards above.
+
+**Order between the two groups, decided: spawns FIRST, then the tools.** Children are the long pole,
+so starting them before the sequential work means the tools run inside the window the children are
+already occupying. The alternative — tools first — has the parent doing quick work while nothing is
+delegated, then waiting on children with nothing else to do.
+
+**Cancellation is per-call and Escape must reach every child.** Today one CTS covers the turn and each
+tool awaits it in sequence; with two children in flight, Escape has to cancel both AND close both
+rows. §1f's `try/finally` is per-invocation, so it already covers each child individually — verify it,
+do not assume it.
+
 #### What a barrier still FORCES
 
 
 
-Parallel spawning is not one change. It makes four currently-harmless things dangerous, and each must
-land BEFORE the first two children run at once:
+Parallel spawning is not one change. Each of these must land BEFORE two children run at once.
+Verified against the code, not recalled:
 
-1. **Permission attribution** (§4.1, Q3). Prompts follow the composer, not the view: you can approve
-   one child's write while looking at another's transcript. Both request-construction sites need
-   per-call identity — `IJobContext` hides the agent id, and the shared `McpToolset` never receives
-   one.
+1. **Permission attribution — HALF DONE.** `PermissionRequest.Requester` exists and a child's prompt
+   reads *"asked for by: <description>"*; that shipped with named types. **The gap is MCP:**
+   `McpToolset.TryInvokeAsync(call, ct)` takes no agent id, so a permission prompt raised by an MCP
+   call cannot say who asked. One parameter, and it is the one request-construction site the
+   attribution work did not reach.
 2. **The denial echo** (§4.2) goes to the main transcript whoever asked.
 3. **A waiting-on-permission row state** (§3.1). Two children, one blocked: currently
-   indistinguishable from slow.
-4. **The shared-state audit** (below) — `McpClient.WriteAsync` has no lock on a shared stdio pipe.
+   indistinguishable from slow. Cheaper now than when this was written — a row already carries a live
+   progress body, so this is a `JobState` and a header word rather than new plumbing.
+4. **The MCP write lock — CONFIRMED MISSING.** `McpClient.WriteAsync` (`:340-345`) is a bare
+   `WriteLineAsync` followed by `FlushAsync` on a shared stdio pipe, with no lock of any kind. Two
+   children calling tools on one server interleave a JSON-RPC frame and corrupt it. One
+   `SemaphoreSlim`. The read side is fine — replies multiplex by id.
+5. **The turn is MIXED** — see the section above. Parallelise the spawns, not the tools.
 
-Only then: `Task.Run` per child, sinks marshalling as they already do, and the `foreach` awaiting
-several at once.
+Only then: `Task.WhenAll` over the spawn partition, sinks marshalling as they already do (all four
+implementations go through `EnqueueOnUIThread`), and the results reassembled in call order.
 
-#### 5. THE PROMPTING MUST CHANGE TOO — a fifth item, and the one easiest to forget
+#### 6. THE PROMPTING MUST CHANGE TOO — the one easiest to forget
 
 The machinery running two children at once does not make a model USE two. Every wording in the tool
 description today is written for a single blocking child ("It runs once… and returns one message"),
