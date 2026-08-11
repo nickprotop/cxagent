@@ -577,6 +577,106 @@ public class AgentTests
         }
     }
 
+    // ---- 1c: the outcome is a field, not something to infer ------------------------------------
+
+    /// <summary>An ordinary answer reports <see cref="SendOutcome.Completed"/>.</summary>
+    [Fact]
+    public async Task SendAsync_NormalAnswer_ReportsCompleted()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "the answer", StopReason = "end_turn" });
+
+        var result = await NewAgent(provider).SendAsync("a question", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Completed, result.Outcome);
+        Assert.Equal("the answer", result.Text);
+    }
+
+    /// <summary>
+    /// A CAPPED RUN MUST NOT REPORT Completed — the entire reason this type exists.
+    ///
+    /// <para>The text on this path is a SALVAGE SUMMARY: an account of unfinished work, produced by a
+    /// toolless turn after the cap fired. A caller that cannot tell it from a finished answer acts on
+    /// it as though the work were done — and for a sub-agent, whose sink is a buffer nobody reads,
+    /// the returned string is the ONLY thing the parent ever sees.</para>
+    ///
+    /// <para>The turn count could not carry this: <c>_maxTurns</c> is private, the counter reads
+    /// exactly <c>maxTurns</c> both when the cap fires AND when a run ends naturally on its last
+    /// turn, and the salvage turn raises no <c>TurnCompleted</c> at all.</para>
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_AtTheTurnCap_ReportsCapped_NotCompleted()
+    {
+        var provider = new MockLlmProvider();
+        // Every turn calls a tool, so the loop never exits normally and runs into the cap.
+        for (var i = 0; i < 6; i++)
+            provider.EnqueueResponse(new LlmResponse
+            {
+                Text = "",
+                StopReason = "tool_use",
+                ToolCalls = [ReadOfNothing($"file-{i}.txt")],
+            });
+        provider.EnqueueResponse(new LlmResponse { Text = "here is what I got through", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+
+        var result = await agent.SendAsync("do something long", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Capped, result.Outcome);
+        Assert.NotEqual(SendOutcome.Completed, result.Outcome);
+    }
+
+    /// <summary>
+    /// A STUCK RUN REPORTS Stuck. Same tool, same arguments, same result, past the nudge — the run
+    /// was not making progress, and the text it returns is whatever prose accompanied the loop rather
+    /// than an answer to the question.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_WhenStuck_ReportsStuck()
+    {
+        var provider = new MockLlmProvider();
+        // The SAME call every turn: same name, same arguments, and (a missing file) the same result.
+        for (var i = 0; i < 12; i++)
+            provider.EnqueueResponse(new LlmResponse
+            {
+                Text = "checking again",
+                StopReason = "tool_use",
+                ToolCalls = [ReadOfNothing("does-not-exist.txt")],
+            });
+
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
+
+        var result = await agent.SendAsync("read that file", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Stuck, result.Outcome);
+    }
+
+    /// <summary>
+    /// The implicit conversion is what kept this a mechanical change: of ~73 call sites only four
+    /// read the string, and every other one awaits and discards. Without it each would have needed
+    /// touching to say <c>.Text</c>.
+    /// </summary>
+    [Fact]
+    public async Task SendResult_ConvertsToItsText_SoExistingCallSitesAreUnchanged()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "plain text", StopReason = "end_turn" });
+
+        string answer = await NewAgent(provider).SendAsync("q", CancellationToken.None);
+
+        Assert.Equal("plain text", answer);
+    }
+
+    /// <summary>A read of a file that is not there: same call, same failure, every time.</summary>
+    private static ToolCall ReadOfNothing(string path) => new()
+    {
+        Id = "call-" + path,
+        Name = "read_file",
+        Arguments = System.Text.Json.JsonDocument.Parse($$"""{"path":"{{path}}"}""").RootElement,
+    };
+
     /// <summary>Waits for the loop to report a Running row, so cancellation lands DURING the tool
     /// call rather than before it starts.</summary>
     private static async Task<Job> WaitForRunningJobAsync(NullJobPanel jobs)

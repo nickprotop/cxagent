@@ -208,7 +208,7 @@ public sealed class Agent
     /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it, and the pre-send
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
     /// </remarks>
-    public async Task<string> SendAsync(string prompt, CancellationToken ct)
+    public async Task<SendResult> SendAsync(string prompt, CancellationToken ct)
     {
         // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
         // `new List<ChatMessage>(conversation)` — a fresh working list built from the session history
@@ -386,8 +386,10 @@ public sealed class Agent
                 _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
 
                 // The salvaged summary IS the answer on this path — the caller puts it on the
-                // transcript, exactly as it does for an ordinary reply.
-                return summary;
+                // transcript, exactly as it does for an ordinary reply. CAPPED, not Completed: it is
+                // an account of unfinished work, and a caller that cannot tell the difference acts
+                // on it as though the work were done.
+                return new SendResult(summary, SendOutcome.Capped);
             }
 
             // OPEN THE TURN BEFORE THE CALL, not after it. A turn is created with thinking:true and
@@ -573,7 +575,7 @@ public sealed class Agent
                 // The answer, either way. It is already ON SCREEN — it streamed into the turn opened
                 // above — so this is for the caller's transcript, and it is returned rather than
                 // pushed onto a list the agent was handed.
-                return text;
+                return new SendResult(text, SendOutcome.Completed);
             }
 
             // Prose that came WITH tool calls is narration ("let me check that file"). It has
@@ -664,7 +666,7 @@ public sealed class Agent
                 _sink.ShowError(
                     $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
                     + "returned the same result each time. The run was not making progress.");
-                return text;
+                return new SendResult(text, SendOutcome.Stuck);
             }
         }
     }
