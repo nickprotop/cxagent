@@ -3,6 +3,12 @@
 Typed into the composer, like a message. They are handled by the app before the model sees anything,
 so they cost nothing — no request, no tokens.
 
+**Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
+arguments shows them as a hint — `/stats  usage: …  [<days>|all|clear]` — and typing a space
+descends into them: `/mcp ` offers `reload`, `login` and `<server>`, `/mcp re` narrows to `reload`,
+Enter completes the whole thing. `<angle brackets>` mark a value you supply, so those rows are shown
+but not completed.
+
 | Command | What it does |
 |---|---|
 | `/help` | Keys and commands |
@@ -10,6 +16,9 @@ so they cost nothing — no request, no tokens.
 | `/mode single` · `/mode fan-out` | Set it, live |
 | `/clear` | Wipe the conversation |
 | `/compress` | Summarise the conversation to free room |
+| `/stats` | Usage: tokens, projects, agent types, what fills the context |
+| `/stats 30` · `/stats all` | Widen the window (default: 7 days) |
+| `/stats clear` | Delete all usage history, after confirming |
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
@@ -42,6 +51,43 @@ argument still works mid-turn: it reads nothing and changes nothing.
 
 Setting the mode you are already in says so and changes nothing. An unrecognised value names the
 valid ones.
+
+---
+
+## `/stats`
+
+What this installation has actually done, as a dashboard in the transcript. Seven days by default;
+`/stats 30` or `/stats all` widens it.
+
+```
+Usage · last 7 days
+
+  2,023,023 tokens  ↑2.0M ↓40.9k
+  4 sessions  · 28 turns
+
+  █████████████████───── 79% to workers  (1.6M of 2.0M)
+```
+
+**The worker share is the number fan-out users want.** Children share the parent's ledger and usually
+its model, so nothing else distinguishes their spend — before this existed, a session that sent 86%
+of its tokens to sub-agents looked identical to one that spawned nothing.
+
+**"What fills the context" is the section that explains an expensive session.** Tools are ranked by
+characters returned, not by call count, because a turn re-sends everything before it: a tool that
+returns 11k characters fifty times does not cost that once, it costs it again on every later turn.
+Forty cheap calls are not the problem; one large result repeated is.
+
+**"By agent type" needs history, not a session.** Whether 41k is typical for a `planner` or an
+outlier is a question about many runs. `capped` is counted apart from `failed` — a run that exhausted
+its turn cap did not fail, it ran out of room, which is a fact about the briefing rather than the
+work.
+
+A separate database from resume (`history.db` beside `cxagent.db`) and **never pruned**: the resume
+store is a buffer worth nothing once a session ends cleanly, this is the archive. Recording is
+best-effort throughout — a locked file costs statistics and never a session.
+
+**Nothing is recorded before this version.** A fresh install says so rather than showing an empty
+dashboard, which would read as "you have done nothing".
 
 ---
 

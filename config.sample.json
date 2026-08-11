@@ -89,6 +89,10 @@
     },
     "test": {
       "briefing": "You run and diagnose tests. Read the actual output before drawing a conclusion — a command that exits 0 has not necessarily verified anything, and a filter that matched nothing exits 0. Report the counts you saw."
+    },
+    "planner": {
+      "briefing": "You produce a plan and change nothing. Read enough of the code to be specific: name the files that must change and what each change is, in the order they can be made without breaking the build in between. Say which step is the one most likely to be wrong, and what would prove it early. Where the code already decides something, follow it rather than inventing a parallel way — and if the existing design blocks the request, say so instead of planning around it. A step nobody could carry out without asking you a question is not finished.",
+      "maxTurns": 40
     }
   },
 

@@ -96,9 +96,9 @@ finished.
 `--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed —
 turning it off really does turn it off.
 
-**Named types** let you say how a delegated job should be done. See
-[`config.sample.json`](config.sample.json) for the `agents` block, and [COMMANDS.md](COMMANDS.md) for
-`/mode`.
+**Named types** let you say how a delegated job should be done — a briefing, optionally its own
+provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and
+[COMMANDS.md](COMMANDS.md) for `/mode` and `/stats`.
 
 **Honest about the limits**, because they are the sort you would otherwise find out the hard way:
 
@@ -128,18 +128,12 @@ Provider kinds: `ollama`, `openai-compatible` (requires `baseUrl`), `anthropic`.
 Set `contextWindow` on a provider when you know it — it is the denominator for the occupancy
 readout and the trigger for compaction. Left unset, cxagent asks the endpoint at startup.
 
-Optional `orchestrator` block:
+Optional blocks: `agents` for sub-agent types, `mcp` for MCP servers, `orchestrator` for caps.
 
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `maxWorkerTurns` | 500 | Turns per request before the agent stops and summarises what it has. `0` means no cap. Sub-agents inherit it. |
-| `goalTokenBudget` | unset | Warn once past this many tokens for the session |
-| `maxTokensPerCall` | unset | Per-request cap; unset means the provider's own |
-| `contextCompressThreshold` | 80% of the window | Compact above this many tokens |
-
-Optional `agents` block for sub-agent types, and `mcp` for MCP servers.
-[`config.sample.json`](config.sample.json) documents every key, including what each one's absence
-means.
+**[CONFIG.md](CONFIG.md) is the full reference** — every block, where the file lives on each OS, what
+else cxagent keeps in that directory, and how `AGENTS.md` / `CXAGENT.md` / `CLAUDE.md` are resolved.
+[`config.sample.json`](config.sample.json) documents every key inline, including what each one's
+absence means.
 
 ## Keys
 
@@ -169,9 +163,15 @@ ask. A model can propose a command that deletes things, and if you approve it, i
 
 **It spends your money.** Every turn is a request to whichever provider you configured, and a
 sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand
-tokens — the session panel shows the running total, and `goalTokenBudget` warns once past a figure
-you set. Neither stops a bill. If you point cxagent at a paid API, **you are paying for what it
-does**, including work that turns out to be wrong.
+tokens. The session panel shows the running total and the parent/worker split, `/stats` shows what
+past sessions cost and which tools fill the context, and `goalTokenBudget` warns once past a figure
+you set. **None of them stops a bill.** If you point cxagent at a paid API, **you are paying for what
+it does**, including work that turns out to be wrong.
+
+A measured example, on a local model where the cost was only electricity: one evening of six sessions
+came to roughly two million input tokens, because every turn re-sends the whole conversation and one
+sub-agent made ninety-five web requests before its turn cap stopped it. On a metered API that is real
+money for a result that was partly wrong.
 
 **It talks to whatever you configure.** Your prompts, your file contents and your shell output go to
 your chosen model provider, and to any MCP server you have enabled. What they do with it is between
