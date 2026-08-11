@@ -3,9 +3,13 @@
     "cxagent configuration. Copy to ~/.config/cxagent/config.json and edit.",
     "",
     "Every block is OPTIONAL except `providers` — without one there is no model to talk to,",
-    "and cxagent starts into its setup wizard instead. Keys not listed here are not read;",
-    "an unknown key is ignored rather than rejected, so a typo is silent. Check a value took",
-    "effect rather than assuming it did.",
+    "and cxagent starts into its setup wizard instead.",
+    "",
+    "AN UNKNOWN KEY IS IGNORED; AN UNKNOWN VALUE IS AN ERROR. There is no key-level",
+    "validation, so a misspelled key name is silent — `contextWindwo` simply does nothing.",
+    "Values are checked: an unknown provider `kind`, or a name referencing a provider that",
+    "is not configured, stops startup and says so. Check that a key took effect rather than",
+    "assuming it did.",
     "",
     "JSON has no comments. These `//` arrays are data the parser ignores, which is the",
     "conventional way to annotate a JSON sample and the reason they read oddly."
@@ -57,7 +61,10 @@
     "do not rely on a briefing to contain an agent.",
     "",
     "`general` always exists whether or not it appears here — same model as the parent, no",
-    "briefing. Define it to give every untyped sub-agent a standing instruction."
+    "briefing. Define it to give every untyped sub-agent a standing instruction.",
+    "",
+    "A type does NOT get its own turn ceiling or token budget. Those are session-wide",
+    "(`orchestrator` below), and a child inherits them."
   ],
   "agents": {
     "explore": {
@@ -74,7 +81,11 @@
   "//mcp": [
     "MCP servers, by name. `command` is argv — no shell, so no pipes or globs.",
     "Optional: `enabled` (default true), `cwd`, `env`, `timeoutMs`.",
-    "An HTTP server uses `url` instead of `command`."
+    "An HTTP server uses `url` instead of `command`, and may carry `headers` for auth.",
+    "",
+    "A server's own usage instructions, when it sends any, are appended to the system prompt",
+    "attributed to it by name — so a server can tell the model how to use it, and the model",
+    "can tell that advice apart from cxagent's own."
   ],
   "mcp": {
     "context7": {
@@ -89,9 +100,13 @@
     "goalTokenBudget: tokens for the whole session before it warns. null/absent = unbounded.",
     "maxTokensPerCall: per-request cap. null/absent = the provider's own.",
     "maxWorkerTurns: turns per request before the agent stops and summarises what it got.",
-    "  0 means NO CAP. Absent means the built-in ceiling, which is not the same as no cap.",
-    "contextCompressThreshold: compact above this many tokens. Absent means derive it from",
-    "  the provider's contextWindow, which is the better answer when a window is configured."
+    "  0 means NO CAP — an explicit opt-out. Absent means the built-in ceiling, which is NOT",
+    "  the same as no cap. It applies to sub-agents too: a child inherits this ceiling rather",
+    "  than getting a smaller one of its own.",
+    "contextCompressThreshold: compact above this many tokens. Absent and a contextWindow is",
+    "  known, it is 80% of that window — which is the better answer, since it tracks the model",
+    "  rather than a number that was right for whatever was configured when it was written.",
+    "  Absent with no window either, a fixed built-in threshold is used."
   ],
   "orchestrator": {
     "goalTokenBudget": null,
