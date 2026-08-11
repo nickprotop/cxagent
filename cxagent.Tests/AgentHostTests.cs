@@ -127,12 +127,14 @@ public class AgentHostTests
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
+            // WITH A WORKING DIRECTORY, as AppBootstrap wires it: resume is scoped to the folder a
+            // session ran in, and a row saved without one is deliberately never offered.
             var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-                PluginRegistry.CreateWithBuiltins(), store: store);
+                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
 
             await runner.SendAsync("remember this", CancellationToken.None);
 
-            var snap = store.LoadLatestUnfinished();
+            var snap = store.LoadLatestUnfinished("/projects/here");
             Assert.NotNull(snap);
             Assert.Equal(runner.SessionId, snap!.AgentId);
             Assert.Contains(snap.Context, m => m.Content.Contains("remember this"));
@@ -157,12 +159,16 @@ public class AgentHostTests
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
             var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-                PluginRegistry.CreateWithBuiltins(), store: store);
+                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
             await runner.SendAsync("hello", CancellationToken.None);
+
+            // IT WAS OFFERABLE FIRST — otherwise this test passes vacuously, since an unscoped save
+            // returns null whether or not MarkSessionFinished does anything at all.
+            Assert.NotNull(store.LoadLatestUnfinished("/projects/here"));
 
             runner.MarkSessionFinished();
 
-            Assert.Null(store.LoadLatestUnfinished());
+            Assert.Null(store.LoadLatestUnfinished("/projects/here"));
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }

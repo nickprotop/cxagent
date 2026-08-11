@@ -264,7 +264,11 @@ public static class AppBootstrap
                 // its spend back exactly as it did when AgentHost made this itself.
                 ledger: ledger,
                 spawner: subAgents,
-                mode: startupMode)
+                mode: startupMode,
+                // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup. Sessions
+                // and permission rules are both scoped to the project they belong to, and they must
+                // agree on what "this project" means.
+                workingDir: workingDir)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
                 // said nothing — the Unbounded placeholder substituted elsewhere would report 200
@@ -852,7 +856,9 @@ public static class AppBootstrap
 
         async Task OfferResumeAsync()
         {
-            var snapshot = sessions.LoadLatestUnfinished();
+            // SCOPED TO THIS FOLDER. Without it the newest unfinished session anywhere on the
+            // machine was offered here, and accepting it restored another project's conversation.
+            var snapshot = sessions.LoadLatestUnfinished(workingDir);
             if (snapshot is null) return;
 
             // ENOUGH TO RECOGNISE IT BY. A ULID identifies a session but describes nothing; the size

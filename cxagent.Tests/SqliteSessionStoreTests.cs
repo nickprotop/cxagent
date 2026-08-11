@@ -22,6 +22,16 @@ public class SqliteSessionStoreTests : IDisposable
         _paths.EnsureCreated();
     }
 
+    /// <summary>
+    /// The folder these round-trip tests pretend to run in.
+    ///
+    /// <para>Resume is SCOPED to a working directory, so a session saved without one is deliberately
+    /// unreachable — a row that cannot say where it came from could have come from anywhere. These
+    /// tests are about round-tripping rather than scoping, so they all use one folder; the scoping
+    /// rules have their own tests below.</para>
+    /// </summary>
+    private const string Here = "/projects/here";
+
     public void Dispose()
     {
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
@@ -37,9 +47,9 @@ public class SqliteSessionStoreTests : IDisposable
         var store = new SqliteSessionStore(_paths);
         store.SaveTurn("agent-1",
             [Msg("system", "Your working directory is /tmp."), Msg("user", "hello"), Msg("assistant", "hi")],
-            inputTokens: 100, outputTokens: 20);
+            inputTokens: 100, outputTokens: 20, workingDir: Here);
 
-        var snap = store.LoadLatestUnfinished();
+        var snap = store.LoadLatestUnfinished(Here);
 
         Assert.NotNull(snap);
         Assert.Equal("agent-1", snap!.AgentId);
@@ -72,9 +82,9 @@ public class SqliteSessionStoreTests : IDisposable
         [
             new ChatMessage { Role = "assistant", Content = "", ToolCalls = [call] },
             new ChatMessage { Role = "tool", Content = "file contents", ToolCallId = "call-7" },
-        ], inputTokens: 10, outputTokens: 5);
+        ], inputTokens: 10, outputTokens: 5, workingDir: Here);
 
-        var snap = store.LoadLatestUnfinished();
+        var snap = store.LoadLatestUnfinished(Here);
 
         Assert.NotNull(snap);
         var restored = Assert.Single(snap!.Context[0].ToolCalls!);
@@ -91,11 +101,11 @@ public class SqliteSessionStoreTests : IDisposable
     public void SaveTurn_Twice_KeepsOnlyTheNewerContext()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("agent-1", [Msg("user", "first")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("agent-1", [Msg("user", "first")], inputTokens: 10, outputTokens: 1, workingDir: Here);
         store.SaveTurn("agent-1", [Msg("user", "first"), Msg("user", "second")],
-            inputTokens: 30, outputTokens: 4);
+            inputTokens: 30, outputTokens: 4, workingDir: Here);
 
-        var snap = store.LoadLatestUnfinished();
+        var snap = store.LoadLatestUnfinished(Here);
 
         Assert.NotNull(snap);
         Assert.Equal(2, snap!.Context.Count);
@@ -107,10 +117,10 @@ public class SqliteSessionStoreTests : IDisposable
     public void MarkFinished_ThenLoad_ReturnsNull()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("agent-1", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("agent-1", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
         store.MarkFinished("agent-1");
 
-        Assert.Null(store.LoadLatestUnfinished());
+        Assert.Null(store.LoadLatestUnfinished(Here));
     }
 
     /// <summary>Nothing saved, nothing to resume.</summary>
@@ -119,7 +129,7 @@ public class SqliteSessionStoreTests : IDisposable
     {
         var store = new SqliteSessionStore(_paths);
 
-        Assert.Null(store.LoadLatestUnfinished());
+        Assert.Null(store.LoadLatestUnfinished(Here));
     }
 
     /// <summary>The ledger totals come back, so a resumed session reports what it has already spent
@@ -128,9 +138,9 @@ public class SqliteSessionStoreTests : IDisposable
     public void SaveTurn_RoundTripsTheLedgerTotals()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("agent-1", [Msg("user", "hello")], inputTokens: 1_234, outputTokens: 567);
+        store.SaveTurn("agent-1", [Msg("user", "hello")], inputTokens: 1_234, outputTokens: 567, workingDir: Here);
 
-        var snap = store.LoadLatestUnfinished();
+        var snap = store.LoadLatestUnfinished(Here);
 
         Assert.NotNull(snap);
         Assert.Equal(1_234, snap!.InputTokens);
@@ -145,11 +155,11 @@ public class SqliteSessionStoreTests : IDisposable
     public void LoadLatestUnfinished_WithSeveral_ReturnsTheMostRecentlyUpdated()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("older", [Msg("user", "old")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("older", [Msg("user", "old")], inputTokens: 10, outputTokens: 1, workingDir: Here);
         Thread.Sleep(1_100);   // the timestamp has second resolution in ISO-8601 round-trip form
-        store.SaveTurn("newer", [Msg("user", "new")], inputTokens: 20, outputTokens: 2);
+        store.SaveTurn("newer", [Msg("user", "new")], inputTokens: 20, outputTokens: 2, workingDir: Here);
 
-        var snap = store.LoadLatestUnfinished();
+        var snap = store.LoadLatestUnfinished(Here);
 
         Assert.NotNull(snap);
         Assert.Equal("newer", snap!.AgentId);
@@ -164,7 +174,7 @@ public class SqliteSessionStoreTests : IDisposable
     public void Prune_RemovesFinishedSessionsOlderThanTheWindow()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("old", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("old", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
         store.MarkFinished("old");
 
         // Everything finished, however recently, is older than a zero-length window.
@@ -181,12 +191,12 @@ public class SqliteSessionStoreTests : IDisposable
     public void Prune_KeepsUnfinishedSessions_HoweverOld()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("crashed", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("crashed", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
 
         store.Prune(TimeSpan.Zero);
 
         Assert.Equal(1, store.CountSessions());
-        Assert.NotNull(store.LoadLatestUnfinished());
+        Assert.NotNull(store.LoadLatestUnfinished(Here));
     }
 
     /// <summary>A finished session inside the window stays — pruning is age-based, not a purge.</summary>
@@ -194,7 +204,7 @@ public class SqliteSessionStoreTests : IDisposable
     public void Prune_KeepsFinishedSessionsInsideTheWindow()
     {
         var store = new SqliteSessionStore(_paths);
-        store.SaveTurn("recent", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1);
+        store.SaveTurn("recent", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
         store.MarkFinished("recent");
 
         store.Prune(TimeSpan.FromDays(7));
@@ -216,5 +226,88 @@ public class SqliteSessionStoreTests : IDisposable
             store.SaveTurn("agent-1", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1));
 
         Assert.Null(ex);
+    }
+
+    // ---- resume is scoped to the folder it was started in ---------------------------------------
+
+    /// <summary>
+    /// A SESSION IS OFFERED IN ITS OWN FOLDER AND NOWHERE ELSE.
+    ///
+    /// <para>Without the filter the newest unfinished session ANYWHERE on the machine was offered
+    /// wherever cxagent next started, and accepting it restored another project's conversation into
+    /// this one — file paths, code and decisions describing a tree the user is not in. Permission
+    /// rules were scoped this way from the start; only this store missed it.</para>
+    /// </summary>
+    [Fact]
+    public void ASession_IsOfferedInItsOwnFolder_AndNotInAnother()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [new ChatMessage { Role = "user", Content = "work in A" }],
+            10, 5, workingDir: "/projects/alpha");
+
+        Assert.NotNull(store.LoadLatestUnfinished("/projects/alpha"));
+        Assert.Null(store.LoadLatestUnfinished("/projects/beta"));
+    }
+
+    /// <summary>The newest session FROM THIS FOLDER wins — not the newest overall, which is the whole
+    /// bug: a more recent session elsewhere used to shadow the one you actually wanted.</summary>
+    [Fact]
+    public void TheNewestSessionInThisFolder_Wins_EvenIfAnotherFolderIsMoreRecent()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("older-here", [new ChatMessage { Role = "user", Content = "mine" }],
+            1, 1, workingDir: "/projects/alpha");
+        Thread.Sleep(1100);   // the timestamp has second resolution
+        store.SaveTurn("newer-elsewhere", [new ChatMessage { Role = "user", Content = "theirs" }],
+            1, 1, workingDir: "/projects/beta");
+
+        var snapshot = store.LoadLatestUnfinished("/projects/alpha");
+
+        Assert.NotNull(snapshot);
+        Assert.Equal("older-here", snapshot!.AgentId);
+    }
+
+    /// <summary>
+    /// A ROW WITH NO FOLDER IS NEVER OFFERED. Those are sessions written before the column existed —
+    /// they could be from anywhere, which is exactly the condition being fixed. The cost is one lost
+    /// resume for a session that predates the fix; the alternative is restoring a stranger's context.
+    /// </summary>
+    [Fact]
+    public void ALegacyRowWithNoFolder_IsNeverOffered()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("legacy", [new ChatMessage { Role = "user", Content = "from before" }], 1, 1);
+
+        Assert.Null(store.LoadLatestUnfinished("/projects/alpha"));
+        Assert.Null(store.LoadLatestUnfinished(null));
+    }
+
+    /// <summary>
+    /// THE MIGRATION RUNS AGAINST AN EXISTING DATABASE WITHOUT LOSING ROWS.
+    ///
+    /// <para>`CREATE TABLE IF NOT EXISTS` does nothing when the table is already there, so a user
+    /// upgrading in place would keep the old shape and every INSERT naming working_dir would fail —
+    /// silently, since this store swallows everything. Their resume would simply stop working with no
+    /// message. This opens a second store over the same directory, which is what a second launch
+    /// does.</para>
+    /// </summary>
+    [Fact]
+    public void ASecondStoreOverTheSameDatabase_KeepsWorking()
+    {
+        var first = new SqliteSessionStore(_paths);
+        first.SaveTurn("agent-a", [new ChatMessage { Role = "user", Content = "first run" }],
+            10, 5, workingDir: "/projects/alpha");
+
+        // A fresh store re-runs schema creation and the migration over the existing file.
+        var second = new SqliteSessionStore(_paths);
+
+        var snapshot = second.LoadLatestUnfinished("/projects/alpha");
+        Assert.NotNull(snapshot);
+        Assert.Equal("agent-a", snapshot!.AgentId);
+
+        // And it can still write.
+        second.SaveTurn("agent-b", [new ChatMessage { Role = "user", Content = "second run" }],
+            1, 1, workingDir: "/projects/alpha");
+        Assert.Equal("agent-b", second.LoadLatestUnfinished("/projects/alpha")!.AgentId);
     }
 }

@@ -64,11 +64,26 @@ public sealed class SqliteSessionStore
                     input_tokens INTEGER NOT NULL DEFAULT 0,
                     output_tokens INTEGER NOT NULL DEFAULT 0,
                     finished INTEGER NOT NULL DEFAULT 0,
-                    updated_at TEXT NOT NULL);
-                CREATE INDEX IF NOT EXISTS idx_sessions_unfinished
-                    ON agent_sessions(finished, updated_at);
+                    updated_at TEXT NOT NULL,
+                    working_dir TEXT);
                 """;
             cmd.ExecuteNonQuery();
+
+            // THE COLUMN ON AN EXISTING DATABASE. `CREATE TABLE IF NOT EXISTS` does exactly nothing
+            // when the table is already there, so a user upgrading in place would keep the old shape
+            // and every INSERT naming working_dir would fail — silently, since every operation here
+            // is best-effort. Their resume would simply stop working with no message.
+            AddColumnIfMissing(conn, "agent_sessions", "working_dir", "TEXT");
+
+            using var index = conn.CreateCommand();
+            // KEYED BY FOLDER FIRST, because that is now the leading predicate of every read. The old
+            // index on (finished, updated_at) is left alone rather than dropped: it costs one page of
+            // a table that holds a handful of rows, and dropping it is a migration that can fail.
+            index.CommandText = """
+                CREATE INDEX IF NOT EXISTS idx_sessions_by_dir
+                    ON agent_sessions(working_dir, finished, updated_at);
+                """;
+            index.ExecuteNonQuery();
         }
         catch (Exception)
         {
@@ -77,10 +92,40 @@ public sealed class SqliteSessionStore
     }
 
     /// <summary>
+    /// Adds a column when it is not already there, for a database created before it existed.
+    ///
+    /// <para>SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>, so the check is a <c>PRAGMA</c> read. The
+    /// alternative — running the ALTER and swallowing the "duplicate column" error — cannot tell that
+    /// failure apart from a real one, and this store swallows everything.</para>
+    /// </summary>
+    private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string type)
+    {
+        using var check = conn.CreateCommand();
+        check.CommandText = $"PRAGMA table_info({table});";
+        using var reader = check.ExecuteReader();
+        while (reader.Read())
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return;
+
+        reader.Close();
+        using var alter = conn.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type};";
+        alter.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// Records the agent's whole context and ledger totals, replacing whatever it had before.
     /// </summary>
+    /// <param name="workingDir">
+    /// The folder this session is running in — what scopes it for resume.
+    ///
+    /// <para>Optional so the ~10 existing call sites and tests keep compiling, but a session saved
+    /// without one can never be OFFERED (see <see cref="LoadLatestUnfinished"/>): a row that does not
+    /// say where it came from could have come from anywhere, and offering it is the bug this
+    /// exists to fix.</para>
+    /// </param>
     public void SaveTurn(string agentId, IReadOnlyList<ChatMessage> context,
-        int inputTokens, int outputTokens)
+        int inputTokens, int outputTokens, string? workingDir = null)
     {
         try
         {
@@ -90,16 +135,18 @@ public sealed class SqliteSessionStore
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO agent_sessions
-                    (agent_id, context_json, input_tokens, output_tokens, finished, updated_at)
-                VALUES ($id, $json, $in, $out, 0, $at)
+                    (agent_id, context_json, input_tokens, output_tokens, finished, updated_at, working_dir)
+                VALUES ($id, $json, $in, $out, 0, $at, $dir)
                 ON CONFLICT(agent_id) DO UPDATE SET
-                    context_json=$json, input_tokens=$in, output_tokens=$out, updated_at=$at;
+                    context_json=$json, input_tokens=$in, output_tokens=$out, updated_at=$at,
+                    working_dir=$dir;
                 """;
             cmd.Parameters.AddWithValue("$id", agentId);
             cmd.Parameters.AddWithValue("$json", json);
             cmd.Parameters.AddWithValue("$in", inputTokens);
             cmd.Parameters.AddWithValue("$out", outputTokens);
             cmd.Parameters.AddWithValue("$at", Ts(DateTimeOffset.UtcNow));
+            cmd.Parameters.AddWithValue("$dir", (object?)workingDir ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception)
@@ -114,7 +161,25 @@ public sealed class SqliteSessionStore
     /// <para>NEWEST FIRST, because two crashed sessions can both be sitting here and resuming the
     /// older one would silently discard the more recent work.</para>
     /// </summary>
-    public SessionSnapshot? LoadLatestUnfinished()
+    /// <param name="workingDir">
+    /// Only a session from THIS folder is offered.
+    ///
+    /// <para>WITHOUT THIS, the most recent unfinished session ANYWHERE on the machine was offered
+    /// wherever cxagent next started — and accepting it restored another project's conversation into
+    /// this one: its file paths, its code, its decisions, all describing a tree that is not the one
+    /// you are in. The agent then reasons from context about files that do not exist here, and the
+    /// dialog said only "an earlier session ended without closing (N messages, last active 5m ago)",
+    /// never WHERE.</para>
+    ///
+    /// <para>Permission rules were scoped this way from the start — "a grant made in one project must
+    /// never silently cover another" (PermissionRulesStore) — and the same argument always applied
+    /// here. Only one of the two stores got it.</para>
+    ///
+    /// <para>A NULL working_dir IS NEVER OFFERED. Those are rows written before this column existed;
+    /// they could be from anywhere, which is precisely the condition being fixed. Prune drops them in
+    /// time, and the cost of ignoring them is one lost resume for a session that predates the fix.</para>
+    /// </param>
+    public SessionSnapshot? LoadLatestUnfinished(string? workingDir = null)
     {
         try
         {
@@ -123,10 +188,11 @@ public sealed class SqliteSessionStore
             cmd.CommandText = """
                 SELECT agent_id, context_json, input_tokens, output_tokens, updated_at
                 FROM agent_sessions
-                WHERE finished = 0
+                WHERE finished = 0 AND working_dir IS NOT NULL AND working_dir = $dir
                 ORDER BY updated_at DESC
                 LIMIT 1;
                 """;
+            cmd.Parameters.AddWithValue("$dir", (object?)workingDir ?? DBNull.Value);
 
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return null;

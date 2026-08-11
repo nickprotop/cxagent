@@ -98,6 +98,15 @@ public sealed class AgentHost : IDisposable
     private readonly AgentMode _mode;
 
     /// <summary>
+    /// The folder this session runs in, recorded with every saved turn so resume can be scoped to it.
+    ///
+    /// <para>Null in tests and anywhere that does not persist — a session saved without one is never
+    /// OFFERED for resume, which is the safe direction: a row that cannot say where it came from
+    /// could have come from anywhere.</para>
+    /// </summary>
+    private readonly string? _workingDir;
+
+    /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
     /// P11 Task 1), threaded through from ProviderResolution at construction time rather than read off
     /// <see cref="_provider"/> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
@@ -248,9 +257,11 @@ public sealed class AgentHost : IDisposable
         string? briefing = null,
         TokenLedger? ledger = null,
         ISubAgentSpawner? spawner = null,
-        AgentMode mode = AgentMode.Single)
+        AgentMode mode = AgentMode.Single,
+        string? workingDir = null)
     {
         _mode = mode;
+        _workingDir = workingDir;
         _spawner = spawner;
         _briefing = briefing;
         _mcp = mcp;
@@ -427,7 +438,8 @@ public sealed class AgentHost : IDisposable
             // not happen. The whole context goes each time, because compression rewrites it wholesale
             // and an append-only log would have to be reconciled against a list that no longer
             // matches. The store swallows its own failures — see its class doc.
-            _store?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens);
+            _store?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
+                _workingDir);
         };
 
         // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the
