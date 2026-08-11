@@ -1145,8 +1145,48 @@ land BEFORE the first two children run at once:
 Only then: `Task.Run` per child, sinks marshalling as they already do, and the `foreach` awaiting
 several at once.
 
-**Done when:** two children run simultaneously, each prompt names its requester, and the drive shows
-no interleaved MCP corruption.
+#### 5. THE PROMPTING MUST CHANGE TOO — a fifth item, and the one easiest to forget
+
+The machinery running two children at once does not make a model USE two. Every wording in the tool
+description today is written for a single blocking child ("It runs once… and returns one message"),
+and a model reading it will keep spawning one at a time however parallel the runtime becomes. Both
+references treat this as prompting rather than plumbing:
+
+- **opencode**, `task.txt` note 1: *"Launch multiple agents concurrently whenever possible, to
+  maximize performance; to do that, use a single message with multiple tool uses."* Note the
+  mechanism is stated — ONE message, SEVERAL tool calls — because a model that wants to parallelise
+  and does not know how will issue them sequentially and wait for each.
+- **opencode's `anthropic.txt`**, in the SYSTEM prompt: *"If the user specifies that they want you to
+  run tools 'in parallel', you MUST send a single message with multiple tool use content blocks. For
+  example, if you need to launch multiple agents in parallel, send a single message with multiple
+  Task tool calls."*
+- **Claude Code's** Agent tool: *"When you launch multiple agents for independent work, send them in
+  a single message with multiple tool uses so they run concurrently."*
+
+**What step 3 must add, and where:**
+
+| Change | Where | Why there |
+|---|---|---|
+| how to spawn several at once — one message, several tool calls | tool DESCRIPTION | read at the moment of choosing (D25) |
+| "independent work" as the test for parallelising | tool DESCRIPTION | it is a property of the tasks, weighed when picking them |
+| drop "It runs once… returns one message" if background lands | tool DESCRIPTION | it becomes false |
+| a `CanSpawn`-gated line about not blocking on a child | SYSTEM prompt, only if a drive shows it is needed | D26's precedent: an obligation, not spawn guidance |
+
+**AND THE PARALLEL-SPECIFIC OBLIGATION.** With one child, "do not also do it yourself" covers the
+duplication risk. With several, a new one appears that no current wording addresses: **two children
+given overlapping work will edit the same files.** opencode says it outright (*"avoid working with the
+same files or topics it is using"*, *"Work on non-overlapping tasks"*). That belongs in the
+description beside the concurrency instruction, and it is a correctness rule rather than an
+efficiency one.
+
+**VERIFY BY DRIVING, NOT BY ASSERTING.** Whether a model reaches for a parameter, or issues two calls
+in one message rather than two messages, is not answerable by a unit test — proven twice already this
+project: `context` had passing end-to-end tests while no model ever used it, and the fix was four
+lines of prose. Tests pin the guidance so it cannot silently vanish; a drive is what says it works.
+
+**Done when:** two children run simultaneously, each prompt names its requester, the drive shows no
+interleaved MCP corruption, AND a model asked for genuinely parallel work issues the spawns in ONE
+message rather than serially.
 
 ---
 

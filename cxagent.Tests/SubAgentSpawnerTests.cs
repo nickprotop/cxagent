@@ -291,7 +291,23 @@ public class SubAgentSpawnerTests
     {
         var definition = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition;
 
-        Assert.Contains("Do NOT use it", definition.Description, StringComparison.Ordinal);
+        // THE BENEFIT AND THE COST, BOTH. A model weighing a decision needs both sides: ours used to
+        // state only the cost of spawning (a briefing plus a full run) and never what delegation buys,
+        // which is an argument with one half missing.
+        // Asserted on a fragment that does not span the source's line break — the raw string keeps
+        // its newlines, so "keep the conclusion, not the file dumps" is not contiguous in the value.
+        Assert.Contains("the conclusion, not the file dumps",
+            definition.Description, StringComparison.Ordinal);
+
+        // THE TEST IS WHAT YOU ALREADY KNOW, not a count of tool calls. "two or three tool calls
+        // away" asked the model to predict something it cannot know before starting; "you already
+        // know the file, symbol or value" is checkable up front.
+        Assert.Contains("single-fact lookup", definition.Description, StringComparison.Ordinal);
+
+        // DO NOT DUPLICATE DELEGATED WORK — a real failure mode, and one both Claude Code and
+        // opencode call out: the model spawns, grows impatient, does the work anyway, pays twice and
+        // ends up reconciling two answers.
+        Assert.Contains("do not also do it yourself", definition.Description, StringComparison.Ordinal);
 
         // AND WHAT GOES IN WHICH CHANNEL. Found on a live drive: asked to spawn WITH context, the
         // model folded the fact into the PROMPT instead and left `context` unused — the description

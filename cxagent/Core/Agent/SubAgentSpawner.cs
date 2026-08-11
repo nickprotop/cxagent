@@ -34,15 +34,17 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         """
         Run a prompt in a separate agent that has its own context, and get back what it found.
 
-        Use it when finding the answer would fill this conversation with material you do not need to
-        keep — searching a large codebase for where something is done, reading through many files to
-        answer one question, or any open-ended hunt whose intermediate steps are noise once it is
-        over.
+        Reach for it when answering would mean reading across several files — delegate it and you keep
+        the conclusion, not the file dumps. Searching a large codebase for where something is done,
+        reading through many files to answer one question, any open-ended hunt whose intermediate
+        steps are noise once it is over.
 
-        Do NOT use it when you already know what to read. A known file, a known symbol, or anything
-        two or three tool calls away is faster and more reliable done yourself — a sub-agent starts
-        with no knowledge of this conversation, so a task you could finish now costs a full briefing
-        and a full run.
+        For a single-fact lookup where you already know the file, symbol or value, search directly.
+        A sub-agent starts with none of this conversation, so a task you could finish yourself costs
+        a full briefing and a full run to arrive at what you already had.
+
+        Once you have delegated something, do not also do it yourself — wait for the result. Doing
+        both pays twice and leaves you two answers to reconcile.
 
         It cannot ask you anything. It runs once, with only what you write in the prompt, and returns
         one message. Say in the prompt exactly what you want back, and what "done" means.
