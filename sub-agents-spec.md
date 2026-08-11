@@ -39,6 +39,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D27 | **Concurrency is a BARRIER, not background.** N children in one assistant message, all resolved before the parent's loop resumes. Forced by the message format — an unmatched tool call 400s the session — and it is what both references ship. It also dodges the unsolved problem: with a barrier the user is still watching, so a child's permission prompt has someone to answer it. | §5 STEP 3 |
 | D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
 | D22 | **Nothing of the child renders live except its row.** Its reasoning and answer stay in the buffer until expanded. A five-minute child shows one line of numbers — chosen, not discovered. | §5.1e |
@@ -1173,7 +1174,37 @@ ceiling, not this design's.
 
 ---
 
-### STEP 3 — concurrency, and what it FORCES
+### STEP 3 — concurrency: A BARRIER, NOT BACKGROUND (decided)
+
+**D27. Several children run at once and the parent waits for the LAST one.** One assistant message
+carries N spawn calls, all N run concurrently, all N results arrive together, and the parent's loop
+resumes once — linearly — with everything in hand. Not background: no child outlives the turn that
+started it.
+
+**THE MESSAGE FORMAT ALREADY REQUIRES THIS.** A tool call without its result is the orphan that 400s
+a session permanently (§1b), so the parent's list is malformed from the moment A returns and B is
+still running. Resuming the loop early is not a design one could choose — it produces a request the
+provider rejects. The barrier is what the protocol was going to make us do anyway.
+
+**BOTH REFERENCES SHIP EXACTLY THIS**, having had every opportunity to do otherwise. Claude Code's
+Agent tool: "When you launch multiple agents for independent work, send them in a single message with
+multiple tool uses so they run concurrently." opencode's task.txt: "Launch multiple agents
+concurrently whenever possible… use a single message with multiple tool uses." Neither is describing
+detached agents; both are describing several tool calls resolved together.
+
+**AND IT ANSWERS THE QUESTION NOBODY HAS A GOOD ANSWER FOR.** A background child hits the permission
+gate while the user is reading something else — queue it and the child stalls silently, auto-deny and
+it fails oddly, interrupt and it was never background. With a barrier THE USER IS SITTING THERE
+WATCHING, because their turn has not finished. The hardest problem in unattended agents is dodged by
+not having unattended agents.
+
+Cost, stated: no child survives its turn, so "start this and tell me later" is not expressible. That
+is a real capability given up, and it is the one background would buy. Revisit only if a concrete
+need appears — not because it sounds more advanced.
+
+#### What a barrier still FORCES
+
+
 
 Parallel spawning is not one change. It makes four currently-harmless things dangerous, and each must
 land BEFORE the first two children run at once:
