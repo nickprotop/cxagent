@@ -29,10 +29,31 @@ public static class SessionCommands
         // NeedsWindow, not Handled: the live server state belongs to the session, and this type
         // deliberately holds nothing but the conversation. The caller has the servers and formats
         // them through DescribeMcp below.
-        new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow),
+        new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow,
+        [
+            new("reload", "re-read config.json and reconnect"),
+            new("login", "authorise a server that needs OAuth"),
+            // NOT COMPLETABLE: the value is a name from the user's config, and the angle brackets are
+            // notation for a reader rather than something to type. Listing live servers here would
+            // couple this static table to session state — `/mcp` bare is what enumerates them.
+            new("<server>", "inspect one server by name", Completes: false),
+        ]),
         // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
         // this type deliberately holds nothing but the conversation.
-        new("/mode", "show or set the agent mode: single, fan-out", CommandOutcome.NeedsWindow),
+        new("/mode", "show or set the agent mode: single, fan-out", CommandOutcome.NeedsWindow,
+        [
+            new("single", "this agent works alone; the spawn tool is withdrawn"),
+            new("fan-out", "this agent can spawn sub-agents"),
+        ]),
+        // NeedsWindow again: history is a store the composition root owns, and this type holds
+        // nothing but the conversation. `/stats 30` widens the window; the default is a week.
+        new("/stats", "usage: tokens, projects, agent types, what fills the context",
+            CommandOutcome.NeedsWindow,
+        [
+            new("<days>", "how far back to look — default 7", Completes: false),
+            new("all", "every session ever recorded"),
+            new("clear", "delete all usage history, after confirming"),
+        ]),
         new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
         new("/exit", "quit cxagent", CommandOutcome.Quit),
     ];
@@ -64,6 +85,37 @@ public static class SessionCommands
                 hits.Add(c);
 
         return hits;
+    }
+
+    /// <summary>
+    /// The arguments offered for an input that has already named a command and a space —
+    /// <c>"/mcp "</c>, <c>"/mcp re"</c> — or empty when the input is not in that shape.
+    ///
+    /// <para>ONE LEVEL DOWN, SAME GESTURE. The palette closed the moment a space was typed, which is
+    /// exactly when a user has committed to a command and needs to know what follows it. Arguments
+    /// are NOT flattened into the top-level list: nine commands would become twenty rows, and
+    /// <c>/clear</c> would sit among <c>/mcp login</c> and <c>/stats clear</c> with nothing to say
+    /// which is a command and which is a modifier. The hierarchy is real, so the palette shows it.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<CommandArgument> ArgumentsFor(string input)
+    {
+        var space = input.IndexOf(' ');
+        if (space < 0) return [];
+
+        // A SECOND SPACE MEANS THE ARGUMENT IS TYPED and the user has moved past choosing one —
+        // "/mcp login serv" is naming a server, not still picking between login and reload.
+        var rest = input[(space + 1)..];
+        if (rest.Contains(' ')) return [];
+
+        var command = All.FirstOrDefault(c =>
+            string.Equals(c.Name, input[..space], StringComparison.OrdinalIgnoreCase));
+        if (!command.TakesArguments) return [];
+
+        if (rest.Length == 0) return command.Args;
+
+        return [.. command.Args.Where(a =>
+            a.Name.StartsWith(rest, StringComparison.OrdinalIgnoreCase))];
     }
 
     /// <summary>
@@ -255,7 +307,22 @@ public static class SessionCommands
     }
 
     /// <summary>The command list as help text, one indented line each.</summary>
-    public static string HelpLines(string markupColor) =>
-        string.Join('\n', All.Select(c => $"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary));
+    public static string HelpLines(string markupColor)
+    {
+        var lines = new List<string>();
+        foreach (var c in All)
+        {
+            lines.Add($"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary);
+
+            // ARGUMENTS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only, so
+            // `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
+            // surface a user could find. Indented rather than listed flat, because the relationship
+            // is the information: these are modifiers of the line above, not commands of their own.
+            foreach (var a in c.Args)
+                lines.Add($"    [{ColorScheme.MutedMarkup}]{c.Name} {a.Name}[/]".PadRight(40)
+                        + $"[{ColorScheme.MutedMarkup}]{a.Summary}[/]");
+        }
+        return string.Join('\n', lines);
+    }
 
 }

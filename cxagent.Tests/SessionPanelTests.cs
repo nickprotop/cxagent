@@ -25,12 +25,14 @@ public class SessionPanelTests
     [Fact]
     public void Refresh_ShowsOccupancyOverTheWindow_NotTheCumulativeSpend()
     {
-        var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 4_441, spentTokens: 19_559, contextWindow: 212_992,
-            model: "m", endpoint: "", rules: 0);
+        // THE STATUS BAR NOW OWNS THIS. The panel stopped rendering occupancy when its Context block
+        // was cut for duplicating `ctx 4% · 9,140/212,992 · 160,084 spent` — but the invariant is
+        // about a bug seen in a live session, not about which control shows it, so the test follows
+        // the number rather than dying with the block.
+        var text = MainWindow.ContextLabelForTest(used: 4_441, spent: 19_559, window: 212_992);
 
-        Assert.Contains("2%", panel.RenderedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("9%", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("2%", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("9%", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -54,11 +56,12 @@ public class SessionPanelTests
     [Fact]
     public void Refresh_StillReportsTheCumulativeSpend()
     {
-        var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 4_441, spentTokens: 19_559, contextWindow: 212_992,
-            model: "m", endpoint: "", rules: 0);
+        // Also the status bar's now, and still labelled — the point was never where it appears but
+        // that it appears SEPARATELY from occupancy and can never be mistaken for "how full".
+        var text = MainWindow.ContextLabelForTest(used: 4_441, spent: 19_559, window: 212_992);
 
-        Assert.Contains("19,559", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("19,559", text, StringComparison.Ordinal);
+        Assert.Contains("spent", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -68,12 +71,40 @@ public class SessionPanelTests
     [Fact]
     public void Refresh_ShowsTheCount_ButNoPercentage_WhenTheWindowIsUnknown()
     {
-        var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 4_441, spentTokens: 19_559, contextWindow: null,
-            model: "m", endpoint: "", rules: 0);
+        var text = MainWindow.ContextLabelForTest(used: 4_441, spent: 19_559, window: null);
 
-        Assert.Contains("4,441", panel.RenderedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("%", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("4,441", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("%", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE PANEL DOES NOT REPEAT THE STATUS BAR. Occupancy, the window, the percentage and the spend
+    /// total all appear in `ctx 4% · 9,140/212,992 · 160,084 spent`, which is always on screen — the
+    /// panel can be hidden. Four duplicated lines is also how two readouts drift apart, which is the
+    /// reason the model block was moved out earlier.
+    /// </summary>
+    [Fact]
+    public void Refresh_DoesNotRepeatWhatTheStatusBarAlreadyShows()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 9_140, spentTokens: 160_084, contextWindow: 212_992,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 160_084 },
+            splitByModel: new Dictionary<string, (int Input, int Output)>
+            {
+                ["qwen3.6-35b.gguf"] = (153_100, 6_900),
+            });
+
+        var text = panel.RenderedText;
+
+        // Occupancy and the percentage are the status bar's alone.
+        Assert.DoesNotContain("9,140", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("%", text, StringComparison.Ordinal);
+
+        // The BREAKDOWN stays: the status bar has one total, and what the panel adds is who spent it
+        // and how it splits — figures the bar has no room for.
+        Assert.Contains("153.1k", text, StringComparison.Ordinal);
+        Assert.Contains("6.9k", text, StringComparison.Ordinal);
     }
 
     // ---- MCP servers ---------------------------------------------------------------------------
@@ -191,26 +222,80 @@ public class SessionPanelTests
             model: "m", endpoint: "", rules: 0,
             spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 });
 
-        Assert.Contains("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3.6-35b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3-1b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// ONE MODEL NEEDS NO BREAKDOWN. The session total already says it, and a section repeating that
-    /// number under a heading costs space to say nothing — the same rule the MCP and agent-type
-    /// blocks follow.
+    /// ONE MODEL STILL GETS A BREAKDOWN, because the breakdown now carries something the total does
+    /// not: the ↑/↓ split.
+    ///
+    /// <para>The old rule — suppress below two models, since a lone row only restates the session
+    /// total — was right while the row held nothing but that total. It is what made a whole fan-out
+    /// run show no attribution at all: children normally run on the PARENT'S provider, so a
+    /// spawn-heavy session has exactly one model id and the section hid itself.</para>
     /// </summary>
     [Fact]
-    public void Refresh_WithOneModel_ShowsNoBreakdown()
+    public void Refresh_WithOneModel_StillShowsTheSplit()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 },
+            splitByModel: new Dictionary<string, (int Input, int Output)>
+            {
+                ["qwen3.6-35b.gguf"] = (3_800, 200),
+            });
+
+        Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("↑3.8k", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EVERY FIGURE IS LABELLED WITH ITS UNIT. Both blocks render bare numbers — "workers · 730" says
+    /// nothing about what 730 IS, and the reader's guess (stars? kilobytes? currency?) is as good as
+    /// any. The status bar escapes this only because "160,084 spent" has a verb doing the work.
+    ///
+    /// <para>The unit lives in the HEADING rather than on each line: repeating "tokens" four times
+    /// would spend columns this panel does not have to say one thing four times.</para>
+    /// </summary>
+    [Fact]
+    public void Refresh_NamesTheUnit_OnEveryFigureBlock()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 895, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 895 },
+            subAgentTokens: 730);
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("Tokens by model", text, StringComparison.Ordinal);
+        Assert.Contains("Tokens by agent", text, StringComparison.Ordinal);
+
+        // And the two agent lines still sum to the session total the status bar shows — which is why
+        // "this agent" is subtraction rather than a second counter that could drift from it.
+        Assert.Contains("workers · 730", text, StringComparison.Ordinal);
+        Assert.Contains("this agent · 165", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NO SPLIT, NO LINE. A provider that reports no usage breakdown — a local llama.cpp build often
+    /// does not — must not get "↑0 ↓0", which reads as a measurement of nothing rather than as the
+    /// absence of a measurement. Same rule occupancy follows.
+    /// </summary>
+    [Fact]
+    public void Refresh_OmitsTheSplit_WhenTheProviderReportedNone()
     {
         var panel = new SessionPanel();
         panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
             model: "m", endpoint: "", rules: 0,
             spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 });
 
-        Assert.DoesNotContain("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("↑", panel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -249,7 +334,12 @@ public class SessionPanelTests
             model: "m", endpoint: "", rules: 0,
             spendByModel: new Dictionary<string, int> { ["used.gguf"] = 4_000, ["unused.gguf"] = 0 });
 
-        Assert.DoesNotContain("Spend by model", panel.RenderedText, StringComparison.Ordinal);
+        // The FILTER is the invariant, not the section hiding. This used to also assert the heading
+        // was absent — true only as a side effect, since filtering left a single model and a lone
+        // model then suppressed the block. The block now earns its place with the ↑/↓ split, so what
+        // matters is that a model which spent nothing is not listed at all.
+        // "used", not "used.gguf" — Short() strips the extension every local model carries.
         Assert.DoesNotContain("unused", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("used · 4,000", panel.RenderedText, StringComparison.Ordinal);
     }
 }

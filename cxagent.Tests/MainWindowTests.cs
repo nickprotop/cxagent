@@ -506,14 +506,17 @@ public class MainWindowTests
     public void SessionPanel_OmitsThePercentageWhenTheWindowIsUnknown()
     {
         // A percentage needs a denominator. Inventing one would put a confident number on a guess.
+        // The occupancy half moved to the status bar with the panel's Context block; what remains
+        // panel-side is the permissions line this always also asserted.
+        Assert.Contains("5,000", MainWindow.ContextLabelForTest(used: 5_000, spent: 5_000, window: null),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("%", MainWindow.ContextLabelForTest(used: 5_000, spent: 5_000, window: null),
+            StringComparison.Ordinal);
+
         var panel = new SessionPanel();
         panel.Refresh(contextUsed: 5_000, spentTokens: 5_000, contextWindow: null, model: "m", endpoint: "", rules: 0);
 
-        var text = panel.RenderedText;
-
-        Assert.Contains("5,000 tokens", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("% used", text, StringComparison.Ordinal);
-        Assert.Contains("none granted", text, StringComparison.Ordinal);
+        Assert.Contains("none granted", panel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -564,14 +567,19 @@ public class MainWindowTests
     }
 
     /// <summary>
-    /// The panel and the status bar answer the same question and must never disagree.
+    /// THE PANEL AND THE STATUS BAR CANNOT DISAGREE, because only one of them answers this now.
     ///
-    /// <para>They did: RefreshTokenItem read _contextUsed while the panel was handed _lastTokens, so
-    /// one reported 2% and the other 9% of the same session. Both now derive from the same field —
-    /// this is the lock that keeps it that way.</para>
+    /// <para>They did disagree: RefreshTokenItem read _contextUsed while the panel was handed
+    /// _lastTokens, so one reported 2% and the other 9% of the same session. That was locked by
+    /// asserting both showed the same figure — a guard that only works while someone remembers to
+    /// keep it. Cutting the panel's duplicated Context block replaced the guard with a structure:
+    /// there is one occupancy readout, so there is nothing left to drift.</para>
+    ///
+    /// <para>The assertion is therefore the ABSENCE of a second one. Occupancy figures reaching the
+    /// panel again would be the duplication coming back.</para>
     /// </summary>
     [Fact]
-    public void PanelAndStatusBar_ReportTheSameOccupancy()
+    public void OnlyTheStatusBar_ReportsOccupancy()
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
         {
@@ -584,22 +592,29 @@ public class MainWindowTests
         mw.SetTokenTotal(96_500);      // the cumulative SPEND
         mw.SetContextUsed(20_000);     // the OCCUPANCY — 10% of the window
 
-        // The panel's percentage is occupancy-derived, so the spend must not appear as one.
-        Assert.Contains("10% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
-        Assert.Contains("20,000 tokens", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("48%", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        var panel = mw.SessionPanel.RenderedText;
+        Assert.DoesNotContain("20,000", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("96,500", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("%", panel, StringComparison.Ordinal);
+
+        // And the status bar still has both, distinctly — occupancy as the percentage, spend as
+        // itself. The old bug was the spend BECOMING the percentage; 96,500 of 200,000 is 48%.
+        var status = MainWindow.ContextLabelForTest(used: 20_000, spent: 96_500, window: 200_000);
+        Assert.Contains("10%", status, StringComparison.Ordinal);
+        Assert.Contains("96,500 spent", status, StringComparison.Ordinal);
+        Assert.DoesNotContain("48%", status, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// A new occupancy reading repaints the PANEL too, not only the status bar.
+    /// THE GAUGE MOVES AFTER A COMPRESSION — the reported "compress, and nothing changes" bug.
     ///
-    /// <para>SetContextUsed refreshed the status-bar item alone, so after a compression — which
-    /// reaches the UI through exactly this method — the bar moved and the panel kept showing the
-    /// pre-compression figure. That is the reported "compress, and the gauge does not move" bug,
-    /// surviving in the surface that shows the number most prominently.</para>
+    /// <para>SetContextUsed once refreshed the status-bar item alone, and compression reaches the UI
+    /// through exactly this method, so the panel kept showing the pre-compression figure. The panel
+    /// no longer carries occupancy at all (it duplicated the status bar), so the assertion follows
+    /// the number: the STATUS BAR must reflect the new reading and not the old one.</para>
     /// </summary>
     [Fact]
-    public void SetContextUsed_RepaintsThePanel_NotJustTheStatusBar()
+    public void AfterCompression_TheOccupancyReadoutMoves()
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
         {
@@ -609,11 +624,14 @@ public class MainWindowTests
         mw.Build();
 
         mw.SetContextUsed(100_000);
-        Assert.Contains("50% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("50%", MainWindow.ContextLabelForTest(used: 100_000, spent: 0, window: 200_000),
+            StringComparison.Ordinal);
 
-        mw.SetContextUsed(20_000);   // a compression freed most of it
-        Assert.Contains("10% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("50% of", mw.SessionPanel.RenderedText, StringComparison.Ordinal);
+        // A compression freed most of it. The new reading supersedes the old rather than joining it.
+        mw.SetContextUsed(20_000);
+        var after = MainWindow.ContextLabelForTest(used: 20_000, spent: 0, window: 200_000);
+        Assert.Contains("10%", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("50%", after, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -646,16 +664,113 @@ public class MainWindowTests
         Assert.DoesNotContain("200 turns", single.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// THE BAR IS THIS AGENT; THE PANEL IS EVERYTHING. The ledger is shared — children record into it
+    /// deliberately, because a budget belongs to the conversation rather than to whichever agent did
+    /// the work — so <c>Ledger.TotalTokens</c> is session-wide and was wrong for a readout sitting
+    /// beside an occupancy percentage that IS the parent's. A fan-out session showed a spend four
+    /// times the parent's with nothing on screen to say why.
+    ///
+    /// <para>The session view has a home: the panel, whose "Tokens by agent" block reconciles the
+    /// two. This asserts the seam that feeds them apart — <c>OwnSpend</c> excludes children while the
+    /// ledger includes them.</para>
+    /// </summary>
     [Fact]
-    public void SessionPanel_ShowsTheInputOutputSplit()
+    public void OwnSpend_ExcludesSubAgents_WhileTheLedgerIncludesThem()
+    {
+        var ledger = new TokenLedger(null);
+
+        // A parent turn and a child turn, into the one shared ledger.
+        ledger.Record(new LlmUsage { InputTokens = 100, OutputTokens = 10 }, "m");
+        ledger.Record(new LlmUsage { InputTokens = 800, OutputTokens = 80 }, "m", subAgent: true);
+
+        Assert.Equal(990, ledger.TotalTokens);       // the session — what the panel shows
+        Assert.Equal(880, ledger.SubAgentTokens);    // the workers' share
+        // …and 110 is the parent's, which is what the bar must show. AgentHost.OwnSpend reads it from
+        // the agent's private tally rather than by subtracting, so the two cannot drift.
+        Assert.Equal(110, ledger.TotalTokens - ledger.SubAgentTokens);
+    }
+
+    /// <summary>
+    /// THE STATUS BAR CARRIES THE ↑/↓ SPLIT, beside the total it splits.
+    ///
+    /// <para>Input and output behave nothing alike — input grows with the conversation because every
+    /// turn re-sends everything before it, output is only what the model produced — and they have
+    /// different remedies: compress the history, or ask for less. A lone total says which is true of
+    /// neither, and the status bar is the readout that is always on screen.</para>
+    /// </summary>
+    [Fact]
+    public void StatusBar_ShowsTheInputOutputSplit_BesideTheSpend()
+    {
+        var text = MainWindow.ContextLabelForTest(used: 9_140, spent: 160_084, window: 212_992,
+            input: 153_100, output: 6_900);
+
+        Assert.Contains("160,084 spent", text, StringComparison.Ordinal);
+        Assert.Contains("↑153.1k", text, StringComparison.Ordinal);
+        Assert.Contains("↓6.9k", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>No split reported, no arrows — the same rule occupancy follows. A provider that
+    /// reports no usage breakdown must not be shown "↑0 ↓0", which reads as a measurement of nothing
+    /// rather than the absence of one.</summary>
+    [Fact]
+    public void StatusBar_OmitsTheSplit_WhenNoneWasReported()
+    {
+        var text = MainWindow.ContextLabelForTest(used: 9_140, spent: 160_084, window: 212_992);
+
+        Assert.Contains("160,084 spent", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("↑", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// SetTokenSplit REPAINTS rather than only storing. It used to store and stop, which was correct
+    /// while the session panel was the sole reader and SetTokenTotal refreshed it a moment later on
+    /// the same event. The status bar reads the split now, so a setter that does not repaint leaves
+    /// the always-visible readout stale until something else happens to redraw it.
+    ///
+    /// <para>Asserted as "does not throw and the numbers reach the label": the status bar's rendered
+    /// text is owned by the console control and is not readable from here, so this pins the call
+    /// path while <see cref="StatusBar_ShowsTheInputOutputSplit_BesideTheSpend"/> pins the format.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void SetTokenSplit_RepaintsTheStatusBar()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        {
+            ContextWindow = 200_000,
+        };
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+
+        mw.SetTokenTotal(96_500);
+        mw.SetContextUsed(20_000);
+        mw.SetTokenSplit(94_000, 2_500);   // arrives on its own; nothing else redraws after it
+
+        Assert.Contains("↑94.0k",
+            MainWindow.ContextLabelForTest(used: 20_000, spent: 96_500, window: 200_000,
+                input: 94_000, output: 2_500),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionPanel_ShowsTheInputOutputSplit_PerModel()
     {
         // Input and output behave nothing alike: input grows with the conversation (every turn
         // re-sends everything before it) and dominates a long session, while output is what the
         // model produced. A single total hides which is growing — and they have different remedies,
         // compress the history or ask for less.
+        //
+        // PER MODEL, not session-wide. A single ↑/↓ pair sat above the per-model list and read as
+        // the parent's when it was in fact the sum of every agent including children on other
+        // providers. The panel is the aggregator; its figures must say what they aggregate.
         var panel = new SessionPanel();
         panel.Refresh(contextUsed: 96_500, spentTokens: 96_500, contextWindow: 200_000, model: "m", endpoint: "", rules: 0,
-            inputTokens: 94_000, outputTokens: 2_500);
+            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 96_500 },
+            splitByModel: new Dictionary<string, (int Input, int Output)>
+            {
+                ["qwen3.6-35b.gguf"] = (94_000, 2_500),
+            });
 
         // Compact, because 24 columns cannot hold two full counts on one line — and at this
         // magnitude the exact digits are never what the number is read for.

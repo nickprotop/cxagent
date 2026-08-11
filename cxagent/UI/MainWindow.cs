@@ -90,8 +90,16 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public StatusBarControl StatusBar { get; } = new(stickyBottom: false)
     {
+        // A STEP LIGHTER THAN THE COMPOSER, so the column ascends toward the bottom: chat is the dark
+        // field you read against, the composer sits on it, and the bar sits on the composer. It used
+        // to take ChatSurface, which put the darkest surface in the app UNDER the lightest
+        // interactive one and made the two read as unrelated strips.
         // The chat column's field, so the bar reads as the base of that pane rather than a separate
         // strip laid across the app.
+        //
+        // TRIED AND REVERTED: a lighter bar (#3a3a3a, then #32) read as a bright stripe competing
+        // with the composer, and a darker-than-composer one (#1c) added an edge that bought nothing.
+        // Matching the chat is what makes the bottom of the pane continuous.
         BackgroundColor = ColorScheme.ChatSurface,
 
         // A column each side so the cwd and the shortcut keys are not flush against the pane edges.
@@ -262,11 +270,20 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private IReadOnlyDictionary<string, int> _spendByModel = new Dictionary<string, int>();
 
-    /// <summary>Records what each model has spent. Pushed from AgentHost on the same event as the
-    /// total, so the breakdown and the number it breaks down can never disagree.</summary>
-    public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel)
+    private int _subAgentTokens;
+    private IReadOnlyDictionary<string, (int Input, int Output)> _splitByModel
+        = new Dictionary<string, (int, int)>();
+
+    /// <summary>Records what each model has spent, its ↑/↓ split, and what sub-agents spent of the
+    /// total. All on ONE setter, pushed from AgentHost on a single event: they are views of the same
+    /// fact, and separate setters would let the panel paint a breakdown from one moment beside a total
+    /// from another.</summary>
+    public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel, int subAgentTokens = 0,
+        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null)
     {
         _spendByModel = byModel;
+        _subAgentTokens = subAgentTokens;
+        if (splitByModel is not null) _splitByModel = splitByModel;
         RefreshSessionPanel();
     }
 
@@ -276,6 +293,12 @@ public sealed class MainWindow : IDisposable
     {
         _lastInput = input;
         _lastOutput = output;
+
+        // AND REPAINT. This used to store and stop, because the only reader was the session panel,
+        // which SetTokenTotal refreshed a moment later on the same event. The status bar now shows
+        // the split too, and it is the readout that is ALWAYS visible — leaving it to a neighbouring
+        // setter would work only for as long as the two stay wired to one event.
+        RefreshTokenItem();
     }
 
     /// <summary>Always-allow rules live for this folder; set by AppBootstrap, which owns the store.</summary>
@@ -645,16 +668,19 @@ public sealed class MainWindow : IDisposable
         //
         // The working directory takes the left, because "which checkout am I editing" is the
         // question a status bar should answer and the one whose wrong answer costs most.
-        StatusBar.AddLeft(string.Empty,
-            $"[{ColorScheme.MutedMarkup}]{SharpConsoleUI.Parsing.MarkupParser.Escape(ShortCwd())}[/]");
+        // NO WORKING DIRECTORY HERE. The session panel carries it under "Location", and two readouts
+        // of one unchanging value is how they drift — the same rule that moved the model line out of
+        // the panel and the context block out after it. The path is also the least volatile thing on
+        // screen: it is fixed for the life of the process, so it earns a place you look up rather
+        // than a permanent slot beside numbers that change every turn.
 
-        // Two on the right, both about leaving: help for what you do not know, quit for when you
-        // are done. The context readout joins them from SetTokenTotal.
-        // TWO KEYS: what to press when lost, and what to press to change the view. Quit moved out —
-        // Ctrl+Q is the one binding nobody needs told, and /exit now says it in the command list.
-        // F3 earns the slot because it is the only key that changes what is ON SCREEN; everything
-        // else opens something and comes back.
-        StatusBar.AddRight("F1", "Help");
+        // ONE KEY HINT. Quit went first — Ctrl+Q is the binding nobody needs told, and /exit says it
+        // in the command list. F1 follows it: help is discoverable from `/help`, which is where
+        // someone lost already looks, and the slot is better spent on the token split beside the
+        // context readout — a number that changes, rather than a key that never does.
+        //
+        // F3 stays because it is the only key that changes what is ON SCREEN; everything else opens
+        // something and comes back.
         StatusBar.AddRight("F3", "Panel");
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
@@ -868,7 +894,11 @@ public sealed class MainWindow : IDisposable
             // "9%" on a context measured at 2%, and what stopped the gauge falling after a
             // compression. It goes in the `spent` slot, which is what it has always been.
             _contextUsed,
-            _lastTokens,
+            // THE SESSION'S SPEND, not the bar's. _lastTokens is now the PARENT's alone — the status
+            // bar is this agent's readout — but the panel is where the whole session is accounted
+            // for, and "Tokens by agent" subtracts workers from this figure to show the split. Adding
+            // them back here keeps that arithmetic honest: parent + workers is the session.
+            _lastTokens + _subAgentTokens,
             _resolution.ContextWindow,
             // ModelId ONLY. DisplayName is "openai-compatible <the same model id>", so showing both
             // printed the model twice — and at 24 columns a long gguf name wraps to three lines, so
@@ -889,7 +919,9 @@ public sealed class MainWindow : IDisposable
             // STRAIGHT OFF THE RESOLUTION — no new plumbing. It already carries the parsed types for
             // AppBootstrap to build the catalog from, and the panel only wants their names.
             [.. _resolution.AgentTypes.Keys],
-            _spendByModel);
+            _spendByModel,
+            _subAgentTokens,
+            _splitByModel);
     }
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
@@ -1232,7 +1264,7 @@ public sealed class MainWindow : IDisposable
         // cannot drift from another. Null (window unconfigured) falls back to the plain count — a
         // percentage needs a denominator, and a guessed one is worse than none.
         var label = ContextLabel(_contextUsed, _lastTokens, _resolution.ContextWindow, _contextStale,
-            _contextDelta);
+            _contextDelta, _lastInput, _lastOutput);
         if (label.Length == 0)
         {
             if (_tokenItem is not null) _tokenItem.IsVisible = false;
@@ -1248,18 +1280,6 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-
-    /// <summary>The working directory, <c>~</c>-relative. Trimmed from the LEFT when long: the tail
-    /// identifies a project and the head repeats for every project on the machine.</summary>
-    private static string ShortCwd()
-    {
-        var path = TryGetWorkingDirectory() ?? "";
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (home.Length > 0 && path.StartsWith(home, StringComparison.Ordinal))
-            path = "~" + path[home.Length..];
-
-        return path.Length <= 60 ? path : "…" + path[^59..];
-    }
 
     private static string? TryGetWorkingDirectory()
     {
@@ -1295,11 +1315,20 @@ public sealed class MainWindow : IDisposable
     /// InternalsVisibleTo grant; the ForTest suffix follows the convention used elsewhere here.
     /// </summary>
     public static string ContextLabelForTest(int? used, int spent, int? window, bool stale = false,
-        string? delta = null)
-        => ContextLabel(used, spent, window, stale, delta);
+        string? delta = null, int input = 0, int output = 0)
+        => ContextLabel(used, spent, window, stale, delta, input, output);
+
+    /// <summary>Status-bar magnitudes: two counts and a label must fit beside the context figures,
+    /// so thousands collapse. Its own helper rather than SessionPanel's — that one is private to a
+    /// control this class does not own, and sharing it would couple the bar to the panel's layout.
+    /// </summary>
+    private static string CompactTokens(int n) =>
+        n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
+        : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
+        : n.ToString();
 
     private static string ContextLabel(int? used, int spent, int? window, bool stale = false,
-        string? delta = null)
+        string? delta = null, int input = 0, int output = 0)
     {
         var parts = new List<string>(2);
 
@@ -1336,7 +1365,30 @@ public sealed class MainWindow : IDisposable
         }
 
         if (spent > 0)
-            parts.Add($"[{ColorScheme.MutedMarkup}]{spent:N0} spent[/]");
+        {
+            // THE SPLIT RIDES WITH THE TOTAL, in the one readout that is always on screen. Input and
+            // output behave nothing alike — input grows with the conversation because every turn
+            // re-sends everything before it, while output is only what the model produced — and they
+            // have different remedies: compress the history, or ask for less. A lone total says
+            // which is true of neither.
+            //
+            // Compact, because this is a status bar: "↑153.1k ↓6.9k" is four columns of information
+            // where the exact digits were never what the number is read for.
+            var split = input > 0 || output > 0
+                ? $" [{ColorScheme.MutedMarkup}]↑{CompactTokens(input)} ↓{CompactTokens(output)}[/]"
+                : "";
+
+            // THIS AGENT'S SPEND, NOT THE SESSION'S. The ledger is shared — children record into it
+            // deliberately, since a budget belongs to the conversation — so `Ledger.TotalTokens` is
+            // everything, sub-agents included. Shown here it sat beside `ctx 17%`, which IS this
+            // agent's, and read as one figure about one agent: a fan-out session showed a number four
+            // times the parent's with nothing to say why.
+            //
+            // THE BAR IS THIS AGENT, THE PANEL IS EVERYTHING. That division already holds for
+            // occupancy, and the panel now carries "Tokens by agent" — workers against this agent —
+            // so the breakdown has a home and the bar does not need to hedge.
+            parts.Add($"[{ColorScheme.MutedMarkup}]{spent:N0} spent[/]{split}");
+        }
 
         return string.Join($"[{ColorScheme.MutedMarkup}] · [/]", parts);
     }

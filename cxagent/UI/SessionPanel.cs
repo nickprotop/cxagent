@@ -165,48 +165,24 @@ public sealed class SessionPanel
         string sessionId = "",
         IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null,
         IReadOnlyList<string>? agentTypes = null,
-        IReadOnlyDictionary<string, int>? spendByModel = null)
+        IReadOnlyDictionary<string, int>? spendByModel = null,
+        int subAgentTokens = 0,
+        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null)
     {
         var lines = new List<string>();
 
-        // CONTEXT first: the one number that decides whether the next turn fits, and the reason the
-        // panel exists at all. It was a cramped "ctx 46% · 94,102" in a status-bar corner.
-        Section(lines, "Context");
-
-        // OCCUPANCY, or nothing. Until a provider reports usage there is no measurement, and 0 reads
-        // as "empty" rather than "not known yet" — the one state where saying nothing is honest.
-        if (contextUsed is { } used)
+        // NO CONTEXT BLOCK, for the same reason the model block went: the status bar already carries
+        // `ctx 4% · 9,140/212,992 · 160,084 spent` and is ALWAYS visible, while this panel can be
+        // hidden. Occupancy, the window, the percentage and the spend total were all repeated here
+        // verbatim — four lines of duplication, and the exact drift risk the note below names.
+        //
+        // The window alone is still worth a line before any measurement exists, since the status bar
+        // shows a fraction it has no numerator for yet.
+        if (contextUsed is null && contextWindow is > 0)
         {
-            lines.Add(Value($"{used:N0} tokens"));
-
-            if (contextWindow is > 0)
-            {
-                // THE CEILING, not just the fraction. "1% used" does not say what of, and the window
-                // is the number that makes a climbing count meaningful — 40k is nothing against 208k
-                // and most of the budget against 64k. Shown beside the percentage so one line answers
-                // both "how full" and "how big".
-                var percent = 100.0 * used / contextWindow.Value;
-                lines.Add($"[{ColorScheme.ThresholdMarkup(percent)}]{percent:N0}% of {Compact(contextWindow.Value)}[/]");
-            }
-        }
-        else if (contextWindow is > 0)
-        {
-            // The window is worth stating even with nothing in it yet — it is the size the session
-            // has to work within, and it does not depend on a measurement.
+            Section(lines, "Context");
             lines.Add(Muted($"window {Compact(contextWindow.Value)}"));
         }
-
-        // THE SPEND, kept but demoted. It is a real figure answering a real question, and it used to
-        // be the one shown above as occupancy. Labelled, so it can never be read as "how full".
-        if (spentTokens > 0)
-            lines.Add(Muted($"{spentTokens:N0} spent"));
-
-        // IN / OUT, because the two behave nothing alike and a single total hides which is growing.
-        // Input dominates a long session — every turn re-sends the whole conversation — while output
-        // is what the model actually produced. They also have different remedies: compress the
-        // history, or ask for less. One number cannot tell you which you need.
-        if (inputTokens > 0 || outputTokens > 0)
-            lines.Add(Muted($"↑{Compact(inputTokens)} ↓{Compact(outputTokens)}"));
 
         // NO MODEL BLOCK. It moved to the line under the composer, where opencode puts it and
         // where it sits beside the mode it belongs to. Two places showing one value is how they
@@ -288,11 +264,55 @@ public sealed class SessionPanel
             .Where(kv => kv.Value > 0)
             .OrderByDescending(kv => kv.Value)
             .ToList();
-        if (byModel.Count > 1)
+
+        // ONE SPEND BLOCK, AND IT IS AN AGGREGATE OF EVERY MODEL THAT RAN.
+        //
+        // This panel is the aggregator: the status bar shows the session's running total, and what
+        // belongs here is the breakdown of that total across everything the session used. A
+        // session-wide ↑/↓ used to sit above a per-model list, which answered two different questions
+        // in one block — and the ↑/↓ read as the parent's when it was in fact the sum of every agent,
+        // including children on other providers.
+        //
+        // SPLIT PER MODEL for the same reason the totals are split at all: input dominates a long
+        // session (every turn re-sends the whole conversation) while output is what the model
+        // produced, and the two have different remedies — compress the history, or ask for less. Per
+        // model it is sharper still: a planner that reads a repo and returns a page is almost all
+        // input; a model writing code is not.
+        //
+        // MODEL ID, NOT INSTANCE NAME. Two instances can serve the same model (a shared endpoint, a
+        // second base URL), and what a user is deciding about when they read this is the MODEL —
+        // instance names would split one cost across two lines for no reason they could act on.
+        // THE UNIT IS IN THE HEADING, once. Every figure in both blocks is a token count, and a bare
+        // "730" names no unit at all — the status bar's "160,084 spent" gets away with it only
+        // because a verb is doing the work there. Repeating "tokens" on each line would say it four
+        // times and cost columns this panel does not have; the heading says it once and governs
+        // everything indented under it.
+        if (byModel.Count > 0)
         {
-            Section(lines, "Spend by model");
+            Section(lines, "Tokens by model");
             foreach (var (modelId, spent) in byModel)
+            {
                 lines.Add(Value($"{Short(modelId)} · {spent:N0}"));
+
+                // The split, indented under its model. Absent when the provider reported no usage
+                // breakdown — a local llama.cpp build often does not — rather than showing ↑0 ↓0,
+                // which would read as a measurement of nothing rather than the absence of one.
+                if (splitByModel is not null
+                    && splitByModel.TryGetValue(modelId, out var s)
+                    && (s.Input > 0 || s.Output > 0))
+                    lines.Add(Muted($"  ↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
+            }
+        }
+
+        // WORKERS, WHENEVER THEY SPENT ANYTHING — the one split the model breakdown cannot express.
+        // A fan-out session normally runs its children on the PARENT'S provider, so every agent lands
+        // under one model id and the list above cannot say which of them spent it. "A worker spent
+        // this" is the question a fan-out session asks, and model identity never answered it.
+        if (subAgentTokens > 0)
+        {
+            Section(lines, "Tokens by agent");
+            lines.Add(Value($"workers · {subAgentTokens:N0}"));
+            lines.Add(Value($"this agent · {Math.Max(0, spentTokens - subAgentTokens):N0}"));
         }
 
         // AGENT TYPES, when any are CONFIGURED — and `general` alone does not count as configured.

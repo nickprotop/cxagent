@@ -107,6 +107,7 @@ public static class ColorScheme
     public static readonly Color ComposerSurface = new(0x2a, 0x2a, 0x2a);
 
 
+
     // --- Markdown ---------------------------------------------------------------
     // Values from opencode's default dark theme (packages/tui/src/theme/assets/
     // opencode.json), which is the palette this was compared against.

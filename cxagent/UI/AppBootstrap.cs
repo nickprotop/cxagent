@@ -55,6 +55,12 @@ public static class AppBootstrap
         var sessions = new SqliteSessionStore(paths);
         sessions.Prune(SqliteSessionStore.DefaultRetention);
 
+        // USAGE HISTORY — a different file, and NOT pruned. The resume database above is a buffer
+        // whose rows are worthless once a session ends cleanly; this is the archive, and pruning an
+        // archive on startup would delete the answer to "where did last month go" every time the app
+        // opened.
+        var history = new UsageHistoryStore(paths);
+
         var mainWindow = new MainWindow(system, resolution, logs)
         {
             ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
@@ -265,6 +271,8 @@ public static class AppBootstrap
                 contextWindow: res.ContextWindow,
                 // Every completed turn lands here, so a crash leaves something to resume from.
                 store: sessions,
+                // And here, for /stats — a separate archive that outlives the session.
+                history: history,
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 globalInstructionsDir: paths.ConfigDir,
                 resume: resumeSnapshot,
@@ -298,13 +306,34 @@ public static class AppBootstrap
             // that is merely slow to connect.
             foreach (var warning in res.Warnings)
                 permissionSink.ShowSystemMessage($"[yellow]{warning}[/]");
+
+            // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
+            // because the session id does not exist until the host does — and reassigned on every
+            // re-wire (F5 changes provider), so the hook reads `runner` lazily rather than closing
+            // over the id of a host that has since been replaced.
+            permissionGate.OnDecision = (kind, decision, requester) =>
+                history.SavePermission(new PermissionRecord(
+                    runner?.SessionId ?? "unknown", DateTimeOffset.UtcNow,
+                    kind.ToString(), decision, requester, workingDir));
+
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
-                mainWindow.SetTokenTotal(total);
+                // THE PARENT'S OWN SPEND, not `total`. The event carries Ledger.TotalTokens, which is
+                // the whole session — children share the ledger — and the status bar is this agent's
+                // readout: it sits beside an occupancy percentage that is the parent's, so a
+                // session-wide figure there read as the parent's and was four times too large.
+                var (ownIn, ownOut) = runner!.OwnSpend;
+                mainWindow.SetTokenTotal(ownIn + ownOut);
+                mainWindow.SetTokenSplit(ownIn, ownOut);
+
                 // THE SAME EVENT, so the breakdown and the number it breaks down can never disagree.
                 // Pushed rather than pulled: the panel refreshes on a clock too, and a stale tally
                 // beside a live total is the kind of small inconsistency nobody can explain later.
-                mainWindow.SetSpendByModel(runner!.Ledger.ByModel);
+                //
+                // The PANEL keeps the session-wide figures — that is the division: bar is this agent,
+                // panel is everything, and "Tokens by agent" is where the two are reconciled.
+                mainWindow.SetSpendByModel(runner.Ledger.ByModel, runner.Ledger.SubAgentTokens,
+                    runner.Ledger.SplitByModel);
             });
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
@@ -317,7 +346,11 @@ public static class AppBootstrap
             runner.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionPanel.RecordTurn(calls);
-                mainWindow.SetTokenSplit(runner.Ledger.InputTokens, runner.Ledger.OutputTokens);
+                // THE PARENT'S SPLIT, matching the total beside it. The ledger's InputTokens and
+                // OutputTokens include every child, and a bar showing a session-wide ↑/↓ under a
+                // parent-only total would be two figures that cannot be added together.
+                var (turnIn, turnOut) = runner.OwnSpend;
+                mainWindow.SetTokenSplit(turnIn, turnOut);
                 mainWindow.RefreshSessionPanel();
             });
             mainWindow.SetSubmissionEnabled(true);
@@ -388,12 +421,15 @@ public static class AppBootstrap
         // desktop portal captures keyboard input before PreviewKeyPressed is reached, so a hook in
         // this handler would never fire while the menu is up. See CommandMenuContent.
         var commandMenu = new CommandMenu(system, window, mainWindow.Input) { Composer = mainWindow.Input };
-        commandMenu.Chosen += (_, cmd) =>
+        commandMenu.Chosen += (_, completion) =>
         {
             // Choosing fills the composer rather than dispatching. The command may take arguments,
             // and a menu that ran on selection would make "/compress" unreachable-with-an-argument
             // and give the user no chance to change their mind. One more Enter runs it.
-            mainWindow.Input.Input = cmd.Name;
+            //
+            // The text is now whatever the ROW completes to — "/mcp" from the command list, or
+            // "/mcp reload" when the user descended into its arguments.
+            mainWindow.Input.Input = completion;
         };
         mainWindow.Input.InputChanged += (_, text) => commandMenu.Sync(text);
 
@@ -464,6 +500,30 @@ public static class AppBootstrap
                         if (command.Name == "/mcp")
                         {
                             _ = mcpCommand.HandleAsync(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+
+                        if (command.Name == "/stats")
+                        {
+                            var statsArg = SessionCommands.Arguments(goalText);
+
+                            // READ FAILURES ARE REPORTED, unlike the writes. An empty dashboard from
+                            // a locked database would say "you have done nothing", which is a lie a
+                            // user cannot detect; an error tells them the number is missing rather
+                            // than zero.
+                            try
+                            {
+                                if (StatsCommand.IsClear(statsArg))
+                                    ConfirmClearHistory(mainWindow, history);
+                                else
+                                    mainWindow.Chat.AddMessage(ChatRole.System,
+                                        StatsCommand.Render(history, statsArg));
+                            }
+                            catch (Exception ex)
+                            {
+                                mainWindow.Chat.AddMessage(ChatRole.System,
+                                    $"[{ColorScheme.DangerMarkup}]Could not read usage history: {ex.Message}[/]");
+                            }
                             return;
                         }
 
@@ -1044,5 +1104,64 @@ public static class AppBootstrap
 
         // The marker is punctuation for the editor, not part of the goal, so it is consumed.
         return text[..^1] + "\n";
+    }
+
+    /// <summary>
+    /// Asks before wiping usage history, with the confirmation IN the transcript.
+    ///
+    /// <para>A MESSAGE WITH ACTIONS, NOT A MODAL. The transcript control carries a footer of buttons
+    /// per message (<c>SetActions</c>), so the question lives where the answer will appear — no popup
+    /// stealing focus, no dialog covering the numbers the user is deciding about. The destructive
+    /// choice is <see cref="ChatActionVariant.Danger"/> and the safe one is default, so the visual
+    /// weight matches the consequence rather than the reading order.</para>
+    ///
+    /// <para><see cref="ChatActionAfterPress.Hide"/> on both: once answered, the buttons go. A
+    /// confirmation that stays pressable is one a user can answer twice, and the second press acts on
+    /// a question that was already settled.</para>
+    /// </summary>
+    private static void ConfirmClearHistory(MainWindow mainWindow, UsageHistoryStore history)
+    {
+        var rows = history.TotalRows();
+        var sessions = history.SessionsSince(DateTimeOffset.UtcNow.AddYears(-10)).Count;
+
+        var id = mainWindow.Chat.AddMessage(ChatRole.System,
+            StatsCommand.ConfirmText(rows, sessions));
+
+        // NOTHING TO DELETE MEANS NO BUTTONS. Offering a destructive action that would do nothing
+        // teaches a user the button is harmless.
+        if (rows == 0) return;
+
+        mainWindow.Chat.SetActions(id,
+        [
+            new ChatMessageAction
+            {
+                Id = "clear",
+                Label = "Delete history",
+                Variant = ChatActionVariant.Danger,
+                AfterPress = ChatActionAfterPress.Hide,
+                OnClick = ctx =>
+                {
+                    try
+                    {
+                        history.Clear();
+                        ctx.SetStatus($"{rows:N0} records deleted", SharpConsoleUI.Core.NotificationSeverity.Success);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Clear is the one history operation that THROWS rather than swallowing —
+                        // a delete that silently failed would leave the user believing their history
+                        // is gone when it is not.
+                        ctx.SetStatus($"could not clear: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                    }
+                },
+            },
+            new ChatMessageAction
+            {
+                Id = "keep",
+                Label = "Keep",
+                AfterPress = ChatActionAfterPress.Hide,
+                OnClick = ctx => ctx.SetStatus("history kept", SharpConsoleUI.Core.NotificationSeverity.Info),
+            },
+        ]);
     }
 }

@@ -311,4 +311,131 @@ public class SessionCommandTableTests
 
         Assert.Contains("login", text, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ---- arguments -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// EVERY SUBCOMMAND THE DISPATCHER ACCEPTS IS IN THE TABLE. They existed in the handlers and in
+    /// no surface a user could find — /help rendered name-plus-summary, and the palette closed the
+    /// moment a space was typed. This is the list those surfaces now read from, so a subcommand added
+    /// to a handler and not to the table is a subcommand nobody will discover.
+    /// </summary>
+    [Theory]
+    [InlineData("/mcp", "reload")]
+    [InlineData("/mcp", "login")]
+    [InlineData("/mode", "single")]
+    [InlineData("/mode", "fan-out")]
+    [InlineData("/stats", "clear")]
+    [InlineData("/stats", "all")]
+    public void TheTable_CarriesEverySubcommand(string command, string argument)
+    {
+        var c = SessionCommands.All.Single(x => x.Name == command);
+
+        Assert.Contains(c.Args, a => a.Name == argument);
+    }
+
+    /// <summary>A command that takes nothing says so, so the hint is meaningful when it appears.</summary>
+    [Fact]
+    public void ACommandWithoutArguments_HasNoHint()
+    {
+        var clear = SessionCommands.All.Single(c => c.Name == "/clear");
+
+        Assert.False(clear.TakesArguments);
+        Assert.Equal("", clear.Hint);
+    }
+
+    /// <summary>The hint is the shell's own convention for "optional, one of these", so a reader who
+    /// has used any CLI already knows how to read it.</summary>
+    [Fact]
+    public void ACommandWithArguments_HintsThemCompactly()
+    {
+        var stats = SessionCommands.All.Single(c => c.Name == "/stats");
+
+        Assert.Equal("[<days>|all|clear]", stats.Hint);
+    }
+
+    /// <summary>
+    /// A PLACEHOLDER IS NOT COMPLETABLE. <c>&lt;server&gt;</c> names a shape, not a value; filling
+    /// the composer with angle brackets would put text there that is not a command. The row still
+    /// exists, because the argument does.
+    /// </summary>
+    [Fact]
+    public void PlaceholderArguments_AreMarkedNonCompleting()
+    {
+        var mcp = SessionCommands.All.Single(c => c.Name == "/mcp");
+
+        Assert.False(mcp.Args.Single(a => a.Name == "<server>").Completes);
+        Assert.True(mcp.Args.Single(a => a.Name == "reload").Completes);
+    }
+
+    // ---- the palette's second level ------------------------------------------------------------
+
+    /// <summary>After a command and a space, the palette offers that command's arguments — the
+    /// gesture the user already learned, one level down.</summary>
+    [Fact]
+    public void ArgumentsFor_AfterASpace_OffersTheCommandsArguments()
+    {
+        var args = SessionCommands.ArgumentsFor("/mcp ");
+
+        Assert.Contains(args, a => a.Name == "reload");
+        Assert.Contains(args, a => a.Name == "login");
+    }
+
+    [Fact]
+    public void ArgumentsFor_NarrowsAsTheUserTypes()
+    {
+        var args = SessionCommands.ArgumentsFor("/mcp re");
+
+        Assert.Equal("reload", Assert.Single(args).Name);
+    }
+
+    /// <summary>
+    /// A SECOND SPACE ENDS IT. "/mcp login serv" is naming a server, not still choosing between
+    /// login and reload — a palette that kept offering subcommands there would be answering a
+    /// question the user has already moved past.
+    /// </summary>
+    [Fact]
+    public void ArgumentsFor_StopsOnceTheArgumentIsTyped() =>
+        Assert.Empty(SessionCommands.ArgumentsFor("/mcp login context7"));
+
+    [Fact]
+    public void ArgumentsFor_ACommandWithoutArguments_OffersNothing() =>
+        Assert.Empty(SessionCommands.ArgumentsFor("/clear "));
+
+    [Fact]
+    public void ArgumentsFor_WithoutASpace_OffersNothing() =>
+        Assert.Empty(SessionCommands.ArgumentsFor("/mcp"));
+
+    /// <summary>An unknown command has no arguments to offer — the unknown-command reply on submit
+    /// is what tells the user they mistyped.</summary>
+    [Fact]
+    public void ArgumentsFor_AnUnknownCommand_OffersNothing() =>
+        Assert.Empty(SessionCommands.ArgumentsFor("/frobnicate "));
+
+    // ---- help ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// /help LISTS SUBCOMMANDS. This is the defect that started this: every subcommand was reachable
+    /// and none was documented anywhere the app itself would show you.
+    /// </summary>
+    [Fact]
+    public void HelpLines_ListEverySubcommand()
+    {
+        var help = SessionCommands.HelpLines("cyan");
+
+        Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
+        Assert.Contains("/stats clear", help, StringComparison.Ordinal);
+        Assert.Contains("/mode fan-out", help, StringComparison.Ordinal);
+    }
+
+    /// <summary>Each subcommand line carries its own summary, so the list explains rather than
+    /// merely enumerates.</summary>
+    [Fact]
+    public void HelpLines_ExplainEachSubcommand()
+    {
+        var help = SessionCommands.HelpLines("cyan");
+
+        Assert.Contains("re-read config.json", help, StringComparison.Ordinal);
+        Assert.Contains("delete all usage history", help, StringComparison.Ordinal);
+    }
 }

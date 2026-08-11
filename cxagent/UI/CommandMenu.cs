@@ -34,7 +34,19 @@ public sealed class CommandMenu
 
     private DesktopPortal? _portal;
     private CommandMenuContent? _list;
-    private IReadOnlyList<SessionCommand> _shown = [];
+    /// <summary>
+    /// One row, whichever mode the menu is in.
+    /// </summary>
+    /// <param name="Label">What is shown in the name column — <c>/mcp</c> or <c>reload</c>.</param>
+    /// <param name="Summary">The line beside it.</param>
+    /// <param name="Completion">
+    /// What the composer becomes when this row is chosen, or null when it cannot be completed. Null
+    /// is a PLACEHOLDER row (<c>&lt;server&gt;</c>): shown so the argument is discoverable, but the
+    /// value is the user's to type and filling the composer with angle brackets would be nonsense.
+    /// </param>
+    private readonly record struct Row(string Label, string Summary, string? Completion);
+
+    private IReadOnlyList<Row> _shown = [];
     private int _selected;
     /// <summary>Most rows the menu will show. Past this the list wants scrolling, which this is not.</summary>
     private const int MaxRows = 10;
@@ -53,8 +65,12 @@ public sealed class CommandMenu
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
 
-    /// <summary>The command the user settled on, when they chose one.</summary>
-    public event EventHandler<SessionCommand>? Chosen;
+    /// <summary>
+    /// The text the composer should become. A STRING RATHER THAN A COMMAND, because a row is now
+    /// either a command or one of its arguments, and the only thing the consumer ever used was the
+    /// text to insert.
+    /// </summary>
+    public event EventHandler<string>? Chosen;
 
     /// <summary>
     /// Reconsiders the menu for what is now in the composer — opens it, refilters it, or closes it.
@@ -77,13 +93,35 @@ public sealed class CommandMenu
             _suppressUntilEdit = false;
         }
 
-        if (!text.StartsWith('/') || text.Contains('\n') || text.Contains(' '))
+        if (!text.StartsWith('/') || text.Contains('\n'))
         {
             Close();
             return;
         }
 
-        var matches = SessionCommands.Matching(text);
+        // A SPACE NO LONGER CLOSES THE MENU — it descends into the command's arguments. That was the
+        // discovery gap: the palette vanished at exactly the moment a user had committed to a command
+        // and needed to know what may follow it, leaving `/mcp reload` and `/stats clear` reachable
+        // only by having read the docs.
+        List<Row> matches;
+        if (text.Contains(' '))
+        {
+            var args = SessionCommands.ArgumentsFor(text);
+            var name = text[..text.IndexOf(' ')];
+            matches = [.. args.Select(a => new Row(
+                a.Name, a.Summary, a.Completes ? $"{name} {a.Name}" : null))];
+        }
+        else
+        {
+            // THE HINT RIDES WITH THE SUMMARY, so a command that takes arguments does not look
+            // identical to one that does not. Without it `/stats` and `/clear` were the same row to
+            // a reader, and nothing on screen suggested one of them had more to offer.
+            matches = [.. SessionCommands.Matching(text).Select(c => new Row(
+                c.Name,
+                c.TakesArguments ? $"{c.Summary}  {c.Hint}" : c.Summary,
+                c.Name))];
+        }
+
         if (matches.Count == 0)
         {
             // Nothing matches: close rather than show an empty box. The unknown-command reply on
@@ -153,6 +191,12 @@ public sealed class CommandMenu
 
             case ConsoleKey.Enter:
                 var picked = _shown[_selected];
+
+                // A PLACEHOLDER CANNOT BE CHOSEN. `<server>` and `<days>` name a shape, not a value;
+                // completing them literally would put text in the composer that is not a command.
+                // The row exists to say the argument is there — the typing stays the user's.
+                if (picked.Completion is null) return true;
+
                 Close();
 
                 // SUPPRESS THE REOPEN. Chosen fills the composer with the command's name, which fires
@@ -163,8 +207,8 @@ public sealed class CommandMenu
                 // A completed choice is the one moment the menu must stay shut: the user has said
                 // which command they want, so the next Enter belongs to the submit path.
                 _suppressUntilEdit = true;
-                _chosenText = picked.Name;
-                Chosen?.Invoke(this, picked);
+                _chosenText = picked.Completion;
+                Chosen?.Invoke(this, picked.Completion);
                 return true;
 
             default:
@@ -276,7 +320,7 @@ public sealed class CommandMenu
         for (var i = first; i < last; i++)
         {
             var c = _shown[i];
-            var name = MarkupParser.Escape(c.Name).PadRight(NameColumn);
+            var name = MarkupParser.Escape(c.Label).PadRight(NameColumn);
             var summary = MarkupParser.Escape(
                 c.Summary.Length > room ? c.Summary[..Math.Max(0, room - 1)] + "…" : c.Summary);
 
