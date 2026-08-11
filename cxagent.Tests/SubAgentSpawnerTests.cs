@@ -218,7 +218,8 @@ public class SubAgentSpawnerTests
     {
         public string ToolName => "spawn_agent";
         public ToolDefinition Definition => new(ToolName, "spawns", default);
-        public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct)
+        public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
+            CancellationToken ct, string? parentAgentId = null)
             => throw new InvalidOperationException("the child exploded");
     }
 
@@ -427,11 +428,17 @@ public class SubAgentSpawnerTests
 
         await parent.SendAsync("delegate", CancellationToken.None);
 
-        // The row carries progress text rather than staying blank...
+        // The row carries progress text rather than staying blank. SendAsync has returned by now, so
+        // the header has already switched to its finished form — the live "N turns · x% ctx · 12s"
+        // is what UpdateProgress carried DURING the run, counted below.
         var row = Assert.Single(jobs.Jobs);
         Assert.False(string.IsNullOrWhiteSpace(row.ProgressMessage),
             "the row never reported progress — it would render as a frozen spinner");
-        Assert.Contains("turn", row.ProgressMessage!, StringComparison.Ordinal);
+        Assert.Contains("done", row.ProgressMessage!, StringComparison.Ordinal);
+
+        // The standing facts survive into the finished row: what this child WAS is still the first
+        // question of a row you expand after the fact.
+        Assert.Contains("type: general", row.ProgressBody!, StringComparison.Ordinal);
 
         // ...and EVERY tick arrived through UpdateProgress, NOT UpdateJob. That distinction is the
         // whole point: UpdateJob force-expands the row and blanks its body on every call, so a
@@ -444,6 +451,153 @@ public class SubAgentSpawnerTests
         Assert.True(jobs.ProgressTicks >= 2,
             $"expected the starting tick plus at least one turn report, saw {jobs.ProgressTicks}");
         Assert.Equal(1, jobs.StateTransitions);
+    }
+
+    /// <summary>
+    /// THE ROW NAMES THE TYPE. Reported from a live session: the header showed
+    /// <c>spawn_agent {"description":"Explore cxgpu repo struct…</c> and the type was invisible.
+    ///
+    /// <para>The cause was generic truncation — DescribeCall clipped the serialised arguments at 60
+    /// characters, and a spawn's JSON opens with <c>description</c> while <c>type</c> serialises
+    /// LAST, so the one field identifying the worker was always the field cut off. A session that
+    /// spawned an explore, another explore and a planner rendered three rows that read alike.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnRow_LeadsWithTheAgentType_NotTruncatedJson()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [SpawnCall(
+                description: "Explore the cxgpu repository structure and report back",
+                prompt: "explore it")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        var row = Assert.Single(jobs.Jobs);
+
+        // The TYPE leads, and the raw tool name and JSON braces are gone from the header entirely.
+        Assert.StartsWith("general", row.DisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain("{", row.DisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain("spawn_agent", row.DisplayName, StringComparison.Ordinal);
+
+        // The description still appears — it is what distinguishes two agents of the SAME type.
+        Assert.Contains("Explore", row.DisplayName, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A CHILD'S SPEND IS ATTRIBUTED, and this is the half the per-model breakdown could never carry.
+    ///
+    /// <para>The panel had one attribution mechanism — spend keyed by model id — and it suppressed
+    /// itself below two entries. But the ordinary fan-out session runs its children on the PARENT'S
+    /// provider: one model, one entry, section hidden, and a whole run of spawned agents showing no
+    /// attribution whatsoever. Here parent and child share one provider, exactly as configured
+    /// sessions do, so ByModel cannot distinguish them and only this counter can.</para>
+    /// </summary>
+    [Fact]
+    public async Task AChildsTokens_AreAttributedToWorkers_EvenOnTheParentsModel()
+    {
+        var ledger = new TokenLedger(null);
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+            Usage = new LlmUsage { InputTokens = 100, OutputTokens = 10 },
+        });
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "parent done", StopReason = "end_turn",
+            Usage = new LlmUsage { InputTokens = 50, OutputTokens = 5 },
+        });
+
+        // THE SAME MODEL ID as the parent — that is the case that was invisible.
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "child done", StopReason = "end_turn",
+            Usage = new LlmUsage { InputTokens = 700, OutputTokens = 30 },
+        });
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), ledger,
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(new SubAgentFactory(
+                childProvider, PluginRegistry.CreateWithBuiltins(), ledger,
+                logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
+                globalInstructionsDir: null, mcp: null)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        // The child's 730 and nobody else's: the parent spent 165 across its two turns.
+        Assert.Equal(730, ledger.SubAgentTokens);
+        Assert.Equal(895, ledger.TotalTokens);
+
+        // And ByModel genuinely cannot answer this — one bucket, both agents in it. Asserted rather
+        // than assumed, because if the mock ever gave the two providers different ids this test
+        // would silently stop covering the case it exists for.
+        Assert.Single(ledger.ByModel);
+    }
+
+    /// <summary>
+    /// THE SESSION READOUT REPAINTS WHILE A CHILD RUNS.
+    ///
+    /// <para>Spend reached the panel only on the parent's TurnCompleted — and a parent completes no
+    /// turns while blocked inside the spawn tool. So a worker could burn a window's worth of tokens
+    /// and the panel showed pre-spawn figures for the whole run: right in memory, stale on screen,
+    /// and worst in exactly the sessions the breakdown exists for.</para>
+    /// </summary>
+    [Fact]
+    public async Task ARunningChild_RaisesChildSpend_SoThePanelCanRepaintMidTurn()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        // A CHILD THAT TAKES TWO TURNS — one tool call, then an answer. A one-turn child would make
+        // this assertion `>= 1`, which is the trap ProgressTicks fell into: a single raise proves the
+        // event is wired but not that it fires AS the child works, which is the whole defect.
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "read_file",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"nope.txt"}""").RootElement }],
+        });
+        childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        var raised = 0;
+        parent.ChildSpend += () => raised++;
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        // Both of the child's turns reported, while the parent sat inside one tool call completing
+        // none of its own — which is exactly the window in which the panel used to go stale.
+        Assert.True(raised >= 2,
+            $"expected one report per child turn while the parent was blocked, saw {raised}");
     }
 
     /// <summary>

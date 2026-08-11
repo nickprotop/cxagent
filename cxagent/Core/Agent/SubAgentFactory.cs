@@ -8,7 +8,14 @@ namespace CxAgent.Core.Agent;
 /// <param name="Agent">The child itself. Its <c>Id</c> addresses its row and names its log directory.</param>
 /// <param name="Sink">Everything it said, for inspection after the fact.</param>
 /// <param name="Jobs">Every tool it called.</param>
-public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPanel Jobs);
+/// <param name="TypeName">The resolved type — <c>general</c> unless config named another.</param>
+/// <param name="ModelId">
+/// The model this child actually runs on, which is NOT always the session's: a type may name its own
+/// provider. Carried here because the row is the only place a user learns a worker went somewhere
+/// else, and by the time it finishes the provider is no longer reachable from the row.
+/// </param>
+public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPanel Jobs,
+    string TypeName, string? ModelId);
 
 /// <summary>
 /// Builds a sub-agent from a parent's own wiring.
@@ -132,8 +139,12 @@ public sealed class SubAgentFactory
     /// IsUnderPressure as permanently false (AgentContext returns false for a MISSING window, never
     /// for a wrong one), never compacts, and dies on a provider overflow instead.</para>
     /// </param>
+    /// <param name="parentAgentId">
+    /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
+    /// only the tests that predate nesting pass nothing.
+    /// </param>
     public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
-        AgentType? type = null)
+        AgentType? type = null, string? parentAgentId = null)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
@@ -162,9 +173,11 @@ public sealed class SubAgentFactory
             // still leaks a row per tool call into the parent's transcript.
             sink,
             jobs,
-            // ITS OWN LOG DIRECTORY, keyed by the child's id. The only surface on which a finished
-            // child is inspectable after the fact.
-            _logs,
+            // ITS OWN LOG DIRECTORY, keyed by the child's id and NESTED UNDER THE PARENT'S. The only
+            // surface on which a finished child is inspectable after the fact — and while it sat at
+            // the top level it was indistinguishable from a session, so `ls -t` showed a child above
+            // the parent that spawned it and the newest directory was often not the newest session.
+            parentAgentId is null ? _logs : _logs?.Under(parentAgentId),
             maxTurns,
             compressAbove: compressAbove,
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
@@ -191,6 +204,8 @@ public sealed class SubAgentFactory
         //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what
         //     makes "no sub-agents of sub-agents" true rather than aspirational: it is not a rule the
         //     child is asked to follow, it is a tool it was never given.
-        return new SubAgent(agent, sink, jobs);
+        return new SubAgent(agent, sink, jobs,
+            TypeName: type?.Name ?? AgentTypeCatalog.DefaultTypeName,
+            ModelId: provider.ModelId);
     }
 }

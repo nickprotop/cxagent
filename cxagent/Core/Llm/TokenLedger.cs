@@ -85,21 +85,64 @@ public sealed class TokenLedger
         get { lock (_byModel) return new Dictionary<string, int>(_byModel, StringComparer.Ordinal); }
     }
 
+    /// <summary>What each model SENT and GENERATED, split — the same ↑/↓ the totals carry.</summary>
+    /// <remarks>
+    /// PER MODEL, because the panel is the aggregator and a session-wide ↑/↓ beside a per-model
+    /// breakdown answers two different questions in one block. The split is the thing worth knowing
+    /// per model, too: a planner that reads the whole repo and returns a page is almost all input,
+    /// a model that writes code is not, and one summed figure hides which is which — exactly the
+    /// distinction the totals were split to expose.
+    ///
+    /// <para>Taken under the SAME lock as <see cref="ByModel"/> and returned as one snapshot, so a
+    /// reader can never see a model's total and its split disagree.</para>
+    /// </remarks>
+    public IReadOnlyDictionary<string, (int Input, int Output)> SplitByModel
+    {
+        get
+        {
+            lock (_byModel)
+                return new Dictionary<string, (int, int)>(_splitByModel, StringComparer.Ordinal);
+        }
+    }
+
     // A LOCK, NOT A CONCURRENT DICTIONARY. Two agents on one ledger is already the normal case, and
     // the read is a snapshot the UI takes a few times a second — a dictionary that is internally
-    // thread-safe would still let a reader see a torn view across several keys.
+    // thread-safe would still let a reader see a torn view across several keys. Both maps share the
+    // one lock: they are two views of the same fact and must never be observed out of step.
     private readonly Dictionary<string, int> _byModel = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Input, int Output)> _splitByModel = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What sub-agents have spent, of <see cref="TotalTokens"/>.
+    ///
+    /// <para>SEPARATE FROM <see cref="ByModel"/> because the common fan-out session runs its children
+    /// on the PARENT'S model — one provider, one model id — and a per-model breakdown then has a
+    /// single row and shows nothing. "A worker spent this" is the question a fan-out session actually
+    /// asks, and model identity does not answer it.</para>
+    /// </summary>
+    public int SubAgentTokens => Volatile.Read(ref _subAgent);
+
+    private int _subAgent;
 
     /// <param name="modelId">
     /// Which model spent it, or null when the caller does not know. Null records into the totals and
     /// nothing else — better than inventing a bucket named "unknown", which would look like a model.
     /// </param>
-    public void Record(LlmUsage usage, string? modelId = null)
+    /// <param name="subAgent">True when a CHILD spent this, so the panel can attribute it.</param>
+    public void Record(LlmUsage usage, string? modelId = null, bool subAgent = false)
     {
         if (!string.IsNullOrWhiteSpace(modelId))
             lock (_byModel)
+            {
                 _byModel[modelId] = _byModel.GetValueOrDefault(modelId)
                                   + usage.InputTokens + usage.OutputTokens;
+
+                var (input, output) = _splitByModel.GetValueOrDefault(modelId);
+                _splitByModel[modelId] = (input + usage.InputTokens, output + usage.OutputTokens);
+            }
+
+        if (subAgent)
+            Interlocked.Add(ref _subAgent, usage.InputTokens + usage.OutputTokens);
 
         Interlocked.Add(ref _input, usage.InputTokens);
         Interlocked.Add(ref _output, usage.OutputTokens);

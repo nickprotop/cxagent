@@ -35,7 +35,12 @@ public interface ISubAgentSpawner
     /// Called with the child the moment it is built, BEFORE it runs — the seam telemetry uses to
     /// attach to a child's events and to associate its id with the row already on screen.
     /// </param>
-    Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct);
+    /// <param name="parentAgentId">
+    /// The spawning agent's id, so the child's logs nest under it rather than beside it. Optional
+    /// because a spawner that keeps no logs does not need it.
+    /// </param>
+    Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
+        string? parentAgentId = null);
 }
 
 /// <summary>
@@ -57,6 +62,34 @@ public static class SubAgentEnvelope
     /// in JSON means escaping it, and a model reading escaped source is reading something other than
     /// what the child wrote.</para>
     /// </summary>
+    /// <summary>
+    /// Reads the <c>state</c> back out of a rendered envelope, or null if this is not one.
+    ///
+    /// <para>THE INVERSE OF <see cref="Render"/>, and deliberately parsed rather than threaded
+    /// alongside: the envelope is the one artefact that always carries the outcome, so a caller that
+    /// has the string has the truth. Threading a second copy of the same fact through the spawn
+    /// dispatch would create two things that can disagree — and the failure would be silent, since
+    /// both are plausible strings.</para>
+    ///
+    /// <para>Null for an ordinary tool result, which is how a non-spawn call is told apart.</para>
+    /// </summary>
+    public static string? StateOf(string? envelope)
+    {
+        if (string.IsNullOrEmpty(envelope)) return null;
+
+        const string marker = "state=\"";
+        var i = envelope.IndexOf(marker, StringComparison.Ordinal);
+        if (i < 0) return null;
+
+        // Only in the opening tag: a state= appearing later is the CHILD's own text, not ours.
+        var close = envelope.IndexOf('>', 0);
+        if (close >= 0 && i > close) return null;
+
+        var start = i + marker.Length;
+        var end = envelope.IndexOf('"', start);
+        return end > start ? envelope[start..end] : null;
+    }
+
     public static string Render(string childId, SendOutcome outcome, string text)
     {
         var state = outcome switch

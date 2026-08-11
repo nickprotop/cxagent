@@ -117,10 +117,39 @@ public sealed class InteractivePermissionGate : IPermissionGate
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(policy, store, workingDir, sink, promptHook);
 
+    /// <summary>
+    /// Called with every decision this gate makes. Set by the composition root to record history;
+    /// null when nothing is listening, which is the case in every test.
+    ///
+    /// <para>A HOOK RATHER THAN A STORE, for the same reason the loop raises reports instead of
+    /// writing rows: a permission gate that knows about a database is a permission gate that can fail
+    /// for a reason unrelated to permission.</para>
+    /// </summary>
+    public Action<PermissionKind, string, string?>? OnDecision { get; set; }
+
+    /// <summary>
+    /// Wraps the decision so EVERY path is recorded — silent allows, stored rules, denials, and the
+    /// cancelled-while-queued case. There are six returns inside; recording at each would leave the
+    /// next one added silently unrecorded.
+    /// </summary>
     public async Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
     {
+        // The silent path is reported separately: "allowed without asking" and "the user said yes"
+        // are different facts, and collapsing them would make a session of stored rules look like a
+        // session of decisions.
         if (_policy.IsSilentlyAllowed(request))
-            return true;   // in-boundary-and-trusted, or a matching stored rule — no UI at all
+        {
+            OnDecision?.Invoke(request.Kind, "silent", request.Requester);
+            return true;
+        }
+
+        var granted = await DecideAsync(request, ct);
+        OnDecision?.Invoke(request.Kind, granted ? "allowed" : "denied", request.Requester);
+        return granted;
+    }
+
+    private async Task<bool> DecideAsync(PermissionRequest request, CancellationToken ct)
+    {
 
         try
         {

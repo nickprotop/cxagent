@@ -151,7 +151,8 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
             }
             """).RootElement);
 
-    public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct)
+    public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
+        CancellationToken ct, string? parentAgentId = null)
     {
         if (!string.Equals(call.Name, ToolName, StringComparison.Ordinal)) return null;
 
@@ -190,7 +191,9 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
             callerContext: Read(call, "context"),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
             label: Read(call, "description"),
-            type: type);
+            type: type,
+            // So the child's logs land UNDER this agent's directory rather than beside it.
+            parentAgentId: parentAgentId);
         onChild?.Invoke(child);
 
         var result = await child.Agent.SendAsync(prompt, ct);

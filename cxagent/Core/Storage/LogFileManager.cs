@@ -17,13 +17,39 @@ public class LogFileManager
     private static readonly string[] Streams = { "log", "stdout", "stderr" };
     private readonly AppPaths _paths;
 
-    public LogFileManager(AppPaths paths) => _paths = paths;
+    /// <summary>
+    /// Ids of the agents this one was spawned under, outermost first. Empty for a session.
+    ///
+    /// <para>A SUB-AGENT NESTS UNDER ITS PARENT. Children mint their own <c>Agent.Id</c> and logged
+    /// through the same flat <c>logs/&lt;id&gt;/</c> scheme, so every spawn produced a TOP-LEVEL
+    /// directory indistinguishable from a real session — `ls -t` put a child above the parent that
+    /// created it, and the newest directory was routinely not the newest session. The work is
+    /// hierarchical; the record of it should be too.</para>
+    /// </summary>
+    private readonly string[] _ancestry;
+
+    public LogFileManager(AppPaths paths) : this(paths, []) { }
+
+    private LogFileManager(AppPaths paths, string[] ancestry)
+    {
+        _paths = paths;
+        _ancestry = ancestry;
+    }
+
+    /// <summary>
+    /// A manager that writes beneath <paramref name="parentAgentId"/>, for an agent it spawned.
+    ///
+    /// <para>Returns a NEW instance rather than mutating: one factory serves every child, and a
+    /// mutable parent id would be shared state under concurrent spawns — which step 3 makes real.</para>
+    /// </summary>
+    public LogFileManager Under(string parentAgentId) =>
+        new(_paths, [.. _ancestry, parentAgentId]);
 
     public string PathFor(string agentId, string jobId, string stream)
     {
         if (Array.IndexOf(Streams, stream) < 0)
             throw new ArgumentException($"stream must be one of log/stdout/stderr, got '{stream}'.", nameof(stream));
-        return Path.Combine(_paths.LogsDir, agentId, $"{jobId}.{stream}");
+        return Path.Combine(_paths.LogsDir, Path.Combine([.. _ancestry, agentId]), $"{jobId}.{stream}");
     }
 
     /// <summary>

@@ -8,6 +8,18 @@ public class AppPaths
 {
     public string ConfigDir { get; }
     public string DatabasePath => Path.Combine(ConfigDir, "cxagent.db");
+
+    /// <summary>
+    /// Usage history — a SEPARATE file from the resume database, deliberately.
+    ///
+    /// <para><see cref="SqliteSessionStore"/>'s own doc draws this line: it is "a RESUME BUFFER, not
+    /// an archive: persistence-as-history is a different feature with different requirements, and
+    /// pretending one is the other produces a database that grows forever and a schema that serves
+    /// neither." Two files keep both truths — resume stays small and disposable (delete it and you
+    /// lose nothing but a crash recovery), history grows and is the thing worth keeping.</para>
+    /// </summary>
+    public string HistoryPath => Path.Combine(ConfigDir, "history.db");
+
     public string LogsDir => Path.Combine(ConfigDir, "logs");
 
     public AppPaths(string? overrideDir = null)

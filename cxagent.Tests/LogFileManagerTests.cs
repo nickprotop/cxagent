@@ -93,4 +93,56 @@ public class LogFileManagerTests : IDisposable
         var mgr = new LogFileManager(_paths);
         Assert.Equal("", await mgr.ReadAsync("nope", "nope", "log"));
     }
+
+    /// <summary>
+    /// A SUB-AGENT'S LOGS NEST UNDER ITS PARENT'S, rather than sitting beside them.
+    ///
+    /// <para>Children mint their own <c>Agent.Id</c> and wrote through the same flat
+    /// <c>logs/&lt;id&gt;/</c> scheme, so every spawn produced a top-level directory indistinguishable
+    /// from a real session. Seen live: session 01KZSDDC… spawned three agents, and `ls -t` put a
+    /// CHILD at the top — reading "the latest session" opened a sub-agent instead. The work is
+    /// hierarchical and the record of it now is too.</para>
+    /// </summary>
+    [Fact]
+    public async Task Under_NestsAChildsLogsInsideItsParents()
+    {
+        var mgr = new LogFileManager(_paths);
+        await mgr.AppendAsync("parent", "turn-000", "log", "p");
+
+        var child = mgr.Under("parent");
+        await child.AppendAsync("kid", "turn-000", "log", "c");
+
+        Assert.True(File.Exists(Path.Combine(_paths.LogsDir, "parent", "kid", "turn-000.log")));
+
+        // AND NOT AT THE TOP LEVEL — the half that made a child look like a session.
+        Assert.False(Directory.Exists(Path.Combine(_paths.LogsDir, "kid")));
+    }
+
+    /// <summary>
+    /// <c>Under</c> returns a NEW manager and leaves the original alone. One factory serves every
+    /// child, so a mutated parent id would be shared state the moment two spawns overlap — which is
+    /// exactly what step 3's concurrency introduces.
+    /// </summary>
+    [Fact]
+    public async Task Under_DoesNotMutateTheManagerItCameFrom()
+    {
+        var mgr = new LogFileManager(_paths);
+        _ = mgr.Under("parent");
+
+        await mgr.AppendAsync("sibling", "turn-000", "log", "s");
+
+        Assert.True(File.Exists(Path.Combine(_paths.LogsDir, "sibling", "turn-000.log")));
+    }
+
+    /// <summary>A grandchild nests two deep, so the tree mirrors who spawned whom however far it
+    /// goes. Nesting is structurally impossible today (a child gets no spawner) but the path logic
+    /// should not be what stops it.</summary>
+    [Fact]
+    public async Task Under_Nests_ToAnyDepth()
+    {
+        var mgr = new LogFileManager(_paths);
+        await mgr.Under("a").Under("b").AppendAsync("c", "turn-000", "log", "x");
+
+        Assert.True(File.Exists(Path.Combine(_paths.LogsDir, "a", "b", "c", "turn-000.log")));
+    }
 }

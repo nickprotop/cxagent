@@ -214,6 +214,67 @@ public sealed class Agent
     /// measurement, so the readout marks it approximate until a real reading arrives.</summary>
     public event Action<int>? ContextEstimated;
 
+    /// <summary>
+    /// Raised when a CHILD has spent tokens, so the session readout can repaint mid-turn.
+    ///
+    /// <para>A child records into the shared ledger under its OWN model id, correctly and live — but
+    /// the only thing that repainted spend was <see cref="TurnCompleted"/>, and this agent completes
+    /// no turns while it is blocked inside the spawn tool waiting for that child. So a worker could
+    /// burn a window's worth of tokens on a second model and the panel showed the figures from
+    /// before it started: right in memory, stale on screen, and most wrong exactly when a second
+    /// model is in play, which is the case the per-model breakdown exists to show.</para>
+    ///
+    /// <para>Carries nothing. The ledger is shared and already correct — this says only WHEN to
+    /// re-read it, which keeps the child's spend attributed by the ledger rather than by whoever
+    /// happens to be listening.</para>
+    /// </summary>
+    public event Action? ChildSpend;
+
+    /// <summary>
+    /// Raised when a tool call finishes: name, plugin type, outcome, duration, and how many
+    /// characters its result put INTO the context.
+    ///
+    /// <para>AN EVENT, NOT A STORE REFERENCE. The loop must not know that history is a database, or
+    /// that there is one — this is the same reason logging is being moved to an event
+    /// (isolated-kernel.md item 1). The host subscribes and writes; a host that does not subscribe
+    /// records nothing and the loop cannot tell.</para>
+    ///
+    /// <para><c>result_chars</c> is the field worth having: it is what a tool COST the context, and
+    /// the whole premise of delegation is moving large results out of the parent.</para>
+    /// </summary>
+    public event Action<ToolCallReport>? ToolCallFinished;
+
+    /// <summary>
+    /// Raised when a spawned child finishes, with everything the parent knows about the run.
+    ///
+    /// <para>THE PARENT REPORTS IT, because a child never reaches a store — <c>SubAgentFactory</c>
+    /// builds children directly as <see cref="Agent"/> precisely so they cannot write a session row
+    /// that resume would later offer as a crashed session the user never ran. The parent is also the
+    /// only party that sees both ends of the run.</para>
+    /// </summary>
+    public event Action<ChildRunReport>? ChildFinished;
+
+    /// <summary>
+    /// What THIS agent has spent, input and output. A private tally, not a share of the ledger.
+    ///
+    /// <para>The ledger is deliberately shared — a budget belongs to the session, not to an agent —
+    /// so it can say what all children spent together but never what ONE child cost. That is the
+    /// figure a finished worker row needs: "this planner cost 41k" is actionable in a way that a
+    /// session total is not.</para>
+    /// </summary>
+    public (int Input, int Output) Spend => (Volatile.Read(ref _spentInput), Volatile.Read(ref _spentOutput));
+
+    private int _spentInput;
+    private int _spentOutput;
+
+    // Interlocked, because a child's tally is read by the PARENT'S tick timer on another thread
+    // while the child's own turn loop writes it.
+    private void RecordOwnSpend(LlmUsage usage)
+    {
+        Interlocked.Add(ref _spentInput, usage.InputTokens);
+        Interlocked.Add(ref _spentOutput, usage.OutputTokens);
+    }
+
 
     /// <summary>
     /// Input tokens past which the loop compresses its own context, or null to never compress.
@@ -562,7 +623,7 @@ public sealed class Agent
             // model, and a summarisation turn that vanished from the per-model tally
             // would make the numbers disagree with the session total for no reason a
             // reader could work out.
-            u => _ledger.Record(u, _provider.ModelId), ct, compressed: (b, a) =>
+            u => { _ledger.Record(u, _provider.ModelId, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
                     {
                         ContextCompressed?.Invoke(b, a);
                         if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
@@ -578,7 +639,8 @@ public sealed class Agent
                 throw;
             }
 
-            _ledger.Record(response.Usage, _provider.ModelId);
+            _ledger.Record(response.Usage, _provider.ModelId, _isSubAgent);
+            RecordOwnSpend(response.Usage);
 
             // RECORD IT ON THE CONTEXT, which needs both the reading and the size it was taken at to
             // estimate honestly after a compaction. Published BEFORE the compression check below, so
@@ -827,7 +889,8 @@ public sealed class Agent
         try
         {
             var response = await StreamTurnAsync(ask, tools, ct, turnId);
-            _ledger.Record(response.Usage, _provider.ModelId);
+            _ledger.Record(response.Usage, _provider.ModelId, _isSubAgent);
+            RecordOwnSpend(response.Usage);
             return ModelOutput.StripReasoning(response.Text);
         }
         catch (Exception)
@@ -993,6 +1056,17 @@ public sealed class Agent
         // expand-the-row swap keys on.
         string? childId = null;
 
+        // THE PROMPT THIS CHILD WAS GIVEN, read from the call rather than from the child: the child
+        // holds it as a user message inside a buffered context, and digging it back out would couple
+        // the row to the message layout. Read once — it never changes.
+        var childPrompt = ReadArg(call, "prompt");
+
+        // THE CHILD ITSELF, once built — so the finished row can account for it after SendAsync has
+        // returned. Null on every failure path before the child exists, which is why every read of
+        // it is guarded rather than assumed.
+        SubAgent? spawned = null;
+        var childTurns = 0;
+
         // A PERIODIC TICK, owned by this call and disposed in its finally.
         //
         // Turn boundaries alone are not enough: a child spends most of a long run INSIDE one turn,
@@ -1004,6 +1078,7 @@ public sealed class Agent
         void OnChildSpawned(SubAgent child)
         {
             childId = child.Agent.Id;
+            spawned = child;
             job.ProgressMessage = "starting…";
             // UpdateProgress, NEVER UpdateJob, for anything that fires repeatedly: UpdateJob
             // force-expands the row and blanks its body on every call, so a per-second tick would
@@ -1013,15 +1088,22 @@ public sealed class Agent
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session
             // aggregator both subscribe to one signal.
-            var turns = 0;
+            // childTurns is the ENCLOSING local, not one scoped here: the finished row states how
+            // many turns the run took, and a counter that died with this closure could not say.
             child.Agent.TurnCompleted += _ =>
             {
-                turns++;
-                Report(child, turns);
+                childTurns++;
+                Report(child, childTurns);
             };
-            child.Agent.ContextUsed += _ => Report(child, turns);
+            child.Agent.ContextUsed += _ => Report(child, childTurns);
 
-            tick = new Timer(_ => Report(child, turns), null,
+            // A CHILD'S TOOL CALLS, FORWARDED. The child has no store and no host — that is the whole
+            // isolation design — so its calls would otherwise be recorded nowhere, and a child's calls
+            // are the interesting ones: that is where the expensive reading happens. The report keeps
+            // the CHILD's agent id, so forwarding attributes rather than absorbs.
+            child.Agent.ToolCallFinished += report => ToolCallFinished?.Invoke(report);
+
+            tick = new Timer(_ => Report(child, childTurns), null,
                 TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
@@ -1059,9 +1141,44 @@ public sealed class Agent
                 .Reverse()
                 .Select(j => $"  {j.DisplayName}")
                 .ToList();
-            job.ProgressBody = recent.Count > 0 ? string.Join("\n", recent) : null;
+
+            // WHAT IT IS, above what it is doing. The recent-tools list answers "on the right track",
+            // but not "what did I even start" — and the header cannot carry that: it is one truncated
+            // line, and the row's own name lost the type entirely until DescribeCall grew a spawn
+            // branch. These are STANDING FACTS, unchanged for the child's whole life, so they belong
+            // where they can be read at leisure rather than glanced at.
+            //
+            // The MODEL earns its line because a type may name its own provider: a worker running
+            // somewhere other than the session's model is a thing the user has no other way to learn,
+            // and by the time the row finishes the provider is gone.
+            var facts = new List<string> { $"  type: {child.TypeName}" };
+            if (!string.IsNullOrWhiteSpace(child.ModelId))
+                facts.Add($"  model: {child.ModelId}");
+
+            // ITS TASK, clipped. The prompt is the parent's own words and is often a page long — the
+            // first line is what the parent MEANT; the rest is detail the row cannot hold. Shown only
+            // when it says something the row's name does not already.
+            if (!string.IsNullOrWhiteSpace(childPrompt))
+            {
+                var first = childPrompt!.Split('\n', 2)[0].Trim();
+                if (first.Length > 0) facts.Add($"  task: {Clip(first, 60)}");
+            }
+
+            // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
+            // that the header may be scrolled out of view, and these are the numbers being watched.
+            facts.Add($"  {turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}");
+
+            job.ProgressBody = recent.Count > 0
+                ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
+                : string.Join("\n", facts);
 
             _jobs.UpdateProgress(job);
+
+            // AND THE SESSION READOUT. Raised from Report rather than from the child's TurnCompleted
+            // because Report is also driven by the one-second tick — a child that spends four minutes
+            // inside a single turn completes no turns to hang this on, which is precisely the run
+            // whose spend the panel was missing.
+            ChildSpend?.Invoke();
         }
 
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs)
@@ -1097,7 +1214,7 @@ public sealed class Agent
             // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
             // spawn_agent in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
-            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct) : null)
+            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id) : null)
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
         }
@@ -1150,6 +1267,19 @@ public sealed class Agent
             };
             _jobs.UpdateJob(job);
 
+            // CANCELLED IS AN OUTCOME, not an absence. A tool the user stopped is a fact about how
+            // the session went, and dropping it here would make Escape invisible in history while
+            // leaving its cost in the totals.
+            ToolCallFinished?.Invoke(new ToolCallReport(
+                CallId: jobId,
+                AgentId: Id,
+                ToolName: call.Name,
+                PluginType: job.PluginType,
+                Outcome: "cancelled",
+                DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
+                ResultChars: 0,
+                StartedAt: started));
+
             // RETHROWN, NOT SWALLOWED. The turn is over: the loop is unwinding and there is no next
             // request, so there is nobody to hand a tool result to. Returning a string here would
             // feed "cancelled" back as though the tool had answered.
@@ -1167,6 +1297,68 @@ public sealed class Agent
         var failed = LooksLikeFailure(result);
         job.State = failed ? JobState.Failed : JobState.Succeeded;
         job.CompletedAt = DateTimeOffset.UtcNow;
+
+        // A FINISHED CHILD'S HEADER STATES THE COST, not its last live tick. While running, the
+        // header answers "is it alive"; once done, that question is settled and the numbers that
+        // remain interesting are what the run took. Leaving the ticking line in place also reads as
+        // though it were still going — the elapsed figure simply stops, which looks like a freeze
+        // rather than a finish.
+        if (childId is not null)
+        {
+            var took = DateTimeOffset.UtcNow - started;
+            var duration = took.TotalMinutes >= 1
+                ? $"{(int)took.TotalMinutes}m{took.Seconds:00}s"
+                : $"{took.TotalSeconds:0}s";
+
+            // WHAT IT COST, on the header. The session panel says what all workers spent together;
+            // only here can a user see that THIS planner cost 41k while that explore cost 3k — which
+            // is the comparison that decides whether a type is worth spawning again.
+            var (spentIn, spentOut) = spawned?.Agent.Spend ?? (0, 0);
+            var cost = spentIn + spentOut > 0 ? $" · {spentIn + spentOut:N0} tokens" : "";
+
+            job.ProgressMessage = $"{(failed ? "failed" : "done")} · {duration}{cost}";
+
+            // AND THE FULL ACCOUNT IN THE BODY, which survives the row being collapsed and is what
+            // a run is read back from later. The live turn counter is replaced rather than joined:
+            // once finished, "3 turns" is a fact about the run, not a thing still moving.
+            if (spawned is not null)
+            {
+                var account = new List<string> { $"  type: {spawned.TypeName}" };
+                if (!string.IsNullOrWhiteSpace(spawned.ModelId))
+                    account.Add($"  model: {spawned.ModelId}");
+                if (!string.IsNullOrWhiteSpace(childPrompt))
+                {
+                    var first = childPrompt!.Split('\n', 2)[0].Trim();
+                    if (first.Length > 0) account.Add($"  task: {Clip(first, 60)}");
+                }
+                account.Add($"  {childTurns} turn{(childTurns == 1 ? "" : "s")} · {duration}");
+                if (spentIn + spentOut > 0)
+                    account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
+
+                job.ProgressBody = string.Join("\n", account);
+
+                // AND TO HISTORY, once. The row above is for a user reading this session; this is for
+                // a user asking "is planner worth spawning" — a question one session cannot answer.
+                ChildFinished?.Invoke(new ChildRunReport(
+                    RunId: childId,
+                    ParentAgentId: Id,
+                    TypeName: spawned.TypeName,
+                    ModelId: spawned.ModelId,
+                    InputTokens: spentIn,
+                    OutputTokens: spentOut,
+                    Turns: childTurns,
+                    // The child's own panel already holds every row it drew — that is what keeps them
+                    // out of the parent's transcript — so this is a read, not new bookkeeping.
+                    ToolCalls: spawned.Jobs.Jobs.Count,
+                    // THE ENVELOPE'S OWN WORD, not a two-way failed/completed guess. A capped run —
+                    // seen live: an explore child burned all 30 turns hunting a JSON schema that is
+                    // not published anywhere — is neither. Recording it as "completed" would put a
+                    // wasted run in the success column, which is exactly the run worth finding later.
+                    Outcome: SubAgentEnvelope.StateOf(result) ?? (failed ? "failed" : "completed"),
+                    StartedAt: started,
+                    DurationMs: (long)took.TotalMilliseconds));
+            }
+        }
         job.Result = new JobResult
         {
             Success = !failed,
@@ -1176,6 +1368,20 @@ public sealed class Agent
             Output = new Dictionary<string, object?> { ["content"] = result },
         };
         _jobs.UpdateJob(job);
+
+        // EVERY TOOL CALL, at the single exit both spawns and ordinary tools pass through. Raised
+        // after the row is closed so a subscriber that throws cannot leave a row open — and the
+        // result's LENGTH rather than its content, because this is a measurement, not an archive:
+        // storing tool output would duplicate the transcript and the logs at once.
+        ToolCallFinished?.Invoke(new ToolCallReport(
+            CallId: jobId,
+            AgentId: Id,
+            ToolName: call.Name,
+            PluginType: job.PluginType,
+            Outcome: failed ? "failed" : "succeeded",
+            DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
+            ResultChars: result.Length,
+            StartedAt: started));
 
         return result;
     }
@@ -1300,7 +1506,7 @@ public sealed class Agent
             // model, and a summarisation turn that vanished from the per-model tally
             // would make the numbers disagree with the session total for no reason a
             // reader could work out.
-            u => _ledger.Record(u, _provider.ModelId), ct, compressed: (b, a) =>
+            u => { _ledger.Record(u, _provider.ModelId, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(b, a);
                 // The context re-estimated its own occupancy while compacting; publish it so the
@@ -1549,9 +1755,42 @@ public sealed class Agent
 
     private static string DescribeCall(ToolCall call)
     {
+        // A SPAWN IS NAMED BY ITS TYPE AND ITS DESCRIPTION, not by raw JSON. The generic branch below
+        // truncates the serialised arguments at 60 characters, and a spawn's JSON opens with
+        // `{"description":"…` — so the description ate the budget and `type`, which serialises last,
+        // was ALWAYS cut off. The row could not say whether it was an explore, a planner or a
+        // general agent, which is the first thing anyone wants from it.
+        if (string.Equals(call.Name, "spawn_agent", StringComparison.Ordinal))
+        {
+            var type = ReadArg(call, "type");
+            var what = ReadArg(call, "description");
+            // A CALL THAT NAMES NO TYPE IS `general` — that is what the catalog resolves it to, so
+            // the row says the same thing. "agent" would be a third name for a state that already
+            // has two, and the row exists to tell three concurrent workers apart.
+            var name = string.IsNullOrWhiteSpace(type) ? AgentTypeCatalog.DefaultTypeName : type!.Trim();
+            return string.IsNullOrWhiteSpace(what) ? name : $"{name} · {Clip(what!, 44)}";
+        }
+
         var args = call.Arguments.ToString();
-        var detail = args.Length > 60 ? args[..60] + "…" : args;
-        return $"{call.Name} {detail}";
+        return $"{call.Name} {Clip(args, 60)}";
+    }
+
+    private static string Clip(string text, int max) =>
+        text.Length > max ? text[..max] + "…" : text;
+
+    /// <summary>One string argument, or null. Tolerant by design: this feeds a display name, and a
+    /// malformed call must still produce a row rather than throwing inside the turn loop.</summary>
+    private static string? ReadArg(ToolCall call, string name)
+    {
+        try
+        {
+            return call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object
+                && call.Arguments.TryGetProperty(name, out var v)
+                && v.ValueKind == System.Text.Json.JsonValueKind.String
+                ? v.GetString()
+                : null;
+        }
+        catch (Exception) { return null; }
     }
 
     private static string? TryGetWorkingDirectory()

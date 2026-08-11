@@ -69,6 +69,21 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     private readonly SqliteSessionStore? _store;
 
+    /// <summary>
+    /// Usage history — a DIFFERENT database from <see cref="_store"/>, and optional for the same
+    /// reason: a session that cannot record statistics is unaffected in every way that matters.
+    /// </summary>
+    private readonly UsageHistoryStore? _history;
+
+    /// <summary>Turns this session has completed, for the history row. Not derived from the message
+    /// count, which compaction rewrites — a compacted session would appear to have run backwards.
+    /// </summary>
+    private int _turns;
+
+    /// <summary>When this session began. `updated_at` alone cannot give a duration, and duration is
+    /// the axis every "where did my week go" view wants.</summary>
+    private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
+
     private readonly int? _sessionTokenBudget;
 
     /// <summary>
@@ -217,6 +232,19 @@ public sealed class AgentHost : IDisposable
     public string SessionId => _agent.Id;
 
     /// <summary>
+    /// What THIS agent has spent — the parent alone, excluding every sub-agent.
+    ///
+    /// <para>NOT <c>Ledger.TotalTokens</c>, which is the whole session: children record into the
+    /// shared ledger deliberately, because a budget belongs to the conversation rather than to
+    /// whichever agent did the work. That makes the ledger right for a budget and wrong for a status
+    /// bar, where the figure sits beside an occupancy percentage that IS this agent's — a fan-out
+    /// session showed a spend four times the parent's with nothing to say why.</para>
+    ///
+    /// <para>The session-wide view has a home: the panel's "Tokens by agent".</para>
+    /// </summary>
+    public (int Input, int Output) OwnSpend => _agent.Spend;
+
+    /// <summary>
     /// Records that this session ended normally, so it is never offered for resume.
     ///
     /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did
@@ -258,7 +286,8 @@ public sealed class AgentHost : IDisposable
         TokenLedger? ledger = null,
         ISubAgentSpawner? spawner = null,
         AgentMode mode = AgentMode.FanOut,
-        string? workingDir = null)
+        string? workingDir = null,
+        UsageHistoryStore? history = null)
     {
         _mode = mode;
         _workingDir = workingDir;
@@ -272,6 +301,7 @@ public sealed class AgentHost : IDisposable
         _plugins = pluginRegistry;
         _logs = logs;
         _store = store;
+        _history = history;
         _globalInstructionsDir = globalInstructionsDir;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
@@ -440,14 +470,48 @@ public sealed class AgentHost : IDisposable
             // matches. The store swallows its own failures — see its class doc.
             _store?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
                 _workingDir);
+
+            // AND HISTORY, which is a different feature from resume and so a different database. The
+            // resume store is a buffer worth nothing once a session ends cleanly; this survives, and
+            // is the only place a question needing MANY sessions can be answered. Upserted every
+            // turn for the same reason resume is: a crash is exactly when a final write never comes.
+            _turns++;
+            _history?.SaveSession(new SessionRecord(
+                agent.Id, _workingDir, _provider.ModelId, AgentModes.Name(Mode),
+                Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
+                _startedAt, DateTimeOffset.UtcNow));
         };
 
         // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the
         // cumulative total to divide by the window — a sum that passes 100% while the context is half
         // empty, and that cannot fall when compression frees space.
         agent.ContextUsed += RecordInputTokens;
-        agent.ContextCompressed += (b, a) => ContextCompressed?.Invoke(this, (b, a));
+        agent.ContextCompressed += (b, a) =>
+        {
+            ContextCompressed?.Invoke(this, (b, a));
+            // PRESSURE, not manual: this fires from the loop's own per-turn check. `/compress` writes
+            // its own row with trigger "manual", and separating them is the point — a threshold that
+            // fires too eagerly and one that never fires are indistinguishable from a bare count.
+            _history?.SaveCompaction(new CompactionRecord(agent.Id, DateTimeOffset.UtcNow, b, a, "pressure"));
+        };
         agent.ContextEstimated += used => ContextEstimatedUpdated?.Invoke(this, used);
+
+        // HISTORY SUBSCRIBES HERE, and nowhere in the loop. The kernel raises reports and does not
+        // know a database exists; this is the one place that turns them into rows. Both writers
+        // swallow their own failures, so a locked file costs statistics and nothing else.
+        agent.ToolCallFinished += r => _history?.SaveToolCall(new ToolCallRecord(
+            r.CallId, r.AgentId, r.ToolName, r.PluginType, r.Outcome, r.DurationMs,
+            r.ResultChars, r.StartedAt, _workingDir));
+
+        agent.ChildFinished += r => _history?.SaveRun(new RunRecord(
+            r.RunId, r.ParentAgentId, r.TypeName, r.ModelId, r.InputTokens, r.OutputTokens,
+            r.Turns, r.ToolCalls, r.Outcome, r.StartedAt, r.DurationMs, _workingDir));
+
+        // A CHILD'S SPEND, mid-turn. TokensUpdated otherwise fires only on THIS agent's turn
+        // boundaries, and it completes none while blocked inside the spawn tool — so a worker
+        // running on a second model left the per-model breakdown showing pre-spawn figures for the
+        // whole run. The ledger is shared and was always right; only the repaint was missing.
+        agent.ChildSpend += () => TokensUpdated?.Invoke(this, Ledger.TotalTokens);
 
         return agent;
     }
@@ -476,7 +540,12 @@ public sealed class AgentHost : IDisposable
             {
                 Ledger.Record(usage, _provider.ModelId);
                 TokensUpdated?.Invoke(this, Ledger.TotalTokens);
-            }, ct, compressed: (b, a) => ContextCompressed?.Invoke(this, (b, a)));
+            }, ct, compressed: (b, a) =>
+            {
+                ContextCompressed?.Invoke(this, (b, a));
+                _history?.SaveCompaction(new CompactionRecord(
+                    _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _workingDir));
+            });
 
 
 
