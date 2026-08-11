@@ -86,7 +86,15 @@ public sealed class InlineJobSink : IJobPanel
                 // an "expand…" affordance over an empty body — an invitation to reveal nothing.
                 // UpdateJob already does this; SetJobs did not, so every row showed it until its
                 // first transition.
-                _chat.SetExpanded(id, true);
+                //
+                // EXCEPT A WORKER. That reasoning holds only while the body IS empty, and a spawn
+                // fills its body as it runs (the child's recent calls) and again when it finishes
+                // (the child's report). Auto-expanding here opens a block that then GROWS under the
+                // reader for minutes, pushing the conversation away — and the user never asked for
+                // it. The affordance is the point: `expand…` says there is something, and they
+                // choose.
+                if (job.PluginType != "llm_agent")
+                    _chat.SetExpanded(id, true);
             }
             else
             {
@@ -194,7 +202,15 @@ public sealed class InlineJobSink : IJobPanel
             // does. A compact row has nothing behind that affordance (its whole content is the one
             // line), so leaving it collapsed offers to expand into a copy of the header, which is
             // exactly the noise being removed. Seen live: "▸ Tool │   expand… │ running…".
-            if (compactRow)
+            // A WORKER IS NEVER AUTO-EXPANDED, running or finished. The rule above is right for a
+            // TOOL — its compact row's whole content is the one line, so leaving it collapsed offers
+            // to expand into a copy of the header. A sub-agent is the case that rule was not written
+            // for: while running it has a live progress body (the child's recent calls), and when it
+            // finishes it has the child's whole report. Opening either without being asked puts a
+            // block on screen that grows under the reader and pushes the conversation away.
+            //
+            // The affordance is the point: `expand…` says there IS something, and the user decides.
+            if (compactRow && job.PluginType != "llm_agent")
                 _chat.SetExpanded(id, true);
 
             // THE BODY. Until now this method only touched the status row, so a job's message stayed
