@@ -182,6 +182,24 @@ public static class SystemPrompt
             sb.AppendLine("user: What does Parser.cs:88 do?");
             sb.AppendLine("assistant: [reads the file directly — the location is already known]");
             sb.AppendLine("</example>");
+            // THE MIXED TASK, and the reason for a fourth. The three above are pure lookups: they
+            // move a "where is X?" question and leave a task with two halves untouched, because
+            // there is nothing for a model to pattern-match a mixed task against.
+            //
+            // MEASURED: asked to find every hand-rolled markup escape in a repo AND replace the safe
+            // ones, this model did all of it inline — 50 messages, 168,249 chars, no spawn — when the
+            // finding half was a textbook delegation and only the deciding half needed the
+            // conversation. The work was correct; it simply cost nine times what it needed to.
+            //
+            // FOUR IS THE CEILING. opencode ships two Task-tool examples; ours carries a
+            // counter-example and this split, which is one distinction more than theirs has to
+            // teach. Past that, examples stop being a pattern and become a list nobody reads.
+            sb.AppendLine("<example>");
+            sb.AppendLine("user: Find every place that hand-rolls this, and fix the ones that are "
+                        + "safe to change.");
+            sb.AppendLine("assistant: [sends a sub-agent to find them all, then decides and edits "
+                        + "here — the finding is a search, the deciding needs this conversation]");
+            sb.AppendLine("</example>");
             sb.AppendLine();
             sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
                         + "report is thin or does not answer what you asked, say so or check it "

@@ -484,6 +484,17 @@ public class SystemPromptTests
         // that over-corrects into delegating a one-file read pays a full run to learn what a single
         // read_file would have said. The pair is what draws the line.
         Assert.Contains("reads the file directly", fanOut, StringComparison.Ordinal);
+
+        // AND THE MIXED TASK. The other three are pure lookups, which move a "where is X?" question
+        // and leave a two-halved task untouched — measured: find-every-X-and-fix-the-safe-ones ran
+        // entirely inline at 168,249 chars, when the finding half was a textbook delegation.
+        Assert.Contains("the finding is a search, the deciding needs this conversation",
+            fanOut, StringComparison.Ordinal);
+
+        // FOUR IS THE CEILING, asserted so it stays one. opencode ships two Task-tool examples; ours
+        // carries a counter-example and a split, one distinction more than theirs. Past four they
+        // stop being a pattern and become a list nobody reads.
+        Assert.Equal(4, CountOf(fanOut, "<example>"));
     }
 
     /// <summary>
