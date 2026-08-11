@@ -241,7 +241,16 @@ public sealed class InlineJobSink : IJobPanel
                 // expansion revealed the same title again. Seen in a live screenshot: two of six jobs
                 // were pure noise, offering to expand into nothing. Clearing it collapses the row to
                 // its header, which is all such a job has to say.
-                _chat.UpdateMessage(id, BodyFor(job) ?? string.Empty);
+                // THE ENVELOPE'S TAGS ARE STRIPPED FOR DISPLAY. <sub_agent id=… state=…> is addressed
+                // to the PARENT'S MODEL — it exists so a capped run cannot be mistaken for a finished
+                // one — and it is the first line of the body, so it becomes the collapsed row's
+                // preview. Seen live: a completed spawn previewed as its own id and state, telling a
+                // reader nothing the header had not already said in plainer words.
+                //
+                // What a person wants behind that expand is the CHILD'S REPORT. The state is not lost:
+                // it is in the header (done / failed) and, for a capped or stuck run, in the note the
+                // envelope carries above the text — which survives because only the tags are removed.
+                _chat.UpdateMessage(id, StripEnvelope(BodyFor(job)) ?? string.Empty);
 
                 // A SUCCEEDED job collapses (the user's call): a five-job fan-out each returning
                 // paragraphs would push the conversation off screen, and its outcome is readable
@@ -267,8 +276,20 @@ public sealed class InlineJobSink : IJobPanel
                 // missed is a one-line fact, and expanding it printed the same error twice, header
                 // and body, on every miss. The header already says `failed`, and `expand…` is there
                 // for anyone who wants the detail.
-                var keepOpen = job.PluginType == "llm_agent";
-                _chat.SetExpanded(id, keepOpen);
+                // EVERYTHING COLLAPSES NOW, INCLUDING A SPAWN.
+                //
+                // The rule was "a worker stays expanded", written when llm_agent meant a STREAMING
+                // worker: its prose had been visible and growing for the whole run, so collapsing at
+                // the finish line snatched away what the user was reading. That argument does not
+                // survive contact with a sub-agent, which is the opposite case — its work is
+                // BUFFERED and was never on screen (D22), so there is nothing to snatch. What lands
+                // at the finish line is a wall of new text the user did not ask to have opened.
+                //
+                // Seen in a screenshot: a completed spawn opened its whole envelope into the
+                // transcript, pushing the parent's own answer — the thing the user was waiting for —
+                // down the screen behind it. The answer is the parent's reply; the child's report is
+                // the working, and working belongs one keypress away.
+                _chat.SetExpanded(id, false);
             }
 
             // NO INLINE BUTTONS. Retry/Skip/Diagnose were removed: they invited the user to drive
@@ -622,6 +643,8 @@ public sealed class InlineJobSink : IJobPanel
             // to know is that it was read and roughly how much came back; a size says that. A WORKER
             // is exempt: its long output is the prose it composed, the answer that was asked for, so
             // it keeps its expandable block. That is the whole tool-vs-worker distinction.
+            // A WORKER'S LONG OUTPUT KEEPS ITS EXPANDABLE BLOCK rather than being summarised by
+            // size: it is prose the model composed, not an echo of something already on disk.
             if (job.PluginType == "llm_agent") return null;
 
             // A FAILURE IS NEVER SUMMARISED BY SIZE. The count answers "how much came back", which is
@@ -650,11 +673,50 @@ public sealed class InlineJobSink : IJobPanel
             return $"⎿  {lineCount:N0} lines, {raw.Length:N0} chars";
         }
 
+        // A SPAWN HAS NO RESULT LINE. Its body is the envelope — <sub_agent id=… state=…> and the
+        // child's report — and none of that belongs on a one-line summary beneath the header.
+        //
+        // Seen in a screenshot: a finished spawn rendered its envelope's opening tag as the result
+        // line, so the row read the id and `state="completed"` back at a user whose header already
+        // said `done · 144.6s`. Two lines, one fact, and the noisier of the two was the machine's.
+        //
+        // KEYED ON THE ENVELOPE, NOT ON PluginType. llm_agent is the row TYPE and covers every
+        // worker; suppressing all of them broke short tool results, which legitimately fold their
+        // whole output into this line ("20", "MIT License"). What has nothing to say here is
+        // specifically a machine-readable envelope addressed to the parent's model.
+        if (trimmed.StartsWith("<sub_agent", StringComparison.Ordinal)) return null;
+
         // NO markup here. The Tool role sets Markdown = true, so its content routes through
         // MarkdownToMarkup, which ESCAPES '[' — a "[dim]" tag renders as the literal text "[dim]"
         // (verified live: the row read "Count .cs files  [dim]⎿  20"). The same trap MainWindow.cs:86
         // documents for System lines, hit from the other direction.
         return $"⎿  {trimmed}";
+    }
+
+    /// <summary>
+    /// Removes the <c>&lt;sub_agent&gt;</c> wrapper, leaving what the child actually said.
+    ///
+    /// <para>The tags carry the id and the state for the parent's MODEL to read. A person reading the
+    /// transcript has the header for state and does not need the id — and the tag being the body's
+    /// first line meant it became the collapsed preview, which is the one line a reader sees without
+    /// asking for more.</para>
+    ///
+    /// <para>Only the wrapper goes. A capped or stuck run carries a NOTE between the tag and the text
+    /// ("This agent hit its turn limit… NOT a completed answer") and that is exactly the sort of thing
+    /// a person needs, so it stays.</para>
+    /// </summary>
+    private static string? StripEnvelope(string? body)
+    {
+        if (body is null || !body.StartsWith("<sub_agent", StringComparison.Ordinal)) return body;
+
+        var open = body.IndexOf('>');
+        if (open < 0) return body;
+
+        var inner = body[(open + 1)..];
+        var close = inner.LastIndexOf("</sub_agent>", StringComparison.Ordinal);
+        if (close >= 0) inner = inner[..close];
+
+        return inner.Trim() is { Length: > 0 } text ? text : null;
     }
 
     private static string Title(Job job) =>

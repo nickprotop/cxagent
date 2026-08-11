@@ -257,7 +257,7 @@ public sealed class AgentHost : IDisposable
         string? briefing = null,
         TokenLedger? ledger = null,
         ISubAgentSpawner? spawner = null,
-        AgentMode mode = AgentMode.Single,
+        AgentMode mode = AgentMode.FanOut,
         string? workingDir = null)
     {
         _mode = mode;

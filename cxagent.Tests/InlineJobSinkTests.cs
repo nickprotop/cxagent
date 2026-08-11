@@ -430,4 +430,37 @@ public class InlineJobSinkTests
 
         Assert.Contains("[[not-a-tag]", header, StringComparison.Ordinal);
     }
+
+    // ---- a finished spawn ------------------------------------------------------------------------
+
+    /// <summary>
+    /// A SPAWN'S ENVELOPE IS NOT A RESULT LINE.
+    ///
+    /// <para>Seen in a screenshot: a finished spawn rendered its envelope's opening tag beneath the
+    /// row, so the user read an id and <c>state="completed"</c> back at a header that already said
+    /// <c>done · 144.6s</c>. Two lines, one fact, and the noisier of the two was the machine's.</para>
+    ///
+    /// <para>Keyed on the ENVELOPE rather than on PluginType: llm_agent is the row type and covers
+    /// every worker, and suppressing all of them broke short tool results, which legitimately fold
+    /// their whole output into this line.</para>
+    /// </summary>
+    [Fact]
+    public void AFinishedSpawn_HasNoResultLine()
+    {
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"01KZ\" state=\"completed\">\nThe repo has three layers.\n</sub_agent>",
+        });
+
+        Assert.Null(InlineJobSink.OneLineRowForTest(job));
+    }
+
+    /// <summary>A short TOOL result still folds into one line — the guard above must not reach it.</summary>
+    [Fact]
+    public void AShortToolResult_StillFoldsIntoOneLine()
+    {
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?> { ["content"] = "20" });
+
+        Assert.Contains("20", InlineJobSink.OneLineRowForTest(job) ?? "", StringComparison.Ordinal);
+    }
 }

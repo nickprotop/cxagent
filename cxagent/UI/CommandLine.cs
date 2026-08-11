@@ -25,7 +25,14 @@ public static class CommandLine
     public static CommandLineOptions Parse(string[] args)
     {
         var useMock = false;
-        var mode = AgentMode.Single;
+        // FAN-OUT BY DEFAULT. Sub-agents are built, driven and proven, and a capability nobody
+        // discovers is a capability nobody has — this model does not reach for `--mode fan-out` any
+        // more than it reaches for the spawn tool unprompted.
+        //
+        // The cost of being wrong is small in this direction: a fan-out session that never spawns is
+        // a single-agent session that paid for a slightly longer system prompt. A single-mode session
+        // that WANTED to delegate cannot, and gives no hint that it could.
+        var mode = AgentMode.FanOut;
 
         for (var i = 0; i < args.Length; i++)
         {

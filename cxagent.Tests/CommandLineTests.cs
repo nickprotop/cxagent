@@ -11,14 +11,22 @@ namespace CxAgent.Tests;
 /// </summary>
 public class CommandLineTests
 {
-    /// <summary>No arguments is a plain single-agent session — delegation is a choice a user makes,
-    /// not one they discover.</summary>
+    /// <summary>
+    /// NO ARGUMENTS IS FAN-OUT. The default was Single on the reasoning that delegation should be a
+    /// choice a user makes rather than one they discover — but a capability nobody discovers is a
+    /// capability nobody has, and this model reaches for `--mode fan-out` no more readily than it
+    /// reaches for the spawn tool unprompted.
+    ///
+    /// <para>The asymmetry decides it: a fan-out session that never spawns has paid for a slightly
+    /// longer system prompt, while a single-mode session that WANTED to delegate cannot, and gives no
+    /// hint that it could. `/mode single` is one keystroke away for anyone who wants it.</para>
+    /// </summary>
     [Fact]
-    public void NoArguments_IsSingleMode_WithNoMock()
+    public void NoArguments_IsFanOut_WithNoMock()
     {
         var options = CommandLine.Parse([]);
 
-        Assert.Equal(AgentMode.Single, options.Mode);
+        Assert.Equal(AgentMode.FanOut, options.Mode);
         Assert.False(options.UseMock);
         Assert.Null(options.Error);
     }
@@ -67,6 +75,13 @@ public class CommandLineTests
         Assert.Contains("fan-out", options.Error!, StringComparison.Ordinal);
     }
 
+    /// <summary>`--mode single` still opts out — the default changed, the flag did not.</summary>
+    [Fact]
+    public void ModeSingle_StillOptsOut()
+    {
+        Assert.Equal(AgentMode.Single, CommandLine.Parse(["--mode", "single"]).Mode);
+    }
+
     [Fact]
     public void ModeWithNoValue_IsAnError()
     {
@@ -92,7 +107,7 @@ public class CommandLineTests
         var options = CommandLine.Parse(["--mock"]);
 
         Assert.True(options.UseMock);
-        Assert.Equal(AgentMode.Single, options.Mode);
+        Assert.Equal(AgentMode.FanOut, options.Mode);   // the default, unaffected by --mock
         Assert.Null(options.Error);
     }
 }
