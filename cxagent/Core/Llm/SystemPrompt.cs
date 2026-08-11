@@ -160,6 +160,24 @@ public static class SystemPrompt
                         + "conclusion; the files it opened to find it are not worth the room they "
                         + "take. Read directly only when you already know the file.");
             sb.AppendLine();
+            // TYPE-MATCHING AS A REASON TO DELEGATE — opencode's one line on the subject
+            // (anthropic.txt:80), and note what it does NOT do: it names no type. The catalog lives
+            // in the tool description, read at the moment of choosing (D25); this is the judgement
+            // rule, which is a different thing and belongs where judgement is formed.
+            //
+            // SHIPPED BEFORE THE TYPES THEMSELVES, deliberately. Today's prompting work produced one
+            // usable answer out of three attempts, and the difference was always whether a change
+            // could be attributed: the worked examples moved a pure search from 0 spawns to 1
+            // because nothing else changed in that run. Landing this line together with a generated
+            // catalog would change two things at once and explain neither.
+            //
+            // HARMLESS UNTIL TYPES EXIST. With only the implicit `general` there is nothing to
+            // match, so this reads as a restatement of the rule above rather than as a false
+            // promise — no session is told about a capability it does not have.
+            sb.AppendLine("If one of the agent types you are offered fits the task at hand, use it "
+                        + "rather than doing the work yourself — a type exists because someone "
+                        + "decided that work is better done by an agent briefed for it.");
+            sb.AppendLine();
             // WORKED EXAMPLES, opencode's shape (<example> blocks with a bracketed action). Two
             // interventions had already failed to move this — a sharpened tool description and the
             // rule above — and an example is the one lever opencode has that we did not: it shows

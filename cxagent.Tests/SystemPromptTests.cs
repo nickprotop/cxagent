@@ -491,6 +491,11 @@ public class SystemPromptTests
         Assert.Contains("the finding is a search, the deciding needs this conversation",
             fanOut, StringComparison.Ordinal);
 
+        // TYPE-MATCHING AS A REASON TO DELEGATE — opencode's one line on types (anthropic.txt:80).
+        // It names no type: the catalog belongs in the tool description, read at the moment of
+        // choosing (D25), and this is the judgement rule that sits beside the others.
+        Assert.Contains("If one of the agent types you are offered fits", fanOut, StringComparison.Ordinal);
+
         // FOUR IS THE CEILING, asserted so it stays one. opencode ships two Task-tool examples; ours
         // carries a counter-example and a split, one distinction more than theirs. Past four they
         // stop being a pattern and become a list nobody reads.
