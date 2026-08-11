@@ -1,0 +1,100 @@
+{
+  "//": [
+    "cxagent configuration. Copy to ~/.config/cxagent/config.json and edit.",
+    "",
+    "Every block is OPTIONAL except `providers` — without one there is no model to talk to,",
+    "and cxagent starts into its setup wizard instead. Keys not listed here are not read;",
+    "an unknown key is ignored rather than rejected, so a typo is silent. Check a value took",
+    "effect rather than assuming it did.",
+    "",
+    "JSON has no comments. These `//` arrays are data the parser ignores, which is the",
+    "conventional way to annotate a JSON sample and the reason they read oddly."
+  ],
+
+  "//providers": [
+    "THE MODEL CATALOG. Each entry is an INSTANCE: a name you choose, bound to one endpoint",
+    "and one model. Names are referenced elsewhere in this file — `defaultProvider` and, from",
+    "step 2, an agent type's `provider`.",
+    "",
+    "kind: openai-compatible | anthropic | ollama",
+    "contextWindow: the model's REAL context size in tokens. It is the denominator for the",
+    "  occupancy readout and the trigger for compaction.",
+    "",
+    "  OPTIONAL, AND CONFIGURED WINS OVER PROBED. Absent, cxagent asks the endpoint at startup",
+    "  (bounded at three seconds; any failure just leaves it unknown, and an unknown window",
+    "  means compaction falls back to a fixed threshold). Setting it explicitly is you saying",
+    "  something the server cannot know — a shared endpoint, a deliberately smaller budget —",
+    "  and a number read off the server must not override that.",
+    "",
+    "  Do not set it LARGER than the endpoint really allows. Nothing compacts until the",
+    "  provider rejects the request, and that failure arrives mid-work with no warning."
+  ],
+  "providers": {
+    "local": {
+      "kind": "openai-compatible",
+      "model": "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
+      "baseUrl": "http://localhost:8771/v1",
+      "apiKey": "sk-local",
+      "contextWindow": 212992
+    }
+  },
+
+  "//defaultProvider": "Which instance an agent uses when nothing else says. A name from `providers`.",
+  "defaultProvider": "local",
+
+  "//agents": [
+    "SUB-AGENT TYPES (step 2). A name, a briefing, and optionally a provider.",
+    "",
+    "briefing: HOW this agent works. It becomes the highest-authority text in the child's",
+    "  system prompt — above the general prompt and above anything the parent tells it — so it",
+    "  is the one instruction channel a human writes and a model cannot override.",
+    "",
+    "provider: an instance name from `providers` above. Omit to use the parent's. A name that",
+    "  is not in `providers` is a startup error, not a surprise at spawn time.",
+    "",
+    "A BRIEFING IS A REQUEST, NOT A PERMISSION. 'Never edit files' asks the agent not to; it",
+    "does not remove the tool. Enforcement is a separate mechanism and does not exist yet, so",
+    "do not rely on a briefing to contain an agent.",
+    "",
+    "`general` always exists whether or not it appears here — same model as the parent, no",
+    "briefing. Define it to give every untyped sub-agent a standing instruction."
+  ],
+  "agents": {
+    "explore": {
+      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything."
+    },
+    "review": {
+      "briefing": "You review code for correctness. Look for logic that is wrong rather than style that is unusual, and say plainly when something is fine. An objection with no failing case behind it is noise."
+    },
+    "test": {
+      "briefing": "You run and diagnose tests. Read the actual output before drawing a conclusion — a command that exits 0 has not necessarily verified anything, and a filter that matched nothing exits 0. Report the counts you saw."
+    }
+  },
+
+  "//mcp": [
+    "MCP servers, by name. `command` is argv — no shell, so no pipes or globs.",
+    "Optional: `enabled` (default true), `cwd`, `env`, `timeoutMs`.",
+    "An HTTP server uses `url` instead of `command`."
+  ],
+  "mcp": {
+    "context7": {
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true
+    }
+  },
+
+  "//orchestrator": [
+    "Caps and thresholds. Every one is optional.",
+    "",
+    "goalTokenBudget: tokens for the whole session before it warns. null/absent = unbounded.",
+    "maxTokensPerCall: per-request cap. null/absent = the provider's own.",
+    "maxWorkerTurns: turns per request before the agent stops and summarises what it got.",
+    "  0 means NO CAP. Absent means the built-in ceiling, which is not the same as no cap.",
+    "contextCompressThreshold: compact above this many tokens. Absent means derive it from",
+    "  the provider's contextWindow, which is the better answer when a window is configured."
+  ],
+  "orchestrator": {
+    "goalTokenBudget": null,
+    "maxWorkerTurns": 500
+  }
+}
