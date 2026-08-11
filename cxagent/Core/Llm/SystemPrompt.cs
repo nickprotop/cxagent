@@ -160,6 +160,29 @@ public static class SystemPrompt
                         + "conclusion; the files it opened to find it are not worth the room they "
                         + "take. Read directly only when you already know the file.");
             sb.AppendLine();
+            // WORKED EXAMPLES, opencode's shape (<example> blocks with a bracketed action). Two
+            // interventions had already failed to move this — a sharpened tool description and the
+            // rule above — and an example is the one lever opencode has that we did not: it shows
+            // the SHAPE of the decision at the moment of choosing, where a rule only asserts one.
+            //
+            // THE THIRD IS A COUNTER-EXAMPLE, deliberately. Two positives alone teach "spawn when
+            // asked about code", and a model that over-corrects into delegating a one-file read is
+            // no better than one that never delegates — it pays a full run to learn what a single
+            // read_file would have told it. The pair is what draws the line.
+            sb.AppendLine("<example>");
+            sb.AppendLine("user: Where is retry logic handled?");
+            sb.AppendLine("assistant: [sends a sub-agent to find it, rather than grepping and "
+                        + "reading the matches here]");
+            sb.AppendLine("</example>");
+            sb.AppendLine("<example>");
+            sb.AppendLine("user: How does this project structure its tests?");
+            sb.AppendLine("assistant: [sends a sub-agent]");
+            sb.AppendLine("</example>");
+            sb.AppendLine("<example>");
+            sb.AppendLine("user: What does Parser.cs:88 do?");
+            sb.AppendLine("assistant: [reads the file directly — the location is already known]");
+            sb.AppendLine("</example>");
+            sb.AppendLine();
             sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
                         + "report is thin or does not answer what you asked, say so or check it "
                         + "yourself — do not pass it on as fact.");

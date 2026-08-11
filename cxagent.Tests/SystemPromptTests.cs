@@ -474,6 +474,16 @@ public class SystemPromptTests
 
         Assert.Contains("send a sub-agent rather", fanOut, StringComparison.Ordinal);
         Assert.Contains("only when you already know the file", fanOut, StringComparison.Ordinal);
+
+        // WORKED EXAMPLES, in opencode's shape. Two interventions had already failed to move this
+        // model — a sharpened tool description and the rule above — and an example is the lever they
+        // have that we did not: it shows the SHAPE of the decision rather than asserting it.
+        Assert.Contains("<example>", fanOut, StringComparison.Ordinal);
+
+        // AND A COUNTER-EXAMPLE. Positives alone teach "spawn when asked about code", and a model
+        // that over-corrects into delegating a one-file read pays a full run to learn what a single
+        // read_file would have said. The pair is what draws the line.
+        Assert.Contains("reads the file directly", fanOut, StringComparison.Ordinal);
     }
 
     /// <summary>
