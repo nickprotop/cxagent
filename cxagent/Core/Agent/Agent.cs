@@ -875,11 +875,22 @@ public sealed class Agent
         // expand-the-row swap keys on.
         string? childId = null;
 
+        // A PERIODIC TICK, owned by this call and disposed in its finally.
+        //
+        // Turn boundaries alone are not enough: a child spends most of a long run INSIDE one turn,
+        // waiting on a provider or a slow tool, and a row whose elapsed time only moves between
+        // turns reads exactly like a frozen one. MainWindow._panelClock cannot be borrowed for this
+        // — it refreshes nothing when the panel is hidden.
+        Timer? tick = null;
+
         void OnChildSpawned(SubAgent child)
         {
             childId = child.Agent.Id;
             job.ProgressMessage = "starting…";
-            _jobs.UpdateJob(job);
+            // UpdateProgress, NEVER UpdateJob, for anything that fires repeatedly: UpdateJob
+            // force-expands the row and blanks its body on every call, so a per-second tick would
+            // re-open a row the user collapsed and erase whatever was in it.
+            _jobs.UpdateProgress(job);
 
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session
@@ -891,18 +902,29 @@ public sealed class Agent
                 Report(child, turns);
             };
             child.Agent.ContextUsed += _ => Report(child, turns);
+
+            tick = new Timer(_ => Report(child, turns), null,
+                TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
 
         void Report(SubAgent child, int turns)
         {
+            // ELAPSED, so a long-running child is visibly ALIVE rather than merely un-finished. A
+            // five-minute child otherwise shows one line of numbers that never moves between turns,
+            // which reads exactly like a frozen row.
+            var elapsed = DateTimeOffset.UtcNow - started;
+            var age = elapsed.TotalMinutes >= 1
+                ? $" · {(int)elapsed.TotalMinutes}m{elapsed.Seconds:00}s"
+                : $" · {elapsed.TotalSeconds:0}s";
+
             // UsedFraction is null until the provider first reports usage, so an early tick shows
             // turns alone rather than "0% ctx", which would read as a measurement rather than as the
             // absence of one.
             var occupancy = child.Agent.Context.UsedFraction is { } f
                 ? $" · {f:P0} ctx"
                 : "";
-            job.ProgressMessage = $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}";
-            _jobs.UpdateJob(job);
+            job.ProgressMessage = $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
+            _jobs.UpdateProgress(job);
         }
 
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs);
@@ -978,6 +1000,14 @@ public sealed class Agent
             // request, so there is nobody to hand a tool result to. Returning a string here would
             // feed "cancelled" back as though the tool had answered.
             throw;
+        }
+        finally
+        {
+            // THE TICK STOPS HOWEVER THIS ENDS — answer, error, or cancellation. A Timer left running
+            // holds a closure over the child and keeps writing to a row that has already closed, once
+            // a second, for the rest of the session. Null on every path that never spawned, which is
+            // almost all of them.
+            tick?.Dispose();
         }
 
         var failed = LooksLikeFailure(result);

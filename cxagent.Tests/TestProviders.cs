@@ -229,7 +229,20 @@ public sealed class NullJobPanel : IJobPanel
     public IReadOnlyCollection<Job> Jobs => _jobs.Values;
 
     public void SetJobs(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
-    public void UpdateJob(Job job) { _jobs[job.Id] = job; }
+
+    /// <summary>Counted separately from progress ticks: UpdateJob is for REAL transitions, and a
+    /// repeating tick routed through it would re-expand and blank the row on every call.</summary>
+    public void UpdateJob(Job job) { _jobs[job.Id] = job; StateTransitions++; }
+
+    /// <summary>How many times UpdateJob was called — one per genuine state change.</summary>
+    public int StateTransitions { get; private set; }
+    /// <summary>Progress ticks land in the same map, so a test can assert what a running row was
+    /// showing — which is the only place that text ever appears.</summary>
+    public void UpdateProgress(Job job) { _jobs[job.Id] = job; ProgressTicks++; }
+
+    /// <summary>How many progress ticks arrived — a frozen row is zero.</summary>
+    public int ProgressTicks { get; private set; }
+
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
     public void AppendText(string jobId, string delta) { }
 }

@@ -217,4 +217,87 @@ public class SubAgentSpawnerTests
         Assert.Contains("cannot spawn sub-agents of its own", definition.Description, StringComparison.Ordinal);
         Assert.Contains("NOT shown to the user", definition.Description, StringComparison.Ordinal);
     }
+
+    // ---- 1e: telemetry ---------------------------------------------------------------------
+
+    /// <summary>
+    /// A RUNNING CHILD'S ROW REPORTS PROGRESS. Without this the row shows a spinner and nothing else
+    /// for however long the child runs — indistinguishable from frozen, which is the state a
+    /// minutes-long child spends most of its life in.
+    /// </summary>
+    [Fact]
+    public async Task ARunningChild_ReportsProgressOntoItsRow()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        // The child's own provider, answering after one tool call so it takes two turns.
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "t1", Name = "read_file",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"nope.txt"}""").RootElement }],
+        });
+        childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(childProvider)));
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        // The row carries progress text rather than staying blank...
+        var row = Assert.Single(jobs.Jobs);
+        Assert.False(string.IsNullOrWhiteSpace(row.ProgressMessage),
+            "the row never reported progress — it would render as a frozen spinner");
+        Assert.Contains("turn", row.ProgressMessage!, StringComparison.Ordinal);
+
+        // ...and EVERY tick arrived through UpdateProgress, NOT UpdateJob. That distinction is the
+        // whole point: UpdateJob force-expands the row and blanks its body on every call, so a
+        // per-second tick through it would re-open a row the user collapsed and erase its contents.
+        //
+        // COUNTED, NOT MERELY NON-ZERO. A first draft asserted ProgressTicks > 0 and passed even with
+        // the reporter routed back through UpdateJob, because the "starting…" tick alone satisfied
+        // it. The real invariant is that UpdateJob fires only for genuine state transitions — one
+        // here, when the tool call completes — and everything else goes through UpdateProgress.
+        Assert.True(jobs.ProgressTicks >= 2,
+            $"expected the starting tick plus at least one turn report, saw {jobs.ProgressTicks}");
+        Assert.Equal(1, jobs.StateTransitions);
+    }
+
+    /// <summary>
+    /// THE ROW IS A WORKER, NOT A FILE OPERATION. ToolPluginType maps unknown names to "file", and
+    /// InlineJobSink.IsCompactRow treats anything that is not "llm_agent" as compact — so without this
+    /// the row COLLAPSES the moment the child finishes, hiding the answer behind an "expand…".
+    /// </summary>
+    [Fact]
+    public async Task ASpawnRow_IsTypedAsAWorker_SoItStaysExpanded()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))));
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        Assert.Equal("llm_agent", Assert.Single(jobs.Jobs).PluginType);
+    }
 }

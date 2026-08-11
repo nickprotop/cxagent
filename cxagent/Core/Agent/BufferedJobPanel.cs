@@ -35,6 +35,10 @@ public sealed class BufferedJobPanel : IJobPanel
         lock (_gate) _jobs[job.Id] = job;
     }
 
+    // A progress tick for a row nobody is watching. The job it describes is already stored above,
+    // and its final state is what a later inspection wants.
+    public void UpdateProgress(Job job) { }
+
     // Live samples for a row nobody is watching. The finished job carries its own duration, which is
     // what a later inspection actually wants.
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }

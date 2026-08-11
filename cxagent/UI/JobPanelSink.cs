@@ -25,6 +25,11 @@ public sealed class JobPanelSink : IJobPanel
     public void UpdateJob(Job job) =>
         _system.EnqueueOnUIThread(() => _panel.UpdateJob(job));
 
+    // The side panel redraws a whole row from the job it holds, so a progress tick is just an
+    // update — there is no separate header to touch as there is in the inline transcript.
+    public void UpdateProgress(Job job) =>
+        _system.EnqueueOnUIThread(() => _panel.UpdateJob(job));
+
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) =>
         _system.EnqueueOnUIThread(() => _panel.UpdateResources(jobId, snapshot));
 

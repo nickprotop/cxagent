@@ -398,6 +398,21 @@ public sealed class InlineJobSink : IJobPanel
     /// The side panel could afford that because it had dedicated space — inline, the job's outcome is
     /// what matters. Resource data is still collected and still reaches the log file.
     /// </summary>
+    /// <summary>
+    /// THE HEADER, AND NOTHING ELSE — the whole point of not routing a tick through UpdateJob, which
+    /// calls SetExpanded(id, true) and UpdateMessage(id, "") on every invocation.
+    ///
+    /// <para>Silently ignores a job with no row yet: a progress tick is not the add path, and adopting
+    /// an unknown job here would race SetJobs into drawing the row twice.</para>
+    /// </summary>
+    public void UpdateProgress(Job job) =>
+        _system.EnqueueOnUIThread(() =>
+        {
+            _known[job.Id] = job;
+            if (_lines.TryGetValue(job.Id, out var id))
+                _chat.SetHeader(id, CompactHeader(job));
+        });
+
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
 
     /// <summary>
@@ -522,6 +537,19 @@ public sealed class InlineJobSink : IJobPanel
         var name = SharpConsoleUI.Parsing.MarkupParser.Escape(Title(job));
 
         if (!IsTerminal(job.State))
+        {
+            // LIVE PROGRESS BELONGS HERE, NOT IN StatusText. A running row always takes the compact
+            // branch, which calls ClearStatus immediately after setting this header — so StatusText's
+            // "running…" is never on screen at all. Someone changing StatusText would test it through
+            // its own seam, see nothing, and lose an afternoon.
+            //
+            // ESCAPED like `name` above, and for the same reason: this text is wrapped in a scope the
+            // markup parser reads, and an unescaped '[' renders the whole row as an EMPTY LINE
+            // rather than erroring.
+            var progress = string.IsNullOrWhiteSpace(job.ProgressMessage)
+                ? ""
+                : "  ·  " + SharpConsoleUI.Parsing.MarkupParser.Escape(job.ProgressMessage);
+
             // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick. Single-cell like Arc, so the text after it does
             // not shift as it animates (Dots is three columns wide and does exactly that).
             //
@@ -534,7 +562,8 @@ public sealed class InlineJobSink : IJobPanel
             // Stated here anyway because the clock ticks at the SHORTEST interval any parsed tag
             // reports, so this is the app declaring the repaint cadence it wants rather than
             // inheriting whatever else is on screen.
-            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}";
+            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{progress}";
+        }
 
         var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
         var state = job.State switch

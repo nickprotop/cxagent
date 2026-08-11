@@ -12,6 +12,16 @@ public interface IJobPanel
     void SetJobs(IReadOnlyList<Job> jobs);
     void UpdateJob(Job job);
 
+    /// <summary>
+    /// New progress text for a RUNNING job's row — turns, occupancy, elapsed.
+    ///
+    /// <para>SEPARATE FROM <see cref="UpdateJob"/>, and it must be. That method force-expands the row
+    /// and BLANKS ITS BODY on every call, which is right for a real state transition and ruinous once
+    /// a second: a row that re-opens under a user who collapsed it, and that erases anything a later
+    /// step might stream into it. This path touches the header and nothing else.</para>
+    /// </summary>
+    void UpdateProgress(Job job);
+
     /// <summary>A CPU/memory sample for a running job. Best-effort — not every job reports one.</summary>
     void UpdateResources(string jobId, ResourceSnapshot snapshot);
 
