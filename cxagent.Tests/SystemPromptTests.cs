@@ -455,6 +455,38 @@ public class SystemPromptTests
         Assert.Contains("sub-agent", Parent(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// FAN-OUT MODE PUSHES THE MODEL TO DELEGATE WIDE READING.
+    ///
+    /// <para>Measured before this line existed: asked "across this whole repository, which controls
+    /// implement their own keyboard handling — I don't know where they are", the model made TWELVE
+    /// read_file calls and spawned nothing, on the exact shape of task its tool description says to
+    /// delegate. The description alone did not move it.</para>
+    ///
+    /// <para>opencode carries FOUR such nudges in its system prompt for the same reason. This is one,
+    /// phrased as a rule about where the reading LANDS rather than as a preference for a tool: a model
+    /// can check "am I about to read files I will not need afterwards" against what it is doing.</para>
+    /// </summary>
+    [Fact]
+    public void FanOut_TellsTheModelToDelegateWideReading()
+    {
+        var fanOut = Parent();
+
+        Assert.Contains("send a sub-agent rather", fanOut, StringComparison.Ordinal);
+        Assert.Contains("only when you already know the file", fanOut, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND SINGLE MODE PAYS NOTHING FOR IT. The nudge is gated on CanSpawn like every other
+    /// sub-agent line, so a session that cannot delegate is not told to — its prompt stays
+    /// byte-identical to what shipped before sub-agents existed.
+    /// </summary>
+    [Fact]
+    public void SingleMode_IsNotToldToDelegate()
+    {
+        Assert.DoesNotContain("send a sub-agent rather", SingleModeParent(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Parent_IsNotToldWhenToSpawn()
     {

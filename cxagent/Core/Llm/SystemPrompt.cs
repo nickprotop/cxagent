@@ -137,6 +137,29 @@ public static class SystemPrompt
         // that needs them, and would change the prefix mid-session.
         if (ctx.CanSpawn)
         {
+            // ADAPTED FROM OPENCODE'S anthropic.txt, which carries FOUR separate nudges toward
+            // delegating — "prefer to use the Task tool in order to reduce context usage",
+            // "proactively use", "VERY IMPORTANT… it is CRITICAL that you use the Task tool instead
+            // of running search commands directly", plus two worked examples. Four, in a system
+            // prompt, for a capability its tool description already explains.
+            //
+            // WHY SO MUCH INSISTENCE: a model left to its own judgement UNDER-delegates. Measured
+            // here, in fan-out mode, asked "across this whole repository, which controls implement
+            // their own keyboard handling — I don't know where they are": TWELVE read_file calls and
+            // no spawn, on the exact shape of task the tool description says to delegate. Twelve file
+            // dumps permanently in the context, to answer one question. The tool description alone
+            // did not move it, which is the finding this line exists to act on.
+            //
+            // ONE LINE RATHER THAN FOUR, and phrased as a rule about WHERE THE READING LANDS rather
+            // than as a preference for a tool. A model can check "am I about to read files I will not
+            // need afterwards" against what it is doing; "prefer the Task tool" it can only obey or
+            // ignore.
+            sb.AppendLine("When answering means searching or reading widely — you do not know which "
+                        + "files hold the answer, or there are several — send a sub-agent rather "
+                        + "than reading them into this conversation. What you need is its "
+                        + "conclusion; the files it opened to find it are not worth the room they "
+                        + "take. Read directly only when you already know the file.");
+            sb.AppendLine();
             sb.AppendLine("You are accountable for a sub-agent's work as if it were your own. If its "
                         + "report is thin or does not answer what you asked, say so or check it "
                         + "yourself — do not pass it on as fact.");
