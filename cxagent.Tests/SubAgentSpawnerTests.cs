@@ -292,6 +292,18 @@ public class SubAgentSpawnerTests
         var definition = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition;
 
         Assert.Contains("Do NOT use it", definition.Description, StringComparison.Ordinal);
+
+        // AND WHAT GOES IN WHICH CHANNEL. Found on a live drive: asked to spawn WITH context, the
+        // model folded the fact into the PROMPT instead and left `context` unused — the description
+        // said nothing about it, and a schema blurb reads as documentation rather than instruction.
+        //
+        // The two are not interchangeable, which is why the description gives the mechanical reason
+        // rather than a preference: a fact in the prompt is a user turn and is summarised away when
+        // the child compacts; a fact in context sits in the system message, pinned at index 0, and
+        // survives. On a short run both work. On a long one the prompt version is forgotten exactly
+        // when it was most needed.
+        Assert.Contains("in context", definition.Description, StringComparison.Ordinal);
+        Assert.Contains("whole run", definition.Description, StringComparison.Ordinal);
         Assert.Contains("cannot spawn sub-agents of its own", definition.Description, StringComparison.Ordinal);
         Assert.Contains("NOT shown to the user", definition.Description, StringComparison.Ordinal);
     }

@@ -47,6 +47,11 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         It cannot ask you anything. It runs once, with only what you write in the prompt, and returns
         one message. Say in the prompt exactly what you want back, and what "done" means.
 
+        Put the TASK in prompt, and what you already KNOW in context. Anything that would otherwise be
+        rediscovered, or got wrong — a file that is currently broken, an approach already tried and
+        failed, where the thing actually lives, a convention this repo follows — belongs in context.
+        It stays with the agent for its whole run; the prompt does not survive a long one.
+
         Its work is NOT shown to the user — they see only a status row. Anything from its answer that
         they need must appear in your reply.
 
