@@ -163,7 +163,8 @@ public sealed class SessionPanel
         string endpoint, int rules,
         int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
         string sessionId = "",
-        IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null)
+        IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null,
+        IReadOnlyList<string>? agentTypes = null)
     {
         var lines = new List<string>();
 
@@ -270,6 +271,22 @@ public sealed class SessionPanel
                 lines.Add(server.IsConnected
                     ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
                     : Muted($"{server.Name} · failed"));
+        }
+
+        // AGENT TYPES, when any are CONFIGURED — and `general` alone does not count as configured.
+        //
+        // The catalog always holds at least `general`, so a naive "show the catalog" would put a
+        // permanent one-line section on every session including the ones that never spawn. What is
+        // worth a panel line is that the user set something up: a type they wrote and might be
+        // wondering whether the model can see.
+        //
+        // NAMES ONLY. The briefing is what the MODEL reads; here it would not fit 24 columns and
+        // would push the sections below it off screen. Anyone who wants the text has the config file.
+        var types = (agentTypes ?? []).Where(t => t != "general").ToList();
+        if (types.Count > 0)
+        {
+            Section(lines, "Agent types");
+            lines.Add(Value(string.Join(", ", types)));
         }
 
         // PERMISSIONS as a COUNT. What was granted is a security surface, and it was invisible

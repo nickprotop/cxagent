@@ -870,7 +870,10 @@ public sealed class MainWindow : IDisposable
             _lastInput,
             _lastOutput,
             SessionId,
-            _mcpServers);
+            _mcpServers,
+            // STRAIGHT OFF THE RESOLUTION — no new plumbing. It already carries the parsed types for
+            // AppBootstrap to build the catalog from, and the panel only wants their names.
+            [.. _resolution.AgentTypes.Keys]);
     }
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>

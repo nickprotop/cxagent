@@ -139,4 +139,40 @@ public class SessionPanelTests
 
         Assert.DoesNotContain("MCP", panel.RenderedText, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ---- agent types ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// CONFIGURED TYPES ARE VISIBLE. A user who wrote three types in config has no other way to
+    /// confirm the session picked them up — the tool description is read by the model, not by them.
+    /// </summary>
+    [Fact]
+    public void Refresh_ShowsConfiguredAgentTypes()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 0, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            agentTypes: ["general", "explore", "review"]);
+
+        Assert.Contains("Agent types", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("explore", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("review", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// `general` ALONE IS NOT A SECTION. The catalog always holds it, so showing the catalog would
+    /// put a permanent line on every session including the ones that never spawn. What earns a line
+    /// is that the user CONFIGURED something — the same rule the MCP block follows, where a section
+    /// with nothing to say is absent rather than empty.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithOnlyTheImplicitGeneral_ShowsNoSection()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(contextUsed: 100, spentTokens: 0, contextWindow: 1000,
+            model: "m", endpoint: "", rules: 0,
+            agentTypes: ["general"]);
+
+        Assert.DoesNotContain("Agent types", panel.RenderedText, StringComparison.Ordinal);
+    }
 }
