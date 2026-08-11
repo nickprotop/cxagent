@@ -96,7 +96,15 @@ public sealed class InlineJobSink : IJobPanel
                 // tools showing ✔ beside workers still spinning after they had finished and
                 // collapsed.
                 _chat.SetHeader(id, CompactHeader(job));
-                _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
+                // NO STATUS ROW ON A WORKER. CompactHeader already ends with "· done · 73.6s", and
+                // SetStatus prints those same two facts again UNDER the body — seen live on a
+                // finished spawn: header `done · 73.6s`, then the report, then `done · 73.6s` once
+                // more. A row that says one thing twice teaches the reader to skip both.
+                //
+                // Tools keep theirs: a tool's status row is where a failure's reason surfaces, and
+                // its header is shorter. This is about worker rows, which are the verbose ones.
+                if (job.PluginType == "llm_agent") _chat.ClearStatus(id);
+                else _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
             }
 
             // COMPACT the chrome for a row with nothing to read. Measured on a real drive: one tool
@@ -155,7 +163,15 @@ public sealed class InlineJobSink : IJobPanel
                 // Seen live: a worker showing a spinning Braille frame beside its own finished
                 // review body, with "Goal completed." printed below it.
                 _chat.SetHeader(id, CompactHeader(job));
-                _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
+                // NO STATUS ROW ON A WORKER. CompactHeader already ends with "· done · 73.6s", and
+                // SetStatus prints those same two facts again UNDER the body — seen live on a
+                // finished spawn: header `done · 73.6s`, then the report, then `done · 73.6s` once
+                // more. A row that says one thing twice teaches the reader to skip both.
+                //
+                // Tools keep theirs: a tool's status row is where a failure's reason surfaces, and
+                // its header is shorter. This is about worker rows, which are the verbose ones.
+                if (job.PluginType == "llm_agent") _chat.ClearStatus(id);
+                else _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
             }
 
             // COMPACT the chrome for a row with nothing to read. Measured on a real drive: one tool
@@ -205,8 +221,15 @@ public sealed class InlineJobSink : IJobPanel
             // a running tool otherwise offers to expand into a copy of its own header. Also drops a
             // previous attempt's output when a job is RETRIED — stale stderr under a live "running…"
             // describes work that is no longer happening.
+            // A RUNNING ROW SHOWS WHAT IT IS DOING, when it has anything to say. Blanking is still
+            // right for a job with no progress body — the message was CREATED with Title(job) as its
+            // body, so a running tool would otherwise offer to expand into a copy of its own header,
+            // and a RETRIED job would show the previous attempt's stderr under a live "running…".
+            //
+            // But a sub-agent does have something: its child's recent tool calls. Expanding a running
+            // spawn used to reveal an empty block, which is the worst moment to show nothing.
             if (!IsTerminal(job.State))
-                _chat.UpdateMessage(id, string.Empty);
+                _chat.UpdateMessage(id, job.ProgressBody ?? string.Empty);
 
             // A COMPACT row folds its whole result into ONE line and drops the expand affordance:
             // "20" does not need a header, a body, a full-width rule, a status row and a blank line
@@ -430,8 +453,19 @@ public sealed class InlineJobSink : IJobPanel
         _system.EnqueueOnUIThread(() =>
         {
             _known[job.Id] = job;
-            if (_lines.TryGetValue(job.Id, out var id))
-                _chat.SetHeader(id, CompactHeader(job));
+            if (!_lines.TryGetValue(job.Id, out var id)) return;
+
+            _chat.SetHeader(id, CompactHeader(job));
+
+            // THE BODY TOO, when there is one — but ONLY the body. This is still not UpdateJob: that
+            // method force-expands the row (SetExpanded(id, true)) and blanks it, and doing either
+            // once a second would re-open a row the user collapsed and fight them for it.
+            //
+            // UpdateMessage alone changes what is BEHIND the expand without touching whether it is
+            // open. A user who opened the row watches it fill; a user who left it shut sees nothing
+            // move, which is the whole point of the distinction.
+            if (!string.IsNullOrEmpty(job.ProgressBody))
+                _chat.UpdateMessage(id, job.ProgressBody);
         });
 
     public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }

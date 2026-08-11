@@ -1042,6 +1042,25 @@ public sealed class Agent
                 ? $" · {f:P0} ctx"
                 : "";
             job.ProgressMessage = $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
+
+            // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
+            // its tool calls say whether it is on the right track — which is the question a
+            // minutes-long run provokes and the one that decides whether to press Escape.
+            //
+            // The child's own BufferedJobPanel already holds every row it has drawn (that is what
+            // keeps them out of the parent's transcript), so this is a read of something recorded
+            // rather than new bookkeeping.
+            //
+            // THE LAST FEW ONLY. A child that has made forty calls has a scrollback nobody wants
+            // inline; the recent ones are what "on the right track" is judged from.
+            var recent = child.Jobs.Jobs
+                .OrderByDescending(j => j.StartedAt)
+                .Take(6)
+                .Reverse()
+                .Select(j => $"  {j.DisplayName}")
+                .ToList();
+            job.ProgressBody = recent.Count > 0 ? string.Join("\n", recent) : null;
+
             _jobs.UpdateProgress(job);
         }
 

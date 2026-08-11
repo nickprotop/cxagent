@@ -44,4 +44,18 @@ public record Job
 
     public double? Progress { get; set; }
     public string? ProgressMessage { get; set; }
+
+    /// <summary>
+    /// What a still-running job has to show BEHIND its expand — as opposed to
+    /// <see cref="ProgressMessage"/>, which is the one line on the header.
+    ///
+    /// <para>WHY A RUNNING ROW NEEDS ONE AT ALL: a job's body comes from its Result, and a Result
+    /// exists only once the call has finished. So expanding a running row showed an empty block —
+    /// reported by a user watching a sub-agent, and it is the worst moment to have nothing, because
+    /// "is this on the right track?" is exactly the question a minutes-long child provokes.</para>
+    ///
+    /// <para>The header answers "is it alive" (turns, occupancy, elapsed). This answers "what is it
+    /// doing", which no amount of counters can.</para>
+    /// </summary>
+    public string? ProgressBody { get; set; }
 }
