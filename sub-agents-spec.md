@@ -317,11 +317,14 @@ the UI thread (`AppBootstrap.cs:200-214`). **A child's factory wires the same ca
 per-child row instead**, which is what makes the §3.1 row (`⠹ 1m14s · 12.4k/208k`) buildable.
 
 Two things NOT there and needed for the row: **elapsed time** (nothing publishes a running clock) and
-**a waiting-on-permission state** (§3.1) — both land in step 3.
+**a waiting-on-permission state** (§3.1). **Elapsed time shipped in step 1** — a per-call timer,
+because turn boundaries alone leave a row frozen while a child sits inside one turn. Only the
+permission state is still outstanding, and it is a step 3 prerequisite.
 
-**A session aggregator is then a subscriber, not new plumbing** — it sums what the children already
-report. Worth doing only once several children run at once; with one child the parent's own panel
-already shows it.
+**A session aggregator is then a subscriber, not new plumbing** — and that is how it was built. The
+parent subscribes to a child's `ToolCallFinished` and forwards it keeping the CHILD's agent id;
+`TokenLedger` gained `SubAgentTokens` so the panel can say what workers spent against what this agent
+spent. Both arrived for one child at a time and are already what N children need.
 
 ### Hooks — what "the parent can act" would mean
 
@@ -419,17 +422,28 @@ briefing can always ask for a particular shape in prose.
 
 ---
 
-## 3. Presentation
+## 3. Presentation — **BUILT, and step 3 needs almost nothing from it**
 
 ### 3.1 The row
 
-Each sub-agent owns one row in its orchestrator's transcript:
+Each sub-agent owns one row in its orchestrator's transcript. What was sketched here:
 
 ```
 ▸ worker 2 · refactor IndentShift    ⠹ 1m14s · 12.4k/208k
 ```
 
-N workers, N rows, no interleaving. Useful before any drill-down exists.
+What ships — collapsed while running, and expandable to standing facts above the child's recent
+calls:
+
+```
+▸ ✔ Worker  explore · Analyze the repo structure  ·  done · 102.6s
+```
+
+**N WORKERS, N ROWS, AND NOTHING COORDINATES THEM.** That was an aspiration when this was written and
+is now a property of the code: every path into `InlineJobSink` keys on `job.Id` and marshals through
+`EnqueueOnUIThread`, so rows are independent transcript messages with no shared layout state. Three
+concurrent children need no new presentation — which is why step 3 is a loop-and-locks step rather
+than a UI one.
 
 - **Occupancy — solved.** `AgentContext.Used` holds the last turn's input tokens and `UsedFraction`
   divides it by the window, read straight off the sub-agent's own context.
@@ -1429,6 +1443,24 @@ do not assume it.
 #### What a barrier still FORCES
 
 
+
+**THIS STEP HAS ALMOST NO UI IN IT, and that is a finding rather than an oversight.** A worker is
+already fully presented: one row per child, named by type, with live turns, occupancy, elapsed time
+and its recent calls, closing with an account of what it cost. Step 3 makes several of those exist at
+once and changes nothing about any one of them.
+
+The presentation survives N children by CONSTRUCTION, verified rather than assumed: every path into
+`InlineJobSink` — `SetJobs`, `UpdateProgress`, `UpdateJob` — keys on `job.Id` and marshals through
+`EnqueueOnUIThread`. Rows are independent messages in the transcript with no shared layout state, so
+three children produce three rows that update independently. Nothing serialises them, nothing
+interleaves, and no row knows another exists.
+
+**The one exception is a state, not a view** — see prerequisite 3 below. `waiting on permission`
+needs a `JobState` member and a word in the header, and it matters ONLY because several children run
+at once: with one child at a time, blocked and slow are the same thing to a user, which is exactly
+why it never bit.
+
+So the work here is the loop, the locks, and the prompt. Not the screen.
 
 Parallel spawning is not one change. Each of these must land BEFORE two children run at once.
 Verified against the code, not recalled:
