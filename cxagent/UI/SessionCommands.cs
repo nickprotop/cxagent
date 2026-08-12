@@ -312,21 +312,53 @@ public static class SessionCommands
     }
 
     /// <summary>The command list as help text, one indented line each.</summary>
+    /// <summary>
+    /// The command list, as a table.
+    ///
+    /// <para>DRAWN, NOT MARKDOWN. <c>ChatRole.System</c> sets <c>Markdown = false</c> — a pipe table
+    /// would render as literal pipes — and flipping that role would change every system message in
+    /// the app, banner and errors included. Box characters go through the markup renderer untouched.
+    /// </para>
+    ///
+    /// <para>A TABLE SUITS THIS AND NOT EVERY LIST. Command names and summaries are short and
+    /// uniform, which is what columns are for; a skill's description is a paragraph and belongs in
+    /// indented rows, so <c>/skills</c> keeps that shape.</para>
+    ///
+    /// <para>WIDTH IS BOUNDED BY THE CONTENT, not by the terminal: the name column is as wide as the
+    /// widest name, so the table cannot push the summary off a narrow pane on its own.</para>
+    /// </summary>
     public static string HelpLines(string markupColor)
     {
-        var lines = new List<string>();
+        // ARGUMENTS ARE ROWS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only,
+        // so `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
+        // surface a user could find. The indent carries the relationship: these are modifiers of the
+        // row above, not commands of their own.
+        var rows = new List<(string Name, string Summary, bool IsArg)>();
         foreach (var c in All)
         {
-            lines.Add($"  [{markupColor}]{c.Name}[/]".PadRight(28) + c.Summary);
-
-            // ARGUMENTS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only, so
-            // `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
-            // surface a user could find. Indented rather than listed flat, because the relationship
-            // is the information: these are modifiers of the line above, not commands of their own.
+            rows.Add((c.Name, c.Summary, false));
             foreach (var a in c.Args)
-                lines.Add($"    [{ColorScheme.MutedMarkup}]{c.Name} {a.Name}[/]".PadRight(40)
-                        + $"[{ColorScheme.MutedMarkup}]{a.Summary}[/]");
+                rows.Add(($"{c.Name} {a.Name}", a.Summary, true));
         }
+
+        var width = rows.Max(r => r.Name.Length + (r.IsArg ? 2 : 0));
+        var muted = ColorScheme.MutedMarkup;
+
+        var lines = new List<string>
+        {
+            $"  [{muted}]┌─{new string('─', width)}─┬─{new string('─', rows.Max(r => r.Summary.Length))}─┐[/]",
+        };
+
+        foreach (var (name, summary, isArg) in rows)
+        {
+            var label = isArg ? "  " + name : name;
+            var colour = isArg ? muted : markupColor;
+            lines.Add($"  [{muted}]│[/] [{colour}]{label}[/]{new string(' ', width - label.Length)} "
+                    + $"[{muted}]│[/] {(isArg ? $"[{muted}]{summary}[/]" : summary)}"
+                    + $"{new string(' ', rows.Max(r => r.Summary.Length) - summary.Length)} [{muted}]│[/]");
+        }
+
+        lines.Add($"  [{muted}]└─{new string('─', width)}─┴─{new string('─', rows.Max(r => r.Summary.Length))}─┘[/]");
         return string.Join('\n', lines);
     }
 

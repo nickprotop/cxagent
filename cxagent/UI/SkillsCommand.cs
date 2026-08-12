@@ -26,43 +26,53 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, IChatSink si
         var found = catalog();
         var lines = new List<string>();
 
+        var accent = ColorScheme.AccentMarkup;
+        var muted = ColorScheme.MutedMarkup;
+
         if (found.Skills.Count == 0)
         {
             // NO WINNER IS NOT AN ERROR, and must not be reported as one. It is what a first attempt
             // at writing a skill looks like — and saying "/repo/.cxagent/skills is in use" when
             // nothing in it parsed would be a lie about the one thing the user is debugging.
             lines.Add(found.Problems.Count > 0
-                ? "[yellow]No skills loaded.[/] Every candidate file was skipped:"
-                : "[dim]No skills found.[/] Add one at "
-                  + "[cyan].cxagent/skills/<name>/SKILL.md[/] with a name and a description.");
+                ? "[yellow]No skills loaded[/]"
+                : $"[{accent}]Skills[/]");
+            lines.Add(found.Problems.Count > 0
+                ? $"  [{muted}]every candidate file was skipped — see below[/]"
+                : $"  [{muted}]none found. Add one at[/] "
+                  + $"[{accent}].cxagent/skills/<name>/SKILL.md[/] "
+                  + $"[{muted}]with a name and a description.[/]");
         }
         else
         {
-            lines.Add($"[bold]{found.Skills.Count} skill{(found.Skills.Count == 1 ? "" : "s")}[/] "
-                    + $"from [cyan]{found.SourceDirectory}[/]");
+            // SAME SHAPE AS /help: a coloured heading, then two-space indented rows with the detail
+            // muted underneath. A command that invents its own layout makes the app look like
+            // several apps.
+            lines.Add($"[{accent}]Skills[/] [{muted}]· {found.Skills.Count} from {found.SourceDirectory}[/]");
             lines.Add("");
 
             foreach (var skill in found.Skills)
             {
-                lines.Add($"  [bold]{skill.Name}[/]");
+                lines.Add($"  [{accent}]{skill.Name}[/]");
                 // THE DESCRIPTION VERBATIM. It is what the model matches on, so a user debugging
                 // "why was this never loaded?" needs to read exactly what the model read.
-                lines.Add($"    [dim]{skill.Description}[/]");
+                lines.Add($"    [{muted}]{skill.Description}[/]");
             }
         }
 
         if (found.Problems.Count > 0)
         {
             lines.Add("");
-            lines.Add($"[yellow]{found.Problems.Count} skipped[/]");
+            lines.Add($"[yellow]Skipped[/] [{muted}]· {found.Problems.Count}[/]");
+            lines.Add("");
 
             // EVERY CANDIDATE DIRECTORY, INCLUDING THE ONES THAT LOST. Shadowing decides which
             // directory SUPPLIES skills, not which may report a file the user wrote and expected to
             // work — a broken file in a shadowed directory is exactly the one nothing else explains.
             foreach (var problem in found.Problems)
             {
-                lines.Add($"  [cyan]{problem.Path}[/]");
-                lines.Add($"    [dim]{problem.Reason}[/]");
+                lines.Add($"  [yellow]{problem.Path}[/]");
+                lines.Add($"    [{muted}]{problem.Reason}[/]");
             }
         }
 
