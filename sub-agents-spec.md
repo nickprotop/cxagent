@@ -39,6 +39,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D30 | **`capped` is an outcome in its own right, not a failure and not a success.** A child that exhausts its turn cap ran out of room; that is a fact about its briefing, not about the work. The envelope already carried the word, so the row and the usage history read it back rather than deriving a two-way failed/completed guess. Filing it under "completed" hides the one run worth finding later. | §3.1, §5 STEP 2.5 |
 | D29 | **Audit every prompt line against the four combinations (single/fan-out x parent/child) BEFORE step 3 adds more.** They were written one finding at a time and never read together; one of D26's three lines was ungated and reaching CHILDREN until the mode work caught it by accident. Deliverable is a table — line, home, gate, evidence it is earned. | §5 STEP 2.5 |
 | D28 | **The parent must be TOLD several agents can run at once** — one line in the system prompt (gated on CanSpawn), and the mechanism plus "independent work" in the tool description, which today says "It runs once… returns one message". Both references state the mechanism explicitly rather than trusting inference. Ship them separately so each can be attributed. | §5 STEP 3 |
 | D27 | **Concurrency is a BARRIER, not background.** N children in one assistant message, all resolved before the parent's loop resumes. Forced by the message format — an unmatched tool call 400s the session — and it is what both references ship. It also dodges the unsolved problem: with a barrier the user is still watching, so a child's permission prompt has someone to answer it. | §5 STEP 3 |
@@ -442,12 +443,49 @@ N workers, N rows, no interleaving. Useful before any drill-down exists.
 
 Row states wanted: running, waiting on permission, failed, complete.
 
-### 3.2 The swap
+**WHERE THIS LANDED.** Elapsed time shipped in step 1 as planned, and the row grew further from
+driving it: the header names the TYPE (it was truncated JSON, so three spawns looked alike), carries
+live turns and occupancy while running, and switches to `done · 2m10s · 41,203 tokens` when finished
+rather than freezing on its last tick — a stopped counter reads as a hang.
 
-Expanding a row replaces the chat view with that sub-agent's own transcript. Its own `IChatSink` and
-`IJobPanel` are constructor parameters, and the agent emits kinds of text rather than styled text, so
-a sub-agent's transcript is a different sink implementation — a UI composition problem, not a kernel
-one.
+**A FIFTH STATE APPEARED THAT NOBODY LISTED: `capped`.** A child that exhausts its turn cap did not
+fail and did not complete. Seen live, and the envelope already carried the word — `SendOutcome.Capped`
+renders as `state="capped"` — so the row and the history read it back rather than guessing from a
+`failed` boolean. Recording it as "completed" would file a wasted run under success, which is exactly
+the run worth finding later.
+
+**Waiting-on-permission is still missing**, and remains a step 3 prerequisite: with one child at a
+time a blocked worker is merely slow, which is why it never bit.
+
+### 3.2 The swap — **SUPERSEDED, and the replacement is better**
+
+The plan was: expanding a row replaces the chat view with that sub-agent's own transcript. Still
+possible — its `IChatSink` and `IJobPanel` are constructor parameters — but it was never built,
+because driving the thing showed a cheaper answer to the question it was solving.
+
+**WHAT SHIPPED INSTEAD: the row expands in place.** While running it shows standing facts above the
+child's recent calls; when finished it shows the account:
+
+```
+done · 2m10s · 41,203 tokens
+
+  type: planner
+  model: qwen3.6-35b-a3b-ud-iq4_xs
+  task: You are planning a new GPU backend plugin for cxgpu…
+  7 turns · 2m10s
+  tokens: 41,203  ↑38,900 ↓2,303
+```
+
+Three things this gets that a swap does not. **You do not leave the conversation** — the question a
+running child provokes is "is it on the right track", which is answered beside the work rather than
+in a different view you must navigate back from. **It survives** — a swap shows a live transcript,
+this is a record that is still there tomorrow. And **the model line earns its place** precisely
+because a type may name its own provider: a worker running somewhere other than the session's model
+is otherwise invisible, and once the row finishes the provider is unreachable.
+
+The swap is not ruled out — a forty-turn child has a scrollback the row deliberately truncates to the
+last six calls. But it is now a convenience rather than the only way to see inside a child, which is
+a different and much weaker case for building it.
 
 ### 3.3 Job rows belong to their own agent
 
@@ -509,6 +547,21 @@ part, and deleting them would leave a document that looks like it predicted ever
 Beyond the numbered steps, and not planned here: **AgentMode** (`/mode single|fan-out`, `--mode`,
 fan-out by default), per-model spend attribution, and the config `agents` block. Those came out of
 using the thing.
+
+**AND A SECOND ROUND OF THE SAME**, all of it found by driving real work rather than by planning:
+
+| What | Why it was invisible until a real run |
+|---|---|
+| A worker's spend, live | The ledger is shared, and children usually run on the PARENT'S model — so the per-model breakdown had one row and suppressed itself. A whole fan-out run showed no attribution at all. |
+| The spawn row's type | `DescribeCall` truncated raw JSON at 60 chars, and `type` serialises LAST, so the one field naming the worker was always the field cut. Three spawns rendered as three identical rows. |
+| A child's logs | Written to a TOP-LEVEL directory keyed by the child's own id — indistinguishable from a session. `ls -t` returned a CHILD as the newest "session", which cost a wrong diagnosis before it was noticed. |
+| The parent's own spend | The status bar showed `Ledger.TotalTokens` beside an occupancy figure that IS the parent's, so a fan-out session read as one agent costing four times what it did. |
+| `/stats` | None of the above survived the process. What a run cost, which type earns its keep, what fills a context — all measured every turn, all discarded. |
+
+The pattern is worth naming because it will repeat in step 3: **every one of these was correct in
+single-agent mode and wrong the moment a second agent existed.** None had a failing test, because
+each was a reasonable reading of a one-agent world. Concurrency is a third such world, and the same
+class of bug is waiting in it.
 
 Each step ends with something that WORKS and is driven live. Nothing in a later step is designed into
 an earlier one. If a step fails, there is one candidate cause.
@@ -587,6 +640,36 @@ with no evidence is a candidate for deletion, and deleting it is cheaper than de
 **DO THIS BEFORE STEP 3'S PROMPT WORK (D28), NOT AFTER.** Adding parallel-agent guidance to a prompt
 nobody has audited means the audit then has to disentangle new text from old, and the attribution
 discipline that produced today's one usable result depends on changing one thing at a time.
+
+**TWO BRIEFINGS ALREADY HAVE A NAMED DEFECT**, both found by driving real work rather than by
+reading:
+
+**1. `explore` has no give-up clause, and burned a whole cap for nothing.** Asked to find the
+`intel_gpu_top -q` JSON schema — which is not published anywhere; it is defined in `igt-gpu-tools` C
+source — a child spent **all 30 of its turns and 112 tool calls** (52 HTTP, 43 shell `curl`) hunting
+it, then filled its last four turns re-reading local files that could not possibly contain an Intel
+schema. The envelope said `capped`, the parent was told, nothing broke. But the useful answer existed
+at turn 15 and it never gave it.
+
+The briefing says *"Find what was asked for… say what you actually saw rather than what you expect to
+be true."* Every clause of that is about a findable target. Nothing tells it what to do when the
+thing does not exist, so it kept looking. **A confident negative is an answer** — "not formally
+documented, defined in this C source, here is the repo" — and no cap value produces it. This is a
+prompt fix, and it belongs in the audit rather than in a number.
+
+**2. A child's wrong path propagates into the parent's work.** An `explore` report listed
+`cxgpu/Gpu/Abstractions/GpuBackendPlugin.cs` in its file table while its OWN directory tree, two
+sections earlier, correctly placed the file at `cxgpu/Gpu/`. The parent then read the wrong path and
+got `error: Could not find file`.
+
+The parent did not guess — **it trusted the report**, which is the correct behaviour and the reason
+this matters. A receiving agent cannot tell a cited path from a plausible one, so a summary's errors
+become the next agent's errors. Seven of eight sampled paths were right; the failure was a
+*self-inconsistency* the child could have caught by comparing its own two sections.
+
+Both are the same shape: the briefing describes the happy path well and says nothing about the
+failure mode. The audit should ask, per briefing, **"what does this agent do when the work does not
+go as described?"** — a question none of the four currently answers.
 
 ---
 
@@ -1364,6 +1447,19 @@ Verified against the code, not recalled:
    children calling tools on one server interleave a JSON-RPC frame and corrupt it. One
    `SemaphoreSlim`. The read side is fine — replies multiplex by id.
 5. **The turn is MIXED** — see the section above. Parallelise the spawns, not the tools.
+
+**ALREADY SAFE, AND DELIBERATELY SO — the usage history writers.** `UsageHistoryStore` was added
+after this list was written and is the one piece of new state two concurrent children will both
+touch: a child's `ToolCallFinished` is forwarded through the parent, so N children raise it on one
+handler. It holds no mutable state — a connection string, a fresh connection per call — every write
+is a single append-only statement with no read-modify-write, and the connection is opened with
+`busy_timeout` so two writers wait rather than throw. Nothing to add; recorded here so the next
+person does not have to re-derive it.
+
+Two figures it records are also **already per-agent rather than shared**, which matters once several
+children run at once: `Agent.Spend` is a private interlocked tally (the ledger is shared and could
+never say what ONE child cost), and a child's tool calls keep the CHILD's agent id when forwarded.
+Both were built for the row and the panel; both happen to be what concurrency needs.
 
 Only then: `Task.WhenAll` over the spawn partition, sinks marshalling as they already do (all four
 implementations go through `EnqueueOnUIThread`), and the results reassembled in call order.
