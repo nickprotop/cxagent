@@ -39,7 +39,16 @@
       "model": "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
       "baseUrl": "http://localhost:8771/v1",
       "apiKey": "sk-local",
-      "contextWindow": 212992
+      "contextWindow": 212992,
+
+      "//maxConcurrentAgents": [
+        "How many sub-agents may call THIS endpoint at once. Absent or 0 = unlimited (the default).",
+        "cxagent cannot discover what an endpoint tolerates, so it does not guess — set this when",
+        "you know. A single-threaded local server queues concurrent children at the socket and",
+        "splits its context across slots; a hosted API answers them and returns 429s.",
+        "See CONFIG.md. The real bound on cost is orchestrator.goalTokenBudget, not this."
+      ],
+      "maxConcurrentAgents": 0
     }
   },
 
@@ -81,7 +90,7 @@
   ],
   "agents": {
     "explore": {
-      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything.",
+      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything. If the thing asked for does not appear to exist, say so and say where you looked \u2014 a confident negative is an answer, and is worth more than more searching. Before you report a path, check it against what you actually opened.",
       "maxTurns": 30
     },
     "review": {

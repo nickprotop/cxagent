@@ -42,6 +42,25 @@ falls back to a fixed constant that may be far from your model's real headroom.
 **`apiKey` supports `${ENV_VAR}`**, so a config file can be committed or shared without carrying a
 secret. A key written literally is still forced to `0600`, but the variable form is better.
 
+**`maxConcurrentAgents` bounds how many sub-agents may call this endpoint at once.** Absent or `0`
+means unlimited, which is the default — the same convention `maxTurns` uses.
+
+Uncapped is deliberate: cxagent cannot discover what an endpoint tolerates, and a limit chosen
+without evidence throttles everyone to guard against a problem they may not have. Set it when you
+know your endpoint's shape. What uncapped costs, so the choice is informed:
+
+- **A hosted API** answers concurrent requests and pushes back with 429s — and the retry layer then
+  multiplies the traffic that caused them.
+- **A single-threaded local server** (the common `llama.cpp` case) queues them at the socket, so the
+  children hold open connections and running timeouts while executing one at a time. The parallelism
+  becomes serial execution with more ways to fail.
+- **A local server splits its context across slots.** With N concurrent streams each child actually
+  gets `n_ctx / N` while its own accounting believes it has the whole window — so compaction fires
+  far too late and children die on overflow rather than compacting.
+
+The real bound on runaway cost is `orchestrator.goalTokenBudget`, not this: a child is refused
+outright once the session's budget is already spent, whatever the concurrency.
+
 **`defaultProvider` is optional** and names one of the instances above. Without it, a session with
 more than one configured provider has no way to choose.
 

@@ -39,6 +39,8 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D21 | **A child gets MCP**, inherits the parent's `maxTurns`, and its registry entry is **never evicted in step 1**. | §5.1d |
 | D24 | **A child gets a DIFFERENT system prompt**: `# The user's commands` DROPPED (it has no composer) and `# Answering` REPLACED (its text addresses a human at a terminal; a child's reader is a model). Everything else kept. One init-only property, fixed at construction. Text verbatim in §5.1h-i. **One child type in phase 1 — per-role prompts are step 2**, a lookup where the constant sits. | §5.1h-i |
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
+| D32 | **Never reorder tool calls; defer the await instead.** One pass in EMITTED order — a spawn is started and not awaited, everything else runs inline, the spawn group is awaited at the end. An earlier draft partitioned and hoisted spawns to the front, which moves a child ahead of a `run_shell` meant to precede it: the child works against a tree that command had not yet changed, and nothing reports an error. Start-and-defer gets identical overlap in all 7 observed mixed turns without moving anything. | §5 STEP 3 |
+| D31 | **A cancelled turn must append a result for EVERY call, including ones never started.** Escape during a sub-agent run leaves the assistant message (appended at `Agent.cs:766`, before the loop) carrying a tool call with no `tool` result — in the LIVE context, since `messages` is `_context.Messages`. That is the §1b orphan: the next request 400s, `IsOverflow` does not match, and only `/clear` recovers. A live bug today, reachable through spawns and MCP; step 3 makes it the normal outcome of every Escape. Proven by a failing test before the fix. | §5 STEP 3 prereq 0 |
 | D30 | **`capped` is an outcome in its own right, not a failure and not a success.** A child that exhausts its turn cap ran out of room; that is a fact about its briefing, not about the work. The envelope already carried the word, so the row and the usage history read it back rather than deriving a two-way failed/completed guess. Filing it under "completed" hides the one run worth finding later. | §3.1, §5 STEP 2.5 |
 | D29 | **Audit every prompt line against the four combinations (single/fan-out x parent/child) BEFORE step 3 adds more.** They were written one finding at a time and never read together; one of D26's three lines was ungated and reaching CHILDREN until the mode work caught it by accident. Deliverable is a table — line, home, gate, evidence it is earned. | §5 STEP 2.5 |
 | D28 | **The parent must be TOLD several agents can run at once, and the sentence forbidding it DELETED** — one line in the system prompt (gated on CanSpawn), the mechanism plus "independent work" in the tool description, and the removal of *"It runs once… returns one message"* (`SubAgentSpawner.cs:58`), which is true today and false after step 3. Adding without deleting leaves two contradicting instructions, the older and more specific of which is the one a reader believes. Ships WITH the partition — either half alone is untestable. | §5 STEP 3 |
@@ -666,6 +668,62 @@ message", which step 3 makes false.
 description), its gate (`CanSpawn`, `IsSubAgent`, always), and the evidence it is earned. Anything
 with no evidence is a candidate for deletion, and deleting it is cheaper than defending it later.
 
+---
+
+#### THE AUDIT — DONE. Verified against RENDERED PROMPTS, not against the code
+
+Reading the source tells you what the gates are supposed to do. The logs tell you what they did. This
+was checked the second way, by grepping the system messages of real sessions — a parent in fan-out, a
+child of that parent, and a parent in single mode.
+
+| Block | Gate | single parent | fan-out parent | child |
+|---|---|---|---|---|
+| `# Doing the work` | always | ✅ | ✅ | ✅ |
+| Delegation rule + 4 examples | `CanSpawn` | — | ✅ | — |
+| `# Following conventions` | always | ✅ | ✅ | ✅ |
+| `# Verifying` | always | ✅ | ✅ | ✅ |
+| "a report is a claim, not a verification" | `CanSpawn` | — | ✅ | — |
+| `# The user's commands` | `!IsSubAgent` | ✅ | ✅ | — |
+| `# Answering` (human reader) | `!IsSubAgent` | ✅ | ✅ | — |
+| `# Answering` (**replaced**, sub-agent) | `IsSubAgent` | — | — | ✅ |
+| "the user cannot see a sub-agent's work" | `CanSpawn` | — | ✅ | — |
+| "several agents can run at once" (D28) | `CanSpawn` | — | ✅ | — |
+| `# MCP servers` | always | ✅ | ✅ | ✅ |
+| `# Your task` (briefing + caller context) | child only | — | — | ✅ |
+
+**MEASURED, not asserted.** Grepping one fan-out session's parent against its own child:
+
+```
+"sub-agent's report is a claim"   parent=1  child=0
+"user cannot see a sub-agent"     parent=1  child=0
+"Several agents can run at once"  parent=1  child=0
+```
+
+And a single-mode session's system message contains **zero** occurrences of `sub-agent`, `spawn`, or
+`Several agents`. All four combinations hold.
+
+**NO LEAKS FOUND — and that is a change.** D29 was written because one of D26's three lines had been
+ungated and reaching children until the mode work caught it by accident. That class of defect is now
+absent, and two things make it structural rather than lucky:
+
+- **`CanSpawn` is `Mode == FanOut && _spawner is not null`**, and `SubAgentFactory` never passes a
+  spawner. A child therefore cannot receive spawn text even if someone gated it wrongly — the
+  condition is false for reasons that have nothing to do with the prompt author's care.
+- **The child's `# Answering` REPLACES the parent's and returns early**, so everything below that
+  point in the builder is unreachable for a child by construction. That is why `# The user's
+  commands` — which would be actively wrong for an agent with no user — cannot reach one.
+
+**ONE FALSE ALARM, worth recording** because it shows the audit method mattering: a first pass grepped
+for `if (ctx.` and reported `# The user's commands` as ungated. It is gated — as `if (!ctx.IsSubAgent)`,
+which that pattern missed. The rendered-prompt check found the truth immediately where the code read
+ambiguously.
+
+**WHAT REMAINS UNEARNED.** Three of four measured prompt interventions moved nothing (§ "What driving
+the prompts actually measured"). Those lines are still there, and this audit does not delete them:
+every measurement is on ONE model, and both references ship comparable guidance for model families we
+cannot test. Deleting a line because a 35B local quant ignored it would be over-fitting to the one
+model we happen to run. Recorded as the open question it is, not resolved.
+
 **DO THIS BEFORE STEP 3'S PROMPT WORK (D28), NOT AFTER.** Adding parallel-agent guidance to a prompt
 nobody has audited means the audit then has to disentangle new text from old, and the attribution
 discipline that produced today's one usable result depends on changing one thing at a time.
@@ -699,6 +757,22 @@ become the next agent's errors. Seven of eight sampled paths were right; the fai
 Both are the same shape: the briefing describes the happy path well and says nothing about the
 failure mode. The audit should ask, per briefing, **"what does this agent do when the work does not
 go as described?"** — a question none of the four currently answers.
+
+**FIXED — `explore` gains two clauses, one per defect:**
+
+> *"If the thing asked for does not appear to exist, say so and say where you looked — a confident
+> negative is an answer, and is worth more than more searching. Before you report a path, check it
+> against what you actually opened."*
+
+The first would have ended the capped run at turn 15 with a usable answer instead of turn 30 with
+none. The second addresses the propagation case directly: the child's tree and its file table
+disagreed, and only the child was ever in a position to notice.
+
+**THE OTHER THREE ARE LEFT ALONE, deliberately.** `review`, `test` and `planner` have the same
+happy-path shape, but neither defect has been OBSERVED in them — and this project's own evidence is
+that unmeasured prompt text usually changes nothing (three of four interventions moved nothing). Two
+clauses added for two witnessed failures is attribution; four more added by analogy is the prose
+inflation D29 exists to prevent. Revisit when a run shows one of them failing the same way.
 
 ---
 
@@ -1458,6 +1532,20 @@ citation and the reason each row names what it is as well as where:
 | `:827-828` | `_lastBuild`, `_lastTest` | two commands racing leaves the wrong verdict for the session |
 | `:792` | `messages.Add` for the stuck nudge | appends to the LIVE list mid-iteration |
 
+**1b. TWO MORE MUTATIONS THE FIRST PASS MISSED**, found by reading the loop body end to end rather
+than grepping for the four already named:
+
+| Line | State | What breaks |
+|---|---|---|
+| `:814-815` | `stuckOn`, `stuckTimes` | Set when a call repeats past `StuckRepeats * 2`. Two calls racing leaves whichever wrote last, so the turn reports the wrong tool as stuck — or, worse, one clears what the other set. |
+| `:831` | `messages.Add` for the tool RESULT | The append every call makes. Concurrent appends to a `List<T>` are not merely out of order — `List<T>.Add` is not thread-safe at all, and a torn write loses a result entirely, which is the orphan of §1b. |
+
+That second one is the important one and it is not a matter of ordering: **the spawn partition must
+collect results and append them after the group completes, never append from inside a concurrent
+task.** Point 2 below says "collect, then append in the original order" for cosmetic reasons; this
+says the same thing for correctness reasons, and the correctness reason is the one that must not be
+optimised away.
+
 **2. Results must land in call order.** The `tool` messages are matched to the assistant message's
 calls by `ToolCallId`, and while order is not strictly required by the wire format, an out-of-order
 list is a needless divergence from what every provider sees in its own examples. Collect, then append
@@ -1486,23 +1574,88 @@ interface, three orders of magnitude apart. If an agent were a tool in every res
 would be to parallelise all of them or none — the partition exists precisely because that one
 property differs.
 
-**SO: PARALLELISE THE SPAWNS, NOT THE TOOLS.** Partition the turn's calls — spawns run under
-`Task.WhenAll`, everything else keeps today's sequential `foreach`, and results are reassembled in
-call order before any is appended.
+**AND THE PARTITION NEEDS A CLASSIFIER THE CODE DOES NOT HAVE.** Dispatch today is a TRY-CHAIN
+(`Agent.cs:1213`): spawner first, then MCP, then the builtin toolset, each returning null if the call
+is not theirs. Nothing decides what a call IS before invoking it — the chain finds out by trying.
+
+A partition must classify BEFORE dispatch, and the material is there:
+`ISubAgentSpawner.ToolName` exposes the name without invoking anything, so
+`calls.Where(c => c.Name == _spawner.ToolName)` is the whole test. Worth stating because "partition
+the calls" reads as trivial until you look for the thing that would do it, and the try-chain is
+deliberately shaped the other way — it was built so a new toolset could be added with one more `??`
+rather than by editing a switch. The partition does not break that; it reads one name first and
+leaves the chain intact for everything else.
+
+**SO: OVERLAP THE SPAWNS, NOT THE TOOLS.** One pass in emitted order — a spawn is STARTED and not
+awaited, everything else runs inline exactly as today, and the spawn group is awaited at the end of
+the turn. Results are collected and appended in call order before the loop resumes.
+
+**Not a partition-and-hoist.** An earlier draft of this step said "partition the calls, spawns
+first" — see the ordering discussion above for why that is wrong: it moves a spawn ahead of a
+`run_shell` that was meant to precede it, and the child then works against a tree that command had
+not yet changed. Start-and-defer gets the identical overlap in every observed turn without ever
+moving a call.
 
 That is not a compromise; it is where the benefit actually is. A child is minutes and its
 intermediate work is invisible, so overlapping two saves minutes. A `read_file` is milliseconds and
 its result is already inline — overlapping it saves nothing and costs the four hazards above.
 
-**Order between the two groups, decided: spawns FIRST, then the tools.** Children are the long pole,
-so starting them before the sequential work means the tools run inside the window the children are
-already occupying. The alternative — tools first — has the parent doing quick work while nothing is
-delegated, then waiting on children with nothing else to do.
+**Why a spawn is the thing that gets deferred, and not the reverse.** Children are the long pole, so
+a child started early has the rest of the turn's work happening inside the window it already
+occupies. Deferring the TOOLS instead would have the parent doing quick work while nothing is
+delegated, then waiting on children with nothing left to overlap.
+
+Note this is about which call is *awaited late*, not about moving calls: emitted order is preserved
+either way. The first draft of this step reached the same conclusion by reordering, which is where it
+went wrong.
 
 **And it matches what the model already emits.** All 7 observed mixed turns are literally
 `[spawn_agent, read_file, read_file]` — the spawn first, the reads after. The partition preserves the
 order the model chose rather than imposing one, which means the reordering is invisible in exactly
 the case that occurs.
+
+**BUT THAT EVIDENCE EXPIRES THE DAY THIS SHIPS, and the argument must not lean on it.** Counted
+across every log: `spawn_agent` has NEVER appeared after `run_shell` in one message — but only
+because the description forbids multi-spawn turns at all, so the shape was unreachable. Step 3
+removes that sentence, and `[run_shell, spawn_agent]` becomes newly possible on the first turn after.
+
+**THE MODEL DOES RELY ON WITHIN-MESSAGE ORDER.** `run_shell, run_shell` occurs 64 times and
+`run_shell, run_shell, run_shell` 56 times — it batches shell commands routinely, and shell commands
+depend on each other (`mkdir` then write into it; `git checkout -b` then build). Those stay
+sequential under this design and are safe. What is NOT safe by inspection is hoisting a spawn past a
+`run_shell` that was meant to precede it: `[run_shell "git checkout -b x", spawn_agent "work on
+branch x"]` starts the child before the branch exists.
+
+**"Results reassembled in call order" does not fix this.** It fixes what the model SEES afterwards —
+the side effects already happened in the hoisted order. Reordering a `read_file` is harmless;
+reordering across a `run_shell` is not, and the design does not currently distinguish them.
+
+**AND ONE ASSUMED HAZARD IS NOT ONE.** `[read_file config.json, spawn "analyse the config I just
+read"]` looks like a broken dependency and is not: a child never sees the parent's tool results in
+ANY ordering, because it gets a fresh `AgentContext` (`SubAgentFactory.cs:185`) and only the prompt
+text. That dependency is illusory both ways round. **The real channel is the ENVIRONMENT** —
+`[run_shell "git checkout -b x", spawn "work on x"]`, or `[write_file fix.cs, spawn "run the
+tests"]`, where the child starts against the pre-side-effect tree and returns a confidently wrong
+answer with nothing reporting an error.
+
+**THE FIX — DON'T HOIST AT ALL; START AND DEFER.** Walk the calls in emitted order. On a spawn,
+START it and do not await. On anything else, run it inline as reached, exactly as today. Await the
+spawn group at the end of the turn.
+
+That is strictly better than partition-and-hoist:
+
+- **Identical benefit in the observed case.** All 7 mixed turns are `[spawn, read, read]` — the
+  spawn starts first either way, and the reads overlap it either way.
+- **It cannot reorder side effects**, because it never moves anything. A `run_shell` that preceded a
+  spawn still runs before that spawn starts.
+- **It degrades instead of failing.** `[run_shell, spawn]` simply starts the child later — slower,
+  correct — where hoisting would have started it against the wrong tree, silently.
+- **It is easier to reason about**: one pass, emitted order, one await at the end. No partition, no
+  reassembly-order question for the side effects, and the classifier is still just
+  `call.Name == _spawner.ToolName`.
+
+The results still collect and append in call order (§1b), and the barrier is unchanged: nothing
+resumes the loop until every spawn has returned.
 
 **Cancellation is per-call and Escape must reach every child.** Today one CTS covers the turn and each
 tool awaits it in sequence; with two children in flight, Escape has to cancel both AND close both
@@ -1587,6 +1740,43 @@ why it never bit.
 
 So the work here is the loop, the locks, and the prompt. Not the screen.
 
+**PREREQUISITE 0 — A LIVE BUG, TODAY, WITH NO CONCURRENCY INVOLVED.** Found by adversarial review of
+this step and confirmed with a failing test (`CancellingAChild_LeavesNoToolCallWithoutAResult`):
+
+**Escape during a sub-agent run poisons the session permanently.** The chain, every link verified:
+
+1. `Agent.cs:766` appends the assistant message with its tool calls BEFORE the loop runs.
+2. `messages` IS `_context.Messages` (`:383`) — the live session context, not a copy.
+3. A cancelled child's `InvokeAndShowAsync` closes its row and RETHROWS (`:1286`). Its comment says
+   *"there is no next request"* — true of the turn, FALSE of the session: `AppBootstrap.cs:676`
+   catches the cancellation and the conversation continues.
+4. Nothing repairs the context. Grepped `AgentHost`, `AppBootstrap`, `AgentContext`,
+   `CompressionRun`: no filter, no synthetic result, no `RemoveAt`.
+
+So the context keeps an assistant message whose tool call has no `tool` result — **the orphan of
+§1b.** The next request 400s, `ContextOverflow.IsOverflow` does not match it, and nothing recovers
+but `/clear`. One Escape, session gone.
+
+Reachable today only where a tool actually throws `OperationCanceledException`: the spawn branch and
+MCP. `run_shell` is immune because `ProcessRunner` swallows OCE — which is why this has not been hit
+more often, and why it went unnoticed.
+
+**STEP 3 TURNS IT FROM A CORNER CASE INTO THE NORMAL OUTCOME.** With N children in flight, one
+Escape orphans N calls, every time. `Task.WhenAll` does not cause this — it inherits and multiplies
+it.
+
+**The fix, and it belongs before any of the below:** on cancellation, append a synthetic `cancelled`
+result for EVERY call of the turn — including calls not yet started — before the exception leaves
+`SendAsync`. Then the conversation is well-formed whatever happened, which is the same discipline
+`§1f` already applies to a tool that throws. The alternative (drop the trailing assistant message) is
+worse: it discards what the model said it was doing.
+
+**And the spec was wrong here.** It said §1f's try/finally "already covers each child — verify it."
+That is half true: ROWS close correctly per child. The CONTEXT was never covered, and the spec did
+not mention it.
+
+---
+
 Parallel spawning is not one change. Each of these must land BEFORE two children run at once.
 Verified against the code, not recalled:
 
@@ -1604,11 +1794,68 @@ Verified against the code, not recalled:
    member, confirmed in `Core/Models/Job.cs`. Two children, one blocked, is currently
    indistinguishable from slow. Cheaper than when this was written — a row already carries a live
    header and body — so this is one enum member and a header word, not new plumbing.
+3b. **`McpClient.Error` IS SHARED MUTABLE STATE THAT CROSS-CONTAMINATES CHILDREN.** Not previously in
+   this list. The field is written by any failing or timed-out call and READ INTO ANOTHER CALL'S
+   failure text: `CallToolAsync:262-264` renders `error calling '{name}': {Error}` using whatever the
+   last failure on that server left behind, and `Error ??=` at `:305` makes the first error sticky
+   for the life of the connection.
+
+   Two children on one server: A times out, B's unrelated failure reports A's message, and the model
+   reasons from an error that belongs to someone else's call. Silent, and the wrong-diagnosis kind of
+   silent. Fix: return the error from `SendAsync` per call, or at minimum stop reading the shared
+   field into another call's result.
+
 4. **The MCP write lock — CONFIRMED MISSING.** `McpClient.WriteAsync` (`:340-345`) is a bare
    `WriteLineAsync` followed by `FlushAsync` on a shared stdio pipe, with no lock of any kind. Two
    children calling tools on one server interleave a JSON-RPC frame and corrupt it. One
    `SemaphoreSlim`. The read side is fine — replies multiplex by id.
-5. **The turn is MIXED** — see the section above. Parallelise the spawns, not the tools.
+5. **The turn is MIXED** — see the section above. Walk the calls in EMITTED ORDER, start spawns
+   without awaiting, run everything else inline as reached, await the spawn group at the end. Not a
+   partition-and-hoist: reordering a spawn ahead of a `run_shell` starts a child against a tree that
+   command had not yet changed, and nothing reports an error when it does.
+
+6. **A CONCURRENCY CAP — NOT PRESENT ANYWHERE, and the right value is a property of the endpoint.**
+   Nothing in
+   `Core/` limits parallelism: `grep -rn "SemaphoreSlim|MaxDegreeOfParallelism" cxagent/Core/` finds
+   only `LogFileManager`'s per-path lock and `McpManager`'s connect lock. Neither bounds N children.
+
+   And the provider is a **shared static `HttpClient`** (`OpenAiCompatibleProvider.cs:29`,
+   `AnthropicProvider.cs:26`), so N children are N simultaneous requests to one endpoint.
+
+   **HOW BADLY THAT LANDS DEPENDS ENTIRELY ON THE ENDPOINT, and cxagent does not know which one it
+   has.** A hosted API answers concurrent requests and pushes back with 429s. A single-threaded local
+   server queues them at the socket, so the children hold open connections and running timeouts while
+   executing serially. Both are real deployments of this app and neither is the default case — the
+   only honest statement is that the right N is a property of the endpoint, not of the design.
+
+   So: **a cap belongs in the spawn partition** — `SemaphoreSlim(N)` around the child launch, barrier
+   still collecting every result, only N running at once — and **N belongs in config**, beside the
+   other endpoint-shaped values. `providers.<name>.maxConcurrentAgents`, sitting next to
+   `contextWindow`, which is already there for exactly this reason: a fact about the endpoint that
+   cxagent cannot discover and must be told.
+
+   **UNCAPPED BY DEFAULT — decided.** Absent or `0` means unlimited, matching how `maxTurns` already
+   reads 0 as unbounded. The reasoning: a cap chosen without evidence throttles every user to protect
+   against a problem none of them may have, and the honest default for an unknown endpoint is not to
+   interfere. A user who hits a limit has a key to turn; a user throttled by a guess has no idea why
+   their agents are slow. The barrier remains the real invariant — no child outlives its turn.
+
+   **What that costs belongs in CONFIG.md beside the key**, not buried here: 429s and retry
+   amplification on a hosted API; socket queueing with N held connections and N running timeouts on a
+   single-threaded local server; and the window arithmetic — a local server splits `n_ctx` across
+   slots, so each child gets `window/N` while its `AgentContext` believes it has the whole thing, and
+   `IsUnderPressure` fires far too late. `AgentContext.IsPossible`'s own doc already names that.
+
+   **AND THE BOUND THAT ACTUALLY MATTERS IS THE BUDGET, NOT N.** `Breached` is a warning today
+   (`AgentHost.cs:332`) and nothing refuses a child; `WouldBreach` (`:162-163`) has no caller in the
+   spawn path. Consulting it before starting a child — and returning a refusal envelope instead of
+   running it — bounds what a user actually cares about, which is cost rather than parallelism.
+   Worth doing whether or not anyone ever sets a cap.
+
+   Related and already safe: budget breach cannot double-fire.
+   `TokenLedger:157` guards `Breached` with `Interlocked.CompareExchange`, so exactly one caller ever
+   raises it however many children record concurrently. That was written for one child and happens to
+   be exactly right for N.
 
 **ALREADY SAFE, AND DELIBERATELY SO — the usage history writers.** `UsageHistoryStore` was added
 after this list was written and is the one piece of new state two concurrent children will both
