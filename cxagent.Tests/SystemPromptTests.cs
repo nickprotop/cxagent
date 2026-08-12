@@ -1,4 +1,5 @@
 using CxAgent.Core.Llm;
+using CxAgent.Core.Skills;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -544,6 +545,99 @@ public class SystemPromptTests
         Assert.Equal(Child(), Child());
         Assert.Equal(Parent(), Parent());
         Assert.NotEqual(Child(), Parent());
+    }
+
+    // ---- Skills -----------------------------------------------------------------------------
+
+    private static SkillInfo Skill(string name, string description = "Use when testing.") =>
+        new(name, description, $"/tmp/skills/{name}", "# Body\n\nDo it.");
+
+    private static string WithSkills(params SkillInfo[] skills) =>
+        SystemPrompt.Build(Context() with { Skills = skills });
+
+    /// <summary>
+    /// THE CATALOG IS NAME AND DESCRIPTION ONLY. The body is what the load tool fetches; putting it
+    /// here would defeat the entire point — twenty skills of 3k each is 60k of permanent prefix.
+    /// </summary>
+    [Fact]
+    public void Build_RendersTheSkillCatalog_WithoutTheBodies()
+    {
+        var p = WithSkills(Skill("rtl-aware-development", "Use when implementing RTL/LTR behaviour."));
+
+        Assert.Contains("<name>rtl-aware-development</name>", p, StringComparison.Ordinal);
+        Assert.Contains("Use when implementing RTL/LTR behaviour.", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("Do it.", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// OMITTED ENTIRELY WITH NO SKILLS — not an empty heading, not "none available". Most sessions
+    /// have none, and an empty section is permanent prefix bytes charged to every one of them for a
+    /// capability nobody is using. A suite that only ever builds WITH skills never notices the leak.
+    /// </summary>
+    [Fact]
+    public void Build_WithNoSkills_HasNoSkillsSectionAtAll()
+    {
+        var p = Build();
+
+        Assert.DoesNotContain("# Skills", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("available_skills", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("load_skill", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EVERY AGENT GETS A CATALOG — the main agent is the ordinary case, not an exception, and a
+    /// child that cannot see skills would have to be told about them by its parent in prose.
+    /// </summary>
+    [Fact]
+    public void Build_RendersSkills_ForAChildAndForBothParentModes()
+    {
+        var skills = new[] { Skill("planner-notes") };
+
+        foreach (var p in new[]
+                 {
+                     SystemPrompt.Build(Context() with { Skills = skills, IsSubAgent = true }),
+                     SystemPrompt.Build(Context() with { Skills = skills, CanSpawn = true }),
+                     SystemPrompt.Build(Context() with { Skills = skills }),
+                 })
+            Assert.Contains("<name>planner-notes</name>", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// BYTE-IDENTICAL FROM UNCHANGED INPUT. This text rides in the cached prompt prefix, and the
+    /// catalog arrives from Directory.EnumerateDirectories — filesystem order, which is neither
+    /// sorted nor stable across machines. Two builds differing would churn the prefix for free.
+    /// </summary>
+    [Fact]
+    public void Build_WithTheSameSkills_IsByteIdenticalAcrossBuilds()
+    {
+        var skills = new[] { Skill("alpha"), Skill("middle"), Skill("zebra") };
+
+        Assert.Equal(SystemPrompt.Build(Context() with { Skills = skills }),
+                     SystemPrompt.Build(Context() with { Skills = skills }));
+    }
+
+    /// <summary>
+    /// RENDERED IN THE ORDER GIVEN, which the catalog has already sorted. Re-sorting here would put
+    /// the guarantee in two places, the second silently wrong the day the first changes.
+    /// </summary>
+    [Fact]
+    public void Build_RendersSkillsInTheOrderSupplied()
+    {
+        var p = WithSkills(Skill("alpha"), Skill("middle"), Skill("zebra"));
+
+        var a = p.IndexOf("alpha", StringComparison.Ordinal);
+        var m = p.IndexOf("middle", StringComparison.Ordinal);
+        var z = p.IndexOf("zebra", StringComparison.Ordinal);
+
+        Assert.True(a < m && m < z, "the catalog must render in the order the discovery sorted it");
+    }
+
+    /// <summary>The model needs to know HOW to load one, or a catalog is a list of things it cannot
+    /// reach.</summary>
+    [Fact]
+    public void Build_WithSkills_NamesTheToolThatLoadsThem()
+    {
+        Assert.Contains("load_skill", WithSkills(Skill("anything")), StringComparison.Ordinal);
     }
 
     private static int CountOf(string haystack, string needle)

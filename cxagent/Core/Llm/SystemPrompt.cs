@@ -26,6 +26,23 @@ public readonly record struct SystemPromptContext(
         new Dictionary<string, string>();
 
     /// <summary>
+    /// The skills available to this agent — NAME AND DESCRIPTION ONLY. The body is fetched by the
+    /// load tool when the model decides a task matches, which is the whole economics of the feature:
+    /// twenty skills of 3k each would be 60k of permanent prefix, while their catalog is a few
+    /// hundred characters.
+    ///
+    /// <para>A LIST OF RECORDS, not a name→description dictionary like <see cref="McpInstructions"/>.
+    /// A skill also carries a directory and a body that the loader needs, and forking discovery into
+    /// a prompt-shaped copy and a loader-shaped copy is two representations to keep in step. The
+    /// prompt renders the two fields it wants and ignores the rest.</para>
+    ///
+    /// <para>Already sorted by name when it arrives — see the catalog. Order is not cosmetic here:
+    /// this text rides in the cached prefix, so a list that reshuffled between turns would churn the
+    /// cache for nothing.</para>
+    /// </summary>
+    public IReadOnlyList<Skills.SkillInfo> Skills { get; init; } = [];
+
+    /// <summary>
     /// True when this prompt is for a SUB-AGENT rather than the session's own agent.
     ///
     /// <para>A child would otherwise receive the session prompt unchanged, which is wrong in one
@@ -332,6 +349,7 @@ public static class SystemPrompt
             sb.AppendLine();
 
             AppendMcpInstructions(sb, ctx);
+            AppendSkills(sb, ctx);
             return sb.ToString();
         }
 
@@ -368,6 +386,7 @@ public static class SystemPrompt
                     + "file you create.");
 
         AppendMcpInstructions(sb, ctx);
+        AppendSkills(sb, ctx);
 
         return sb.ToString();
     }
@@ -408,5 +427,48 @@ public static class SystemPrompt
             sb.AppendLine();
             sb.AppendLine(text.Trim());
         }
+    }
+
+    /// <summary>
+    /// The skills this agent can load, as names and descriptions.
+    ///
+    /// <para>OMITTED ENTIRELY WHEN THERE ARE NONE — not an empty heading, not "no skills available".
+    /// Most sessions have no skills, and those users should pay nothing for the feature: an empty
+    /// section is permanent prefix bytes charged to everyone for a capability nobody is using. The
+    /// same early return <see cref="AppendMcpInstructions"/> makes, for the same reason.</para>
+    ///
+    /// <para>THE DESCRIPTION IS THE ENTIRE INTERFACE. It is all the model sees before deciding, so it
+    /// is rendered verbatim from the file rather than summarised — a skill whose description says
+    /// WHEN to use it will be found, and one that reads like a title will not.</para>
+    ///
+    /// <para>TAGGED RATHER THAN BULLETED, matching both reference implementations. The catalog sits
+    /// among prose the model must not confuse it with; delimiters make "these are the available
+    /// skills" unambiguous where a markdown list would blend into the surrounding instructions.</para>
+    /// </summary>
+    private static void AppendSkills(StringBuilder sb, SystemPromptContext ctx)
+    {
+        // NO RE-SORT. The catalog is already ordered by name, and sorting again here would put the
+        // guarantee in two places — the second one silently wrong the day the first changes.
+        var skills = ctx.Skills;
+        if (skills.Count == 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("# Skills");
+        sb.AppendLine();
+        sb.AppendLine("Specialised instructions you can load when a task matches one. Call "
+                    + "load_skill with the name to read it; the description tells you when it "
+                    + "applies. Load one BEFORE starting work it covers, not after.");
+        sb.AppendLine();
+        sb.AppendLine("<available_skills>");
+
+        foreach (var skill in skills)
+        {
+            sb.AppendLine("  <skill>");
+            sb.AppendLine($"    <name>{skill.Name}</name>");
+            sb.AppendLine($"    <description>{skill.Description}</description>");
+            sb.AppendLine("  </skill>");
+        }
+
+        sb.AppendLine("</available_skills>");
     }
 }

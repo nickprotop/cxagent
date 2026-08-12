@@ -449,6 +449,17 @@ public sealed class Agent
                     McpInstructions = _mcp?.InstructionsByServer()
                                       ?? new Dictionary<string, string>(),
 
+                    // READ FROM DISK EACH PROMPT, exactly like the instruction files below and for
+                    // the same reason: a skill edited mid-session takes effect on the next turn. The
+                    // cache is protected by the text COMPARISON above, not by avoiding the read —
+                    // unchanged files render byte-identical and the message is not replaced.
+                    //
+                    // EVERY AGENT DISCOVERS ITS OWN. A child runs this same code from the same
+                    // working directory, so it gets the same catalog without anything being threaded
+                    // through the factory. What a child does NOT inherit is whatever the parent
+                    // LOADED — that lives in the parent's messages, which a child never sees.
+                    Skills = Core.Skills.SkillCatalog.Find(cwd, _globalInstructionsDir).Skills,
+
                     // A CHILD GETS A DIFFERENT PROMPT (D24): the commands block dropped, and
                     // # Answering replaced with one written for a model rather than a person at a
                     // terminal. Fixed for this agent's whole life, so its prefix stays byte-identical
