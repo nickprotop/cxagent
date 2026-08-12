@@ -25,3 +25,11 @@ publish/
 # exactly the kind of file that produces a diff for everyone the moment one
 # person opens the repo in it.
 .lazydotide.workspace
+
+# Skills are per-developer, not per-repository. A SKILL.md here is discovered and
+# loaded by every cxagent session run from this folder, so committing one imposes
+# it on everyone who clones — including whatever house rules or tool preferences
+# it encodes. Keep them local; a skill that genuinely belongs to the project can
+# be argued for on its own merits.
+.agents/
+.cxagent/
