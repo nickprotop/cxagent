@@ -12,6 +12,7 @@ namespace CxAgent.Tests;
 /// agent's whole life, distinct identities between agents, and one context that grows across
 /// prompts instead of being rebuilt per message.
 /// </summary>
+[Collection("working-directory")]
 public class AgentTests
 {
     /// <summary>The id is the agent's, for its whole life — not one per prompt. It keys the log

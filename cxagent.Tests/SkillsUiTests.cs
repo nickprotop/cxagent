@@ -13,6 +13,7 @@ namespace CxAgent.Tests;
 /// refusals are the reason /skills exists at all — a broken file is invisible to the model, and
 /// nothing else in the app would ever mention it.
 /// </summary>
+[Collection("working-directory")]
 public class SkillsUiTests
 {
     private static SkillInfo Skill(string name, string description = "Use when testing.") =>
