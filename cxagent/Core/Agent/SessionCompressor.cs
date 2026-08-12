@@ -221,7 +221,29 @@ public static class SessionCompressor
         if (conversation.Count - pinnedHead < 2) return;
 
         var keep = (conversation.Count - pinnedHead) / 2;
-        conversation.RemoveRange(pinnedHead, conversation.Count - pinnedHead - keep);
+        var removeCount = conversation.Count - pinnedHead - keep;
+
+        // AND NEVER LEAVE A TOOL RESULT WITHOUT ITS CALL. SafeCut does this for the summarise path;
+        // this path had bare arithmetic and did not, so a boundary landing on a tool result deleted
+        // the assistant message that CALLED it and kept the answer — a result answering nothing.
+        // That orphans the conversation permanently: the provider 400s every subsequent request,
+        // ContextOverflow.IsOverflow does not match the error so nothing recovers, and only /clear
+        // gets the session back. It is the same hazard the cancellation backfill exists to prevent,
+        // reached by the path taken when things are ALREADY going wrong.
+        //
+        // FORWARD, not backward like SafeCut, because the two compute different ends of the same
+        // range: SafeCut chooses where deletion STOPS and walks back to keep a pair together, while
+        // this chooses where survival STARTS and walks forward, dropping one more message until the
+        // first survivor is not an unanswered result. Walking the wrong way here would preserve the
+        // orphan and delete a healthy message instead.
+        var start = pinnedHead + removeCount;
+        while (start < conversation.Count && conversation[start].ToolCallId is not null)
+        {
+            start++;
+            removeCount++;
+        }
+
+        conversation.RemoveRange(pinnedHead, removeCount);
     }
 
     /// <summary>

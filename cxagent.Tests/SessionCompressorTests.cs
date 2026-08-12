@@ -90,6 +90,65 @@ public class SessionCompressorTests
     }
 
     /// <summary>
+    /// THE FALLBACK MUST NOT ORPHAN A TOOL RESULT. <c>SafeCut</c> walks the summarise path's boundary
+    /// backward off any ToolCallId so a call and its result are removed together; <c>Truncate</c> did
+    /// bare arithmetic and had no such walk. When its boundary landed on a tool result, the assistant
+    /// message that CALLED it was deleted and the result survived — answering nothing.
+    ///
+    /// <para>That orphan 400s the session permanently: ContextOverflow.IsOverflow does not match it,
+    /// so nothing recovers and only /clear gets the session back. The trigger is ordinary — this path
+    /// is taken whenever summarisation throws, which is what a provider blip looks like.</para>
+    /// </summary>
+    [Fact]
+    public async Task Compress_WhenSummarisationFails_NeverLeavesAToolResultWithoutItsCall()
+    {
+        var provider = new ThrowingProvider();
+        var context = new AgentContext();
+        var conversation = context.Messages;
+
+        // TWO LEADING TURNS. The boundary is arithmetic — for a conversation of N messages the
+        // survivors begin at index N - N/2 — so reproducing this is a question of PARITY, not of
+        // size: the pairs must be positioned so that index lands on a RESULT rather than on a call.
+        // With 18 messages the survivors start at index 9, and these two leaders put a result there.
+        // Every even count with pairs starting at index 0 lands on a call instead, which is how the
+        // bug survived a suite that already exercises this fallback.
+        conversation.Add(Msg("user", "start"));
+        conversation.Add(Msg("assistant", "working on it"));
+
+        for (int i = 0; i < 8; i++)
+        {
+            conversation.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = "",
+                ToolCalls = [new ToolCall { Name = "read_file", Id = $"call-{i:D2}" }],
+            });
+            conversation.Add(new ChatMessage
+            {
+                Role = "tool",
+                Content = $"contents-{i:D2}",
+                ToolCallId = $"call-{i:D2}",
+            });
+        }
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        // EVERY surviving result must still have the call it answers, somewhere above it.
+        var callIds = conversation
+            .Where(m => m.ToolCalls is not null)
+            .SelectMany(m => m.ToolCalls!)
+            .Select(c => c.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var orphans = conversation
+            .Where(m => m.ToolCallId is not null && !callIds.Contains(m.ToolCallId))
+            .Select(m => m.ToolCallId)
+            .ToList();
+
+        Assert.Empty(orphans);
+    }
+
+    /// <summary>
     /// No preamble, no pin. A sub-agent or a test context that never had a system message must still
     /// compress from the very front rather than mysteriously keeping its oldest user turn.
     /// </summary>
