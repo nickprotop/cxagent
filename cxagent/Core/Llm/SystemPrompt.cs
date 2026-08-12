@@ -459,6 +459,15 @@ public static class SystemPrompt
                     + "load_skill with the name to read it; the description tells you when it "
                     + "applies. Load one BEFORE starting work it covers, not after.");
         sb.AppendLine();
+        // SAID HERE AND IN THE TOOL DESCRIPTION, because the first live drive showed that naming the
+        // tool is not enough: the model located the SKILL.md with list_files and read it with
+        // read_file — the tool it reaches for whenever it holds a path. The instructions still
+        // arrived, so the WORK was right and every downstream surface was wrong: no marker meant the
+        // worker row, the session panel and the compaction notice all reported no skill in force.
+        sb.AppendLine("Use load_skill for this, never a file tool. Reading a SKILL.md directly gets "
+                    + "you the text but does not register the skill, so nothing else in the session "
+                    + "knows it is in force — and you will not be told when it is compacted away.");
+        sb.AppendLine();
         sb.AppendLine("<available_skills>");
 
         foreach (var skill in skills)

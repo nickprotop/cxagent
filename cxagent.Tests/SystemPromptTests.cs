@@ -640,6 +640,22 @@ public class SystemPromptTests
         Assert.Contains("load_skill", WithSkills(Skill("anything")), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// AND THAT A FILE TOOL IS NOT THE WAY. Naming the tool proved not to be enough: on the first
+    /// live drive the model located the SKILL.md with list_files and read it with read_file — the
+    /// tool it reaches for whenever it holds a path. The instructions arrived, so the work was
+    /// correct and every downstream surface was wrong; without the marker the worker row, the panel
+    /// and the compaction notice all reported that no skill was in force.
+    /// </summary>
+    [Fact]
+    public void Build_WithSkills_TellsTheModelNotToReadTheFileDirectly()
+    {
+        var p = WithSkills(Skill("anything"));
+
+        Assert.Contains("never a file tool", p, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SKILL.md", p, StringComparison.Ordinal);
+    }
+
     private static int CountOf(string haystack, string needle)
     {
         var count = 0;

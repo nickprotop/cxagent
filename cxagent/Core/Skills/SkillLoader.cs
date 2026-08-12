@@ -55,11 +55,21 @@ public sealed class SkillLoader
     /// <summary>
     /// Hand-built, like the spawner's and MCP's: there is no plugin and no <c>JobSchema</c> behind
     /// this, so <c>WorkerToolset.BuildDefinition</c>'s drift guard has nothing to guard.
+    ///
+    /// <para>IT SAYS "DO NOT READ THE FILE" BECAUSE A MODEL OTHERWISE WILL. On the first live drive
+    /// the model saw the catalog, decided it wanted the skill, then found the SKILL.md with
+    /// <c>list_files</c> and read it with <c>read_file</c> — the tool it reaches for whenever it holds
+    /// a path. The instructions arrived and the work was correct, but nothing downstream of loading
+    /// ran: no marker, so the row, the panel and the compaction notice all believed no skill was in
+    /// force. A description that only says what this tool DOES leaves the file sitting there as an
+    /// equally good answer.</para>
     /// </summary>
     public ToolDefinition Definition => new(
         ToolName,
         "Load a specialised skill when the task at hand matches one of the available skills listed "
-        + "in your system context. Returns the skill's full instructions.",
+        + "in your system context. Returns the skill's full instructions. "
+        + "ALWAYS use this tool to read a skill — never open its SKILL.md with a file tool, even if "
+        + "you know the path. Only this tool records that the skill is in force.",
         JsonDocument.Parse("""
             {
               "type": "object",
