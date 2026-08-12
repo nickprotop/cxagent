@@ -946,8 +946,25 @@ public sealed class MainWindow : IDisposable
             [.. _resolution.AgentTypes.Keys],
             _spendByModel,
             _subAgentTokens,
-            _splitByModel);
+            _splitByModel,
+            // WHAT EXISTS, AND WHAT IS IN FORCE. The count comes from discovery; the loaded names are
+            // DERIVED from this agent's window, so the line vanishes by itself when compaction takes
+            // a body — which is the silent behaviour change the panel exists to make visible.
+            //
+            // THE PARENT'S, not the session's: a child's skills are reported on the child's own row,
+            // and a child is gone by the next turn while this panel persists.
+            SkillCount,
+            LoadedSkills);
     }
+
+    /// <summary>How many skills discovery found. Set by the composition root, which owns the read.</summary>
+    public int SkillCount { get; set; }
+
+    /// <summary>
+    /// The skills whose bodies are still in the PARENT agent's window. A function of the conversation
+    /// rather than a remembered list, so it stops reporting one the moment compaction removes it.
+    /// </summary>
+    public IReadOnlyList<string> LoadedSkills { get; set; } = [];
 
     /// <summary>F3 — show the panel, hide it, or hand it back to the terminal width.</summary>
     public void ToggleSessionPanel()

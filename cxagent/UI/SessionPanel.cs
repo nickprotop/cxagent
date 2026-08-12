@@ -167,7 +167,9 @@ public sealed class SessionPanel
         IReadOnlyList<string>? agentTypes = null,
         IReadOnlyDictionary<string, int>? spendByModel = null,
         int subAgentTokens = 0,
-        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null)
+        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
+        int skillCount = 0,
+        IReadOnlyList<string>? loadedSkills = null)
     {
         var lines = new List<string>();
 
@@ -248,6 +250,28 @@ public sealed class SessionPanel
                 lines.Add(server.IsConnected
                     ? Value($"{server.Name} · {server.ToolCount} tool{(server.ToolCount == 1 ? "" : "s")}")
                     : Muted($"{server.Name} · failed"));
+        }
+
+        // SKILLS: HOW MANY EXIST, AND WHICH ARE IN FORCE RIGHT NOW.
+        //
+        // THE LOADED ONES ARE THE POINT. A skill loaded ten turns ago is still shaping every answer
+        // with nothing on screen saying so — and when compaction removes its body it silently stops,
+        // which is a behaviour change with no visible cause. This is the only surface that reports
+        // that, and it reports it by DERIVING from the window rather than remembering, so the line
+        // disappears exactly when the skill stops applying.
+        //
+        // THE COUNT IS MUTED AND THE NAMES ARE VALUED, following the MCP rows above: otherwise a
+        // reader sees five lines and cannot tell which are available from which are active.
+        //
+        // THE PARENT'S ONLY. A child's skills live and die inside its own row, which already names
+        // them, and a child is gone by the next turn while this panel persists — attributing one to
+        // the session would be worse than omitting it, because a skill is not a quantity to total.
+        if (skillCount > 0)
+        {
+            Section(lines, "Skills");
+            lines.Add(Muted($"{skillCount} available"));
+            foreach (var skill in loadedSkills ?? [])
+                lines.Add(Value(skill));
         }
 
         // SPEND PER MODEL, when more than one model has spent anything.

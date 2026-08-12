@@ -358,6 +358,17 @@ public static class AppBootstrap
                 // parent-only total would be two figures that cannot be added together.
                 var (turnIn, turnOut) = runner.OwnSpend;
                 mainWindow.SetTokenSplit(turnIn, turnOut);
+
+                // SKILLS, RE-READ EVERY TURN like the agent's own discovery — a skill added or
+                // edited mid-session shows up here on the same turn its description reaches the
+                // prompt, rather than after a restart.
+                //
+                // The LOADED list is derived from the parent's window, so it empties itself when
+                // compaction removes a body. That silent stop is the thing worth showing.
+                mainWindow.SkillCount = Core.Skills.SkillCatalog
+                    .Find(Directory.GetCurrentDirectory(), paths.ConfigDir).Skills.Count;
+                mainWindow.LoadedSkills = runner.LoadedSkills;
+
                 mainWindow.RefreshSessionPanel();
             });
             mainWindow.SetSubmissionEnabled(true);
@@ -507,6 +518,18 @@ public static class AppBootstrap
                         if (command.Name == "/mcp")
                         {
                             _ = mcpCommand.HandleAsync(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+
+                        if (command.Name == "/skills")
+                        {
+                            // DISCOVERED HERE AND NOW, from the working directory — the same read the
+                            // agent does each turn, so what this prints is what the model is seeing
+                            // rather than a copy that could disagree with it.
+                            new SkillsCommand(
+                                () => Core.Skills.SkillCatalog.Find(
+                                    Directory.GetCurrentDirectory(), paths.ConfigDir),
+                                permissionSink).Handle();
                             return;
                         }
 

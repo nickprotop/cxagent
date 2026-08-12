@@ -199,6 +199,20 @@ public sealed class Agent
     /// <summary>This agent's context — its messages, its occupancy, its window.</summary>
     public AgentContext Context => _context;
 
+    /// <summary>
+    /// The skills whose bodies are STILL IN THIS AGENT'S WINDOW, in load order.
+    ///
+    /// <para>DERIVED, NOT TRACKED — the same scan the load tool answers with, for the same reason: a
+    /// list that drifted from the window would tell the user a skill is shaping the answer after
+    /// compaction removed it. It reports what is true right now, including that a skill silently
+    /// stopped applying.</para>
+    ///
+    /// <para>A WORKER'S ROW IS THE ONLY PLACE THIS IS VISIBLE. A child's context is invisible by
+    /// design, so a skill it loaded is the one thing shaping its answer that the parent cannot
+    /// otherwise learn — and by the time the row finishes, the context is gone.</para>
+    /// </summary>
+    public IReadOnlyList<string> LoadedSkills => Skills.SkillLoader.LoadedIn(_context.Messages);
+
     /// <summary>Raised when a turn finishes, with its tool-call count. A callback rather than a
     /// AgentHost reference: the loop needs to ANNOUNCE a turn boundary, not to know what listens.</summary>
     public event Action<int>? TurnCompleted;
@@ -1244,6 +1258,11 @@ public sealed class Agent
         SubAgent? spawned = null;
         var childTurns = 0;
 
+        // THE SKILLS IT LOADED, captured on each tick so the finished row can name them after the
+        // child's context is gone. The live row reads child.Agent directly; the finished row is built
+        // once SendAsync has returned, and cannot.
+        IReadOnlyList<string> childSkills = [];
+
         // A PERIODIC TICK, owned by this call and disposed in its finally.
         //
         // Turn boundaries alone are not enough: a child spends most of a long run INSIDE one turn,
@@ -1340,6 +1359,23 @@ public sealed class Agent
             var facts = new List<string> { $"  type: {child.TypeName}" };
             if (!string.IsNullOrWhiteSpace(child.ModelId))
                 facts.Add($"  model: {child.ModelId}");
+
+            // WHAT IT LOADED, and this is the line the row earns most. A child's context is invisible
+            // by design, so a skill it chose is the one thing shaping its answer that the parent
+            // cannot otherwise learn — and the load itself appears in the recent-tools list below for
+            // six calls before scrolling away for good.
+            //
+            // CAPTURED INTO THE ENCLOSING LOCAL, not just rendered. The finished row is built after
+            // SendAsync returns and cannot read live state — this section argues the child's context
+            // is gone by then, and a finished row reading it would depend on the very thing it says
+            // has vanished. childTurns is captured for the same reason.
+            //
+            // NOT A STANDING FACT, unlike type and model: skills ACCUMULATE mid-run, so the line
+            // appears only once something is loaded rather than sitting empty — the same reason
+            // occupancy renders as "" until the provider first reports usage.
+            childSkills = child.Agent.LoadedSkills;
+            if (childSkills.Count > 0)
+                facts.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
 
             // ITS TASK, clipped. The prompt is the parent's own words and is often a page long — the
             // first line is what the parent MEANT; the rest is detail the row cannot hold. Shown only
@@ -1530,6 +1566,16 @@ public sealed class Agent
                     var first = childPrompt!.Split('\n', 2)[0].Trim();
                     if (first.Length > 0) account.Add($"  task: {Clip(first, 60)}");
                 }
+                // THE SKILLS IT LOADED, from the captured copy rather than a live read: by here the
+                // child has finished and this section's own argument is that its context is gone.
+                // A live read would depend on the thing that has vanished.
+                //
+                // ITS OWN LINE IN THIS LIST because ProgressBody is REPLACED here, not appended to —
+                // a change made only to `facts` above would pass a live-row test and silently drop
+                // this from the finished row, which is the surface that outlives the run.
+                if (childSkills.Count > 0)
+                    account.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
+
                 account.Add($"  {childTurns} turn{(childTurns == 1 ? "" : "s")} · {duration}");
                 if (spentIn + spentOut > 0)
                     account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
@@ -1555,7 +1601,13 @@ public sealed class Agent
                     // wasted run in the success column, which is exactly the run worth finding later.
                     Outcome: SubAgentEnvelope.StateOf(result) ?? (failed ? "failed" : "completed"),
                     StartedAt: started,
-                    DurationMs: (long)took.TotalMilliseconds));
+                    DurationMs: (long)took.TotalMilliseconds)
+                {
+                    // From the captured copy, like the row above: the child has finished and its
+                    // context is gone. Null rather than "" when nothing was loaded, so a later query
+                    // can tell "loaded nothing" from "ran before skills existed".
+                    Skills = childSkills.Count > 0 ? string.Join(", ", childSkills) : null,
+                });
             }
         }
         job.Result = new JobResult
@@ -1968,6 +2020,16 @@ public sealed class Agent
             // has two, and the row exists to tell three concurrent workers apart.
             var name = string.IsNullOrWhiteSpace(type) ? AgentTypeCatalog.DefaultTypeName : type!.Trim();
             return string.IsNullOrWhiteSpace(what) ? name : $"{name} · {Clip(what!, 44)}";
+        }
+
+        // A SKILL LOAD IS NAMED BY THE SKILL. The generic branch would render
+        // `load_skill {"name":"rtl-aware-development"}` — the JSON scaffolding is noise around the
+        // one word that matters, and the row is the only place a user sees that a skill entered the
+        // conversation at all.
+        if (string.Equals(call.Name, "load_skill", StringComparison.Ordinal))
+        {
+            var skill = ReadArg(call, "name");
+            return string.IsNullOrWhiteSpace(skill) ? "load_skill" : $"skill · {skill!.Trim()}";
         }
 
         var args = call.Arguments.ToString();

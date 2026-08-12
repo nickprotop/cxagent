@@ -40,4 +40,18 @@ public sealed record ChildRunReport(
     int ToolCalls,
     string Outcome,
     DateTimeOffset StartedAt,
-    long DurationMs);
+    long DurationMs)
+{
+    /// <summary>
+    /// The skills this child loaded, comma-separated, or null when it loaded none.
+    ///
+    /// <para>HERE AND NOT ONLY ON THE ROW, because this record exists for the question one session
+    /// cannot answer — "is a planner worth spawning?" — and a loaded skill changes that answer. "The
+    /// planner runs that loaded the deployment skill cost 3x the ones that did not" is exactly the
+    /// cross-session comparison this is for, and the row that carries it scrolls away.</para>
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, not a positional field: every construction site would otherwise
+    /// have to name it, including tests and persistence that have nothing to do with skills.</para>
+    /// </summary>
+    public string? Skills { get; init; }
+}

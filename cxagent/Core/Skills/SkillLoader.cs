@@ -121,15 +121,40 @@ public sealed class SkillLoader
     /// "user" turn carrying a tool_result block — and <c>ToolCallId</c> is the only reliable marker
     /// of a tool result.</para>
     /// </summary>
-    private static bool IsLoaded(IReadOnlyList<ChatMessage> messages, string name)
-    {
-        var marker = BodyMarkerPrefix + name + "]";
-        foreach (var message in messages)
-            if (message.ToolCallId is not null
-                && message.Content.StartsWith(marker, StringComparison.Ordinal))
-                return true;
+    private static bool IsLoaded(IReadOnlyList<ChatMessage> messages, string name) =>
+        LoadedIn(messages).Contains(name, StringComparer.Ordinal);
 
-        return false;
+    /// <summary>
+    /// Every skill whose body is still in this window, in load order.
+    ///
+    /// <para>ONE RECOGNISER, THREE CONSUMERS: the "already loaded" answer above, the worker row that
+    /// says which skills are shaping a child's behaviour, and compaction naming what it removed. A
+    /// second implementation of "is this a skill body?" is the kind of duplicate that stays correct
+    /// until the marker changes and then disagrees silently.</para>
+    ///
+    /// <para>FILTERS ON <c>ToolCallId</c>, NEVER ON <c>Role == "tool"</c>. <see cref="ChatMessage"/>
+    /// says so itself: the wire builders overwrite the role — OpenAI sets "tool", Anthropic emits a
+    /// "user" turn carrying a tool_result block — and <c>ToolCallId</c> is the only reliable marker
+    /// of a tool result. An assistant message that merely QUOTES the marker is not a loaded body.</para>
+    /// </summary>
+    public static IReadOnlyList<string> LoadedIn(IReadOnlyList<ChatMessage> messages)
+    {
+        List<string>? names = null;
+
+        foreach (var message in messages)
+        {
+            if (message.ToolCallId is null) continue;
+            if (!message.Content.StartsWith(BodyMarkerPrefix, StringComparison.Ordinal)) continue;
+
+            var end = message.Content.IndexOf(']', BodyMarkerPrefix.Length);
+            if (end <= BodyMarkerPrefix.Length) continue;
+
+            var name = message.Content[BodyMarkerPrefix.Length..end];
+            names ??= [];
+            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+        }
+
+        return (IReadOnlyList<string>?)names ?? [];
     }
 
     /// <summary>

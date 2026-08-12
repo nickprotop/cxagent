@@ -245,6 +245,12 @@ public sealed class AgentHost : IDisposable
     public (int Input, int Output) OwnSpend => _agent.Spend;
 
     /// <summary>
+    /// The skills whose bodies are still in THIS agent's window — the parent's, not the session's.
+    /// A child's are reported on the child's own row, and a child is gone by the next turn.
+    /// </summary>
+    public IReadOnlyList<string> LoadedSkills => _agent.LoadedSkills;
+
+    /// <summary>
     /// Records that this session ended normally, so it is never offered for resume.
     ///
     /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did

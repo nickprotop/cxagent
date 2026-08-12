@@ -38,6 +38,11 @@ public static class SessionCommands
             // couple this static table to session state — `/mcp` bare is what enumerates them.
             new("<server>", "inspect one server by name", Completes: false),
         ]),
+        // NeedsWindow like /mcp: discovery reads the session's working directory, and this type
+        // holds nothing but the conversation. NO SUBCOMMANDS — it lists, it does not load, and it is
+        // not a refresh: skills are re-read every turn, so an edited one is already live.
+        new("/skills", "list available skills, and any SKILL.md that was skipped",
+            CommandOutcome.NeedsWindow),
         // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
         // this type deliberately holds nothing but the conversation.
         new("/mode", "show or set the agent mode: single, fan-out", CommandOutcome.NeedsWindow,
