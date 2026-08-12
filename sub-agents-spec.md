@@ -1376,6 +1376,37 @@ Cost, stated: no child survives its turn, so "start this and tell me later" is n
 is a real capability given up, and it is the one background would buy. Revisit only if a concrete
 need appears — not because it sounds more advanced.
 
+#### WHAT THE LOGS SAY THIS MODEL ACTUALLY DOES — read before building any of it
+
+Every assistant message ever logged by this installation, counted. Two findings, and they point in
+opposite directions.
+
+**THE MODEL HAS NEVER EMITTED TWO SPAWNS IN ONE MESSAGE.** Of 118 messages carrying `spawn_agent`:
+
+| Shape | Count |
+|---|---|
+| `spawn_agent` alone | 111 |
+| `spawn_agent, read_file, read_file` | 7 |
+| **two or more spawns together** | **0** |
+
+Multi-call turns are otherwise routine — messages of 8, 10, 12 and 16 tool calls are all common — so
+this is not a model that cannot emit several calls at once. It emits several READS at once and has
+never once emitted several spawns. Sequential delegation (spawn, read the report, spawn again) is
+what it does, twice observed across two separate sessions.
+
+**SO THE HONEST EXPECTED VALUE OF PARALLELISM HERE IS LOW**, and D28's prompt work is not a
+finishing touch on step 3 — it is the part that decides whether step 3 does anything at all. Both
+references say the mechanism must be stated explicitly; this is the measurement explaining why they
+bothered. If the prompt does not move it, the concurrency is correct and unexercised.
+
+**THE MIXED TURN IS NOT HYPOTHETICAL, THOUGH — it is 7 of the 118.** A spawn arriving alongside two
+`read_file` calls is a shape the current sequential loop already handles by accident, and the shape
+that most needs care once anything in that loop runs concurrently. The partition below is therefore
+worth building even if two spawns never co-occur: it is what keeps the reads from racing the child.
+
+**MEASURE THIS AGAIN AFTER D28.** The same grep over the same logs answers "did the prompt change
+anything" in one line, and it is a better gate than an impression.
+
 #### A MIXED TURN: 2 spawns and 3 tools in one message
 
 The obvious reading of "run the children concurrently" is wrong, and it is worth stating before
@@ -1437,14 +1468,61 @@ so starting them before the sequential work means the tools run inside the windo
 already occupying. The alternative — tools first — has the parent doing quick work while nothing is
 delegated, then waiting on children with nothing else to do.
 
+**And it matches what the model already emits.** All 7 observed mixed turns are literally
+`[spawn_agent, read_file, read_file]` — the spawn first, the reads after. The partition preserves the
+order the model chose rather than imposing one, which means the reordering is invisible in exactly
+the case that occurs.
+
 **Cancellation is per-call and Escape must reach every child.** Today one CTS covers the turn and each
 tool awaits it in sequence; with two children in flight, Escape has to cancel both AND close both
 rows. §1f's `try/finally` is per-invocation, so it already covers each child individually — verify it,
 do not assume it.
 
+#### IS THIS STEP STILL WHAT WE WANT? — the honest accounting
+
+Worth asking before building it, because the evidence above weakens the case and the surrounding work
+has changed what the step costs.
+
+**WHAT IT BUYS.** Wall-clock, and only wall-clock. Two children that each take two minutes finish in
+two minutes rather than four. Nothing else improves: the same tokens are spent, the same context is
+saved, the same reports come back. Measured against tonight's runs — a 102s explore, a 480s capped
+explore — that is minutes per session, real but not transformative.
+
+**WHAT IT COSTS.** Smaller than when it was written, and this is the part that has moved:
+
+| | Then | Now |
+|---|---|---|
+| Presentation | unknown; assumed work | **nothing** — verified per entry point |
+| Telemetry, per-agent | did not exist | **built** — `Agent.Spend`, child-id attribution |
+| History under concurrency | did not exist | **safe by construction** — no mutable state |
+| Denial echo | listed as a prerequisite | **already true** |
+| Remaining | — | one `SemaphoreSlim`, one parameter, one enum member, the partition, D28 |
+
+**WHAT IT RISKS.** The tool loop is the most load-bearing code in the app, and three of its four
+hazards fail SILENTLY — a lost `wrote` flag skips build verification, a corrupted `seen` dictionary
+breaks loop detection, a raced `_lastBuild` leaves a wrong verdict for the session. None throws. None
+is caught by a test that does not specifically look for it.
+
+**THE VERDICT: build it, but build D28 first and let the measurement decide the rest.** The model has
+never spawned twice in one message, so the concurrency has nothing to do until the prompt changes
+that. Shipping the locks and the partition against a model that will not use them is correct
+plumbing with zero observable effect — and the plumbing that DOES have an effect today is the
+partition's other half, which keeps 7-in-118 mixed turns from racing.
+
+Concretely: **D28 and the mixed-turn partition are worth doing regardless. `Task.WhenAll` over the
+spawn group is worth doing only once a log shows two spawns in one message.** That is a one-line
+grep, and it is a better gate than an intention.
+
 #### What a barrier still FORCES
 
+Whatever the model does with it, the barrier's own constraints are fixed by the message format and do
+not depend on how often several children occur:
 
+- **No child outlives its turn.** The parent's message list is malformed the moment one tool call
+  lacks its result, so the loop cannot resume early even if a design wanted it to.
+- **Escape must reach every child**, not just the one the parent is awaiting — see the cancellation
+  note above.
+- **The user is present**, which is what makes a child's permission prompt answerable at all.
 
 **THIS STEP HAS ALMOST NO UI IN IT, and that is a finding rather than an oversight.** A worker is
 already fully presented: one row per child, named by type, with live turns, occupancy, elapsed time
