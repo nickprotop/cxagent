@@ -329,7 +329,14 @@ public class WorkerToolsetTests
         // inventing is not. BuildDefinition throws on a name the plugin does not accept, so simply
         // building every tool is the assertion.
         var tools = WorkerToolset.For(Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins());
-        Assert.Equal(7, tools.Count);
+
+        // The count is a tripwire, not a fact worth asserting on its own: every tool is permanent
+        // prompt weight, so adding one should be a deliberate edit here rather than something that
+        // slips in. Named, so a failure says WHICH set changed.
+        Assert.Equal(
+            ["read_file", "list_files", "search_files", "write_file", "replace_in_file",
+             "run_shell", "http_request", "web_fetch"],
+            tools.Select(t => t.Name));
     }
 
     // ---- ARGUMENT TYPE TOLERANCE -------------------------------------------
@@ -451,5 +458,55 @@ public class WorkerToolsetTests
             Assert.DoesNotContain("Unrecognised", r);
         }
         finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// web_fetch is the http plugin with as_text pinned. The model must not be offered the flag —
+    /// the choice between "read this page" and "call this endpoint" is the choice between the two
+    /// TOOLS, and a boolean it can forget to set is a decision that goes wrong silently.
+    /// </summary>
+    [Fact]
+    public void WebFetch_DoesNotOfferTheFlagItPins()
+    {
+        var tools = WorkerToolset.For(new[] { WorkerTool.WebFetch }, PluginRegistry.CreateWithBuiltins());
+        var props = tools.Single().InputSchema.GetProperty("properties");
+
+        // Guards the premise: if the plugin ever drops as_text, the pinning is silently a no-op.
+        var real = PluginRegistry.CreateWithBuiltins().All
+            .Single(p => p.TypeName == "http").GetSchema().Params.Select(p => p.Name).ToList();
+        Assert.Contains("as_text", real);
+
+        Assert.False(props.TryGetProperty("as_text", out _));
+        Assert.True(props.TryGetProperty("url", out _));
+    }
+
+    /// <summary>
+    /// And http_request stays raw. A model calling an API needs what the server sent, byte for
+    /// byte — running a JSON body through an HTML converter would corrupt exactly what was asked
+    /// for.
+    /// </summary>
+    [Fact]
+    public void HttpRequest_AndWebFetch_AreDistinctToolsOverOnePlugin()
+    {
+        var tools = WorkerToolset.For(
+            new[] { WorkerTool.HttpRequest, WorkerTool.WebFetch },
+            PluginRegistry.CreateWithBuiltins());
+
+        var names = tools.Select(t => t.Name).ToList();
+
+        Assert.Contains("http_request", names);
+        Assert.Contains("web_fetch", names);
+
+        // http_request keeps the full request surface; web_fetch is deliberately just a URL.
+        var request = tools.Single(t => t.Name == "http_request").InputSchema.GetProperty("properties");
+        Assert.True(request.TryGetProperty("method", out _));
+        Assert.True(request.TryGetProperty("body", out _));
+
+        // AND THEIR DESCRIPTIONS MUST DIFFER. Sharing a plugin means sharing its DisplayName, which
+        // would leave the model choosing between them on the tool name alone — the way load_skill
+        // lost out to read_file on a live drive.
+        var fetch = tools.Single(t => t.Name == "web_fetch").Description;
+        Assert.NotEqual(tools.Single(t => t.Name == "http_request").Description, fetch);
+        Assert.Contains("http_request", fetch, StringComparison.Ordinal);
     }
 }

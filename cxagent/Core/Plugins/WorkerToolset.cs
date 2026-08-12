@@ -55,8 +55,23 @@ public static class WorkerToolset
     /// replace_in_file, both of which the plugin then rejects. Requiredness is a property of the
     /// TOOL, so it is stated per tool.
     /// </param>
+    /// <param name="Pinned">
+    /// Parameter values this tool always sends, whatever the model said.
+    ///
+    /// <para>The action is the usual one — <c>read_file</c> is the file plugin with
+    /// <c>action=read</c> — but not the only one. <c>web_fetch</c> is the http plugin with
+    /// <c>as_text=true</c>: the same plugin, the same request, a different treatment of the
+    /// response. Pinning it here rather than adding a plugin keeps one HTTP implementation with one
+    /// set of validation, retry and header rules.</para>
+    /// </param>
+    /// <param name="Description">
+    /// What the model is told this tool is for. Defaults to the plugin's DisplayName, which is right
+    /// while one plugin backs one tool and useless the moment two share it.
+    /// </param>
     private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
-        string[] Params, string[] Required);
+        string[] Params, string[] Required,
+        IReadOnlyDictionary<string, object?>? Pinned = null,
+        string? Description = null);
 
     // Ordered so WorkerTool.For's output is stable regardless of the caller's list order —
     // a stable tool order keeps the prompt (and provider-side caching of it) stable across calls.
@@ -83,6 +98,21 @@ public static class WorkerToolset
             Params: ["command", "working_dir", "timeout_seconds"], Required: ["command"])),
         (WorkerTool.HttpRequest, new ToolSpec("http_request", "http", null,
             Params: ["url", "method", "headers", "body"], Required: ["url"])),
+        // THE SAME PLUGIN, READING RATHER THAN CALLING. http_request hands back what the server
+        // sent, which is right for an API and ruinous for a page: raw HTML is nearly all markup, a
+        // tool result is re-sent every later turn, and ten fetches measured at 200k of context.
+        // web_fetch pins as_text, so a page costs roughly what its words cost.
+        //
+        // A SEPARATE TOOL RATHER THAN A PARAMETER, because the model must choose between them by
+        // INTENT — "read this page" against "call this endpoint" — and a boolean on one tool is a
+        // decision it can forget to make. The names say which is which.
+        (WorkerTool.WebFetch, new ToolSpec("web_fetch", "http", null,
+            Params: ["url"], Required: ["url"],
+            Pinned: new Dictionary<string, object?> { ["as_text"] = true },
+            Description: "Read a web page as text. Fetches the URL and strips the markup, scripts, "
+                       + "styles and navigation, leaving the readable content. Use this for "
+                       + "documentation and articles — use http_request for APIs, where the raw "
+                       + "response is what you want.")),
     };
 
     /// <summary>
@@ -143,9 +173,15 @@ public static class WorkerToolset
             required = spec.Required,
         };
 
-        var description = spec.PinnedAction is null
-            ? schema.DisplayName
-            : $"{schema.DisplayName} ({spec.PinnedAction})";
+        // THE SPEC'S OWN WORDS WIN. Two tools can share a plugin — web_fetch and http_request are
+        // both "http" — and the plugin's DisplayName then describes both identically, leaving the
+        // model to choose between them on the tool name alone. That is exactly how load_skill lost
+        // out to read_file on a live drive: the model reaches for what it understands, and a
+        // description that does not distinguish the two is not doing its job.
+        var description = spec.Description
+            ?? (spec.PinnedAction is null
+                ? schema.DisplayName
+                : $"{schema.DisplayName} ({spec.PinnedAction})");
 
         return new ToolDefinition(spec.Name, description, JsonSerializer.SerializeToElement(jsonSchema));
     }
@@ -205,6 +241,12 @@ public static class WorkerToolset
             values[prop.Name] = prop.Value;
         if (entry.Spec.PinnedAction is not null)
             values["action"] = entry.Spec.PinnedAction;
+
+        // AFTER the model's own arguments, so a pinned value cannot be talked out of. web_fetch is
+        // web_fetch even if the model sends as_text:false.
+        if (entry.Spec.Pinned is not null)
+            foreach (var (key, value) in entry.Spec.Pinned)
+                values[key] = value;
         var parameters = new JobParameters(values);
 
         // Validate READS the parameters, so a type slip throws HERE, before the try/catch below.

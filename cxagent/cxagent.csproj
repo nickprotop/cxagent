@@ -21,16 +21,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
 
-    <!-- web_fetch: a real HTML parser rather than regex over a document. Both arrive transitively
-         through SharpConsoleUI anyway; naming them here pins the versions we actually want and
-         makes the dependency visible to anyone auditing it.
+    <!-- web_fetch parses HTML with AngleSharp rather than regex over a document. NOT REFERENCED
+         HERE: SharpConsoleUI already brings it, and pinning a version from this side only creates a
+         downgrade to resolve every time the UI package moves ahead. -->
 
-         1.5.0, not the 1.4.0 that comes in transitively: 1.4.0 carries GHSA-pgww-w46g-26qg, an mXSS
-         sanitiser bypass. It does not reach us — we extract text and never re-serialize HTML into a
-         browser — but taking the patched version costs nothing and stops the advisory showing up in
-         every restore. -->
-    <PackageReference Include="AngleSharp" Version="1.5.0" />
-    <PackageReference Include="Markdig" Version="0.41.3" />
   </ItemGroup>
 
 </Project>

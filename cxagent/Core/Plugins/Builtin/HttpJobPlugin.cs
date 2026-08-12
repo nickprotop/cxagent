@@ -22,6 +22,8 @@ public class HttpJobPlugin : IJobPlugin
         new JobParamSpec("expect_status", "integer", Required: false, "Expected status (default: any 2xx)"),
         new JobParamSpec("retry_interval_seconds", "number", Required: false, "Delay between retries"),
         new JobParamSpec("max_retries", "integer", Required: false, "Max retry attempts"),
+        new JobParamSpec("as_text", "boolean", Required: false,
+            "Convert an HTML response to readable text. Non-HTML is returned unchanged."),
     });
 
     public JobValidation Validate(JobParameters parameters)
@@ -56,6 +58,7 @@ public class HttpJobPlugin : IJobPlugin
         var retryInterval = parameters.Get("retry_interval_seconds", 0.0);
         var headers = parameters.Get<Dictionary<string, string>?>("headers", null);
         var body = parameters.Get<string?>("body", null);
+        var asText = parameters.Get("as_text", false);
         var start = DateTimeOffset.UtcNow;
 
         int attempt = 0;
@@ -99,6 +102,23 @@ public class HttpJobPlugin : IJobPlugin
                 using var resp = await _client.SendAsync(req, ct);
                 var status = (int)resp.StatusCode;
                 var respBody = await resp.Content.ReadAsStringAsync(ct);
+
+                // HTML TO TEXT, WHEN ASKED. A page is almost entirely markup, and a tool result is
+                // re-sent on every later turn — ten raw fetches measured at 200k of context. The
+                // conversion is opt-in because http_request is also how the model talks to APIs, and
+                // rewriting a JSON body would corrupt exactly what the caller asked for.
+                //
+                // CONTENT TYPE DECIDES, not the flag alone: a server that answers a fetch with JSON
+                // gets passed through even when as_text was set, because the caller wanted the
+                // resource and this is what the resource is.
+                var contentTypeHeader = resp.Content.Headers.ContentType?.ToString();
+                if (asText && HtmlToText.IsHtml(contentTypeHeader))
+                {
+                    var before = respBody.Length;
+                    respBody = HtmlToText.Convert(respBody);
+                    context.Log($"html -> text: {before:N0} -> {respBody.Length:N0} chars");
+                }
+
                 context.Log($"http {method} {url} -> {status}");
 
                 bool ok = expectStatus is int es ? status == es : status is >= 200 and < 300;

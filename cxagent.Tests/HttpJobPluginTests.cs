@@ -39,8 +39,77 @@ public class HttpJobPluginTests : IDisposable
         ctxHttp.Response.Close();
     });
 
+    /// <summary>Serves one response with a declared content type — conversion keys on it.</summary>
+    private Task ServeOnceAs(string contentType, string body) => Task.Run(() =>
+    {
+        var ctxHttp = _listener.GetContext();
+        ctxHttp.Response.StatusCode = 200;
+        ctxHttp.Response.ContentType = contentType;
+        var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+        ctxHttp.Response.OutputStream.Write(bytes);
+        ctxHttp.Response.Close();
+    });
+
     private static JobParameters P(params (string k, object? v)[] kv)
         => new(kv.ToDictionary(x => x.k, x => x.v));
+
+    /// <summary>
+    /// as_text is what makes web_fetch worth having: raw HTML is nearly all markup, and a tool
+    /// result is re-sent on every later turn — ten raw page fetches measured at 200k of context.
+    /// </summary>
+    [Fact]
+    public async Task Execute_WithAsText_ConvertsAnHtmlResponseToReadableText()
+    {
+        var html = "<html><head><style>.a{color:red}</style></head><body>"
+                 + "<nav><a href=/x>Home</a></nav>"
+                 + "<script>window.track('noise');</script>"
+                 + "<h1>The Heading</h1><p>The paragraph.</p></body></html>";
+
+        var serve = ServeOnceAs("text/html; charset=utf-8", html);
+        var r = await new HttpJobPlugin().ExecuteAsync(
+            P(("url", _prefix), ("as_text", true)), new CollectingContext(), CancellationToken.None);
+        await serve;
+
+        var text = (string)r.Output["body"]!;
+        Assert.True(r.Success);
+        Assert.Contains("# The Heading", text, StringComparison.Ordinal);
+        Assert.Contains("The paragraph.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("window.track", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("color:red", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Home", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE CONTENT TYPE DECIDES, not the flag alone. A server that answers with JSON gets passed
+    /// through untouched even when as_text was set — the caller wanted the resource, and running a
+    /// JSON body through an HTML converter would corrupt exactly what they asked for.
+    /// </summary>
+    [Fact]
+    public async Task Execute_WithAsText_LeavesNonHtmlUntouched()
+    {
+        const string json = """{"items":[{"id":1,"name":"<b>not markup</b>"}]}""";
+
+        var serve = ServeOnceAs("application/json", json);
+        var r = await new HttpJobPlugin().ExecuteAsync(
+            P(("url", _prefix), ("as_text", true)), new CollectingContext(), CancellationToken.None);
+        await serve;
+
+        Assert.Equal(json, (string)r.Output["body"]!);
+    }
+
+    /// <summary>Without the flag, http_request hands back exactly what the server sent.</summary>
+    [Fact]
+    public async Task Execute_WithoutAsText_ReturnsRawHtml()
+    {
+        const string html = "<body><p>Raw.</p></body>";
+
+        var serve = ServeOnceAs("text/html", html);
+        var r = await new HttpJobPlugin().ExecuteAsync(
+            P(("url", _prefix)), new CollectingContext(), CancellationToken.None);
+        await serve;
+
+        Assert.Equal(html, (string)r.Output["body"]!);
+    }
 
     [Fact]
     public async Task Execute_200_SucceedsWithBody()

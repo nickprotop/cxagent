@@ -23,4 +23,5 @@ public enum WorkerTool
     ListFiles,
     SearchFiles,
     ReplaceInFile,
+    WebFetch,
 }

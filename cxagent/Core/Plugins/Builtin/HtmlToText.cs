@@ -19,11 +19,11 @@ namespace CxAgent.Core.Plugins.Builtin;
 /// parser gets right by construction. AngleSharp already arrives transitively through
 /// SharpConsoleUI; this only pins the version.</para>
 ///
-/// <para>A NOTE ON THE ADVISORY. AngleSharp 1.4.0 carries GHSA-pgww-w46g-26qg, an mXSS sanitiser
-/// bypass. It does not reach this code — the vulnerability is about re-serializing hostile HTML into
-/// a browser, and we walk the tree for text and never emit HTML — but the project pins 1.5.0 anyway.
-/// A dependency taken for parsing UNTRUSTED input from the internet is the last place to be casual
-/// about a known patch.</para>
+/// <para>THE INPUT IS UNTRUSTED, which is worth saying out loud about a parser fed arbitrary pages
+/// from the internet. What protects us is the shape of the use rather than the parser: this walks
+/// the tree for text and never re-serializes HTML, so the sanitiser-bypass class of bug (mXSS) has
+/// nowhere to land — nothing here emits markup for anything to render. The version comes from
+/// SharpConsoleUI rather than being pinned here, so it moves forward with the UI package.</para>
 /// </summary>
 public static class HtmlToText
 {
