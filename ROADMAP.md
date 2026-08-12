@@ -43,7 +43,6 @@ model. The drives keep finding things the tests do not.
 one message run at once, and none outlives the turn that started it.
 
 **Usage history.** `/stats` — tokens by project, by agent type, and what actually fills the context.
-`stats-spec.md`.
 
 **Skills.** `SKILL.md` files whose description sits in the prompt while the body loads on demand.
 
