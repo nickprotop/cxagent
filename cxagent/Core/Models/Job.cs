@@ -5,6 +5,21 @@ public enum JobState
     Pending,      // Waiting for dependencies
     Queued,       // Dependencies met, waiting for execution slot
     Running,      // Currently executing
+
+    /// <summary>
+    /// Stopped at a permission prompt, waiting for the user to answer.
+    ///
+    /// <para>ADDED FOR CONCURRENCY, and pointless without it. With one agent, blocked and slow look
+    /// the same to a user and it does not matter — they know what they started and there is only one
+    /// thing it can be waiting for. With three children up, one parked on approval is
+    /// indistinguishable from one grinding through a long turn, and the user is left guessing which
+    /// row their answer would unblock.</para>
+    ///
+    /// <para>Between Running and Paused deliberately: Paused is a state the USER chose, this is one
+    /// they are being asked about.</para>
+    /// </summary>
+    WaitingOnPermission,
+
     Paused,       // User paused (can resume -> Running)
     Succeeded,    // Completed successfully
     Failed,       // Completed with error

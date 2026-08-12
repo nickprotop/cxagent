@@ -45,7 +45,21 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             // STAMPED HERE, not built into RequestsFor. That method is a pure policy function over
             // (pluginType, parameters) — it has no idea which agent is running and should not learn.
             // This is the one layer that sees both the request and the context it was made in.
-            var allowed = await _gate.RequestAsync(request with { Requester = context.Requester }, ct);
+            // MARKED WAITING FOR THE DURATION OF THE ASK. The row above this job keeps ticking turns
+            // and elapsed time while a prompt sits unanswered, so without this a parked child reads
+            // as a working one — and with several up, the user cannot tell which row their answer
+            // releases. In a finally because a cancelled-while-queued request never returns here.
+            context.ReportPermissionWait(true);
+            bool allowed;
+            try
+            {
+                allowed = await _gate.RequestAsync(request with { Requester = context.Requester }, ct);
+            }
+            finally
+            {
+                context.ReportPermissionWait(false);
+            }
+
             if (!allowed)
             {
                 return new JobResult

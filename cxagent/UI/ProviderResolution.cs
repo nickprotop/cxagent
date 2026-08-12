@@ -16,6 +16,12 @@ namespace CxAgent.UI;
 /// run a role-bearing job: the plugin needs the whole catalog plus the role bindings. Null on the
 /// no-provider paths, where there is nothing to dispatch to anyway.
 /// </param>
+/// <param name="MaxConcurrentAgents">
+/// The resolved instance's <c>maxConcurrentAgents</c> — how many sub-agents may call THIS endpoint
+/// at once. Null (the default, and the common case) means unlimited: cxagent cannot discover what an
+/// endpoint tolerates, so it does not guess. Threaded here for the same reason ContextWindow is —
+/// config-only, resolved once at startup rather than re-read per spawn.
+/// </param>
 /// <param name="ContextWindow">
 /// The default provider instance's ProviderInstanceConfig.ContextWindow (P11 Task 1), threaded
 /// through so AppBootstrap can hand AgentHost the real number to derive its compression threshold
@@ -30,7 +36,8 @@ public sealed record ProviderResolution(
     IReadOnlyList<string> Errors,
     OrchestratorSettings? Orchestrator = null,
     ProviderRegistry? Providers = null,
-    int? ContextWindow = null)
+    int? ContextWindow = null,
+    int? MaxConcurrentAgents = null)
 {
     public bool HasProvider => Provider is not null;
 
@@ -130,7 +137,7 @@ public static class ProviderResolver
                 ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
                     .GetAwaiter().GetResult();
             return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
-                settings.Orchestrator, registry, contextWindow)
+                settings.Orchestrator, registry, contextWindow, cfg?.MaxConcurrentAgents)
             {
                 McpServers = settings.McpServers,
                 AgentTypes = settings.AgentTypes,

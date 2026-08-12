@@ -52,11 +52,20 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         A sub-agent starts with none of this conversation, so a task you could finish yourself costs
         a full briefing and a full run to arrive at what you already had.
 
-        Once you have delegated something, do not also do it yourself — wait for the result. Doing
+        Once you have delegated something, do not also do it yourself — wait for the results. Doing
         both pays twice and leaves you two answers to reconcile.
 
-        It cannot ask you anything. It runs once, with only what you write in the prompt, and returns
-        one message. Say in the prompt exactly what you want back, and what "done" means.
+        LAUNCH SEVERAL AT ONCE when the work is independent: put every call in ONE message and they
+        run concurrently, finishing in the time the slowest one takes. Two searches of different
+        parts of the repository are independent. A search and then a fix that depends on what the
+        search found are not — those are two turns, not two agents.
+
+        Give them non-overlapping work. Two agents told to edit the same file will both edit it, and
+        neither will know the other did.
+
+        An agent cannot ask you anything. It runs with only what you write in its prompt and returns
+        one message when it is done. Say in that prompt exactly what you want back, and what "done"
+        means.
 
         Put the TASK in prompt, and what you already KNOW in context. Anything that would otherwise be
         rediscovered, or got wrong — a file that is currently broken, an approach already tried and
@@ -196,8 +205,40 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
             parentAgentId: parentAgentId);
         onChild?.Invoke(child);
 
-        var result = await child.Agent.SendAsync(prompt, ct);
-        return SubAgentEnvelope.Render(child.Agent.Id, result.Outcome, result.Text);
+        // A BUDGET ALREADY BREACHED REFUSES THE CHILD RATHER THAN RUNNING IT.
+        //
+        // `Breached` is a warning that fires exactly once and stops nothing. With one child at a
+        // time that was tolerable — the user sees it and can press Escape. With several, N children
+        // can each burn a window past a limit that announced itself one time, and the announcement
+        // is long gone by the third.
+        //
+        // ESTIMATE ZERO, deliberately: refuse only what is ALREADY over, never what might go over.
+        // We cannot know what a child will cost, and guessing would refuse work the user's budget
+        // could afford. This is a floor, not a forecast.
+        //
+        // Refused as an ENVELOPE, not an exception: the parent reads it, knows why, and can say so —
+        // the same contract every other spawn failure has.
+        if (_factory.Ledger.WouldBreach(0))
+            return SubAgentEnvelope.Render(child.Agent.Id, SendOutcome.Capped,
+                "not started: the session's token budget is already spent. Raise "
+              + "orchestrator.goalTokenBudget or start a new session.");
+
+        // THE CAP, WAITED HERE — inside the started task, never on the parent's walk. Waiting on the
+        // walk would stall the turn's INLINE tools behind a queued child, turning a limit on
+        // concurrency into a serialiser for work that was never capped.
+        //
+        // Null when unconfigured, which is the default: whatever the model emits, runs.
+        var slot = _factory.ConcurrencySlot;
+        if (slot is not null) await slot.WaitAsync(ct);
+        try
+        {
+            var result = await child.Agent.SendAsync(prompt, ct);
+            return SubAgentEnvelope.Render(child.Agent.Id, result.Outcome, result.Text);
+        }
+        finally
+        {
+            slot?.Release();
+        }
     }
 
     private static string? Read(ToolCall call, string name) =>

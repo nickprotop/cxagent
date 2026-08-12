@@ -128,6 +128,22 @@ public sealed class InteractivePermissionGate : IPermissionGate
     public Action<PermissionKind, string, string?>? OnDecision { get; set; }
 
     /// <summary>
+    /// Called when a request starts WAITING for the user, and again when it stops — true then false,
+    /// carrying the requester so a caller can find whose row to mark.
+    ///
+    /// <para>SEPARATE FROM <see cref="OnDecision"/>, which fires once the answer is known. That is
+    /// too late for a row: the interesting interval is precisely the one before a decision exists.
+    /// With one agent nobody needed it — blocked and slow look alike and it does not matter. With
+    /// three children up, one parked on approval is indistinguishable from one grinding, and the
+    /// user cannot tell which row their answer unblocks.</para>
+    ///
+    /// <para>NOT raised for the silent path. A rule that already allows something never waits, and
+    /// flashing a row into "waiting" and out again within the same microsecond would be noise
+    /// describing an interval that did not happen.</para>
+    /// </summary>
+    public Action<string?, bool>? OnWaiting { get; set; }
+
+    /// <summary>
     /// Wraps the decision so EVERY path is recorded — silent allows, stored rules, denials, and the
     /// cancelled-while-queued case. There are six returns inside; recording at each would leave the
     /// next one added silently unrecorded.
@@ -143,9 +159,23 @@ public sealed class InteractivePermissionGate : IPermissionGate
             return true;
         }
 
-        var granted = await DecideAsync(request, ct);
-        OnDecision?.Invoke(request.Kind, granted ? "allowed" : "denied", request.Requester);
-        return granted;
+        // WAITING STARTS HERE — before the queue, not after it. A child third in line behind two
+        // other prompts is waiting from this moment, and a row that only turned "waiting" once its
+        // prompt was actually SHOWN would sit reading "running" through the whole queue.
+        OnWaiting?.Invoke(request.Requester, true);
+        try
+        {
+            var granted = await DecideAsync(request, ct);
+            OnDecision?.Invoke(request.Kind, granted ? "allowed" : "denied", request.Requester);
+            return granted;
+        }
+        finally
+        {
+            // IN A FINALLY, because a cancelled-while-queued request never reaches the line above —
+            // and a row left permanently "waiting" for an answer nobody will ever be asked for is
+            // worse than one that never said it was waiting at all.
+            OnWaiting?.Invoke(request.Requester, false);
+        }
     }
 
     private async Task<bool> DecideAsync(PermissionRequest request, CancellationToken ct)

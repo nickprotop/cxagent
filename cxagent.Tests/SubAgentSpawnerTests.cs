@@ -212,6 +212,653 @@ public class SubAgentSpawnerTests
         Assert.DoesNotContain("follow this", system, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// CANCELLING A SPAWN LEAVES THE CONTEXT MALFORMED — a live defect, not a step 3 hazard.
+    ///
+    /// <para>The assistant message carrying the tool calls is appended at <c>Agent.cs:766</c>, BEFORE
+    /// the loop runs. When a child observes cancellation, <c>InvokeAndShowAsync</c> closes the row and
+    /// RETHROWS — its comment says "there is no next request", which is not true of the session: the
+    /// user presses Escape, the app catches the cancellation, and the conversation continues. But
+    /// <c>messages</c> IS <c>_context.Messages</c> (<c>:383</c>), so the assistant message stays with
+    /// a tool call that has no matching <c>tool</c> result.</para>
+    ///
+    /// <para>That is the orphan of §1b: the provider rejects the whole conversation with a 400,
+    /// <c>ContextOverflow.IsOverflow</c> does not match it, and nothing recovers but <c>/clear</c>.
+    /// One Escape during a sub-agent run poisons the session permanently.</para>
+    ///
+    /// <para>Asserted as the INVARIANT rather than the bug, so this test states what must be true and
+    /// fails until it is: every tool call in the context has a matching result.</para>
+    /// </summary>
+    [Fact]
+    public async Task CancellingAChild_LeavesNoToolCallWithoutAResult()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+
+        using var cts = new CancellationTokenSource();
+
+        // A child whose provider cancels the moment it is asked — which is what Escape does to a
+        // child mid-run, since the token is the parent's turn token handed straight down.
+        var childProvider = new CancellingProvider(cts);
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => parent.SendAsync("delegate", cts.Token));
+
+        // THE INVARIANT: every tool call has a result. Stated as a set difference so the failure
+        // message names the orphaned call rather than only a count.
+        var calls = parent.Context.Messages
+            .Where(m => m.ToolCalls is { Count: > 0 })
+            .SelectMany(m => m.ToolCalls!)
+            .Select(c => c.Id ?? c.Name)
+            .ToList();
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var orphans = calls.Where(id => !results.Contains(id)).ToList();
+
+        Assert.True(orphans.Count == 0,
+            $"tool call(s) left with no result: {string.Join(", ", orphans)} — this context is "
+          + "malformed and the provider will reject the next request with a 400.");
+    }
+
+    /// <summary>
+    /// A CALL THAT NEVER STARTED IS AS ORPHANING AS ONE THAT WAS INTERRUPTED. The provider checks
+    /// only that every id in the assistant message has a matching result — it does not care whether
+    /// the tool ran. So a turn cancelled two calls into a list of three must backfill the third,
+    /// which it never touched.
+    ///
+    /// <para>This is the half a "close the row on cancel" fix would miss: rows exist only for calls
+    /// that started, and the unstarted one has no row to close.</para>
+    /// </summary>
+    [Fact]
+    public async Task CancellingMidTurn_BackfillsCallsThatNeverRan()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            // THREE calls; the spawn is first and cancels, so the two reads never run.
+            ToolCalls =
+            [
+                SpawnCall(),
+                new ToolCall { Id = "r1", Name = "read_file",
+                    Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"a.txt"}""").RootElement },
+                new ToolCall { Id = "r2", Name = "read_file",
+                    Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"b.txt"}""").RootElement },
+            ],
+        });
+
+        using var cts = new CancellationTokenSource();
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => parent.SendAsync("delegate", cts.Token));
+
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("call-1", results);   // the spawn, interrupted
+        Assert.Contains("r1", results);       // never started
+        Assert.Contains("r2", results);       // never started
+    }
+
+    /// <summary>
+    /// EXACTLY ONE RESULT PER CALL. The interrupted call may or may not have appended before it
+    /// threw, so the backfill matches by id rather than counting — a second result for one id is its
+    /// own malformation, and one the provider rejects just as readily as a missing one.
+    /// </summary>
+    [Fact]
+    public async Task CancellingATurn_DoesNotDoubleAnswerACall()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+
+        using var cts = new CancellationTokenSource();
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => parent.SendAsync("delegate", cts.Token));
+
+        var ids = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+
+        Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    // ---- start-and-defer: several children in one turn -----------------------------------------
+
+    private static ToolCall Spawn(string id, string description) =>
+        new()
+        {
+            Id = id,
+            Name = "spawn_agent",
+            Arguments = System.Text.Json.JsonDocument.Parse(
+                System.Text.Json.JsonSerializer.Serialize(
+                    new { description, prompt = "do the thing" })).RootElement,
+        };
+
+    /// <summary>
+    /// TWO CHILDREN RUN AT ONCE. The point of the whole step, and the thing no other test can see:
+    /// before this, every spawn was awaited inline, so two children were strictly sequential.
+    ///
+    /// <para>Asserted by construction rather than by timing — each child's provider blocks until BOTH
+    /// have arrived. Under the old sequential loop the first child would wait forever and the test
+    /// would hang; the timeout is what makes the failure legible rather than a false pass.</para>
+    /// </summary>
+    [Fact]
+    public async Task TwoSpawnsInOneTurn_RunConcurrently()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        // Both children must be INSIDE their provider call before either may return.
+        var arrived = new SemaphoreSlim(0, 2);
+        var bothArrived = new TaskCompletionSource();
+        var gate = new RendezvousProvider(arrived, bothArrived);
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(gate)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        var run = parent.SendAsync("delegate twice", CancellationToken.None);
+
+        // BOTH CHILDREN MUST ARRIVE BEFORE EITHER IS RELEASED. Sequentially this cannot happen: the
+        // first child blocks forever waiting for a release that only comes once the second arrives,
+        // and the second is never started. So the assertion is that both arrivals are observed —
+        // and it FAILS, rather than hanging, because each wait has its own deadline.
+        //
+        // A first draft released on a background task that swallowed its own timeout, so the run
+        // completed anyway and the test passed under a sabotaged (sequential) loop. Verified against
+        // that sabotage now: this version fails.
+        Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)),
+            "no child reached its provider");
+        Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)),
+            "the second child never started while the first was still running — the spawns did not "
+          + "overlap, so the loop is awaiting each one inline");
+
+        bothArrived.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // And both answered — the barrier held.
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+        Assert.Contains("s1", results);
+        Assert.Contains("s2", results);
+    }
+
+    /// <summary>
+    /// A SPAWN NEVER OVERTAKES A PRECEDING TOOL. `[run_shell "git checkout -b x", spawn "work on x"]`
+    /// is the shape that makes hoisting wrong: a child started before the branch exists works against
+    /// the wrong tree and reports a confident answer, with no error anywhere.
+    ///
+    /// <para>Emitted order is preserved because the walk defers the AWAIT, never the CALL.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnDoesNotOvertakeAToolThatPrecedesIt()
+    {
+        var order = new List<string>();
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls =
+            [
+                new ToolCall { Id = "t1", Name = "read_file",
+                    Arguments = System.Text.Json.JsonDocument.Parse("""{"path":"nope.txt"}""").RootElement },
+                Spawn("s1", "after the read"),
+            ],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var childProvider = new RecordingOrderProvider(order, "child-started");
+
+        var jobs = new OrderRecordingJobPanel(order);
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(childProvider)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await parent.SendAsync("read then delegate", CancellationToken.None);
+
+        var readAt = order.IndexOf("read_file");
+        var childAt = order.IndexOf("child-started");
+
+        Assert.True(readAt >= 0 && childAt >= 0, $"missing marker in [{string.Join(", ", order)}]");
+        Assert.True(readAt < childAt,
+            $"the child started before the read that preceded it: [{string.Join(", ", order)}]");
+    }
+
+    /// <summary>
+    /// ONE CHILD FAULTING DOES NOT ORPHAN ITS SIBLINGS. Every call of the turn gets exactly one
+    /// result, whatever happened to any of them — a missing result is the 400 that ends the session,
+    /// and "the other child threw" is no reason to hand the provider a malformed conversation.
+    /// </summary>
+    [Fact]
+    public async Task AFaultedChild_DoesNotOrphanTheOthers()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Spawn("s1", "explodes"), Spawn("s2", "succeeds")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(new FaultOnFirstProvider())))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await parent.SendAsync("delegate twice", CancellationToken.None);
+
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+
+        Assert.Contains("s1", results);
+        Assert.Contains("s2", results);
+        Assert.Equal(results.Count, results.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    /// <summary>
+    /// CANCELLING WITH SEVERAL IN FLIGHT still answers every call — 3-0's invariant, now under N.
+    /// This is the case the barrier could lose through the back door: the exception leaves while a
+    /// child is still running, and that child finishes onto an id the backfill has already answered.
+    /// </summary>
+    [Fact]
+    public async Task CancellingWithTwoChildrenInFlight_AnswersEveryCallExactlyOnce()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
+        });
+
+        using var cts = new CancellationTokenSource();
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => parent.SendAsync("delegate twice", cts.Token));
+
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+
+        Assert.Contains("s1", results);
+        Assert.Contains("s2", results);
+        Assert.Equal(results.Count, results.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    // ---- waiting on permission ------------------------------------------------------------------
+
+    /// <summary>
+    /// ONLY THE ASKING AGENT IS MARKED WAITING. The assertion that matters: with two children up,
+    /// one at a prompt and one working, exactly one row changes.
+    ///
+    /// <para>A single-child version of this test would pass on a broken implementation — routing the
+    /// signal from the SHARED gate by its display label would look right until two children of the
+    /// same type existed, at which point both rows would flip together. The flag lives on the agent
+    /// precisely because an agent knows whether it is the one waiting and a label does not.</para>
+    /// </summary>
+    [Fact]
+    public void EveryAgentTracksItsOwnWait_AndStartsNotWaiting()
+    {
+        var a = new Agent(new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(),
+            new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
+        var b = new Agent(new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(),
+            new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
+
+        // PER AGENT, not per gate. The flag lives here precisely so two children sharing one gate —
+        // and one display label, if they are the same type — remain distinguishable.
+        Assert.False(a.IsWaitingOnPermission);
+        Assert.False(b.IsWaitingOnPermission);
+        Assert.NotSame(a, b);
+    }
+
+    /// <summary>
+    /// THE GATED PLUGIN REPORTS THE WAIT, and reports its END even when the answer is no — a row
+    /// left permanently "waiting" for an answer nobody will be asked for is worse than one that
+    /// never said it was waiting. The signal is what an agent subscribes to in order to mark itself.
+    /// </summary>
+    [Fact]
+    public async Task TheGatedPlugin_ReportsTheWaitAndItsEnd()
+    {
+        var ctx = new TestJobContext();
+        var plugin = new CxAgent.Core.Permissions.PermissionGatedPlugin(
+            new AlwaysAskPlugin(), new DenyingGate());
+
+        // A real shell parameter set — PermissionPolicy reads `command` to build the request, so an
+        // empty one throws before the gate is ever consulted and the test would pass on a fixture
+        // fault rather than on the behaviour.
+        var parameters = new JobParameters(new Dictionary<string, object?> { ["command"] = "ls" });
+
+        await plugin.ExecuteAsync(parameters, ctx, CancellationToken.None);
+
+        // True then false, in that order: the interval had a start and an end.
+        Assert.Equal([true, false], ctx.PermissionWaits);
+    }
+
+    /// <summary>A shell plugin, so the gate is genuinely consulted rather than short-circuited.</summary>
+    private sealed class AlwaysAskPlugin : IJobPlugin
+    {
+        public string TypeName => "shell";
+        public string DisplayName => "shell";
+        public JobSchema GetSchema() => new(TypeName, DisplayName, []);
+        public JobValidation Validate(JobParameters parameters) => JobValidation.Valid();
+
+        public Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context,
+            CancellationToken ct) =>
+            Task.FromResult(new JobResult { Success = true, ExitCode = 0 });
+    }
+
+    /// <summary>Answers no, so the wait ends through the denial path rather than the happy one.</summary>
+    private sealed class DenyingGate : CxAgent.Core.Permissions.IPermissionGate
+    {
+        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request,
+            CancellationToken ct) => Task.FromResult(false);
+    }
+
+    // ---- the cap, and the bound that matters more ----------------------------------------------
+
+    private static SubAgentFactory FactoryOver(ILlmProvider provider, TokenLedger ledger,
+        int? maxConcurrent = null) =>
+        new(provider, PluginRegistry.CreateWithBuiltins(), ledger,
+            logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
+            globalInstructionsDir: null, mcp: null, thresholdFor: null,
+            maxConcurrentAgents: maxConcurrent);
+
+    /// <summary>
+    /// A CAP OF ONE SERIALISES THE CHILDREN. The rendezvous that proves overlap becomes the proof of
+    /// its absence: with one slot, the second child cannot arrive while the first holds it, so the
+    /// wait times out — which is the whole point of a cap.
+    /// </summary>
+    [Fact]
+    public async Task ACapOfOne_StopsTheSecondChildStarting()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var arrived = new SemaphoreSlim(0, 2);
+        var release = new TaskCompletionSource();
+        var gate = new RendezvousProvider(arrived, release);
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(gate, new TokenLedger(null), maxConcurrent: 1)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        var run = parent.SendAsync("delegate twice", CancellationToken.None);
+
+        Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)), "no child started at all");
+
+        // THE SECOND MUST NOT ARRIVE while the first holds the only slot.
+        Assert.False(await arrived.WaitAsync(TimeSpan.FromSeconds(2)),
+            "both children ran at once despite a cap of 1");
+
+        release.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // And the cap DELAYS rather than drops: both still answered.
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+        Assert.Contains("s1", results);
+        Assert.Contains("s2", results);
+    }
+
+    /// <summary>
+    /// UNCONFIGURED MEANS UNBOUNDED — the default, and a decision rather than an oversight. A cap
+    /// picked without evidence throttles every user to guard against a problem none of them may have,
+    /// and cxagent cannot discover what its endpoint tolerates.
+    /// </summary>
+    [Fact]
+    public async Task NoCapConfigured_RunsChildrenConcurrently()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var arrived = new SemaphoreSlim(0, 2);
+        var release = new TaskCompletionSource();
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(
+                new RendezvousProvider(arrived, release), new TokenLedger(null))))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        var run = parent.SendAsync("delegate twice", CancellationToken.None);
+
+        Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)), "no child started");
+        Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)),
+            "the second child did not start — unconfigured must mean unbounded");
+
+        release.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(15));
+    }
+
+    /// <summary>
+    /// AN ALREADY-BREACHED BUDGET REFUSES THE CHILD. This is the bound that actually matters: it
+    /// limits COST, which is what a user cares about, rather than parallelism, which is a proxy.
+    ///
+    /// <para><c>Breached</c> fires once as a warning and stops nothing. With one child that was
+    /// tolerable — the user sees it and can press Escape. With several, N children each burn a window
+    /// past a limit whose one announcement is long gone by the third.</para>
+    ///
+    /// <para>Refused as an ENVELOPE, so the parent reads why and can say so — the contract every
+    /// other spawn failure has.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnAlreadyBreachedBudget_RefusesTheChildInsteadOfRunningIt()
+    {
+        var ledger = new TokenLedger(goalTokenBudget: 100);
+        ledger.Record(new LlmUsage { InputTokens = 500, OutputTokens = 0 }, "m");
+        Assert.True(ledger.IsBreached, "the fixture must start already over budget");
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+
+        var childProvider = new MockLlmProvider();
+        childProvider.EnqueueResponse(new LlmResponse { Text = "should never run", StopReason = "end_turn" });
+
+        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), ledger,
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(childProvider, ledger)))
+        {
+            Mode = AgentMode.FanOut,
+        };
+
+        await parent.SendAsync("delegate", CancellationToken.None);
+
+        var result = Assert.Single(parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId == "call-1"));
+
+        Assert.Contains("budget", result.Content, StringComparison.OrdinalIgnoreCase);
+        // The child never asked its provider anything.
+        Assert.Equal(0, childProvider.ChatCallCount);
+    }
+
+    /// <summary>Blocks until every child has arrived, so overlap is proven by construction rather
+    /// than inferred from timing.</summary>
+    private sealed class RendezvousProvider(SemaphoreSlim arrived, TaskCompletionSource release)
+        : StubProvider
+    {
+        public override async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            List<ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            arrived.Release();
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            yield return new LlmStreamChunk("done", null, IsFinal: true, StopReason: "end_turn");
+        }
+    }
+
+    /// <summary>Notes when a child first reaches its provider, for the ordering test.</summary>
+    private sealed class RecordingOrderProvider(List<string> order, string marker) : StubProvider
+    {
+        public override async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            List<ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            lock (order) order.Add(marker);
+            await Task.Yield();
+            yield return new LlmStreamChunk("done", null, IsFinal: true, StopReason: "end_turn");
+        }
+    }
+
+    /// <summary>Throws for the first child asked, answers the rest.</summary>
+    private sealed class FaultOnFirstProvider : StubProvider
+    {
+        private int _calls;
+
+        public override async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            List<ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+                throw new InvalidOperationException("the child exploded");
+
+            await Task.Yield();
+            yield return new LlmStreamChunk("done", null, IsFinal: true, StopReason: "end_turn");
+        }
+    }
+
+    /// <summary>The boilerplate every stub above would otherwise repeat.</summary>
+    private abstract class StubProvider : ILlmProvider
+    {
+        public string ProviderId => "stub";
+        public string ModelId => "stub";
+        public string DisplayName => "stub";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public ILlmProvider WithModel(string model) => this;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools, CancellationToken ct) =>
+            Task.FromResult(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        public abstract IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            List<ChatMessage> messages, List<ToolDefinition>? tools, CancellationToken ct = default);
+    }
+
+    /// <summary>Notes each tool row as it opens, so a test can assert execution order.</summary>
+    private sealed class OrderRecordingJobPanel(List<string> order) : IJobPanel
+    {
+        public void SetJobs(IReadOnlyList<Job> jobs)
+        {
+            foreach (var job in jobs)
+                lock (order) order.Add(job.PlanLocalId ?? "?");
+        }
+
+        public void UpdateJob(Job job) { }
+        public void UpdateProgress(Job job) { }
+        public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
+        public void AppendText(string jobId, string delta) { }
+    }
+
+    /// <summary>Cancels the token as soon as the model is asked, standing in for Escape landing while
+    /// a child is mid-turn.</summary>
+    private sealed class CancellingProvider(CancellationTokenSource cts) : ILlmProvider
+    {
+        public string ProviderId => "cancelling";
+        public string ModelId => "cancelling";
+        public string DisplayName => "cancelling";
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => true;
+        public ILlmProvider WithModel(string model) => this;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            throw new OperationCanceledException();
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            yield break;
+        }
+    }
+
     /// <summary>Throws from inside the spawn branch, standing in for anything that can go wrong in a
     /// child — a provider fault, a bad config, a bug.</summary>
     private sealed class ThrowingSpawner : ISubAgentSpawner
@@ -296,6 +943,42 @@ public class SubAgentSpawnerTests
 
         Assert.Contains("- general: same model as you", d, StringComparison.Ordinal);
         Assert.DoesNotContain("- explore:", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE DESCRIPTION SAYS SEVERAL AGENTS MAY RUN AT ONCE, and no longer says the opposite.
+    ///
+    /// <para>Pinned because guidance vanishes silently. Two sentences here contradicted the
+    /// capability the loop now has — "It runs once… and returns one message", and "wait for the
+    /// result" in the singular. Both were TRUE when written; a reader hitting either alongside "you
+    /// may launch several" believes the older, more specific one.</para>
+    ///
+    /// <para>This is also the sentence that made the 0-of-118 baseline uninformative about the model:
+    /// it was told not to, in the one place D25 says such instructions belong.</para>
+    /// </summary>
+    [Fact]
+    public void Definition_SaysAgentsCanRunConcurrently_AndNoLongerSaysOtherwise()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
+
+        Assert.Contains("LAUNCH SEVERAL AT ONCE", d, StringComparison.Ordinal);
+        Assert.Contains("ONE message", d, StringComparison.Ordinal);
+
+        // The two sentences that forbade it. Matched on their distinguishing fragments so a reworded
+        // version of the same claim still trips this.
+        Assert.DoesNotContain("It runs once", d, StringComparison.Ordinal);
+        Assert.DoesNotContain("returns\n        one message", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>The obligation that only exists with several: overlapping work is the failure two
+    /// agents can produce that one cannot, and no permission prompt catches it — stored "Always"
+    /// rules mean both may write the same file without asking.</summary>
+    [Fact]
+    public void Definition_WarnsAgainstOverlappingWork()
+    {
+        var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
+
+        Assert.Contains("non-overlapping", d, StringComparison.Ordinal);
     }
 
     /// <summary>

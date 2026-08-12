@@ -36,6 +36,15 @@ public interface IJobContext
     void WorkStarting();
 
     /// <summary>
+    /// Reports that this job has stopped at a permission prompt (true), or resumed (false).
+    ///
+    /// <para>The agent running the job subscribes and marks itself, so a parent's row can say which
+    /// child is parked on approval rather than leaving it looking like one that is merely slow. Only
+    /// distinguishable — and only worth reporting — once several children run at once.</para>
+    /// </summary>
+    void ReportPermissionWait(bool waiting);
+
+    /// <summary>
     /// WHO THIS WORK IS FOR, in words a user can act on — null for the session's own agent.
     ///
     /// <para>A LABEL, NOT AN ID. The permission prompt is the only place this surfaces, and a ULID

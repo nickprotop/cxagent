@@ -261,7 +261,10 @@ public static class AppBootstrap
                 // copy of "80% of the window" in the factory would desynchronise the moment either
                 // moved.
                 thresholdFor: w => orchestrator.EffectiveCompressThreshold(w)
-                    ?? OrchestratorSettings.DefaultCompressThreshold),
+                    ?? OrchestratorSettings.DefaultCompressThreshold,
+                // UNCAPPED UNLESS THE USER SAID OTHERWISE. Null is the common case and means every
+                // spawn the model emits runs — the barrier still holds them all inside the turn.
+                maxConcurrentAgents: res.MaxConcurrentAgents),
                 agentTypes);
 
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap

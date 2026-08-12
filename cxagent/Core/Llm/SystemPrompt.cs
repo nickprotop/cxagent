@@ -268,6 +268,18 @@ public static class SystemPrompt
                         + "passes, the build is not verified until you have seen the output "
                         + "yourself.");
             sb.AppendLine();
+
+            // THE MECHANISM, STATED. Both references say it outright rather than trusting a model to
+            // infer that several tool calls in one message may be several agents — Claude Code's
+            // Agent tool ("send them in a single message with multiple tool uses so they run
+            // concurrently") and opencode's task.txt ("Launch multiple agents concurrently whenever
+            // possible"). Here rather than only in the tool description because the description
+            // answers "should I delegate THIS?" at the moment of choosing, while this answers "what
+            // shape does a delegating turn take?", which is a fact about the session.
+            sb.AppendLine("Several agents can run at once: put their calls in one message and they "
+                        + "work concurrently. Only for genuinely independent work — anything that "
+                        + "depends on another agent's answer is a later turn, not a parallel one.");
+            sb.AppendLine();
         }
 
         // THE MODEL CANNOT RUN THESE — the app intercepts them before a turn starts. It is told

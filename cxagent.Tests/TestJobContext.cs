@@ -25,6 +25,11 @@ public sealed class TestJobContext : IJobContext
 
     public void WorkStarting() { }
 
+    /// <summary>Recorded rather than ignored, so a test can assert a job reported itself blocked on
+    /// a prompt — the signal a parent's row turns into "waiting for permission".</summary>
+    public List<bool> PermissionWaits { get; } = [];
+    public void ReportPermissionWait(bool waiting) => PermissionWaits.Add(waiting);
+
     public string? Requester => null;
 
     public void ReportProgress(double percent, string? message = null) { }

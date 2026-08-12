@@ -53,6 +53,22 @@ public sealed class JobContext : IJobContext
     public string? Requester { get; set; }
 
     /// <summary>
+    /// Raised true when this job stops at a permission prompt, false when it stops waiting.
+    ///
+    /// <para>THE AGENT SUBSCRIBES, and marks itself — which is what lets a parent's row say which
+    /// child is parked on approval. Routing it from the gate instead would not work: the gate is a
+    /// single shared instance and its request carries a display LABEL, so two children of the same
+    /// type are indistinguishable to it. The agent, by contrast, knows perfectly well whether it is
+    /// the one waiting.</para>
+    ///
+    /// <para>Only matters with several children — with one, blocked and slow look alike and nobody
+    /// is choosing between rows.</para>
+    /// </summary>
+    public event Action<bool>? PermissionWaitChanged;
+
+    public void ReportPermissionWait(bool waiting) => PermissionWaitChanged?.Invoke(waiting);
+
+    /// <summary>
     /// Raised whenever a plugin reports a resource sample. ProcessRunner subscribes its
     /// ProcessResourceMonitor.Updated to ReportResources, which re-raises it here; the UI
     /// (Task 10 wiring) subscribes this event and marshals onto the UI thread itself — this

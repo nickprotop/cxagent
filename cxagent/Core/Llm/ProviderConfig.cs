@@ -15,9 +15,20 @@ namespace CxAgent.Core.Llm;
 /// (Task 2) branches on exactly that difference. Substituting a made-up value here would silently
 /// drive compression at the wrong point — the bug this feature exists to fix.
 /// </summary>
+/// <param name="MaxConcurrentAgents">
+/// How many sub-agents may call THIS endpoint at once. Null or 0 means unlimited, matching how
+/// <c>maxTurns</c> already reads 0 as unbounded.
+///
+/// <para>BESIDE <see cref="ContextWindow"/> BECAUSE IT IS THE SAME CATEGORY: a property of the
+/// endpoint that cxagent cannot discover and must be told. A hosted API answers concurrent requests
+/// and pushes back with 429s; a single-threaded local server queues them at the socket, so children
+/// hold open connections while executing serially. Both are real deployments and neither is the
+/// default case — so the default is not to interfere.</para>
+/// </param>
 public record ProviderInstanceConfig(
     string Kind, string Model, string? ApiKey, string? BaseUrl,
-    IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null);
+    IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null,
+    int? MaxConcurrentAgents = null);
 
 public record RoutingTarget(string Provider, string Model);
 
@@ -269,6 +280,12 @@ public static class ProviderConfigLoader
                     string? baseUrl = o.TryGetProperty("baseUrl", out var b) && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
                     int? contextWindow = o.TryGetProperty("contextWindow", out var cw) && cw.ValueKind == JsonValueKind.Number
                         ? cw.GetInt32() : null;
+                    // ABSENT OR 0 IS UNLIMITED — the same convention maxTurns uses, so a reader who
+                    // knows one knows the other. Negative is treated as absent rather than rejected:
+                    // a config typo should not stop a session starting over a performance hint.
+                    int? maxConcurrentAgents = o.TryGetProperty("maxConcurrentAgents", out var mca)
+                        && mca.ValueKind == JsonValueKind.Number && mca.GetInt32() > 0
+                        ? mca.GetInt32() : null;
 
                     // env override: CXAGENT_PROVIDER_<INSTANCE>_APIKEY
                     var envKey = $"CXAGENT_PROVIDER_{name.ToUpperInvariant()}_APIKEY";
@@ -291,7 +308,8 @@ public static class ProviderConfigLoader
                     if (KnownKinds.Contains(kind) && !KeylessKinds.Contains(kind) && string.IsNullOrWhiteSpace(apiKey))
                         errors.Add($"provider '{name}': 'apiKey' is required for kind '{kind}' (or set {envKey}).");
 
-                    providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow);
+                    providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
+                        maxConcurrentAgents);
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

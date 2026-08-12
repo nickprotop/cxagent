@@ -92,8 +92,13 @@ public sealed class SubAgentFactory
     public SubAgentFactory(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         LogFileManager? logs, int maxTurns, int? compressAbove, int? contextWindow,
         string? globalInstructionsDir, Core.Mcp.McpToolset? mcp,
-        Func<int?, int?>? thresholdFor = null)
+        Func<int?, int?>? thresholdFor = null,
+        int? maxConcurrentAgents = null)
     {
+        // 0 AND NULL BOTH MEAN UNLIMITED, matching maxTurns. A semaphore of 0 would deadlock every
+        // spawn forever, which is the one reading of "zero" nobody wants.
+        ConcurrencySlot = maxConcurrentAgents is > 0 ? new SemaphoreSlim(maxConcurrentAgents.Value) : null;
+
         _provider = provider;
         _plugins = plugins;
         _ledger = ledger;
@@ -139,6 +144,27 @@ public sealed class SubAgentFactory
     /// IsUnderPressure as permanently false (AgentContext returns false for a MISSING window, never
     /// for a wrong one), never compacts, and dies on a provider overflow instead.</para>
     /// </param>
+    /// <summary>
+    /// The session's ledger, for a caller that must decide whether a child should start at all.
+    ///
+    /// <para>Exposed rather than duplicated: it is the SAME instance every child records into, so a
+    /// budget check here and the spend it is checking cannot disagree.</para>
+    /// </summary>
+    public TokenLedger Ledger => _ledger;
+
+    /// <summary>
+    /// Bounds how many children run at once, or null for unbounded — the default.
+    ///
+    /// <para>UNCAPPED UNLESS CONFIGURED. A cap picked without evidence throttles every user to guard
+    /// against a problem none of them may have, and cxagent cannot discover what its endpoint
+    /// tolerates. The barrier remains the real invariant: no child outlives its turn, however many
+    /// there are.</para>
+    ///
+    /// <para>Held here rather than in the spawner because a session has one, whatever spawns come
+    /// and go.</para>
+    /// </summary>
+    public SemaphoreSlim? ConcurrencySlot { get; }
+
     /// <param name="parentAgentId">
     /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
     /// only the tests that predate nesting pass nothing.
