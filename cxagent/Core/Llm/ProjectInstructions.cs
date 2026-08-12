@@ -105,9 +105,32 @@ public static class ProjectInstructions
             //
             // The monorepo case is why it matters: a root file carries the house style, a package
             // file carries what is specific to that package, and both are true at the same time.
+            // BOUNDED AT THE WORKTREE ROOT. This ran to the FILESYSTEM root — `d = d.Parent` until
+            // null — so a file in the user's home directory, in /home, or in / was collected and
+            // applied as though it described this project. A CLAUDE.md sitting directly in ~ was
+            // stacked in, which is the same "another product's configuration written for a different
+            // agent" this class deliberately refuses at ~/.claude/CLAUDE.md, reached by the other
+            // route; and on a shared machine the directories above ~ are writable by other people.
+            //
+            // A .git ENTRY, FILE OR DIRECTORY. A submodule and a linked worktree mark their root
+            // with a .git FILE containing a gitdir: pointer, so testing for the directory alone
+            // walks straight past them and back out of the repo.
+            //
+            // NO REPO, NO WALK. Outside a worktree "the project" has no boundary that means
+            // anything, so the only directory whose file certainly describes THIS work is the one
+            // the agent was started in. Collecting ancestors there is how a scratch directory under
+            // ~ would pick up the home folder's own files.
             var dirs = new List<DirectoryInfo>();
+            var foundRepoRoot = false;
             for (var d = new DirectoryInfo(startDirectory); d is not null; d = d.Parent)
+            {
                 dirs.Add(d);
+                var dotGit = Path.Combine(d.FullName, ".git");
+                if (Directory.Exists(dotGit) || File.Exists(dotGit)) { foundRepoRoot = true; break; }
+            }
+
+            // Nothing above the start directory is part of any project, so nothing above it is read.
+            if (!foundRepoRoot && dirs.Count > 1) dirs.RemoveRange(1, dirs.Count - 1);
 
             foreach (var name in ProjectFileNames)
             {

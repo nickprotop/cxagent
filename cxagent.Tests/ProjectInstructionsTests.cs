@@ -57,12 +57,78 @@ public class ProjectInstructionsTests : IDisposable
     public void Find_WalksUpToTheRepoRoot()
     {
         var root = Dir("repo");
+        Dir("repo", ".git");                      // the boundary the walk stops at
         Write(root, "AGENTS.md", "root instructions");
         var deep = Dir("repo", "src", "nested");
 
         var found = ProjectInstructions.Find(deep);
 
         Assert.Contains("root instructions", Assert.Single(found).Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND NOT ONE LEVEL ABOVE IT. The walk had no boundary at all — <c>for (d = start; d is not
+    /// null; d = d.Parent)</c> runs to the FILESYSTEM ROOT, so a file in the user's home directory,
+    /// in /home, or in / was collected and applied as though it described this project.
+    ///
+    /// <para>Two things made that worse than untidy. A CLAUDE.md sitting directly in <c>~</c> was
+    /// stacked in — the same "another product's configuration" this class refuses at
+    /// <c>~/.claude/CLAUDE.md</c>, reached by the other route. And on a shared machine <c>/</c> and
+    /// <c>/home</c> are writable by people who are not this user.</para>
+    /// </summary>
+    [Fact]
+    public void Find_StopsAtTheRepoRoot_AndIgnoresAnythingAboveIt()
+    {
+        var outside = Dir("outside");
+        Write(outside, "AGENTS.md", "instructions from ABOVE the repo");
+        var root = Dir("outside", "repo");
+        Dir("outside", "repo", ".git");
+        Write(root, "AGENTS.md", "root instructions");
+        var deep = Dir("outside", "repo", "src");
+
+        var found = ProjectInstructions.Find(deep);
+
+        Assert.DoesNotContain(found, f => f.Text.Contains("ABOVE the repo", StringComparison.Ordinal));
+        Assert.Contains("root instructions", Assert.Single(found).Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NO REPO, NO WALK. Outside a worktree there is no boundary that means anything — "the project"
+    /// is undefined — so the only directory whose file certainly describes THIS work is the one the
+    /// agent was started in. Walking up from a scratch directory in the home folder would otherwise
+    /// collect the home folder's own files.
+    /// </summary>
+    [Fact]
+    public void Find_WithNoGitAnywhere_ReadsTheWorkingDirectoryOnly()
+    {
+        var parent = Dir("loose");
+        Write(parent, "AGENTS.md", "the parent's instructions");
+        var here = Dir("loose", "work");
+        Write(here, "AGENTS.md", "the working directory's own");
+
+        var found = ProjectInstructions.Find(here);
+
+        Assert.Contains("working directory's own", Assert.Single(found).Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A worktree or submodule marks its root with a .git FILE rather than a directory. Testing for
+    /// the directory alone would walk straight past it and out of the repo.
+    /// </summary>
+    [Fact]
+    public void Find_TreatsAGitFileAsARepoRoot_NotOnlyAGitDirectory()
+    {
+        var outside = Dir("above");
+        Write(outside, "AGENTS.md", "outside the worktree");
+        var root = Dir("above", "worktree");
+        Write(root, ".git", "gitdir: /somewhere/else/.git/worktrees/wt");
+        Write(root, "AGENTS.md", "the worktree's own");
+        var deep = Dir("above", "worktree", "src");
+
+        var found = ProjectInstructions.Find(deep);
+
+        Assert.DoesNotContain(found, f => f.Text.Contains("outside the worktree", StringComparison.Ordinal));
+        Assert.Contains("worktree's own", Assert.Single(found).Text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -81,6 +147,7 @@ public class ProjectInstructionsTests : IDisposable
     public void Find_TakesEveryLevelThatHasTheSameName_RootFirst()
     {
         var root = Dir("outer");
+        Dir("outer", ".git");                     // the repo the levels belong to
         Write(root, "AGENTS.md", "OUTER");
         var inner = Dir("outer", "inner");
         Write(inner, "AGENTS.md", "INNER");
@@ -100,6 +167,7 @@ public class ProjectInstructionsTests : IDisposable
     public void Find_DoesNotMixNames_AcrossLevels()
     {
         var root = Dir("outer");
+        Dir("outer", ".git");                     // the repo the levels belong to
         Write(root, "AGENTS.md", "AGENTS at root");
         var inner = Dir("outer", "inner");
         Write(inner, "CLAUDE.md", "CLAUDE in subdir");
