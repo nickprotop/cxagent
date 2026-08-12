@@ -534,10 +534,27 @@ public class AgentChallengeTests
             // stable for the session rather than changing with each prompt.
             // The write is fire-and-forget, so poll briefly rather than racing it.
             var agentDir = Path.GetDirectoryName(logs.PathFor(agent.Id, "x", "log"))!;
-            for (var i = 0; i < 50 && !Directory.Exists(agentDir); i++) await Task.Delay(20);
-            for (var i = 0; i < 50 && Directory.GetFiles(agentDir).Length == 0; i++) await Task.Delay(20);
 
-            var written = string.Concat(Directory.GetFiles(agentDir).Select(File.ReadAllText));
+            // TEN SECONDS, NOT ONE — and the difference is a real intermittent failure, not caution.
+            // The old budget was 50 polls of 20ms, which is ample on an idle machine and a coin flip
+            // under a full parallel suite: this failed twice in full runs while passing every time in
+            // isolation, which is the signature of a deadline rather than a defect.
+            //
+            // AND IT WAITS FOR CONTENT, not merely for a file to exist. A log file appears the moment
+            // it is created and is empty until the write lands, so a poll that stops at "a file is
+            // there" can read nothing and assert on it.
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+            var written = "";
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                if (Directory.Exists(agentDir))
+                {
+                    try { written = string.Concat(Directory.GetFiles(agentDir).Select(File.ReadAllText)); }
+                    catch (IOException) { /* mid-write; try again */ }
+                    if (written.Contains("### A heading", StringComparison.Ordinal)) break;
+                }
+                await Task.Delay(20);
+            }
 
             // The MARKDOWN SOURCE, verbatim — that is the whole point. A log holding only the
             // rendered form could not answer "what did the renderer receive?".

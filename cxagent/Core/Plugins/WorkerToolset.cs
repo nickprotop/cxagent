@@ -68,10 +68,25 @@ public static class WorkerToolset
     /// What the model is told this tool is for. Defaults to the plugin's DisplayName, which is right
     /// while one plugin backs one tool and useless the moment two share it.
     /// </param>
+    /// <param name="Aliases">
+    /// Former names, still answered but never advertised.
+    ///
+    /// <para>A rename lands mid-conversation: a model that saw <c>list_files</c> in an earlier turn's
+    /// prompt, or learned it from a summary, will call it again — and "no such tool" for something
+    /// that worked a moment ago is a turn spent on the app's bookkeeping. Accepting the old name is
+    /// two lines; the model never sees it, so nothing is spent on the prompt side.</para>
+    /// </param>
     private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
-        string? Description = null);
+        string? Description = null,
+        string[]? Aliases = null);
+
+    /// <summary>Whether a spec answers to this name, current or former.</summary>
+    private static bool Answers(ToolSpec? spec, string name) =>
+        spec is not null
+        && (string.Equals(spec.Name, name, StringComparison.Ordinal)
+            || (spec.Aliases?.Contains(name, StringComparer.Ordinal) ?? false));
 
     // Ordered so WorkerTool.For's output is stable regardless of the caller's list order —
     // a stable tool order keeps the prompt (and provider-side caching of it) stable across calls.
@@ -79,13 +94,26 @@ public static class WorkerToolset
     {
         (WorkerTool.ReadFile, new ToolSpec("read_file", "file", "read",
             Params: ["path", "offset", "limit"], Required: ["path"])),
-        // list/search are READ-ONLY. Through run_shell they are `find` and `grep`, which raise a
-        // permission prompt for an operation that reads nothing the agent could not already read --
-        // live drives stalled repeatedly on exactly those approvals.
-        (WorkerTool.ListFiles, new ToolSpec("list_files", "file", "list",
-            Params: ["path", "pattern", "limit"], Required: ["path"])),
-        (WorkerTool.SearchFiles, new ToolSpec("search_files", "file", "search",
-            Params: ["path", "pattern", "regex", "glob", "limit"], Required: ["path", "pattern"])),
+        // NAMED FOR WHAT THE MODEL ALREADY KNOWS. These were list_files and search_files — accurate
+        // names that describe the operation, and the model shelled out to `find` and `grep` anyway.
+        // It reaches for the word it has seen a million times, which is the same reason load_skill
+        // lost out to read_file until the prompt said otherwise. Cheaper to match the instinct than
+        // to argue with it.
+        //
+        // AND SHELLING OUT COSTS MORE THAN A NAME. Through run_shell these are commands that raise a
+        // permission prompt for an operation reading nothing the agent could not already read — live
+        // drives stalled repeatedly on exactly those approvals.
+        (WorkerTool.ListFiles, new ToolSpec("glob", "file", "list",
+            Params: ["path", "pattern", "limit"], Required: ["path"],
+            Description: "Find files by path pattern, e.g. \"**/*.cs\". Use this rather than "
+                       + "run_shell with find or ls — it needs no approval.",
+            Aliases: ["list_files"])),
+        (WorkerTool.SearchFiles, new ToolSpec("grep", "file", "search",
+            Params: ["path", "pattern", "regex", "glob", "limit"], Required: ["path", "pattern"],
+            Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
+                       + "matching a glob. Use this rather than run_shell with grep or rg — it "
+                       + "needs no approval.",
+            Aliases: ["search_files"])),
         (WorkerTool.WriteFile, new ToolSpec("write_file", "file", "write",
             Params: ["path", "content"], Required: ["path", "content"])),
         // Producers only: replace EDITS an existing file. write_file is whole-file, so changing one
@@ -215,7 +243,7 @@ public static class WorkerToolset
         // tool result and is the only thing it can act on: "no such tool" should make it pick a real
         // one, whereas a configuration fault should make it STOP asking rather than retry
         // variations. A shared string invites exactly that retry loop, and burns turns against the cap.
-        var entry = Specs.FirstOrDefault(s => s.Spec.Name == call.Name);
+        var entry = Specs.FirstOrDefault(s => Answers(s.Spec, call.Name));
         if (entry.Spec is null)
             return $"no such tool '{call.Name}'. Available to this role: "
                 + $"{string.Join(", ", NamesFor(allowed).Concat(alsoAvailable ?? []))}";
@@ -350,7 +378,7 @@ public static class WorkerToolset
     /// </summary>
     private static string DescribeBadArguments(ToolCall call, Exception ex)
     {
-        var entry = Specs.FirstOrDefault(s => s.Spec.Name == call.Name);
+        var entry = Specs.FirstOrDefault(s => Answers(s.Spec, call.Name));
         var expected = entry.Spec?.Params ?? [];
 
         var sent = new List<string>();

@@ -272,7 +272,7 @@ public class WorkerToolsetTests
         // The pinned-action property, re-pinned now that four tools share the file plugin: a worker
         // calling list_files must not be able to pass action: "delete".
         var registry = PluginRegistry.CreateWithBuiltins();
-        foreach (var name in new[] { "read_file", "write_file", "list_files", "search_files", "replace_in_file" })
+        foreach (var name in new[] { "read_file", "write_file", "glob", "grep", "replace_in_file" })
         {
             var def = WorkerToolset.For(Enum.GetValues<WorkerTool>(), registry)
                 .SingleOrDefault(d => d.Name == name);
@@ -318,7 +318,7 @@ public class WorkerToolsetTests
     [Fact]
     public void SearchFiles_RequiresSomethingToSearchFor()
     {
-        var json = SchemaFor("search_files").Replace(" ", "");
+        var json = SchemaFor("grep").Replace(" ", "");
         Assert.Contains("\"required\":[\"path\",\"pattern\"]", json);
     }
 
@@ -334,7 +334,7 @@ public class WorkerToolsetTests
         // prompt weight, so adding one should be a deliberate edit here rather than something that
         // slips in. Named, so a failure says WHICH set changed.
         Assert.Equal(
-            ["read_file", "list_files", "search_files", "write_file", "replace_in_file",
+            ["read_file", "glob", "grep", "write_file", "replace_in_file",
              "run_shell", "http_request", "web_fetch"],
             tools.Select(t => t.Name));
     }
@@ -456,6 +456,41 @@ public class WorkerToolsetTests
 
             Assert.Contains("hello", r);
             Assert.DoesNotContain("Unrecognised", r);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// THE OLD NAMES STILL ANSWER. A rename lands mid-conversation: a model that saw list_files in
+    /// an earlier turn's prompt, or learned it from a summary, will call it again — and "no such
+    /// tool" for something that worked a moment ago is a turn spent on our bookkeeping.
+    /// </summary>
+    [Theory]
+    [InlineData("list_files", "glob")]
+    [InlineData("search_files", "grep")]
+    public void RenamedTools_StillAnswerToTheirOldNames_ButAdvertiseOnlyTheNew(string old, string current)
+    {
+        var names = WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()).ToList();
+
+        Assert.Contains(current, names);
+        Assert.DoesNotContain(old, names);   // answered, never advertised
+    }
+
+    [Fact]
+    public async Task ATool_CalledByItsOldName_StillRuns()
+    {
+        var dir = Directory.CreateTempSubdirectory("wt-alias-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "found.txt"), "needle\n");
+
+            var r = await WorkerToolset.InvokeAsync(
+                Call("list_files", new { path = dir }),
+                Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins(),
+                new CollectingContext(), CancellationToken.None);
+
+            Assert.Contains("found.txt", r);
+            Assert.DoesNotContain("no such tool", r, StringComparison.OrdinalIgnoreCase);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
