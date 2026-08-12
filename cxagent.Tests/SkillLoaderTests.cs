@@ -215,6 +215,103 @@ public class SkillLoaderTests
         Assert.Contains("No skills are available", result!, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A SKILL'S OTHER FILES ARE NAMED BY ABSOLUTE PATH. Published skills carry reference documents
+    /// and link them the way markdown does — [references/patterns.md](references/patterns.md) —
+    /// which is relative to a directory the model cannot see. Both skills in this repository do
+    /// exactly that, under a heading reading "Load References".
+    /// </summary>
+    [Fact]
+    public void TryInvoke_ListsTheSkillsOtherFiles_ByAbsolutePath()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-ref-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "references"));
+            File.WriteAllText(Path.Combine(dir, "SKILL.md"), "---\n---\nbody");
+            File.WriteAllText(Path.Combine(dir, "references", "patterns.md"), "patterns");
+            File.WriteAllText(Path.Combine(dir, "manifest.json"), "{}");
+
+            var loader = new SkillLoader(() => new SkillCatalogResult(
+                [new SkillInfo("xunit", "Use when testing.", dir, "# Body\n\nDo the thing.")],
+                [], dir));
+
+            var result = loader.TryInvoke(Call("xunit"), [])!;
+
+            Assert.Contains(Path.Combine(dir, "references", "patterns.md"), result, StringComparison.Ordinal);
+            Assert.Contains(Path.Combine(dir, "manifest.json"), result, StringComparison.Ordinal);
+
+            // NOT the SKILL.md — its content is already in this very message, and listing it invites
+            // a re-read of what the model is holding.
+            Assert.DoesNotContain(Path.Combine(dir, "SKILL.md"), result, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A skill with nothing beside its SKILL.md says nothing about files.</summary>
+    [Fact]
+    public void TryInvoke_WithNoOtherFiles_AddsNoFileList()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-noref-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "SKILL.md"), "---\n---\nbody");
+
+            var loader = new SkillLoader(() => new SkillCatalogResult(
+                [new SkillInfo("bare", "Use when testing.", dir, "# Body")], [], dir));
+
+            Assert.DoesNotContain("files (", loader.TryInvoke(Call("bare"), [])!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A skill shipping forty documents must not spend more of the window on its own file listing
+    /// than on its instructions — and this text is a tool result, re-sent on every later turn.
+    /// </summary>
+    [Fact]
+    public void TryInvoke_WithManyFiles_StopsListingAndSaysThereAreMore()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxa-many-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "SKILL.md"), "---\n---\nbody");
+            for (var i = 0; i < 40; i++)
+                File.WriteAllText(Path.Combine(dir, $"ref{i:D2}.md"), "x");
+
+            var loader = new SkillLoader(() => new SkillCatalogResult(
+                [new SkillInfo("big", "Use when testing.", dir, "# Body")], [], dir));
+
+            var result = loader.TryInvoke(Call("big"), [])!;
+
+            Assert.Contains("and more in this directory", result, StringComparison.Ordinal);
+            Assert.DoesNotContain("ref39.md", result, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>A directory that cannot be listed still loads — the body is the substance.</summary>
+    [Fact]
+    public void TryInvoke_WhenTheDirectoryIsGone_StillReturnsTheBody()
+    {
+        var loader = new SkillLoader(() => new SkillCatalogResult(
+            [new SkillInfo("ghost", "Use when testing.", "/nope/not/here", "# Body\n\nDo the thing.")],
+            [], "/nope"));
+
+        Assert.Contains("Do the thing.", loader.TryInvoke(Call("ghost"), [])!, StringComparison.Ordinal);
+    }
+
     /// <summary>Names are matched case-insensitively: a model that title-cases a name meant the skill.</summary>
     [Fact]
     public void TryInvoke_MatchesTheNameCaseInsensitively()

@@ -69,7 +69,9 @@ public sealed class SkillLoader
         "Load a specialised skill when the task at hand matches one of the available skills listed "
         + "in your system context. Returns the skill's full instructions. "
         + "ALWAYS use this tool to read a skill — never open its SKILL.md with a file tool, even if "
-        + "you know the path. Only this tool records that the skill is in force.",
+        + "you know the path. Only this tool records that the skill is in force. "
+        + "Any OTHER file it ships with is listed by full path in the result, and you read those "
+        + "with the ordinary file tool, only if the instructions point you at one.",
         JsonDocument.Parse("""
             {
               "type": "object",
@@ -120,8 +122,77 @@ public sealed class SkillLoader
             return $"The '{skill.Name}' skill is already loaded earlier in this conversation. "
                  + "Its instructions are above — follow them.";
 
-        return $"{BodyMarkerPrefix}{skill.Name}]\ndirectory: {skill.Directory}\n\n{skill.Body}";
+        return $"{BodyMarkerPrefix}{skill.Name}]\ndirectory: {skill.Directory}"
+             + Files(skill)
+             + $"\n\n{skill.Body}";
     }
+
+    /// <summary>
+    /// The files that ship with a skill, listed by ABSOLUTE path.
+    ///
+    /// <para>WHY THEY ARE LISTED AND NOT JUST IMPLIED. Published skills carry reference documents,
+    /// and their bodies link them the way markdown does — <c>[references/patterns.md](references/patterns.md)</c>
+    /// — which is a path relative to a directory the MODEL CANNOT SEE. It would have to know where
+    /// the skill lives, join the two itself, and hope. Both skills in this repository do exactly this
+    /// under a heading that says "Load References", so the failure is not hypothetical.</para>
+    ///
+    /// <para>ABSOLUTE, so the model can pass one straight to the file tool. A relative path here
+    /// would be resolved against the WORKING DIRECTORY rather than the skill's, which is the same
+    /// confusion one level down.</para>
+    ///
+    /// <para>NAMED, NOT INLINED. The point of the catalog/body split is that a skill costs what it is
+    /// worth: inlining every reference would hand back the 60k prefix the design exists to avoid, and
+    /// most references go unread on most tasks. The model reads the one it needs, through the
+    /// ordinary permission-gated file tool — no second capability channel, and the gate that already
+    /// governs every other read governs these.</para>
+    ///
+    /// <para>A PROJECT SKILL'S FILES ARE INSIDE THE WORKING BOUNDARY and read without a prompt; a
+    /// GLOBAL skill's are in the config directory, outside it, and asking is correct — those files
+    /// are not part of the repository the user is working in.</para>
+    /// </summary>
+    private static string Files(SkillInfo skill)
+    {
+        string[] files;
+        try
+        {
+            if (!Directory.Exists(skill.Directory)) return "";
+            files = Directory
+                .EnumerateFiles(skill.Directory, "*", SearchOption.AllDirectories)
+                // The body is already in this message; listing it invites a re-read of what the model
+                // is holding.
+                .Where(f => !string.Equals(Path.GetFileName(f), "SKILL.md", StringComparison.Ordinal))
+                // Ordinal, for the same reason the catalog is sorted: filesystem order is not stable,
+                // and this text lands in the window.
+                .OrderBy(f => f, StringComparer.Ordinal)
+                .Take(FileListLimit + 1)
+                .ToArray();
+        }
+        catch (Exception)
+        {
+            // A skill whose directory cannot be listed still loads. Its body is the substance.
+            return "";
+        }
+
+        if (files.Length == 0) return "";
+
+        var shown = files.Take(FileListLimit).Select(f => $"\n  {f}");
+        var more = files.Length > FileListLimit
+            ? $"\n  …and more in this directory"
+            : "";
+
+        return "\nfiles (read one with the file tool if the instructions below point at it):"
+             + string.Concat(shown) + more;
+    }
+
+    /// <summary>
+    /// How many files are named before the list is cut short.
+    ///
+    /// <para>A skill with forty reference documents would otherwise spend more of the window on its
+    /// own file listing than on its instructions — and this text is a tool result, so it is re-sent
+    /// on every subsequent turn. Twenty names the real cases (both skills here ship three) and stops
+    /// a pathological one from becoming the message.</para>
+    /// </summary>
+    private const int FileListLimit = 20;
 
     /// <summary>
     /// Is this skill's body still in the window?

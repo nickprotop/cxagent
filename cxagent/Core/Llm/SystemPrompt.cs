@@ -466,7 +466,9 @@ public static class SystemPrompt
         // worker row, the session panel and the compaction notice all reported no skill in force.
         sb.AppendLine("Use load_skill for this, never a file tool. Reading a SKILL.md directly gets "
                     + "you the text but does not register the skill, so nothing else in the session "
-                    + "knows it is in force — and you will not be told when it is compacted away.");
+                    + "knows it is in force — and you will not be told when it is compacted away. "
+                    + "A skill may ship other files; those are listed by full path when you load it, "
+                    + "and you read them with the file tool as usual.");
         sb.AppendLine();
         sb.AppendLine("<available_skills>");
 
