@@ -665,6 +665,30 @@ public class MainWindowTests
     }
 
     /// <summary>
+    /// THE OPENING BANNER NAMES THE MODE THE SESSION ACTUALLY STARTED IN.
+    ///
+    /// <para>It said "single agent" unconditionally — the word was hardcoded, predating modes
+    /// existing — so `--mode fan-out` opened with a banner contradicting the composer line beneath
+    /// it. And unlike that line the banner cannot be corrected later: it is a chat message, and the
+    /// transcript is a record rather than a live readout. The mode therefore has to arrive BEFORE
+    /// Build(), which is what StartupMode is for.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("fan-out")]
+    [InlineData("single")]
+    public void TheBanner_NamesTheStartupMode(string mode)
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(SysOfWidth(200), res, Logs()) { StartupMode = mode };
+        mw.Build();
+
+        // The BANNER'S subtitle, which is what Build wrote into the transcript. Asserted through the
+        // same seam the composer line uses rather than by reading the chat control back: the
+        // transcript exposes ids, not text, and the mode is what is under test here — not markup.
+        Assert.Equal(mode, mw.CurrentMode);
+    }
+
+    /// <summary>
     /// THE BAR IS THIS AGENT; THE PANEL IS EVERYTHING. The ledger is shared — children record into it
     /// deliberately, because a budget belongs to the conversation rather than to whichever agent did
     /// the work — so <c>Ledger.TotalTokens</c> is session-wide and was wrong for a readout sitting

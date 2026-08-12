@@ -64,6 +64,10 @@ public static class AppBootstrap
         var mainWindow = new MainWindow(system, resolution, logs)
         {
             ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
+            // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
+            // The SetMode call further down still fixes the composer line on every /mode; this is the
+            // one readout that has to be right the first time.
+            StartupMode = AgentModes.Name(startupMode),
         };
         var window = mainWindow.Build();
 

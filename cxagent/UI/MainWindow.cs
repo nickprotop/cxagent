@@ -228,6 +228,26 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private string _mode = "single";
 
+    /// <summary>
+    /// The mode this session starts in, set BEFORE <see cref="Build"/>.
+    ///
+    /// <para>An init-only property rather than a call after construction, because the banner is a
+    /// CHAT MESSAGE: once <c>Build</c> has written it into the transcript it cannot be revised, and a
+    /// later <see cref="SetMode"/> corrects the composer line while leaving the banner claiming
+    /// something else. That is precisely what happened — the banner said "single agent" for the life
+    /// of a fan-out session, because the word was hardcoded and the correction came too late to
+    /// matter anyway.</para>
+    /// </summary>
+    public string StartupMode
+    {
+        init => _mode = value;
+    }
+
+    /// <summary>The mode both the banner and the composer line are showing. Readable so a test can
+    /// assert what was rendered without reaching into the transcript, which exposes ids and not
+    /// text.</summary>
+    public string CurrentMode => _mode;
+
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
     public SessionPanel SessionPanel { get; } = new();
 
@@ -464,9 +484,14 @@ public sealed class MainWindow : IDisposable
         {
             // The keybinding hint that used to live here is gone: Input.Placeholder below says
             // the same thing, in the control the user is about to type into.
+            // THE MODE, NOT THE WORD "single". This was hardcoded — it predates modes existing — so
+            // a session started with `--mode fan-out` opened with a banner claiming it was single.
+            // Unlike the composer line, a banner cannot be corrected afterwards: it is a chat
+            // message, and the transcript is a record rather than a live readout. So the mode has to
+            // be right BEFORE Build() runs, which is why it is a property set at construction.
             Chat.AddMessage(ChatRole.System, Banner.Render(
                 _system.DesktopDimensions.Width,
-                $"single agent · {_resolution.DisplayName}"));
+                $"{_mode} · {_resolution.DisplayName}"));
         }
         else
         {
