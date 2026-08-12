@@ -189,6 +189,95 @@ public class SkillsUiTests
         }
     }
 
+    /// <summary>
+    /// THE TOOL MUST ACTUALLY BE OFFERED. A live drive found the model hunting the SKILL.md down with
+    /// list_files and read_file instead of calling load_skill — the catalog was in its prompt, so it
+    /// knew the skill existed, and it did the only thing available to it. Everything downstream of
+    /// loading is unreachable if the definition never reaches the request.
+    /// </summary>
+    [Fact]
+    public async Task TheLoadSkillTool_IsOfferedToTheModel_WhenSkillsExist()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cxa-offer-" + Guid.NewGuid().ToString("N"));
+        var here = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, ".git"));
+            var skill = Directory.CreateDirectory(
+                Path.Combine(root, ".cxagent", "skills", "deployment")).FullName;
+            File.WriteAllText(Path.Combine(skill, "SKILL.md"),
+                "---\nname: deployment\ndescription: Use when deploying.\n---\n\nShip carefully.\n");
+            Directory.SetCurrentDirectory(root);
+
+            var provider = new ToolCapturingProvider();
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+                new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+
+            await agent.SendAsync("do something", CancellationToken.None);
+
+            Assert.Contains("load_skill", provider.LastTools.Select(t => t.Name));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(here);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>And withheld when there is nothing to load — every call could only fail.</summary>
+    [Fact]
+    public async Task TheLoadSkillTool_IsWithheld_WhenThereAreNoSkills()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "cxa-nooffer-" + Guid.NewGuid().ToString("N"));
+        var here = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, ".git"));
+            Directory.SetCurrentDirectory(root);
+
+            var provider = new ToolCapturingProvider();
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+                new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+
+            await agent.SendAsync("do something", CancellationToken.None);
+
+            Assert.DoesNotContain("load_skill", provider.LastTools.Select(t => t.Name));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(here);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>Captures the tool definitions the agent actually sent.</summary>
+    private sealed class ToolCapturingProvider : ILlmProvider
+    {
+        public List<ToolDefinition> LastTools { get; private set; } = [];
+
+        public string ProviderId => "capturing";
+        public string DisplayName => "Capturing";
+        public string ModelId => "test-model";
+        public ILlmProvider WithModel(string model) => this;
+        public bool SupportsToolCalling => true;
+        public bool SupportsStreaming => false;
+
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+            CancellationToken ct)
+        {
+            LastTools = tools ?? [];
+            return Task.FromResult(new LlmResponse { Text = "done", StopReason = "end_turn" });
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            var r = await ChatAsync(messages, tools, ct);
+            yield return new LlmStreamChunk(r.Text, null, true, null, r.StopReason);
+        }
+    }
+
     /// <summary>Each skill once, in load order, however many times it was asked for.</summary>
     [Fact]
     public void LoadedIn_ListsEachSkillOnce_InLoadOrder()
