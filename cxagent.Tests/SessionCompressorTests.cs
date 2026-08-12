@@ -148,6 +148,119 @@ public class SessionCompressorTests
         Assert.Empty(orphans);
     }
 
+    /// <summary>A loaded skill body, as the load tool writes it into the conversation.</summary>
+    private static ChatMessage SkillBody(string name, string id) => new()
+    {
+        Role = "tool",
+        Content = $"[skill: {name}]\ndirectory: /tmp/skills/{name}\n\nShip carefully.",
+        ToolCallId = id,
+    };
+
+    /// <summary>
+    /// COMPACTION MUST SAY WHAT IT TOOK. A loaded skill is an ordinary tool result, so it is removed
+    /// like anything else and nothing tells the model — worse, the summary may MENTION the load,
+    /// leaving a model that believes a skill is in force holding none of its text. From the inside
+    /// that looks like a model ignoring its instructions, which is the one failure this could not
+    /// otherwise be diagnosed as.
+    /// </summary>
+    [Fact]
+    public async Task Compress_NamesTheSkillsWhoseBodiesItRemoved()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(SkillBody("deployment", "t1"));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var text = string.Concat(conversation.Select(m => m.Content));
+        Assert.Contains("deployment", text, StringComparison.Ordinal);
+        Assert.Contains("load_skill", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// OUTSIDE THE BRACKET, and this is the whole reason the placement was specified. The NEXT
+    /// compaction pulls the bracketed summary back out via ExtractPreviousSummary and feeds it to the
+    /// summariser to merge — so a notice inside the bracket is text a model paraphrases or drops,
+    /// which destroys the determinism that makes it worth having.
+    /// </summary>
+    [Fact]
+    public async Task Compress_PutsTheSkillNoticeOutsideTheSummaryBracket()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(SkillBody("deployment", "t1"));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var summary = conversation.First(m => m.Content.Contains("summarised", StringComparison.Ordinal));
+        var closing = summary.Content.IndexOf(']');
+        var notice = summary.Content.IndexOf("deployment", StringComparison.Ordinal);
+
+        Assert.True(notice > closing,
+            "the notice must follow the closing bracket, or the next compaction feeds it to the "
+            + "summariser and a model rewrites it");
+    }
+
+    /// <summary>
+    /// THE FALLBACK PATH NEEDS ITS OWN NOTICE. It inserts no summary at all, so without this the loss
+    /// goes unannounced on exactly the path taken when things are ALREADY going wrong — a provider
+    /// blip during compaction.
+    /// </summary>
+    [Fact]
+    public async Task Compress_WhenSummarisationFails_StillNamesTheSkillsItRemoved()
+    {
+        var provider = new ThrowingProvider();
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        conversation.Add(SkillBody("deployment", "t1"));
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var text = string.Concat(conversation.Select(m => m.Content));
+        Assert.Contains("deployment", text, StringComparison.Ordinal);
+        Assert.Contains("load_skill", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A SKILL THAT SURVIVED IS NOT ANNOUNCED AS LOST. The notice names what the cut actually removed,
+    /// so a body in the half that stays must not appear in it — telling a model to reload something
+    /// it still holds would waste the window on a second copy.
+    /// </summary>
+    [Fact]
+    public async Task Compress_DoesNotNameASkillThatSurvivedTheCut()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+        conversation.Add(SkillBody("survivor", "t9"));      // newest — in the half that is kept
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        var summary = conversation.First(m => m.Content.Contains("summarised", StringComparison.Ordinal));
+        Assert.DoesNotContain("removed by compaction", summary.Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>No skills, no notice — a compaction that removed none must read exactly as before.</summary>
+    [Fact]
+    public async Task Compress_WithNoSkillsLoaded_AddsNoNotice()
+    {
+        var provider = new RecordingProvider(Usage(new LlmResponse { Text = SummaryText }));
+        var context = new AgentContext();
+        var conversation = context.Messages;
+        for (int i = 0; i < 12; i++) conversation.Add(Msg("user", $"goal-{i:D2}"));
+
+        await SessionCompressor.CompressAsync(context, provider, CancellationToken.None);
+
+        Assert.DoesNotContain("removed by compaction",
+            string.Concat(conversation.Select(m => m.Content)), StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// No preamble, no pin. A sub-agent or a test context that never had a system message must still
     /// compress from the very front rather than mysteriously keeping its oldest user turn.

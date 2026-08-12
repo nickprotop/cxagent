@@ -163,7 +163,7 @@ public static class SessionCompressor
             conversation.Insert(pin, new ChatMessage
             {
                 Role = "assistant",
-                Content = FormatSummary(summary.Text),
+                Content = FormatSummary(summary.Text) + SkillNotice(oldTurns),
                 Timestamp = DateTimeOffset.UtcNow,
             });
             // THE READING NO LONGER DESCRIBES THE CONVERSATION. Done here rather than left to the
@@ -181,7 +181,26 @@ public static class SessionCompressor
             // Summarisation failed — fall back to the SAME truncation /compress uses, never a
             // second, divergent degradation path.
             var beforeTruncate = context.TotalChars();
+
+            // WHAT TRUNCATION IS ABOUT TO REMOVE, computed BEFORE it removes it. This path inserts no
+            // summary at all, so without its own notice the loss goes unannounced on exactly the path
+            // taken when things are already going wrong.
+            //
+            // Truncate chooses its own boundary, which is not `cut` — so the range is recomputed
+            // rather than reusing oldTurns above, which would name skills that survived.
+            var keep = (conversation.Count - pin) / 2;
+            var notice = SkillNotice(conversation.GetRange(pin, Math.Max(0, conversation.Count - pin - keep)));
+
             Truncate(conversation, pin);
+
+            if (notice.Length > 0)
+                conversation.Insert(pin, new ChatMessage
+                {
+                    Role = "assistant",
+                    Content = notice.TrimStart(),
+                    Timestamp = DateTimeOffset.UtcNow,
+                });
+
             context.EstimateUsageAfterCompaction();
             return new CompressResult(Summarised: false,
                 CharsFreed: Math.Max(0, beforeTruncate - context.TotalChars()));
@@ -439,6 +458,34 @@ public static class SessionCompressor
 
     private static string FormatSummary(string? text) =>
         $"{SummaryMarker}{text}]";
+
+    /// <summary>
+    /// Names the skills whose bodies are being removed, or "" when none are.
+    ///
+    /// <para>WHY THIS EXISTS. A loaded skill is an ordinary tool result, so compaction removes it like
+    /// anything else — and nothing tells the model. Worse, the summary may well MENTION the load
+    /// ("loaded the deployment skill"), leaving a model that believes a skill is in force holding
+    /// none of its text, still citing a document it can no longer read. This is the one failure this
+    /// feature could not otherwise detect, because from the inside it looks like the model simply
+    /// ignoring its instructions.</para>
+    ///
+    /// <para>OUTSIDE THE SUMMARY'S BRACKET, and that placement is the whole point.
+    /// <see cref="ExtractPreviousSummary"/> pulls the bracketed text back out on the NEXT compaction
+    /// and feeds it to the summariser to merge — so a notice inside the bracket is text a model will
+    /// paraphrase or drop, destroying the determinism that makes it worth having. Outside, it is
+    /// literal text that nothing ever rewrites.</para>
+    ///
+    /// <para>It reads as an instruction rather than a note, because the model's next decision is
+    /// whether to reload: a line that only reported the loss would leave it to infer the remedy.</para>
+    /// </summary>
+    private static string SkillNotice(IReadOnlyList<ChatMessage> removed)
+    {
+        var skills = Skills.SkillLoader.LoadedIn(removed);
+        if (skills.Count == 0) return "";
+
+        return $"\n\nSkill instructions removed by compaction: {string.Join(", ", skills)}. "
+             + "You are no longer following them — call load_skill again if the task still needs one.";
+    }
 
     /// <summary>The marker that makes a summary recognisable as one on the next compaction.</summary>
     private const string SummaryMarker = "[earlier conversation, summarised: ";
