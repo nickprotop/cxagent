@@ -204,6 +204,23 @@ public static class SkillCatalog
     }
 
     /// <summary>
+    /// Strips the surrounding quotes YAML allows around a scalar.
+    ///
+    /// <para>Published skills use them — a description containing a colon has to be quoted to be
+    /// valid YAML, and "USE FOR: … DO NOT USE FOR: …" is exactly the shape a good description takes.
+    /// Without this the quotes reach the prompt and <c>/skills</c> verbatim, which reads as a
+    /// formatting bug and spends prefix bytes on punctuation.</para>
+    ///
+    /// <para>ONLY WHEN BOTH ENDS MATCH, so an apostrophe or a quoted phrase inside a longer
+    /// description is left exactly as written.</para>
+    /// </summary>
+    private static string Unquote(string value) =>
+        value.Length >= 2
+        && ((value[0] == '"' && value[^1] == '"') || (value[0] == '\'' && value[^1] == '\''))
+            ? value[1..^1]
+            : value;
+
+    /// <summary>
     /// Frontmatter and body, or null with a reason recorded.
     ///
     /// <para>HAND-ROLLED, NO YAML DEPENDENCY. Two string fields do not justify a package, and real
@@ -246,7 +263,7 @@ public static class SkillCatalog
             if (colon <= 0) continue;                       // blank, comment, or continuation
 
             var key = lines[i][..colon].Trim();
-            var value = lines[i][(colon + 1)..].Trim();
+            var value = Unquote(lines[i][(colon + 1)..].Trim());
 
             if (string.Equals(key, "description", StringComparison.OrdinalIgnoreCase)) description = value;
             else if (string.Equals(key, "name", StringComparison.OrdinalIgnoreCase)) declaredName = value;

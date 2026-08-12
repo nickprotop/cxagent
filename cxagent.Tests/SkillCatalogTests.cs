@@ -96,6 +96,39 @@ public class SkillCatalogTests : IDisposable
         Assert.Empty(found.Problems);
     }
 
+    /// <summary>
+    /// YAML QUOTES ARE STRIPPED. A description containing a colon must be quoted to be valid YAML,
+    /// and "USE FOR: … DO NOT USE FOR: …" is exactly the shape a good description takes — so real
+    /// published skills arrive quoted. Left in, the quotes reach the prompt and /skills verbatim.
+    /// </summary>
+    [Fact]
+    public void Find_StripsSurroundingQuotesFromADescription()
+    {
+        var repo = Dir("repo");
+        Dir("repo", ".git");
+        Raw(Dir("repo", ".cxagent", "skills"), "xunit",
+            "---\nname: xunit\ndescription: \"Write tests. USE FOR: xUnit projects.\"\n---\n\nBody.\n");
+
+        var found = SkillCatalog.Find(repo);
+
+        Assert.Equal("Write tests. USE FOR: xUnit projects.", Assert.Single(found.Skills).Description);
+    }
+
+    /// <summary>But an apostrophe or a quoted phrase INSIDE a description is left exactly as written.</summary>
+    [Fact]
+    public void Find_LeavesQuotesThatAreNotWrapping_Alone()
+    {
+        var repo = Dir("repo");
+        Dir("repo", ".git");
+        Raw(Dir("repo", ".cxagent", "skills"), "quoting",
+            "---\nname: quoting\ndescription: Use when the repo's \"house style\" applies.\n---\n\nBody.\n");
+
+        var found = SkillCatalog.Find(repo);
+
+        Assert.Equal("Use when the repo's \"house style\" applies.",
+            Assert.Single(found.Skills).Description);
+    }
+
     [Fact]
     public void Find_RefusesAFileWithNoFrontmatter_AndSaysWhy()
     {
