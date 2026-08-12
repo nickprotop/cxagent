@@ -1382,17 +1382,19 @@ The obvious reading of "run the children concurrently" is wrong, and it is worth
 anyone writes `Task.WhenAll(response.ToolCalls.Select(...))`.
 
 A model does not emit a turn of only spawns. It emits `[spawn A, spawn B, read_file, run_shell,
-search_files]` — a mixture — and today `Agent.cs:711` runs all five through ONE sequential `foreach`.
+search_files]` — a mixture — and today `Agent.cs:773` runs all five through ONE sequential `foreach`.
 Parallelising that loop wholesale breaks four things, three of them silently:
 
-**1. Four pieces of state are mutated per iteration**, and none is thread-safe:
+**1. Four pieces of state are mutated per iteration**, and none is thread-safe. Re-verified against
+the current file — the line numbers had drifted by roughly sixty, which is the usual fate of a
+citation and the reason each row names what it is as well as where:
 
 | Line | State | What breaks |
 |---|---|---|
-| `:714` | `wrote` | a lost update means the build-verification gate does not fire |
-| `:728` | `seen[signature]` | plain `Dictionary` — concurrent writes corrupt it |
-| `:765-766` | `_lastBuild`, `_lastTest` | two commands racing leaves the wrong verdict for the session |
-| `:731` | `messages.Add` for the stuck nudge | appends to the LIVE list mid-iteration |
+| `:776` | `wrote` | a lost update means the build-verification gate does not fire |
+| `:789` | `seen[signature]` | plain `Dictionary` — concurrent writes corrupt it |
+| `:827-828` | `_lastBuild`, `_lastTest` | two commands racing leaves the wrong verdict for the session |
+| `:792` | `messages.Add` for the stuck nudge | appends to the LIVE list mid-iteration |
 
 **2. Results must land in call order.** The `tool` messages are matched to the assistant message's
 calls by `ToolCallId`, and while order is not strictly required by the wire format, an out-of-order
@@ -1449,11 +1451,18 @@ already fully presented: one row per child, named by type, with live turns, occu
 and its recent calls, closing with an account of what it cost. Step 3 makes several of those exist at
 once and changes nothing about any one of them.
 
-The presentation survives N children by CONSTRUCTION, verified rather than assumed: every path into
-`InlineJobSink` — `SetJobs`, `UpdateProgress`, `UpdateJob` — keys on `job.Id` and marshals through
-`EnqueueOnUIThread`. Rows are independent messages in the transcript with no shared layout state, so
-three children produce three rows that update independently. Nothing serialises them, nothing
-interleaves, and no row knows another exists.
+The presentation survives N children by CONSTRUCTION. Cross-checked against the code, every entry
+point, not recalled:
+
+| Surface | Why N children is already fine |
+|---|---|
+| `InlineJobSink` — `SetJobs`, `UpdateJob`, `UpdateProgress`, `AppendText`, `UpdateResources` | **All five** key on `job.Id` and open with `EnqueueOnUIThread`. Rows are independent transcript messages with no shared layout state. |
+| `BufferedJobPanel` (what a CHILD actually gets) | One instance per child, and already `lock`-guarded on every accessor — because the parent's tick timer reads `child.Jobs.Jobs` from another thread, which step 1 had to solve anyway. |
+| The row's content | Type, model, task, turns, occupancy, elapsed, recent calls, final account. All read from the child's own state; none of it consults a sibling. |
+| The session panel | Reads `Ledger.ByModel` / `SubAgentTokens` — one shared ledger, already thread-safe, already summing across children. |
+
+Nothing serialises the rows, nothing interleaves, and no row knows another exists. **Three concurrent
+children need no new presentation and no changes to the old.**
 
 **The one exception is a state, not a view** — see prerequisite 3 below. `waiting on permission`
 needs a `JobState` member and a word in the header, and it matters ONLY because several children run
@@ -1470,10 +1479,15 @@ Verified against the code, not recalled:
    `McpToolset.TryInvokeAsync(call, ct)` takes no agent id, so a permission prompt raised by an MCP
    call cannot say who asked. One parameter, and it is the one request-construction site the
    attribution work did not reach.
-2. **The denial echo** (§4.2) goes to the main transcript whoever asked.
-3. **A waiting-on-permission row state** (§3.1). Two children, one blocked: currently
-   indistinguishable from slow. Cheaper now than when this was written — a row already carries a live
-   progress body, so this is a `JobState` and a header word rather than new plumbing.
+2. **The denial echo** (§4.2) goes to the main transcript whoever asked — **ALREADY TRUE.** The gate
+   holds a `LatestChatSink` whose `Current` is the session's transcript, and every echo
+   (`InteractivePermissionGate:231, 245, 251`) goes through it. A child's denial cannot land in a
+   buffered sink nobody reads, because the gate never had a per-child one.
+3. **A waiting-on-permission row state** (§3.1) — **STILL OPEN, and the only outstanding UI in the
+   step.** `JobState` is Pending/Queued/Running/Paused/Succeeded/Failed/Cancelled/Skipped: no waiting
+   member, confirmed in `Core/Models/Job.cs`. Two children, one blocked, is currently
+   indistinguishable from slow. Cheaper than when this was written — a row already carries a live
+   header and body — so this is one enum member and a header word, not new plumbing.
 4. **The MCP write lock — CONFIRMED MISSING.** `McpClient.WriteAsync` (`:340-345`) is a bare
    `WriteLineAsync` followed by `FlushAsync` on a shared stdio pipe, with no lock of any kind. Two
    children calling tools on one server interleave a JSON-RPC frame and corrupt it. One
