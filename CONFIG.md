@@ -244,6 +244,30 @@ Their prose then loads normally. Unknown frontmatter keys — `allowed-tools`, `
 ignored rather than rejected, which is what makes that symlink work. cxagent's own permission gate
 governs every call a skill provokes, exactly as if the model had chosen the tool itself.
 
+**A skill can ship other files.** Reference documents, templates, examples — anything beside the
+`SKILL.md`:
+
+```
+.agents/skills/xunit/
+  SKILL.md
+  manifest.json
+  references/
+    patterns.md
+    anti-patterns.md
+```
+
+They are **listed by absolute path when the skill loads**, and the model reads the one it needs with
+the ordinary file tool. Not inlined: inlining every reference would hand back the permanent prefix
+the catalog/body split exists to avoid, and most references go unread on most tasks. Write the body
+to point at them by name — *"see references/anti-patterns.md for what not to do"* — and the model
+matches that against the listing.
+
+The same permission gate governs those reads as governs every other one. A **project** skill's files
+are inside the working boundary and read without asking; a **global** skill's live in the config
+directory, outside it, so they prompt — those files are not part of the repository you are working
+in. Twenty files are named before the list is cut short, since the listing rides in the window for
+the rest of the session.
+
 **A malformed `SKILL.md` is skipped and reported, never guessed at.** Missing frontmatter, missing
 `description`: the skill does not exist as far as the model is concerned, and `/skills` says which
 file and why — including files in a directory that lost the shadowing contest, since a broken file in

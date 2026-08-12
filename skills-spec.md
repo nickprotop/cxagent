@@ -19,7 +19,7 @@ and where they agree the reasoning is theirs, not ours.
 | S6 | **No unload.** Neither reference has one, and here it would be wrong: the body is a tool result, so removing it means editing history — the thing that breaks tool-call pairing and 400s a session. | §4 |
 | S7 | **No command loads a skill.** The model decides. `/skills` LISTS what was found, which is the `/mcp` case: a malformed file silently does not exist and nothing else would tell you. | §5 |
 | S8 | **Discovery runs per turn inside the prompt build, exactly as `ProjectInstructions` does** — no cache, no snapshot, no rebuild policy. Unchanged files render byte-identical text, the message is replaced only when it differs, so the prefix holds. Editing a skill costs one prefix and takes effect next turn: their edit, their cost. | §2, §3 |
-| S9 | **Prose only, for now.** The tool still returns the skill's DIRECTORY, so files are reachable later through the ordinary file tool — and therefore through the ordinary permission gate. Deferred, not rejected. | §6 |
+| S9 | **Prose first; reference FILES followed almost immediately.** Real skills linked `references/*.md` relative to a directory the model could not see, so the loader now lists a skill's other files by absolute path and the model reads them through the ordinary permission gate. Only SCRIPTS remain deferred. | §6 |
 | S10 | **The UI says which skills are loaded.** A skill shaping behaviour with nothing on screen saying so is an invisible state change, and it changes again silently at compaction. | §5 |
 | S11 | **A CHILD'S ROW SAYS WHAT IT LOADED**, in its expanded body beside `type` and `model`. A worker is the case where this matters most: its context is invisible, so a loaded skill is the one thing shaping its behaviour that the parent cannot see. | §5 |
 
@@ -352,9 +352,10 @@ them, and nothing else in the dispatch path can reach them.
 **THE ACK MUST NOT COUNT AS A LOAD.** The marker goes on bodies only, or the second call's
 *"already loaded"* result would itself satisfy the next scan.
 
-**`directory` COMES BACK FROM THE START (S9).** Nothing reads it yet. It is there so that when files
-are supported, the skill can say *"see reference.md in this directory"* and the model reads it with
-the ordinary file tool — which means the existing permission gate covers it and no new one is needed.
+**`directory` COMES BACK, AND SO DOES A FILE LISTING (S9).** The directory alone proved not to be
+enough. A real skill says *"see references/anti-patterns.md"* — a path relative to a directory the
+model cannot see — so the result also names what is IN that directory, absolute, ready to hand to the
+file tool. The existing permission gate covers those reads and no new one is needed.
 
 ---
 
@@ -575,20 +576,29 @@ agent is worse than omitting it.
 
 ---
 
-## 6. Files and scripts — deferred, not rejected (S9)
+## 6. Files — built. Scripts — still deferred (S9)
 
-Most published skills carry more than prose: scripts, reference documents, templates. Both references
-support it.
+Most published skills carry more than prose: reference documents, templates, sometimes scripts. Both
+reference implementations support it.
 
-**Not in the first version, and the reason is permissions rather than effort.** A skill that ships a
-script is code from disk the user did not write. `PermissionGatedPlugin` gates *shell and file
-access*, not *where an instruction came from* — so prose-only adds no attack surface, while
-executable content raises a question this design has not answered.
+**REFERENCE FILES ARRIVED FASTER THAN THIS SECTION PREDICTED, because real skills forced it.** Two
+skills added to this repository — `xunit` and `modern-csharp` — link their references the way
+markdown does, `[references/patterns.md](references/patterns.md)`, under a heading reading *"Load
+References"*. That is a path relative to a directory the MODEL CANNOT SEE: it was being instructed to
+load files it had no way to locate. Prose-only was not a stable resting point once a real skill
+existed.
 
-**The seam is already there.** `load_skill` returns `directory`; a later version lets a skill say
-*"the schema is in reference.json in this directory"* and the model reads it with `read_file`, under
-the permission gate that already exists. That is a strictly smaller change than building a second
-capability channel.
+**So `load_skill` lists the skill's other files by ABSOLUTE path**, and the model reads the one it
+needs with the ordinary file tool. Named rather than inlined: inlining every reference would hand
+back the permanent prefix the catalog/body split exists to avoid, and most references go unread on
+most tasks. No second capability channel, and the gate that governs every other read governs these —
+a project skill's files are inside the working boundary and read silently, a global skill's are in
+the config directory and prompt.
+
+**SCRIPTS ARE STILL DEFERRED, and the reason is unchanged.** A skill that ships something meant to be
+RUN is code from disk the user did not write. `PermissionGatedPlugin` gates *shell access*, not
+*where a command came from* — so a document adds no attack surface a file read did not already have,
+while executable content raises a question this design has not answered.
 
 ---
 

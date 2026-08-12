@@ -79,10 +79,10 @@ Nothing here is committed to. Ordered by how much each would change day-to-day u
 
 - **`cxagent.kernel` extraction.** The design exists. The payoff is a web presentation and reuse in
   the other cx apps; the cost is that every seam has to be honest about what it needs.
-- **Skill files and scripts.** Published skills often ship reference documents and helpers. The
-  loader already returns the skill's directory, so a skill could point at a file beside it and have
-  the model read it through the ordinary permission-gated file tool. Deliberately deferred, not
-  rejected — executable content from disk raises a permission question this design has not answered.
+- **Skill scripts.** Reference *documents* now work — a skill's other files are listed by absolute
+  path when it loads, and the model reads them through the permission-gated file tool. What is still
+  deferred is a skill shipping something meant to be RUN: that is code from disk the user did not
+  write, and the gate governs *shell access*, not *where a command came from*.
 - **Narrowing a child's skill catalog by agent type.** A planner that can load a deployment skill is a
   planner with a distraction. Cheap once a skill exists that someone wants withheld.
 - **Sandboxed shell.** The one thing standing between the current loop and running tools in parallel:
