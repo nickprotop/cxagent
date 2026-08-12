@@ -37,7 +37,8 @@ public class McpClientTests : IDisposable
     /// </summary>
     private string[] Server(string toolsJson, string callResultJson, string? instructions = null,
         bool exitAfterInitialize = false, bool neverAnswerCalls = false,
-        string? reportEnv = null, bool reportCwd = false, string? protocolVersion = null)
+        string? reportEnv = null, bool reportCwd = false, string? protocolVersion = null,
+        string? failTool = null)
     {
         var path = Path.Combine(Path.GetTempPath(), "mcpsrv-" + Guid.NewGuid().ToString("N") + ".py");
         _scripts.Add(path);
@@ -79,6 +80,13 @@ public class McpClientTests : IDisposable
                 elif method == "tools/call":
                     if @@HANG@@:
                         continue
+                    # A NAMED TOOL FAILS, the rest succeed — so one call's error and another call's
+                    # success can be observed on ONE connection, which is what a shared error field
+                    # would confuse.
+                    if @@FAILTOOL@@ is not None and @@FAILTOOL@@ in ("*", msg["params"]["name"]):
+                        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"],
+                                          "error": {"code": -32000, "message": "boom in " + msg["params"]["name"]}}), flush=True)
+                        continue
                     print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": CALL}), flush=True)
             """;
 
@@ -92,6 +100,7 @@ public class McpClientTests : IDisposable
             .Replace("@@INSTR@@", instr)
             .Replace("@@EXIT@@", exitAfterInitialize ? "True" : "False")
             .Replace("@@HANG@@", neverAnswerCalls ? "True" : "False")
+            .Replace("@@FAILTOOL@@", failTool is null ? "None" : JsonSerializer.Serialize(failTool))
             .Replace("@@PROTO@@", JsonSerializer.Serialize(protocolVersion ?? "2025-06-18"))
             .Replace("@@REPORT@@",
                 reportCwd ? "os.getcwd()"
@@ -129,6 +138,72 @@ public class McpClientTests : IDisposable
     private static readonly string TextResult = """
         {"content": [{"type": "text", "text": "hello from the server"}]}
         """;
+
+    /// <summary>
+    /// ONE CALL'S ERROR DOES NOT COLOUR ANOTHER'S. The failure text belongs to the call that
+    /// failed, and to no other.
+    ///
+    /// <para>It used to live on a shared <c>Error</c> field: written by whichever call failed last,
+    /// read into every later failure's message, and made sticky by <c>??=</c>. With one agent that
+    /// was merely untidy — the last failure usually WAS yours. With two children on one server it
+    /// became a wrong diagnosis: A times out, B's unrelated failure reports A's message, and the
+    /// model reasons from an error belonging to another agent's call.</para>
+    ///
+    /// <para>CONCURRENTLY, which is the only way to see it. Run sequentially, the shared field is
+    /// simply overwritten between calls and the wrong text never surfaces — a first version of this
+    /// test did exactly that and passed against the bug. Two children on one server do NOT take
+    /// turns, so the test must not either: here two calls that both fail are in flight at once, and
+    /// each must report its OWN tool's name.</para>
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentCalls_EachReportTheirOwnError()
+    {
+        if (!HavePython) return;
+
+        const string twoTools = """
+            [{"name": "boom", "description": "Fails.", "inputSchema": {"type": "object"}},
+             {"name": "bang", "description": "Also fails.", "inputSchema": {"type": "object"}}]
+            """;
+
+        // Both tools fail — the server echoes the tool NAME into its error, so a message carrying
+        // the wrong name is proof one call read another's failure.
+        await using var client = new McpClient("scripted",
+            Server(twoTools, TextResult, failTool: "*"));
+        await client.StartAsync(CancellationToken.None);
+
+        var empty = JsonDocument.Parse("{}").RootElement;
+
+        var a = client.CallToolAsync("boom", empty, CancellationToken.None);
+        var b = client.CallToolAsync("bang", empty, CancellationToken.None);
+        var results = await Task.WhenAll(a, b);
+
+        Assert.Contains("boom in boom", results[0], StringComparison.Ordinal);
+        Assert.Contains("boom in bang", results[1], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A FAILED CALL LEAVES THE CONNECTION USABLE, and leaves its status alone. `Error` is still the
+    /// per-SERVER surface that /mcp reads — splitting the per-call text out of it must not start
+    /// reporting a healthy server as broken because one call failed.
+    /// </summary>
+    [Fact]
+    public async Task ACallFailing_DoesNotMarkTheConnectionBroken()
+    {
+        if (!HavePython) return;
+
+        const string twoTools = """
+            [{"name": "boom", "description": "Fails.", "inputSchema": {"type": "object"}},
+             {"name": "fine", "description": "Works.", "inputSchema": {"type": "object"}}]
+            """;
+
+        await using var client = new McpClient("scripted",
+            Server(twoTools, TextResult, failTool: "boom"));
+        await client.StartAsync(CancellationToken.None);
+
+        await client.CallToolAsync("boom", JsonDocument.Parse("{}").RootElement, CancellationToken.None);
+
+        Assert.Null(client.Error);
+    }
 
     [Fact]
     public async Task StartAsync_ThenListTools_ReturnsTheServersTools()

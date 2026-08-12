@@ -130,6 +130,42 @@ public class McpToolsetTests
         Assert.Equal("read", server.CalledTool);
     }
 
+    /// <summary>
+    /// AN MCP PROMPT SAYS WHO IS ASKING. The attribution work reached every other
+    /// request-construction site and missed this one, because MCP takes no JobContext to copy it
+    /// from — the plugin path gets it via <c>context.Requester</c>.
+    ///
+    /// <para>With one child at a time this is merely unhelpful: the user knows what they started.
+    /// With two children up, a prompt to approve third-party code on their machine has no answer to
+    /// "which of them wants this?"</para>
+    /// </summary>
+    [Fact]
+    public async Task TryInvokeAsync_NamesTheRequester_WhenAChildIsAsking()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "file contents" };
+        var gate = new RecordingGate(allow: true);
+        var toolset = new McpToolset([server], gate);
+
+        await toolset.TryInvokeAsync(Call("files_read"), CancellationToken.None,
+            requester: "analyse the config");
+
+        Assert.Equal("analyse the config", Assert.Single(gate.Asked).Requester);
+    }
+
+    /// <summary>The session's own agent has no label, and must not acquire a misleading one — null
+    /// is what "the agent you are talking to" looks like everywhere else.</summary>
+    [Fact]
+    public async Task TryInvokeAsync_LeavesTheRequesterNull_ForTheSessionsOwnAgent()
+    {
+        var server = new FakeServer("files", Tool("read")) { Result = "file contents" };
+        var gate = new RecordingGate(allow: true);
+
+        await new McpToolset([server], gate)
+            .TryInvokeAsync(Call("files_read"), CancellationToken.None);
+
+        Assert.Null(Assert.Single(gate.Asked).Requester);
+    }
+
     /// <summary>A name no server owns is a MISS, not an error — the caller falls through to the
     /// built-ins, whose "no such tool" text stays the single fallback for a name nobody owns.</summary>
     [Fact]

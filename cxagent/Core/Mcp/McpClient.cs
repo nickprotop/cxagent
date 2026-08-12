@@ -56,6 +56,19 @@ public sealed class McpClient : IMcpConnection
     /// </summary>
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
 
+    /// <summary>
+    /// Why a particular call failed, keyed by its request id.
+    ///
+    /// <para>The read loop is the only place that knows WHICH call a server error belongs to — it has
+    /// just matched the id — but it cannot return anything to the waiter, which it merely cancels. So
+    /// the text is parked here and collected by that call's own <c>SendAsync</c> as it unwinds, then
+    /// removed. Concurrent by construction, because several children may be waiting at once.</para>
+    ///
+    /// <para>This replaces writing to the shared <c>Error</c> field, which made one child's failure
+    /// the text reported for another's.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<int, string> _callErrors = new();
+
     /// <summary>The server's own usage prose from <c>initialize</c>, or null if it sent none.</summary>
     public string? Instructions { get; private set; }
 
@@ -257,11 +270,15 @@ public sealed class McpClient : IMcpConnection
     /// </summary>
     public async Task<string> CallToolAsync(string name, JsonElement arguments, CancellationToken ct)
     {
-        var result = await SendAsync("tools/call", new { name, arguments }, ct);
+        // THIS CALL'S OWN ERROR, not whatever the last failure on this server left behind. With two
+        // children sharing a server, reading the shared field here reported A's timeout inside B's
+        // unrelated failure — and the model then reasoned from an error belonging to another agent.
+        string? failure = null;
+        var result = await SendAsync("tools/call", new { name, arguments }, ct, e => failure = e);
         if (result is null)
-            return Error is null
+            return failure is null
                 ? $"error: '{name}' timed out after {_timeout.TotalSeconds:N0}s"
-                : $"error calling '{name}': {Error}";
+                : $"error calling '{name}': {failure}";
 
         var text = TextOf(result.Value);
 
@@ -297,12 +314,27 @@ public sealed class McpClient : IMcpConnection
         return string.Join("\n", parts);
     }
 
-    /// <summary>Sends a request and waits for its reply, or null on timeout, death or malformed JSON.</summary>
-    private async Task<JsonElement?> SendAsync(string method, object parameters, CancellationToken ct)
+    /// <summary>
+    /// Sends a request and waits for its reply, or null on timeout, death or malformed JSON.
+    /// </summary>
+    /// <param name="callError">
+    /// Why THIS call failed, when it did. Returned rather than left on <see cref="Error"/>, which is
+    /// shared: with two children on one server, A's timeout would appear in B's unrelated failure
+    /// message and the model would reason from an error belonging to someone else's call.
+    ///
+    /// <para><see cref="Error"/> keeps its other job — the CONNECTION's status, which <c>/mcp</c>
+    /// shows and <c>StartAsync</c> sets. That is genuinely per-server and genuinely sticky; only the
+    /// per-call text had to move.</para>
+    /// </param>
+    private async Task<JsonElement?> SendAsync(string method, object parameters, CancellationToken ct,
+        Action<string>? callError = null)
     {
         if (_process is null || _process.HasExited)
         {
+            // A DEAD SERVER IS BOTH. The connection really is unusable — that belongs on the field —
+            // and this call really did fail for that reason.
             Error ??= "the server is not running";
+            callError?.Invoke("the server is not running");
             return null;
         }
 
@@ -325,24 +357,62 @@ public sealed class McpClient : IMcpConnection
         }
         catch (OperationCanceledException)
         {
+            // TWO WAYS TO ARRIVE HERE and they are different facts: the read loop cancelled this
+            // waiter because the server returned an error for THIS id, or the timeout fired. The map
+            // tells them apart — a parked message means the former.
+            if (_callErrors.TryRemove(id, out var served))
+                callError?.Invoke(served);
+
             return null;
         }
         catch (Exception ex)
         {
-            Error = ex.Message;
+            // PER CALL, not onto the shared field. A transport fault during one child's call says
+            // nothing about whether another child's call will work, and writing it to Error made the
+            // next unrelated failure report this one.
+            callError?.Invoke(ex.Message);
             return null;
         }
         finally
         {
+            // The id is abandoned whatever happened, so its parked error must not outlive it — a
+            // timed-out call whose late reply arrives after this would otherwise leave a message
+            // nobody collects.
+            _callErrors.TryRemove(id, out _);
             _pending.TryRemove(id, out _);
         }
     }
 
+    /// <summary>
+    /// One writer at a time on the pipe.
+    ///
+    /// <para>A JSON-RPC frame is a line, and a line is TWO awaits — the write and the flush. Two
+    /// callers interleaving there do not merely scramble the order: <see cref="StreamWriter"/> is
+    /// not thread-safe, and a concurrent write throws <c>InvalidOperationException</c> ("the stream
+    /// is currently in use"), which this class's own catch turns into a sticky connection error. One
+    /// server, two children, and the second call kills the server for the rest of the session.</para>
+    ///
+    /// <para>The read side needs no lock — replies carry their id and multiplex through
+    /// <c>_pending</c>.</para>
+    /// </summary>
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     private async Task WriteAsync(object message, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(message);
-        await _process!.StandardInput.WriteLineAsync(json.AsMemory(), ct);
-        await _process.StandardInput.FlushAsync(ct);
+
+        // INSIDE THE METHOD, not around its callers, so the handshake path is covered too — the
+        // initialize exchange writes through here as much as a tool call does.
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            await _process!.StandardInput.WriteLineAsync(json.AsMemory(), ct);
+            await _process.StandardInput.FlushAsync(ct);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     /// <summary>Reads replies until the pipe closes, matching each to the call waiting on its id.</summary>
@@ -371,7 +441,17 @@ public sealed class McpClient : IMcpConnection
 
                     if (root.TryGetProperty("error", out var error))
                     {
-                        Error = error.TryGetProperty("message", out var m) ? m.GetString() : "server error";
+                        // THE ERROR BELONGS TO THIS CALL, and this is the one place that knows
+                        // WHICH call — the id was just matched a line above. It used to go onto the
+                        // shared Error field, so a server rejecting one child's arguments became the
+                        // text reported for the next child's unrelated timeout.
+                        //
+                        // The waiter is cancelled rather than faulted, as before; the text reaches
+                        // the caller through the callError channel its SendAsync passed in.
+                        var message = error.TryGetProperty("message", out var m)
+                            ? m.GetString() ?? "server error"
+                            : "server error";
+                        _callErrors[idElement.GetInt32()] = message;
                         waiting.TrySetCanceled();
                     }
                     else if (root.TryGetProperty("result", out var result))

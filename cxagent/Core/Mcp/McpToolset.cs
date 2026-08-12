@@ -137,7 +137,17 @@ public sealed class McpToolset
     /// for a name nobody owns. Two sources each producing their own version of that message is how a
     /// model ends up being told a tool does not exist by one and nothing by the other.</para>
     /// </summary>
-    public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct)
+    /// <param name="requester">
+    /// WHO IS ASKING — null for the session's own agent, a short label for a sub-agent.
+    ///
+    /// <para>The attribution work reached every other request-construction site and missed this one:
+    /// <see cref="Permissions.PermissionGatedPlugin"/> copies it from its <c>JobContext</c>, and MCP
+    /// had no equivalent because it takes no context at all. With one child at a time that is merely
+    /// unhelpful. With two, a prompt saying "may I run this?" has no answer to "which of them wants
+    /// it?" — and the user is being asked to approve third-party code on their machine.</para>
+    /// </param>
+    public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct,
+        string? requester = null)
     {
         if (!_byName.TryGetValue(call.Name, out var found)) return null;
 
@@ -151,7 +161,10 @@ public sealed class McpToolset
         var request = new Permissions.PermissionRequest(
             Permissions.PermissionKind.Mcp,
             $"{found.Server.Name} → {found.Tool} {call.Arguments}",
-            $"mcp:{call.Name}");
+            $"mcp:{call.Name}")
+        {
+            Requester = requester,
+        };
 
         if (!await _gate.RequestAsync(request, ct))
             // The same shape as a denied built-in: a refusal the MODEL reads, not an exception, and
