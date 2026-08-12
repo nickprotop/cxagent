@@ -97,6 +97,13 @@ public sealed class Agent
     private readonly ISubAgentSpawner? _spawner;
 
     /// <summary>
+    /// Loads skill bodies on demand. Built here rather than injected because it needs nothing from
+    /// the outside: its catalog comes from the same per-turn discovery the prompt uses, so parent and
+    /// child each get their own without anything being threaded through the factory.
+    /// </summary>
+    private readonly Skills.SkillLoader _skills;
+
+    /// <summary>
     /// Whether this agent works alone or may delegate — SETTABLE, and the only mutable thing about
     /// how this agent is configured.
     ///
@@ -341,6 +348,18 @@ public sealed class Agent
             : null;
         _mcp = mcp;
         _spawner = spawner;
+
+        // RESOLVED PER CALL, not captured here: the catalog is read from disk each turn, so a skill
+        // added mid-session is loadable from the same turn its description reaches the prompt. A
+        // snapshot taken at construction would let the two disagree — the model reading about a skill
+        // the loader cannot find.
+        _skills = new Skills.SkillLoader(() =>
+        {
+            var cwd = TryGetWorkingDirectory();
+            return cwd is null
+                ? new Skills.SkillCatalogResult([], [], null)
+                : Skills.SkillCatalog.Find(cwd, _globalInstructionsDir);
+        });
         _isSubAgent = isSubAgent;
         _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
@@ -458,7 +477,7 @@ public sealed class Agent
                     // working directory, so it gets the same catalog without anything being threaded
                     // through the factory. What a child does NOT inherit is whatever the parent
                     // LOADED — that lives in the parent's messages, which a child never sees.
-                    Skills = Core.Skills.SkillCatalog.Find(cwd, _globalInstructionsDir).Skills,
+                    Skills = _skills.Catalog().Skills,
 
                     // A CHILD GETS A DIFFERENT PROMPT (D24): the commands block dropped, and
                     // # Answering replaced with one written for a model rather than a person at a
@@ -521,6 +540,11 @@ public sealed class Agent
             // with. Two independent reasons not to offer it, and both matter: a child has no spawner
             // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
             .Concat(CanSpawn ? new[] { _spawner!.Definition } : [])
+            // THE LOAD TOOL, only when there is something to load. Offering it with an empty catalog
+            // advertises a capability whose every call can only fail, and costs schema bytes in the
+            // request for every session that has no skills — the same reasoning that keeps the
+            // catalog section out of the prompt when it is empty.
+            .Concat(_skills.Catalog().Skills.Count > 0 ? new[] { _skills.Definition } : [])
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1383,6 +1407,11 @@ public sealed class Agent
             // spawn_agent in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
             result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id) : null)
+                // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
+                // any name, and a skill load answered by an MCP server would be silently wrong.
+                // Reads _context.Messages — the agent's own conversation, which is what lets it
+                // answer "already loaded" without keeping state that could drift from the window.
+                ?? _skills.TryInvoke(call, _context.Messages)
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
