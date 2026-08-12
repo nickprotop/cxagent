@@ -22,6 +22,7 @@ but not completed.
 | `/mcp` | List MCP servers, or inspect one |
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
+| `/skills` | List available skills, and any `SKILL.md` that was skipped |
 | `/exit` | Quit |
 
 ---
@@ -119,6 +120,23 @@ configured.
 `/mcp reload` re-reads `config.json` from disk and reconnects — adding a server does not need a
 restart. `/mcp login <server>` runs the OAuth flow for a server that returned 401, opening a browser
 and storing the token at `0600`, never in the config file.
+
+---
+
+## `/skills`
+
+Lists what was found, which directory it came from, and — the reason this command exists — **every
+`SKILL.md` that was skipped, with why**. A file with broken frontmatter is invisible to the model and
+nothing else in the app would ever mention it: you wrote a file, nothing happened, and there is no
+error anywhere.
+
+It lists; it does not load. The model decides what a task needs, and loading one here would spend
+context on a document nothing had asked for.
+
+It is also **not a refresh.** Skills are re-read from disk every turn, so a skill you just edited is
+already live on the next one — there is nothing to apply.
+
+See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
 
 ---
 

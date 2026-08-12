@@ -114,11 +114,49 @@ provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and
   rarely on its own judgement, usually doing the work inline instead. A stronger model may well
   choose to delegate unprompted; we have not measured one. Treat the guidance as a starting point
   rather than a property of the tool.
-- One sub-agent runs at a time, in the foreground, and the parent waits. Parallel is not built.
+- **Sub-agents in one message run concurrently**, and the parent waits for all of them before it
+  answers. No child outlives the turn that started it — the message format requires every tool call
+  to be answered in the same turn, so a background agent has nowhere to put its result.
 - A sub-agent cannot spawn its own — not a rule it is asked to follow, a tool it is never given.
 - **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
   agent not to; it does not remove the tool. Permissions are the mechanism that constrains an agent,
   and they apply to sub-agents exactly as they apply to the main one.
+
+## Skills
+
+Instructions the model loads **when it needs them**, instead of carrying them on every turn.
+
+Put a `SKILL.md` in `.cxagent/skills/<name>/` with a `description` saying *when* it applies. Only the
+name and description ride in the prompt; the body is fetched by a tool when the model decides a task
+matches — so twenty skills cost a few hundred characters instead of sixty thousand.
+
+```markdown
+---
+name: double-entry-posting
+description: Use when adding or fixing ledger posting or balance logic in this
+  repo. Covers house rules that are not obvious from the code.
+---
+
+Every posting must sum to exactly zero. Reject unbalanced transactions with
+ERR-UNBALANCED in the message.
+```
+
+`/skills` lists what was found — and, more usefully, every `SKILL.md` that was **skipped and why**,
+because a file with broken frontmatter is otherwise invisible: you wrote it, nothing happened, and
+there was no error anywhere. The session panel shows which skills are currently in force.
+
+Already have `.claude/skills/`? `ln -s .claude/skills .cxagent/skills` — the prose loads, and
+cxagent's own permission gate still governs every tool call, so no `allowed-tools` grant comes with
+it.
+
+**Same caveat as delegation: whether a model reaches for a skill is a property of the model.** On a
+local `qwen3.6-35b-a3b` it does — it announced *"this is a double-entry bookkeeping task, so let me
+load that skill first"* and loaded it unprompted — but only after the prompt was changed to say
+explicitly that reading the file directly is not the same thing. Before that, the model found the
+`SKILL.md` with `list_files` and read it: the instructions arrived, and nothing else in the session
+knew a skill was in force.
+
+See [CONFIG.md](CONFIG.md#skills) for where they live and how shadowing works.
 
 ## Configuration
 

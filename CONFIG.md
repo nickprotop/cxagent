@@ -144,8 +144,10 @@ instructions are *what an agent should know here*. They ride in the system messa
 
 1. **The global one** — `CXAGENT.md` in cxagent's config directory. What is true of you wherever you
    work.
-2. **The nearest project one** — searched by walking up from the working directory until a match is
-   found or the filesystem root is reached.
+2. **The nearest project one** — searched by walking up from the working directory, stopping at the
+   repository root (the directory holding `.git`). Outside a repository only the working directory
+   itself is read: with no worktree there is no boundary that means anything, and climbing would let
+   a scratch folder under your home directory pick up that directory's own files.
 
 **Project file names, first match wins:**
 
@@ -155,9 +157,12 @@ instructions are *what an agent should know here*. They ride in the system messa
 | `AGENTS.md` | The vendor-neutral convention, and what a repo will already have if it has anything. |
 | `CLAUDE.md` | Last, so a repo carrying only that one is still honoured. |
 
-**Only the nearest match is used, not every ancestor.** Stacking one file per directory from here to
-`/` would let a file three levels up silently govern a session, and the reader has no way to know
-which files contributed.
+**One NAME, but every level inside the repo that has it.** The first name that matches anywhere wins,
+and then every copy of *that* name from the repository root down to here is used, root first — so the
+nearest file is rendered last and wins on a conflict. The monorepo case is why: a root file carries
+the house style, a package file carries what is specific to that package, and both are true at once.
+What is never mixed is the *names* — a repo with `AGENTS.md` at its root and `CLAUDE.md` in a
+subdirectory gets the `AGENTS.md`.
 
 **The global file is `CXAGENT.md` and only that.** No `AGENTS.md` at that path — no other agent reads
 cxagent's config directory, so the shared name buys nothing and invites confusion. No global
@@ -169,6 +174,95 @@ deliberately does not.
 prefix that is re-sent on every turn, so a large instruction file is not a one-off cost but a
 permanent tax on the window. Instructions that stop mid-sentence with no explanation read as a bug in
 the agent, so the truncation says so.
+
+---
+
+## Skills
+
+Instructions the model loads **when it needs them**, instead of paying for them on every turn.
+
+The split is the whole point: a skill's **name and description** ride in the system prompt
+permanently and cost a few hundred characters, while its **body** is fetched by a tool only when the
+model decides a task matches. Twenty skills of 3k each would be 60k of permanent prefix; their
+catalog is a rounding error.
+
+**A skill is a directory with a `SKILL.md`:**
+
+```
+.cxagent/skills/
+  double-entry-posting/
+    SKILL.md
+```
+
+```markdown
+---
+name: double-entry-posting
+description: Use when adding, reviewing or fixing any ledger posting or balance
+  logic in this repo. Covers house rules that are not obvious from the code.
+---
+
+# Double-entry posting
+
+Every posting must sum to exactly zero. A transaction that does not balance is
+rejected, never auto-corrected.
+```
+
+**The description is the entire interface.** It is the only thing the model sees before deciding, so
+write it as *"Use when…"* rather than as a title. A description that says WHEN beats one that says
+WHAT — the model is matching a task against it, not reading a table of contents.
+
+**Where they live, first directory with a valid skill wins:**
+
+| Location | Meaning |
+|---|---|
+| `<repo>/.cxagent/skills/` | This project, addressed to this agent |
+| `<repo>/.agents/skills/` | This project, vendor-neutral — the plural of the `AGENTS.md` convention |
+| `<config dir>/skills/` | You, wherever you work |
+
+Searched by walking up from the working directory to the repository root, nearest first, so a
+package's own skills outrank the repo's. Same boundary as the instruction files, and it matters more
+here: a skill is text the model reads **and acts on**, and the directories above your home folder are
+writable by other people on a shared machine.
+
+**Unlike instructions, skills shadow rather than stack.** Two `AGENTS.md` files combine sensibly —
+house style plus package specifics. Two `SKILL.md` files with the same name are two *versions* of one
+document, and merging them produces a document that contradicts itself. Exactly one directory
+supplies the catalog.
+
+**"Has a skill" means at least one that parses**, not merely that the directory exists — an abandoned
+empty `.cxagent/skills/` must not silently switch off a populated `.agents/skills/` beside it.
+
+**`.claude/skills/` is not read.** Those files carry `allowed-tools`, a tool grant written for a
+different application with different tools; honouring it silently would mean obeying permissions you
+never granted here. If you want them, say so explicitly:
+
+```sh
+ln -s .claude/skills .cxagent/skills
+```
+
+Their prose then loads normally. Unknown frontmatter keys — `allowed-tools`, `argument-hint` — are
+ignored rather than rejected, which is what makes that symlink work. cxagent's own permission gate
+governs every call a skill provokes, exactly as if the model had chosen the tool itself.
+
+**A malformed `SKILL.md` is skipped and reported, never guessed at.** Missing frontmatter, missing
+`description`: the skill does not exist as far as the model is concerned, and `/skills` says which
+file and why — including files in a directory that lost the shadowing contest, since a broken file in
+a shadowed directory is exactly the one nothing else would explain.
+
+**The name comes from the folder.** A `name:` in the frontmatter is checked against it and reported
+when it disagrees, never obeyed — otherwise two directories could declare the same skill.
+
+**Re-read every turn.** Edit a skill and it takes effect on the next one, with no restart and no
+refresh command. The prompt cache is protected by comparison rather than by caching the read: an
+unchanged file renders byte-identical text and the system message is not replaced, so editing one
+costs a single prefix — which is what you asked for by editing it.
+
+**Once loaded, a skill stays until the conversation is compacted.** Its body is an ordinary tool
+result, so it is re-sent every turn like any other and cannot be unloaded — an unload would leave the
+call that fetched it unanswered, which breaks the session outright. When compaction does remove it,
+the model is told which skills went and that it may reload them; without that it would keep citing a
+document it can no longer read. `/skills` shows what exists; the session panel shows what is
+currently in force.
 
 ---
 
