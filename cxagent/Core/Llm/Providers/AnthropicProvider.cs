@@ -23,7 +23,11 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
 
-    private static readonly HttpClient Shared = new();
+    /// <summary>The shared client. NO TIMEOUT — cancellation is the bound, for the reasons set out on
+    /// <see cref="OpenAiCompatibleProvider"/>'s copy of this field. Kept identical rather than
+    /// left at .NET's 100-second default, so the two providers cannot behave differently under the
+    /// same Escape.</summary>
+    private static readonly HttpClient Shared = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     // Constructor arguments kept verbatim so WithModel can rebuild an identical instance — notably
     // the injected HttpClient, without which a clone would build a fresh one and lose test wiring.

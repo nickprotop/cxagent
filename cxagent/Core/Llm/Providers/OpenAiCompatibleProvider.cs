@@ -26,7 +26,26 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
 
-    protected static readonly HttpClient Shared = new();
+    /// <summary>
+    /// The shared client. NO TIMEOUT — the cancellation token is the bound.
+    ///
+    /// <para>A bare <c>new HttpClient()</c> carries .NET's 100-second default, which was never a
+    /// decision anyone made here. It does not bound a long generation: every request goes out with
+    /// <see cref="System.Net.Http.HttpCompletionOption.ResponseHeadersRead"/>, so the clock covers
+    /// only time-to-first-byte and stops once headers arrive. What it DOES kill is a request still
+    /// waiting its turn — and that is exactly the case sub-agents create, since a single-slot local
+    /// endpoint queues concurrent children at the socket while their clocks run.</para>
+    ///
+    /// <para>Worse, it is INDISTINGUISHABLE FROM ESCAPE. A client timeout raises
+    /// <c>TaskCanceledException</c>, which is an <c>OperationCanceledException</c>, so a child killed
+    /// by a busy endpoint reports "cancelled" and the user reads it as their own keypress.</para>
+    ///
+    /// <para>Cancellation already covers the hang it was nominally there for: the token reaches
+    /// <c>SendAsync</c>, <c>ReadAsStreamAsync</c> and every <c>ReadLineAsync</c> of the stream loop,
+    /// so Escape cuts a wedged server at any point. A human who can see a stuck row is a better judge
+    /// of "this is not working" than a fixed number that cannot tell waiting from working.</para>
+    /// </summary>
+    protected static readonly HttpClient Shared = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>
     /// The injected HttpClient, or null when this instance fell back to <see cref="Shared"/>.

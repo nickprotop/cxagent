@@ -267,6 +267,26 @@ public sealed class Agent
     private int _spentInput;
     private int _spentOutput;
 
+    /// <summary>
+    /// True while this agent is stopped at a permission prompt.
+    ///
+    /// <para>Read CROSS-THREAD by a parent's row timer while this agent's own flow writes it, hence
+    /// volatile — a bool write is atomic but the reader must not cache it in a register and show a
+    /// row that never changes.</para>
+    ///
+    /// <para>On the AGENT rather than routed from the gate, because the gate is SHARED: one instance
+    /// serves the parent and every child, and its request carries a display label rather than an id.
+    /// Two children of the same type would be indistinguishable to anything routing by label, while
+    /// each agent knows perfectly well whether it is the one waiting.</para>
+    /// </summary>
+    public bool IsWaitingOnPermission
+    {
+        get => Volatile.Read(ref _waitingOnPermission) != 0;
+        internal set => Volatile.Write(ref _waitingOnPermission, value ? 1 : 0);
+    }
+
+    private int _waitingOnPermission;
+
     // Interlocked, because a child's tally is read by the PARENT'S tick timer on another thread
     // while the child's own turn loop writes it.
     private void RecordOwnSpend(LlmUsage usage)
@@ -770,73 +790,195 @@ public sealed class Agent
                 ToolCalls = response.ToolCalls.ToList(),
             });
 
-            foreach (var call in response.ToolCalls)
+            // CANCELLATION MUST LEAVE THE CONVERSATION WELL-FORMED.
+            //
+            // The assistant message above is already in the LIVE context — `messages` IS
+            // `_context.Messages` — and it names every tool call the model asked for. If the loop
+            // unwinds before each of those has a matching `tool` result, the context keeps a call
+            // with no answer: the orphan of §1b. The provider rejects the WHOLE conversation with a
+            // 400, `ContextOverflow.IsOverflow` does not match it, and nothing recovers but /clear.
+            //
+            // The turn is over either way. The difference is whether the SESSION survives it — and
+            // the user pressing Escape expects to keep talking, not to lose the conversation.
+            //
+            // Reachable through any tool that observes the token: a spawned child (its own loop
+            // throws at its top-of-turn check) and MCP. `run_shell` is immune only because
+            // ProcessRunner swallows OperationCanceledException, which is why this went unseen.
+            // Children started this turn and not yet awaited. Declared outside the try so the
+            // cancellation handler can join them — a child left running past its turn keeps ticking
+            // into a closed row and may finish onto an id the backfill has already answered.
+            var spawned = new List<(ToolCall Call, Task<string> Task)>();
+
+            try
             {
-                var result = await InvokeAndShowAsync(Id, call, ct);
-                if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
-
-                // STUCK: the same call returning the same result, over and over. Measured on one
-                // drive that produced nothing in 42 calls — MarkupParser.cs was READ six times and
-                // SEARCHED five times, each returning what it had already returned. A model in that
-                // state is not making progress and will not spontaneously leave it; every repeat is
-                // a paid turn against the cap.
+                // TWO PHASES, AND THE SPLIT IS THE POINT.
                 //
-                // OpenHands calls this "scenario 1: same action, same observation" and nudges once
-                // before killing, which is the right order — the model may simply have lost track,
-                // and telling it so is far cheaper than failing the goal.
-                var signature = call.Name + "\0" + call.Arguments.ToString() + "\0" + result;
-                seen.TryGetValue(signature, out var times);
-                seen[signature] = ++times;
+                // Dispatch produces a STRING. Everything else — the write flag, the stuck ledger, the
+                // nudge, the build/test verdicts, the tool result itself — happens in Record below,
+                // on this thread, in call order.
+                //
+                // Today both phases run in one sequential pass and this is a pure refactor: the
+                // observable behaviour is byte-for-byte what it was. It exists so that when a spawn is
+                // later STARTED rather than awaited, the concurrent part carries no shared state at
+                // all. Nothing races because nothing concurrent touches anything — which is a much
+                // cheaper guarantee than locking six mutation sites and hoping the list stays at six.
+                void Record(ToolCall call, string result)
+                {
+                    if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
 
-                if (times == StuckRepeats)
+                    // STUCK: the same call returning the same result, over and over. Measured on one
+                    // drive that produced nothing in 42 calls — MarkupParser.cs was READ six times and
+                    // SEARCHED five times, each returning what it had already returned. A model in that
+                    // state is not making progress and will not spontaneously leave it; every repeat is
+                    // a paid turn against the cap.
+                    //
+                    // OpenHands calls this "scenario 1: same action, same observation" and nudges once
+                    // before killing, which is the right order — the model may simply have lost track,
+                    // and telling it so is far cheaper than failing the goal.
+                    var signature = call.Name + "\0" + call.Arguments.ToString() + "\0" + result;
+                    seen.TryGetValue(signature, out var times);
+                    seen[signature] = ++times;
+
+                    if (times == StuckRepeats)
+                        messages.Add(new ChatMessage
+                        {
+                            Role = "user",
+                            Content = $"You have called {call.Name} with the same arguments {times} times "
+                                    + "and received the same result each time. Repeating it will not "
+                                    + "produce anything new. Use what you already have, or try a "
+                                    + "genuinely different approach.",
+                            Timestamp = DateTimeOffset.UtcNow,
+                        });
+
+                    // AND THE NUDGE IS NOT A FAILSAFE. It is a request, and a model in a loop is
+                    // precisely one that is not responding to requests — measured in Plan 1, a provider
+                    // yielding the same call every turn ran until something else stopped it, and with no
+                    // turn ceiling in production there was nothing else. The doc below this loop has
+                    // promised "twice that many before the goal is failed" since the nudge was written;
+                    // this is the code that makes the promise true.
+                    //
+                    // FLAGGED, NOT BROKEN OUT OF. This turn's remaining calls still need their results
+                    // appended: a tool call left without its result is the orphan providers reject, and
+                    // ending the request is no reason to leave the context malformed.
+                    if (times >= StuckRepeats * 2)
+                    {
+                        stuckOn = call.Name;
+                        stuckTimes = times;
+                    }
+
+                    // A build or test run REPLACES the previous verdict of ITS OWN KIND rather than
+                    // accumulating: what matters at the end is whether the tree compiles NOW and whether
+                    // the tests pass NOW, not whether either ever did. A model that breaks the build,
+                    // fixes it, and stops has finished the job.
+                    //
+                    // Two slots, not one. A build and a test answer different questions, and folding
+                    // them together lets the answer to one erase the answer to the other — see lastTest.
+                    if (call.Name == "run_shell" && LooksLikeBuildOrTest(call))
+                    {
+                        if (LooksLikeTest(call)) _lastTest = result;
+                        else _lastBuild = result;
+                    }
+
                     messages.Add(new ChatMessage
                     {
-                        Role = "user",
-                        Content = $"You have called {call.Name} with the same arguments {times} times "
-                                + "and received the same result each time. Repeating it will not "
-                                + "produce anything new. Use what you already have, or try a "
-                                + "genuinely different approach.",
-                        Timestamp = DateTimeOffset.UtcNow,
+                        Role = "tool",
+                        // call.Id ?? call.Name, never a bare Id: ToolCallId is the ONLY field marking a
+                        // message as a tool result, and a null turns it into an ordinary user turn — no
+                        // error, no warning, the model simply never sees the result.
+                        ToolCallId = call.Id ?? call.Name,
+                        Content = result,
                     });
-
-                // AND THE NUDGE IS NOT A FAILSAFE. It is a request, and a model in a loop is
-                // precisely one that is not responding to requests — measured in Plan 1, a provider
-                // yielding the same call every turn ran until something else stopped it, and with no
-                // turn ceiling in production there was nothing else. The doc below this loop has
-                // promised "twice that many before the goal is failed" since the nudge was written;
-                // this is the code that makes the promise true.
-                //
-                // FLAGGED, NOT BROKEN OUT OF. This turn's remaining calls still need their results
-                // appended: a tool call left without its result is the orphan providers reject, and
-                // ending the request is no reason to leave the context malformed.
-                if (times >= StuckRepeats * 2)
-                {
-                    stuckOn = call.Name;
-                    stuckTimes = times;
                 }
 
-                // A build or test run REPLACES the previous verdict of ITS OWN KIND rather than
-                // accumulating: what matters at the end is whether the tree compiles NOW and whether
-                // the tests pass NOW, not whether either ever did. A model that breaks the build,
-                // fixes it, and stops has finished the job.
+                // THE WALK — in EMITTED ORDER, always.
                 //
-                // Two slots, not one. A build and a test answer different questions, and folding
-                // them together lets the answer to one erase the answer to the other — see lastTest.
-                if (call.Name == "run_shell" && LooksLikeBuildOrTest(call))
+                // A spawn is STARTED and not awaited; everything else is awaited inline exactly as
+                // before. Nothing is reordered: a `run_shell` that preceded a spawn still runs before
+                // that spawn begins. The alternative considered and rejected was partitioning the
+                // calls and hoisting spawns to the front — which starts a child against a tree that a
+                // preceding command had not yet changed, silently and with no error anywhere.
+                //
+                // Deferring the AWAIT rather than moving the CALL buys the same overlap: the child
+                // runs while the rest of the turn's tools do, because a child is minutes and a
+                // read_file is milliseconds.
+                foreach (var call in response.ToolCalls)
                 {
-                    if (LooksLikeTest(call)) _lastTest = result;
-                    else _lastBuild = result;
+                    var task = InvokeAndShowAsync(Id, call, ct);
+
+                    if (CanSpawn && string.Equals(call.Name, _spawner!.ToolName, StringComparison.Ordinal))
+                    {
+                        // HELD, NOT AWAITED. Its result is recorded after the walk.
+                        spawned.Add((call, task));
+                        continue;
+                    }
+
+                    Record(call, await task);
                 }
 
-                messages.Add(new ChatMessage
+                // THE BARRIER. Every child is resolved before the loop resumes, because an assistant
+                // message whose tool call has no result is the orphan that 400s the session — see the
+                // cancellation handler above, which exists for the same reason.
+                //
+                // Recorded AFTER the inline results rather than woven among them. The list is
+                // therefore not in emitted order for a mixed turn, and that is correct: the wire
+                // matches results to calls by ToolCallId, never by position. Buffering the inline
+                // results to "fix" the order would be worse than useless — the cancellation backfill
+                // reads `messages` to find what is already answered, so buffered results would be
+                // invisible to it and every one of them double-answered.
+                foreach (var (call, task) in spawned)
+                    Record(call, await task);
+
+                spawned.Clear();
+            }
+            catch (OperationCanceledException)
+            {
+                // JOIN THE CHILDREN FIRST. They share this turn's token, so they are already ending —
+                // but "already ending" is not "ended", and letting the exception leave while one is
+                // still running is the barrier violation D27 forbids arriving through the back door:
+                // a timer still ticking into a closed row, a sink writing to a finished transcript,
+                // and a child completing onto an id the backfill below has just answered.
+                //
+                // Awaited for their SIDE EFFECTS ONLY — rows closing, timers disposing. The results
+                // are discarded because the backfill answers every call uniformly, and a child that
+                // happened to finish in the gap does not deserve different treatment from its sibling
+                // that did not. Exceptions are swallowed for the same reason: this path is already
+                // unwinding, and a faulted child must not replace the cancellation the user asked for.
+                foreach (var (_, task) in spawned)
                 {
-                    Role = "tool",
-                    // call.Id ?? call.Name, never a bare Id: ToolCallId is the ONLY field marking a
-                    // message as a tool result, and a null turns it into an ordinary user turn — no
-                    // error, no warning, the model simply never sees the result.
-                    ToolCallId = call.Id ?? call.Name,
-                    Content = result,
-                });
+                    try { await task; }
+                    catch (Exception) { }
+                }
+
+                // BACKFILL EVERY UNANSWERED CALL, then let the cancellation continue.
+                //
+                // Includes calls that never STARTED: the loop may have been three into a list of
+                // five, and the model's message named all five. A call nobody ran is as orphaning as
+                // one that was interrupted — the provider only checks that each id has a result.
+                //
+                // Matched by id against what is already there rather than by counting, because the
+                // interrupted call may or may not have appended before it threw, and appending a
+                // second result for one id would be its own malformation.
+                var answered = messages
+                    .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+                    .Select(m => m.ToolCallId!)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                foreach (var call in response.ToolCalls)
+                {
+                    var id = call.Id ?? call.Name;
+                    if (!answered.Add(id)) continue;
+
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "tool",
+                        ToolCallId = id,
+                        // SAID PLAINLY, because the model reads this on the next turn and a blank
+                        // result is indistinguishable from a tool that found nothing.
+                        Content = "cancelled: the user stopped this turn before this call completed.",
+                    });
+                }
+
+                throw;
             }
 
             // STUCK, AND THE NUDGE DID NOT REACH IT. Every result of this turn is now on the context,
@@ -1123,7 +1265,16 @@ public sealed class Agent
             var occupancy = child.Agent.Context.UsedFraction is { } f
                 ? $" · {f:P0} ctx"
                 : "";
-            job.ProgressMessage = $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
+            // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
+            // at a prompt, so a row showing only those reads as working — and with several children
+            // up, the user cannot tell which one their answer would release. The state changes too,
+            // so anything reasoning about the row (not just the header text) sees it.
+            var waiting = child.Agent.IsWaitingOnPermission;
+            job.State = waiting ? JobState.WaitingOnPermission : JobState.Running;
+
+            job.ProgressMessage = waiting
+                ? $"waiting for permission · {turns} turn{(turns == 1 ? "" : "s")}{age}"
+                : $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
 
             // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
             // its tool calls say whether it is on the right track — which is the question a
@@ -1187,6 +1338,12 @@ public sealed class Agent
             Requester = _requesterLabel,
         };
 
+        // THIS AGENT MARKS ITSELF while one of its calls sits at a prompt. Set on the agent rather
+        // than routed from the shared gate, which knows only a display label — two children of the
+        // same type would be indistinguishable to it, while each agent knows whether it is the one
+        // waiting. A parent's row timer reads the flag and says so.
+        ctx.PermissionWaitChanged += waiting => IsWaitingOnPermission = waiting;
+
         // THE CLOCK RESTARTS WHEN THE WORK DOES. `started` above is stamped when the ROW appears,
         // which is before the permission gate has asked the user anything — so a command the user
         // took four minutes to approve reported four minutes of runtime. Seen live: a shell call
@@ -1215,7 +1372,9 @@ public sealed class Agent
             // spawn_agent in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
             result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id) : null)
-                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct))
+                // _requesterLabel, so an MCP prompt names the child that wants it — the same value
+                // JobContext carries into the plugin path a few lines below.
+                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
