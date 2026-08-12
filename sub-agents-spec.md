@@ -582,10 +582,13 @@ an earlier one. If a step fails, there is one candidate cause.
 
 ---
 
-### What driving the prompts actually measured
+### What driving the prompts actually measured — on ONE model
 
 Four interventions, one result. Recorded because the ratio is the finding, and because a later reader
 will otherwise assume every line in these prompts earned its place.
+
+**Read the whole section as scoped to `qwen3.6-35b-a3b` at iq4_xs, local.** That is the only model
+these numbers come from, cxagent runs whatever a user configures, and none of it generalises.
 
 | # | Change | Result |
 |---|---|---|
@@ -600,14 +603,26 @@ whether its situation is the one the rule meant.
 
 **THE CONTROL THAT MATTERS MOST.** opencode was driven on the IDENTICAL task with the IDENTICAL model
 and did not delegate either — zero Task calls, with four system-prompt nudges (including an all-caps
-CRITICAL) and two worked examples. **The ceiling is the model, not our prompting.** Without that
-measurement the honest conclusion would have been "our prompts are deficient", and the next move
-would have been more prose.
+CRITICAL) and two worked examples. **For THIS model, the ceiling is the model rather than our
+prompting.** Without that control the honest conclusion would have been "our prompts are deficient",
+and the next move would have been more prose.
 
-**WHAT REMAINS TRUE AFTER ALL FOUR:** the model delegates when TOLD to and rarely on its own
+**EVERY MEASUREMENT IN THIS SECTION IS ONE MODEL — `qwen3.6-35b-a3b` at iq4_xs, local.** cxagent is
+provider-agnostic by design and a user may run Claude, GPT, Gemini or anything OpenAI-compatible.
+Nothing here licenses a claim about models in general, and a prompt tuned until it works on a 35B
+local quant is not thereby tuned for a frontier model — it may be carrying scaffolding a stronger
+model does not need, which costs prefix on every turn of every session.
+
+The two references are the corrective: Claude Code and opencode both ship the delegation guidance we
+were tempted to conclude was unnecessary, and they ship it for model families we have never measured.
+**When a finding here disagrees with what both references do, the reference is the safer bet** — it
+was tuned against models we cannot test.
+
+**WHAT REMAINS TRUE AFTER ALL FOUR, FOR THIS MODEL:** it delegates when TOLD to and rarely on its own
 judgement. A pure lookup ("where is X?") it will now delegate. A mixed task (find X, then fix it) it
-does inline. Four examples is the ceiling — opencode ships two, ours carries a counter-example and a
-split, and past four they stop being a pattern and become a list nobody reads.
+does inline. Four examples was the point of diminishing return here — opencode ships two, ours
+carries a counter-example and a split, and past four they stop being a pattern and become a list
+nobody reads. Whether a stronger model needs any of them is untested.
 
 **AND THE PARAMETER THAT WAS INVISIBLE UNTIL THE DESCRIPTION EARNED IT.** `context` shipped with
 passing end-to-end tests and no model ever used it — it folded the fact into the prompt instead. Four
@@ -1409,8 +1424,19 @@ THE MEASUREMENT POSSIBLE**, not what the measurement justifies.
    impression. Recorded now precisely because a baseline taken afterwards is worthless.
 
 Multi-call turns being routine otherwise (8, 10, 12 and 16 calls in one message all occur) says the
-mechanism is available to the model. Whether it reaches for it with spawns is the open question step
+mechanism is available to this model. Whether it reaches for it with spawns is the open question step
 3 exists to ask.
+
+**AND THE ANSWER WILL BE ABOUT ONE MODEL.** Every log counted here is `qwen3.6-35b-a3b` at iq4_xs.
+cxagent runs whatever a user configures — Claude, GPT, Gemini, any OpenAI-compatible endpoint — and a
+frontier model may well emit three spawns in a message the first time it is allowed to. So the
+after-count answers "did enabling it change anything ON THIS SETUP", which is a real question and a
+narrow one.
+
+**That cuts in the build direction, not against it.** A capability the local model turns out not to
+use may be the capability a user's Claude reaches for immediately, and we would never see that until
+it exists. Building for the model in front of us and calling it done is how a provider-agnostic app
+acquires a local-model-shaped ceiling.
 
 #### A MIXED TURN: 2 spawns and 3 tools in one message
 

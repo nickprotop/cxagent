@@ -109,8 +109,11 @@ provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and
 
 **Honest about the limits**, because they are the sort you would otherwise find out the hard way:
 
-- The model delegates readily when you ask it to and rarely on its own judgement. Say "use a
-  sub-agent to…" and it will; leave the choice to it and it will usually do the work inline.
+- **Delegation depends on your model, and what we measured is one model.** On a local
+  `qwen3.6-35b-a3b`, it delegates readily when asked — say "use a sub-agent to…" and it will — and
+  rarely on its own judgement, usually doing the work inline instead. A stronger model may well
+  choose to delegate unprompted; we have not measured one. Treat the guidance as a starting point
+  rather than a property of the tool.
 - One sub-agent runs at a time, in the foreground, and the parent waits. Parallel is not built.
 - A sub-agent cannot spawn its own — not a rule it is asked to follow, a tool it is never given.
 - **A briefing is a request, not a permission.** "Never edit files" in a type's briefing asks the
