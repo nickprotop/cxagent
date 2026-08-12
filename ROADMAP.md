@@ -47,17 +47,19 @@ drives have caught more.
 
 ---
 
-## Recent work, and where it is written down
+## Recent work
 
-Each of these has a spec in the repository recording the decisions and the reasoning, not just the
-outcome.
+| Feature | What it added |
+|---|---|
+| **Sub-agents** | A parent delegates to isolated workers with their own context and briefing. Several launched in one message run concurrently; none outlives the turn that started it. |
+| **Usage history** | Five tables in a separate `history.db`, and a `/stats` dashboard: tokens by project, by agent type, what fills the context. See `stats-spec.md`. |
+| **Skills** | `SKILL.md` files whose name and description ride in the prompt while the body is loaded on demand, with its other files listed by absolute path. |
+| **Kernel isolation** | How a provider-agnostic `cxagent.kernel` would talk to a presentation layer, so a web front end becomes a sibling rather than a rewrite. See `isolated-kernel.md` — **designed, not built.** |
 
-| Feature | Spec | What it added |
-|---|---|---|
-| **Sub-agents** | `sub-agents-spec.md` | A parent delegates to isolated workers with their own context and briefing. Several launched in one message run concurrently; none outlives the turn that started it. 32 recorded decisions. |
-| **Usage history** | `stats-spec.md` | Five tables in a separate `history.db`, and a `/stats` dashboard: tokens by project, by agent type, what fills the context. |
-| **Skills** | `skills-spec.md` | `SKILL.md` files whose name and description ride in the prompt while the body is loaded on demand. |
-| **Kernel isolation** | `isolated-kernel.md` | How a provider-agnostic `cxagent.kernel` would talk to a presentation layer, so a web front end becomes a sibling rather than a rewrite. **Designed, not built.** |
+**The sub-agent and skills specs were working documents and have been removed.** Their reasoning is
+in the code comments, which is where it stays current; the specs themselves are in git history if the
+argument behind a decision is ever needed —
+`git show 423d8bc:sub-agents-spec.md` and `git show e0ceca7:skills-spec.md`.
 
 ---
 
