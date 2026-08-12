@@ -183,6 +183,8 @@ else cxagent keeps in that directory, and how `AGENTS.md` / `CXAGENT.md` / `CLAU
 [`config.sample.json`](config.sample.json) documents every key inline, including what each one's
 absence means.
 
+**[ROADMAP.md](ROADMAP.md)** is what is built, what is next, and what was tried and removed.
+
 ## Keys
 
 | Key | Action |
