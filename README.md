@@ -8,6 +8,13 @@
 
 </div>
 
+<div align="center">
+  <img src="docs/images/cxagent.png" alt="cxagent analysing a repository, with a sub-agent's report and the live session panel" width="900">
+  <br>
+  <sub>A worker agent explored the repo and reported back — 214,073 of the session's tokens spent
+  inside the child, and 4% of the parent's context used.</sub>
+</div>
+
 **A terminal AI coding agent built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
 
 <div align="center">
