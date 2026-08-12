@@ -41,7 +41,7 @@ Everything a reader needs before reading the rest. Detail and evidence in the se
 | D25 | **The parent's system prompt says NOTHING about spawning.** When to spawn — and especially when NOT to — belongs in the tool description, where opencode puts it: read at the moment of choosing, not paid for on every turn of every session. | §5.1h-i |
 | D30 | **`capped` is an outcome in its own right, not a failure and not a success.** A child that exhausts its turn cap ran out of room; that is a fact about its briefing, not about the work. The envelope already carried the word, so the row and the usage history read it back rather than deriving a two-way failed/completed guess. Filing it under "completed" hides the one run worth finding later. | §3.1, §5 STEP 2.5 |
 | D29 | **Audit every prompt line against the four combinations (single/fan-out x parent/child) BEFORE step 3 adds more.** They were written one finding at a time and never read together; one of D26's three lines was ungated and reaching CHILDREN until the mode work caught it by accident. Deliverable is a table — line, home, gate, evidence it is earned. | §5 STEP 2.5 |
-| D28 | **The parent must be TOLD several agents can run at once** — one line in the system prompt (gated on CanSpawn), and the mechanism plus "independent work" in the tool description, which today says "It runs once… returns one message". Both references state the mechanism explicitly rather than trusting inference. Ship them separately so each can be attributed. | §5 STEP 3 |
+| D28 | **The parent must be TOLD several agents can run at once, and the sentence forbidding it DELETED** — one line in the system prompt (gated on CanSpawn), the mechanism plus "independent work" in the tool description, and the removal of *"It runs once… returns one message"* (`SubAgentSpawner.cs:58`), which is true today and false after step 3. Adding without deleting leaves two contradicting instructions, the older and more specific of which is the one a reader believes. Ships WITH the partition — either half alone is untestable. | §5 STEP 3 |
 | D27 | **Concurrency is a BARRIER, not background.** N children in one assistant message, all resolved before the parent's loop resumes. Forced by the message format — an unmatched tool call 400s the session — and it is what both references ship. It also dodges the unsolved problem: with a barrier the user is still watching, so a child's permission prompt has someone to answer it. | §5 STEP 3 |
 | D26 | **The parent's prompt gains THREE lines, and none is about when to spawn** — a child's report is a claim not a verification (the live-drive failure, through a layer `# Verifying` does not cover); the user cannot see its work; you are accountable for it. Appended to Verifying / Answering / Doing the work. Fixed text, unconditional, so no prefix churn. | §5.1h-i |
 | D23 | **Spawning is NOT permission-gated in step 1.** opencode asks (`ctx.ask({ permission: "task" })`), but its children can spawn and run in background; ours is one foreground child using the parent's own gated tools, so every risky thing it does is already prompted — a spawn prompt would ask about the wrapper, not the risk. Revisit at step 3, where several unattended children change the answer. | §4 |
@@ -1376,12 +1376,9 @@ Cost, stated: no child survives its turn, so "start this and tell me later" is n
 is a real capability given up, and it is the one background would buy. Revisit only if a concrete
 need appears — not because it sounds more advanced.
 
-#### WHAT THE LOGS SAY THIS MODEL ACTUALLY DOES — read before building any of it
+#### A BASELINE, AND WHY IT PROVES NOTHING ABOUT THE MODEL
 
-Every assistant message ever logged by this installation, counted. Two findings, and they point in
-opposite directions.
-
-**THE MODEL HAS NEVER EMITTED TWO SPAWNS IN ONE MESSAGE.** Of 118 messages carrying `spawn_agent`:
+Every assistant message logged by this installation, counted. Of 118 carrying `spawn_agent`:
 
 | Shape | Count |
 |---|---|
@@ -1389,23 +1386,31 @@ opposite directions.
 | `spawn_agent, read_file, read_file` | 7 |
 | **two or more spawns together** | **0** |
 
-Multi-call turns are otherwise routine — messages of 8, 10, 12 and 16 tool calls are all common — so
-this is not a model that cannot emit several calls at once. It emits several READS at once and has
-never once emitted several spawns. Sequential delegation (spawn, read the report, spawn again) is
-what it does, twice observed across two separate sessions.
+**DO NOT READ THIS AS "THE MODEL WILL NOT PARALLELISE."** It was read that way once and the reading
+was wrong, which is why the correction is kept here rather than the mistake quietly removed.
 
-**SO THE HONEST EXPECTED VALUE OF PARALLELISM HERE IS LOW**, and D28's prompt work is not a
-finishing touch on step 3 — it is the part that decides whether step 3 does anything at all. Both
-references say the mechanism must be stated explicitly; this is the measurement explaining why they
-bothered. If the prompt does not move it, the concurrency is correct and unexercised.
+**The model was told not to, and could not have anyway.** The tool description says, in the parent's
+own words at `SubAgentSpawner.cs:58`: *"It runs once, with only what you write in the prompt, and
+returns one message."* And underneath it, `Agent.cs:773` is a single sequential `foreach` — two
+spawns in one message would have run one after the other regardless of what the model intended. A
+zero here measures the CONSTRAINT, not the behaviour. It is the shape of what we built.
 
-**THE MIXED TURN IS NOT HYPOTHETICAL, THOUGH — it is 7 of the 118.** A spawn arriving alongside two
-`read_file` calls is a shape the current sequential loop already handles by accident, and the shape
-that most needs care once anything in that loop runs concurrently. The partition below is therefore
-worth building even if two spawns never co-occur: it is what keeps the reads from racing the child.
+This is exactly the error §5's prompt findings warn about in the other direction: a measurement of a
+system that could not do the thing is not evidence the model would not do it. **STEP 3 IS WHAT MAKES
+THE MEASUREMENT POSSIBLE**, not what the measurement justifies.
 
-**MEASURE THIS AGAIN AFTER D28.** The same grep over the same logs answers "did the prompt change
-anything" in one line, and it is a better gate than an impression.
+**WHAT THE BASELINE IS ACTUALLY GOOD FOR — two things:**
+
+1. **The mixed turn is real: 7 of the 118**, every one `[spawn_agent, read_file, read_file]`. That
+   shape occurs today, under a sequential loop that handles it by accident, and it is the shape most
+   at risk once anything in that loop runs concurrently. The partition is earned by this alone.
+2. **It is the before-picture.** Re-run the same count after step 3 ships and after D28, and the
+   difference is the answer to "did enabling it change anything" — a count rather than an
+   impression. Recorded now precisely because a baseline taken afterwards is worthless.
+
+Multi-call turns being routine otherwise (8, 10, 12 and 16 calls in one message all occur) says the
+mechanism is available to the model. Whether it reaches for it with spawns is the open question step
+3 exists to ask.
 
 #### A MIXED TURN: 2 spawns and 3 tools in one message
 
@@ -1503,15 +1508,22 @@ hazards fail SILENTLY — a lost `wrote` flag skips build verification, a corrup
 breaks loop detection, a raced `_lastBuild` leaves a wrong verdict for the session. None throws. None
 is caught by a test that does not specifically look for it.
 
-**THE VERDICT: build it, but build D28 first and let the measurement decide the rest.** The model has
-never spawned twice in one message, so the concurrency has nothing to do until the prompt changes
-that. Shipping the locks and the partition against a model that will not use them is correct
-plumbing with zero observable effect — and the plumbing that DOES have an effect today is the
-partition's other half, which keeps 7-in-118 mixed turns from racing.
+**THE VERDICT: build it.** The capability does not exist yet — the tool description tells the model a
+spawn "runs once and returns one message", and the loop would serialise two spawns even if it tried.
+Step 3 is what makes parallel delegation POSSIBLE; nothing observed so far is evidence about whether
+the model would use it, because nothing so far allowed it to.
 
-Concretely: **D28 and the mixed-turn partition are worth doing regardless. `Task.WhenAll` over the
-spawn group is worth doing only once a log shows two spawns in one message.** That is a one-line
-grep, and it is a better gate than an intention.
+**Order within the step, and the one thing worth getting right:** the mechanism and the permission to
+use it must land TOGETHER. Shipping `Task.WhenAll` while the description still says "returns one
+message" leaves a capability nothing will invoke; shipping D28's wording while the loop still
+serialises makes the description a lie. Either half alone is untestable.
+
+So: prerequisites first (they are all defensive and none is observable), then the partition and D28
+as one shippable unit, then the drive that answers whether the model reaches for it.
+
+**And the measurement to make afterwards is already defined** — the same count that produced the
+baseline above. `0 of 118` is the before-picture; the after-picture is the same grep on the same
+logs. That is a better gate on "did this change anything" than any impression of the drive.
 
 #### What a barrier still FORCES
 
@@ -1593,6 +1605,15 @@ implementations go through `EnqueueOnUIThread`), and the results reassembled in 
 **D28. The parent's SYSTEM PROMPT gains one line saying several agents may run at once, and the TOOL
 DESCRIPTION gains the mechanism.** Both, because they answer different questions at different
 moments — the split D25 already draws.
+
+**AND ONE SENTENCE MUST BE DELETED, not merely added to.** `SubAgentSpawner.cs:58` currently reads
+*"It runs once, with only what you write in the prompt, and returns one message."* Every clause of
+that was true when written and describes a limit step 3 removes. Leaving it in place while adding
+"you may launch several at once" gives the model two instructions that contradict, and the older one
+is the more specific — which is usually the one a reader believes.
+
+This is the line that makes the `0 of 118` baseline uninformative about the model: it was told not to,
+in the one place D25 says such things belong.
 
 Nothing today tells the model that more than one child is possible. The tool description says the
 opposite in as many words: *"It cannot ask you anything. It runs once, with only what you write in
