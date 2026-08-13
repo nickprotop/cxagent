@@ -37,8 +37,13 @@ public sealed class TrustQuestionControl
         var markup = Ctl.Markup();
         markup.AddLine("[bold]Trust this folder?[/]");
         markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(_workingDir));
-        markup.AddLine("Trusted folders allow in-boundary file reads and writes without asking "
-            + "each time. Shell commands and anything outside this folder always ask, either way.");
+        // WHAT TRUST ACTUALLY BUYS, kept current. This said "shell commands … always ask, either
+        // way" — true when it was written and false since read-only commands stopped prompting.
+        // A consent screen that overstates its own restraint is the worst kind to leave stale: the
+        // user grants something broader than the words they read.
+        markup.AddLine("Trusted folders allow file reads and writes inside this folder, and "
+            + "commands that only read — ls, cat, grep — without asking each time.");
+        markup.AddLine("Anything that can write, and anything outside this folder, still asks.");
         panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
         AddButton(panel, "Trust this folder", true);
