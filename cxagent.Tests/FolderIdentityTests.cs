@@ -176,4 +176,45 @@ public class FolderIdentityTests : IDisposable
 
         Assert.NotEqual(TrustState.Trusted, store.GetTrust(dir));
     }
+
+    /// <summary>
+    /// A SCOPE SURVIVES THE AGENT WRITING FILES, which is the whole point of it.
+    ///
+    /// <para>This failed before the Linux fallback existed. .NET cannot reach statx's btime on
+    /// Linux, so CreationTimeUtc returns the CHANGE time — which moves whenever anything inside the
+    /// directory is created or removed. Every rule and every trust decision was therefore scoped to
+    /// "this folder as of its last modification", and died the moment the agent wrote a file.</para>
+    ///
+    /// <para>Found on a real drive: the same folder trusted twice in one session, two entries in the
+    /// store minutes apart, and a second trust prompt for a directory already trusted — because
+    /// cloning a repo into it moved the clock.</para>
+    /// </summary>
+    [Fact]
+    public void ScopeFor_IsUnchangedByWritingInsideTheFolder()
+    {
+        var dir = MakeDir();
+        var before = FolderIdentity.ScopeFor(dir);
+
+        // Enough for the containing directory's ctime to move to a new second.
+        Thread.Sleep(1_100);
+        File.WriteAllText(Path.Combine(dir, "written-by-the-agent.txt"), "x");
+
+        Assert.Equal(before, FolderIdentity.ScopeFor(dir));
+    }
+
+    /// <summary>...and so does removing one. Same clock, same hazard.</summary>
+    [Fact]
+    public void ScopeFor_IsUnchangedByDeletingInsideTheFolder()
+    {
+        var dir = MakeDir();
+        var file = Path.Combine(dir, "temp.txt");
+        File.WriteAllText(file, "x");
+
+        var before = FolderIdentity.ScopeFor(dir);
+
+        Thread.Sleep(1_100);
+        File.Delete(file);
+
+        Assert.Equal(before, FolderIdentity.ScopeFor(dir));
+    }
 }

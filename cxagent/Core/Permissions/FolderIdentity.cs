@@ -10,7 +10,7 @@ namespace CxAgent.Core.Permissions;
 /// accumulated rules across seven scopes, 61 of them pinned to a <c>/tmp</c> directory that no
 /// longer exists. Recreate that path and sixty-one grants wake up.</para>
 ///
-/// <para>CREATION TIME, because it is the one signal .NET gives PORTABLY. An inode is exact and
+/// <para>CREATION TIME WHERE THERE IS ONE, because it is the one signal .NET gives portably. An inode is exact and
 /// costs a P/Invoke per platform — <c>stat</c> on Unix, <c>GetFileInformationByHandle</c> on
 /// Windows, where the index is documented as unstable on ReFS. That is a lot of native surface for
 /// a check that must never be wrong. <c>DirectoryInfo.CreationTimeUtc</c> needs none of it.</para>
@@ -50,6 +50,23 @@ public static class FolderIdentity
             // from a rule written on a filesystem that DOES report one — turning a missing feature
             // into a mismatch.
             if (created == DateTime.UnixEpoch || created == default) return path;
+
+            // ...AND LINUX DOES NOT REPORT ONE, whatever the property is called.
+            //
+            // .NET has no access to statx's btime on Linux, so DirectoryInfo.CreationTimeUtc returns
+            // the CHANGE time — which moves every time anything inside the directory is created,
+            // renamed or removed. That is not an identity, it is a modification clock, and scoping
+            // rules by it means every grant and every trust decision dies the moment the agent
+            // writes a file. Measured on a real drive: the same folder trusted twice in one session,
+            // two entries in the store minutes apart, and a second trust prompt for a directory the
+            // user had already trusted — because cloning a repo into it moved the clock.
+            //
+            // DETECTED RATHER THAN ASSUMED. Where a true birth time exists it is almost always
+            // EARLIER than the last write; where the platform substitutes ctime the two are the same
+            // value to the tick, because both come from the same field. Equal means the suffix would
+            // be a modification time wearing an identity's clothes, so it is dropped and the scope
+            // falls back to the path — exactly the behaviour before this type existed, and no worse.
+            if (created == info.LastWriteTimeUtc) return path;
 
             // SECONDS, not ticks. Two folders created in the same second are the same folder for
             // this purpose, and sub-second precision differs between filesystems — a rule written
