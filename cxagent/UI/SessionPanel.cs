@@ -60,6 +60,7 @@ public sealed class SessionPanel
     /// a reader can see, where a reference would silently follow it somewhere meaningless.</summary>
     private const int MaxToolResultChars = 65536;
 
+
     private readonly MarkupControl _body = Ctl.Markup().WithMargin(1, 1, 1, 0).Build();
 
     /// <summary>
@@ -273,6 +274,15 @@ public sealed class SessionPanel
             foreach (var skill in loadedSkills ?? [])
                 lines.Add(Value(skill));
         }
+
+        // THE MODEL'S PLAN IS NOT HERE, DELIBERATELY. It was, briefly, and the panel is the wrong
+        // surface for it three ways: this column is 24 characters wide and a plan item is a
+        // sentence; the panel shows NOW while the interesting thing about a plan is that step three
+        // appeared after the model read the code; and a plan is model OUTPUT, which belongs in the
+        // transcript with everything else the model produces.
+        //
+        // It renders as its own tool row instead — expanded, with the whole list in the body — so
+        // each revision is visible in the order it happened. See TodoRow.
 
         // SPEND PER MODEL, when more than one model has spent anything.
         //

@@ -111,7 +111,11 @@ public sealed class InlineJobSink : IJobPanel
                 //
                 // Tools keep theirs: a tool's status row is where a failure's reason surfaces, and
                 // its header is shorter. This is about worker rows, which are the verbose ones.
-                if (job.PluginType == "llm_agent") _chat.ClearStatus(id);
+                // A PLAN ROW IS THE SAME CASE. Its header already ends `· done · 0.0s`, and the
+                // status row repeated it under the list with a full-width rule between — three
+                // lines of chrome around six lines of content, which is what pushed the list itself
+                // behind an `expand…`.
+                if (job.PluginType is "llm_agent" or "todo") _chat.ClearStatus(id);
                 else _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
             }
 
@@ -178,7 +182,11 @@ public sealed class InlineJobSink : IJobPanel
                 //
                 // Tools keep theirs: a tool's status row is where a failure's reason surfaces, and
                 // its header is shorter. This is about worker rows, which are the verbose ones.
-                if (job.PluginType == "llm_agent") _chat.ClearStatus(id);
+                // A PLAN ROW IS THE SAME CASE. Its header already ends `· done · 0.0s`, and the
+                // status row repeated it under the list with a full-width rule between — three
+                // lines of chrome around six lines of content, which is what pushed the list itself
+                // behind an `expand…`.
+                if (job.PluginType is "llm_agent" or "todo") _chat.ClearStatus(id);
                 else _chat.SetStatus(id, StatusText(job), SeverityFor(job.State));
             }
 
@@ -210,7 +218,13 @@ public sealed class InlineJobSink : IJobPanel
             // block on screen that grows under the reader and pushes the conversation away.
             //
             // The affordance is the point: `expand…` says there IS something, and the user decides.
-            if (compactRow && job.PluginType != "llm_agent")
+            //
+            // A PLAN IS THE EXCEPTION ON BOTH COUNTS. It is not compact — its body is the list, not
+            // a copy of the header — and it must still open, because the list IS what the call
+            // produced and hiding it behind `expand…` defeats the whole row. Unlike a worker's it
+            // does not grow under the reader: it is a handful of short lines, written once, and it
+            // is the answer rather than the working.
+            if ((compactRow && job.PluginType != "llm_agent") || job.PluginType == "todo")
                 _chat.SetExpanded(id, true);
 
             // THE BODY. Until now this method only touched the status row, so a job's message stayed
@@ -328,7 +342,16 @@ public sealed class InlineJobSink : IJobPanel
                 // transcript, pushing the parent's own answer — the thing the user was waiting for —
                 // down the screen behind it. The answer is the parent's reply; the child's report is
                 // the working, and working belongs one keypress away.
-                _chat.SetExpanded(id, false);
+                // EXCEPT A PLAN, which is the case the rule above was not written for. It collapses
+                // everything because a finished spawn dumps a wall of buffered prose that shoves the
+                // parent's own answer off screen — but a plan is six short lines, and it IS the
+                // answer to the call that produced it. Collapsing it to "plan · 3/3 · expand…" hides
+                // the list at the exact moment the model just finished rewriting it.
+                //
+                // Claude Code pins its list to the bottom of the screen instead. This transcript has
+                // no pinned region, so an expanded row in place is the nearest thing: the plan is
+                // visible where it changed, and every revision stays in the scrollback in order.
+                if (job.PluginType != "todo") _chat.SetExpanded(id, false);
             }
 
             // NO INLINE BUTTONS. Retry/Skip/Diagnose were removed: they invited the user to drive
@@ -694,8 +717,10 @@ public sealed class InlineJobSink : IJobPanel
             // is exempt: its long output is the prose it composed, the answer that was asked for, so
             // it keeps its expandable block. That is the whole tool-vs-worker distinction.
             // A WORKER'S LONG OUTPUT KEEPS ITS EXPANDABLE BLOCK rather than being summarised by
-            // size: it is prose the model composed, not an echo of something already on disk.
-            if (job.PluginType == "llm_agent") return null;
+            // size: it is prose the model composed, not an echo of something already on disk. A PLAN
+            // is the same case — "6 lines, 134 chars" measures the list instead of showing it, and
+            // the list is the entire reason the row exists.
+            if (job.PluginType is "llm_agent" or "todo") return null;
 
             // A FAILURE IS NEVER SUMMARISED BY SIZE. The count answers "how much came back", which is
             // the right question for a bulky success and meaningless for an error — a missing file
@@ -894,8 +919,10 @@ public sealed class InlineJobSink : IJobPanel
     {
         if (OneLineRow(job) is not null) return true;
 
-        // A tool's bulky output is an echo; a worker's is the answer.
-        return job.PluginType != "llm_agent";
+        // A tool's bulky output is an echo; a worker's is the answer. So is a plan: the list IS the
+        // point of the row, and collapsing it to "plan · 2/5 · expand…" hides the thing the user
+        // wanted to see at the one moment they asked for it.
+        return job.PluginType is not ("llm_agent" or "todo");
     }
 
     private static bool IsTerminal(JobState state) =>

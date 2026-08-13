@@ -104,6 +104,20 @@ public sealed class Agent
     private readonly Skills.SkillLoader _skills;
 
     /// <summary>
+    /// This agent's own plan. State rather than a tool result, so compaction cannot delete it — see
+    /// <see cref="TodoList"/>.
+    /// </summary>
+    private readonly TodoList _todos = new();
+
+    private readonly TodoTool _todoTool;
+
+    /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
+    public IReadOnlyList<TodoItem> Todos => _todos.Items;
+
+    /// <summary>Raised when the model rewrites its plan, so a panel can follow along.</summary>
+    public event Action? TodosChanged;
+
+    /// <summary>
     /// Whether this agent works alone or may delegate — SETTABLE, and the only mutable thing about
     /// how this agent is configured.
     ///
@@ -367,6 +381,8 @@ public sealed class Agent
         // added mid-session is loadable from the same turn its description reaches the prompt. A
         // snapshot taken at construction would let the two disagree — the model reading about a skill
         // the loader cannot find.
+        _todoTool = new TodoTool(_todos);
+
         _skills = new Skills.SkillLoader(() =>
         {
             var cwd = TryGetWorkingDirectory();
@@ -514,7 +530,16 @@ public sealed class Agent
                 // CONTEXT BELOW THE BRIEFING. Both survive compaction; only the briefing carries
                 // authority. See _context for why a parent-written instruction must not outrank a
                 // config-written one.
-                + RenderContext(_callerContext);
+                + RenderContext(_callerContext)
+                // THE PLAN LAST, because it changes most often and everything above it is stable.
+                // Putting it here means a rewritten list invalidates only the tail of the cached
+                // prefix rather than the instructions above it.
+                //
+                // IN THE SYSTEM MESSAGE AT ALL is the point: this is why the model's plan outlives
+                // compaction. Held as a tool result it would be an ordinary message and the older
+                // half would take it — deleting the plan exactly when the conversation got long
+                // enough to need one.
+                + _todos.Render();
 
             var existing = messages.FirstOrDefault(m => m.Role == "system");
             if (existing is null)
@@ -559,6 +584,10 @@ public sealed class Agent
             // request for every session that has no skills — the same reasoning that keeps the
             // catalog section out of the prompt when it is empty.
             .Concat(_skills.Catalog().Skills.Count > 0 ? new[] { _skills.Definition } : [])
+            // THE PLAN TOOL, always. Unlike skills there is no catalog to be empty — an agent can
+            // always have work worth tracking, and the list starting empty is the normal state
+            // rather than a reason to withhold the tool.
+            .Concat(new[] { _todoTool.Definition })
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1448,6 +1477,9 @@ public sealed class Agent
                 // Reads _context.Messages — the agent's own conversation, which is what lets it
                 // answer "already loaded" without keeping state that could drift from the window.
                 ?? _skills.TryInvoke(call, _context.Messages)
+                // The plan is this agent's own state, so it resolves here rather than in a plugin —
+                // and the event fires only on a real write, not on every call that missed.
+                ?? TryUpdateTodos(call)
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
@@ -1996,6 +2028,11 @@ public sealed class Agent
         // was, until now, unused.
         "spawn_agent" => "llm_agent",
 
+        // ITS OWN TYPE, so the row stays EXPANDED. The list is the point of this row — collapsed to
+        // "plan · 2/5 · expand…" it hides exactly what the user wanted at the moment they wanted it,
+        // which is the same argument that keeps a worker's report open.
+        "update_todos" => "todo",
+
         // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
         // honest label; the server's own name is already in DisplayName.
@@ -2032,6 +2069,28 @@ public sealed class Agent
             return string.IsNullOrWhiteSpace(skill) ? "load_skill" : $"skill · {skill!.Trim()}";
         }
 
+        // A PLAN IS NAMED BY WHERE IT STANDS. The generic branch would render the entire list as
+        // JSON in a header clipped at 60 characters, which is the worst of both: too long to read
+        // and too short to hold the plan. The counts go here, the list goes in the body.
+        if (string.Equals(call.Name, "update_todos", StringComparison.Ordinal))
+        {
+            var items = TodoList.Parse(
+                call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Array
+                    ? call.Arguments
+                    : call.Arguments.TryGetProperty("todos", out var t) ? t : default);
+
+            if (items.Count == 0) return "plan · cleared";
+
+            var done = items.Count(i => i.Status == TodoStatus.Completed);
+            var current = items.FirstOrDefault(i => i.Status == TodoStatus.InProgress);
+
+            // WHAT IT IS DOING NOW, when it has said. "3/7 · fix the guard" answers the question a
+            // reader has mid-run; "3/7" alone only answers half of it.
+            return current is null
+                ? $"plan · {done}/{items.Count}"
+                : $"plan · {done}/{items.Count} · {Clip(current.Text, 44)}";
+        }
+
         var args = call.Arguments.ToString();
         return $"{call.Name} {Clip(args, 60)}";
     }
@@ -2052,6 +2111,16 @@ public sealed class Agent
                 : null;
         }
         catch (Exception) { return null; }
+    }
+
+    /// <summary>
+    /// Runs an <c>update_todos</c> call and tells the UI, or returns null for someone else's tool.
+    /// </summary>
+    private string? TryUpdateTodos(ToolCall call)
+    {
+        var result = _todoTool.TryInvoke(call);
+        if (result is not null) TodosChanged?.Invoke();
+        return result;
     }
 
     private static string? TryGetWorkingDirectory()

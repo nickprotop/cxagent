@@ -251,6 +251,26 @@ public sealed class AgentHost : IDisposable
     public IReadOnlyList<string> LoadedSkills => _agent.LoadedSkills;
 
     /// <summary>
+    /// The session agent's plan. A child keeps its own and it stays with the child: a worker's plan
+    /// is scaffolding for one job, and pooling it into the session's would make the panel report a
+    /// list nobody can act on after the child exits.
+    /// </summary>
+    public IReadOnlyList<TodoItem> Todos => _agent.Todos;
+
+    /// <summary>
+    /// Raised when the model rewrites its plan.
+    ///
+    /// <para>MID-TURN, which is why it exists at all: a plan written on the first call of a
+    /// forty-turn run would otherwise not reach the panel until the whole turn ended, and "what is
+    /// it doing right now" is exactly the question the panel is being asked in the meantime.</para>
+    /// </summary>
+    public event Action? TodosChanged
+    {
+        add => _agent.TodosChanged += value;
+        remove => _agent.TodosChanged -= value;
+    }
+
+    /// <summary>
     /// Records that this session ended normally, so it is never offered for resume.
     ///
     /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did
