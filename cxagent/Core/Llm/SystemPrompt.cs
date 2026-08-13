@@ -76,6 +76,15 @@ public readonly record struct SystemPromptContext(
     /// unrepresentable.</para>
     /// </summary>
     public bool CanSpawn { get; init; }
+
+    /// <summary>
+    /// True when this agent can put a question to a person and wait for the answer.
+    ///
+    /// <para>False for a sub-agent, which has no user, and for any headless host. Gated for the same
+    /// reason the spawn lines are: a prompt that describes machinery the reader cannot reach is
+    /// noise, and noise in a system prompt is what teaches a model to skim it.</para>
+    /// </summary>
+    public bool CanAskUser { get; init; }
 }
 
 /// <summary>
@@ -382,6 +391,21 @@ public static class SystemPrompt
         sb.AppendLine("If you will not do something, say so in a sentence and offer what you can do. "
                     + "Do not explain at length why it was refused.");
         sb.AppendLine();
+
+        // ENDING A TURN WITH A QUESTION IS THE FAILURE THIS PREVENTS. Seen on the first drive of the
+        // tool: three config files, an ambiguous request, and the model wrote "Which one should I
+        // change?" as its final message — which reads as an answer, is not one, and costs the user a
+        // turn to repair. The tool was offered; nothing told the model it existed, because a tool
+        // description is only read once the model is already considering that tool.
+        if (ctx.CanAskUser)
+        {
+            sb.AppendLine("If you need something from the user to continue — which of several files "
+                        + "they meant, a choice that is theirs to make — call ask_user and wait. Do "
+                        + "NOT end your turn with a question in the text: that reads as an answer, "
+                        + "and nobody is listening for a reply to it. Ask only when you cannot "
+                        + "settle it yourself; if the answer is in the code, read the code.");
+            sb.AppendLine();
+        }
         sb.AppendLine("Never write code that logs or hard-codes a secret, and never put one in a "
                     + "file you create.");
 

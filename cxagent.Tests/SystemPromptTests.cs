@@ -656,6 +656,33 @@ public class SystemPromptTests
         Assert.Contains("SKILL.md", p, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// THE PROMPT HAS TO SAY THE TOOL EXISTS. On the first drive of ask_user the model hit a
+    /// genuinely ambiguous request, wrote "Which one should I change?" as its FINAL MESSAGE, and
+    /// ended the turn — which reads as an answer, is not one, and costs the user a turn to repair.
+    /// The tool was offered the whole time: a tool description is only read once the model is
+    /// already considering that tool.
+    /// </summary>
+    [Fact]
+    public void Build_WhenItCanAsk_SaysNotToEndTheTurnWithAQuestion()
+    {
+        var p = SystemPrompt.Build(Context() with { CanAskUser = true });
+
+        Assert.Contains("ask_user", p, StringComparison.Ordinal);
+        Assert.Contains("end your turn with a question", p, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// And says nothing when there is nobody to ask. A child has no user, so the lines would
+    /// describe machinery it cannot reach — which is what teaches a model to skim its prompt.
+    /// </summary>
+    [Fact]
+    public void Build_WithNoWayToAsk_SaysNothingAboutAsking()
+    {
+        Assert.DoesNotContain("ask_user", Build(), StringComparison.Ordinal);
+        Assert.DoesNotContain("ask_user", Child(), StringComparison.Ordinal);
+    }
+
     private static int CountOf(string haystack, string needle)
     {
         var count = 0;

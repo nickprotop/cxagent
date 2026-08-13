@@ -792,6 +792,53 @@ public sealed class MainWindow : IDisposable
     /// (a mismatched instance is a safe no-op rather than a thrown ArgumentException), but callers
     /// should still follow the contract — a mismatch means a caller's OWN prompt was never shown.
     /// </summary>
+    /// <summary>
+    /// Asks the model's question in the composer and waits for the answer.
+    ///
+    /// <para>THE SAME SWAP THE PERMISSION GATE USES, deliberately: one place the session asks for
+    /// input, so a user who has approved a shell command already knows where to look.</para>
+    ///
+    /// <para>Returns "" when the user skips — the tool reads that as "proceed on your own
+    /// judgement". Cancellation resolves the CONTROL, not just this await: a prompt left holding a
+    /// live TaskCompletionSource keeps the composer swapped out, and the user would be looking at a
+    /// question nobody is waiting on.</para>
+    /// </summary>
+    public async Task<string> AskQuestionAsync(string question, IReadOnlyList<string> options,
+        CancellationToken ct)
+    {
+        var prompt = new QuestionPromptControl(question, options);
+        var content = prompt.BuildContent();
+
+        _activeQuestion = prompt;
+        ShowPermissionPrompt(content);
+
+        using var _ = ct.Register(() => prompt.Resolve(string.Empty));
+        try
+        {
+            return await prompt.Completion;
+        }
+        finally
+        {
+            _activeQuestion = null;
+            RestoreComposer(content);
+            FocusComposer();
+        }
+    }
+
+    /// <summary>
+    /// The question currently on screen, or null. Escape reads this — skipping a question must not
+    /// have to kill the turn to get out of a dialog.
+    /// </summary>
+    private QuestionPromptControl? _activeQuestion;
+
+    /// <summary>Escape while a question is up: skip it, and let the run continue.</summary>
+    public bool TrySkipQuestion()
+    {
+        if (_activeQuestion is null) return false;
+        _activeQuestion.Skip();
+        return true;
+    }
+
     public void ShowPermissionPrompt(IWindowControl prompt)
     {
         if (_activePrompt is not null) return;   // already showing one — no-op, not a crash

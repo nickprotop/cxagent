@@ -280,6 +280,10 @@ public static class AppBootstrap
                 store: sessions,
                 // And here, for /stats — a separate archive that outlives the session.
                 history: history,
+                // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one place
+                // that can put a question where the permission gate already asks. A sub-agent never
+                // gets it — Agent refuses regardless of what is passed here.
+                askUser: mainWindow.AskQuestionAsync,
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 globalInstructionsDir: paths.ConfigDir,
                 resume: resumeSnapshot,
@@ -790,6 +794,12 @@ public static class AppBootstrap
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape,
             () =>
             {
+                // A QUESTION FIRST, BEFORE ANYTHING ELSE. Escape while the model is asking means
+                // "I am not answering that" — not "throw away the run". Making the only exit from a
+                // dialog be cancelling the turn would put the user's work behind their reluctance to
+                // answer, so the question is skipped and the model proceeds on its own judgement.
+                if (mainWindow.TrySkipQuestion()) return;
+
                 // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
                 // (which need a live dialog or a live turn) stay here.
                 var running = turnCts is { IsCancellationRequested: false };

@@ -132,6 +132,9 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     private readonly int? _contextWindow;
 
+    /// <summary>How this session asks the user a question, or null when nothing can ask.</summary>
+    private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? _askUser;
+
     /// <summary>
     /// Whether this session works alone or may delegate. Forwarded straight to the agent, which reads
     /// it on the next prompt — no rebuild, and the conversation is untouched.
@@ -313,7 +316,10 @@ public sealed class AgentHost : IDisposable
         ISubAgentSpawner? spawner = null,
         AgentMode mode = AgentMode.FanOut,
         string? workingDir = null,
-        UsageHistoryStore? history = null)
+        UsageHistoryStore? history = null,
+        // ASKING THE USER, when there is one. Null in every headless path — a host with no UI must
+        // not offer a tool whose whole behaviour is to wait for a person.
+        Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? askUser = null)
     {
         _mode = mode;
         _workingDir = workingDir;
@@ -328,6 +334,7 @@ public sealed class AgentHost : IDisposable
         _logs = logs;
         _store = store;
         _history = history;
+        _askUser = askUser;
         _globalInstructionsDir = globalInstructionsDir;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
@@ -469,7 +476,11 @@ public sealed class AgentHost : IDisposable
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
-            context: Context)
+            context: Context,
+
+            // AND THE WAY TO ASK. Null in every headless path, and refused outright for a child —
+            // Agent enforces that itself rather than trusting whoever constructs it.
+            askUser: _askUser)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more

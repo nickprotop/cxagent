@@ -111,6 +111,12 @@ public sealed class Agent
 
     private readonly TodoTool _todoTool;
 
+    /// <summary>
+    /// Asks the user a question, when there is a user to ask. Null for a sub-agent and for any host
+    /// that has no UI — see <see cref="AskUserTool"/> for why a child must never have this.
+    /// </summary>
+    private readonly AskUserTool? _askUser;
+
     /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
     public IReadOnlyList<TodoItem> Todos => _todos.Items;
 
@@ -356,7 +362,8 @@ public sealed class Agent
         ISubAgentSpawner? spawner = null,
         bool isSubAgent = false,
         string? callerContext = null,
-        string? label = null)
+        string? label = null,
+        Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? askUser = null)
     {
         // NAMED callerContext, NOT context: `context` on this constructor is already the
         // AgentContext — the conversation itself. Two different things called the same word at one
@@ -382,6 +389,12 @@ public sealed class Agent
         // snapshot taken at construction would let the two disagree — the model reading about a skill
         // the loader cannot find.
         _todoTool = new TodoTool(_todos);
+
+        // NEVER FOR A SUB-AGENT, whatever the caller passed. A child has no user: its output goes to
+        // its parent, and a child blocking on a question nobody can see is a hang that ends only
+        // when the parent's turn is cancelled. Enforced here rather than trusted to the factory, so
+        // the guarantee holds for any construction path.
+        _askUser = askUser is not null && !isSubAgent ? new AskUserTool(askUser) : null;
 
         _skills = new Skills.SkillLoader(() =>
         {
@@ -519,6 +532,10 @@ public sealed class Agent
                     // The three parent-obligation lines are for an agent that can actually delegate.
                     // In single mode they describe machinery it does not have.
                     CanSpawn = CanSpawn,
+
+                    // Gated the same way, and false for a child by construction — _askUser is null
+                    // for a sub-agent whatever the caller passed.
+                    CanAskUser = _askUser is not null,
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
@@ -588,6 +605,10 @@ public sealed class Agent
             // always have work worth tracking, and the list starting empty is the normal state
             // rather than a reason to withhold the tool.
             .Concat(new[] { _todoTool.Definition })
+            // ONLY WHEN THERE IS SOMEONE TO ASK. Withheld from a child and from any host with no UI
+            // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
+            // the agent is asked to follow, a tool it was never given.
+            .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1480,6 +1501,9 @@ public sealed class Agent
                 // The plan is this agent's own state, so it resolves here rather than in a plugin —
                 // and the event fires only on a real write, not on every call that missed.
                 ?? TryUpdateTodos(call)
+                // Null when there is no user — the call then falls through to "no such tool", which
+                // is the honest answer for a tool this agent was never offered.
+                ?? (_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
