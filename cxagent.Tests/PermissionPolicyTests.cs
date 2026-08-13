@@ -54,6 +54,58 @@ public class PermissionPolicyTests
         Assert.False(policy.IsSilentlyAllowed(FileWrite("/tmp/elsewhere.txt")));
     }
 
+    /// <summary>
+    /// A COMMAND THAT CAN ONLY LOOK IS THE FILE READ THAT ALREADY PASSES. Measured on an agentic
+    /// drive: thirteen shell calls in one turn, and the run only finished because approvals were
+    /// automated — a gate noisy enough to be routed around is worse than a coarser one that is kept.
+    /// </summary>
+    [Fact]
+    public void AReadOnlyCommand_InATrustedFolder_IsSilent()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var policy = new PermissionPolicy(root, rules);
+
+        Assert.True(policy.IsSilentlyAllowed(Shell("ls -la src")));
+        Assert.True(policy.IsSilentlyAllowed(Shell("grep -rn TODO .")));
+        Assert.True(policy.IsSilentlyAllowed(Shell("cat README.md")));
+    }
+
+    /// <summary>
+    /// AND EVERYTHING ELSE STILL ASKS. The exemption is a short list of programs that cannot write,
+    /// not a judgement about what a command probably does.
+    /// </summary>
+    [Fact]
+    public void AnythingThatCanWrite_StillPrompts_EvenInATrustedFolder()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var policy = new PermissionPolicy(root, rules);
+
+        Assert.False(policy.IsSilentlyAllowed(Shell("rm -rf build")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("dotnet build")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("git status")));
+
+        // A safe verb with a chain is not a safe command — the guard that makes the rest defensible.
+        Assert.False(policy.IsSilentlyAllowed(Shell("cat x; rm -rf /")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("grep foo > /etc/passwd")));
+    }
+
+    /// <summary>
+    /// TRUST IS STILL REQUIRED. An untrusted folder prompts for everything — the exemption rides on
+    /// the same decision the user already made about file reads, not on the command alone.
+    /// </summary>
+    [Fact]
+    public void AReadOnlyCommand_InAnUntrustedFolder_StillPrompts()
+    {
+        var root = MakeTempDir();
+        var policy = new PermissionPolicy(root, EmptyRules());   // nothing arranged → Unknown
+
+        Assert.False(policy.IsSilentlyAllowed(Shell("ls -la")));
+    }
+
     [Fact]
     public void AnUnclassifiedFolder_HasNoSilentClass_AnUnansweredQuestionIsNotAYes()
     {
@@ -77,17 +129,24 @@ public class PermissionPolicyTests
     }
 
     [Fact]
-    public void Trust_NeverSilencesShell_OrHttp_OrAnOutOfBoundaryPath()
+    public void Trust_NeverSilencesAShellCommandThatCouldWrite_OrHttp_OrAnOutOfBoundaryPath()
     {
         // Trust grants exactly the class the boundary can police. `cd / && rm -rf .` escapes the
-        // folder in its first six characters — a trust that silenced shell would grant far more
-        // than a folder.
+        // folder in its first six characters — a trust that silenced shell WHOLESALE would grant far
+        // more than a folder.
+        //
+        // NARROWED, NOT ABANDONED. This asserted bare `ls` as its example, and `ls` is now exempt:
+        // it cannot write however it is invoked, which makes it the file READ that trust already
+        // silences, spelled as a command. The invariant that matters is unchanged and is what the
+        // example now shows — anything that could write, or could become something that writes,
+        // still asks. See ReadOnlyCommands for why the list is short and hand-checked.
         var root = MakeTempDir();
         var rules = EmptyRules();
         rules.SetTrust(root, TrustState.Trusted);
         var policy = new PermissionPolicy(root, rules);
 
-        Assert.False(policy.IsSilentlyAllowed(Shell("ls")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("cd / && rm -rf .")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("rm -rf build")));
         Assert.False(policy.IsSilentlyAllowed(Http("https://api.example.com")));
         Assert.False(policy.IsSilentlyAllowed(FileWrite("/tmp/outside.txt")));
     }

@@ -135,6 +135,24 @@ public class PermissionPolicy
             && IsInsideBoundary(request.Display))
             return true;
 
+        // A COMMAND THAT CAN ONLY LOOK, in a folder the user has trusted. The comment above used to
+        // say shell has no in-boundary free pass because "a command string says nothing reliable
+        // about what it touches" — true of commands in general, and false of the short list in
+        // ReadOnlyCommands, which is exactly the set that cannot write however it is invoked.
+        //
+        // MEASURED, not assumed: one agentic drive made thirteen shell calls in a single turn, and
+        // it only finished because approvals were automated. `ls`, `cat` and `grep` are the file
+        // READ that already passes silently here, spelled as a command — charging for one and not
+        // the other is a distinction the user cannot act on, and it is why run_shell kept beating
+        // our own read-only tools: the model reaches for the verb it knows and the gate bills the
+        // user for it.
+        //
+        // TRUST IS STILL REQUIRED. An untrusted folder prompts for everything, unchanged.
+        if (request.Kind == PermissionKind.Shell
+            && _rules.GetTrust(_root) == TrustState.Trusted
+            && ReadOnlyCommands.IsReadOnly(request.AlwaysRule))
+            return true;
+
         if (request.AlwaysRule is null) return false;
 
         var subject = RuleSubject(request);

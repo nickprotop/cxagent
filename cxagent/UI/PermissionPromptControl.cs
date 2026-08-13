@@ -134,6 +134,23 @@ public sealed class PermissionPromptControl
         // (e.g. a shell command plus its working_dir) would otherwise paint its "\n" literally.
         foreach (var line in displayed.Replace("\r\n", "\n").Split('\n'))
             markup.AddLine(SharpConsoleUI.Parsing.MarkupParser.Escape(line));
+
+        // WHAT "ALWAYS" WOULD ACTUALLY COVER, in the BODY rather than the button. The label says
+        // "Always allow" and reads as "stop asking about this sort of thing" — while a shell rule is
+        // the EXACT command string, so the next call, one flag different, prompts again. A user who
+        // grants Always on `find . -type f` and is asked about `find . -name '*.cs'` a second later
+        // concludes the button does not work.
+        //
+        // NOT IN THE BUTTON. That was tried: "Always allow: <the whole command>" made the control
+        // as wide as the dialog and pushed the row off screen, so the answer to a question you could
+        // read was a control you could not. The body already wraps and already holds the command.
+        if (_request.AlwaysRule is { Length: > 0 } rule)
+        {
+            markup.AddLine(string.Empty);
+            markup.AddLine($"[{ColorScheme.MutedMarkup}]Always allow covers: "
+                         + $"{SharpConsoleUI.Parsing.MarkupParser.Escape(Clip(rule))}[/]");
+        }
+
         panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
         // A BLANK LINE between the question and the controls that answer it, so the eye reads
@@ -186,6 +203,13 @@ public sealed class PermissionPromptControl
     /// reached. It stays anyway: the cost is one call, and the failure it prevents is invisible
     /// rather than loud.</para>
     /// </summary>
+    /// <summary>
+    /// The rule text, bounded. A shell rule is the whole command and a command can be a paragraph;
+    /// this line exists to correct an expectation, not to reproduce what is already displayed above.
+    /// </summary>
+    private static string Clip(string text) =>
+        text.Length > 120 ? text[..120].TrimEnd() + "…" : text;
+
     private ButtonControl ChoiceButton(string label, ColorRole role, PermissionChoice choice)
     {
         var btn = Ctl.Button(SharpConsoleUI.Parsing.MarkupParser.Escape(label))
