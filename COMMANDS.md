@@ -12,8 +12,8 @@ but not completed.
 | Command | What it does |
 |---|---|
 | `/help` | Keys and commands |
-| `/mode` | Show the agent mode |
-| `/mode single` · `/mode fan-out` | Set it, live |
+| `/mode` | Show how this session works |
+| `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
 | `/clear` | Wipe the conversation |
 | `/compress` | Summarise the conversation to free room |
 | `/stats` | Usage: tokens, projects, agent types, what fills the context |
@@ -30,11 +30,26 @@ but not completed.
 ## `/mode`
 
 ```
-/mode              → mode: fan-out  (set with /mode single or /mode fan-out)
-/mode single       → mode: single — this agent works alone; the spawn tool is withdrawn.
-                     The conversation is unchanged.
-/mode fan-out      → mode: fan-out — this agent can now spawn sub-agents.
+/mode                    Working mode
+
+                           agent  fan-out
+                             can spawn sub-agents
+
+                           set with /mode agent single | fan-out
+
+/mode agent single       agent: single — this agent works alone; the spawn tool is
+                         withdrawn. The conversation is unchanged.
+/mode agent fan-out      agent: fan-out — this agent can now spawn sub-agents.
 ```
+
+**The axis is named because there will be more than one.** Delegation is one way a session can be
+set up; file editing and a build/plan mode are coming, and each would otherwise have wanted a
+command of its own — three entries in the palette where one will do, with no single place showing
+the whole picture. A bare `/mode` reports every axis for that reason.
+
+`/mode fan-out` without the axis still works. Agent is the only axis today, so naming it is ceremony
+for the one thing anyone is switching — the day a value means something on two axes is the day that
+value stops being unambiguous on its own.
 
 **Fan-out is the default.** Single mode withdraws the spawn tool and removes the sub-agent guidance
 from the system prompt — its prompt is what shipped before sub-agents existed, so turning delegation

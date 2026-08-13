@@ -75,16 +75,29 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `read_file` | Read a file, or a line window of it (`offset`/`limit`) |
 | `write_file` | Write a whole file |
 | `replace_in_file` | Replace an exact passage, leaving the rest untouched |
-| `list_files` | List files under a path, by glob |
-| `search_files` | Find text in files, literal or regex |
+| `glob` | Find files by path pattern, e.g. `**/*.cs` |
+| `grep` | Search file contents, literal or regex |
 | `run_shell` | Run a command |
-| `http_request` | Fetch a URL |
+| `http_request` | Call an HTTP endpoint |
+| `web_fetch` | Read a web page as text, markup stripped |
+| `load_skill` | Load a skill's instructions on demand |
+| `update_todos` | Keep a task list across a long job |
+| `ask_user` | Ask a question when the request is genuinely ambiguous |
+| `spawn_agent` | Delegate a job to a sub-agent (fan-out mode) |
 
 ### Permissions
 
-Reading and writing inside the working folder is free. Anything else — a path outside it, a shell
-command — stops and asks, with **Allow once**, **Always allow**, or **Deny**. "Always" is remembered
-per folder, because a folder is a project.
+Reading and writing inside the working folder is free, and so are commands that can only look —
+`ls`, `cat`, `grep`, and `cd` into the folder before one. Anything that can write, and anything
+outside the folder, stops and asks with **Allow once**, **Always allow**, or **Deny**.
+
+**"Always" grants the command's NAME, not the exact string.** Approving `git status` stores
+`git status*`, so the next `git status --short` runs — while `git push` still asks, because a
+subcommand is part of what names a command. The prompt shows the rule it would write before you
+grant it.
+
+Grants are remembered per folder, and a folder is identified by more than its path: delete a folder
+and recreate it, and its old grants do not apply to the new one.
 
 ### Sub-agents
 
@@ -99,9 +112,12 @@ A sub-agent's work is not shown in the transcript. It gets one row, showing live
 occupancy and elapsed time; expand it to see what the child is doing, or its report once it has
 finished.
 
-`/mode single` turns delegation off for a session, `/mode fan-out` turns it back on, and
+`/mode agent single` turns delegation off for a session, `/mode agent fan-out` turns it back on, and
 `--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed —
 turning it off really does turn it off.
+
+The axis is named because there will be more than one: file editing and a build/plan mode are
+coming, and `/mode` on its own reports every axis rather than guessing which one you meant.
 
 **Named types** let you say how a delegated job should be done — a briefing, optionally its own
 provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and
@@ -153,8 +169,8 @@ it.
 local `qwen3.6-35b-a3b` it does — it announced *"this is a double-entry bookkeeping task, so let me
 load that skill first"* and loaded it unprompted — but only after the prompt was changed to say
 explicitly that reading the file directly is not the same thing. Before that, the model found the
-`SKILL.md` with `list_files` and read it: the instructions arrived, and nothing else in the session
-knew a skill was in force.
+`SKILL.md` with the file-listing tool and read it: the instructions arrived, and nothing else in
+the session knew a skill was in force.
 
 See [CONFIG.md](CONFIG.md#skills) for where they live and how shadowing works.
 

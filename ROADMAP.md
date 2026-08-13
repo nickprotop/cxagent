@@ -13,14 +13,15 @@ What is built and what is next. Update it as work lands.
 run them, append the results, send again. Everything below hangs off that.
 
 Cancellation that cannot poison a session. Providers: Anthropic native,
-`openai-compatible`, `ollama`, several at once and bindable per role. The usual tools —
-read, write, edit, search, shell, http — behind a permission gate that knows where the working
-boundary is. SQLite resume, per-turn context dumps, per-tool logs. Compaction that summarises rather
-than truncates, and never cuts a tool call away from its result. MCP over stdio and HTTP, OAuth
-included. Sub-agents, usage history, skills. The UI: transcript, job rows, session panel, command
-palette, settings.
+`openai-compatible`, `ollama`, several at once and bindable per role. The usual tools — read, write,
+edit, glob, grep, shell, http, web fetch — behind a permission gate that knows where the working
+boundary is, and that stops asking about commands which can only look. SQLite resume, per-turn
+context dumps, per-tool logs. Compaction that summarises rather than truncates, and never cuts a
+tool call away from its result. MCP over stdio and HTTP, OAuth included. Sub-agents, usage history,
+skills, a plan the model keeps across turns, and a way for it to ask you a question. The UI:
+transcript, job rows, session panel, command palette, settings.
 
-**1152 tests**, and every one of those subsystems has also been driven live against a real local
+**1318 tests**, and every one of those subsystems has also been driven live against a real local
 model. The drives keep finding things the tests do not.
 
 ---
@@ -58,17 +59,21 @@ distraction. Cheap to add, once there is a skill worth withholding.
 **Sandboxed shell.** The last thing standing between this loop and running tools in parallel. Two
 shell commands in one directory can trip over each other and nothing here would notice.
 
-**One flake nobody has explained.** `AgentChallengeTests.TheModelsRawResponseIsLogged` failed once in
-a full-suite run and has never failed since.
+**Pipes still prompt.** A command that can only look runs without asking — unless it is piped, and
+the model pipes constantly (`find . | head`). Allowing a single pipe between two safe verbs needs a
+real split-and-check on both sides rather than a substring test, and the failure mode is silent,
+which is why it was left out.
 
 ---
 
 ## Things worth knowing
 
-**Whether the model delegates, or reaches for a skill, is the model's business.** A local
-`qwen3.6-35b-a3b` does both — but it only started loading skills after the prompt spelled out that
-reading a `SKILL.md` is not the same as loading it. A better model may need neither nudge. A worse
-one may ignore both.
+**Whether the model uses a tool at all is the model's business.** A local `qwen3.6-35b-a3b` loads
+skills and keeps a plan — but skills only after the prompt spelled out that reading a `SKILL.md` is
+not the same as loading it, and `glob`/`grep` only after they were renamed from `list_files` and
+`search_files` to the words it already knew. `ask_user` it has never once called: asked an
+ambiguous question, it lists the options and ends the turn, which is exactly the failure that tool
+exists to prevent. A better model may need none of these nudges; a worse one may ignore them all.
 
 **A briefing asks; permissions decide.** "Never edit files" in a type's briefing is a request. It
 does not take the tool away.
