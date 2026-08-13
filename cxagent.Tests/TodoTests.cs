@@ -175,6 +175,47 @@ public class TodoTests
     }
 
     /// <summary>
+    /// FINISHED ITEMS ARE STRUCK THROUGH in the row. The transcript renders this body as markdown,
+    /// so `~~` becomes real strikethrough — a settled item that LOOKS settled is readable at a
+    /// glance, where a heading alone makes the reader hold "which group am I in" while scanning.
+    /// </summary>
+    [Fact]
+    public void Describe_StrikesThroughWhatIsSettled_AndLeavesTheRestPlain()
+    {
+        var result = new TodoTool(new TodoList()).TryInvoke(Call(new
+        {
+            todos = new object[]
+            {
+                new { text = "the finished one", status = "completed" },
+                new { text = "the dropped one", status = "cancelled" },
+                new { text = "the current one", status = "in_progress" },
+                new { text = "the next one", status = "pending" },
+            },
+        }))!;
+
+        Assert.Contains("~~the finished one~~", result, StringComparison.Ordinal);
+        Assert.Contains("~~the dropped one~~", result, StringComparison.Ordinal);
+
+        // Still to do, so still plain — striking these would say the opposite of what is true.
+        Assert.DoesNotContain("~~the current one~~", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("~~the next one~~", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE PROMPT FORM STAYS CLEAN. The row is rendered for a person; the prompt is read by the
+    /// model, for which `~~` is punctuation to parse rather than a visual cue — and the `[x]` marker
+    /// already says the item is done.
+    /// </summary>
+    [Fact]
+    public void Render_DoesNotCarryTheRowsStrikethrough()
+    {
+        var list = Written(new { todos = new[] { new { text = "the finished one", status = "completed" } } });
+
+        Assert.DoesNotContain("~~", list.Render(), StringComparison.Ordinal);
+        Assert.Contains("- [x] the finished one", list.Render(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The PROMPT form stays flat and in the model's own order — it is the model's plan as it wrote
     /// it, and regrouping would quietly reorder the thing it is reading back.
     /// </summary>

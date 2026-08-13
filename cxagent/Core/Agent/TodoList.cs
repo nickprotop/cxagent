@@ -184,9 +184,17 @@ public sealed class TodoList
         var items = _items.Where(i => i.Status == status).ToList();
         if (items.Count == 0) return;
 
+        // STRUCK THROUGH ONCE IT IS SETTLED. The transcript renders this body as markdown, so `~~`
+        // becomes real strikethrough — and a finished item that LOOKS finished is readable at a
+        // glance, where a heading alone makes the reader hold "which group am I in" while scanning.
+        // Cancelled too: it is equally not-to-be-done, and the heading distinguishes why.
+        var strike = status is TodoStatus.Completed or TodoStatus.Cancelled;
+
         sb.AppendLine($"{heading}");
         foreach (var item in items)
-            sb.AppendLine($"  {Marker(status)} {item.Text}");
+            sb.AppendLine(strike
+                ? $"  {Marker(status)} ~~{item.Text}~~"
+                : $"  {Marker(status)} {item.Text}");
         sb.AppendLine();
     }
 
