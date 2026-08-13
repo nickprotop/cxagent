@@ -65,7 +65,14 @@ public class PermissionPolicy
             display.Append(']');
         }
 
-        var alwaysRule = hasEnv ? null : command;
+        // THE COMMAND'S NAME, NOT THE WHOLE COMMAND. This was the literal string, which meant
+        // `find Services -type f` and `find . -type f` were unrelated grants — 111 rules
+        // accumulated in one user's store and essentially none could ever match again.
+        //
+        // CommandArity decides how many words NAME a command, so `git status` grants `git status *`
+        // and never `git push`. See it for why granting the first word alone is the dangerous
+        // version of this idea.
+        var alwaysRule = hasEnv ? null : CommandArity.RuleFor(command);
         return new PermissionRequest(PermissionKind.Shell, display.ToString(), alwaysRule);
     }
 
@@ -187,10 +194,19 @@ public class PermissionPolicy
         // Path-bearing: resolve before matching, and fail toward asking if it cannot be resolved.
         PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display),
 
-        // Not path-bearing. Shell matches the exact command text; Http matches the request origin.
-        // Neither is a filesystem path, so there is nothing to resolve — the stored rule IS the
-        // subject.
-        PermissionKind.Shell or PermissionKind.Http => request.AlwaysRule,
+        // SHELL MATCHES THE COMMAND, NOT THE RULE. This read AlwaysRule, which was the same string
+        // as the command back when a rule WAS the whole command. It no longer is — a rule is now
+        // `git status *` — so comparing AlwaysRule against a stored pattern would compare a pattern
+        // to a pattern, and `git status *` would only ever match a command literally called
+        // "git status *". The subject is what the model actually asked to run.
+        //
+        // Display, not the raw parameter, because ShellRequest already assembled it and it carries
+        // the working directory when one was given. The stored `... *` pattern is a prefix match, so
+        // the trailing " (in /path)" costs nothing.
+        PermissionKind.Shell => request.Display,
+
+        // Http is unchanged: its rule IS its subject, the request origin.
+        PermissionKind.Http => request.AlwaysRule,
 
         // Nor is an MCP call. Its subject is the SERVER AND TOOL ("mcp:files_read"), never the
         // arguments: those follow a schema written by a third party, and we cannot tell which of them
