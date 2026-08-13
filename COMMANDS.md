@@ -197,11 +197,30 @@ schedule, and a policy nobody mentioned is one you discover by losing something.
 
 ## `/exit`
 
-Quits, and marks the session finished so it is not offered for resume next time. A session that ends
-any other way — a crash, a kill — stays unfinished and is offered when you next start **in the same
-folder**. Resume is scoped to the working directory: a session crashed in one project is never
-offered in another, because restoring it would fill this conversation with another project's files
-and decisions.
+Quits, and marks the session finished — so bare `--resume`, which continues the most recent
+*unfinished* session, skips it. It is still listed by `/sessions` and still opens by id.
+
+**On the way out it prints how to come back:**
+
+```
+Resume this session:  cxagent --resume 5ZFAVZ
+```
+
+That is the one moment the id is worth something — everywhere else it is an implementation detail,
+and here it turns "I closed that by accident" into a command you can paste. It is skipped for a
+session where nothing was said, since nothing was stored to come back to.
+
+A session that ends any other way — a crash, a kill — stays **unfinished**, which is what bare
+`--resume` looks for and what the startup line mentions by name.
+
+**Nothing is offered on startup.** Earlier versions asked *"an earlier session ended without closing
+— resume it?"* on the first render, before you had typed anything. It asked at the worst moment,
+could only ever offer one session, and made resume something that happened *to* you. Now a grey line
+says what is there:
+
+```
+An earlier session here ended without closing (13 messages). /sessions to see it — 4 in this folder.
+```
 
 ---
 

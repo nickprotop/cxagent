@@ -143,6 +143,54 @@ public class AgentHostTests
     }
 
     /// <summary>
+    /// THE EXIT HINT'S GUARD. A session is written per turn, so one where nothing was said was never
+    /// stored — printing "cxagent --resume XXXXXX" for it would hand the user a command that answers
+    /// "no session matches" and makes resume look broken on its first use.
+    /// </summary>
+    [Fact]
+    public async Task HasSavedTurn_IsFalseUntilSomethingIsSaid()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-saved-" + Guid.NewGuid().ToString("N"));
+        var paths = new CxAgent.Core.Storage.AppPaths(dir);
+        paths.EnsureCreated();
+
+        try
+        {
+            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var mock = new MockLlmProvider();
+            mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
+
+            Assert.False(runner.HasSavedTurn);
+
+            await runner.SendAsync("say something", CancellationToken.None);
+
+            Assert.True(runner.HasSavedTurn);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>A restored session was loaded FROM a stored row, so there is already a way back.</summary>
+    [Fact]
+    public void HasSavedTurn_IsTrueImmediatelyForARestoredSession()
+    {
+        var mock = new MockLlmProvider();
+        var snapshot = new CxAgent.Core.Storage.SessionSnapshot(
+            "AAAA01KZXC",
+            [new ChatMessage { Role = "user", Content = "earlier work" }],
+            InputTokens: 10,
+            OutputTokens: 5,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
+            PluginRegistry.CreateWithBuiltins(), resume: snapshot);
+
+        Assert.True(runner.HasSavedTurn);
+    }
+
+    /// <summary>
     /// A session that ended properly is not offered for resume. That distinction is the whole point
     /// of the store: an unfinished row means the process never got to say goodbye.
     /// </summary>

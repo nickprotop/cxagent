@@ -1073,12 +1073,11 @@ public static class AppBootstrap
             // NEVER RESUME SILENTLY. A context the user did not ask for is one they cannot account
             // for, and it is paid for on the very first turn — so this asks, on the first pump, for
             // the same reason everything else here is deferred: a dialog needs a render tick to join.
-            // NOT WHEN THE COMMAND LINE ALREADY ANSWERED. `--resume` is a decision about which
-            // session to continue; offering another one on top of it would restore twice, and
-            // `--resume <id>` followed by a dialog proposing a different session is the app arguing
-            // with what it was just told.
+            // NOT WHEN THE COMMAND LINE ALREADY ANSWERED. `--resume` said which session to continue,
+            // and pointing at the list afterwards would be the app answering a question nobody asked
+            // twice over.
             if (!options.Resume.Wanted)
-                _ = OfferResumeAsync();
+                HintAtResume();
         });
 
         // THE LIST THE COMMAND AND THE PALETTE BOTH READ. Scoped to this folder unless asked
@@ -1162,40 +1161,33 @@ public static class AppBootstrap
                 + "They are not shown above, but the agent remembers them.[/]");
         }
 
-        async Task OfferResumeAsync()
+        // A HINT, NOT A QUESTION.
+        //
+        // This used to be a dialog: "an earlier session ended without closing — resume it?", asked on
+        // the first render, before the user had typed anything. Three things were wrong with it.
+        //
+        // It asked at the worst possible moment. Someone opening the app is about to do something,
+        // and the first thing they met was a question about LAST time — one they had to answer to
+        // reach the composer, with the "wrong" answer costing them a conversation they might have
+        // wanted. During this feature's own drives it fired every single launch.
+        //
+        // It could only ever offer ONE session, the newest unfinished one. Everything older was
+        // unreachable, so the dialog was not a way into your sessions — it was a way into exactly
+        // one of them, presented as though it were the choice.
+        //
+        // And it made "resume" a thing that happens TO you rather than something you ask for. Now
+        // /sessions lists them and --resume opens one; this line only says the door exists.
+        void HintAtResume()
         {
-            // SCOPED TO THIS FOLDER. Without it the newest unfinished session anywhere on the
-            // machine was offered here, and accepting it restored another project's conversation.
-            var snapshot = sessions.LoadLatestUnfinished(workingDir);
-            if (snapshot is null) return;
+            var here = sessions.List(workingDir).Count;
+            if (here == 0) return;
 
-            // ENOUGH TO RECOGNISE IT BY. A ULID identifies a session but describes nothing; the size
-            // and the age are what tell someone whether this is the work they were in the middle of.
-            var age = DateTimeOffset.UtcNow - snapshot.UpdatedAt;
-            var when = age.TotalMinutes < 1 ? "just now"
-                     : age.TotalHours < 1 ? $"{(int)age.TotalMinutes}m ago"
-                     : age.TotalDays < 1 ? $"{(int)age.TotalHours}h ago"
-                     : $"{(int)age.TotalDays}d ago";
+            // THE UNFINISHED ONE IS WORTH NAMING, because "ended without closing" is the case where
+            // someone lost work and is looking for it. Everything else is just a count.
+            var unfinished = sessions.LoadLatestUnfinished(workingDir);
 
-            const string resume = "Resume it";
-            const string fresh = "Start fresh";
-
-            var choice = await FlowDialogs.ChooseAsync(system, mainWindow.Window,
-                $"An earlier session ended without closing ({snapshot.Context.Count} messages, "
-                + $"last active {when}). Resume it?",
-                [resume, fresh], cts.Token);
-
-            if (choice == resume)
-            {
-                RestoreSession(snapshot);
-            }
-            else if (choice == fresh)
-            {
-                // Retired explicitly, so it stops being offered on every launch from here on.
-                sessions.MarkFinished(snapshot.AgentId);
-            }
-            // Dismissed: left alone, and offered again next launch. Declining to answer is not the
-            // same as declining the session.
+            if (SessionsCommand.StartupHint(here, unfinished?.Context.Count) is { } line)
+                permissionSink.ShowSystemMessage(line);
         }
 
         int code = system.Run();
@@ -1203,6 +1195,10 @@ public static class AppBootstrap
         // ENDED PROPERLY, so do not offer it back. Reaching this line is the only evidence available
         // that the process was not killed mid-session — which is precisely what makes an unfinished
         // row mean something.
+        // ONLY IF THERE IS SOMETHING TO COME BACK TO. A session is written per turn, so one where
+        // nothing was said was never stored — pointing at it would hand the user a command that
+        // reports "no session matches" and makes resume look broken on its first use.
+        var endedSessionId = runner?.HasSavedTurn == true ? runner.SessionId : null;
         runner?.MarkSessionFinished();
         // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's runner ever created (each
         // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
@@ -1216,6 +1212,17 @@ public static class AppBootstrap
         // process. Best-effort: shutdown is not a place to throw or to wait indefinitely.
         try { mcp.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
         catch (Exception) { /* best effort: shutdown is not a place to hang */ }
+
+        // HOW TO COME BACK, printed AFTER the TUI has released the terminal so it stays on screen
+        // rather than being painted over by the last frame.
+        //
+        // THIS IS THE MOMENT THE ID IS WORTH SOMETHING. Everywhere else it is an implementation
+        // detail; here it is the one thing that turns "I closed that by accident" into a command.
+        // Costless to ignore — a line of grey text on a terminal the user is already leaving — and
+        // the alternative is finding out that resume exists by reading the documentation of an app
+        // you have already stopped using.
+        if (endedSessionId is { Length: > 0 } id)
+            Console.WriteLine(SessionsCommand.ExitHint(id));
 
         return code;
     }

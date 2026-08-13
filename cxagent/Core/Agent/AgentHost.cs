@@ -235,6 +235,20 @@ public sealed class AgentHost : IDisposable
     public string SessionId => _agent.Id;
 
     /// <summary>
+    /// Has a turn been written to the resume store yet?
+    ///
+    /// <para>FOR THE EXIT HINT. Sessions are saved per turn, so one where nothing was said was never
+    /// stored — telling the user how to resume it would hand them a command that answers "no session
+    /// matches" and makes resume look broken the first time they try it.</para>
+    ///
+    /// <para>A restored session counts immediately: it was loaded FROM a stored row, so there is
+    /// something to come back to even before this instance saves anything of its own.</para>
+    /// </summary>
+    public bool HasSavedTurn => _turns > 0 || _resumed;
+
+    private readonly bool _resumed;
+
+    /// <summary>
     /// What THIS agent has spent — the parent alone, excluding every sub-agent.
     ///
     /// <para>NOT <c>Ledger.TotalTokens</c>, which is the whole session: children record into the
@@ -360,6 +374,8 @@ public sealed class AgentHost : IDisposable
 
         Context = new AgentContext(contextWindow);
         if (resume is not null) Context.Replace(resume.Context);
+        // Loaded FROM a stored row, so there is already something to come back to — see HasSavedTurn.
+        _resumed = resume is not null;
         // On breach, pause and ask — never silently keep spending. For now (Task 4) that means
         // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
         Ledger.Breached += (_, total) =>
