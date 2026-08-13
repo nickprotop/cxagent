@@ -90,4 +90,81 @@ public class ReadOnlyCommandsTests
     [Fact]
     public void AnUnknownProgram_IsNotReadOnly() =>
         Assert.False(ReadOnlyCommands.IsReadOnly("dotnet build"));
+
+    // ---- cd, the idiom that defeated all of the above ----------------------------------------
+    //
+    // Two agentic drives: two of three prompts were `cd <dir> && <something>`. The `&&`
+    // disqualified the whole line, so `cd /repo && ls` prompted while a bare `ls` did not — and the
+    // model writes the `cd` form constantly because it cannot rely on the working directory.
+
+    /// <summary>
+    /// The `cd` is stripped and the REST is judged — and the target is reported so the caller can
+    /// decide whether that directory is acceptable.
+    /// </summary>
+    [Fact]
+    public void ALeadingCd_IsStrippedAndItsTargetReported()
+    {
+        Assert.True(ReadOnlyCommands.IsReadOnly("cd /repo && ls -la", out var target));
+        Assert.Equal("/repo", target);
+    }
+
+    /// <summary>
+    /// THE ESCAPE THIS CLOSES. `cat shadow` is read-only by any measure, and the boundary is the
+    /// only thing standing between it and /etc — so the target must reach the caller rather than
+    /// being swallowed.
+    /// </summary>
+    [Fact]
+    public void ACdToAnywhere_ReportsWhereItWent_SoTheCallerCanRefuse()
+    {
+        Assert.True(ReadOnlyCommands.IsReadOnly("cd /etc && cat shadow", out var target));
+        Assert.Equal("/etc", target);   // read-only, yes — but the CALLER must veto the directory
+    }
+
+    /// <summary>`cd somewhere` alone changes no files and reads nothing. Still reports its target:
+    /// trust is about a folder, and this is a request to be in a different one.</summary>
+    [Fact]
+    public void ABareCd_IsReadOnly_AndStillReportsItsTarget()
+    {
+        Assert.True(ReadOnlyCommands.IsReadOnly("cd /repo/src", out var target));
+        Assert.Equal("/repo/src", target);
+    }
+
+    /// <summary>And what follows the `cd` is judged exactly as it would be alone.</summary>
+    [Theory]
+    [InlineData("cd /repo && rm -rf build")]
+    [InlineData("cd /repo && dotnet build")]
+    [InlineData("cd /repo && git status")]
+    public void WhatFollowsACd_IsJudgedOnItsOwnMerits(string command) =>
+        Assert.False(ReadOnlyCommands.IsReadOnly(command));
+
+    /// <summary>
+    /// ONE `cd` AND ONE `&amp;&amp;`. A longer chain is something this has not looked at, and the
+    /// metacharacter check refuses the remainder — the safe direction.
+    /// </summary>
+    [Theory]
+    [InlineData("cd /repo && ls && rm -rf x")]
+    [InlineData("cd /a && cd /b && cat x")]
+    [InlineData("cd /repo && ls | head")]
+    public void ALongerChainIsStillRefused(string command) =>
+        Assert.False(ReadOnlyCommands.IsReadOnly(command));
+
+    /// <summary>
+    /// A QUOTED TARGET IS NOT UNQUOTED HERE. Handling escapes correctly is one more place to be
+    /// subtly wrong about which directory is really being entered, and being wrong there hands the
+    /// caller a target that is not the one that will be used.
+    /// </summary>
+    [Theory]
+    [InlineData("cd \"/some dir\" && ls")]
+    [InlineData("cd '/some dir' && ls")]
+    [InlineData("cd /a /b && ls")]
+    public void AnUnparseableCd_IsRefusedRatherThanGuessedAt(string command) =>
+        Assert.False(ReadOnlyCommands.IsReadOnly(command));
+
+    /// <summary>A command with no `cd` reports no target, so the caller has nothing to veto.</summary>
+    [Fact]
+    public void WithoutACd_NoTargetIsReported()
+    {
+        Assert.True(ReadOnlyCommands.IsReadOnly("ls -la", out var target));
+        Assert.Null(target);
+    }
 }

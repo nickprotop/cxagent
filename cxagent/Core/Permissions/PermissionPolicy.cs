@@ -73,7 +73,12 @@ public class PermissionPolicy
         // and never `git push`. See it for why granting the first word alone is the dangerous
         // version of this idea.
         var alwaysRule = hasEnv ? null : CommandArity.RuleFor(command);
-        return new PermissionRequest(PermissionKind.Shell, display.ToString(), alwaysRule);
+
+        // SUBJECT IS THE BARE COMMAND. Display gains " (in /path)" for the reader, and anything that
+        // PARSES the command — the read-only check, the rule match — would otherwise see a command
+        // called "ls (in".
+        return new PermissionRequest(PermissionKind.Shell, display.ToString(), alwaysRule,
+            Subject: command);
     }
 
     private static List<PermissionRequest> FileRequests(JobParameters parameters)
@@ -155,9 +160,14 @@ public class PermissionPolicy
         // user for it.
         //
         // TRUST IS STILL REQUIRED. An untrusted folder prompts for everything, unchanged.
+        //
+        // ON Display, NOT AlwaysRule. AlwaysRule is now a PATTERN — `find*` — since rules started
+        // generalising over arguments, so asking whether it is read-only would be asking about a
+        // glob rather than about the command the model actually sent.
         if (request.Kind == PermissionKind.Shell
             && _rules.GetTrust(_root) == TrustState.Trusted
-            && ReadOnlyCommands.IsReadOnly(request.AlwaysRule))
+            && ReadOnlyCommands.IsReadOnly(request.What, out var changesTo)
+            && (changesTo is null || IsInsideBoundary(changesTo)))
             return true;
 
         if (request.AlwaysRule is null) return false;
@@ -203,7 +213,7 @@ public class PermissionPolicy
         // Display, not the raw parameter, because ShellRequest already assembled it and it carries
         // the working directory when one was given. The stored `... *` pattern is a prefix match, so
         // the trailing " (in /path)" costs nothing.
-        PermissionKind.Shell => request.Display,
+        PermissionKind.Shell => request.What,
 
         // Http is unchanged: its rule IS its subject, the request origin.
         PermissionKind.Http => request.AlwaysRule,

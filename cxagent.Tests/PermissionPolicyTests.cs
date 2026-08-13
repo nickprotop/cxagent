@@ -94,6 +94,46 @@ public class PermissionPolicyTests
     }
 
     /// <summary>
+    /// `cd &lt;dir&gt; &amp;&amp; &lt;read-only&gt;` IS THE IDIOM THE MODEL WRITES, and it used to prompt for the
+    /// `&amp;&amp;` alone — so `cd /repo &amp;&amp; ls` asked while a bare `ls` did not. Two of three prompts on a
+    /// measured drive were this shape.
+    /// </summary>
+    [Fact]
+    public void ACdIntoTheTrustedFolder_FollowedByAReadOnlyCommand_IsSilent()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var policy = new PermissionPolicy(root, rules);
+
+        Assert.True(policy.IsSilentlyAllowed(Shell($"cd {root} && ls -la")));
+        Assert.True(policy.IsSilentlyAllowed(Shell($"cd {root}/src && grep -rn TODO .")));
+
+        // And `cd` on its own, which changes no files and reads nothing.
+        Assert.True(policy.IsSilentlyAllowed(Shell($"cd {root}")));
+    }
+
+    /// <summary>
+    /// THE ESCAPE THE BOUNDARY EXISTS TO CLOSE. `cat shadow` is read-only by any measure — the only
+    /// thing standing between it and /etc is where the `cd` went, which is why the target is checked
+    /// rather than stripped and forgotten.
+    /// </summary>
+    [Fact]
+    public void ACdOutOfTheTrustedFolder_StillPrompts_EvenForAReadOnlyCommand()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var policy = new PermissionPolicy(root, rules);
+
+        Assert.False(policy.IsSilentlyAllowed(Shell("cd /etc && cat shadow")));
+        Assert.False(policy.IsSilentlyAllowed(Shell("cd /etc")));
+
+        // A traversal that LOOKS like it stays inside is resolved, not pattern-matched.
+        Assert.False(policy.IsSilentlyAllowed(Shell($"cd {root}/../.. && ls")));
+    }
+
+    /// <summary>
     /// TRUST IS STILL REQUIRED. An untrusted folder prompts for everything — the exemption rides on
     /// the same decision the user already made about file reads, not on the command alone.
     /// </summary>

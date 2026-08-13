@@ -63,11 +63,48 @@ public static class ReadOnlyCommands
     /// Never throws, and answers false for anything it cannot parse confidently. A wrong `false`
     /// costs one prompt; a wrong `true` runs something nobody approved.
     /// </remarks>
-    public static bool IsReadOnly(string? command)
+    public static bool IsReadOnly(string? command) => IsReadOnly(command, out _);
+
+    /// <summary>
+    /// True when this command reads and nothing more, reporting the directory it first changes to.
+    /// </summary>
+    /// <param name="changesTo">
+    /// The target of a leading <c>cd</c>, or null when there is none. The CALLER decides whether that
+    /// directory is acceptable — this class knows nothing about a working boundary, and guessing
+    /// would put a security decision in a string helper.
+    /// </param>
+    /// <remarks>
+    /// Never throws, and answers false for anything it cannot parse confidently. A wrong `false`
+    /// costs one prompt; a wrong `true` runs something nobody approved.
+    /// </remarks>
+    public static bool IsReadOnly(string? command, out string? changesTo)
     {
+        changesTo = null;
         if (string.IsNullOrWhiteSpace(command)) return false;
 
         var text = command.Trim();
+
+        // `cd <somewhere> && <the real command>` IS THE DOMINANT IDIOM, and it defeated everything:
+        // the `&&` disqualified the whole line, so `cd /repo && ls` prompted while a bare `ls` did
+        // not. Measured across two agentic drives — two of three prompts were this shape, and the
+        // model writes it constantly because it cannot rely on the working directory.
+        //
+        // STRIPPED, NOT IGNORED. The target is handed back so the caller can require it to be inside
+        // the trusted folder: `cd /etc && cat shadow` reads a file the boundary exists to protect,
+        // and the `cat` half looks perfectly innocent on its own.
+        //
+        // ONE `cd` ONLY, and only at the start. A second one later in the line is a chain doing
+        // something this cannot reason about, and the `&&` check below still refuses it.
+        if (TryStripLeadingCd(text, out var target, out var rest))
+        {
+            changesTo = target;
+            text = rest;
+
+            // `cd /somewhere` with nothing after it. It changes no files and reads nothing, so it is
+            // read-only by any measure — but the caller still has to accept the DIRECTORY, which is
+            // the whole reason the target is reported rather than swallowed.
+            if (text.Length == 0) return true;
+        }
 
         if (text.IndexOfAny(Dangerous) >= 0) return false;
 
@@ -85,5 +122,55 @@ public static class ReadOnlyCommands
         if (first.Contains('/', StringComparison.Ordinal)) return false;
 
         return SafeVerbs.Contains(first);
+    }
+
+    /// <summary>
+    /// Splits <c>cd &lt;dir&gt; &amp;&amp; rest</c> into its target and the rest, or reports no match.
+    /// </summary>
+    /// <remarks>
+    /// DELIBERATELY STRICT. It matches only `cd`, one unquoted target, and at most one `&amp;&amp;` —
+    /// anything else is left whole for the metacharacter check to refuse. That is the safe direction:
+    /// a shape this does not recognise costs one prompt, while a shape it mis-parses hands the caller
+    /// a target that is not the one that will actually be entered.
+    /// </remarks>
+    private static bool TryStripLeadingCd(string text, out string? target, out string rest)
+    {
+        target = null;
+        rest = text;
+
+        if (!text.StartsWith("cd ", StringComparison.Ordinal)) return false;
+
+        // A QUOTED TARGET IS REFUSED, not unquoted here. `cd "a b" && ls` is legitimate and rare, and
+        // unquoting correctly means handling escapes — one more place to be subtly wrong about what
+        // directory is really being entered.
+        if (text.Contains('"') || text.Contains('\'')) return false;
+
+        var after = text[3..].TrimStart();
+        if (after.Length == 0) return false;
+
+        var separator = after.IndexOf("&&", StringComparison.Ordinal);
+
+        // `cd somewhere` on its own — the whole command.
+        if (separator < 0)
+        {
+            // Still one token: `cd a b` is not a directory change this can reason about.
+            if (after.Contains(' ')) return false;
+            target = after;
+            rest = string.Empty;
+            return true;
+        }
+
+        var dir = after[..separator].Trim();
+        if (dir.Length == 0 || dir.Contains(' ')) return false;
+
+        // ONE `cd` AND ONE `&&`. A second `&&` means a longer chain, and the command after it is not
+        // something this has looked at — the metacharacter check refuses the remainder anyway, but
+        // refusing here keeps the reason legible.
+        var remainder = after[(separator + 2)..].Trim();
+        if (remainder.Length == 0) return false;
+
+        target = dir;
+        rest = remainder;
+        return true;
     }
 }

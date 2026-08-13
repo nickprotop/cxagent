@@ -21,9 +21,23 @@ public enum TrustState { Unknown, Trusted, Untrusted }
 /// AlwaysRule is EXACTLY what "Always" would persist, pre-computed here so the button text and
 /// the stored rule can never diverge. NULL AlwaysRule = this request cannot be truthfully
 /// generalised (e.g. a shell job carrying a custom env — Decisions §3): no Always button is
-/// offered, and no stored rule ever matches it.</summary>
-public sealed record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule)
+/// offered, and no stored rule ever matches it.
+///
+/// <para>SUBJECT IS THE THING ITSELF, when Display is not. For a shell command Display is decorated
+/// for a reader — "<c>ls (in /repo)</c>" — and anything that PARSES the command needs it undecorated
+/// or it sees a command called "ls (in". Defaults to Display, so every other kind is unaffected and
+/// no existing construction site changes.</para></summary>
+public sealed record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule,
+    string? Subject = null)
 {
+    /// <summary>
+    /// The undecorated thing this request is about — the command, the path, the origin.
+    ///
+    /// <para>Falls back to <see cref="Display"/>, which is right for every kind whose display IS the
+    /// subject. Only shell decorates, and only shell sets this.</para>
+    /// </summary>
+    public string What => Subject ?? Display;
+
     /// <summary>
     /// WHO IS ASKING — null for the session's own agent, a short label for a sub-agent.
     ///
