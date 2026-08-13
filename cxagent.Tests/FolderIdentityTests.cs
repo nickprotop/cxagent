@@ -180,14 +180,9 @@ public class FolderIdentityTests : IDisposable
     /// <summary>
     /// A SCOPE SURVIVES THE AGENT WRITING FILES, which is the whole point of it.
     ///
-    /// <para>This failed before the Linux fallback existed. .NET cannot reach statx's btime on
-    /// Linux, so CreationTimeUtc returns the CHANGE time — which moves whenever anything inside the
-    /// directory is created or removed. Every rule and every trust decision was therefore scoped to
-    /// "this folder as of its last modification", and died the moment the agent wrote a file.</para>
-    ///
-    /// <para>Found on a real drive: the same folder trusted twice in one session, two entries in the
-    /// store minutes apart, and a second trust prompt for a directory already trusted — because
-    /// cloning a repo into it moved the clock.</para>
+    /// <para>Found on a real drive: the same folder trusted twice in one session, and `cd*` granted
+    /// three times under three different scopes minutes apart — because each file the agent wrote
+    /// moved the clock .NET reports as a creation time on Linux, orphaning the previous grant.</para>
     /// </summary>
     [Fact]
     public void ScopeFor_IsUnchangedByWritingInsideTheFolder()
@@ -216,5 +211,40 @@ public class FolderIdentityTests : IDisposable
         File.Delete(file);
 
         Assert.Equal(before, FolderIdentity.ScopeFor(dir));
+    }
+
+    /// <summary>
+    /// A FOLDER STILL HAS AN IDENTITY THE MOMENT IT IS MADE.
+    ///
+    /// <para>The first attempt at the Linux problem was a heuristic: compare creation against
+    /// last-write and drop the suffix when they match, since a real birth time is usually earlier.
+    /// A FRESHLY CREATED FOLDER HAS THEM EQUAL ON EVERY PLATFORM — so it threw the identity away on
+    /// Windows and macOS for exactly the new folders where "someone recreated this path" is the live
+    /// hazard. Reading the birth time instead of inferring it is what makes this pass.</para>
+    /// </summary>
+    [Fact]
+    public void ScopeFor_ANewFolder_IsStillDistinguishedFromItsPath()
+    {
+        var dir = MakeDir();
+
+        Assert.NotEqual(dir, FolderIdentity.ScopeFor(dir));
+        Assert.StartsWith(dir + "#", FolderIdentity.ScopeFor(dir), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE HAZARD THIS TYPE EXISTS FOR: a path is a label, not an identity. Delete a folder and
+    /// recreate it and every grant made to the first must not apply to the second.
+    /// </summary>
+    [Fact]
+    public void ScopeFor_ARecreatedFolder_IsNotTheOriginal()
+    {
+        var dir = MakeDir();
+        var before = FolderIdentity.ScopeFor(dir);
+
+        Directory.Delete(dir, recursive: true);
+        Thread.Sleep(1_100);          // the suffix has second resolution
+        Directory.CreateDirectory(dir);
+
+        Assert.NotEqual(before, FolderIdentity.ScopeFor(dir));
     }
 }
