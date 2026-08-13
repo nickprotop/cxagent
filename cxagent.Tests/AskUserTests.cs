@@ -16,37 +16,66 @@ public class AskUserTests
     private static ToolCall Call(object args, string name = "ask_user") =>
         new() { Name = name, Id = "call-1", Arguments = JsonSerializer.SerializeToElement(args) };
 
-    private static AskUserTool Answering(string answer) =>
-        new((_, _, _) => Task.FromResult(answer));
+    private static AskUserTool Answering(params string[] answers) =>
+        new((_, _) => Task.FromResult(new QuestionAnswers(answers)));
+
+    /// <summary>Captures what the UI was asked to present.</summary>
+    private static AskUserTool Capturing(
+        out Func<IReadOnlyList<UserQuestion>> seen, params string[] answers)
+    {
+        IReadOnlyList<UserQuestion> captured = [];
+        seen = () => captured;
+
+        return new((qs, _) =>
+        {
+            captured = qs;
+            return Task.FromResult(new QuestionAnswers(
+                answers.Length > 0 ? answers : qs.Select(_ => "ok").ToArray()));
+        });
+    }
 
     [Fact]
     public async Task Ask_ReturnsWhatTheUserSaid()
     {
         var result = await Answering("the second one").TryInvokeAsync(
-            Call(new { question = "Which parser?" }), CancellationToken.None);
+            Call(new { questions = new[] { new { question = "Which parser?" } } }),
+            CancellationToken.None);
 
-        Assert.Equal("the second one", result);
+        Assert.Contains("the second one", result!);
+        Assert.Contains("Which parser?", result!);
     }
 
     [Fact]
-    public async Task Ask_PassesTheQuestionAndOptionsThrough()
+    public async Task Ask_PassesTheQuestionAndItsOptionsThrough()
     {
-        string? asked = null;
-        IReadOnlyList<string> offered = [];
-
-        var tool = new AskUserTool((q, o, _) =>
-        {
-            asked = q;
-            offered = o;
-            return Task.FromResult("ok");
-        });
+        var tool = Capturing(out var seen);
 
         await tool.TryInvokeAsync(
-            Call(new { question = "Which one?", options = new[] { "first", "second" } }),
+            Call(new
+            {
+                questions = new[]
+                {
+                    new
+                    {
+                        question = "Which one?",
+                        header = "Parser",
+                        options = new[]
+                        {
+                            new { label = "first", description = "the existing one" },
+                            new { label = "second", description = "a rewrite" },
+                        },
+                    },
+                },
+            }),
             CancellationToken.None);
 
-        Assert.Equal("Which one?", asked);
-        Assert.Equal(["first", "second"], offered);
+        var q = Assert.Single(seen());
+        Assert.Equal("Which one?", q.Question);
+        Assert.Equal("Parser", q.Header);
+        Assert.Equal(["first", "second"], q.Choices.Select(c => c.Label));
+
+        // THE DESCRIPTION IS THE POINT. Two bare labels ask the user to guess what the model meant.
+        Assert.Equal(["the existing one", "a rewrite"], q.Choices.Select(c => c.Description));
     }
 
     /// <summary>
@@ -56,8 +85,11 @@ public class AskUserTests
     [Fact]
     public async Task Ask_WhenTheUserSkips_TellsTheModelToUseItsOwnJudgement()
     {
-        var result = await Answering("").TryInvokeAsync(
-            Call(new { question = "Which one?" }), CancellationToken.None);
+        var tool = new AskUserTool((_, _) => Task.FromResult(QuestionAnswers.Cancel));
+
+        var result = await tool.TryInvokeAsync(
+            Call(new { questions = new[] { new { question = "Which one?" } } }),
+            CancellationToken.None);
 
         Assert.Contains("dismissed", result!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("own judgement", result, StringComparison.OrdinalIgnoreCase);
@@ -71,11 +103,12 @@ public class AskUserTests
     [Fact]
     public async Task Ask_WhenCancelled_StillReturnsSomething()
     {
-        var tool = new AskUserTool((_, _, ct) => Task.FromCanceled<string>(ct));
+        var tool = new AskUserTool((_, ct) => Task.FromCanceled<QuestionAnswers>(ct));
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var result = await tool.TryInvokeAsync(Call(new { question = "Which one?" }), cts.Token);
+        var result = await tool.TryInvokeAsync(
+            Call(new { questions = new[] { new { question = "Which one?" } } }), cts.Token);
 
         Assert.False(string.IsNullOrWhiteSpace(result));
         Assert.Contains("cancelled", result!, StringComparison.OrdinalIgnoreCase);
@@ -93,8 +126,7 @@ public class AskUserTests
     [Fact]
     public async Task Ask_AcceptsABareStringAsTheQuestion()
     {
-        string? asked = null;
-        var tool = new AskUserTool((q, _, _) => { asked = q; return Task.FromResult("ok"); });
+        var tool = Capturing(out var seen);
 
         await tool.TryInvokeAsync(
             new ToolCall
@@ -104,7 +136,7 @@ public class AskUserTests
             },
             CancellationToken.None);
 
-        Assert.Equal("Which one?", asked);
+        Assert.Equal("Which one?", Assert.Single(seen()).Question);
     }
 
     [Fact]
@@ -128,7 +160,7 @@ public class AskUserTests
         var child = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
             isSubAgent: true,
-            askUser: (_, _, _) => Task.FromResult("this must never be reachable"));
+            askUser: (_, _) => Task.FromResult(new QuestionAnswers(["never reachable"])));
 
         await child.SendAsync("do something", CancellationToken.None);
 
@@ -143,7 +175,7 @@ public class AskUserTests
 
         var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
-            askUser: (_, _, _) => Task.FromResult("ok"));
+            askUser: (_, _) => Task.FromResult(new QuestionAnswers(["ok"])));
 
         await agent.SendAsync("do something", CancellationToken.None);
 
@@ -204,7 +236,7 @@ public class AskUserTests
     [Fact]
     public void TypedAnswer_ResolvesOnlyWhenSubmitted()
     {
-        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config file?")]);
         var content = prompt.BuildContent();
         var input = FindPrompt(content);
 
@@ -219,7 +251,7 @@ public class AskUserTests
         // Submitting does, and with the WHOLE thing.
         input.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
         Assert.True(prompt.Completion.IsCompleted);
-        Assert.Equal("config-prod.yaml", prompt.Completion.Result);
+        Assert.Equal("config-prod.yaml", Assert.Single(prompt.Completion.Result.Answers));
     }
 
     /// <summary>
@@ -229,7 +261,7 @@ public class AskUserTests
     [Fact]
     public void EmptyEnter_LeavesTheQuestionUp()
     {
-        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config file?")]);
         var input = FindPrompt(prompt.BuildContent());
 
         input.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
@@ -241,12 +273,278 @@ public class AskUserTests
     [Fact]
     public void Skip_CompletesWithNothing()
     {
-        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config file?")]);
 
         prompt.Skip();
 
         Assert.True(prompt.Completion.IsCompleted);
-        Assert.Equal("", prompt.Completion.Result);
+        Assert.True(prompt.Completion.Result.Cancelled);
+    }
+
+    // --- stepping through several questions ---
+
+    private static void Type(SharpConsoleUI.Controls.PromptControl input, string text)
+    {
+        foreach (var c in text)
+            input.ProcessKey(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+
+        input.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+    }
+
+    /// <summary>
+    /// ONE ON SCREEN AT A TIME, answers returned together. The composer is a few rows tall: three
+    /// questions with described option lists stacked into it would clip the last of them.
+    /// </summary>
+    [Fact]
+    public void SeveralQuestions_AreAnsweredOneStepAtATime()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "config-prod.yaml");
+        Assert.False(prompt.Completion.IsCompleted);   // the first answer is not the whole run
+
+        Type(FindPrompt(current), "master");
+        Assert.False(prompt.Completion.IsCompleted);   // ...nor is the last: the summary comes first
+
+        Type(FindPrompt(current), "");                 // Enter on the summary sends
+
+        Assert.True(prompt.Completion.IsCompleted);
+        Assert.Equal(["config-prod.yaml", "master"], prompt.Completion.Result.Answers);
+    }
+
+    /// <summary>
+    /// BACK, so an answer can be reconsidered. Someone who realises their first choice was wrong
+    /// while reading the second question can go and change it — which a single submit-everything
+    /// panel cannot offer.
+    /// </summary>
+    [Fact]
+    public void Back_ReturnsToThePreviousQuestion()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "wrong.yaml");
+        Assert.True(prompt.Back());
+
+        Type(FindPrompt(current), "config-prod.yaml");   // answered again, this time correctly
+        Type(FindPrompt(current), "master");
+        Type(FindPrompt(current), "");                   // send from the summary
+
+        Assert.Equal(["config-prod.yaml", "master"], prompt.Completion.Result.Answers);
+    }
+
+    [Fact]
+    public void Back_OnTheFirstQuestion_DoesNothing()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config?")]);
+        prompt.BuildContent();
+
+        Assert.False(prompt.Back());
+    }
+
+    /// <summary>
+    /// ESCAPE MID-RUN KEEPS WHAT WAS ALREADY ANSWERED. Those were real decisions, and making the
+    /// user repeat them punishes them for changing their mind about the third.
+    /// </summary>
+    [Fact]
+    public void SkippingPartWayThrough_KeepsTheAnswersAlreadyGiven()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "config-prod.yaml");
+        prompt.Skip();
+
+        var result = prompt.Completion.Result;
+        Assert.False(result.Cancelled);
+        Assert.Equal("config-prod.yaml", result.Answers[0]);
+        Assert.Equal("", result.Answers[1]);            // skipped: "you decide"
+    }
+
+    /// <summary>Escaping before answering anything is a CANCEL — a different message to the model
+    /// than a set of blank answers.</summary>
+    [Fact]
+    public void SkippingImmediately_IsACancel()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+        prompt.BuildContent();
+
+        prompt.Skip();
+
+        Assert.True(prompt.Completion.Result.Cancelled);
+    }
+
+    // --- the summary, before anything is sent ---
+
+    /// <summary>
+    /// THE LAST CHANCE TO CHANGE A DECISION, and the only place the set is visible as a set.
+    /// Stepping is what makes several questions readable, and it also means that by question three
+    /// nobody remembers exactly what they said to question one.
+    /// </summary>
+    [Fact]
+    public void SeveralQuestions_AreReviewedBeforeTheyAreSent()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?", "Config file"),
+            new UserQuestion("Which branch?", "Branch"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "config-prod.yaml");
+        Type(FindPrompt(current), "master");
+
+        // Not sent yet — the summary is on screen, showing both answers under their headers.
+        Assert.False(prompt.Completion.IsCompleted);
+        var text = Rendered(current);
+        Assert.Contains("Your answers", text);
+        Assert.Contains("Config file", text);
+        Assert.Contains("config-prod.yaml", text);
+        Assert.Contains("master", text);
+    }
+
+    /// <summary>Back from the summary reopens the last question — the one just read, and so the
+    /// one most likely to want changing.</summary>
+    [Fact]
+    public void BackFromTheSummary_ReopensTheLastQuestion()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "config-prod.yaml");
+        Type(FindPrompt(current), "wrong-branch");
+
+        Assert.True(prompt.Back());
+        Type(FindPrompt(current), "master");     // answered again
+        Type(FindPrompt(current), "");           // send
+
+        Assert.Equal(["config-prod.yaml", "master"], prompt.Completion.Result.Answers);
+    }
+
+    /// <summary>One question needs no review: the user is looking at the answer they just gave.</summary>
+    [Fact]
+    public void ASingleQuestion_IsSentWithoutASummary()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config?")]);
+        var content = prompt.BuildContent();
+
+        Type(FindPrompt(content), "config-prod.yaml");
+
+        Assert.True(prompt.Completion.IsCompleted);
+    }
+
+    /// <summary>Escape on the summary sends what is there — the answers were given, and discarding
+    /// them because someone would rather not confirm is a punishment for reading.</summary>
+    [Fact]
+    public void EscapeOnTheSummary_SendsTheAnswers()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?"),
+            new UserQuestion("Which branch?"),
+        ]);
+
+        SharpConsoleUI.Controls.IWindowControl current = prompt.BuildContent();
+        prompt.StepChanged += next => current = next;
+
+        Type(FindPrompt(current), "config-prod.yaml");
+        Type(FindPrompt(current), "master");
+        prompt.Skip();
+
+        var result = prompt.Completion.Result;
+        Assert.False(result.Cancelled);
+        Assert.Equal(["config-prod.yaml", "master"], result.Answers);
+    }
+
+    /// <summary>
+    /// FOCUS LANDS ON THE LIST when there is one. The drive found this: focus started on the panel,
+    /// so the first Enter did nothing and the user had to press Down before the list would answer —
+    /// which reads as a hung app.
+    /// </summary>
+    [Fact]
+    public void AQuestionWithOptions_FocusesTheList()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?", Options: [new QuestionOption("a"), new QuestionOption("b")]),
+        ]);
+        prompt.BuildContent();
+
+        Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
+    }
+
+    /// <summary>
+    /// AND THE FIRST OPTION IS ALREADY HIGHLIGHTED. A list opens with SelectedIndex = -1, so Enter
+    /// had nothing to activate — the drive showed a user pressing it twice with no effect. It is
+    /// also what makes "put your recommendation first" mean anything.
+    /// </summary>
+    [Fact]
+    public void AQuestionWithOptions_StartsOnTheFirstOption()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which config?",
+                Options: [new QuestionOption("prod (Recommended)"), new QuestionOption("dev")]),
+        ]);
+        var content = prompt.BuildContent();
+
+        var list = Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
+        Assert.Equal(0, list.SelectedIndex);
+
+        // ...so Enter alone answers with it.
+        FindPrompt(content).ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+
+        Assert.Equal("prod (Recommended)", Assert.Single(prompt.Completion.Result.Answers));
+    }
+
+    [Fact]
+    public void AFreeTextQuestion_FocusesTheField()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl([new UserQuestion("Which config?")]);
+        prompt.BuildContent();
+
+        Assert.IsType<SharpConsoleUI.Controls.PromptControl>(prompt.FocusTarget);
+    }
+
+    /// <summary>Everything the panel would paint, for asserting on what is shown.</summary>
+    private static string Rendered(SharpConsoleUI.Controls.IWindowControl content)
+    {
+        var panel = Assert.IsType<SharpConsoleUI.Controls.ScrollablePanelControl>(content);
+
+        return string.Join("\n", panel.GetChildren()
+            .OfType<SharpConsoleUI.Controls.MarkupControl>()
+            .Select(m => m.Text));
     }
 
     /// <summary>The free-text prompt inside the question panel.</summary>
@@ -256,5 +554,177 @@ public class AskUserTests
         var panel = Assert.IsType<SharpConsoleUI.Controls.ScrollablePanelControl>(content);
 
         return panel.GetChildren().OfType<SharpConsoleUI.Controls.PromptControl>().Single();
+    }
+
+    // --- several questions in one call ---
+
+    /// <summary>
+    /// RELATED DECISIONS COST ONE INTERRUPTION, not three. A model gathering three answers by
+    /// calling three times stops the user three separate times, and each call is a round trip.
+    /// </summary>
+    [Fact]
+    public async Task Ask_CarriesSeveralQuestionsInOneCall()
+    {
+        var tool = Capturing(out var seen, "config-prod.yaml", "yes", "rewrite");
+
+        var result = await tool.TryInvokeAsync(
+            Call(new
+            {
+                questions = new[]
+                {
+                    new { question = "Which config?" },
+                    new { question = "Run the tests?" },
+                    new { question = "Parser approach?" },
+                },
+            }),
+            CancellationToken.None);
+
+        Assert.Equal(3, seen().Count);
+
+        // PAIRED WITH THEIR QUESTIONS. Three loose answers leave the model matching by position,
+        // and one that miscounts acts on the wrong decision believing the user chose it.
+        Assert.Contains("\"Which config?\" = \"config-prod.yaml\"", result!);
+        Assert.Contains("\"Run the tests?\" = \"yes\"", result!);
+        Assert.Contains("\"Parser approach?\" = \"rewrite\"", result!);
+    }
+
+    /// <summary>
+    /// Past the cap the extras are DROPPED AND REPORTED. A model that believes it asked five
+    /// questions and hears back about four will act on an answer nobody gave.
+    /// </summary>
+    [Fact]
+    public async Task Ask_BeyondTheCap_SaysWhatItDidNotAsk()
+    {
+        var tool = Capturing(out var seen);
+
+        var result = await tool.TryInvokeAsync(
+            Call(new
+            {
+                questions = Enumerable.Range(1, AskUserTool.MaxQuestions + 2)
+                    .Select(i => new { question = $"Question {i}?" })
+                    .ToArray(),
+            }),
+            CancellationToken.None);
+
+        Assert.Equal(AskUserTool.MaxQuestions, seen().Count);
+        Assert.Contains("not asked", result!);
+        Assert.Contains("2 further questions", result!);
+    }
+
+    /// <summary>A skipped question is reported as one — it means "you decide", not "no answer".</summary>
+    [Fact]
+    public async Task Ask_ASkippedQuestion_IsReportedAsSkipped()
+    {
+        var tool = Answering("config-prod.yaml", "");
+
+        var result = await tool.TryInvokeAsync(
+            Call(new
+            {
+                questions = new[]
+                {
+                    new { question = "Which config?" },
+                    new { question = "Run the tests?" },
+                },
+            }),
+            CancellationToken.None);
+
+        Assert.Contains("(skipped)", result!);
+        Assert.Contains("your own judgement", result!);
+    }
+
+    [Fact]
+    public async Task Ask_MultipleChoiceIsCarriedThrough()
+    {
+        var tool = Capturing(out var seen);
+
+        await tool.TryInvokeAsync(
+            Call(new
+            {
+                questions = new[]
+                {
+                    new
+                    {
+                        question = "Which checks?",
+                        multiple = true,
+                        options = new[] { new { label = "lint" }, new { label = "tests" } },
+                    },
+                },
+            }),
+            CancellationToken.None);
+
+        Assert.True(Assert.Single(seen()).Multiple);
+    }
+
+    // --- shapes a model might send ---
+
+    /// <summary>
+    /// THE OLDER SINGLE-QUESTION SHAPE STILL WORKS. It was this tool's whole schema until recently,
+    /// and a model producing it should reach the user rather than receive a schema lecture.
+    /// </summary>
+    [Fact]
+    public async Task Ask_AcceptsASingleQuestionAtTheTopLevel()
+    {
+        var tool = Capturing(out var seen);
+
+        await tool.TryInvokeAsync(
+            Call(new { question = "Which one?", options = new[] { "a", "b" } }),
+            CancellationToken.None);
+
+        var q = Assert.Single(seen());
+        Assert.Equal("Which one?", q.Question);
+
+        // Plain strings are labels, for the same reason.
+        Assert.Equal(["a", "b"], q.Choices.Select(c => c.Label));
+    }
+
+    /// <summary>Options past the per-question cap are dropped: more than a handful is a menu.</summary>
+    [Fact]
+    public async Task Ask_CapsTheNumberOfOptions()
+    {
+        var tool = Capturing(out var seen);
+
+        await tool.TryInvokeAsync(
+            Call(new
+            {
+                questions = new[]
+                {
+                    new
+                    {
+                        question = "Which?",
+                        options = Enumerable.Range(1, AskUserTool.MaxOptions + 3)
+                            .Select(i => new { label = $"option {i}" }).ToArray(),
+                    },
+                },
+            }),
+            CancellationToken.None);
+
+        Assert.Equal(AskUserTool.MaxOptions, Assert.Single(seen()).Choices.Count);
+    }
+
+    // --- the description, which is what decides whether the tool is ever called ---
+
+    /// <summary>
+    /// IT DESCRIBES WHAT THE TOOL IS FOR. The previous version spent a paragraph arguing against
+    /// itself — "use this ONLY when you cannot proceed", "a question costs them more than a tool
+    /// call costs you" — and across three live drives the model never called it once. On the last,
+    /// it wanted to consult the user and asked in PROSE, which is the failure the tool exists to
+    /// prevent, caused by the tool's own description.
+    /// </summary>
+    [Fact]
+    public void TheDescriptionSaysWhatTheToolIsFor()
+    {
+        var description = Answering("x").Definition.Description;
+
+        Assert.Contains("preferences", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ambiguous", description, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ONLY when you cannot proceed", description);
+        Assert.DoesNotContain("costs you", description);
+    }
+
+    /// <summary>One line of restraint stays: do not ask what reading the code would answer.</summary>
+    [Fact]
+    public void TheDescriptionStillSaysToLookFirst()
+    {
+        Assert.Contains("read the code", Answering("x").Definition.Description);
     }
 }

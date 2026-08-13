@@ -368,6 +368,12 @@ messages are joined into one prompt, newline-separated, and sent when the turn e
 appended rather than replaced: two messages typed in succession are usually one thought completed,
 and keeping only the last would silently discard half of what you said.
 
+**A question from the model** takes over the composer, one question at a time. `↑↓` and `Enter`
+choose an option — the first is already highlighted, so a recommended answer is one keypress — or
+type your own. `Space` checks when several answers are allowed. With more than one question you get
+a step indicator, `Alt+←` to go back, and a summary of every answer before any of it is sent.
+`Esc` skips: answers already given are kept, and a skipped question tells the model to decide.
+
 **F3** cycles the session panel — shown, hidden, automatic. It carries context occupancy, spend,
 session id, MCP servers, configured agent types, and granted permissions. Spend appears per model
 when more than one model has been used.

@@ -369,7 +369,7 @@ public sealed class Agent
         bool isSubAgent = false,
         string? callerContext = null,
         string? label = null,
-        Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? askUser = null)
+        Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null)
     {
         // NAMED callerContext, NOT context: `context` on this constructor is already the
         // AgentContext — the conversation itself. Two different things called the same word at one

@@ -397,13 +397,21 @@ public static class SystemPrompt
         // change?" as its final message — which reads as an answer, is not one, and costs the user a
         // turn to repair. The tool was offered; nothing told the model it existed, because a tool
         // description is only read once the model is already considering that tool.
+        //
+        // IT USED TO END BY ARGUING AGAINST ITSELF — "ask only when you cannot settle it yourself".
+        // Together with a tool description that spent a paragraph on when NOT to ask, the model
+        // stopped calling the tool at all: on a later drive it wanted to consult the user and asked
+        // in PROSE, which is precisely the failure this paragraph exists to prevent. The restraint
+        // now lives once, in the tool description, and this says what to do instead.
         if (ctx.CanAskUser)
         {
-            sb.AppendLine("If you need something from the user to continue — which of several files "
-                        + "they meant, a choice that is theirs to make — call ask_user and wait. Do "
-                        + "NOT end your turn with a question in the text: that reads as an answer, "
-                        + "and nobody is listening for a reply to it. Ask only when you cannot "
-                        + "settle it yourself; if the answer is in the code, read the code.");
+            sb.AppendLine("When you need something from the user — which of several files they "
+                        + "meant, a preference, a decision on an implementation choice — call "
+                        + "ask_user and wait. Do NOT end your turn with a question in the text: "
+                        + "that reads as an answer, and nobody is listening for a reply to it. Ask "
+                        + "several related things in ONE call rather than one at a time, and give "
+                        + "each option a description so the choice can be made without guessing "
+                        + "what you meant.");
             sb.AppendLine();
         }
         sb.AppendLine("Never write code that logs or hard-codes a secret, and never put one in a "

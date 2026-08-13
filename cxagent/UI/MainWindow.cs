@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -798,21 +799,38 @@ public sealed class MainWindow : IDisposable
     /// <para>THE SAME SWAP THE PERMISSION GATE USES, deliberately: one place the session asks for
     /// input, so a user who has approved a shell command already knows where to look.</para>
     ///
-    /// <para>Returns "" when the user skips — the tool reads that as "proceed on your own
-    /// judgement". Cancellation resolves the CONTROL, not just this await: a prompt left holding a
-    /// live TaskCompletionSource keeps the composer swapped out, and the user would be looking at a
+    /// <para>Several questions are STEPPED THROUGH, one on screen at a time, with the answers
+    /// returned together — the composer is a few rows tall, and stacking three described option
+    /// lists into it would clip the last of them.</para>
+    ///
+    /// <para>A skipped question returns "" and the tool reads that as "decide it yourself".
+    /// Cancellation resolves the CONTROL, not just this await: a prompt left holding a live
+    /// TaskCompletionSource keeps the composer swapped out, and the user would be looking at a
     /// question nobody is waiting on.</para>
     /// </summary>
-    public async Task<string> AskQuestionAsync(string question, IReadOnlyList<string> options,
-        CancellationToken ct)
+    public async Task<QuestionAnswers> AskQuestionAsync(
+        IReadOnlyList<UserQuestion> questions, CancellationToken ct)
     {
-        var prompt = new QuestionPromptControl(question, options);
+        var prompt = new QuestionPromptControl(questions);
         var content = prompt.BuildContent();
+
+        // THE CURRENT STEP, tracked so the right control is torn down at the end. Each step builds a
+        // fresh panel, so restoring the one built here would leave the last step's on screen.
+        var shown = content;
+
+        prompt.StepChanged += next =>
+        {
+            RestoreComposer(shown);
+            shown = next;
+            ShowPermissionPrompt(next);
+            FocusQuestion(prompt);
+        };
 
         _activeQuestion = prompt;
         ShowPermissionPrompt(content);
+        FocusQuestion(prompt);
 
-        using var _ = ct.Register(() => prompt.Resolve(string.Empty));
+        using var _ = ct.Register(() => prompt.Resolve(QuestionAnswers.Cancel));
         try
         {
             return await prompt.Completion;
@@ -820,7 +838,7 @@ public sealed class MainWindow : IDisposable
         finally
         {
             _activeQuestion = null;
-            RestoreComposer(content);
+            RestoreComposer(shown);
             FocusComposer();
         }
     }
@@ -831,6 +849,19 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private QuestionPromptControl? _activeQuestion;
 
+    /// <summary>
+    /// Puts focus where the answer is given — the option list when there is one, else the field.
+    ///
+    /// <para>THE DRIVE FOUND THIS. Focus landed on the panel, so the first Enter on a question with
+    /// options did NOTHING: the user had to press Down before the list would respond. A question
+    /// whose most obvious keystroke has no effect reads as a hung app.</para>
+    /// </summary>
+    private void FocusQuestion(QuestionPromptControl prompt)
+    {
+        if (prompt.FocusTarget is { } target)
+            Window?.FocusManager.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    }
+
     /// <summary>Escape while a question is up: skip it, and let the run continue.</summary>
     public bool TrySkipQuestion()
     {
@@ -838,6 +869,14 @@ public sealed class MainWindow : IDisposable
         _activeQuestion.Skip();
         return true;
     }
+
+    /// <summary>
+    /// Alt+← while a multi-question run is up: back to the previous one.
+    ///
+    /// <para>False when there is no question, or it is the first — so the shortcut falls through to
+    /// whatever else wants it rather than silently eating the key.</para>
+    /// </summary>
+    public bool TryQuestionBack() => _activeQuestion?.Back() ?? false;
 
     public void ShowPermissionPrompt(IWindowControl prompt)
     {

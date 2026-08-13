@@ -82,7 +82,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `web_fetch` | Read a web page as text, markup stripped |
 | `load_skill` | Load a skill's instructions on demand |
 | `update_todos` | Keep a task list across a long job |
-| `ask_user` | Ask a question when the request is genuinely ambiguous |
+| `ask_user` | Ask the user questions — options with descriptions, several per call |
 | `spawn_agent` | Delegate a job to a sub-agent (fan-out mode) |
 
 ### Permissions

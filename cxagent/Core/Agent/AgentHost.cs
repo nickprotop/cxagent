@@ -133,7 +133,7 @@ public sealed class AgentHost : IDisposable
     private readonly int? _contextWindow;
 
     /// <summary>How this session asks the user a question, or null when nothing can ask.</summary>
-    private readonly Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? _askUser;
+    private readonly Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? _askUser;
 
     /// <summary>
     /// Whether this session works alone or may delegate. Forwarded straight to the agent, which reads
@@ -333,7 +333,7 @@ public sealed class AgentHost : IDisposable
         UsageHistoryStore? history = null,
         // ASKING THE USER, when there is one. Null in every headless path — a host with no UI must
         // not offer a tool whose whole behaviour is to wait for a person.
-        Func<string, IReadOnlyList<string>, CancellationToken, Task<string>>? askUser = null)
+        Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null)
     {
         _mode = mode;
         _workingDir = workingDir;

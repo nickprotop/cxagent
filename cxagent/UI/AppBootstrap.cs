@@ -933,6 +933,12 @@ public static class AppBootstrap
         // never see Escape itself. `openDialog` is cleared in OpenSettingsAsync's `finally`, so once
         // the dialog closes Escape does nothing again — it used to fall through to DiscardDraft,
         // which was a no-op from the moment the copilot draft gate was deleted.
+        // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
+        // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
+        // shortcut would swallow the keys that edit a typed answer.
+        system.RegisterGlobalShortcut(ConsoleModifiers.Alt, ConsoleKey.LeftArrow,
+            () => mainWindow.TryQuestionBack());
+
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape,
             () =>
             {
