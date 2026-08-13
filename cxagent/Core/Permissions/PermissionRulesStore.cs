@@ -105,6 +105,7 @@ public class PermissionRulesStore
     /// kinds match exactly.</summary>
     public bool Matches(string scope, PermissionKind kind, string subject)
     {
+        scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {
             foreach (var rule in _rules)
@@ -135,6 +136,7 @@ public class PermissionRulesStore
 
     public void Add(string scope, PermissionKind kind, string rule)
     {
+        scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {
             _rules.Add(new Rule(scope, kind, rule));
@@ -147,6 +149,7 @@ public class PermissionRulesStore
     /// a yes.</summary>
     public TrustState GetTrust(string scope)
     {
+        scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {
             return _trust.TryGetValue(scope, out var state) ? state : TrustState.Unknown;
@@ -178,6 +181,7 @@ public class PermissionRulesStore
 
     public void SetTrust(string scope, TrustState state)
     {
+        scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {
             _trust[scope] = state;
