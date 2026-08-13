@@ -141,11 +141,17 @@ public sealed class Agent
     /// build), so a change between two turns of one request cannot make the model chase a tool that
     /// vanished underneath it.</para>
     /// </summary>
-    public AgentMode Mode { get; set; } = AgentMode.Single;
+    /// <remarks>
+    /// A <see cref="WorkingMode"/> rather than a bare <see cref="AgentMode"/>: delegation is one
+    /// axis of how a session is set up, and the others arriving later would otherwise each thread
+    /// themselves through the same ten files. <c>Mode = AgentMode.FanOut</c> still compiles — the
+    /// implicit conversion is a widening.
+    /// </remarks>
+    public WorkingMode Mode { get; set; } = WorkingMode.Default;
 
     /// <summary>True when this agent can actually spawn: fan-out mode AND a spawner to do it with.
     /// A child has no spawner whatever its mode says, which is what makes no-nesting structural.</summary>
-    private bool CanSpawn => Mode == AgentMode.FanOut && _spawner is not null;
+    private bool CanSpawn => Mode.CanDelegate && _spawner is not null;
 
     /// <summary>
     /// Whether this agent is a CHILD, fixed at construction.

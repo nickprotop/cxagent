@@ -571,7 +571,7 @@ public static class AppBootstrap
                             }
 
                             var decision = ModeCommand.Decide(
-                                SessionCommands.Arguments(goalText), runner.Mode, IsTurnRunning());
+                                SessionCommands.Arguments(goalText), runner.Mode.Agent, IsTurnRunning());
 
                             // LIVE, NO RESTART. Both things a mode changes are rebuilt on the next
                             // prompt anyway — the tool list and the system message — so this is one

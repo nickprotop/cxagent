@@ -139,7 +139,7 @@ public sealed class AgentHost : IDisposable
     /// Whether this session works alone or may delegate. Forwarded straight to the agent, which reads
     /// it on the next prompt — no rebuild, and the conversation is untouched.
     /// </summary>
-    public AgentMode Mode
+    public WorkingMode Mode
     {
         get => _agent.Mode;
         set => _agent.Mode = value;
@@ -514,7 +514,7 @@ public sealed class AgentHost : IDisposable
             // turn for the same reason resume is: a crash is exactly when a final write never comes.
             _turns++;
             _history?.SaveSession(new SessionRecord(
-                agent.Id, _workingDir, _provider.ModelId, AgentModes.Name(Mode),
+                agent.Id, _workingDir, _provider.ModelId, Mode.ToString(),
                 Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
                 _startedAt, DateTimeOffset.UtcNow));
         };
