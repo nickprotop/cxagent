@@ -626,6 +626,16 @@ public static class AppBootstrap
                             return;
                         }
 
+                        if (command.Name == "/diff")
+                        {
+                            // THE FOLDER THIS SESSION RUNS IN, not wherever the process happens to
+                            // be: it is the same directory permissions are scoped to, and the one
+                            // whose files the agent has been editing.
+                            mainWindow.Chat.AddMessage(ChatRole.System,
+                                DiffCommand.Render(SessionCommands.Arguments(goalText), workingDir));
+                            return;
+                        }
+
                         if (command.Name == "/sessions")
                         {
                             HandleSessions(SessionCommands.Arguments(goalText));

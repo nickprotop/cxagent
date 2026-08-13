@@ -43,6 +43,16 @@ public static class SessionCommands
         // not a refresh: skills are re-read every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped",
             CommandOutcome.NeedsWindow),
+        // NeedsWindow: it shells out to git in the session's working directory, which this type
+        // does not hold. FOR THE USER, NOT THE MODEL — the output goes to the transcript, and
+        // whether the agent should be able to diff its own work is a separate, larger question.
+        new("/diff", "what has changed in the working tree", CommandOutcome.NeedsWindow,
+        [
+            new("--staged", "what is staged, for people who stage as they go"),
+            // NOT COMPLETABLE: any path in the repo, which this static table cannot enumerate and
+            // the shell already completes better than a popup could.
+            new("<path>", "just this file or folder", Completes: false),
+        ]),
         // NeedsWindow like the rest: the store and the working directory belong to the composition
         // root, and this table deliberately holds nothing but the conversation.
         new("/sessions", "earlier conversations here, and a way back into one",

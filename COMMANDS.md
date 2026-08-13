@@ -23,6 +23,8 @@ but not completed.
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/diff` | What has changed in the working tree |
+| `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
 | `/sessions` | Earlier conversations in this folder |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
@@ -155,6 +157,49 @@ It is also **not a refresh.** Skills are re-read from disk every turn, so a skil
 already live on the next one — there is nothing to apply.
 
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
+
+---
+
+## `/diff`
+
+The review step, in the transcript.
+
+```
+Diff · uncommitted · 1 file · +2 −1
+
+diff --git a/a.txt b/a.txt
+@@ -1,3 +1,4 @@
+ one
+-two
++TWO CHANGED
+ three
++four
+```
+
+The app writes files without asking inside the working folder, and the README says plainly that
+`git diff` is how you check that. Which meant the one action every user has to perform after every
+session was the one thing the app could not show them — you either trusted it or opened another
+terminal.
+
+**It is `git diff`, not a record of our own.** Snapshotting files ourselves would create a second
+baseline that disagrees with git's: it would miss an edit made in another window, and would show as
+changed a file you had since reverted. Deferring to git means the answer matches the tool you will
+check it against.
+
+**An empty diff is not always "nothing changed".** `git diff` exits 0 with no output both for a path
+that does not exist and for a file git has never seen — so a brand-new file, which is what an agent
+spends its time creating, would otherwise report as no change. Untracked files are named instead,
+and a path that is not there is said to be missing.
+
+**Capped at 400 lines, and the cut is stated.** A diff that silently stops is one you read as
+complete, and "everything after this is fine" is the worst thing to imply by accident.
+
+Outside a git repository it says so rather than passing git's message about discovery and ownership
+along, which reads as a bug in this app rather than the plain fact that there is nothing to diff.
+
+**This is for you, not the model.** Whether the agent should be able to diff its own work is a
+separate and larger question; this is a command you type, and its output goes to the transcript
+rather than into the conversation.
 
 ---
 
