@@ -60,12 +60,13 @@ public class DiffCommandTests
     }
 
     /// <summary>
-    /// COLOURED A LINE AT A TIME, not by a markdown fence.
+    /// COLOURED A LINE AT A TIME, not by a ```diff fence.
     ///
-    /// <para>A ```diff block would be the obvious way and does not work here: the System role renders
-    /// as MARKUP rather than markdown, deliberately, because every other System line is written in
-    /// the library's [red]/[cyan] markup. Turning markdown on for the role would make all of those
-    /// render literally.</para>
+    /// <para>The System role renders as MARKUP rather than markdown, deliberately: every other
+    /// System line is written in the library's [red]/[cyan] markup. A message can override its
+    /// role's markdown setting, so a fence is reachable — this does not use one because colouring
+    /// here is exact about which lines are content, and a generic highlighter paints the +++/---
+    /// headers as additions and removals.</para>
     /// </summary>
     [Fact]
     public void AdditionsAndRemovalsAreColouredForScanning()

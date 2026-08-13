@@ -23,6 +23,7 @@ but not completed.
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/init` | Write the project instruction file this agent reads each session |
 | `/diff` | What has changed in the working tree |
 | `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
 | `/sessions` | Earlier conversations in this folder |
@@ -157,6 +158,41 @@ It is also **not a refresh.** Skills are re-read from disk every turn, so a skil
 already live on the next one — there is nothing to apply.
 
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
+
+---
+
+## `/init`
+
+Writes the project instruction file the agent reads at the start of every session here — the
+bootstrap step, and the one place a human writes down what looking around cannot tell you.
+
+**It is a turn, not a command.** Unlike everything else in this file it costs tokens and takes time:
+the agent explores the project, then writes what it found. Its tool calls are visible and its file
+write goes through the permission gate like any other.
+
+**It edits the file that already governs**, whichever one the resolver would pick:
+
+| On disk | `/init` writes |
+|---|---|
+| nothing | a new `CXAGENT.md` |
+| `CXAGENT.md` | into `CXAGENT.md` |
+| `AGENTS.md` only | into **`AGENTS.md`** — no second file |
+| both | into `CXAGENT.md`, the resolver's own winner |
+| `CLAUDE.md` only | a new `CXAGENT.md`, and it says why |
+
+Writing a `CXAGENT.md` beside an existing `AGENTS.md` would produce two near-identical documents,
+one of which rots — and improving `AGENTS.md` in place benefits every agent that reads the repo, not
+only this one. **`CLAUDE.md` is read but never written**: honouring it when it is all there is is a
+courtesy, and treating another product's file as ours to edit is not.
+
+**An existing file is merged, never appended to or rewritten.** It is your work and your words: the
+instruction is to preserve what is there, add only what is genuinely missing, and stop rather than
+overwrite if a safe merge is not possible.
+
+**What it is asked to write is what is not discoverable.** "This is a .NET project" is visible from
+a directory listing and helps nobody. The commands that actually work, the architecture that takes
+several files to see, the convention that looks arbitrary until explained, and the thing that was
+tried and abandoned — those earn their place.
 
 ---
 

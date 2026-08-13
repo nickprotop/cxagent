@@ -412,11 +412,21 @@ public sealed class AgentHost : IDisposable
     /// <para>It also made /clear's comment wrong — "MUST CLEAR BOTH LISTS" — implying the model would
     /// otherwise remember. Clearing the agent's context is the whole operation.</para>
     /// </remarks>
-    public async Task SendAsync(string prompt, CancellationToken ct)
+    /// <param name="echo">
+    /// What to show on the transcript, when that differs from what is sent.
+    ///
+    /// <para>FOR <c>/init</c>, WHERE THE TWO GENUINELY DIFFER. The user typed three words; the model
+    /// receives a long briefing about what to explore and what is worth writing down. Echoing the
+    /// briefing would put words in the user's mouth — a message they never wrote, attributed to them,
+    /// which they then have to scroll past on every later read of the transcript.</para>
+    ///
+    /// <para>Null means they are the same, which is every other caller.</para>
+    /// </param>
+    public async Task SendAsync(string prompt, CancellationToken ct, string? echo = null)
     {
         try
         {
-            _sink.AddUserTurn(prompt);
+            _sink.AddUserTurn(echo ?? prompt);
 
             // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
             var assistantId = _sink.BeginAssistantTurn();

@@ -123,17 +123,17 @@ public static class DiffCommand
         var head = $"[{ColorScheme.AccentMarkup}]Diff[/] "
                  + $"[{ColorScheme.MutedMarkup}]· {scope} · {Summarise(lines)}{what}[/]";
 
-        // COLOURED HERE, NOT BY A MARKDOWN FENCE.
+        // COLOURED HERE, A LINE AT A TIME, rather than by a ```diff fence.
         //
-        // The obvious move is a ```diff block and let the transcript's markdown renderer colour it.
-        // It does not work: the System role renders as MARKUP rather than markdown, deliberately —
-        // every other System line is written in the library's [red]/[cyan] markup, and turning
-        // markdown on for the role would make all of those render literally. Posting the diff as the
-        // ASSISTANT role would get the fence, and would also claim the model said it.
+        // The role cannot do it: System renders as MARKUP, not markdown, and deliberately — every
+        // other System line is written in the library's [red]/[cyan] markup, so turning markdown on
+        // for the role would make all of those render literally. (A MESSAGE can override its role's
+        // markdown setting, so a fence IS reachable; this does not take that route because the
+        // per-line colouring is already here and already exact about which lines are content.)
         //
-        // So the colouring is done a line at a time, which the transcript can show as-is. An
-        // uncoloured diff is markedly harder to scan, and that is the whole reason the fence was
-        // wanted.
+        // Doing it here also fixes something a fence would not: +++/--- headers start with the same
+        // characters as additions and removals, and a generic diff highlighter paints them green and
+        // red — a small lie told on every single diff.
         var body = string.Join('\n', shown.Select(Colour));
 
         var elided = lines.Length > MaxLines

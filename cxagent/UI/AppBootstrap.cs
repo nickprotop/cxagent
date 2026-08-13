@@ -587,6 +587,9 @@ public static class AppBootstrap
             // would ever reach the history and the feature would be silently dead.
             mainWindow.Input.RecordHistory(goalText);
 
+            // WHAT TO SHOW, when it differs from what is sent — see the NeedsTurn case below.
+            string? turnEcho = null;
+
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
 
@@ -693,6 +696,40 @@ public static class AppBootstrap
                         mainWindow.ShowHelp();
                         return;
 
+                    case CommandOutcome.NeedsTurn:
+                        // REWRITTEN INTO A PROMPT AND FALLING THROUGH to the ordinary goal path
+                        // below — not handled here. Everything that path already does is exactly
+                        // what this needs: the running-turn queue, the cancellation scope, the
+                        // spinner, the token accounting. Starting a turn here instead would be a
+                        // second submission route that has to relearn all of it.
+                        if (command.Name == "/init")
+                        {
+                            // DECLINED WHILE A TURN RUNS, like /compress and unlike an ordinary
+                            // prompt. Queued prompts are JOINED into one message, so an /init waiting
+                            // behind two other instructions would reach the model as a paragraph of
+                            // its briefing glued to unrelated work — which is not the operation
+                            // anybody asked for, and would be attributed to the user besides.
+                            if (IsTurnRunning())
+                            {
+                                mainWindow.Chat.AddMessage(ChatRole.System,
+                                    "[yellow]A turn is running — press Escape to stop it first.[/]");
+                                return;
+                            }
+
+                            var target = InitCommand.Resolve(workingDir);
+                            if (target.Note is { } note)
+                                mainWindow.Chat.AddMessage(ChatRole.System,
+                                    $"[{ColorScheme.MutedMarkup}]{note}[/]");
+
+                            goalText = InitCommand.Prompt(target);
+
+                            // WHAT THE USER TYPED, on the transcript. The model gets the briefing
+                            // above; echoing that would attribute a message to the user that they
+                            // never wrote, and leave them scrolling past it forever after.
+                            turnEcho = "/init";
+                        }
+                        break;
+
                     case CommandOutcome.NeedsProvider:
                         // /compress means COMPRESS — it summarises through the model, exactly as
                         // auto-compression does, rather than deleting the oldest half. Truncation
@@ -794,7 +831,7 @@ public static class AppBootstrap
             var turnToken = turnCts!.Token;
 
             turnRunning = true;
-            RunTurnAsync(goalText, turnToken);
+            RunTurnAsync(goalText, turnToken, turnEcho);
         }
 
         // Runs one turn and, when it ends, drains anything typed while it was running.
@@ -802,11 +839,11 @@ public static class AppBootstrap
         // FIRE-AND-FORGET WITH A CONTINUATION, not `_ = runner.SendAsync(...)`. Nothing previously
         // knew when a turn ENDED, which is why the running flag could only ever latch. The await
         // here is what gives it a falling edge.
-        async void RunTurnAsync(string prompt, CancellationToken token)
+        async void RunTurnAsync(string prompt, CancellationToken token, string? echo = null)
         {
             try
             {
-                await runner!.SendAsync(prompt, token);
+                await runner!.SendAsync(prompt, token, echo);
             }
             catch (OperationCanceledException)
             {

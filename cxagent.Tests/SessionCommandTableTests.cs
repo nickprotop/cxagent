@@ -111,6 +111,10 @@ public class SessionCommandTableTests
             CommandOutcome.Handled,
             CommandOutcome.NeedsProvider,
             CommandOutcome.NeedsWindow,
+            // NeedsTurn DOES fall through to the goal path, which is the whole point of it: the
+            // command is rewritten into a prompt first, so what reaches the model is a briefing
+            // rather than the slash command. It still has a branch — the one that rewrites it.
+            CommandOutcome.NeedsTurn,
             CommandOutcome.Quit,
         };
 

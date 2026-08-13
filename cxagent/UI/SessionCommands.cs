@@ -43,6 +43,10 @@ public static class SessionCommands
         // not a refresh: skills are re-read every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped",
             CommandOutcome.NeedsWindow),
+        // NeedsTurn, alone among these: it costs tokens and takes time, because the agent has to go
+        // and look at the project. Every other command here answers from state the app already holds.
+        new("/init", "write the project instruction file this agent reads each session",
+            CommandOutcome.NeedsTurn),
         // NeedsWindow: it shells out to git in the session's working directory, which this type
         // does not hold. FOR THE USER, NOT THE MODEL — the output goes to the transcript, and
         // whether the agent should be able to diff its own work is a separate, larger question.

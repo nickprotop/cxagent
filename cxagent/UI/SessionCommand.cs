@@ -32,6 +32,17 @@ public enum CommandOutcome
     /// </summary>
     NeedsWindow,
 
+    /// <summary>
+    /// Recognised, and it becomes a TURN — the command is rewritten into a prompt and sent to the
+    /// model like anything the user could have typed.
+    ///
+    /// <para>Only <c>/init</c> today, and the distinction is real: every other command here answers
+    /// from state the app already holds, costing no tokens and no time. This one asks the agent to
+    /// go and look at the project. It shows as an ordinary turn, with its tool calls and its file
+    /// write visible and gated, because that is what it is.</para>
+    /// </summary>
+    NeedsTurn,
+
     /// <summary>Recognised, and the application should shut down.</summary>
     Quit,
 }

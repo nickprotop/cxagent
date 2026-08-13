@@ -36,7 +36,15 @@ public static class ProjectInstructions
     /// <para>FIRST MATCH WINS, so this degrades cleanly: a repo with no CXAGENT.md behaves exactly as
     /// if the name did not exist. The extra name costs one File.Exists per directory in the walk.</para>
     /// </summary>
-    private static readonly string[] ProjectFileNames = ["CXAGENT.md", "AGENTS.md", "CLAUDE.md"];
+    /// <summary>
+    /// The instruction files read from a project, in order of preference — first match wins.
+    ///
+    /// <para>PUBLIC because <c>/init</c> has to write the file that GOVERNS, which means it has to
+    /// know what this list says. A private copy over there would be a second list that agrees today:
+    /// add a name here and <c>/init</c> would keep writing a file the agent never reads, silently
+    /// and with every test still green.</para>
+    /// </summary>
+    public static readonly string[] ProjectFileNames = ["CXAGENT.md", "AGENTS.md", "CLAUDE.md"];
 
     /// <summary>
     /// The name read from cxagent's own config directory — <c>AppPaths.ConfigDir</c>, which resolves
