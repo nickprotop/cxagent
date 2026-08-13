@@ -110,4 +110,65 @@ public class ModeCommandTests
         Assert.Contains("single", result.Reply, StringComparison.Ordinal);
         Assert.DoesNotContain("Escape", result.Reply, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// THE AXIS IS NAMED, which is what lets one command grow. File editing and a build/plan mode
+    /// are coming; each would otherwise have wanted a command of its own, and there would be no
+    /// single place that shows the whole picture.
+    /// </summary>
+    [Theory]
+    [InlineData("agent fan-out", AgentMode.FanOut)]
+    [InlineData("agent single", AgentMode.Single)]
+    [InlineData("agents fan-out", AgentMode.FanOut)]
+    public void TheAxisCanBeNamed(string argument, AgentMode expected)
+    {
+        var from = expected == AgentMode.FanOut ? AgentMode.Single : AgentMode.FanOut;
+
+        Assert.Equal(expected, ModeCommand.Decide(argument, from, turnRunning: false).NewMode);
+    }
+
+    /// <summary>
+    /// AND THE BARE VALUE STILL WORKS. Agent is the only axis today, so naming it is ceremony for
+    /// the one thing anyone is switching — the day a value collides across axes is the day the
+    /// unqualified form for THAT value stops being unambiguous, which is a reason to name the axis
+    /// then rather than to demand it now.
+    /// </summary>
+    [Fact]
+    public void TheValueAloneStillWorks() =>
+        Assert.Equal(AgentMode.FanOut,
+            ModeCommand.Decide("fan-out", AgentMode.Single, turnRunning: false).NewMode);
+
+    /// <summary>
+    /// AN AXIS THAT IS NOT SETTABLE YET SAYS SO. Without this, `/mode files read-only` reports
+    /// "unknown mode 'files read-only'" — which reads as though the VALUE were misspelled and sends
+    /// the user hunting for the right spelling of a value that was never the problem.
+    /// </summary>
+    [Theory]
+    [InlineData("files read-only")]
+    [InlineData("work plan")]
+    public void AnAxisThatDoesNotExistYet_SaysWhichAxesDo(string argument)
+    {
+        var result = ModeCommand.Decide(argument, AgentMode.Single, turnRunning: false);
+
+        Assert.Null(result.NewMode);
+        Assert.Contains("not settable yet", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A BARE /mode IS A STATUS BLOCK, not a sentence — because "what mode am I in" is about to have
+    /// more than one answer, and a line that assumed one axis would need rewriting rather than
+    /// extending.
+    /// </summary>
+    [Fact]
+    public void ABareModeReportsEveryAxis()
+    {
+        var result = ModeCommand.Decide("", AgentMode.FanOut, turnRunning: false);
+
+        Assert.Null(result.NewMode);                       // reporting never changes anything
+        Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("fan-out", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("spawn", result.Reply, StringComparison.Ordinal);   // what it MEANS
+        Assert.Contains("\n", result.Reply, StringComparison.Ordinal);      // a block, not a line
+    }
 }

@@ -117,9 +117,13 @@ public class CommandArityTests
     public void AGrantOnOneCommand_SilencesTheSameCommandWithDifferentArguments()
     {
         var dir = Directory.CreateTempSubdirectory("cxa-arity-").FullName;
+        var config = Directory.CreateTempSubdirectory("cxa-arity-cfg-").FullName;
         try
         {
-            var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(dir));
+            // SEPARATE DIRECTORIES. The store writes permissions.json into its config dir, and the
+            // scope's identity comes from stat'ing the folder being scoped — pointing both at one
+            // directory makes a folder's identity depend on the store's own writes.
+            var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(config));
             var policy = new PermissionPolicy(dir, rules);
 
             var first = PermissionPolicy.RequestsFor("shell",
@@ -140,7 +144,11 @@ public class CommandArityTests
 
             Assert.False(policy.IsSilentlyAllowed(other));
         }
-        finally { Directory.Delete(dir, recursive: true); }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(config, recursive: true);
+        }
     }
 
     /// <summary>The same property as GrantingGitStatus_DoesNotGrantGitPush, proven through the
@@ -149,9 +157,10 @@ public class CommandArityTests
     public void AGrantOnOneSubcommand_DoesNotSilenceAnother()
     {
         var dir = Directory.CreateTempSubdirectory("cxa-arity2-").FullName;
+        var config = Directory.CreateTempSubdirectory("cxa-arity2-cfg-").FullName;
         try
         {
-            var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(dir));
+            var rules = new PermissionRulesStore(new CxAgent.Core.Storage.AppPaths(config));
             var policy = new PermissionPolicy(dir, rules);
 
             var status = PermissionPolicy.RequestsFor("shell", Params(("command", "git status"))).Single();
@@ -164,7 +173,11 @@ public class CommandArityTests
 
             Assert.False(policy.IsSilentlyAllowed(push));
         }
-        finally { Directory.Delete(dir, recursive: true); }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(config, recursive: true);
+        }
     }
 
     private static CxAgent.Core.Models.JobParameters Params(params (string, object?)[] entries)

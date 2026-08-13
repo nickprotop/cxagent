@@ -45,10 +45,14 @@ public static class SessionCommands
             CommandOutcome.NeedsWindow),
         // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
         // this type deliberately holds nothing but the conversation.
-        new("/mode", "show or set the agent mode: single, fan-out", CommandOutcome.NeedsWindow,
+        // THE AXIS IS NAMED, so this one command can grow. Delegation is the only axis today; file
+        // editing and a build/plan mode are coming, and each would otherwise have wanted a command
+        // of its own — three entries in this list where one will do, and no single place that shows
+        // the whole picture. `/mode` bare reports every axis for exactly that reason.
+        new("/mode", "show or set how this session works", CommandOutcome.NeedsWindow,
         [
-            new("single", "this agent works alone; the spawn tool is withdrawn"),
-            new("fan-out", "this agent can spawn sub-agents"),
+            new("agent single", "this agent works alone; the spawn tool is withdrawn"),
+            new("agent fan-out", "this agent can spawn sub-agents"),
         ]),
         // NeedsWindow again: history is a store the composition root owns, and this type holds
         // nothing but the conversation. `/stats 30` widens the window; the default is a week.
