@@ -274,6 +274,19 @@ public sealed class QuestionPromptControl
         return list;
     }
 
+    /// <summary>
+    /// Takes whatever the list currently has chosen, as pressing Enter on it would.
+    ///
+    /// <para>A TEST SEAM, and the only one here. <c>ListControl.ProcessKey</c> refuses every key
+    /// unless it <c>HasFocus</c>, which is computed from a live window's focus manager — so the
+    /// multi-select path (check some items, submit) cannot be exercised by simulating keystrokes
+    /// outside a running app. This is the same operation the Enter handler performs.</para>
+    /// </summary>
+    public void SubmitFromList()
+    {
+        if (_list is { } list) TakeFromList(list, _questions[_step]);
+    }
+
     /// <summary>Reads what is chosen in the list and moves on, if anything is.</summary>
     private void TakeFromList(ListControl list, UserQuestion q)
     {

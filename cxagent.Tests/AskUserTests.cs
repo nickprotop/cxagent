@@ -522,7 +522,7 @@ public class AskUserTests
         var list = Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
         Assert.Equal(0, list.SelectedIndex);
 
-        // ...so Enter alone answers with it.
+        // ...so submitting with nothing typed answers with it.
         FindPrompt(content).ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
         Assert.Equal("prod (Recommended)", Assert.Single(prompt.Completion.Result.Answers));
@@ -546,6 +546,96 @@ public class AskUserTests
             .OfType<SharpConsoleUI.Controls.MarkupControl>()
             .Select(m => m.Text));
     }
+
+    // --- choosing more than one ---
+
+    /// <summary>
+    /// SPACE CHECKS, ENTER SUBMITS, and the answer is every label that was checked. Some questions
+    /// are genuinely not exclusive — which checks to run, which files to include — and forcing one
+    /// answer makes the model ask the same question three times.
+    /// </summary>
+    [Fact]
+    public void MultiSelect_AnswersWithEveryCheckedOption()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which checks?", Multiple: true,
+                Options: [new QuestionOption("lint"), new QuestionOption("tests"),
+                          new QuestionOption("typecheck")]),
+        ]);
+        var content = prompt.BuildContent();
+
+        var list = Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
+
+        Check(list, 0);
+        Check(list, 2);
+        prompt.SubmitFromList();
+
+        Assert.Equal("lint, typecheck", Assert.Single(prompt.Completion.Result.Answers));
+    }
+
+    /// <summary>
+    /// NOTHING CHECKED IS NOT AN ANSWER. Advancing on an empty selection would record "none of
+    /// these" as a decision the user never made.
+    /// </summary>
+    [Fact]
+    public void MultiSelect_WithNothingChecked_DoesNotAdvance()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which checks?", Multiple: true,
+                Options: [new QuestionOption("lint"), new QuestionOption("tests")]),
+        ]);
+        var content = prompt.BuildContent();
+
+        prompt.SubmitFromList();
+
+        Assert.False(prompt.Completion.IsCompleted);
+    }
+
+    /// <summary>
+    /// NOTHING IS PRE-CHECKED, unlike single-select where the first option is pre-highlighted.
+    /// Checking one for the user would put a choice in the answer they never made — and on a
+    /// question that accepts several, the empty set is a meaningful starting point.
+    /// </summary>
+    [Fact]
+    public void MultiSelect_StartsWithNothingChosen()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which checks?", Multiple: true,
+                Options: [new QuestionOption("lint"), new QuestionOption("tests")]),
+        ]);
+        prompt.BuildContent();
+
+        var list = Assert.IsType<SharpConsoleUI.Controls.ListControl>(prompt.FocusTarget);
+        Assert.Empty(list.GetCheckedItems());
+    }
+
+    /// <summary>Typing still overrides the list — an answer the model did not think of.</summary>
+    [Fact]
+    public void MultiSelect_StillAcceptsATypedAnswer()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl(
+        [
+            new UserQuestion("Which checks?", Multiple: true,
+                Options: [new QuestionOption("lint"), new QuestionOption("tests")]),
+        ]);
+        var content = prompt.BuildContent();
+
+        Type(FindPrompt(content), "only the slow ones");
+
+        Assert.Equal("only the slow ones", Assert.Single(prompt.Completion.Result.Answers));
+    }
+
+    /// <summary>
+    /// Checks an item, which is what Space does to it.
+    ///
+    /// <para>Set directly rather than via ProcessKey: the list refuses every key unless it HasFocus,
+    /// and that is computed from a live window's focus manager.</para>
+    /// </summary>
+    private static void Check(SharpConsoleUI.Controls.ListControl list, int index) =>
+        list.Items[index].IsChecked = true;
 
     /// <summary>The free-text prompt inside the question panel.</summary>
     private static SharpConsoleUI.Controls.PromptControl FindPrompt(
