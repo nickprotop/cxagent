@@ -75,6 +75,11 @@ public sealed class SqliteSessionStore
             // is best-effort. Their resume would simply stop working with no message.
             AddColumnIfMissing(conn, "agent_sessions", "working_dir", "TEXT");
 
+            // THE TITLE, for the listing. Derivable from context_json — the first user message is in
+            // there — but deriving it means deserialising every session's WHOLE conversation to
+            // render one line each, which is the wrong cost for a list. Written once, read directly.
+            AddColumnIfMissing(conn, "agent_sessions", "title", "TEXT");
+
             using var index = conn.CreateCommand();
             // KEYED BY FOLDER FIRST, because that is now the leading predicate of every read. The old
             // index on (finished, updated_at) is left alone rather than dropped: it costs one page of
@@ -131,15 +136,24 @@ public sealed class SqliteSessionStore
         {
             var json = JsonSerializer.Serialize(context, JsonOptions);
 
+            // THE FIRST USER MESSAGE NAMES THE SESSION. It is what a person recognises a conversation
+            // by — a ULID identifies without describing, and a size and an age describe without
+            // identifying. Recomputed on every save and written with COALESCE below so the FIRST one
+            // sticks: later turns must not retitle a session the user already knows by its opening.
+            var title = TitleOf(context);
+
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO agent_sessions
-                    (agent_id, context_json, input_tokens, output_tokens, finished, updated_at, working_dir)
-                VALUES ($id, $json, $in, $out, 0, $at, $dir)
+                    (agent_id, context_json, input_tokens, output_tokens, finished, updated_at,
+                     working_dir, title)
+                VALUES ($id, $json, $in, $out, 0, $at, $dir, $title)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     context_json=$json, input_tokens=$in, output_tokens=$out, updated_at=$at,
-                    working_dir=$dir;
+                    working_dir=$dir,
+                    -- COALESCE, so the first title wins. A session is named by how it opened.
+                    title=COALESCE(agent_sessions.title, $title);
                 """;
             cmd.Parameters.AddWithValue("$id", agentId);
             cmd.Parameters.AddWithValue("$json", json);
@@ -147,6 +161,7 @@ public sealed class SqliteSessionStore
             cmd.Parameters.AddWithValue("$out", outputTokens);
             cmd.Parameters.AddWithValue("$at", Ts(DateTimeOffset.UtcNow));
             cmd.Parameters.AddWithValue("$dir", (object?)workingDir ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception)
@@ -214,6 +229,150 @@ public sealed class SqliteSessionStore
     /// Marks a session as ended normally, so it is never offered for resume. The distinction this
     /// whole store turns on: an unfinished row means the process did not get to say goodbye.
     /// </summary>
+    /// <summary>
+    /// Every session, newest first — folder-scoped unless <paramref name="all"/>.
+    /// </summary>
+    /// <param name="all">
+    /// Across every folder, with the folder shown. LISTING across folders is safe; RESTORING across
+    /// them fills a context with another project's files, which is the caller's decision to make.
+    /// </param>
+    /// <remarks>
+    /// FINISHED ROWS ARE INCLUDED. Why a session ended is worth seeing and is not a reason to hide
+    /// it — the flag gates what <c>--resume</c> picks by DEFAULT, not what can be reached.
+    /// </remarks>
+    public IReadOnlyList<SessionInfo> List(string? workingDir = null, bool all = false)
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = all
+                ? """
+                  SELECT agent_id, title, working_dir, input_tokens, output_tokens, finished, updated_at
+                  FROM agent_sessions ORDER BY updated_at DESC;
+                  """
+                : """
+                  SELECT agent_id, title, working_dir, input_tokens, output_tokens, finished, updated_at
+                  FROM agent_sessions
+                  WHERE working_dir IS NOT NULL AND working_dir = $dir
+                  ORDER BY updated_at DESC;
+                  """;
+            if (!all) cmd.Parameters.AddWithValue("$dir", (object?)workingDir ?? DBNull.Value);
+
+            var rows = new List<SessionInfo>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                rows.Add(new SessionInfo(
+                    r.GetString(0),
+                    r.IsDBNull(1) ? null : r.GetString(1),
+                    r.IsDBNull(2) ? null : r.GetString(2),
+                    r.GetInt32(3),
+                    r.GetInt32(4),
+                    r.GetInt32(5) != 0,
+                    DateTimeOffset.Parse(r.GetString(6), System.Globalization.CultureInfo.InvariantCulture)));
+
+            return rows;
+        }
+        catch (Exception)
+        {
+            // Best-effort, like every read here: no list is a list you cannot use, not a crash.
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// One session by uid, or by any unambiguous PREFIX of one.
+    ///
+    /// <para>PREFIXES BECAUSE A ULID IS 26 CHARACTERS and unusable at a prompt. Git solved this
+    /// decades ago and users already know the rule.</para>
+    ///
+    /// <para>AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest match silently is how someone
+    /// restores the wrong conversation and does not find out for ten minutes.</para>
+    /// </summary>
+    public UidLookup LoadByUid(string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix)) return new UidLookup(null, []);
+
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT agent_id FROM agent_sessions
+                WHERE agent_id LIKE $p ESCAPE '\'
+                ORDER BY updated_at DESC;
+                """;
+            // Case-insensitive by hand: a user reads a lowercase prefix off the screen and a ULID is
+            // stored uppercase, so an exact LIKE would never match what they just typed.
+            cmd.Parameters.AddWithValue("$p", Escape(prefix.Trim().ToUpperInvariant()) + "%");
+
+            var matches = new List<string>();
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) matches.Add(r.GetString(0));
+
+            if (matches.Count == 0) return new UidLookup(null, []);
+            if (matches.Count > 1) return new UidLookup(null, matches);
+
+            return new UidLookup(LoadById(matches[0]), []);
+        }
+        catch (Exception)
+        {
+            return new UidLookup(null, []);
+        }
+    }
+
+    /// <summary>One session by its exact id, finished or not.</summary>
+    public SessionSnapshot? LoadById(string agentId)
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at
+                FROM agent_sessions WHERE agent_id = $id;
+                """;
+            cmd.Parameters.AddWithValue("$id", agentId);
+
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) return null;
+
+            var context = JsonSerializer.Deserialize<List<ChatMessage>>(r.GetString(1), JsonOptions);
+            if (context is null) return null;
+
+            return new SessionSnapshot(r.GetString(0), context, r.GetInt32(2), r.GetInt32(3),
+                DateTimeOffset.Parse(r.GetString(4), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>LIKE wildcards in a user-supplied prefix would match more than they typed.</summary>
+    private static string Escape(string text) =>
+        text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    /// <summary>
+    /// The first user message, clipped — what a person recognises a conversation by.
+    /// </summary>
+    /// <remarks>
+    /// Null when there is no user message yet: a session that has only a system prompt has not been
+    /// given a subject, and inventing one from the prompt would name every session the same thing.
+    /// </remarks>
+    public static string? TitleOf(IReadOnlyList<ChatMessage> context)
+    {
+        var first = context.FirstOrDefault(m =>
+            string.Equals(m.Role, "user", StringComparison.Ordinal)
+            && m.ToolCallId is null
+            && !string.IsNullOrWhiteSpace(m.Content));
+
+        if (first is null) return null;
+
+        var text = first.Content.ReplaceLineEndings(" ").Trim();
+        return text.Length <= 80 ? text : text[..80].TrimEnd() + "…";
+    }
+
     public void MarkFinished(string agentId)
     {
         try
@@ -294,6 +453,34 @@ public sealed class SqliteSessionStore
 }
 
 /// <summary>One recoverable session, as it was at the last completed turn.</summary>
+/// <summary>
+/// One row of the session list — enough to recognise a conversation by, and nothing more.
+///
+/// <para>DELIBERATELY NOT <see cref="SessionSnapshot"/>, which carries the whole message list.
+/// Rendering ten rows must not cost ten conversation deserialisations.</para>
+/// </summary>
+/// <param name="Uid">The agent id. Shown short, matched by prefix — see <c>LoadByUid</c>.</param>
+/// <param name="Title">The first user message, clipped, or null for a session that never got one.</param>
+/// <param name="Finished">
+/// Ended cleanly, OR superseded by a resume. Two meanings in one flag: see the resume path, which
+/// retires the row it restored so one conversation cannot be accepted twice.
+/// </param>
+public sealed record SessionInfo(
+    string Uid,
+    string? Title,
+    string? WorkingDir,
+    int InputTokens,
+    int OutputTokens,
+    bool Finished,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>What a uid lookup found. Ambiguity is REPORTED, never resolved to the newest match —
+/// silently picking is how someone restores the wrong conversation and does not notice.</summary>
+public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> Ambiguous)
+{
+    public bool IsAmbiguous => Ambiguous.Count > 1;
+}
+
 public sealed record SessionSnapshot(
     string AgentId,
     IReadOnlyList<ChatMessage> Context,

@@ -310,4 +310,191 @@ public class SqliteSessionStoreTests : IDisposable
             1, 1, workingDir: "/projects/alpha");
         Assert.Equal("agent-b", second.LoadLatestUnfinished("/projects/alpha")!.AgentId);
     }
+
+    // ---- the listing, and finding one by uid ---------------------------------------------------
+
+    /// <summary>
+    /// THE TITLE IS HOW A PERSON RECOGNISES A CONVERSATION. A ULID identifies without describing; a
+    /// size and an age describe without identifying.
+    /// </summary>
+    [Fact]
+    public void ASessionIsNamedByItsFirstUserMessage()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a",
+            [Msg("system", "you are cxagent"), Msg("user", "add the arity table"), Msg("assistant", "ok")],
+            1, 1, workingDir: Here);
+
+        Assert.Equal("add the arity table", Assert.Single(store.List(Here)).Title);
+    }
+
+    /// <summary>
+    /// AND KEEPS THAT NAME. Later turns must not retitle a session the user already knows by its
+    /// opening — the list would reshuffle its own labels as work continued.
+    /// </summary>
+    [Fact]
+    public void TheFirstTitleSticks()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("user", "the original question")], 1, 1, workingDir: Here);
+        store.SaveTurn("agent-a",
+            [Msg("user", "the original question"), Msg("user", "a later one")], 2, 2, workingDir: Here);
+
+        Assert.Equal("the original question", Assert.Single(store.List(Here)).Title);
+    }
+
+    /// <summary>A session with no user message yet has no subject, and inventing one from the system
+    /// prompt would name every session the same thing.</summary>
+    [Fact]
+    public void ASessionWithNoUserMessageHasNoTitle()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("system", "you are cxagent")], 1, 1, workingDir: Here);
+
+        Assert.Null(Assert.Single(store.List(Here)).Title);
+    }
+
+    /// <summary>
+    /// FINISHED ROWS ARE LISTED. Why a session ended is worth seeing and is not a reason to hide it —
+    /// the flag gates what `--resume` picks by DEFAULT, not what can be reached.
+    /// </summary>
+    [Fact]
+    public void TheListShowsFinishedSessionsToo()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("user", "one")], 1, 1, workingDir: Here);
+        store.SaveTurn("agent-b", [Msg("user", "two")], 1, 1, workingDir: Here);
+        store.MarkFinished("agent-a");
+
+        var listed = store.List(Here);
+
+        Assert.Equal(2, listed.Count);
+        Assert.True(listed.Single(x => x.Uid == "agent-a").Finished);
+        Assert.False(listed.Single(x => x.Uid == "agent-b").Finished);
+
+        // ...while the default resume still skips the finished one.
+        Assert.Equal("agent-b", store.LoadLatestUnfinished(Here)!.AgentId);
+    }
+
+    /// <summary>Listing across folders is safe; RESTORING across them is the caller's decision.</summary>
+    [Fact]
+    public void TheListIsFolderScopedUnlessAskedOtherwise()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("user", "here")], 1, 1, workingDir: Here);
+        store.SaveTurn("agent-b", [Msg("user", "elsewhere")], 1, 1, workingDir: "/projects/other");
+
+        Assert.Single(store.List(Here));
+        Assert.Equal(2, store.List(Here, all: true).Count);
+    }
+
+    [Fact]
+    public void TheListIsNewestFirst()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-old", [Msg("user", "first")], 1, 1, workingDir: Here);
+        Thread.Sleep(1100);   // updated_at carries whole seconds
+        store.SaveTurn("agent-new", [Msg("user", "second")], 1, 1, workingDir: Here);
+
+        Assert.Equal("agent-new", store.List(Here)[0].Uid);
+    }
+
+    /// <summary>A ULID is 26 characters and unusable at a prompt. Git solved this; users know it.</summary>
+    [Fact]
+    public void ASessionIsFoundByAnUnambiguousPrefix()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("01KZWZ0XHWBDDGD64Z7RRN873P", [Msg("user", "hello")], 1, 1, workingDir: Here);
+
+        Assert.Equal("01KZWZ0XHWBDDGD64Z7RRN873P", store.LoadByUid("01KZWZ").Session!.AgentId);
+        Assert.Equal("01KZWZ0XHWBDDGD64Z7RRN873P", store.LoadByUid("01kzwz").Session!.AgentId);   // as typed
+        Assert.Equal("01KZWZ0XHWBDDGD64Z7RRN873P",
+            store.LoadByUid("01KZWZ0XHWBDDGD64Z7RRN873P").Session!.AgentId);                     // in full
+    }
+
+    /// <summary>
+    /// AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest match silently is how someone
+    /// restores the wrong conversation and does not find out for ten minutes.
+    /// </summary>
+    [Fact]
+    public void AnAmbiguousPrefixIsReportedRatherThanGuessedAt()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("01KZWZAAAA", [Msg("user", "one")], 1, 1, workingDir: Here);
+        store.SaveTurn("01KZWZBBBB", [Msg("user", "two")], 1, 1, workingDir: Here);
+
+        var found = store.LoadByUid("01KZWZ");
+
+        Assert.Null(found.Session);
+        Assert.True(found.IsAmbiguous);
+        Assert.Equal(2, found.Ambiguous.Count);
+    }
+
+    [Fact]
+    public void APrefixThatMatchesNothing_FindsNothing()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("user", "one")], 1, 1, workingDir: Here);
+
+        var found = store.LoadByUid("nope");
+
+        Assert.Null(found.Session);
+        Assert.False(found.IsAmbiguous);
+    }
+
+    /// <summary>A uid names a session wherever it was recorded — the folder scoping is the LIST's
+    /// concern, not the lookup's.</summary>
+    [Fact]
+    public void AUidFindsASessionFromAnotherFolder()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-elsewhere", [Msg("user", "other project")], 1, 1,
+            workingDir: "/projects/other");
+
+        Assert.NotNull(store.LoadByUid("agent-else").Session);
+    }
+
+    /// <summary>And reaches a finished one, which `--resume` with no uid deliberately will not.</summary>
+    [Fact]
+    public void AUidReachesAFinishedSession()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-a", [Msg("user", "done with this")], 1, 1, workingDir: Here);
+        store.MarkFinished("agent-a");
+
+        Assert.NotNull(store.LoadByUid("agent-a").Session);
+        Assert.Null(store.LoadLatestUnfinished(Here));
+    }
+
+    /// <summary>
+    /// A DATABASE WRITTEN BEFORE THE TITLE COLUMN EXISTED still opens, still lists, and keeps its
+    /// rows. `CREATE TABLE IF NOT EXISTS` does nothing to an existing table, so the column is added
+    /// by migration — the same path working_dir already took.
+    /// </summary>
+    [Fact]
+    public void AnOlderDatabaseGainsTheColumnWithoutLosingRows()
+    {
+        // A store shaped like the old schema, written by hand.
+        var dbPath = Path.Combine(_dir, "cxagent.db");
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE agent_sessions (
+                    agent_id TEXT PRIMARY KEY, context_json TEXT NOT NULL,
+                    input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+                    finished INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, working_dir TEXT);
+                INSERT INTO agent_sessions VALUES ('old-agent', '[]', 5, 6, 0, '2026-01-01T00:00:00+00:00', '/projects/alpha');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        var store = new SqliteSessionStore(_paths);
+        var listed = Assert.Single(store.List("/projects/alpha"));
+
+        Assert.Equal("old-agent", listed.Uid);
+        Assert.Null(listed.Title);          // no column then, so nothing to show now
+        Assert.Equal(5, listed.InputTokens);
+    }
 }
