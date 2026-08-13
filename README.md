@@ -13,6 +13,9 @@
   <br>
   <sub>A worker agent explored the repo and reported back — 214,073 of the session's tokens spent
   inside the child, and 4% of the parent's context used.</sub>
+  <br><br>
+  <sub><b><a href="docs/screenshots/">See it working →</a></b> — one session closing three features in
+  another repo, with the mistakes left in.</sub>
 </div>
 
 **A terminal AI coding agent built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
