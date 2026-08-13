@@ -17,6 +17,47 @@ namespace CxAgent.UI;
 /// </summary>
 public static class AppBootstrap
 {
+    /// <summary>
+    /// The session <c>--resume</c> asked for, or why there is not one.
+    ///
+    /// <para>STATIC AND OUTSIDE <c>Run</c> so it can be tested: everything else on this path needs a
+    /// console driver and a terminal. The two failure modes are kept apart because they call for
+    /// different actions — nothing to resume means "just start", while an ambiguous id means "type
+    /// more characters", and a single "could not resume" would hide which one happened.</para>
+    ///
+    /// <para>Public rather than internal: this codebase has no InternalsVisibleTo grant.</para>
+    /// </summary>
+    public static (SessionSnapshot? Snapshot, string Problem) FindResumeTarget(
+        SqliteSessionStore store, string workingDir, string? uid)
+    {
+        // BARE --resume MEANS THE MOST RECENT UNFINISHED ONE HERE, which is the session the startup
+        // offer would have proposed. Scoped to the folder for the same reason it is: restoring
+        // another project's conversation fills this one with its files and decisions.
+        if (uid is null)
+        {
+            var latest = store.LoadLatestUnfinished(workingDir);
+            return latest is null
+                ? (null, "No unfinished session to resume in this folder.")
+                : (latest, "");
+        }
+
+        var found = store.LoadByUid(uid);
+
+        if (found.IsAmbiguous)
+            return (null, $"'{uid}' matches {found.Ambiguous.Count} sessions "
+                        + $"({string.Join(", ", found.Ambiguous.Take(4).Select(SessionsCommand.Short))}"
+                        + $"{(found.Ambiguous.Count > 4 ? ", …" : "")}) — use more characters.");
+
+        // FOUND BY ID REGARDLESS OF FOLDER, unlike bare --resume. Naming a specific session is an
+        // explicit act: someone who copied an id out of `--sessions all` and pasted it here meant
+        // that session, and refusing it because the shell is elsewhere would be a rule with no
+        // purpose — the folder scope exists to stop an unasked-for session appearing, not to stop
+        // a named one being opened.
+        return found.Session is null
+            ? (null, $"No session matches '{uid}'.")
+            : (found.Session, "");
+    }
+
     public static int Run(string[] args)
     {
         var options = CommandLine.Parse(args);
@@ -35,6 +76,19 @@ public static class AppBootstrap
         var startupMode = options.Mode;
         var paths = new AppPaths();
         paths.EnsureCreated();
+
+        // --sessions PRINTS AND EXITS, before anything builds a window or resolves a provider.
+        // Answering "which conversations do I have here" should not cost a TUI launch, and the ids
+        // it prints are meant to be copied into the next command — which is why it goes to stdout as
+        // plain tab-separated text rather than through the transcript.
+        if (options.ListSessions)
+        {
+            var listing = new SqliteSessionStore(paths);
+            var all = options.ListAllSessions;
+            Console.WriteLine(SessionsCommand.RenderPlain(
+                listing.List(all ? null : Path.GetFullPath(Environment.CurrentDirectory), all), all));
+            return 0;
+        }
 
         var env = Environment.GetEnvironmentVariables()
             .Cast<System.Collections.DictionaryEntry>()
@@ -419,7 +473,41 @@ public static class AppBootstrap
         // The panel shows what is live, including servers that failed.
         mainWindow.SetMcpServers(mcp.Statuses());
 
+        // --resume IS SEEDED BEFORE THE FIRST WIRE, not restored after it. `pendingResume` is what
+        // WireRunner reads to build a host over an existing conversation, so setting it here means
+        // the session starts restored — no second wire, and no window that is briefly empty before
+        // a context appears in it. The startup OFFER cannot do this (it needs a rendered window to
+        // put a dialog in) and re-wires for that reason; asking on the command line does not.
+        string? resumeNotice = null;
+        if (options.Resume.Wanted)
+        {
+            var (snapshot, problem) = FindResumeTarget(sessions, workingDir, options.Resume.Uid);
+            if (snapshot is not null)
+            {
+                pendingResume = snapshot;
+
+                // RETIRE THE ROW IT CAME FROM, exactly as the interactive path does: the resumed
+                // session is a new agent writing its own rows, and leaving the old one unfinished
+                // would offer the same context again at the next launch.
+                sessions.MarkFinished(snapshot.AgentId);
+                resumeNotice = $"[yellow]Resumed an earlier session: {snapshot.Context.Count} "
+                             + "messages restored. They are not shown above, but the agent "
+                             + "remembers them.[/]";
+            }
+            else
+            {
+                // NOT FATAL. The user asked to continue something and gets a new session instead —
+                // which is fine as long as it SAYS SO, since an unnoticed fresh start is how someone
+                // spends a turn wondering why the agent forgot everything.
+                resumeNotice = $"[yellow]{problem} Starting a new session.[/]";
+            }
+        }
+
         WireRunner(resolution);   // startup path, unchanged in effect
+
+        // AFTER THE WIRE, because the sink it writes to is created inside it.
+        if (resumeNotice is not null)
+            permissionSink.ShowSystemMessage(resumeNotice);
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
         // next one — the shell's own convention, and Claude Code's.
@@ -985,7 +1073,12 @@ public static class AppBootstrap
             // NEVER RESUME SILENTLY. A context the user did not ask for is one they cannot account
             // for, and it is paid for on the very first turn — so this asks, on the first pump, for
             // the same reason everything else here is deferred: a dialog needs a render tick to join.
-            _ = OfferResumeAsync();
+            // NOT WHEN THE COMMAND LINE ALREADY ANSWERED. `--resume` is a decision about which
+            // session to continue; offering another one on top of it would restore twice, and
+            // `--resume <id>` followed by a dialog proposing a different session is the app arguing
+            // with what it was just told.
+            if (!options.Resume.Wanted)
+                _ = OfferResumeAsync();
         });
 
         // THE LIST THE COMMAND AND THE PALETTE BOTH READ. Scoped to this folder unless asked

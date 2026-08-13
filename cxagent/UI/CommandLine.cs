@@ -5,12 +5,54 @@ namespace CxAgent.UI;
 /// <summary>What the command line asked for.</summary>
 /// <param name="UseMock">The mock provider, for driving the UI without a model.</param>
 /// <param name="Mode">The mode this session starts in.</param>
+/// <param name="ListSessions">
+/// <c>--sessions</c>: print the listing to stdout and exit, WITHOUT starting the TUI.
+///
+/// <para>A QUESTION, NOT A SESSION. "which conversations do I have here" is answered by looking, and
+/// making someone launch a full-screen app — and pay for whatever a first turn costs — to read a
+/// list is the kind of friction that stops people looking. It also makes the ids scriptable, which
+/// is the whole point of having a stable id.</para>
+/// </param>
+/// <param name="ListAllSessions">
+/// <c>--sessions all</c>: every folder, not just this one — the same widening the command offers.
+/// </param>
+/// <param name="Resume">
+/// What <c>--resume</c> asked for. THREE STATES, and they are genuinely different requests:
+/// <list type="bullet">
+/// <item>absent — start a new session (<see cref="ResumeRequest.No"/>)</item>
+/// <item><c>--resume</c> alone — continue the most recent one here</item>
+/// <item><c>--resume &lt;id&gt;</c> — continue that specific one</item>
+/// </list>
+/// A nullable string cannot carry this: null would have to mean both "not asked for" and "asked for,
+/// unspecified", and those take opposite actions.
+/// </param>
 /// <param name="Error">
 /// What was wrong with the arguments, or null. NON-NULL MEANS DO NOT START: an argument nobody
 /// understood must stop the app rather than be ignored, because a user who typed <c>--mode fanout</c>
 /// and silently got single mode concludes the feature is broken.
 /// </param>
-public readonly record struct CommandLineOptions(bool UseMock, AgentMode Mode, string? Error);
+public readonly record struct CommandLineOptions(
+    bool UseMock,
+    AgentMode Mode,
+    string? Error,
+    bool ListSessions = false,
+    ResumeRequest Resume = default,
+    bool ListAllSessions = false);
+
+/// <summary>Which session <c>--resume</c> asked for, if any.</summary>
+/// <param name="Wanted">Was <c>--resume</c> given at all?</param>
+/// <param name="Uid">The id or abbreviation that followed it, or null for "the most recent".</param>
+public readonly record struct ResumeRequest(bool Wanted, string? Uid)
+{
+    /// <summary>The default: start fresh.</summary>
+    public static ResumeRequest No => new(false, null);
+
+    /// <summary>Continue the newest session in this folder.</summary>
+    public static ResumeRequest Latest => new(true, null);
+
+    /// <summary>Continue the one this names.</summary>
+    public static ResumeRequest Of(string uid) => new(true, uid);
+}
 
 /// <summary>
 /// Reads the command line.
@@ -33,10 +75,55 @@ public static class CommandLine
         // a single-agent session that paid for a slightly longer system prompt. A single-mode session
         // that WANTED to delegate cannot, and gives no hint that it could.
         var mode = AgentMode.FanOut;
+        var listSessions = false;
+        var listAll = false;
+        var resume = ResumeRequest.No;
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
+
+            if (string.Equals(arg, "--sessions", StringComparison.Ordinal))
+            {
+                listSessions = true;
+
+                // `--sessions all`, spelled the way the command spells it. A bare word rather than a
+                // second flag, so what a user learns at the prompt is what works on the shell.
+                if (i + 1 < args.Length && string.Equals(args[i + 1], "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    listAll = true;
+                    i++;
+                }
+                continue;
+            }
+
+            if (arg.StartsWith("--resume=", StringComparison.Ordinal))
+            {
+                var uid = arg["--resume=".Length..];
+                if (string.IsNullOrWhiteSpace(uid))
+                    return new(useMock, mode, "--resume= needs an id, or use --resume on its own.");
+
+                resume = ResumeRequest.Of(uid);
+                continue;
+            }
+
+            if (string.Equals(arg, "--resume", StringComparison.Ordinal))
+            {
+                // THE NEXT WORD, BUT ONLY IF IT IS A VALUE. `--resume --mock` asks to continue the
+                // most recent session with the mock provider; swallowing the flag as an id would
+                // fail to find a session called "--mock" and drop the flag silently.
+                var next = i + 1 < args.Length ? args[i + 1] : null;
+                if (next is not null && !next.StartsWith('-'))
+                {
+                    resume = ResumeRequest.Of(next);
+                    i++;
+                }
+                else
+                {
+                    resume = ResumeRequest.Latest;
+                }
+                continue;
+            }
 
             if (string.Equals(arg, "--mock", StringComparison.Ordinal))
             {
@@ -54,7 +141,9 @@ public static class CommandLine
             else if (string.Equals(arg, "--mode", StringComparison.Ordinal))
                 value = i + 1 < args.Length ? args[++i] : null;
             else
-                return new(useMock, mode, $"unknown argument '{arg}'. Valid: --mock, --mode <{AgentModes.Valid}>.");
+                return new(useMock, mode,
+                    $"unknown argument '{arg}'. Valid: --mock, --mode <{AgentModes.Valid}>, "
+                    + "--sessions, --resume [<id>].");
 
             if (string.IsNullOrWhiteSpace(value))
                 return new(useMock, mode, $"--mode needs a value. Valid: {AgentModes.Valid}.");
@@ -66,6 +155,13 @@ public static class CommandLine
             mode = parsed.Value;
         }
 
-        return new(useMock, mode, null);
+        // ONE ASKS A QUESTION, THE OTHER STARTS WORK. Honouring both means either printing a list and
+        // ignoring the resume, or resuming and never printing — both are half of what was typed, and
+        // the user cannot tell which half they got.
+        if (listSessions && resume.Wanted)
+            return new(useMock, mode,
+                "--sessions prints the list and exits, so it cannot be combined with --resume.");
+
+        return new(useMock, mode, null, listSessions, resume, listAll);
     }
 }

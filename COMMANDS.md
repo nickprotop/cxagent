@@ -205,6 +205,40 @@ and decisions.
 
 ---
 
+## From the shell
+
+Three flags that concern sessions, alongside `--mock` and `--mode <single|fan-out>`.
+
+```bash
+cxagent --sessions              # print this folder's sessions and exit
+cxagent --sessions all          # every folder
+cxagent --resume                # continue the most recent unfinished session here
+cxagent --resume 5ZFAVZ         # continue that one, by id or any unambiguous abbreviation
+```
+
+**`--sessions` prints and exits — no TUI, no provider, no turn.** "Which conversations do I have
+here" is a question you answer by looking, and making someone launch a full-screen app to read a list
+is the kind of friction that stops people looking. Output is tab-separated with the **full** id, so
+`cxagent --sessions | cut -f1` does what you expect:
+
+```
+5ZFAVZHZYPHHAWC501KZXEBFY1	2026-08-13 14:33	18213	add the arity table
+```
+
+**`--resume` has three states, and they are different requests.** Absent starts fresh; bare
+continues the most recent unfinished session *in this folder*, which is the one the app would have
+offered you; with an id continues that one specifically. An id is **not** folder-scoped — copying one
+out of `--sessions all` and pasting it here opens it, because naming a session is an explicit act.
+
+**A resume that finds nothing still starts.** It says which of the two things went wrong — nothing to
+resume, or an id that matched several — and begins a new session rather than refusing to launch. An
+unnoticed fresh start is how someone spends a turn wondering why the agent forgot everything.
+
+`--sessions` and `--resume` together is an error: one asks a question, the other starts work, and
+doing half of what was typed leaves no way to tell which half you got.
+
+---
+
 ## Not commands
 
 **Escape** stops a running turn. Anything queued goes back into the composer rather than being

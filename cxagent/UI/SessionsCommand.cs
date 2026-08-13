@@ -163,6 +163,37 @@ public static class SessionsCommand
     }
 
     /// <summary>
+    /// The same listing as plain text, for <c>--sessions</c> — no markup, no colour, no frame.
+    ///
+    /// <para>A SEPARATE RENDERER RATHER THAN STRIPPING TAGS, because the destination is genuinely
+    /// different: this one goes to a pipe as often as to a terminal. It prints EVERY session rather
+    /// than the first twenty — a listing you can pass to <c>grep</c> must not silently end — and the
+    /// FULL id rather than six characters, because the reason to read this from a script is to copy
+    /// an id into the next command.</para>
+    /// </summary>
+    public static string RenderPlain(IReadOnlyList<SessionInfo> sessions, bool all = false)
+    {
+        if (sessions.Count == 0)
+            return all ? "No sessions recorded." : "No sessions recorded in this folder.";
+
+        var lines = new List<string>();
+
+        foreach (var s in sessions)
+        {
+            // TAB-SEPARATED, in the order a reader wants them: the id to copy, when it was, how big,
+            // and what it was about. Columns nobody has to count, and a shape `cut -f1` understands.
+            var row = $"{s.Uid}\t{s.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}\t"
+                    + $"{s.InputTokens + s.OutputTokens}\t{s.Title ?? ""}";
+
+            lines.Add(all && !string.IsNullOrWhiteSpace(s.WorkingDir)
+                ? $"{row}\t{s.WorkingDir}"
+                : row);
+        }
+
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
     /// Six characters, like git — and like git, the FIRST six, because
     /// <see cref="Helpers.UlidGenerator"/> now puts the randomness there.
     ///

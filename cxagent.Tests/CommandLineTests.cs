@@ -110,4 +110,95 @@ public class CommandLineTests
         Assert.Equal(AgentMode.FanOut, options.Mode);   // the default, unaffected by --mock
         Assert.Null(options.Error);
     }
+
+    // --- sessions and resume ---
+
+    /// <summary>
+    /// THREE STATES, NOT TWO. Absent, bare, and with an id are genuinely different requests, and a
+    /// nullable string cannot carry them: null would mean both "not asked for" and "asked for,
+    /// unspecified", which take opposite actions.
+    /// </summary>
+    [Fact]
+    public void Resume_HasThreeDistinctStates()
+    {
+        Assert.False(CommandLine.Parse([]).Resume.Wanted);
+
+        var bare = CommandLine.Parse(["--resume"]).Resume;
+        Assert.True(bare.Wanted);
+        Assert.Null(bare.Uid);
+
+        var named = CommandLine.Parse(["--resume", "5PSCPG"]).Resume;
+        Assert.True(named.Wanted);
+        Assert.Equal("5PSCPG", named.Uid);
+    }
+
+    [Fact]
+    public void Resume_AcceptsTheEqualsForm()
+    {
+        Assert.Equal("5PSCPG", CommandLine.Parse(["--resume=5PSCPG"]).Resume.Uid);
+    }
+
+    [Fact]
+    public void Resume_WithAnEmptyEqualsValue_IsAnError()
+    {
+        Assert.NotNull(CommandLine.Parse(["--resume="]).Error);
+    }
+
+    /// <summary>
+    /// A FLAG IS NOT AN ID. `--resume --mock` asks to continue the most recent session with the mock
+    /// provider; swallowing the flag would look for a session named "--mock" and silently drop the
+    /// provider choice.
+    /// </summary>
+    [Fact]
+    public void Resume_DoesNotSwallowTheFlagThatFollowsIt()
+    {
+        var options = CommandLine.Parse(["--resume", "--mock"]);
+
+        Assert.True(options.Resume.Wanted);
+        Assert.Null(options.Resume.Uid);
+        Assert.True(options.UseMock);
+        Assert.Null(options.Error);
+    }
+
+    [Fact]
+    public void Sessions_AsksToPrintAndExit()
+    {
+        var options = CommandLine.Parse(["--sessions"]);
+
+        Assert.True(options.ListSessions);
+        Assert.False(options.ListAllSessions);
+        Assert.Null(options.Error);
+    }
+
+    /// <summary>Spelled the way the command spells it, so one thing is learned once.</summary>
+    [Fact]
+    public void Sessions_TakesAllAsABareWord()
+    {
+        var options = CommandLine.Parse(["--sessions", "all"]);
+
+        Assert.True(options.ListSessions);
+        Assert.True(options.ListAllSessions);
+        Assert.Null(options.Error);
+    }
+
+    /// <summary>
+    /// ONE ASKS A QUESTION, THE OTHER STARTS WORK. Honouring both means doing half of what was typed
+    /// with no way for the user to tell which half.
+    /// </summary>
+    [Fact]
+    public void Sessions_CombinedWithResume_IsAnError()
+    {
+        Assert.NotNull(CommandLine.Parse(["--sessions", "--resume"]).Error);
+    }
+
+    [Fact]
+    public void Sessions_CombinesWithTheOtherFlags()
+    {
+        var options = CommandLine.Parse(["--mock", "--resume", "5PSCPG", "--mode", "single"]);
+
+        Assert.True(options.UseMock);
+        Assert.Equal("5PSCPG", options.Resume.Uid);
+        Assert.Equal(AgentMode.Single, options.Mode);
+        Assert.Null(options.Error);
+    }
 }

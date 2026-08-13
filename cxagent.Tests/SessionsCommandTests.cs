@@ -173,4 +173,60 @@ public class SessionsCommandTests
         Assert.Contains("asked about /mode", rows[1].Summary);
         Assert.All(rows, r => Assert.True(r.Completes));
     }
+
+    // --- the plain-text listing, for --sessions ---
+
+    /// <summary>
+    /// THE FULL ID, because the reason to read this from a script is to copy an id into the next
+    /// command — six characters would have to be re-expanded by hand.
+    /// </summary>
+    [Fact]
+    public void PlainListingPrintsWholeIdsAndIsTabSeparated()
+    {
+        var line = SessionsCommand.RenderPlain(Two).Split('\n')[0];
+        var fields = line.Split('\t');
+
+        Assert.Equal("XNND4VH6W0GR0701KZXC5H9Q", fields[0]);
+        Assert.Equal(4, fields.Length);              // id, when, tokens, title
+        Assert.Equal("1200", fields[2]);             // 1000 in + 200 out
+        Assert.Equal("did a thing", fields[3]);
+    }
+
+    /// <summary>No markup: this goes to a pipe as often as to a terminal.</summary>
+    [Fact]
+    public void PlainListingCarriesNoMarkup()
+    {
+        var text = SessionsCommand.RenderPlain(Two);
+
+        Assert.DoesNotContain("[/]", text);
+        Assert.DoesNotContain(ColorScheme.AccentMarkup, text);
+    }
+
+    /// <summary>
+    /// EVERY SESSION, unlike the on-screen listing. A list you can pass to grep must not silently
+    /// stop at twenty — the caller asked for what is there.
+    /// </summary>
+    [Fact]
+    public void PlainListingIsNotCapped()
+    {
+        var many = Enumerable.Range(0, SessionsCommand.MaxRows + 5)
+            .Select(i => Row($"UID{i:0000}01KZXC"))
+            .ToList();
+
+        Assert.Equal(many.Count, SessionsCommand.RenderPlain(many).Split('\n').Length);
+    }
+
+    [Fact]
+    public void PlainListingSaysSoWhenThereIsNothing()
+    {
+        Assert.Contains("No sessions", SessionsCommand.RenderPlain([]));
+    }
+
+    /// <summary>The folder is a column only when rows can come from different ones.</summary>
+    [Fact]
+    public void PlainListingAddsTheFolderOnlyForAll()
+    {
+        Assert.DoesNotContain("/w", SessionsCommand.RenderPlain(Two));
+        Assert.Contains("/w", SessionsCommand.RenderPlain(Two, all: true));
+    }
 }
