@@ -170,7 +170,7 @@ Sessions · 3 here
    3  CV5TAC  yesterday     18k  add the arity table to the permissions doc
 
   /sessions resume <number|id>  ·  /sessions all
-  finished sessions are removed after 7 days
+  sessions closed cleanly are removed after 30 days
 ```
 
 **A session is named twice, because the two names are different promises.** The number belongs to
@@ -192,6 +192,25 @@ newer: silently restoring the wrong conversation is not something you find out a
 Sessions are listed for the folder you are in — `/sessions all` widens it, and adds the folder to
 each row. **The retention window is stated in the output** because these rows are deleted on a
 schedule, and a policy nobody mentioned is one you discover by losing something.
+
+**Three things can happen to a session, and only one of them is pruned.**
+
+| | offered by bare `--resume` | pruned |
+|---|---|---|
+| still open (crashed, killed) | yes | **never** — it is the only thing here that cannot be reconstructed |
+| closed cleanly (`/exit`) | no | after 30 days |
+| superseded (you resumed it) | no | **never** |
+
+A superseded session is a live conversation somebody continued: its successor was built on it, so
+deleting it would drop the history behind work that is still going, and a long chain of resumes
+would age out from its tail one link at a time. It is hidden from bare `--resume` for a different
+reason — accepting the same context twice forks one history into two sessions claiming it — and
+stays listed and reachable by id.
+
+Thirty days rather than the week this started with. Seven was right when these rows were an
+invisible crash buffer, where nothing was lost by dropping one because nobody could name it. They
+are now a listing you read and an id you resume by, which makes the question *how far back would
+someone look* rather than *how long until a crash is stale*.
 
 ---
 

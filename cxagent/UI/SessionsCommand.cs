@@ -133,7 +133,12 @@ public static class SessionsCommand
 
         // THE RETENTION WINDOW, SAID OUT LOUD. These rows used to be an invisible buffer, and
         // deleting an invisible thing costs nobody anything. They are visible now.
-        lines.Add($"  [{muted}]finished sessions are removed after {(int)retention.TotalDays} days[/]");
+        //
+        // "CLOSED CLEANLY" RATHER THAN "FINISHED", because those are no longer the same set: a
+        // session someone resumed is retired too, and is kept. Saying "finished" here would promise
+        // deletion of rows that survive, which is the wrong direction to be imprecise in.
+        lines.Add($"  [{muted}]sessions closed cleanly are removed after "
+                + $"{(int)retention.TotalDays} days[/]");
 
         return string.Join('\n', lines);
     }

@@ -199,6 +199,45 @@ public class SqliteSessionStoreTests : IDisposable
         Assert.NotNull(store.LoadLatestUnfinished(Here));
     }
 
+    /// <summary>
+    /// A SUPERSEDED SESSION SURVIVES PRUNING, however old.
+    ///
+    /// <para>Resuming retires the row it restored, so the same context is not offered again — the
+    /// same suppression a clean exit gets, and NOT the same event. A superseded session is a live
+    /// conversation somebody continued, and its successor was built on it: pruning it deletes the
+    /// history behind work that is still going, and a long chain of resumes would age out from its
+    /// tail one link at a time.</para>
+    /// </summary>
+    [Fact]
+    public void Prune_KeepsSupersededSessions_HoweverOld()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("continued", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
+        store.MarkSuperseded("continued");
+
+        store.Prune(TimeSpan.Zero);
+
+        Assert.Equal(1, store.CountSessions());
+    }
+
+    /// <summary>
+    /// ...but it is still retired: bare --resume must not offer a conversation that already has a
+    /// successor, or accepting it twice forks one history into two sessions claiming it.
+    /// </summary>
+    [Fact]
+    public void ASupersededSessionIsNotOfferedForResume()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("continued", [Msg("user", "hello")], inputTokens: 10, outputTokens: 1, workingDir: Here);
+        store.MarkSuperseded("continued");
+
+        Assert.Null(store.LoadLatestUnfinished(Here));
+
+        // Still listed, and still reachable by id — retired is not deleted.
+        Assert.Single(store.List(Here));
+        Assert.NotNull(store.LoadByUid("continued").Session);
+    }
+
     /// <summary>A finished session inside the window stays — pruning is age-based, not a purge.</summary>
     [Fact]
     public void Prune_KeepsFinishedSessionsInsideTheWindow()

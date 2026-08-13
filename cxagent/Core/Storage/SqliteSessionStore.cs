@@ -98,13 +98,6 @@ public sealed class SqliteSessionStore
     }
 
     /// <summary>
-    /// Adds a column when it is not already there, for a database created before it existed.
-    ///
-    /// <para>SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>, so the check is a <c>PRAGMA</c> read. The
-    /// alternative — running the ALTER and swallowing the "duplicate column" error — cannot tell that
-    /// failure apart from a real one, and this store swallows everything.</para>
-    /// </summary>
-    /// <summary>
     /// Titles the sessions that existed before the column did.
     ///
     /// <para>WITHOUT THIS, EVERY SESSION A USER ALREADY HAS reads "(no messages yet)" in the listing
@@ -151,6 +144,13 @@ public sealed class SqliteSessionStore
         }
     }
 
+    /// <summary>
+    /// Adds a column when it is not already there, for a database created before it existed.
+    ///
+    /// <para>SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>, so the check is a <c>PRAGMA</c> read. The
+    /// alternative — running the ALTER and swallowing the "duplicate column" error — cannot tell that
+    /// failure apart from a real one, and this store swallows everything.</para>
+    /// </summary>
     private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string type)
     {
         using var check = conn.CreateCommand();
@@ -430,22 +430,59 @@ public sealed class SqliteSessionStore
         return text.Length <= 80 ? text : text[..80].TrimEnd() + "…";
     }
 
-    public void MarkFinished(string agentId)
+    public void MarkFinished(string agentId) => Retire(agentId, SessionEnd.Exited);
+
+    /// <summary>
+    /// Records that a session was CONTINUED by another one, rather than ended.
+    ///
+    /// <para>TWO MEANINGS WERE SHARING ONE FLAG. Resuming retires the row it restored — otherwise the
+    /// same context is offered again at every launch, and accepting it twice forks one conversation
+    /// into two sessions claiming the same history. That is the right call, and it is NOT the same
+    /// event as a clean exit.</para>
+    ///
+    /// <para>The difference shows up in pruning. A cleanly-ended session is finished work; a
+    /// superseded one is a LIVE conversation somebody continued, and its successor was built on it —
+    /// so dropping it after a retention window deletes the history behind work that is still going,
+    /// and a long chain of resumes would age out from its tail.</para>
+    ///
+    /// <para>ONE COLUMN, THREE VALUES, rather than a second flag. Every read here asks "is this
+    /// offerable?", which stays <c>finished = 0</c>; only pruning needs to tell the two retirements
+    /// apart. A boolean beside a boolean would make four states, two of which mean nothing.</para>
+    /// </summary>
+    public void MarkSuperseded(string agentId) => Retire(agentId, SessionEnd.Superseded);
+
+    private void Retire(string agentId, int how)
     {
         try
         {
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText =
-                "UPDATE agent_sessions SET finished = 1, updated_at = $at WHERE agent_id = $id;";
+                "UPDATE agent_sessions SET finished = $how, updated_at = $at WHERE agent_id = $id;";
+            cmd.Parameters.AddWithValue("$how", how);
             cmd.Parameters.AddWithValue("$id", agentId);
             cmd.Parameters.AddWithValue("$at", Ts(DateTimeOffset.UtcNow));
             cmd.ExecuteNonQuery();
         }
         catch (Exception)
         {
-            // Worst case the session is offered for resume once and declined.
+            // Worst case the session is listed as still open and can be resumed once more.
         }
+    }
+
+    /// <summary>
+    /// What the <c>finished</c> column means. Values, not a flag — see <see cref="MarkSuperseded"/>.
+    /// </summary>
+    private static class SessionEnd
+    {
+        /// <summary>Still open: crashed, killed, or running right now. Never pruned.</summary>
+        public const int Running = 0;
+
+        /// <summary>Ended cleanly. Pruned once it is older than the retention window.</summary>
+        public const int Exited = 1;
+
+        /// <summary>Continued by a later session. Hidden from bare resume, but KEPT.</summary>
+        public const int Superseded = 2;
     }
 
     /// <summary>
@@ -460,8 +497,11 @@ public sealed class SqliteSessionStore
         {
             using var conn = Open();
             using var cmd = conn.CreateCommand();
+            // EXITED ONLY, never superseded. A session someone continued is the history behind a
+            // conversation that is still going — see MarkSuperseded.
             cmd.CommandText =
-                "DELETE FROM agent_sessions WHERE finished = 1 AND updated_at < $cutoff;";
+                $"DELETE FROM agent_sessions WHERE finished = {SessionEnd.Exited} "
+                + "AND updated_at < $cutoff;";
             cmd.Parameters.AddWithValue("$cutoff", Ts(DateTimeOffset.UtcNow - keepFinishedFor));
             cmd.ExecuteNonQuery();
         }
@@ -471,9 +511,20 @@ public sealed class SqliteSessionStore
         }
     }
 
-    /// <summary>How long a finished session stays resumable-by-mistake before being dropped. A week
-    /// is long enough to cover a holiday and short enough that the buffer stays a buffer.</summary>
-    public static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+    /// <summary>
+    /// How long a cleanly-ended session is kept.
+    ///
+    /// <para>A MONTH, RAISED FROM A WEEK. Seven days was right when these rows were an invisible
+    /// crash buffer — nobody could name a session, so nothing was lost by dropping one. They are now
+    /// a listing you read and an id you resume by, which makes the question "how far back would
+    /// someone look?" rather than "how long until a crash is stale". A month covers the work you did
+    /// before a holiday; a week does not.</para>
+    ///
+    /// <para>The cost is small and bounded: one conversation per row, only cleanly-ended ones, and
+    /// <c>/stats</c> keeps its own archive forever in a separate database — so this is not a new kind
+    /// of growth, only more of a small one.</para>
+    /// </summary>
+    public static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(30);
 
     /// <summary>How many sessions are stored, finished or not. Diagnostic — it is what a retention
     /// test can assert on without reaching past this type into the schema.</summary>

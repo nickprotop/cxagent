@@ -486,10 +486,11 @@ public static class AppBootstrap
             {
                 pendingResume = snapshot;
 
-                // RETIRE THE ROW IT CAME FROM, exactly as the interactive path does: the resumed
-                // session is a new agent writing its own rows, and leaving the old one unfinished
-                // would offer the same context again at the next launch.
-                sessions.MarkFinished(snapshot.AgentId);
+                // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
+                // rows, and leaving the old one open would offer the same context again at the next
+                // launch. SUPERSEDED, not finished — it is a live conversation someone continued,
+                // and pruning it would delete the history behind work that is still going.
+                sessions.MarkSuperseded(snapshot.AgentId);
                 resumeNotice = $"[yellow]Resumed an earlier session: {snapshot.Context.Count} "
                              + "messages restored. They are not shown above, but the agent "
                              + "remembers them.[/]";
@@ -1148,10 +1149,11 @@ public static class AppBootstrap
             WireRunner(resolution);   // rebuilds the runner over the restored context
 
             // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
-            // writing its own rows, so leaving the old one unfinished would offer the same
-            // crashed context again at every launch — and accepting it twice would fork the
-            // conversation into two sessions claiming the same history.
-            sessions.MarkFinished(snapshot.AgentId);
+            // writing its own rows, so leaving the old one open would offer the same crashed
+            // context again at every launch — and accepting it twice would fork the conversation
+            // into two sessions claiming the same history. SUPERSEDED rather than finished: see
+            // MarkSuperseded, which is why this one survives pruning.
+            sessions.MarkSuperseded(snapshot.AgentId);
 
             // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
             // model's memory, not this session's scrollback — so without a line here the user
