@@ -407,7 +407,7 @@ public static class SystemPrompt
         {
             sb.AppendLine("When you need something from the user — which of several files they "
                         + "meant, a preference, a decision on an implementation choice — call "
-                        + "ask_user and wait. Do NOT end your turn with a question in the text: "
+                        + "question and wait. Do NOT end your turn with a question in the text: "
                         + "that reads as an answer, and nobody is listening for a reply to it. Ask "
                         + "several related things in ONE call rather than one at a time, and give "
                         + "each option a description so the choice can be made without guessing "

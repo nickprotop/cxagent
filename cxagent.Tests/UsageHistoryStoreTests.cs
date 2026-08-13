@@ -128,7 +128,7 @@ public class UsageHistoryStoreTests : IDisposable
     [Fact]
     public void SaveToolCall_AttributesAChildsCallToTheChild()
     {
-        _store.SaveToolCall(new ToolCallRecord("c1", "parent-1", "spawn_agent", "llm_agent",
+        _store.SaveToolCall(new ToolCallRecord("c1", "parent-1", "task", "llm_agent",
             "succeeded", 1000, 19_231, Ago(1), "/tmp/proj"));
         _store.SaveToolCall(new ToolCallRecord("c2", "child-1", "read_file", "file",
             "succeeded", 10, 5_000, Ago(1), "/tmp/proj"));
@@ -136,7 +136,7 @@ public class UsageHistoryStoreTests : IDisposable
         var calls = _store.ToolCallsSince(Ago(24));
 
         Assert.Contains(calls, c => c.AgentId == "child-1" && c.ToolName == "read_file");
-        Assert.Contains(calls, c => c.AgentId == "parent-1" && c.ToolName == "spawn_agent");
+        Assert.Contains(calls, c => c.AgentId == "parent-1" && c.ToolName == "task");
     }
 
     /// <summary>Compaction's trigger separates "the app decided" from "the user asked" — a threshold

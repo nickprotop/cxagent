@@ -71,9 +71,16 @@ which is why it was left out.
 **Whether the model uses a tool at all is the model's business.** A local `qwen3.6-35b-a3b` loads
 skills and keeps a plan — but skills only after the prompt spelled out that reading a `SKILL.md` is
 not the same as loading it, and `glob`/`grep` only after they were renamed from `list_files` and
-`search_files` to the words it already knew. `ask_user` it has never once called: asked an
-ambiguous question, it lists the options and ends the turn, which is exactly the failure that tool
-exists to prevent. A better model may need none of these nudges; a worse one may ignore them all.
+`search_files` to the words it already knew.
+
+`question` (once `ask_user`) is the sharpest example. It was never called once across three drives:
+asked something ambiguous, the model listed the options and ended the turn — exactly the failure the
+tool exists to prevent. The cause turned out to be the tool's own description, which spent a
+paragraph arguing against using it. Rewritten to say what the tool is *for*, the model called it
+unprompted on a destructive, ambiguous request. It still guesses on ordinary ambiguity, and still
+writes questions as prose when asked to gather requirements. Better than never; not reliable.
+
+A better model may need none of these nudges; a worse one may ignore them all.
 
 **A briefing asks; permissions decide.** "Never edit files" in a type's briefing is a request. It
 does not take the tool away.

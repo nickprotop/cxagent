@@ -62,7 +62,7 @@ from the system prompt — its prompt is what shipped before sub-agents existed,
 off really does turn it off.
 
 **The conversation survives a switch.** Only the system message is rewritten; everything you and the
-agent have said is untouched. History is not rewritten either — a `spawn_agent` call made in fan-out
+agent have said is untouched. History is not rewritten either — a `task` call made in fan-out
 mode stays visible after switching to single. Erasing it to match current capability would
 misrepresent what happened.
 

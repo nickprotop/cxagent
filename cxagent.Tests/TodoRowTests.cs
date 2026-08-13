@@ -18,7 +18,7 @@ public class TodoRowTests
     private static Job TodoJob(string name = "plan · 1/3", JobState state = JobState.Succeeded) => new()
     {
         Id = "job-1",
-        PlanLocalId = "update_todos",
+        PlanLocalId = "todowrite",
         AgentId = "agent-1",
         PluginType = "todo",
         DisplayName = name,

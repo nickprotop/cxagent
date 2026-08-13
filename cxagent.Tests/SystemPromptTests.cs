@@ -514,12 +514,20 @@ public class SystemPromptTests
         Assert.DoesNotContain("send a sub-agent rather", SingleModeParent(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The prompt does not restate the tool's own description.
+    ///
+    /// <para>ASSERTED ON A PHRASE, NOT THE TOOL NAME. It used to check for "spawn_agent", which was a
+    /// distinctive token; the tool is now called <c>task</c>, and "task" is an ordinary English word
+    /// the prompt uses in its own sentences ("fits the task at hand"). A bare-word check would fail
+    /// on prose that has nothing to do with the tool.</para>
+    /// </summary>
     [Fact]
     public void Parent_IsNotToldWhenToSpawn()
     {
         var parent = Parent();
 
-        Assert.DoesNotContain("spawn_agent", parent, StringComparison.Ordinal);
+        Assert.DoesNotContain("task(", parent, StringComparison.Ordinal);
         Assert.DoesNotContain("Do NOT use it", parent, StringComparison.Ordinal);
     }
 
@@ -657,7 +665,7 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// THE PROMPT HAS TO SAY THE TOOL EXISTS. On the first drive of ask_user the model hit a
+    /// THE PROMPT HAS TO SAY THE TOOL EXISTS. On the first drive of question the model hit a
     /// genuinely ambiguous request, wrote "Which one should I change?" as its FINAL MESSAGE, and
     /// ended the turn — which reads as an answer, is not one, and costs the user a turn to repair.
     /// The tool was offered the whole time: a tool description is only read once the model is
@@ -668,7 +676,7 @@ public class SystemPromptTests
     {
         var p = SystemPrompt.Build(Context() with { CanAskUser = true });
 
-        Assert.Contains("ask_user", p, StringComparison.Ordinal);
+        Assert.Contains("question", p, StringComparison.Ordinal);
         Assert.Contains("end your turn with a question", p, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -676,11 +684,16 @@ public class SystemPromptTests
     /// And says nothing when there is nobody to ask. A child has no user, so the lines would
     /// describe machinery it cannot reach — which is what teaches a model to skim its prompt.
     /// </summary>
+    /// <summary>
+    /// Asserted on the INSTRUCTION, not the word. The tool is called <c>question</c> now, and
+    /// "question" appears in unrelated prose ("nobody will answer a question, approve a plan") — so
+    /// a bare-word check tests the English rather than the behaviour.
+    /// </summary>
     [Fact]
     public void Build_WithNoWayToAsk_SaysNothingAboutAsking()
     {
-        Assert.DoesNotContain("ask_user", Build(), StringComparison.Ordinal);
-        Assert.DoesNotContain("ask_user", Child(), StringComparison.Ordinal);
+        Assert.DoesNotContain("call question and wait", Build(), StringComparison.Ordinal);
+        Assert.DoesNotContain("call question and wait", Child(), StringComparison.Ordinal);
     }
 
     private static int CountOf(string haystack, string needle)

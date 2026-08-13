@@ -144,7 +144,7 @@ public class SkillsUiTests
                 Text = "", StopReason = "tool_use",
                 ToolCalls = [new ToolCall
                 {
-                    Id = "call-1", Name = "spawn_agent",
+                    Id = "call-1", Name = "task",
                     Arguments = System.Text.Json.JsonDocument.Parse(
                         """{"description":"deploy it","prompt":"deploy it"}""").RootElement,
                 }],

@@ -25,11 +25,45 @@ public class SubAgentSpawnerTests
             logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
             globalInstructionsDir: null, mcp: null);
 
+    /// <summary>
+    /// THE OLD NAME STILL WORKS. A rename is invisible to a model working from habit, or to a
+    /// RESUMED conversation whose earlier turns called it spawn_agent — and an unknown tool is a
+    /// hard failure costing a turn, for a call that is completely unambiguous.
+    /// </summary>
+    [Fact]
+    public async Task Spawn_StillAnswersToItsOldName()
+    {
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("found it")));
+
+        var result = await spawner.TryInvokeAsync(
+            new ToolCall
+            {
+                Id = "call-1",
+                Name = "spawn_agent",
+                Arguments = System.Text.Json.JsonDocument.Parse(
+                    System.Text.Json.JsonSerializer.Serialize(
+                        new { description = "find thing", prompt = "find the thing" })).RootElement,
+            },
+            onChild: null, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Contains("found it", result!);
+    }
+
+    /// <summary>...but only the new name is advertised, so nothing pulls the model backwards.</summary>
+    [Fact]
+    public void OnlyTheCurrentSpawnNameIsOffered()
+    {
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("x")));
+
+        Assert.Equal("task", spawner.Definition.Name);
+    }
+
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
         new()
         {
             Id = "call-1",
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new { description, prompt })).RootElement,
         };
@@ -101,7 +135,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "c",
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse("""{"description":"do a thing"}""").RootElement,
         };
 
@@ -162,7 +196,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "call-1",
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -193,7 +227,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "call-1",
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -363,7 +397,7 @@ public class SubAgentSpawnerTests
         new()
         {
             Id = id,
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(
                     new { description, prompt = "do the thing" })).RootElement,
@@ -863,7 +897,7 @@ public class SubAgentSpawnerTests
     /// child — a provider fault, a bad config, a bug.</summary>
     private sealed class ThrowingSpawner : ISubAgentSpawner
     {
-        public string ToolName => "spawn_agent";
+        public string ToolName => "task";
         public ToolDefinition Definition => new(ToolName, "spawns", default);
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
             CancellationToken ct, string? parentAgentId = null)
@@ -1138,7 +1172,7 @@ public class SubAgentSpawnerTests
 
     /// <summary>
     /// THE ROW NAMES THE TYPE. Reported from a live session: the header showed
-    /// <c>spawn_agent {"description":"Explore cxgpu repo struct…</c> and the type was invisible.
+    /// <c>task {"description":"Explore cxgpu repo struct…</c> and the type was invisible.
     ///
     /// <para>The cause was generic truncation — DescribeCall clipped the serialised arguments at 60
     /// characters, and a spawn's JSON opens with <c>description</c> while <c>type</c> serialises
@@ -1173,7 +1207,7 @@ public class SubAgentSpawnerTests
         // The TYPE leads, and the raw tool name and JSON braces are gone from the header entirely.
         Assert.StartsWith("general", row.DisplayName, StringComparison.Ordinal);
         Assert.DoesNotContain("{", row.DisplayName, StringComparison.Ordinal);
-        Assert.DoesNotContain("spawn_agent", row.DisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain("task", row.DisplayName, StringComparison.Ordinal);
 
         // The description still appears — it is what distinguishes two agents of the SAME type.
         Assert.Contains("Explore", row.DisplayName, StringComparison.Ordinal);
@@ -1419,7 +1453,7 @@ public class SubAgentSpawnerTests
         await agent.SendAsync("go", CancellationToken.None);
 
         Assert.NotNull(provider.LastTools);
-        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "spawn_agent");
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "task");
     }
 
     /// <summary>Fan-out offers it — the difference is the mode, not the wiring.</summary>
@@ -1436,7 +1470,7 @@ public class SubAgentSpawnerTests
 
         await agent.SendAsync("go", CancellationToken.None);
 
-        Assert.Contains(provider.LastTools!, t => t.Name == "spawn_agent");
+        Assert.Contains(provider.LastTools!, t => t.Name == "task");
     }
 
     /// <summary>
@@ -1460,14 +1494,14 @@ public class SubAgentSpawnerTests
         };
 
         await agent.SendAsync("remember this word: pelican", CancellationToken.None);
-        Assert.Contains(provider.LastTools!, t => t.Name == "spawn_agent");
+        Assert.Contains(provider.LastTools!, t => t.Name == "task");
         var messagesBefore = agent.Context.Messages.Count;
 
         agent.Mode = AgentMode.Single;
         await agent.SendAsync("and now?", CancellationToken.None);
 
         // The tool is gone...
-        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "spawn_agent");
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "task");
         // ...and everything said before the switch is still there.
         Assert.True(agent.Context.Messages.Count > messagesBefore);
         Assert.Contains(agent.Context.Messages, m => m.Content.Contains("pelican", StringComparison.Ordinal));
@@ -1476,7 +1510,7 @@ public class SubAgentSpawnerTests
     /// <summary>
     /// A SPAWN CALL IN SINGLE MODE IS REFUSED, not quietly honoured.
     ///
-    /// <para>A model that saw <c>spawn_agent</c> in an earlier fan-out turn can call it by name after
+    /// <para>A model that saw <c>task</c> in an earlier fan-out turn can call it by name after
     /// a switch — the conversation still contains the evidence that the tool once existed. Gating only
     /// the tool LIST would leave the dispatch branch happily running a child the user had just turned
     /// off.</para>
@@ -1520,7 +1554,7 @@ public class SubAgentSpawnerTests
         new()
         {
             Id = "call-1",
-            Name = "spawn_agent",
+            Name = "task",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(
                     type is null ? new { description = "d", prompt }

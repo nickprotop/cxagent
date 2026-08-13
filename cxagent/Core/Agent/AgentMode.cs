@@ -10,7 +10,7 @@ namespace CxAgent.Core.Agent;
 ///
 /// <para>THE CONVERSATION IS UNAFFECTED. It belongs to <see cref="AgentHost"/>, which hands it to the
 /// agent rather than the other way round, so messages 1..N are untouched by a switch and only index 0
-/// is replaced. History is NOT rewritten either: a <c>spawn_agent</c> call made in fan-out mode stays
+/// is replaced. History is NOT rewritten either: a <c>task</c> call made in fan-out mode stays
 /// in the conversation after switching to single. That is deliberate — erasing history to match
 /// current capability would misrepresent what actually happened.</para>
 /// </summary>
@@ -26,7 +26,7 @@ public enum AgentMode
     Single,
 
     /// <summary>
-    /// The agent may spawn sub-agents. It is offered <c>spawn_agent</c>, and its prompt carries the
+    /// The agent may spawn sub-agents. It is offered <c>task</c>, and its prompt carries the
     /// three obligations a parent has towards work it did not do itself (D26).
     /// </summary>
     FanOut,

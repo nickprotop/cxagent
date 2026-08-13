@@ -77,7 +77,7 @@ public sealed class TodoList
         sb.AppendLine();
         sb.AppendLine("# Your task list");
         sb.AppendLine();
-        sb.AppendLine("You wrote this. Keep it current with update_todos as you work — mark an item "
+        sb.AppendLine("You wrote this. Keep it current with todowrite as you work — mark an item "
                     + "in_progress before starting it and completed once it is actually done.");
         sb.AppendLine();
 

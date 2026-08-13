@@ -1496,7 +1496,7 @@ public sealed class Agent
             // message. Spawn leads because it is the only name that could otherwise be shadowed: an
             // MCP server is free to advertise anything.
             // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
-            // spawn_agent in an earlier fan-out turn could still call it by name after a switch to
+            // task in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
             result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id) : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
@@ -2056,12 +2056,12 @@ public sealed class Agent
         // keepOpen leaves it expanded, StatusText returns null so the worker's own content shows, and
         // JobDigest does not placeholder its bulk output. The concept was built for exactly this and
         // was, until now, unused.
-        "spawn_agent" => "llm_agent",
+        "task" => "llm_agent",
 
         // ITS OWN TYPE, so the row stays EXPANDED. The list is the point of this row — collapsed to
         // "plan · 2/5 · expand…" it hides exactly what the user wanted at the moment they wanted it,
         // which is the same argument that keeps a worker's report open.
-        "update_todos" => "todo",
+        "todowrite" => "todo",
 
         // An MCP tool is none of the three, and the `_ => "file"` below would label it a file
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
@@ -2078,7 +2078,7 @@ public sealed class Agent
         // `{"description":"…` — so the description ate the budget and `type`, which serialises last,
         // was ALWAYS cut off. The row could not say whether it was an explore, a planner or a
         // general agent, which is the first thing anyone wants from it.
-        if (string.Equals(call.Name, "spawn_agent", StringComparison.Ordinal))
+        if (string.Equals(call.Name, "task", StringComparison.Ordinal))
         {
             var type = ReadArg(call, "type");
             var what = ReadArg(call, "description");
@@ -2102,7 +2102,7 @@ public sealed class Agent
         // A PLAN IS NAMED BY WHERE IT STANDS. The generic branch would render the entire list as
         // JSON in a header clipped at 60 characters, which is the worst of both: too long to read
         // and too short to hold the plan. The counts go here, the list goes in the body.
-        if (string.Equals(call.Name, "update_todos", StringComparison.Ordinal))
+        if (string.Equals(call.Name, "todowrite", StringComparison.Ordinal))
         {
             var items = TodoList.Parse(
                 call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Array
@@ -2144,7 +2144,7 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Runs an <c>update_todos</c> call and tells the UI, or returns null for someone else's tool.
+    /// Runs an <c>todowrite</c> call and tells the UI, or returns null for someone else's tool.
     /// </summary>
     private string? TryUpdateTodos(ToolCall call)
     {

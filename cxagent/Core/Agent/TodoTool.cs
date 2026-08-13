@@ -5,7 +5,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Agent;
 
 /// <summary>
-/// <c>update_todos</c> — the model writes and rewrites its own plan.
+/// <c>todowrite</c> — the model writes and rewrites its own plan.
 ///
 /// <para>AGENT-OWNED, like the skill loader and for the same reason: the list is per-agent state,
 /// and a plugin has no agent identity. It sits in the dispatch chain beside the spawner rather than
@@ -18,7 +18,23 @@ namespace CxAgent.Core.Agent;
 /// </summary>
 public sealed class TodoTool(TodoList list)
 {
-    public string ToolName => "update_todos";
+    public string ToolName => "todowrite";
+
+    /// <summary>
+    /// A NAME THIS TOOL ALSO ANSWERS TO — the name this tool carried before it was renamed to match opencode and Claude Code.
+    ///
+    /// <para>ACCEPTED, NOT ADVERTISED. Only <see cref="ToolName"/> is sent to the model, so nothing
+    /// pulls it toward the old spelling. But a rename is invisible to a model working from habit or
+    /// from a resumed conversation whose earlier turns used the old name, and an unknown tool is a
+    /// hard failure that costs a turn to recover from — for no reason, since the call is
+    /// unambiguous. Accepting it costs one comparison.</para>
+    /// </summary>
+    private const string LegacyName = "update_todos";
+
+    /// <summary>Is this call for this tool, under either name?</summary>
+    private bool Claims(string name) =>
+        string.Equals(name, ToolName, StringComparison.Ordinal)
+        || string.Equals(name, LegacyName, StringComparison.Ordinal);
 
     /// <summary>
     /// The description is doing most of the work here, and it is worth being long.
@@ -67,7 +83,7 @@ public sealed class TodoTool(TodoList list)
     /// <summary>Runs the call, or returns null if it is not this tool's.</summary>
     public string? TryInvoke(ToolCall call)
     {
-        if (!string.Equals(call.Name, ToolName, StringComparison.Ordinal)) return null;
+        if (!Claims(call.Name)) return null;
 
         JsonElement todos;
         try
@@ -81,12 +97,12 @@ public sealed class TodoTool(TodoList list)
             else if (call.Arguments.ValueKind != JsonValueKind.Object
                      || !call.Arguments.TryGetProperty("todos", out todos))
             {
-                return "update_todos needs a 'todos' array. Send the whole list each time.";
+                return "todowrite needs a 'todos' array. Send the whole list each time.";
             }
         }
         catch (Exception)
         {
-            return "update_todos could not read its arguments. Send {\"todos\": [ … ]}.";
+            return "todowrite could not read its arguments. Send {\"todos\": [ … ]}.";
         }
 
         var items = TodoList.Parse(todos);

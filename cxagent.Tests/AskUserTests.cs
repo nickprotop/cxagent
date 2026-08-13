@@ -13,7 +13,7 @@ namespace CxAgent.Tests;
 /// </summary>
 public class AskUserTests
 {
-    private static ToolCall Call(object args, string name = "ask_user") =>
+    private static ToolCall Call(object args, string name = "question") =>
         new() { Name = name, Id = "call-1", Arguments = JsonSerializer.SerializeToElement(args) };
 
     private static AskUserTool Answering(params string[] answers) =>
@@ -131,7 +131,7 @@ public class AskUserTests
         await tool.TryInvokeAsync(
             new ToolCall
             {
-                Name = "ask_user", Id = "c",
+                Name = "question", Id = "c",
                 Arguments = JsonSerializer.SerializeToElement("Which one?"),
             },
             CancellationToken.None);
@@ -164,7 +164,7 @@ public class AskUserTests
 
         await child.SendAsync("do something", CancellationToken.None);
 
-        Assert.DoesNotContain("ask_user", provider.LastTools.Select(t => t.Name));
+        Assert.DoesNotContain("question", provider.LastTools.Select(t => t.Name));
     }
 
     /// <summary>And the session's own agent IS offered it — the guard must not withhold from everyone.</summary>
@@ -179,7 +179,7 @@ public class AskUserTests
 
         await agent.SendAsync("do something", CancellationToken.None);
 
-        Assert.Contains("ask_user", provider.LastTools.Select(t => t.Name));
+        Assert.Contains("question", provider.LastTools.Select(t => t.Name));
     }
 
     /// <summary>A host with no UI offers nothing — there is nobody to wait for.</summary>
@@ -193,7 +193,7 @@ public class AskUserTests
 
         await agent.SendAsync("do something", CancellationToken.None);
 
-        Assert.DoesNotContain("ask_user", provider.LastTools.Select(t => t.Name));
+        Assert.DoesNotContain("question", provider.LastTools.Select(t => t.Name));
     }
 
     private sealed class ToolCapturingProvider : ILlmProvider
@@ -789,6 +789,45 @@ public class AskUserTests
             CancellationToken.None);
 
         Assert.Equal(AskUserTool.MaxOptions, Assert.Single(seen()).Choices.Count);
+    }
+
+    /// <summary>
+    /// THE OLD NAME STILL WORKS. A rename is invisible to a model working from habit, or to a
+    /// RESUMED conversation whose earlier turns called it ask_user — and an unknown tool is a hard
+    /// failure that costs a turn to recover from, for a call that is completely unambiguous.
+    /// </summary>
+    [Fact]
+    public async Task Ask_StillAnswersToItsOldName()
+    {
+        var tool = Capturing(out var seen);
+
+        var result = await tool.TryInvokeAsync(
+            new ToolCall
+            {
+                Name = "ask_user", Id = "c",
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { questions = new[] { new { question = "Which one?" } } }),
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("Which one?", Assert.Single(seen()).Question);
+    }
+
+    /// <summary>...but only the new name is advertised, so nothing pulls the model backwards.</summary>
+    [Fact]
+    public void OnlyTheCurrentNameIsOffered()
+    {
+        Assert.Equal("question", Answering("x").Definition.Name);
+    }
+
+    /// <summary>And a call for some other tool is still not ours.</summary>
+    [Fact]
+    public async Task ACallForAnotherTool_IsDeclined()
+    {
+        Assert.Null(await Answering("x").TryInvokeAsync(
+            Call(new { questions = new[] { new { question = "?" } } }, name: "read_file"),
+            CancellationToken.None));
     }
 
     // --- the description, which is what decides whether the tool is ever called ---

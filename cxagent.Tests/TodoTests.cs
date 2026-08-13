@@ -13,7 +13,7 @@ namespace CxAgent.Tests;
 /// </summary>
 public class TodoTests
 {
-    private static ToolCall Call(object args, string name = "update_todos") =>
+    private static ToolCall Call(object args, string name = "todowrite") =>
         new() { Name = name, Id = "call-1", Arguments = JsonSerializer.SerializeToElement(args) };
 
     private static TodoList Written(object args)
@@ -318,7 +318,7 @@ public class TodoTests
 
         await agent.SendAsync("do something", CancellationToken.None);
 
-        Assert.Contains("update_todos", provider.LastTools.Select(t => t.Name));
+        Assert.Contains("todowrite", provider.LastTools.Select(t => t.Name));
     }
 
     private sealed class ToolCapturingProvider : ILlmProvider
@@ -346,4 +346,31 @@ public class TodoTests
             yield return new LlmStreamChunk(r.Text, null, true, null, r.StopReason);
         }
     }
+
+    /// <summary>
+    /// THE OLD NAME STILL WORKS — a rename is invisible to a model working from habit or resuming a
+    /// conversation whose earlier turns used it, and an unknown tool costs a turn to recover from.
+    /// </summary>
+    [Fact]
+    public void Todos_StillAnswerToTheOldName()
+    {
+        var list = new TodoList();
+        var tool = new TodoTool(list);
+
+        var result = tool.TryInvoke(new ToolCall
+        {
+            Id = "c",
+            Name = "update_todos",
+            Arguments = System.Text.Json.JsonSerializer.SerializeToElement(
+                new { todos = new[] { new { content = "ship it", status = "pending" } } }),
+        });
+
+        Assert.NotNull(result);
+        Assert.Single(list.Items);
+    }
+
+    /// <summary>...and only the new name is advertised.</summary>
+    [Fact]
+    public void OnlyTheCurrentTodoNameIsOffered() =>
+        Assert.Equal("todowrite", new TodoTool(new TodoList()).Definition.Name);
 }
