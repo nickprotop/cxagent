@@ -109,8 +109,19 @@ public sealed class QuestionPromptControl
         var input = Ctl.Prompt()
             .WithMargin(1, 0, 1, 0)
             .Build();
-        input.InputChanged += (_, text) =>
+        // ON ENTER, NOT ON EVERY KEYSTROKE.
+        //
+        // This was InputChanged, which fires per character — so the answer resolved on the FIRST
+        // letter typed. Answering "config-prod.yaml" sent the model "c", restored the composer
+        // underneath the user mid-word, and spilled "onfig-prod.yaml" into the transcript as stray
+        // text. The model then reasoned about the single character it had been handed.
+        //
+        // Entered is the submit event, and submitting is what answering a question is.
+        input.Entered += (_, text) =>
         {
+            // EMPTY ENTER IS NOT AN ANSWER. It reads as "skip" only because Skip() also completes
+            // with "" — but a user who pressed Enter by accident has not decided anything, and the
+            // question should stay up rather than silently telling the model to use its judgement.
             if (!string.IsNullOrWhiteSpace(text)) _tcs.TrySetResult(text.Trim());
         };
         panel.AddControl(input);

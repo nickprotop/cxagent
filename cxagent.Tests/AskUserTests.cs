@@ -189,4 +189,72 @@ public class AskUserTests
             yield return new LlmStreamChunk(r.Text, null, true, null, r.StopReason);
         }
     }
+
+    // --- the prompt control, which is where the answer is actually collected ---
+
+    /// <summary>
+    /// THE ANSWER RESOLVES ON ENTER, NOT ON EVERY KEYSTROKE.
+    ///
+    /// <para>This was wired to InputChanged, which fires per character — so answering
+    /// "config-prod.yaml" sent the model "c", restored the composer under the user mid-word, and
+    /// spilled "onfig-prod.yaml" into the transcript as stray text. The model then reasoned about
+    /// the single character it had been given. Every unit test passed throughout: they covered the
+    /// tool, and the defect was in the control that feeds it.</para>
+    /// </summary>
+    [Fact]
+    public void TypedAnswer_ResolvesOnlyWhenSubmitted()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+        var content = prompt.BuildContent();
+        var input = FindPrompt(content);
+
+        // Typing does not answer anything.
+        // REAL KEYSTROKES, because the defect was in which event the answer hung off — a test that
+        // set Input directly would have passed against the broken version too.
+        foreach (var c in "config-prod.yaml")
+            input.ProcessKey(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+
+        Assert.False(prompt.Completion.IsCompleted, "typing a character must not submit the answer");
+
+        // Submitting does, and with the WHOLE thing.
+        input.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+        Assert.True(prompt.Completion.IsCompleted);
+        Assert.Equal("config-prod.yaml", prompt.Completion.Result);
+    }
+
+    /// <summary>
+    /// An accidental Enter is not a decision. It would otherwise read as a skip — Skip() also
+    /// completes with "" — and silently tell the model to use its own judgement.
+    /// </summary>
+    [Fact]
+    public void EmptyEnter_LeavesTheQuestionUp()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+        var input = FindPrompt(prompt.BuildContent());
+
+        input.ProcessKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+
+        Assert.False(prompt.Completion.IsCompleted);
+    }
+
+    /// <summary>Escape resolves with "", which the tool reads as "proceed on your own judgement".</summary>
+    [Fact]
+    public void Skip_CompletesWithNothing()
+    {
+        var prompt = new CxAgent.UI.QuestionPromptControl("Which config file?", []);
+
+        prompt.Skip();
+
+        Assert.True(prompt.Completion.IsCompleted);
+        Assert.Equal("", prompt.Completion.Result);
+    }
+
+    /// <summary>The free-text prompt inside the question panel.</summary>
+    private static SharpConsoleUI.Controls.PromptControl FindPrompt(
+        SharpConsoleUI.Controls.IWindowControl content)
+    {
+        var panel = Assert.IsType<SharpConsoleUI.Controls.ScrollablePanelControl>(content);
+
+        return panel.GetChildren().OfType<SharpConsoleUI.Controls.PromptControl>().Single();
+    }
 }
