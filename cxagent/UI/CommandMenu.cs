@@ -107,9 +107,15 @@ public sealed class CommandMenu
         if (text.Contains(' '))
         {
             var args = SessionCommands.ArgumentsFor(text);
-            var name = text[..text.IndexOf(' ')];
+
+            // THE PREFIX IS EVERYTHING ALREADY COMMITTED TO, not just the command name. At one level
+            // down those are the same string; at two — "/sessions resume 3" — they are not, and
+            // completing to "/sessions 3" would produce a command the dispatcher rejects.
+            var lastSpace = text.LastIndexOf(' ');
+            var prefix = text[..lastSpace];
+
             matches = [.. args.Select(a => new Row(
-                a.Name, a.Summary, a.Completes ? $"{name} {a.Name}" : null))];
+                a.Name, a.Summary, a.Completes ? $"{prefix} {a.Name}" : null))];
         }
         else
         {

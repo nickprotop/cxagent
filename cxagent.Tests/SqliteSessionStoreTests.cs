@@ -399,7 +399,36 @@ public class SqliteSessionStoreTests : IDisposable
         Assert.Equal("agent-new", store.List(Here)[0].Uid);
     }
 
-    /// <summary>A ULID is 26 characters and unusable at a prompt. Git solved this; users know it.</summary>
+    /// <summary>
+    /// SESSIONS THAT PREDATE THE TITLE COLUMN ARE TITLED ANYWAY, once, when the column is added.
+    ///
+    /// <para>Titles are written on save, and a session that already ended is never saved again — so
+    /// without a backfill every conversation a user already had would list as "(no messages yet)"
+    /// forever, on exactly the rows most worth resuming.</para>
+    /// </summary>
+    [Fact]
+    public void SessionsFromBeforeTheTitleColumnAreTitledOnTheNextOpen()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-old", [Msg("user", "why does /mode not show the file axis")], 1, 1,
+            workingDir: Here);
+
+        // Back to what the row looked like before the column existed.
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_paths.DatabasePath}"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE agent_sessions SET title = NULL;";
+            cmd.ExecuteNonQuery();
+        }
+
+        // Opening the store runs the migration, and the migration fills it in.
+        var reopened = new SqliteSessionStore(_paths);
+
+        Assert.Equal("why does /mode not show the file axis", reopened.List(Here)[0].Title);
+    }
+
+    /// <summary>A ULID is 26 characters and unusable at a prompt, so it must be abbreviable.</summary>
     [Fact]
     public void ASessionIsFoundByAnUnambiguousPrefix()
     {
@@ -410,6 +439,27 @@ public class SqliteSessionStoreTests : IDisposable
         Assert.Equal("01KZWZ0XHWBDDGD64Z7RRN873P", store.LoadByUid("01kzwz").Session!.AgentId);   // as typed
         Assert.Equal("01KZWZ0XHWBDDGD64Z7RRN873P",
             store.LoadByUid("01KZWZ0XHWBDDGD64Z7RRN873P").Session!.AgentId);                     // in full
+    }
+
+    /// <summary>
+    /// AND BY ITS TAIL, which is the form the listing actually prints. A ULID begins with a
+    /// timestamp: sessions started minutes apart share their leading characters, so the git habit of
+    /// abbreviating from the front is exactly wrong here — three sessions from one afternoon all
+    /// abbreviate to the same six. The random half is at the end.
+    /// </summary>
+    [Fact]
+    public void ASessionIsAlsoFoundByTheTailTheListingShows()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("01KZXC5H9QXNND4VH6W0GR07R2", [Msg("user", "hello")], 1, 1, workingDir: Here);
+        store.SaveTurn("01KZXC96Z5CSTJC6C9QF7WVD8H", [Msg("user", "hello")], 1, 1, workingDir: Here);
+
+        // The shared timestamp prefix names both and resolves neither...
+        Assert.True(store.LoadByUid("01KZXC").IsAmbiguous);
+
+        // ...while the tail names exactly one.
+        Assert.Equal("01KZXC5H9QXNND4VH6W0GR07R2", store.LoadByUid("GR07R2").Session!.AgentId);
+        Assert.Equal("01KZXC96Z5CSTJC6C9QF7WVD8H", store.LoadByUid("wvd8h").Session!.AgentId);
     }
 
     /// <summary>

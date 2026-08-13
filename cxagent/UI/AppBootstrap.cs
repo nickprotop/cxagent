@@ -537,6 +537,12 @@ public static class AppBootstrap
                             return;
                         }
 
+                        if (command.Name == "/sessions")
+                        {
+                            HandleSessions(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+
                         if (command.Name == "/stats")
                         {
                             var statsArg = SessionCommands.Arguments(goalText);
@@ -967,11 +973,101 @@ public static class AppBootstrap
                 permissionRules.RulesFor(Directory.GetCurrentDirectory()).Rules.Count);
             mainWindow.RefreshSessionPanel();
 
+            // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
+            // the store is the composition root's — SessionCommands stays a description of the
+            // commands rather than a view of the database. Read on each keystroke, never cached.
+            SessionCommands.ValueSupplier = arg => arg switch
+            {
+                "/sessions resume" => SessionsCommand.Completions(SafeList()),
+                _ => [],
+            };
+
             // NEVER RESUME SILENTLY. A context the user did not ask for is one they cannot account
             // for, and it is paid for on the very first turn — so this asks, on the first pump, for
             // the same reason everything else here is deferred: a dialog needs a render tick to join.
             _ = OfferResumeAsync();
         });
+
+        // THE LIST THE COMMAND AND THE PALETTE BOTH READ. Scoped to this folder unless asked
+        // otherwise, and re-read on every use: a session that ended in another window a minute ago
+        // has to appear, and a cached list is a list that lies about exactly that.
+        // COMPLETION MUST NEVER THROW. It runs on a keystroke inside layout, where an exception from
+        // a locked database would take down the composer rather than produce an empty menu.
+        IReadOnlyList<SessionInfo> SafeList()
+        {
+            try { return ListSessions(false); }
+            catch { return []; }
+        }
+
+        IReadOnlyList<SessionInfo> ListSessions(bool all) =>
+            sessions.List(all ? null : workingDir, all);
+
+        void HandleSessions(string argument)
+        {
+            try
+            {
+                // "all" IS READ BEFORE THE DECISION, because it changes which rows exist rather than
+                // what is done with them — and `resume 3` has to mean the row the user is looking at.
+                var all = SessionCommands.ArgumentWords($"/sessions {argument}")
+                    .Any(w => w.Equals("all", StringComparison.OrdinalIgnoreCase));
+
+                var rows = ListSessions(all);
+                var result = SessionsCommand.Decide(
+                    argument, rows, SqliteSessionStore.DefaultRetention, all);
+
+                if (result.ResumeUid is null)
+                {
+                    mainWindow.Chat.AddMessage(ChatRole.System, result.Reply);
+                    return;
+                }
+
+                // RESTORING MID-TURN IS REFUSED. WireRunner replaces the agent the running turn is
+                // appending to — the tool results of a call already in flight would land in a
+                // conversation nobody is reading, which is the orphan shape that 400s a session.
+                if (IsTurnRunning())
+                {
+                    mainWindow.Chat.AddMessage(ChatRole.System,
+                        "[yellow]A turn is running — press Escape to stop it first.[/]");
+                    return;
+                }
+
+                if (sessions.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
+                    RestoreSession(snapshot);
+                else
+                    mainWindow.Chat.AddMessage(ChatRole.System,
+                        "[yellow]That session could not be read back.[/]");
+            }
+            catch (Exception ex)
+            {
+                // REPORTED, like /stats reads and unlike the writes: an empty list from a locked
+                // database says "you have no earlier sessions", which is a lie a user cannot detect.
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    $"[{ColorScheme.DangerMarkup}]Could not read sessions: {ex.Message}[/]");
+            }
+        }
+
+        // THE ONE WAY BACK INTO A SESSION, shared by the startup offer and by /sessions resume.
+        // Restoring is four steps that only work together — seed, re-wire, retire the old row, and
+        // say so — and the second caller is exactly when a sequence like that gets copied with one
+        // step quietly missing.
+        void RestoreSession(SessionSnapshot snapshot)
+        {
+            pendingResume = snapshot;
+            WireRunner(resolution);   // rebuilds the runner over the restored context
+
+            // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
+            // writing its own rows, so leaving the old one unfinished would offer the same
+            // crashed context again at every launch — and accepting it twice would fork the
+            // conversation into two sessions claiming the same history.
+            sessions.MarkFinished(snapshot.AgentId);
+
+            // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
+            // model's memory, not this session's scrollback — so without a line here the user
+            // faces an empty screen and an agent that mysteriously already knows things.
+            permissionSink.ShowSystemMessage(
+                $"[yellow]Resumed an earlier session: {snapshot.Context.Count} messages restored. "
+                + "They are not shown above, but the agent remembers them.[/]");
+        }
 
         async Task OfferResumeAsync()
         {
@@ -998,21 +1094,7 @@ public static class AppBootstrap
 
             if (choice == resume)
             {
-                pendingResume = snapshot;
-                WireRunner(resolution);   // rebuilds the runner over the restored context
-
-                // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
-                // writing its own rows, so leaving the old one unfinished would offer the same
-                // crashed context again at every launch — and accepting it twice would fork the
-                // conversation into two sessions claiming the same history.
-                sessions.MarkFinished(snapshot.AgentId);
-
-                // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
-                // model's memory, not this session's scrollback — so without a line here the user
-                // faces an empty screen and an agent that mysteriously already knows things.
-                permissionSink.ShowSystemMessage(
-                    $"[yellow]Resumed an earlier session: {snapshot.Context.Count} messages restored. "
-                    + "They are not shown above, but the agent remembers them.[/]");
+                RestoreSession(snapshot);
             }
             else if (choice == fresh)
             {

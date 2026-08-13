@@ -23,6 +23,9 @@ but not completed.
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/sessions` | Earlier conversations in this folder |
+| `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
+| `/sessions all` | Every folder, not just this one |
 | `/exit` | Quit |
 
 ---
@@ -152,6 +155,43 @@ It is also **not a refresh.** Skills are re-read from disk every turn, so a skil
 already live on the next one — there is nothing to apply.
 
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
+
+---
+
+## `/sessions`
+
+Every conversation recorded in this folder, and a way back into one.
+
+```
+Sessions · 3 here
+
+   1  8D4BV3  just now     214k  rename list_files to glob everywhere
+   2  7WVD8H  4m ago        31k  why does /mode not show the file axis yet
+   3  GR07R2  yesterday     18k  add the arity table to the permissions doc
+
+  /sessions resume <number|id>  ·  /sessions all
+  finished sessions are removed after 7 days
+```
+
+**A session is named twice, because the two names are different promises.** The number belongs to
+the listing on screen — renumbered every time, useless in a script, ideal at a prompt. The id is the
+session itself: stable, quotable, and the form that works from the command line. `/sessions resume `
+offers the numbered list inline, so the usual case is two keystrokes.
+
+**The id shown is the LAST six characters, not the first.** Session ids are ULIDs, which open with a
+timestamp — abbreviate from the front, git-style, and every session started in the same few minutes
+reads as the same six characters. Three sessions from one afternoon all showed as `01KZXC`. The
+random half is at the end, so that is the half worth printing. Either end is accepted when you type
+one, so a full id pasted from elsewhere still works.
+
+**An ambiguous id is reported, never resolved.** Two matches name both rather than picking the
+newer: silently restoring the wrong conversation is not something you find out about quickly.
+
+**Refused while a turn is running.** Restoring replaces the agent the running turn is writing into.
+
+Sessions are listed for the folder you are in — `/sessions all` widens it, and adds the folder to
+each row. **The retention window is stated in the output** because these rows are deleted on a
+schedule, and a policy nobody mentioned is one you discover by losing something.
 
 ---
 

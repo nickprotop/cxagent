@@ -79,6 +79,7 @@ public sealed class SqliteSessionStore
             // there — but deriving it means deserialising every session's WHOLE conversation to
             // render one line each, which is the wrong cost for a list. Written once, read directly.
             AddColumnIfMissing(conn, "agent_sessions", "title", "TEXT");
+            BackfillTitles(conn);
 
             using var index = conn.CreateCommand();
             // KEYED BY FOLDER FIRST, because that is now the leading predicate of every read. The old
@@ -103,6 +104,53 @@ public sealed class SqliteSessionStore
     /// alternative — running the ALTER and swallowing the "duplicate column" error — cannot tell that
     /// failure apart from a real one, and this store swallows everything.</para>
     /// </summary>
+    /// <summary>
+    /// Titles the sessions that existed before the column did.
+    ///
+    /// <para>WITHOUT THIS, EVERY SESSION A USER ALREADY HAS reads "(no messages yet)" in the listing
+    /// — the one row-level fact that makes a row recognisable, absent on exactly the rows most worth
+    /// resuming, and never filled in because a title is written on save and a past session is not
+    /// going to be saved again.</para>
+    ///
+    /// <para>ONCE, AT MIGRATION, rather than derived per read: the title lives inside
+    /// <c>context_json</c>, so deriving it on the fly means deserialising every conversation in full
+    /// to render one line each. Here the cost is paid a single time, for a handful of rows.</para>
+    /// </summary>
+    private void BackfillTitles(SqliteConnection conn)
+    {
+        try
+        {
+            var pending = new List<(string Id, string Json)>();
+
+            using (var read = conn.CreateCommand())
+            {
+                read.CommandText =
+                    "SELECT agent_id, context_json FROM agent_sessions WHERE title IS NULL;";
+                using var r = read.ExecuteReader();
+                while (r.Read())
+                    if (!r.IsDBNull(1)) pending.Add((r.GetString(0), r.GetString(1)));
+            }
+
+            foreach (var (id, json) in pending)
+            {
+                var context = JsonSerializer.Deserialize<List<ChatMessage>>(json, JsonOptions);
+                if (context is null || TitleOf(context) is not { } title) continue;
+
+                using var write = conn.CreateCommand();
+                write.CommandText =
+                    "UPDATE agent_sessions SET title = $t WHERE agent_id = $id;";
+                write.Parameters.AddWithValue("$t", title);
+                write.Parameters.AddWithValue("$id", id);
+                write.ExecuteNonQuery();
+            }
+        }
+        catch (Exception)
+        {
+            // Best-effort, like the rest of this file: an untitled row is a worse listing, never a
+            // failed startup. A session that cannot be deserialised here also cannot be resumed.
+        }
+    }
+
     private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string type)
     {
         using var check = conn.CreateCommand();
@@ -281,10 +329,13 @@ public sealed class SqliteSessionStore
     }
 
     /// <summary>
-    /// One session by uid, or by any unambiguous PREFIX of one.
+    /// One session by uid, or by any unambiguous ABBREVIATION of one — from either end.
     ///
-    /// <para>PREFIXES BECAUSE A ULID IS 26 CHARACTERS and unusable at a prompt. Git solved this
-    /// decades ago and users already know the rule.</para>
+    /// <para>ABBREVIATIONS BECAUSE A ULID IS 26 CHARACTERS and unusable at a prompt. But the git
+    /// habit of taking the FIRST few does not carry over: a commit hash is random from character
+    /// one, while a ULID opens with a timestamp, so every session started in the same few minutes
+    /// shares a leading prefix. The listing therefore shows the tail, and this matches both — the
+    /// tail a user reads off the screen, and the head of a full uid pasted from somewhere else.</para>
     ///
     /// <para>AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest match silently is how someone
     /// restores the wrong conversation and does not find out for ten minutes.</para>
@@ -297,14 +348,20 @@ public sealed class SqliteSessionStore
         {
             using var conn = Open();
             using var cmd = conn.CreateCommand();
+            // EITHER END, because a ULID starts with a timestamp. Sessions begun in the same few
+            // minutes share their opening characters, so the listing shows the TAIL — the random
+            // half — and a leading-prefix match alone could never resolve what a user reads off the
+            // screen. A full uid pasted from --sessions or an exit hint still matches from the front.
             cmd.CommandText = """
                 SELECT agent_id FROM agent_sessions
-                WHERE agent_id LIKE $p ESCAPE '\'
+                WHERE agent_id LIKE $p ESCAPE '\' OR agent_id LIKE $s ESCAPE '\'
                 ORDER BY updated_at DESC;
                 """;
-            // Case-insensitive by hand: a user reads a lowercase prefix off the screen and a ULID is
+            // Case-insensitive by hand: a user reads a lowercase id off the screen and a ULID is
             // stored uppercase, so an exact LIKE would never match what they just typed.
-            cmd.Parameters.AddWithValue("$p", Escape(prefix.Trim().ToUpperInvariant()) + "%");
+            var needle = Escape(prefix.Trim().ToUpperInvariant());
+            cmd.Parameters.AddWithValue("$p", needle + "%");
+            cmd.Parameters.AddWithValue("$s", "%" + needle);
 
             var matches = new List<string>();
             using (var r = cmd.ExecuteReader())
@@ -459,7 +516,8 @@ public sealed class SqliteSessionStore
 /// <para>DELIBERATELY NOT <see cref="SessionSnapshot"/>, which carries the whole message list.
 /// Rendering ten rows must not cost ten conversation deserialisations.</para>
 /// </summary>
-/// <param name="Uid">The agent id. Shown short, matched by prefix — see <c>LoadByUid</c>.</param>
+/// <param name="Uid">The agent id. Shown as its last six characters, matched from either end — see
+/// <c>LoadByUid</c>, which explains why a ULID cannot be abbreviated from the front.</param>
 /// <param name="Title">The first user message, clipped, or null for a session that never got one.</param>
 /// <param name="Finished">
 /// Ended cleanly, OR superseded by a resume. Two meanings in one flag: see the resume path, which

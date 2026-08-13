@@ -398,6 +398,65 @@ public class SessionCommandTableTests
     public void ArgumentsFor_StopsOnceTheArgumentIsTyped() =>
         Assert.Empty(SessionCommands.ArgumentsFor("/mcp login context7"));
 
+    /// <summary>
+    /// ...UNLESS SOMETHING CAN SUPPLY THE VALUES. `/sessions resume ` is a second space whose right
+    /// answer is a short list the app has on hand, and the supplier is how the composition root
+    /// offers it without this table learning what a session is.
+    /// </summary>
+    [Fact]
+    public void ArgumentsFor_WithASupplier_OffersLiveValuesPastTheSecondSpace()
+    {
+        using var _ = new SuppliedValues("/sessions resume",
+            [new("1", "7f3a2b  2h ago  add the arity table"), new("2", "01kzwz  yesterday  why")]);
+
+        var values = SessionCommands.ArgumentsFor("/sessions resume ");
+
+        Assert.Equal(["1", "2"], values.Select(v => v.Name));
+    }
+
+    [Fact]
+    public void ArgumentsFor_WithASupplier_NarrowsAsTheValueIsTyped()
+    {
+        using var _ = new SuppliedValues("/sessions resume",
+            [new("1", "one"), new("2", "two"), new("12", "twelve")]);
+
+        var values = SessionCommands.ArgumentsFor("/sessions resume 1");
+
+        Assert.Equal(["1", "12"], values.Select(v => v.Name));
+    }
+
+    /// <summary>The supplier is asked for the subcommand actually typed, not for the command.</summary>
+    [Fact]
+    public void ArgumentsFor_WithASupplier_AsksAboutTheSubcommandItIsUnder()
+    {
+        using var _ = new SuppliedValues("/sessions resume", [new("1", "one")]);
+
+        Assert.Empty(SessionCommands.ArgumentsFor("/sessions all "));
+    }
+
+    /// <summary>Three words in: the value is typed, and there is nothing left to choose.</summary>
+    [Fact]
+    public void ArgumentsFor_WithASupplier_StopsOnceTheValueIsTyped()
+    {
+        using var _ = new SuppliedValues("/sessions resume", [new("1", "one")]);
+
+        Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume 1 extra"));
+    }
+
+    [Fact]
+    public void ArgumentsFor_WithoutASupplier_StillStopsAtTheSecondSpace() =>
+        Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume "));
+
+    /// <summary>Registers a value supplier and removes it again, so one test cannot leak into
+    /// the next through a static.</summary>
+    private sealed class SuppliedValues : IDisposable
+    {
+        public SuppliedValues(string forArgument, IReadOnlyList<CommandArgument> values) =>
+            SessionCommands.ValueSupplier = arg => arg == forArgument ? values : [];
+
+        public void Dispose() => SessionCommands.ValueSupplier = null;
+    }
+
     [Fact]
     public void ArgumentsFor_ACommandWithoutArguments_OffersNothing() =>
         Assert.Empty(SessionCommands.ArgumentsFor("/clear "));

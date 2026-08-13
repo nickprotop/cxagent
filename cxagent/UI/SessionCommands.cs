@@ -43,6 +43,17 @@ public static class SessionCommands
         // not a refresh: skills are re-read every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped",
             CommandOutcome.NeedsWindow),
+        // NeedsWindow like the rest: the store and the working directory belong to the composition
+        // root, and this table deliberately holds nothing but the conversation.
+        new("/sessions", "earlier conversations here, and a way back into one",
+            CommandOutcome.NeedsWindow,
+        [
+            // NOT COMPLETABLE: the value is a number off a listing the user has to read first, or an
+            // id. Neither is something this static table could offer.
+            new("resume <number|id>", "restore one — the number from this list, or its id",
+                Completes: false),
+            new("all", "every folder, not just this one"),
+        ]),
         // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
         // this type deliberately holds nothing but the conversation.
         // THE AXIS IS NAMED, so this one command can grow. Delegation is the only axis today; file
@@ -114,8 +125,13 @@ public static class SessionCommands
 
         // A SECOND SPACE MEANS THE ARGUMENT IS TYPED and the user has moved past choosing one —
         // "/mcp login serv" is naming a server, not still picking between login and reload.
+        //
+        // ...UNLESS SOMETHING CAN SUPPLY THE VALUES. `/sessions resume ` is a second space whose
+        // right answer is a short list the app already has on hand, and offering nothing there sends
+        // the user back to read a number off a listing they have scrolled past. See
+        // <see cref="ValueSupplier"/> for why this is one hook rather than a general mechanism.
         var rest = input[(space + 1)..];
-        if (rest.Contains(' ')) return [];
+        if (rest.Contains(' ')) return Values(input[..space], rest);
 
         var command = All.FirstOrDefault(c =>
             string.Equals(c.Name, input[..space], StringComparison.OrdinalIgnoreCase));
@@ -125,6 +141,43 @@ public static class SessionCommands
 
         return [.. command.Args.Where(a =>
             a.Name.StartsWith(rest, StringComparison.OrdinalIgnoreCase))];
+    }
+
+    /// <summary>
+    /// Live values for an argument that names something the app knows about, or null for the great
+    /// majority that name nothing.
+    ///
+    /// <para>THE TABLE IS STATIC AND STAYS STATIC. <c>/mcp &lt;server&gt;</c> documents the reason:
+    /// coupling this list to session state makes a description of the commands into a view of the
+    /// world. This hook does not change that — the table still declares <c>resume &lt;number|id&gt;</c>
+    /// as a shape, and the composition root, which owns the store, is what fills it in. Nothing here
+    /// reads a session.</para>
+    ///
+    /// <para>ONE HOOK RATHER THAN AN INTERFACE PER COMMAND, because there is one command that needs
+    /// it. A second — <c>/mcp login</c> offering live servers — would use the same field and the same
+    /// shape, and a third is when this is worth generalising.</para>
+    /// </summary>
+    public static Func<string, IReadOnlyList<CommandArgument>>? ValueSupplier { get; set; }
+
+    /// <summary>
+    /// The values offered once a subcommand is typed and a space follows it — filtered by whatever
+    /// has been typed since, so <c>/sessions resume 7f</c> narrows rather than listing everything.
+    /// </summary>
+    private static IReadOnlyList<CommandArgument> Values(string name, string rest)
+    {
+        if (ValueSupplier is null) return [];
+
+        var cut = rest.IndexOf(' ');
+        var sub = rest[..cut];
+        var typed = rest[(cut + 1)..];
+
+        // ONLY THE LAST WORD MAY BE INCOMPLETE. "/sessions resume 3 extra" is past choosing.
+        if (typed.Contains(' ')) return [];
+
+        var values = ValueSupplier($"{name} {sub}");
+        if (typed.Length == 0) return values;
+
+        return [.. values.Where(v => v.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))];
     }
 
     /// <summary>
