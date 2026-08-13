@@ -104,6 +104,27 @@ an agent spends its time creating, would report as unchanged. Untracked files ar
 
 ---
 
+## What it cost
+
+![Stats](12-stats.png)
+
+`/stats` over the same two sessions. **Tools are ranked by characters returned, not call count** —
+a turn re-sends everything before it, so one tool returning 215k characters over 44 calls does not
+cost that once, it costs it again on every later turn. Forty cheap calls are rarely the problem.
+
+The failures are counted alongside: `run_shell` failed 16 times out of 32, which is what the three
+tmux attempts and the denied commands look like from the outside.
+
+The last line is the permission gate's own accounting — **20 asked, 64 by rule**. Those 64 are calls
+that would each have been a prompt before "always allow" learned to grant a command's name rather
+than its exact string.
+
+The worker share reads 1% here because this session did most of its work in the parent — reading,
+editing, building and running. A session that delegates heavily reads very differently, which is the
+point of measuring it at all.
+
+---
+
 ## Sessions
 
 ![Sessions and resume](11-sessions-and-resume.png)
