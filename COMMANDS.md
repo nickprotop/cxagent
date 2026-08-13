@@ -165,9 +165,9 @@ Every conversation recorded in this folder, and a way back into one.
 ```
 Sessions · 3 here
 
-   1  8D4BV3  just now     214k  rename list_files to glob everywhere
-   2  7WVD8H  4m ago        31k  why does /mode not show the file axis yet
-   3  GR07R2  yesterday     18k  add the arity table to the permissions doc
+   1  6QC33Q  just now     214k  rename list_files to glob everywhere
+   2  5PSCPG  4m ago        31k  why does /mode not show the file axis yet
+   3  CV5TAC  yesterday     18k  add the arity table to the permissions doc
 
   /sessions resume <number|id>  ·  /sessions all
   finished sessions are removed after 7 days
@@ -178,11 +178,11 @@ the listing on screen — renumbered every time, useless in a script, ideal at a
 session itself: stable, quotable, and the form that works from the command line. `/sessions resume `
 offers the numbered list inline, so the usual case is two keystrokes.
 
-**The id shown is the LAST six characters, not the first.** Session ids are ULIDs, which open with a
-timestamp — abbreviate from the front, git-style, and every session started in the same few minutes
-reads as the same six characters. Three sessions from one afternoon all showed as `01KZXC`. The
-random half is at the end, so that is the half worth printing. Either end is accepted when you type
-one, so a full id pasted from elsewhere still works.
+**The id shown is the first six characters, like a git hash.** That works because session ids put
+their randomness first and their timestamp last — the reverse of a ULID. A timestamp-first id makes
+every session started in the same few minutes read as the same six characters: three sessions from
+one afternoon all showed as `01KZXC`, an identifier that identified nothing. Ids created before this
+change still have their random half at the end, so typing either end of an id matches.
 
 **An ambiguous id is reported, never resolved.** Two matches name both rather than picking the
 newer: silently restoring the wrong conversation is not something you find out about quickly.

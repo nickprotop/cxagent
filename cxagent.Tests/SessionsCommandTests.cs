@@ -20,10 +20,10 @@ public class SessionsCommandTests
             Finished: false,
             UpdatedAt: DateTimeOffset.UtcNow.AddMinutes(-minutesAgo));
 
-    // ULID-SHAPED ON PURPOSE: a shared leading timestamp and a distinguishing tail, which is what
-    // real sessions look like and what makes the tail the part worth showing.
+    // SHAPED LIKE THE IDS THE GENERATOR MAKES NOW: randomness first, timestamp at the tail — so
+    // two sessions differ from their opening character. See UlidGenerator for why that changed.
     private static readonly IReadOnlyList<SessionInfo> Two =
-        [Row("01KZXC5H9QXNND"), Row("01KZXC96Z5CSTJ", "asked about /mode")];
+        [Row("XNND4VH6W0GR0701KZXC5H9Q"), Row("CSTJC6C9QF7WVD01KZXC96Z5", "asked about /mode")];
 
     [Fact]
     public void ListingNamesEachSessionBothWaysItCanBeAddressed()
@@ -32,7 +32,7 @@ public class SessionsCommandTests
 
         // The number to type, the uid to quote, and the title that says which is which.
         Assert.Contains(" 1", reply);
-        Assert.Contains("QXNND", reply);
+        Assert.Contains("XNND4V", reply);
         Assert.Contains("asked about /mode", reply);
     }
 
@@ -47,44 +47,58 @@ public class SessionsCommandTests
     public void ANumberAndAShortIdReachTheSameSession()
     {
         var byNumber = SessionsCommand.Decide("resume 2", Two, Week);
-        var byShortId = SessionsCommand.Decide("resume Z5CSTJ", Two, Week);
+        var byShortId = SessionsCommand.Decide("resume CSTJC6", Two, Week);
 
-        Assert.Equal("01KZXC96Z5CSTJ", byNumber.ResumeUid);
+        Assert.Equal("CSTJC6C9QF7WVD01KZXC96Z5", byNumber.ResumeUid);
         Assert.Equal(byNumber.ResumeUid, byShortId.ResumeUid);
     }
 
-    /// <summary>The listing shows the tail because a ULID's head is a shared timestamp — three
-    /// sessions made minutes apart would otherwise all read as the same six characters.</summary>
+    /// <summary>Six from the front, like git — the generator puts the randomness there.</summary>
     [Fact]
-    public void TheShortFormIsTheEndOfTheUidNotTheStart()
+    public void TheShortFormIsTheOpeningOfTheUid()
     {
-        Assert.Equal("QXNND4", SessionsCommand.Short("01KZXC5H9QXNND4"));
+        Assert.Equal("XNND4V", SessionsCommand.Short("XNND4VH6W0GR0701KZXC5H9Q"));
+    }
+
+    /// <summary>
+    /// IDS MINTED BEFORE THE LAYOUT CHANGED ARE STILL IN THE STORE, and theirs is the random half at
+    /// the tail. A user reading one off an older listing types what they saw; refusing it would be a
+    /// rule the output never explained, on a row that looks no different from any other.
+    /// </summary>
+    [Fact]
+    public void ALegacyIdIsStillReachableByItsTail()
+    {
+        IReadOnlyList<SessionInfo> old = [Row("01KZXC5H9QXNND4VH6W0GR07R2")];
+
+        Assert.Equal("01KZXC5H9QXNND4VH6W0GR07R2",
+            SessionsCommand.Decide("resume GR07R2", old, Week).ResumeUid);
     }
 
     [Fact]
     public void MatchingIsCaseInsensitive()
     {
-        Assert.Equal("01KZXC5H9QXNND", SessionsCommand.Decide("resume qxnnd", Two, Week).ResumeUid);
+        Assert.Equal("XNND4VH6W0GR0701KZXC5H9Q",
+            SessionsCommand.Decide("resume xnnd4v", Two, Week).ResumeUid);
     }
 
     /// <summary>A whole uid pasted from --sessions or an exit hint still names its session.</summary>
     [Fact]
     public void AFullUidMatchesFromTheFront()
     {
-        Assert.Equal("01KZXC5H9QXNND",
-            SessionsCommand.Decide("resume 01KZXC5H9QXNND", Two, Week).ResumeUid);
+        Assert.Equal("XNND4VH6W0GR0701KZXC5H9Q",
+            SessionsCommand.Decide("resume XNND4VH6W0GR0701KZXC5H9Q", Two, Week).ResumeUid);
     }
 
     [Fact]
     public void AnAmbiguousPrefixNamesTheCandidatesInsteadOfPickingOne()
     {
-        IReadOnlyList<SessionInfo> both = [Row("01KZXCAAAZZZ"), Row("01KZXCBBBZZZ")];
+        IReadOnlyList<SessionInfo> both = [Row("ZZZAAA01KZXC"), Row("ZZZBBB01KZXC")];
 
         var result = SessionsCommand.Decide("resume ZZZ", both, Week);
 
         Assert.Null(result.ResumeUid);
-        Assert.Contains("AAAZZZ", result.Reply);
-        Assert.Contains("BBBZZZ", result.Reply);
+        Assert.Contains("ZZZAAA", result.Reply);
+        Assert.Contains("ZZZBBB", result.Reply);
     }
 
     [Fact]
@@ -120,7 +134,7 @@ public class SessionsCommandTests
     [Fact]
     public void ASessionWithNoTitleStillGetsARowThatCanBeActedOn()
     {
-        IReadOnlyList<SessionInfo> untitled = [Row("01KZXCABC123", title: null)];
+        IReadOnlyList<SessionInfo> untitled = [Row("ABC123XX01KZXC", title: null)];
 
         var reply = SessionsCommand.Decide("", untitled, Week).Reply;
 
@@ -140,7 +154,7 @@ public class SessionsCommandTests
     public void ALongListIsCappedAndSaysHowManyItLeftOut()
     {
         var many = Enumerable.Range(0, SessionsCommand.MaxRows + 5)
-            .Select(i => Row($"01KZXCUID{i:0000}"))
+            .Select(i => Row($"UID{i:0000}01KZXC"))
             .ToList();
 
         var reply = SessionsCommand.Decide("", many, Week).Reply;

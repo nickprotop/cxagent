@@ -163,25 +163,23 @@ public static class SessionsCommand
     }
 
     /// <summary>
-    /// Six characters — but the LAST six, not the first.
+    /// Six characters, like git — and like git, the FIRST six, because
+    /// <see cref="Helpers.UlidGenerator"/> now puts the randomness there.
     ///
-    /// <para>THE GIT HABIT IS WRONG FOR A ULID. A commit hash is random from its first character, so
-    /// a leading prefix distinguishes; a ULID begins with a timestamp, so every session started in
-    /// the same few minutes shares one. Three sessions made during this feature's own drive all
-    /// rendered as <c>01KZXC</c> — a listing where the identifier identifies nothing, and a
-    /// prefix-resume that could never succeed on the rows most likely to be resumed.</para>
-    ///
-    /// <para>The tail is the random half, and it is what <see cref="MatchesShort"/> matches on.</para>
+    /// <para>It did not always. Ids used to open with a timestamp, so sessions started minutes apart
+    /// shared a prefix: three made during this feature's own drive all rendered as <c>01KZXC</c>, an
+    /// identifier that identified nothing. That was fixed where it was caused — in the generator —
+    /// rather than compensated for here by printing the tail, which would have left the same
+    /// collision in every other place an id is shown.</para>
     /// </summary>
-    public static string Short(string uid) => uid.Length <= 6 ? uid : uid[^6..];
+    public static string Short(string uid) => uid.Length <= 6 ? uid : uid[..6];
 
     /// <summary>
     /// Does what the user typed name this session?
     ///
-    /// <para>BOTH ENDS ARE ACCEPTED, because both are things a user could reasonably be holding: the
-    /// short form printed in the listing is a suffix, while a uid copied from <c>--sessions</c> or an
-    /// exit hint is the whole thing, and typing its opening characters is the habit every other tool
-    /// teaches. Refusing one of them would be a rule the output never explained.</para>
+    /// <para>BOTH ENDS, because ids minted before the layout changed still exist in the store, and
+    /// theirs is the half at the tail. A user reading one of those off a listing types what they see;
+    /// refusing it would be a rule the output never explained, on rows that look no different.</para>
     /// </summary>
     public static bool MatchesShort(string uid, string typed) =>
         uid.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
