@@ -342,33 +342,41 @@ public static class AppBootstrap
             // provider the session no longer uses.
             var agentTypes = new AgentTypeCatalog(res.AgentTypes, res.Providers);
 
-            var subAgents = new SubAgentSpawner(new SubAgentFactory(
-                res.Provider!,
-                plugins,
+            var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+            {
+                Provider = res.Provider!,
+                Plugins = plugins,
+
                 // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
-                ledger,
-                logs,
-                // THE SAME CEILING THE PARENT GETS, resolved once. Two expressions for one number
-                // is how a configured 0 came to mean "unbounded" for the session and "the default"
-                // for its children.
-                maxTurns: AgentHost.CeilingFor(orchestrator.MaxTurns),
+                Ledger = ledger,
+                Logs = logs,
+
+                // THE SAME CEILING THE PARENT GETS, resolved once. Two expressions for one number is
+                // how a configured 0 came to mean "unbounded" for the session and "the default" for
+                // its children.
+                MaxTurns = AgentHost.CeilingFor(orchestrator.MaxTurns),
+
                 // THE CONSTANT, never the literal — two copies of this number desynchronise the
                 // moment either moves, and a child that never compresses dies on an overflow.
-                compressAbove: orchestrator.EffectiveCompressThreshold(res.ContextWindow)
+                CompressAbove = orchestrator.EffectiveCompressThreshold(res.ContextWindow)
                     ?? OrchestratorSettings.DefaultCompressThreshold,
-                contextWindow: res.ContextWindow,
-                globalInstructionsDir: paths.ConfigDir,
-                mcp: mcp.Toolset,
+                ContextWindow = res.ContextWindow,
+
+                GlobalInstructionsDir = paths.ConfigDir,
+                Mcp = mcp.Toolset,
+
                 // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
                 // has a different window, so the threshold must be re-derived from it — and a second
                 // copy of "80% of the window" in the factory would desynchronise the moment either
                 // moved.
-                thresholdFor: w => orchestrator.EffectiveCompressThreshold(w)
+                ThresholdFor = w => orchestrator.EffectiveCompressThreshold(w)
                     ?? OrchestratorSettings.DefaultCompressThreshold,
+
                 // UNCAPPED UNLESS THE USER SAID OTHERWISE. Null is the common case and means every
                 // spawn the model emits runs — the barrier still holds them all inside the turn.
-                maxConcurrentAgents: res.MaxConcurrentAgents,
-                workingDir: workingDir),
+                MaxConcurrentAgents = res.MaxConcurrentAgents,
+                WorkingDir = workingDir,
+            }),
                 agentTypes);
 
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap

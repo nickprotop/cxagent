@@ -33,14 +33,6 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
 /// </summary>
 public sealed class SubAgentFactory
 {
-    private readonly ILlmProvider _provider;
-    private readonly PluginRegistry _plugins;
-    private readonly TokenLedger _ledger;
-    private readonly LogFileManager? _logs;
-    private readonly string? _workingDir;
-    private readonly int _maxTurns;
-    private readonly int? _compressAbove;
-    private readonly int? _contextWindow;
 
     /// <summary>
     /// Derives a compaction threshold from a context window — the caller's own rule, injected rather
@@ -54,67 +46,111 @@ public sealed class SubAgentFactory
     /// <para>Null for callers that never use per-type providers, which then keep the session's
     /// threshold unchanged.</para>
     /// </summary>
-    private readonly Func<int?, int?>? _thresholdFor;
-    private readonly string? _globalInstructionsDir;
-    private readonly Core.Mcp.McpToolset? _mcp;
 
-    /// <param name="ledger">
-    /// THE PARENT'S, DELIBERATELY (D7). A child's spend is the session's spend: the budget the user
-    /// set covers the work, not the agent that happened to do it, and a child with its own ledger
-    /// spends against nothing and never trips the breach warning.
+    /// <summary>
+    /// Everything a child needs that comes from the SESSION rather than from the spawn call.
     ///
-    /// <para>GIVEN rather than inherited by construction order, which is the whole point of hoisting
-    /// ledger creation to the composition root. When ledgers become per-model, the caller resolves
-    /// one by model and hands it here; this signature does not change.</para>
-    /// </param>
-    /// <param name="maxTurns">
-    /// THE PARENT'S CEILING, not a smaller number invented here. A figure chosen for children is the
-    /// same mistake a tight session cap makes: it caps mid-work and returns a salvage
-    /// summary that the caller reads as a finished answer. Zero means unbounded, and
-    /// <see cref="Agent"/> translates it.
-    /// </param>
-    /// <param name="compressAbove">
-    /// Must be the caller's computed threshold — <c>EffectiveCompressThreshold(window) ??
-    /// DefaultCompressThreshold</c> — never a literal. Two copies of that number desynchronise the
-    /// moment either moves, and a child that never compresses dies on a context overflow instead.
-    /// </param>
-    /// <param name="contextWindow">
-    /// The child's own <see cref="AgentContext"/> is constructed with this. <c>Window</c> is
-    /// get-only, so it can only go in AT CONSTRUCTION — omit it and occupancy reads zero,
-    /// <c>IsUnderPressure</c> is permanently false, and the child never compacts however long it
-    /// runs.
-    /// </param>
-    /// <param name="mcp">
-    /// THE PARENT'S TOOLSET, decided (D21). A child that cannot reach the docs server is crippled for
-    /// the obvious use case — "go and find out how X works" is exactly what a child is for. This is
-    /// also the first shared mutable thing a child touches: <c>McpClient.WriteAsync</c> holds no lock
-    /// on a shared stdio pipe, which is fine while one child runs at a time and is step 3's problem.
-    /// </param>
-    public SubAgentFactory(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
-        LogFileManager? logs, int maxTurns, int? compressAbove, int? contextWindow,
-        string? globalInstructionsDir, Core.Mcp.McpToolset? mcp,
-        Func<int?, int?>? thresholdFor = null,
-        int? maxConcurrentAgents = null,
-        string? workingDir = null)
+    /// <para>TWELVE PARAMETERS BECAME ONE, and the grouping is not cosmetic: these are exactly the
+    /// values a child INHERITS. What a child gets differently — its own buffered sinks, its own log
+    /// directory nested under its parent, a fresh context, a type's provider and window — is decided
+    /// in <see cref="SubAgentFactory.Create"/> and is deliberately NOT here. A child is not a copy of
+    /// its parent, and this type is only the half that is shared.</para>
+    ///
+    /// <para>IMMUTABLE, AND DERIVED RATHER THAN MUTATED. <c>init</c> everywhere, so a caller cannot
+    /// hand two children the same instance and then change it under one of them. Where a child needs
+    /// a different value — a type with its own provider — <see cref="With"/> produces a NEW record
+    /// and the original is untouched. Sharing one mutable settings object between concurrent children
+    /// is the class of bug that shows up as a child compacting against another child's window.</para>
+    /// </summary>
+    public sealed record SubAgentRuntime
     {
+        /// <summary>The session's provider, unless a type names its own.</summary>
+        public required ILlmProvider Provider { get; init; }
+
+        /// <summary>The tools a child may call — the parent's registry, not a narrowed copy.</summary>
+        public required PluginRegistry Plugins { get; init; }
+
+        /// <summary>
+        /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
+        /// a user reads covers the work, not the agent that happened to do it, and a child with its
+        /// own ledger spends against nothing.
+        /// </summary>
+        public required TokenLedger Ledger { get; init; }
+
+        /// <summary>The parent's log manager. <c>Create</c> nests each child beneath its parent.</summary>
+        public LogFileManager? Logs { get; init; }
+
+        /// <summary>
+        /// THE PARENT'S CEILING, not a smaller number invented for children. A figure chosen here is
+        /// the same mistake a tight session cap makes: it caps mid-work and returns a salvage summary
+        /// that the caller reads as a finished answer. Zero means unbounded, and <see cref="Agent"/>
+        /// translates it.
+        /// </summary>
+        public required int MaxTurns { get; init; }
+
+        /// <summary>
+        /// The caller's computed threshold — <c>EffectiveCompressThreshold(window) ??
+        /// DefaultCompressThreshold</c> — never a literal. Two copies of that number desynchronise
+        /// the moment either moves, and a child that never compresses dies on an overflow instead.
+        /// </summary>
+        public int? CompressAbove { get; init; }
+
+        /// <summary>
+        /// The child's own <see cref="AgentContext"/> is constructed with this. <c>Window</c> is
+        /// get-only, so it can only go in AT CONSTRUCTION — omit it and occupancy reads zero,
+        /// <c>IsUnderPressure</c> is permanently false, and the child never compacts however long it
+        /// runs.
+        /// </summary>
+        public int? ContextWindow { get; init; }
+
+        /// <summary>Recomputes the threshold when a type brings its own window. See <c>Create</c>.</summary>
+        public Func<int?, int?>? ThresholdFor { get; init; }
+
+        /// <summary>cxagent's own config folder, so a user-level CXAGENT.md applies everywhere.</summary>
+        public string? GlobalInstructionsDir { get; init; }
+
+        /// <summary>
+        /// THE PARENT'S TOOLSET, decided (D21). A child that cannot reach the docs server is crippled
+        /// for the obvious use case — "go and find out how X works" is exactly what a child is for.
+        /// </summary>
+        public Core.Mcp.McpToolset? Mcp { get; init; }
+
+        /// <summary>
+        /// A CHILD WORKS WHERE ITS PARENT DOES. Inherited rather than read from the process, so a
+        /// session's children stay in that session's folder even when another session runs elsewhere.
+        /// </summary>
+        public string? WorkingDir { get; init; }
+
+        /// <summary>How many children may call the endpoint at once. Null or 0 is unlimited.</summary>
+        public int? MaxConcurrentAgents { get; init; }
+
+        /// <summary>
+        /// The same runtime with a type's provider and window substituted — a NEW record, never a
+        /// mutation of this one.
+        ///
+        /// <para>BOTH TOGETHER OR NEITHER. Pairing provider A with the session's window is the exact
+        /// failure the window field documents: the child measures pressure against a ceiling its
+        /// model does not have. The threshold follows the window for the same reason.</para>
+        /// </summary>
+        public SubAgentRuntime With(ILlmProvider provider, int? contextWindow) => this with
+        {
+            Provider = provider,
+            ContextWindow = contextWindow,
+            CompressAbove = ThresholdFor?.Invoke(contextWindow) ?? CompressAbove,
+        };
+    }
+
+    private readonly SubAgentRuntime _runtime;
+
+    public SubAgentFactory(SubAgentRuntime runtime)
+    {
+        _runtime = runtime;
+
         // 0 AND NULL BOTH MEAN UNLIMITED, matching maxTurns. A semaphore of 0 would deadlock every
         // spawn forever, which is the one reading of "zero" nobody wants.
-        ConcurrencySlot = maxConcurrentAgents is > 0 ? new SemaphoreSlim(maxConcurrentAgents.Value) : null;
-        // A CHILD WORKS WHERE ITS PARENT DOES. It inherits the directory rather than reading the
-        // process, so a session's children stay inside that session's folder even when another
-        // session is running elsewhere in the same process.
-        _workingDir = workingDir;
-
-        _provider = provider;
-        _plugins = plugins;
-        _ledger = ledger;
-        _logs = logs;
-        _maxTurns = maxTurns;
-        _compressAbove = compressAbove;
-        _contextWindow = contextWindow;
-        _thresholdFor = thresholdFor;
-        _globalInstructionsDir = globalInstructionsDir;
-        _mcp = mcp;
+        ConcurrencySlot = runtime.MaxConcurrentAgents is > 0
+            ? new SemaphoreSlim(runtime.MaxConcurrentAgents.Value)
+            : null;
     }
 
     /// <summary>
@@ -156,7 +192,7 @@ public sealed class SubAgentFactory
     /// <para>Exposed rather than duplicated: it is the SAME instance every child records into, so a
     /// budget check here and the spend it is checking cannot disagree.</para>
     /// </summary>
-    public TokenLedger Ledger => _ledger;
+    public TokenLedger Ledger => _runtime.Ledger;
 
     /// <summary>
     /// Bounds how many children run at once, or null for unbounded — the default.
@@ -181,26 +217,28 @@ public sealed class SubAgentFactory
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
 
-        // A TYPE'S PROVIDER BRINGS ITS OWN WINDOW, or neither is used. Falling back per-field would
-        // pair provider A with the session's window, which is the exact failure above.
-        var provider = type?.Provider ?? _provider;
-        var window = type?.Provider is not null ? type.ContextWindow : _contextWindow;
+        // A TYPE'S PROVIDER BRINGS ITS OWN WINDOW, or neither is used — and the threshold follows
+        // the window, since it is derived from it. Falling back per-field would pair provider A with
+        // the session's window, which is the exact failure the runtime's own doc describes.
+        //
+        // A NEW RECORD PER CHILD, never a mutation of the shared one: two children spawned in one
+        // turn must not be able to see each other's provider.
+        var runtime = type?.Provider is not null
+            ? _runtime.With(type.Provider, type.ContextWindow)
+            : _runtime;
 
-        // AND THE THRESHOLD FOLLOWS THE WINDOW. It is derived from the window (80% of it when config
-        // states no explicit figure), so a window that moves and a threshold that does not is a child
-        // compacting against the wrong ceiling.
-        var compressAbove = type?.Provider is not null
-            ? _thresholdFor?.Invoke(window) ?? _compressAbove
-            : _compressAbove;
+        var provider = runtime.Provider;
+        var window = runtime.ContextWindow;
+        var compressAbove = runtime.CompressAbove;
 
         // NULL INHERITS, 0 IS UNBOUNDED — and Agent already translates 0, so this passes it through
         // rather than re-implementing the rule in a second place.
-        var maxTurns = type?.MaxTurns ?? _maxTurns;
+        var maxTurns = type?.MaxTurns ?? _runtime.MaxTurns;
 
         var agent = new Agent(
             provider,
-            _plugins,
-            _ledger,
+            _runtime.Plugins,
+            _runtime.Ledger,
             // BOTH BUFFERED, and both are required. A buffered chat sink with the parent's job panel
             // still leaks a row per tool call into the parent's transcript.
             sink,
@@ -209,15 +247,15 @@ public sealed class SubAgentFactory
             // surface on which a finished child is inspectable after the fact — and while it sat at
             // the top level it was indistinguishable from a session, so `ls -t` showed a child above
             // the parent that spawned it and the newest directory was often not the newest session.
-            parentAgentId is null ? _logs : _logs?.Under(parentAgentId),
+            parentAgentId is null ? _runtime.Logs : _runtime.Logs?.Under(parentAgentId),
             maxTurns,
             compressAbove: compressAbove,
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
             // is the failure the whole design exists to prevent.
             context: new AgentContext(window),
-            workingDir: _workingDir,
-            globalInstructionsDir: _globalInstructionsDir,
-            mcp: _mcp,
+            workingDir: _runtime.WorkingDir,
+            globalInstructionsDir: _runtime.GlobalInstructionsDir,
+            mcp: _runtime.Mcp,
             // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what
             // this child is for, and a type is a human in config saying how that work is done (D9).
             briefing: string.IsNullOrWhiteSpace(type?.Briefing) ? briefing : type!.Briefing,

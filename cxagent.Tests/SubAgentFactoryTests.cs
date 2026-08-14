@@ -19,15 +19,15 @@ public class SubAgentFactoryTests
     private static SubAgentFactory NewFactory(
         TokenLedger? ledger = null, int maxTurns = 50, int? contextWindow = 200_000,
         PluginRegistry? plugins = null, MockLlmProvider? provider = null) =>
-        new(provider ?? Answering(),
-            plugins ?? PluginRegistry.CreateWithBuiltins(),
-            ledger ?? new TokenLedger(),
-            logs: null,
-            maxTurns: maxTurns,
-            compressAbove: 40_000,
-            contextWindow: contextWindow,
-            globalInstructionsDir: null,
-            mcp: null);
+        new(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider ?? Answering(),
+            Plugins = plugins ?? PluginRegistry.CreateWithBuiltins(),
+            Ledger = ledger ?? new TokenLedger(),
+            MaxTurns = maxTurns,
+            CompressAbove = 40_000,
+            ContextWindow = contextWindow,
+        });
 
     /// <summary>A provider with enough queued answers that a test never runs it dry — an empty
     /// queue throws from inside the loop and would hide whichever failure is being tested.</summary>

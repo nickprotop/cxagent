@@ -21,9 +21,15 @@ public class SubAgentSpawnerTests
     }
 
     private static SubAgentFactory FactoryOver(ILlmProvider provider) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
-            logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
-            globalInstructionsDir: null, mcp: null);
+        new(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider,
+            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        });
 
     /// <summary>
     /// THE OLD NAME STILL WORKS. A rename is invisible to a model working from habit, or to a
@@ -115,9 +121,15 @@ public class SubAgentSpawnerTests
             });
         provider.EnqueueResponse(new LlmResponse { Text = "got partway", StopReason = "end_turn" });
 
-        var factory = new SubAgentFactory(provider, PluginRegistry.CreateWithBuiltins(),
-            new TokenLedger(), logs: null, maxTurns: 2, compressAbove: 40_000,
-            contextWindow: 200_000, globalInstructionsDir: null, mcp: null);
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider,
+            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 2,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        });
 
         var result = await new SubAgentSpawner(factory).TryInvokeAsync(SpawnCall(), null, CancellationToken.None);
 
@@ -652,10 +664,16 @@ public class SubAgentSpawnerTests
 
     private static SubAgentFactory FactoryOver(ILlmProvider provider, TokenLedger ledger,
         int? maxConcurrent = null) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), ledger,
-            logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
-            globalInstructionsDir: null, mcp: null, thresholdFor: null,
-            maxConcurrentAgents: maxConcurrent);
+        new(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = provider,
+            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Ledger = ledger,
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+            MaxConcurrentAgents = maxConcurrent,
+        });
 
     /// <summary>
     /// A CAP OF ONE SERIALISES THE CHILDREN. The rendezvous that proves overlap becomes the proof of
@@ -1205,10 +1223,15 @@ public class SubAgentSpawnerTests
 
         var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), ledger,
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
-            spawner: new SubAgentSpawner(new SubAgentFactory(
-                childProvider, PluginRegistry.CreateWithBuiltins(), ledger,
-                logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
-                globalInstructionsDir: null, mcp: null)))
+            spawner: new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+            {
+                Provider = childProvider,
+                Plugins = PluginRegistry.CreateWithBuiltins(),
+                Ledger = ledger,
+                MaxTurns = 50,
+                CompressAbove = 40_000,
+                ContextWindow = 200_000,
+            })))
         {
             Mode = AgentMode.FanOut,
         };
@@ -1346,9 +1369,15 @@ public class SubAgentSpawnerTests
         });
         childProvider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
 
-        var factory = new SubAgentFactory(childProvider, plugins, new TokenLedger(),
-            logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
-            globalInstructionsDir: null, mcp: null);
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = childProvider,
+            Plugins = plugins,
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        });
 
         await new SubAgentSpawner(factory).TryInvokeAsync(
             SpawnCall(description: "Analyze TextWrapping failures"), null, CancellationToken.None);

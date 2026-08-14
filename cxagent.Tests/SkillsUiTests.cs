@@ -169,9 +169,15 @@ public class SkillsUiTests
             var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), jobs, logs: null, maxTurns: 50,
                 spawner: new SubAgentSpawner(new SubAgentFactory(
-                    childProvider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
-                    logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
-                    globalInstructionsDir: null, mcp: null)))
+                    new SubAgentFactory.SubAgentRuntime
+                    {
+                        Provider = childProvider,
+                        Plugins = PluginRegistry.CreateWithBuiltins(),
+                        Ledger = new TokenLedger(),
+                        MaxTurns = 50,
+                        CompressAbove = 40_000,
+                        ContextWindow = 200_000,
+                    })))
             {
                 Mode = AgentMode.FanOut,
             };
