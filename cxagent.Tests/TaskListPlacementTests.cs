@@ -134,6 +134,36 @@ public class TaskListPlacementTests : IDisposable
         Assert.DoesNotContain(provider.LastMessages!, m => m.IsTaskList);
     }
 
+    /// <summary>
+    /// CLEARING THE LIST REMOVES THE MESSAGE — the transition the "never planned" test above cannot
+    /// reach.
+    ///
+    /// <para>Without this, <c>RemoveAll</c> doing real removal work is verified only by reading the
+    /// code: every other test either has a plan throughout or never has one, so a build that placed
+    /// the message and then never took it away would pass them all. It is also the resume shape —
+    /// the TodoList is not persisted, so a restored conversation arrives holding a plan message with
+    /// an empty list behind it, and the stale plan must go rather than linger for the model to act
+    /// on.</para>
+    /// </summary>
+    [Fact]
+    public async Task ClearingTheTodos_RemovesTheTaskListMessage()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+        provider.EnqueueResponse(TodoCall());          // an empty list clears it
+        provider.EnqueueResponse(Done("ok"));
+
+        var agent = Build(provider);
+        await agent.SendAsync("plan it", CancellationToken.None);
+        Assert.Contains(provider.LastMessages!, m => m.IsTaskList);
+
+        await agent.SendAsync("never mind", CancellationToken.None);
+
+        Assert.DoesNotContain(provider.LastMessages!, m => m.IsTaskList);
+        Assert.DoesNotContain(agent.Context.Messages, m => m.IsTaskList);
+    }
+
     /// <summary>The plan is user-role with no ToolCallId. Both compaction cut paths key on
     /// ToolCallId to keep a tool result with its call; a synthetic result would be the orphan those
     /// walks exist to prevent.</summary>

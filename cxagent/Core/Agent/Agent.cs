@@ -1852,21 +1852,6 @@ public sealed class Agent
 
 
     /// <summary>
-    /// Summarises the older half of <paramref name="messages"/> when the last turn's input crossed
-    /// <see cref="_compressAbove"/>.
-    ///
-    /// <para>THROUGH THE MODEL, not by eviction. Dropping tool results and leaving receipts was the
-    /// obvious cheap fix and it is the wrong one: a file read is not dead weight once consumed — what
-    /// the model CONCLUDED from it is the value, and that lives nowhere else. Only the model can tell
-    /// "this defines the interface I am changing" from "this was irrelevant", and a size-based rule
-    /// loses both identically. Every agent in this space compacts by asking the model to write a
-    /// handoff, and SessionCompressor already does exactly that.</para>
-    ///
-    /// <para>Never throws: compression failing must not end a goal that is otherwise working.
-    /// SessionCompressor falls back to truncation on a provider error, and its result says which
-    /// happened so the transcript can be honest about it.</para>
-    /// </summary>
-    /// <summary>
     /// Puts the model's task list at the newest end of the conversation, as the one message marked
     /// <see cref="ChatMessage.IsTaskList"/>.
     ///
@@ -1903,6 +1888,21 @@ public sealed class Agent
         });
     }
 
+    /// <summary>
+    /// Summarises the older half of <paramref name="messages"/> when the last turn's input crossed
+    /// <see cref="_compressAbove"/>.
+    ///
+    /// <para>THROUGH THE MODEL, not by eviction. Dropping tool results and leaving receipts was the
+    /// obvious cheap fix and it is the wrong one: a file read is not dead weight once consumed — what
+    /// the model CONCLUDED from it is the value, and that lives nowhere else. Only the model can tell
+    /// "this defines the interface I am changing" from "this was irrelevant", and a size-based rule
+    /// loses both identically. Every agent in this space compacts by asking the model to write a
+    /// handoff, and SessionCompressor already does exactly that.</para>
+    ///
+    /// <para>Never throws: compression failing must not end a goal that is otherwise working.
+    /// SessionCompressor falls back to truncation on a provider error, and its result says which
+    /// happened so the transcript can be honest about it.</para>
+    /// </summary>
     private async Task MaybeCompressAsync(string agentId, CancellationToken ct)
     {
         // TWO WAYS TO BE OVER, and a configured number wins where it applies: someone who set an
