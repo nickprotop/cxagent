@@ -131,9 +131,18 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
             // ONE LINE EACH. A catalog that dwarfs the guidance above it buries the guidance, and
             // that guidance is already hard enough for a model to act on.
             var what = string.IsNullOrWhiteSpace(type.Briefing)
-                ? "same model as you, no special instructions"
+                ? "runs where you do, no special instructions"
                 : Summarise(type.Briefing);
-            sb.AppendLine($"- {type.Name}: {what}");
+
+            // WHERE IT RUNS, ONLY WHEN THAT IS ELSEWHERE. A type bound to another instance is often
+            // bound to it FOR A REASON — a bigger window, a stronger model, a cheaper one — and that
+            // is a fact worth choosing by. Naming the instance rather than the model is the point:
+            // two instances can serve one model, so the model alone would report the routing as no
+            // routing at all. Silent for the common type, which runs where the parent does and has
+            // nothing to say.
+            var where = type.InstanceName is { Length: > 0 } instance ? $" [runs on {instance}]" : "";
+
+            sb.AppendLine($"- {type.Name}: {what}{where}");
         }
 
         return sb.ToString();

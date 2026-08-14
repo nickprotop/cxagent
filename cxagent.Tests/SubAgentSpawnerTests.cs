@@ -947,8 +947,45 @@ public class SubAgentSpawnerTests
     {
         var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
 
-        Assert.Contains("- general: same model as you", d, StringComparison.Ordinal);
+        Assert.Contains("- general: runs where you do", d, StringComparison.Ordinal);
         Assert.DoesNotContain("- explore:", d, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A TYPE BOUND TO ANOTHER INSTANCE SAYS SO, because it is usually bound for a reason — a bigger
+    /// window, a stronger model, a cheaper one — and that is a fact the parent should choose by.
+    ///
+    /// <para>THE INSTANCE, NOT THE MODEL. Two entries can serve the same model with different
+    /// endpoints and windows, so naming the model would report a real routing decision as no routing
+    /// at all.</para>
+    /// </summary>
+    [Fact]
+    public void Definition_WhenATypeRunsElsewhere_NamesTheInstance()
+    {
+        var registry = ProviderRegistry.FromProviders(
+            new Dictionary<string, ILlmProvider>(StringComparer.Ordinal)
+            {
+                ["local"] = Answering("x"),
+                ["small"] = Answering("x"),
+            },
+            "local",
+            new Dictionary<string, int?>(StringComparer.Ordinal) { ["small"] = 32_000 });
+
+        var types = new AgentTypeCatalog(
+            new Dictionary<string, AgentTypeConfig>(StringComparer.Ordinal)
+            {
+                ["cheap"] = new("Answers quick questions.", "small"),
+            },
+            registry);
+
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")), types).Definition.Description;
+
+        Assert.Contains("[runs on small]", d, StringComparison.Ordinal);
+
+        // The common type runs where the parent does and has nothing to say about it.
+        Assert.Contains("- general: runs where you do", d, StringComparison.Ordinal);
+        Assert.DoesNotContain("general: runs where you do, no special instructions [runs on",
+            d, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -6,9 +6,15 @@ namespace CxAgent.Core.Agent;
 /// One resolved sub-agent type: everything a child needs that a type decides.
 ///
 /// <para>SEPARATE FROM <see cref="AgentTypeConfig"/>, which is what the FILE said. This is what it
-/// MEANS after the provider name has been looked up and the window found — so the factory reads a
+/// MEANS after the instance name has been looked up and the window found — so the factory reads a
 /// resolved value rather than re-doing config work on every spawn, and nothing downstream has to know
-/// that a provider was ever named by a string.</para>
+/// that an instance was ever named by a string.</para>
+///
+/// <para>AN INSTANCE, NOT A MODEL. What <c>agents.&lt;type&gt;.provider</c> names is a <c>providers</c>
+/// entry — an endpoint bound to one model with one window — never a model on its own. That is what
+/// makes routing a type meaningful: two entries can serve the SAME model with different windows, so
+/// <c>small</c> and <c>local</c> are a real choice even when the model behind them is identical, and
+/// the window travels with the instance rather than being guessed at.</para>
 /// </summary>
 /// <param name="Name">What the model asked for, and what the row and errors show.</param>
 /// <param name="Briefing">Empty for <c>general</c>. Becomes the child's briefing — the highest-authority
