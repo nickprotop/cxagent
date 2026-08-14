@@ -104,6 +104,25 @@ an agent spends its time creating, would report as unchanged. Untracked files ar
 
 ---
 
+## Switching model mid-conversation
+
+![Switching model](13-model-switch.png)
+
+One frame, three claims. The number was given to a 212k model; a 32k model answers it — the
+conversation carried. The status bar reads `5,725/32,000`, so the **context window followed** rather
+than staying at the old model's. And the spend accumulated across both instead of resetting, so
+`/stats` still sees one session.
+
+A `providers` entry is an *instance* — a name bound to one endpoint and one model — so `fast` and
+`careful` can be the same server with different models, and switching "the model" and switching "the
+provider" are the same act.
+
+The switch says what it costs, and only when there is something to say. Here the new window is
+smaller, so it says so: nothing breaks, because the turn loop measures pressure before every send
+and compacts if it must, but a conversation that fitted may now have to be summarised.
+
+---
+
 ## What it cost
 
 ![Stats](12-stats.png)
