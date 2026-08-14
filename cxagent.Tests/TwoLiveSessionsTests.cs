@@ -42,33 +42,31 @@ public class TwoLiveSessionsTests : IDisposable
 
     private AppPaths Paths() => new(Path.Combine(_dir, "config"));
 
-    /// <summary>A host rooted in one folder, with everything else shared exactly as the design says
-    /// it may be.</summary>
+    /// <summary>A session rooted in one folder, assembled the way the app assembles one — through
+    /// SessionFactory, so this test exercises the real assembly path rather than a hand-rolled
+    /// subset of it. It used to build an AgentHost directly and silently skipped the type catalog,
+    /// the spawner and the ask-user hook.</summary>
     private (AgentHost Host, BufferedChatSink Sink, BufferedJobPanel Jobs) Build(
         string workingDir, string instance, MockLlmProvider provider, AppPaths paths)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
-        var host = new AgentHost(
-            new AgentHost.AgentRuntime
-            {
-                Provider = provider,
-                Plugins = PluginRegistry.CreateWithBuiltins(),
-                InstanceName = instance,
-                WorkingDir = workingDir,
-                Mode = AgentMode.Single,
-            },
-            sink,
-            jobs,
-            new AgentHost.SessionStores
+        var session = new Session(workingDir);
+
+        SessionFactory.Wire(session,
+            ProviderResolution.ForTesting(provider, instance),
+            new SharedServices
             {
                 // SHARED ON PURPOSE — see TwoSessionsTests for why splitting these would break the
                 // features that depend on the sharing.
                 Resume = new SqliteSessionStore(paths),
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
-            });
-        return (host, sink, jobs);
+            },
+            new SessionPorts { Observer = sink, Tools = jobs },
+            AgentMode.Single);
+
+        return (session.Host!, sink, jobs);
     }
 
     private static LlmResponse ReadWhich() =>
