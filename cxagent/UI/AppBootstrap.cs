@@ -1325,20 +1325,15 @@ public static class AppBootstrap
                 return;
             }
 
-            // THE CONVERSATION AND THE SPEND BOTH CARRY.
-            //
-            // Through the same seam a resume uses: WireRunner takes the session's pending resume to build a host
-            // over an existing conversation. What differs is the LEDGER — a re-wire normally starts a
-            // fresh one, which is right when the provider is being reconfigured and wrong here: a
-            // user switching model mid-conversation expects /stats to show the whole session, and the
-            // ledger already tallies per model, which is exactly the question a switch creates.
-            var window = runner!.Context.Window;
-            var used = runner.Context.Used;
-
-            session.PendResume(new SessionSnapshot(
-                runner.SessionId, runner.Context.Snapshot(),
-                runner.Ledger.InputTokens, runner.Ledger.OutputTokens, DateTimeOffset.UtcNow));
-            session.CarryLedger(runner.Ledger);
+            // THE CONVERSATION AND THE SPEND BOTH CARRY — one call, because arming one without the
+            // other is silently wrong in both directions. Through the same seam a resume uses:
+            // WireRunner takes the session's pending resume to build a host over an existing
+            // conversation. See Session.CarryToNextWire.
+            // FROM THE SESSION'S HOST, not the `runner` local — they are the same object, and one
+            // of the two names is the one a second session would have.
+            var window = session.Host!.Context.Window;
+            var used = session.Host.Context.Used;
+            session.CarryToNextWire();
 
 
             resolution = next;

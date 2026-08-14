@@ -122,6 +122,32 @@ public sealed class Session
         Plugins = plugins;
     }
 
+    /// <summary>
+    /// Arms the next wire to continue THIS conversation on another instance — the <c>/model</c>
+    /// handoff.
+    ///
+    /// <para>TWO THINGS CARRY, AND THEY CARRY TOGETHER. The conversation, so a switch is not a
+    /// restart; and the LEDGER, which a re-wire otherwise starts fresh. Fresh is right when the
+    /// provider is being reconfigured and wrong here: a user switching model mid-conversation
+    /// expects <c>/stats</c> to show the whole session, and the ledger already tallies by
+    /// instance:model — which is exactly the question a switch creates.</para>
+    ///
+    /// <para>ONE CALL RATHER THAN TWO, because arming one without the other is silently wrong in
+    /// both directions: the conversation without the ledger loses the session's spend, and the
+    /// ledger without the conversation attributes the old spend to a fresh chat.</para>
+    /// </summary>
+    /// <returns>False when there is no host to carry from — nothing is armed.</returns>
+    public bool CarryToNextWire()
+    {
+        if (Host is null) return false;
+
+        PendResume(new SessionSnapshot(
+            Host.SessionId, Host.Context.Snapshot(),
+            Host.Ledger.InputTokens, Host.Ledger.OutputTokens, DateTimeOffset.UtcNow));
+        CarryLedger(Host.Ledger);
+        return true;
+    }
+
     /// <summary>The label every spend readout uses: <c>instance:model</c>, or the bare model when no
     /// instance is named. Two entries can serve the same model with different endpoints and windows,
     /// so the model alone cannot say where the tokens went.</summary>

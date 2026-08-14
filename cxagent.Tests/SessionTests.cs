@@ -132,4 +132,20 @@ public class SessionTests
 
         Assert.Same(rewired, s.Plugins);
     }
+
+    // ---- the /model handoff ----------------------------------------------------------------------
+
+    /// <summary>
+    /// WITH NO HOST THERE IS NOTHING TO CARRY, and nothing is armed. A switch before the first wire
+    /// must not leave a half-armed session that the next wire would restore from.
+    /// </summary>
+    [Fact]
+    public void CarryToNextWire_WithNoHost_ArmsNothing()
+    {
+        var s = New();
+
+        Assert.False(s.CarryToNextWire());
+        Assert.Null(s.TakePendingResume());
+        Assert.Null(s.TakeCarriedLedger());
+    }
 }
