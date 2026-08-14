@@ -33,3 +33,8 @@ publish/
 # be argued for on its own merits.
 .agents/
 .cxagent/
+
+# CLAUDE.md is a symlink to CXAGENT.md — the same conventions under the name Claude Code
+# looks for. Ignored rather than committed: the link is a local convenience, and a checked-in
+# symlink breaks on any platform or checkout that does not support one.
+CLAUDE.md
