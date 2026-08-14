@@ -25,7 +25,6 @@ public sealed class BufferedChatSink : ISessionObserver
     private readonly object _gate = new();
     private readonly StringBuilder _transcript = new();
     private readonly List<string> _errors = [];
-    private long _nextId;
 
     /// <summary>Everything the child said, in order — body and reasoning both.</summary>
     public string Transcript { get { lock (_gate) return _transcript.ToString(); } }
@@ -46,13 +45,12 @@ public sealed class BufferedChatSink : ISessionObserver
     public string Body { get { lock (_gate) return _body.ToString(); } }
     private readonly StringBuilder _body = new();
 
-    public ChatMessageId UserTurnAdded(string text)
+    public void UserTurnAdded(ChatMessageId id, string text)
     {
         lock (_gate) _transcript.Append("> ").Append(text).AppendLine();
-        return NextId();
     }
 
-    public ChatMessageId AssistantTurnBegan() => NextId();
+    public void AssistantTurnBegan(ChatMessageId id) { }
 
     public void AssistantTextAppended(ChatMessageId id, string token)
     {
@@ -88,12 +86,5 @@ public sealed class BufferedChatSink : ISessionObserver
             _errors.Add(message);
             _transcript.Append("error: ").Append(message).AppendLine();
         }
-    }
-
-    // Ids need only be unique WITHIN a sink: nothing compares them across sinks, and each sink mints
-    // its own. A child's ids colliding with its parent's is therefore not a hazard.
-    private ChatMessageId NextId()
-    {
-        lock (_gate) return new ChatMessageId(Interlocked.Increment(ref _nextId));
     }
 }

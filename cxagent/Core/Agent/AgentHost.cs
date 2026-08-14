@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
@@ -28,6 +29,10 @@ public sealed class AgentHost : IDisposable
     private readonly AgentRuntime _runtime;
     private readonly SessionStores _stores;
     private readonly ISessionObserver _sink;
+
+    private long _nextTurnId;
+
+    private ChatMessageId NextTurnId() => new(Interlocked.Increment(ref _nextTurnId));
     private readonly IToolObserver _jobPanel;
 
 
@@ -455,10 +460,11 @@ public sealed class AgentHost : IDisposable
     {
         try
         {
-            _sink.UserTurnAdded(echo ?? prompt);
+            _sink.UserTurnAdded(NextTurnId(), echo ?? prompt);
 
             // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
-            var assistantId = _sink.AssistantTurnBegan();
+            var assistantId = NextTurnId();
+            _sink.AssistantTurnBegan(assistantId);
             _sink.AssistantTurnEnded(assistantId);   // the agent opens its own turns
 
             await _agent.SendAsync(prompt, ct);

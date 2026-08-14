@@ -24,7 +24,6 @@ public sealed class ChatTranscriptSink : ISessionObserver
     private readonly ConsoleWindowSystem _system;
     private readonly ChatTranscriptControl _chat;
     private readonly ConcurrentDictionary<long, FwChatId> _map = new();
-    private long _nextId;
 
     public ChatTranscriptSink(ConsoleWindowSystem system, ChatTranscriptControl chat)
     {
@@ -32,21 +31,13 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _chat = chat;
     }
 
-    public ChatMessageId UserTurnAdded(string text)
-    {
-        var id = new ChatMessageId(Interlocked.Increment(ref _nextId));
+    public void UserTurnAdded(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
             _map[id.Value] = _chat.AddMessage(ChatRole.User, text));
-        return id;
-    }
 
-    public ChatMessageId AssistantTurnBegan()
-    {
-        var id = new ChatMessageId(Interlocked.Increment(ref _nextId));
+    public void AssistantTurnBegan(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>
             _map[id.Value] = _chat.AddMessage(ChatRole.Assistant, "", thinking: true));
-        return id;
-    }
 
     /// <summary>
     /// Stops the turn's spinner. Writing an EMPTY body is what clears Thinking (the control clears it

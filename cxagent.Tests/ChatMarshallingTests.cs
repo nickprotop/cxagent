@@ -6,6 +6,8 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
 using Xunit;
 
+using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
+
 namespace CxAgent.Tests;
 
 public class ChatMarshallingTests
@@ -19,7 +21,8 @@ public class ChatMarshallingTests
         var sink = new ChatTranscriptSink(system, chat);
 
         // AssistantTurnBegan + appends are all enqueued (deferred), never applied on the calling thread.
-        var id = sink.AssistantTurnBegan();
+        var id = new ChatMessageId(1);
+        sink.AssistantTurnBegan(id);
         await Task.Run(() =>
         {
             for (int i = 0; i < 50; i++) sink.AssistantTextAppended(id, "x");
@@ -41,7 +44,7 @@ public class ChatMarshallingTests
         var sink = new ChatTranscriptSink(system, new ChatTranscriptControl());
         var ex = Record.Exception(() =>
         {
-            var id = sink.UserTurnAdded("hi");
+            sink.UserTurnAdded(new ChatMessageId(1), "hi");
             sink.Failed("boom");
         });
         Assert.Null(ex);   // enqueue-only; no synchronous control mutation, no throw

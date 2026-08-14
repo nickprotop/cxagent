@@ -2,9 +2,6 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Agent;
 
-/// <summary>A P5a-owned message id (decouples AgentHost from the framework's ChatTranscript ids).</summary>
-public readonly record struct ChatMessageId(long Value);
-
 /// <summary>
 /// What the session REPORTS as a conversation runs — text, reasoning, turn boundaries, failures.
 ///
@@ -20,8 +17,11 @@ public readonly record struct ChatMessageId(long Value);
 /// </summary>
 public interface ISessionObserver
 {
-    ChatMessageId UserTurnAdded(string text);
-    ChatMessageId AssistantTurnBegan();
+    /// <summary>The user said something, under the id the SESSION assigned it.</summary>
+    void UserTurnAdded(ChatMessageId id, string text);
+
+    /// <summary>A turn began. Every later report about it carries this same id.</summary>
+    void AssistantTurnBegan(ChatMessageId id);
     /// <summary>
     /// Body text from the model — what it is SAYING.
     ///

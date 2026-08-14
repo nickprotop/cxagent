@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
@@ -41,6 +42,12 @@ public sealed class Agent
     private readonly TokenLedger _ledger;
     private readonly ISessionObserver _sink;
     private readonly IToolObserver _jobs;
+
+    /// <summary>Mints turn ids. The SESSION owns identity — see ChatMessageId for why it stopped
+    /// being the observer's job.</summary>
+    private long _nextTurnId;
+
+    private ChatMessageId NextTurnId() => new(Interlocked.Increment(ref _nextTurnId));
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
     private readonly string? _workingDir;
@@ -777,7 +784,8 @@ public sealed class Agent
             // one moment nothing needed indicating. Between a tool result and the next response the
             // transcript sat completely still, with no way to tell a model that is thinking from one
             // that has died somewhere in the silicon.
-            var turnId = _sink.AssistantTurnBegan();
+            var turnId = NextTurnId();
+            _sink.AssistantTurnBegan(turnId);
 
             // BEFORE the call, so what is recorded is what was actually sent — including on a turn
             // that then fails, which is the one you most want to look at afterwards. The token count
@@ -1206,7 +1214,8 @@ public sealed class Agent
             },
         };
 
-        var turnId = _sink.AssistantTurnBegan();
+        var turnId = NextTurnId();
+        _sink.AssistantTurnBegan(turnId);
         try
         {
             var response = await StreamTurnAsync(ask, tools, ct, turnId);

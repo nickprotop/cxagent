@@ -938,10 +938,10 @@ public class AgentChallengeTests
     private sealed class RecordingSink : ISessionObserver
     {
         public readonly List<string> Errors = [];
-        public ChatMessageId UserTurnAdded(string text) => new(0);
+        public void UserTurnAdded(ChatMessageId id, string text) { }
         public int Begins, Ends;
         public readonly List<string> Headers = [];
-        public ChatMessageId AssistantTurnBegan() { Begins++; return new(0); }
+        public void AssistantTurnBegan(ChatMessageId id) { Begins++; }
         /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
         public readonly List<string> Appended = [];
         public void AssistantTextAppended(ChatMessageId id, string token) => Appended.Add(token);
