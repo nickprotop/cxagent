@@ -58,3 +58,18 @@ public readonly record struct QuestionAnswers(IReadOnlyList<string> Answers, boo
 {
     public static QuestionAnswers Cancel => new([], Cancelled: true);
 }
+
+/// <summary>
+/// How a session asks its user something and waits for the answer.
+///
+/// <para>A NAMED DELEGATE RATHER THAN A Func, because the shape
+/// <c>Func&lt;IReadOnlyList&lt;UserQuestion&gt;, CancellationToken, Task&lt;QuestionAnswers&gt;&gt;</c>
+/// is unreadable as a record member, and because the name states the direction: everything else a
+/// session is handed reports OUTWARD, and this one asks and waits.</para>
+///
+/// <para>Null means the session cannot ask — a headless run, a test, a server with no operator
+/// attached. Note the guard this does NOT duplicate: <c>Agent</c>'s constructor already applies
+/// <c>askUser is not null &amp;&amp; !isSubAgent</c>, so a child cannot ask whatever it is handed.</para>
+/// </summary>
+public delegate Task<QuestionAnswers> AskUser(
+    IReadOnlyList<UserQuestion> questions, CancellationToken ct);
