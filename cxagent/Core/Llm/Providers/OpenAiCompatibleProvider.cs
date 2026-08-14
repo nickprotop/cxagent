@@ -51,8 +51,6 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     /// The injected HttpClient, or null when this instance fell back to <see cref="Shared"/>.
     /// Clones re-pass the original argument so a clone never silently swaps out a test's fake handler.
     /// </summary>
-    private readonly HttpClient? _injectedClient;
-    private readonly RetryPolicy? _injectedRetry;
 
     public OpenAiCompatibleProvider(string providerId, string displayName, string model,
         string baseUrl, string? apiKey, IReadOnlyDictionary<string, string>? extraHeaders = null,
@@ -66,19 +64,12 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
         _extraHeaders = extraHeaders;
         _client = client ?? Shared;
         _retry = retryPolicy ?? RetryPolicy.Default;
-        _injectedClient = client;
-        _injectedRetry = retryPolicy;
     }
 
     /// <inheritdoc/>
     /// <remarks>
     /// Virtual so <see cref="OllamaProvider"/> can return its own type — a base-typed clone would
     /// silently lose Ollama's native /api/tags model enumeration.
-    /// </remarks>
-    public virtual ILlmProvider WithModel(string model) =>
-        new OpenAiCompatibleProvider(ProviderId, DisplayName, model, _baseUrl, _apiKey,
-            _extraHeaders, _injectedClient, _injectedRetry);
-
     private HttpRequestMessage BuildRequest(string bodyJson)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/chat/completions")

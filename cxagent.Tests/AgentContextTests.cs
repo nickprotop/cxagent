@@ -87,7 +87,6 @@ public class AgentContextTests
         public string ModelId => "test";
         public bool SupportsToolCalling => false;
         public bool SupportsStreaming => false;
-        public ILlmProvider WithModel(string model) => this;
 
         public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
             CancellationToken ct) => Task.FromResult(new LlmResponse { Text = "earlier: a summary." });

@@ -11,10 +11,6 @@ public sealed class OllamaProvider : OpenAiCompatibleProvider
 {
     private readonly HttpClient _client;
     private readonly string _tagsUrl;
-    // The constructor arguments, kept verbatim so WithModel can rebuild an identical OllamaProvider.
-    private readonly string? _ctorBaseUrl;
-    private readonly HttpClient? _ctorClient;
-    private readonly RetryPolicy? _ctorRetry;
 
     public OllamaProvider(string providerId, string displayName, string model,
         string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null)
@@ -28,14 +24,7 @@ public sealed class OllamaProvider : OpenAiCompatibleProvider
             effectiveBaseUrl = effectiveBaseUrl[..^"/v1".Length];
         _tagsUrl = $"{effectiveBaseUrl}/api/tags";
         _client = client ?? Shared;
-        _ctorBaseUrl = baseUrl;
-        _ctorClient = client;
-        _ctorRetry = retryPolicy;
     }
-
-    /// <inheritdoc/>
-    public override ILlmProvider WithModel(string model) =>
-        new OllamaProvider(ProviderId, DisplayName, model, _ctorBaseUrl, _ctorClient, _ctorRetry);
 
     /// <inheritdoc/>
     public override async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken ct)

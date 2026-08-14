@@ -813,7 +813,6 @@ public class SubAgentSpawnerTests
         public string DisplayName => "stub";
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => true;
-        public ILlmProvider WithModel(string model) => this;
 
         public Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
             List<ToolDefinition>? tools, CancellationToken ct) =>
@@ -847,7 +846,6 @@ public class SubAgentSpawnerTests
         public string DisplayName => "cancelling";
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => true;
-        public ILlmProvider WithModel(string model) => this;
 
         public Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
             List<ToolDefinition>? tools, CancellationToken ct)

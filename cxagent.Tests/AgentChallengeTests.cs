@@ -302,7 +302,6 @@ public class AgentChallengeTests
         public string ModelId => "throwing-1";
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => true;
-        public ILlmProvider WithModel(string model) => this;
         public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition> tools,
             CancellationToken ct) => throw new InvalidOperationException("boom");
         public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
@@ -684,7 +683,6 @@ public class AgentChallengeTests
         public string ProviderId => "stuck";
         public string DisplayName => "Stuck";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
 
@@ -811,7 +809,6 @@ public class AgentChallengeTests
         public string ProviderId => "fake";
         public string DisplayName => "Fake";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
 
@@ -837,7 +834,6 @@ public class AgentChallengeTests
         public string ProviderId => "fake";
         public string DisplayName => "Fake";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
 

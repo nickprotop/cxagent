@@ -15,16 +15,6 @@ public interface ILlmProvider
     bool SupportsToolCalling { get; }
     bool SupportsStreaming { get; }
 
-    /// <summary>
-    /// Returns an equivalent provider bound to <paramref name="model"/>, sharing every other setting
-    /// (credentials, baseUrl, HttpClient, retry policy). A role's RoutingTarget names an instance AND
-    /// a model, but the registry builds each instance with its ONE configured default model — so two
-    /// roles bound to different models on the same instance need a per-call override. Implementations
-    /// must preserve their concrete type; returning a base-typed clone silently drops overridden
-    /// behaviour.
-    /// </summary>
-    ILlmProvider WithModel(string model);
-
     Task<LlmResponse> ChatAsync(
         List<ChatMessage> messages,
         List<ToolDefinition>? tools,

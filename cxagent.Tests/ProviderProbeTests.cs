@@ -12,7 +12,6 @@ public class ProviderProbeTests
         public string ProviderId => "bad";
         public string DisplayName => "Bad";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
         public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
@@ -50,7 +49,6 @@ public class ProviderProbeTests
         public string ProviderId => "cancels";
         public string DisplayName => "Cancels";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
         public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)

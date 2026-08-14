@@ -91,7 +91,6 @@ public sealed class ThrowingProvider : ILlmProvider
     public string ProviderId => "bad";
     public string DisplayName => "Bad";
     public string ModelId => "test-model";
-    public ILlmProvider WithModel(string model) => this;
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
     public Task<LlmResponse> ChatAsync(List<ChatMessage> m, List<ToolDefinition>? t, CancellationToken ct)
@@ -125,7 +124,6 @@ public sealed class RecordingProvider : ILlmProvider
     public string ProviderId => "recording";
     public string DisplayName => "Recording";
     public string ModelId => "test-model";
-    public ILlmProvider WithModel(string model) => this;
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => false;
 
@@ -157,7 +155,6 @@ public sealed class AnswersWithoutPlanningProvider : ILlmProvider
     public string ProviderId => "fake";
     public string DisplayName => "Fake";
     public string ModelId => "test-model";
-    public ILlmProvider WithModel(string model) => this;
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
 
@@ -188,7 +185,6 @@ public sealed class AnswersWithUsageProvider : ILlmProvider
     public string ProviderId => "fake";
     public string DisplayName => "Fake";
     public string ModelId => "test-model";
-    public ILlmProvider WithModel(string model) => this;
     public bool SupportsToolCalling => true;
     public bool SupportsStreaming => true;
 

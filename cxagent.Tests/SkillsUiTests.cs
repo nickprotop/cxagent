@@ -264,7 +264,6 @@ public class SkillsUiTests
         public string ProviderId => "capturing";
         public string DisplayName => "Capturing";
         public string ModelId => "test-model";
-        public ILlmProvider WithModel(string model) => this;
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => false;
 

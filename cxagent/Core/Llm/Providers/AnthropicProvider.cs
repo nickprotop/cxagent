@@ -29,10 +29,6 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
     /// same Escape.</summary>
     private static readonly HttpClient Shared = new() { Timeout = Timeout.InfiniteTimeSpan };
 
-    // Constructor arguments kept verbatim so WithModel can rebuild an identical instance — notably
-    // the injected HttpClient, without which a clone would build a fresh one and lose test wiring.
-    private readonly HttpClient? _ctorClient;
-    private readonly RetryPolicy? _ctorRetry;
 
     public AnthropicProvider(string providerId, string displayName, string model, string apiKey,
         int maxTokens = 4096, string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null)
@@ -45,14 +41,7 @@ public class AnthropicProvider : ILlmProvider, IModelCatalog
         _baseUrl = (baseUrl ?? "https://api.anthropic.com/v1").TrimEnd('/');
         _client = client ?? Shared;
         _retry = retryPolicy ?? RetryPolicy.Default;
-        _ctorClient = client;
-        _ctorRetry = retryPolicy;
     }
-
-    /// <inheritdoc/>
-    public ILlmProvider WithModel(string model) =>
-        new AnthropicProvider(ProviderId, DisplayName, model, _apiKey, _maxTokens, _baseUrl,
-            _ctorClient, _ctorRetry);
 
     private HttpRequestMessage BuildRequest(string bodyJson)
     {
