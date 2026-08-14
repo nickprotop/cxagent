@@ -29,3 +29,19 @@ mistaken for a pass in this repo.
 - Target framework `net10.0`. The build must end with `0 Error(s)`.
 - Commit messages: imperative mood, no trailing period on the subject line.
 - Prefer a small explanatory comment over a clever line that needs one.
+- **More than three parameters means the group wants a name** (AV1561). At the fourth, stop and
+  ask whether they are one thing; usually they are. Pass a record instead — `AgentRuntime`,
+  `SessionStores`, `SpendReading`, `StatsView` all came from this. The test is whether a name
+  fits: if one does, they were a concept; if none does, they may genuinely be separate.
+
+  This matters most where the types repeat. `Render(days, totals, projects, models, types, tools,
+  daily, ...)` had five `IReadOnlyList` in a row — transpose two and it compiles cleanly while
+  rendering the wrong section. Named members make that a build error.
+
+  These lists grow by ACCRETION, one reasonable parameter per feature, so the check belongs at the
+  moment you add one — not at review, by which time it is five.
+
+  Exceptions: optional parameters with defaults that callers rarely pass, and arguments that are
+  genuinely unrelated (`Render(view, width)` is not improved by bundling).
+- Avoid tuples in signatures, and avoid returning tuples of more than two elements. A tuple with
+  three or more members is a record that has not been named yet.
