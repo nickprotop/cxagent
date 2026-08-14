@@ -125,6 +125,7 @@ public sealed class ProviderRegistry
                 ApiKey = cfg.ApiKey,
                 ExtraHeaders = cfg.ExtraHeaders,
                 Client = client,
+                CacheControl = cfg.CacheControl,
             }),
             "ollama" => new OllamaProvider(
                 name, display, cfg.Model, cfg.BaseUrl, client: client),

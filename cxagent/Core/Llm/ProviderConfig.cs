@@ -28,7 +28,19 @@ namespace CxAgent.Core.Llm;
 public record ProviderInstanceConfig(
     string Kind, string Model, string? ApiKey, string? BaseUrl,
     IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null,
-    int? MaxConcurrentAgents = null);
+    int? MaxConcurrentAgents = null,
+    /// <summary>
+    /// Ask this endpoint to cache the system prompt, by sending a cache_control breakpoint.
+    ///
+    /// <para>OPT-IN BECAUSE WRITES ARE BILLED. Anthropic charges 1.25x normal input to write a
+    /// five-minute cache entry and 2x for an hour; Gemini charges input plus storage. It repays only
+    /// when the prefix is reused before expiry, so it must be a decision rather than a default.</para>
+    ///
+    /// <para>Needed at all because those providers cache NOTHING without it — measured through
+    /// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
+    /// with one.</para>
+    /// </summary>
+    bool CacheControl = false);
 
 public record RoutingTarget(string Provider, string Model);
 
@@ -283,6 +295,11 @@ public static class ProviderConfigLoader
                         && mca.ValueKind == JsonValueKind.Number && mca.GetInt32() > 0
                         ? mca.GetInt32() : null;
 
+                    // ABSENT IS FALSE, and deliberately: a provider that bills for cache writes must
+                    // not be opted in by a config that never mentioned caching.
+                    var cacheControl = o.TryGetProperty("cacheControl", out var cc)
+                        && cc.ValueKind == JsonValueKind.True;
+
                     // env override: CXAGENT_PROVIDER_<INSTANCE>_APIKEY
                     var envKey = $"CXAGENT_PROVIDER_{name.ToUpperInvariant()}_APIKEY";
                     if (env.TryGetValue(envKey, out var envVal) && !string.IsNullOrEmpty(envVal))
@@ -305,7 +322,7 @@ public static class ProviderConfigLoader
                         errors.Add($"provider '{name}': 'apiKey' is required for kind '{kind}' (or set {envKey}).");
 
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
-                        maxConcurrentAgents);
+                        maxConcurrentAgents, cacheControl);
                 }
             else
                 errors.Add("config.json has no 'providers' object.");

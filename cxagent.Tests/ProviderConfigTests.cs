@@ -678,4 +678,43 @@ public class ProviderConfigTests : IDisposable
         Assert.Null(s.AgentTypes["typo"].MaxTurns);   // ignored, so it inherits
         Assert.Contains(s.Warnings, w => w.Contains("maxTurns", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// OFF UNLESS ASKED. Writing to a cache is billed on the providers that need a breakpoint —
+    /// Anthropic at 1.25x normal input, Gemini at input plus storage — so a config that says nothing
+    /// must not be opted in.
+    /// </summary>
+    [Fact]
+    public void CacheControl_DefaultsToFalse_WhenTheFieldIsAbsent()
+    {
+        WriteConfig("""
+        {
+          "providers": {
+            "p": { "kind": "openai-compatible", "baseUrl": "http://x/v1", "apiKey": "k", "model": "m" }
+          },
+          "defaultProvider": "p"
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.False(s.Providers["p"].CacheControl);
+    }
+
+    /// <summary>And true when it does ask — the whole point of the field.</summary>
+    [Fact]
+    public void CacheControl_IsReadFromConfig()
+    {
+        WriteConfig("""
+        {
+          "providers": {
+            "p": { "kind": "openai-compatible", "baseUrl": "http://x/v1", "apiKey": "k",
+                   "model": "m", "cacheControl": true }
+          },
+          "defaultProvider": "p"
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.True(s.Providers["p"].CacheControl);
+    }
 }
