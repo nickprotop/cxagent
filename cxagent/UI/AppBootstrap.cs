@@ -19,6 +19,20 @@ namespace CxAgent.UI;
 public static class AppBootstrap
 {
     /// <summary>
+    /// <c>instance:model</c> — how a model is named everywhere the UI shows one.
+    ///
+    /// <para>Mirrors <c>MainWindow.ModelLabel</c>. Two spellings of the same fact would drift, and
+    /// this one is reached from a static path that has no window.</para>
+    /// </summary>
+    private static string ModelLabelOf(ProviderResolution resolution)
+    {
+        var model = resolution.Provider?.ModelId;
+        if (model is null) return resolution.DisplayName ?? "no provider";
+
+        return resolution.InstanceName is { Length: > 0 } instance ? $"{instance}:{model}" : model;
+    }
+
+    /// <summary>
     /// What this build calls itself.
     ///
     /// <para>FROM THE ASSEMBLY, not a constant: the release workflow passes <c>-p:Version</c> at
@@ -1460,7 +1474,7 @@ public static class AppBootstrap
         var reResolved = ProviderResolver.Resolve(paths, env, useMock: false);
         wireRunner(reResolved);
         mainWindow.Chat.AddMessage(ChatRole.System, reResolved.HasProvider
-            ? $"Configuration saved. Provider: {reResolved.DisplayName}. Type a goal and press Enter."
+            ? $"Configuration saved. Model: {ModelLabelOf(reResolved)}. Type a goal and press Enter."
             : "Configuration saved, but it did not load cleanly: " + string.Join("; ", reResolved.Errors));
     }
 

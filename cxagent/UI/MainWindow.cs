@@ -137,6 +137,31 @@ public sealed class MainWindow : IDisposable
     public string SessionId { get; set; } = string.Empty;
 
     /// <summary>
+    /// How the model is named everywhere the UI shows one: <c>instance:model</c>.
+    ///
+    /// <para>THE INSTANCE ALONE IS AMBIGUOUS and the model alone is incomplete. A `providers` entry
+    /// is a name bound to one endpoint and one model, so two instances can serve the SAME model —
+    /// `fast` and `careful` against one server — and one instance's model changes the moment config
+    /// does. Showing only the model leaves "which of my providers is this?" unanswerable; showing
+    /// only the instance leaves "what am I actually talking to?" unanswerable.</para>
+    ///
+    /// <para>It is also what <c>/model</c> switches BY, so the readout names the thing the user
+    /// would type to change it.</para>
+    /// </summary>
+    private string ModelLabel
+    {
+        get
+        {
+            var model = _resolution.Provider?.ModelId;
+            if (model is null) return _resolution.DisplayName ?? "no provider";
+
+            return _resolution.InstanceName is { Length: > 0 } instance
+                ? $"{instance}:{model}"
+                : model;
+        }
+    }
+
+    /// <summary>
     /// The folder this session works in, for the panel to show.
     ///
     /// <para>SET BY THE COMPOSITION ROOT, which computes it once, rather than read here from the
@@ -506,7 +531,7 @@ public sealed class MainWindow : IDisposable
             // be right BEFORE Build() runs, which is why it is a property set at construction.
             Chat.AddMessage(ChatRole.System, Banner.Render(
                 _system.DesktopDimensions.Width,
-                $"{_mode} · {_resolution.DisplayName}"));
+                $"{_mode} · {ModelLabel}"));
         }
         else
         {
@@ -545,7 +570,7 @@ public sealed class MainWindow : IDisposable
         // Mode first and accented, model after and muted: the mode is a property of the SESSION and
         // the model is a detail of it, and reading them the other way round invites a user to think
         // the model is what they are choosing.
-        var model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "no provider";
+        var model = ModelLabel;
         _modeLine = Controls.Markup()
             // THE BACKGROUND IS IN THE MARKUP, not on the control. MarkupControl.PaintDOM fills from
             // Container?.BackgroundColor and never consults its own, so the builder's
@@ -1023,10 +1048,6 @@ public sealed class MainWindow : IDisposable
             SpentTokens = _lastTokens,
             ContextWindow = _resolution.ContextWindow,
 
-            // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
-            // provider will actually send. Both differ often enough that showing one leaves the
-            // question open.
-            Model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
             WorkingDirectory = WorkingDirectory,
             SessionId = SessionId,
 
@@ -1271,6 +1292,12 @@ public sealed class MainWindow : IDisposable
     public void SetResolution(ProviderResolution resolution)
     {
         _resolution = resolution;
+
+        // THE COMPOSER LINE TOO. It carries the model name, so a switch that refreshed only the
+        // panel left "local:…" under the prompt while the session was talking to `small` — the same
+        // stale-readout bug the panel's own window had, one line lower.
+        _modeLine?.SetContent([ModeLineText(_mode, ModelLabel)]);
+
         RefreshSessionPanel();
         RefreshTokenItem();
     }
@@ -1278,7 +1305,7 @@ public sealed class MainWindow : IDisposable
     public void SetMode(string mode)
     {
         _mode = mode;
-        var model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "no provider";
+        var model = ModelLabel;
         // SetContent rather than a rebuild: the control is already placed in the grid, and replacing
         // it would detach the instance the layout holds.
         _modeLine?.SetContent([ModeLineText(_mode, model)]);

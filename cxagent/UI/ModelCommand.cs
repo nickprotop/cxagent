@@ -103,8 +103,11 @@ public static class ModelCommand
                 ? Compact(size)
                 : "window unknown";
 
-            lines.Add($"  {(here ? $"[{accent}]▸[/]" : " ")} [{accent}]{Escape(name),-12}[/]"
-                    + $" {Escape(models.GetValueOrDefault(name, "?")),-28}"
+            // instance:model, one column, so the listing reads the same way as every other place
+            // the UI names a model — and is the exact string `/model <name>` takes.
+            var label = $"{name}:{models.GetValueOrDefault(name, "?")}";
+
+            lines.Add($"  {(here ? $"[{accent}]▸[/]" : " ")} [{accent}]{Escape(label),-44}[/]"
                     + $" [{muted}]{window,-14}[/]"
                     + (here ? $"[{muted}]· in use[/]" : ""));
         }
@@ -132,8 +135,10 @@ public static class ModelCommand
 
         var lines = new List<string>
         {
-            $"[{accent}]{Escape(name)}[/] [{muted}]· {Escape(model)}"
-            + (window is { } w ? $" · {Compact(w)} window" : " · window unknown") + "[/]",
+            // instance:model, the same shape every other readout uses — and the same string a user
+            // would type to switch back.
+            $"[{accent}]{Escape(name)}:{Escape(model)}[/]"
+            + $" [{muted}]{(window is { } w ? $"· {Compact(w)} window" : "· window unknown")}[/]",
         };
 
         // THE CONVERSATION SURVIVES, and that is worth stating rather than assuming: every other

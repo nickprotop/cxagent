@@ -176,7 +176,10 @@ public sealed class SessionPanel
     public sealed record SessionPanelState
     {
         // --- what the session is talking to ---
-        public string Model { get; init; } = "";
+        //
+        // NO Model FIELD. The panel does not name the model — the banner, the composer line and the
+        // status bar all do, and "Tokens by model" below is keyed by MODEL ID rather than instance
+        // because spend is attributed to the model two instances may share.
         public string Endpoint { get; init; } = "";
         public string? WorkingDirectory { get; init; }
         public string SessionId { get; init; } = "";

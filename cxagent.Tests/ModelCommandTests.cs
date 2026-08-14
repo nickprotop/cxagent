@@ -30,9 +30,8 @@ public class ModelCommandTests
         var reply = ModelCommand.Decide("",
             Registry(("local", "qwen3", 213_000), ("claude", "claude-x", 200_000)), "local").Reply;
 
-        Assert.Contains("local", reply);
-        Assert.Contains("qwen3", reply);
-        Assert.Contains("claude-x", reply);
+        Assert.Contains("local:qwen3", reply);
+        Assert.Contains("claude:claude-x", reply);
     }
 
     /// <summary>
@@ -134,13 +133,17 @@ public class ModelCommandTests
 
     // --- what the switch says afterwards ---
 
+    /// <summary>
+    /// instance:model, EVERYWHERE THE UI NAMES A MODEL. The instance alone is ambiguous — two
+    /// entries can serve the same model — and the model alone leaves "which of my providers is
+    /// this?" unanswerable. It is also the exact string `/model &lt;name&gt;` takes.
+    /// </summary>
     [Fact]
     public void Switched_NamesTheModelAndItsWindow()
     {
         var text = ModelCommand.Switched("claude", "claude-x", 200_000, 213_000, used: 1_000);
 
-        Assert.Contains("claude", text);
-        Assert.Contains("claude-x", text);
+        Assert.Contains("claude:claude-x", text);
         Assert.Contains("200k", text);
         Assert.Contains("conversation is kept", text);
     }
