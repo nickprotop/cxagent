@@ -278,9 +278,6 @@ public static class AppBootstrap
         {
             if (!res.HasProvider) return;
 
-            // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
-            // The new AgentHost below reads this field, not a startup copy.
-            var plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate);
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host
             // is a bare local.
@@ -313,139 +310,25 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
-            // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
-            // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
-            // seed and the host's context come from it, and taking it inline in the argument list
-            // (as this used to) while also reading it for the ledger would hand the second reader a
-            // null — seeding the ledger and silently discarding the entire restored conversation,
-            // with every test still green. One local, both uses.
-            var resumeSnapshot = session.TakePendingResume();
-
-            // THE LEDGER IS THE COMPOSITION ROOT'S NOW (D7), not AgentHost's. Constructed here so
-            // "which ledger does this agent get?" has an answer — the question per-model attribution
-            // and sub-agent factories both have to ask.
-            //
-            // IN WireRunner, NOT AT THE TOP OF AppBootstrap, and the distinction is behavioural.
-            // This method re-runs on every F5 provider change and that RESETS the spend to zero.
-            // Hoisting it to startup would make the ledger survive the re-wire and report one
-            // session's spend across two providers as though it were one model's.
-            // CONSUMED ONCE, like the pending resume: a later re-wire must start fresh rather than
-            // inherit a ledger from a switch two provider changes ago.
-            var carried = session.TakeCarriedLedger();
-
-            var ledger = carried
-                ?? (resumeSnapshot is null
-                    ? new TokenLedger()
-                    : new TokenLedger(resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens));
-
-            // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
-            // it: the provider, the plugin registry, the ledger just built above, the context window
-            // and the orchestrator settings. That is exactly what the ledger hoist was for — those
-            // last two are private on AgentHost and were unreachable from any factory before it.
-            var orchestrator = res.Orchestrator ?? OrchestratorSettings.Unbounded;
-            // THE TYPE CATALOG. Built per re-wire, like everything else here: an F5 provider change
-            // must re-resolve every type's instance against the NEW registry, or a type would keep a
-            // provider the session no longer uses.
-            var agentTypes = new AgentTypeCatalog(res.AgentTypes, res.Providers);
-
-            var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
-            {
-                Provider = res.Provider!,
-                InstanceName = res.InstanceName,
-                Plugins = plugins,
-
-                // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
-                Ledger = ledger,
-                Logs = logs,
-
-                // THE SAME CEILING THE PARENT GETS, resolved once. Two expressions for one number is
-                // how a configured 0 came to mean "unbounded" for the session and "the default" for
-                // its children.
-                MaxTurns = AgentHost.CeilingFor(orchestrator.MaxTurns),
-
-                // THE CONSTANT, never the literal — two copies of this number desynchronise the
-                // moment either moves, and a child that never compresses dies on an overflow.
-                CompressAbove = orchestrator.EffectiveCompressThreshold(res.ContextWindow)
-                    ?? OrchestratorSettings.DefaultCompressThreshold,
-                ContextWindow = res.ContextWindow,
-
-                GlobalInstructionsDir = paths.ConfigDir,
-                Mcp = mcp.Toolset,
-
-                // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
-                // has a different window, so the threshold must be re-derived from it — and a second
-                // copy of "80% of the window" in the factory would desynchronise the moment either
-                // moved.
-                ThresholdFor = w => orchestrator.EffectiveCompressThreshold(w)
-                    ?? OrchestratorSettings.DefaultCompressThreshold,
-
-                // UNCAPPED UNLESS THE USER SAID OTHERWISE. Null is the common case and means every
-                // spawn the model emits runs — the barrier still holds them all inside the turn.
-                MaxConcurrentAgents = res.MaxConcurrentAgents,
-                WorkingDir = session.WorkingDirectory,
-            }),
-                agentTypes);
-
-            var host = new AgentHost(
-                new AgentHost.AgentRuntime
+            Core.Agent.SessionFactory.Wire(session, res,
+                new Core.Agent.SharedServices
                 {
-                    Provider = res.Provider!,
-                    InstanceName = res.InstanceName,
-                    Plugins = plugins,
-
-                    // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
-                    // Sessions and permission rules are both scoped to the project they belong to,
-                    // and they must agree on what "this project" means.
-                    WorkingDir = session.WorkingDirectory,
-
-                    // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
-                    GlobalInstructionsDir = paths.ConfigDir,
-
-                    // The real window (when config told us one), so auto-compression derives its
-                    // threshold from actual headroom instead of the fixed constant. Null on
-                    // --mock/no-provider and whenever contextWindow is not configured.
-                    ContextWindow = res.ContextWindow,
-
-                    // Passing this is what makes the cap real: the host defaults to unbounded, so
-                    // omitting it silently disabled the turn cap in production while every unit
-                    // test still passed.
-                    Orchestrator = res.Orchestrator,
-
-                    // The toolset, but NOT the servers: ownership stays with the session. Handing
-                    // those over would let an F5 re-wire dispose them, killing every server on a
-                    // provider change and leaving the new host with a toolset over dead pipes.
-                    Mcp = mcp.Toolset,
-
-                    Spawner = subAgents,
-                    Mode = startupMode,
-
-                    // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one
-                    // place that can put a question where the permission gate already asks. A
-                    // sub-agent never gets it — Agent refuses regardless of what is passed here.
-                    AskUser = mainWindow.AskQuestionAsync,
-                },
-                sink,
-                jobPanelSink,
-                new AgentHost.SessionStores
-                {
-                    // Every completed turn lands here, so a crash leaves something to resume from.
-                    Resume = sessions,
-
-                    // And here, for /stats — a separate archive that outlives the session.
-                    History = history,
                     Logs = logs,
+                    Resume = sessions,
+                    History = history,
+                    Mcp = mcp.Toolset,
+                    Gate = permissionGate,
+                    GlobalInstructionsDir = paths.ConfigDir,
                 },
-                resume: resumeSnapshot,
+                new Core.Agent.SessionPorts
+                {
+                    Observer = sink,
+                    Tools = jobPanelSink,
+                    Ask = mainWindow.AskQuestionAsync,
+                },
+                startupMode);
 
-                // Built above from the same snapshot `resume` came from, so a resumed session gets
-                // its spend back exactly as it did when AgentHost made this itself.
-                ledger: ledger);
-
-            // THROUGH THE SESSION, which disposes the host it replaces and records the provider and
-            // instance alongside it — three facts that must move together, and used to be three
-            // assignments a re-wire had to remember.
-            session.ReplaceHost(host, res.Provider!, res.InstanceName, plugins);
-            runner = host;
+            runner = session.Host;
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one

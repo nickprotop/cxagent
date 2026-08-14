@@ -41,6 +41,16 @@ public sealed record ProviderResolution(
     public bool HasProvider => Provider is not null;
 
     /// <summary>
+    /// A resolution over one provider and nothing else — for tests and headless callers that hold a
+    /// provider and have no config file behind it.
+    ///
+    /// <para>InstanceName defaults to "test" so spend attribution has a label: the ledger keys by
+    /// instance:model, and an unnamed instance would record a bare model id.</para>
+    /// </summary>
+    public static ProviderResolution ForTesting(ILlmProvider provider, string instanceName = "test") =>
+        new(provider, provider.DisplayName, []) { InstanceName = instanceName };
+
+    /// <summary>
     /// Which <c>providers</c> entry is in use, or null when it cannot be named (the mock).
     ///
     /// <para>DISTINCT FROM <see cref="DisplayName"/>, which is the driver's own label — "Anthropic",
