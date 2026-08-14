@@ -184,6 +184,37 @@ public sealed class TokenLedger
     private readonly Dictionary<string, int> _byModel = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (int Input, int Output)> _splitByModel = new(StringComparer.Ordinal);
 
+    /// <summary>What each instance has cost, for those that reported anything. See CostByInstance.</summary>
+    private readonly Dictionary<string, decimal> _costByInstance = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What each instance has cost, for the instances that reported anything.
+    ///
+    /// <para>AN INSTANCE THAT NEVER REPORTED IS ABSENT, not present with zero. A session that ran
+    /// some turns locally and some on a paid endpoint shows a cost against the paid one only, which
+    /// is the true answer rather than an invented zero.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, decimal> CostByInstance
+    {
+        get { lock (_byModel) return new Dictionary<string, decimal>(_costByInstance, StringComparer.Ordinal); }
+    }
+
+    /// <summary>
+    /// The session's total, or null when no provider reported a cost.
+    ///
+    /// <para>NULL RATHER THAN ZERO, for the same reason CacheHitRate is: "nothing was measured" and
+    /// "it cost nothing" are different facts, and only one of them is knowable from a response that
+    /// omits the field.</para>
+    /// </summary>
+    public decimal? TotalCost
+    {
+        get
+        {
+            lock (_byModel)
+                return _costByInstance.Count == 0 ? null : _costByInstance.Values.Sum();
+        }
+    }
+
     /// <summary>
     /// What sub-agents have spent, of <see cref="TotalTokens"/>.
     ///
@@ -211,6 +242,11 @@ public sealed class TokenLedger
 
                 var (input, output) = _splitByModel.GetValueOrDefault(modelId);
                 _splitByModel[modelId] = (input + usage.InputTokens, output + usage.OutputTokens);
+
+                // ONLY WHEN REPORTED. A provider that stays silent leaves this instance out of the
+                // map entirely rather than contributing a zero that would read as "free".
+                if (usage.Cost is { } cost)
+                    _costByInstance[modelId] = _costByInstance.GetValueOrDefault(modelId) + cost;
             }
 
         if (subAgent)

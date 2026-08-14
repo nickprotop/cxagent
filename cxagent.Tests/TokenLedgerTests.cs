@@ -218,4 +218,53 @@ public class TokenLedgerTests
         Assert.Empty(ledger.ByModel);
     }
 
+    // ---- what it cost -----------------------------------------------------------------------
+
+    /// <summary>
+    /// PER INSTANCE, because which endpoint is spending is the actionable fact. A fan-out routing
+    /// workers to a paid instance looks identical to one that does not, if the readout is a single
+    /// number.
+    /// </summary>
+    [Fact]
+    public void Record_AccumulatesCostPerInstance()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 5, Cost = 0.001m }, "openrouter:gemini");
+        l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 5, Cost = 0.002m }, "openrouter:gemini");
+        l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 5, Cost = 0.004m }, "other:model");
+
+        Assert.Equal(0.003m, l.CostByInstance["openrouter:gemini"]);
+        Assert.Equal(0.004m, l.CostByInstance["other:model"]);
+        Assert.Equal(0.007m, l.TotalCost);
+    }
+
+    /// <summary>
+    /// AN INSTANCE THAT NEVER REPORTED IS ABSENT, not zero. A mixed session — some turns local,
+    /// some paid — must show a cost against the paid instance and none against the local one, which
+    /// is the honest answer to "what did this cost me".
+    /// </summary>
+    [Fact]
+    public void AnInstanceThatReportedNoCost_IsAbsentRatherThanZero()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 5, Cost = 0.001m }, "openrouter:gemini");
+        l.Record(new LlmUsage { InputTokens = 900, OutputTokens = 50 }, "local:qwen3");
+
+        Assert.True(l.CostByInstance.ContainsKey("openrouter:gemini"));
+        Assert.False(l.CostByInstance.ContainsKey("local:qwen3"));
+        Assert.Equal(0.001m, l.TotalCost);
+    }
+
+    /// <summary>NULL, NOT ZERO, when nothing reported at all — a local-only session has no cost to
+    /// show, and showing $0.00 claims a measurement never made.</summary>
+    [Fact]
+    public void WithNothingReported_TotalCostIsNull()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 5 }, "local:qwen3");
+
+        Assert.Null(l.TotalCost);
+        Assert.Empty(l.CostByInstance);
+    }
+
 }
