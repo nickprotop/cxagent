@@ -26,7 +26,7 @@ public class ProviderResolutionTests : IDisposable
     /// MockLlmProvider is queue-driven — ChatAsync/ChatStreamAsync call Queue.Dequeue(), which
     /// throws InvalidOperationException("Queue empty.") when nothing was enqueued. The resolver
     /// previously returned `new MockLlmProvider()` unseeded, so every --mock goal submission failed
-    /// with a red "✗ Queue empty." in the chat and NO jobs were ever created (SetJobs runs only
+    /// with a red "✗ Queue empty." in the chat and NO jobs were ever created (ToolsChanged runs only
     /// after PlanCompiler.BuildDag, which needs a plan). Seed a canned create_plan so --mock
     /// actually decomposes and runs a DAG.
     /// </summary>

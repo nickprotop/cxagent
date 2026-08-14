@@ -46,7 +46,7 @@ public static class CompressionRun
     /// Optional: callers with no UI to notify pass null.
     /// </param>
     public static async Task<SessionCompressor.CompressResult> RunAsync(
-        AgentContext context, ILlmProvider provider, IJobPanel jobs, string agentId,
+        AgentContext context, ILlmProvider provider, IToolObserver jobs, string agentId,
         string title, Action<LlmUsage>? meter, CancellationToken ct, Action<int, int>? compressed = null)
     {
         // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
@@ -69,7 +69,7 @@ public static class CompressionRun
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow,
         };
-        jobs.SetJobs(new[] { job });
+        jobs.ToolsChanged(new[] { job });
 
         var started = DateTimeOffset.UtcNow;
         var before = context.Count;
@@ -115,7 +115,7 @@ public static class CompressionRun
                 ["content"] = $"{before} messages → {context.Count}\n\n{summary}",
             },
         };
-        jobs.UpdateJob(job);
+        jobs.ToolUpdated(job);
 
         // KEYED ON Summarised, NOT ON THE MESSAGE COUNT — the same trap the /compress reply fell into
         // once already. Compression replaces the older half with ONE summary, so a two-message

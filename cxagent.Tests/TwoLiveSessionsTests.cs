@@ -12,7 +12,7 @@ namespace CxAgent.Tests;
 ///
 /// <para>This is the end of the isolation work rather than a step in it: it does what the app
 /// cannot yet do from its UI, using only the seams the core already exposes. AgentHost takes
-/// IChatSink and IJobPanel, and BufferedChatSink/BufferedJobPanel are real non-UI implementations —
+/// ISessionObserver and IToolObserver, and BufferedChatSink/BufferedJobPanel are real non-UI implementations —
 /// so a headless second session needs nothing new. What is singular is MainWindow, not the
 /// kernel.</para>
 ///

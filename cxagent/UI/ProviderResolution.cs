@@ -118,7 +118,7 @@ public static class ProviderResolver
     /// Seeds the --mock provider with a canned create_plan so `--mock` is a WORKING demo path.
     /// MockLlmProvider is queue-driven (ChatAsync = Queue.Dequeue()), so an unseeded instance throws
     /// InvalidOperationException("Queue empty.") on the first goal — which surfaced as a red
-    /// "✗ Queue empty." in chat and left the job panel permanently empty (SetJobs runs only after
+    /// "✗ Queue empty." in chat and left the job panel permanently empty (ToolsChanged runs only after
     /// PlanCompiler.BuildDag, which needs a plan).
     ///
     /// The plan is deliberately dependency-shaped (two parallel roots → a dependent join) so the

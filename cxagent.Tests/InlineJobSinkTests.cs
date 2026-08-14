@@ -11,7 +11,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// USER-REPORTED: "why jobs aren't updated the text receiving from the model?"
 ///
-/// <para>The answer was that <c>UpdateJob</c> only ever called <c>SetStatus</c> — the message BODY
+/// <para>The answer was that <c>ToolUpdated</c> only ever called <c>SetStatus</c> — the message BODY
 /// stayed whatever <c>Title(job)</c> produced when the job first appeared, i.e. the job's NAME. Every
 /// plugin writes its real output to <c>Output["content"]</c> (LlmAgentJobPlugin's worker transcript,
 /// ShellJobPlugin's stdout) and the ONLY reader was IntrospectionTools — the tool the ORCHESTRATOR

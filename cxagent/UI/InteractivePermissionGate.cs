@@ -40,7 +40,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
     // MainWindow.ShowPermissionPrompt and RestoreComposer — GridControl.ReplaceControl matches by
     // ReferenceEquals (GridControl.cs:389), so a second BuildContent() call would throw from
     // inside the render loop. Tests implement this with a scripted TCS instead of a live window —
-    // the same trick IChatSink plays for AgentHost.
+    // the same trick ISessionObserver plays for AgentHost.
     //
     // Takes `ct` too (not just request/offerTrust): the real implementation registers cancellation
     // directly against the CONTROL's own Completion, not just a gate-local TCS — see the class doc

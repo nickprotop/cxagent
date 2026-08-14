@@ -20,7 +20,7 @@ namespace CxAgent.Core.Agent;
 /// because the reads are rare and the writes must stay ordered — a transcript out of order is worse
 /// than no transcript.</para>
 /// </summary>
-public sealed class BufferedChatSink : IChatSink
+public sealed class BufferedChatSink : ISessionObserver
 {
     private readonly object _gate = new();
     private readonly StringBuilder _transcript = new();
@@ -34,7 +34,7 @@ public sealed class BufferedChatSink : IChatSink
     /// What the child reported as an error.
     ///
     /// <para>SEPARATE FROM THE TRANSCRIPT because the spawn branch reads it. A cap or a stuck run
-    /// announces itself only through <see cref="ShowError"/>, and for a child that is a buffer nobody
+    /// announces itself only through <see cref="Failed"/>, and for a child that is a buffer nobody
     /// is watching — so the caller needs it addressable rather than buried in prose. <see
     /// cref="SendOutcome"/> now carries the same information structurally; this stays because an
     /// error raised mid-run (a provider fault the loop recovered from) never reaches the outcome.</para>
@@ -46,15 +46,15 @@ public sealed class BufferedChatSink : IChatSink
     public string Body { get { lock (_gate) return _body.ToString(); } }
     private readonly StringBuilder _body = new();
 
-    public ChatMessageId AddUserTurn(string text)
+    public ChatMessageId UserTurnAdded(string text)
     {
         lock (_gate) _transcript.Append("> ").Append(text).AppendLine();
         return NextId();
     }
 
-    public ChatMessageId BeginAssistantTurn() => NextId();
+    public ChatMessageId AssistantTurnBegan() => NextId();
 
-    public void AppendAssistant(ChatMessageId id, string token)
+    public void AssistantTextAppended(ChatMessageId id, string token)
     {
         lock (_gate)
         {
@@ -66,12 +66,12 @@ public sealed class BufferedChatSink : IChatSink
     // KEPT, NOT DROPPED. A child's reasoning is the most useful thing in the buffer when its answer
     // turns out to be wrong — it is the record of how it got there. It stays out of Body because the
     // parent's tool result must be the answer, not the thinking.
-    public void AppendReasoning(ChatMessageId id, string text)
+    public void AssistantReasoningAppended(ChatMessageId id, string text)
     {
         lock (_gate) _transcript.Append(text);
     }
 
-    public void EndAssistantTurn(ChatMessageId id)
+    public void AssistantTurnEnded(ChatMessageId id)
     {
         lock (_gate) _transcript.AppendLine();
     }
@@ -79,9 +79,9 @@ public sealed class BufferedChatSink : IChatSink
     // A header is a LIVE indicator — a spinner and a status that overwrite in place. There is nothing
     // to overwrite in a buffer, and appending each one would fill the transcript with the successive
     // states of a progress line nobody watched.
-    public void SetAssistantHeader(ChatMessageId id, string header) { }
+    public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    public void ShowError(string message)
+    public void Failed(string message)
     {
         lock (_gate)
         {

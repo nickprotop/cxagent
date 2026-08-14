@@ -6,13 +6,22 @@ namespace CxAgent.Core.Agent;
 public readonly record struct ChatMessageId(long Value);
 
 /// <summary>
-/// The UI-update seam AgentHost writes to. A real implementation (ChatTranscriptSink) marshals each
-/// call onto the UI thread; tests use a recording fake. AgentHost never touches a control directly.
+/// What the session REPORTS as a conversation runs — text, reasoning, turn boundaries, failures.
+///
+/// <para>REPORTS, DOES NOT INSTRUCT. Every member names something that happened, never something to
+/// display. The session does not know a screen exists; a server, a log file and a test recorder are
+/// all equally valid implementations, and the names should read naturally for each. The verbs used to
+/// be Show/Set/Append — instructions to a display — which is how a UI concern comes to live in a
+/// session's vocabulary.</para>
+///
+/// <para>Plain text, never markup. The implementation escapes what it renders: a model writing
+/// "[red]" as ordinary prose must not open a style scope, and a model discussing THIS codebase does
+/// exactly that.</para>
 /// </summary>
-public interface IChatSink
+public interface ISessionObserver
 {
-    ChatMessageId AddUserTurn(string text);
-    ChatMessageId BeginAssistantTurn();
+    ChatMessageId UserTurnAdded(string text);
+    ChatMessageId AssistantTurnBegan();
     /// <summary>
     /// Body text from the model — what it is SAYING.
     ///
@@ -20,7 +29,7 @@ public interface IChatSink
     /// or "[dim]" as ordinary prose must not open a style scope, and a model discussing THIS codebase
     /// does exactly that. The agent does not know markup exists.</para>
     /// </summary>
-    void AppendAssistant(ChatMessageId id, string token);
+    void AssistantTextAppended(ChatMessageId id, string token);
 
     /// <summary>
     /// Reasoning text from the model — what it is THINKING.
@@ -31,12 +40,12 @@ public interface IChatSink
     /// to tell which of its two inputs was safe to escape. Only one of them was escaped; the other
     /// silently swallowed any recognised tag name a model happened to write.</para>
     ///
-    /// <para>Same contract as <see cref="AppendAssistant"/>: plain text, escaped by the sink.</para>
+    /// <para>Same contract as <see cref="AssistantTextAppended"/>: plain text, escaped by the sink.</para>
     /// </summary>
-    void AppendReasoning(ChatMessageId id, string text);
+    void AssistantReasoningAppended(ChatMessageId id, string text);
 
     /// <summary>
-    /// Closes an assistant turn. MUST be called for every <see cref="BeginAssistantTurn"/>, including
+    /// Closes an assistant turn. MUST be called for every <see cref="AssistantTurnBegan"/>, including
     /// turns that produced no text.
     ///
     /// <para>A turn is created with <c>thinking: true</c>, and ChatTranscriptControl only clears that
@@ -44,7 +53,7 @@ public interface IChatSink
     /// create_plan tool call and no prose — the normal case — therefore span its spinner forever,
     /// which read as "still working" long after the goal had finished.</para>
     /// </summary>
-    void EndAssistantTurn(ChatMessageId id);
+    void AssistantTurnEnded(ChatMessageId id);
 
     /// <summary>
     /// Replaces a message's HEADER — used to show live state on a turn whose body is still empty.
@@ -55,6 +64,6 @@ public interface IChatSink
     /// this ("combined with an inline [spinner] tag the same header carries the running indicator"),
     /// and it is where the job rows already put their status.</para>
     /// </summary>
-    void SetAssistantHeader(ChatMessageId id, string header);
-    void ShowError(string message);
+    void AssistantLabelled(ChatMessageId id, string header);
+    void Failed(string message);
 }

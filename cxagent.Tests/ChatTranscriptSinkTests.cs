@@ -83,7 +83,7 @@ public class ChatTranscriptSinkTests
     [InlineData("plain [abc] with no backticks")]
     public void AssistantBody_RendersModelTextVerbatim_EvenInsideCodeSpans(string modelText)
     {
-        // What AppendAssistant now does: hand the token over untouched.
+        // What AssistantTextAppended now does: hand the token over untouched.
         var rendered = AsAssistantBody(modelText);
 
         Assert.DoesNotContain("[[", rendered, StringComparison.Ordinal);

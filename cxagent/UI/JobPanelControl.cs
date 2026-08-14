@@ -8,7 +8,7 @@ namespace CxAgent.UI;
 /// <summary>
 /// Hosts one JobBlockControl per job (keyed by Job.Id) in a scrollable panel. Owns the expand/collapse
 /// behavior and the single active log-tail poller (collapse-others-on-expand keeps it to one). The
-/// SetJobs/UpdateJob methods run on the UI thread (the marshalling is JobPanelSink's job).
+/// ToolsChanged/ToolUpdated methods run on the UI thread (the marshalling is JobPanelSink's job).
 /// </summary>
 public sealed class JobPanelControl : ScrollablePanelControl
 {
@@ -41,7 +41,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
 
     public bool TryGetBlock(string jobId, out JobBlockControl block) => _blocks.TryGetValue(jobId, out block!);
 
-    public void SetJobs(IReadOnlyList<Job> jobs)
+    public void ToolsChanged(IReadOnlyList<Job> jobs)
     {
         StopTail();
         ClearContents();
@@ -51,7 +51,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         // rebuilt block would ReferenceEquals-compare against that stale, detached control (harmless
         // today: OnBlockExpandedChanged's checks just fail and do one extra no-op StopTail, but it
         // keeps a discarded JobBlockControl alive for no reason). Task 11 review round 2, N5 — this is
-        // the first call site to invoke SetJobs a second time in one session (the I2 InsertBefore
+        // the first call site to invoke ToolsChanged a second time in one session (the I2 InsertBefore
         // re-sync), so it's the first time the stale reference was actually reachable.
         _expanded = null;
         foreach (var job in jobs)
@@ -67,7 +67,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         }
     }
 
-    public void UpdateJob(Job job)
+    public void ToolUpdated(Job job)
     {
         if (_blocks.TryGetValue(job.Id, out var block))
             block.Update(job);
@@ -76,9 +76,9 @@ public sealed class JobPanelControl : ScrollablePanelControl
     /// <summary>
     /// Renders a resource sample on the named job's block, if it's still present. Callers (a
     /// UI-thread sink mirroring JobPanelSink) are responsible for the EnqueueOnUIThread marshal —
-    /// this method assumes it is already running on the UI thread, exactly like UpdateJob above.
+    /// this method assumes it is already running on the UI thread, exactly like ToolUpdated above.
     /// </summary>
-    public void UpdateResources(string jobId, ResourceSnapshot snapshot)
+    public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot)
     {
         if (_blocks.TryGetValue(jobId, out var block))
             block.ShowResources(snapshot);
@@ -138,7 +138,7 @@ public sealed class JobPanelControl : ScrollablePanelControl
         {
             // Cancel and WALK AWAY — never block waiting for the poller.
             //
-            // This runs on the UI THREAD (SetJobs/UpdateJob arrive via JobPanelSink's
+            // This runs on the UI THREAD (ToolsChanged/ToolUpdated arrive via JobPanelSink's
             // EnqueueOnUIThread, and expand/collapse is a UI event). The poller's emit callback is
             // itself an EnqueueOnUIThread, so it needs the UI thread to make progress. Blocking here
             // with .GetAwaiter().GetResult() therefore self-deadlocks: the UI thread waits for the

@@ -18,11 +18,11 @@ public class ChatMarshallingTests
         var chat = new ChatTranscriptControl();
         var sink = new ChatTranscriptSink(system, chat);
 
-        // BeginAssistantTurn + appends are all enqueued (deferred), never applied on the calling thread.
-        var id = sink.BeginAssistantTurn();
+        // AssistantTurnBegan + appends are all enqueued (deferred), never applied on the calling thread.
+        var id = sink.AssistantTurnBegan();
         await Task.Run(() =>
         {
-            for (int i = 0; i < 50; i++) sink.AppendAssistant(id, "x");
+            for (int i = 0; i < 50; i++) sink.AssistantTextAppended(id, "x");
         });
 
         // The sink marshalled every call via EnqueueOnUIThread: NOTHING was applied to the control off
@@ -41,8 +41,8 @@ public class ChatMarshallingTests
         var sink = new ChatTranscriptSink(system, new ChatTranscriptControl());
         var ex = Record.Exception(() =>
         {
-            var id = sink.AddUserTurn("hi");
-            sink.ShowError("boom");
+            var id = sink.UserTurnAdded("hi");
+            sink.Failed("boom");
         });
         Assert.Null(ex);   // enqueue-only; no synchronous control mutation, no throw
     }

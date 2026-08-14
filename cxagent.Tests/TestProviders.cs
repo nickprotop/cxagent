@@ -13,7 +13,7 @@ namespace CxAgent.Tests;
 /// </summary>
 
 /// <summary>
-/// A fake IChatSink that records everything, so a run can be asserted without a real window.
+/// A fake ISessionObserver that records everything, so a run can be asserted without a real window.
 /// Promoted here from AgentHostTests (where it was private) when OrchestratorLoopTests needed it —
 /// same "one copy only" reason this file exists.
 ///
@@ -24,10 +24,10 @@ namespace CxAgent.Tests;
 /// AgentHostTests' existing assertions keep working unchanged.</para>
 ///
 /// <para><see cref="Messages"/> collects EVERY user-visible line — assistant text appended via
-/// <see cref="AppendAssistant"/>, errors, and the goal result — because the loop's "say why you
+/// <see cref="AssistantTextAppended"/>, errors, and the goal result — because the loop's "say why you
 /// stopped" contract is about what reached the user, not which sink method carried it.</para>
 /// </summary>
-public sealed class RecordingSink : IChatSink
+public sealed class RecordingSink : ISessionObserver
 {
     public readonly List<string> Users = new();
     public readonly ConcurrentQueue<string> AssistantTokens = new();
@@ -48,15 +48,15 @@ public sealed class RecordingSink : IChatSink
 
     private long _id;
 
-    public ChatMessageId AddUserTurn(string text) { Users.Add(text); return new ChatMessageId(_id++); }
-    public ChatMessageId BeginAssistantTurn() => new ChatMessageId(_id++);
+    public ChatMessageId UserTurnAdded(string text) { Users.Add(text); return new ChatMessageId(_id++); }
+    public ChatMessageId AssistantTurnBegan() => new ChatMessageId(_id++);
 
-    /// <summary>Turns closed via EndAssistantTurn — a turn left open spins its thinking indicator forever.</summary>
+    /// <summary>Turns closed via AssistantTurnEnded — a turn left open spins its thinking indicator forever.</summary>
     public List<long> EndedTurns { get; } = new();
 
-    public void EndAssistantTurn(ChatMessageId id) => EndedTurns.Add(id.Value);
+    public void AssistantTurnEnded(ChatMessageId id) => EndedTurns.Add(id.Value);
 
-    public void AppendAssistant(ChatMessageId id, string token)
+    public void AssistantTextAppended(ChatMessageId id, string token)
     {
         AssistantTokens.Enqueue(token);
         MessageQueue.Enqueue(token);
@@ -66,15 +66,15 @@ public sealed class RecordingSink : IChatSink
     /// that merged the two would let a test assert on body content that was actually thinking.</summary>
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> ReasoningTokens = new();
 
-    public void AppendReasoning(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
+    public void AssistantReasoningAppended(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
 
-    public void ShowError(string message)
+    public void Failed(string message)
     {
         ErrorQueue.Enqueue(message);
         MessageQueue.Enqueue(message);
     }
 
-    public void SetAssistantHeader(ChatMessageId id, string header) { }
+    public void AssistantLabelled(ChatMessageId id, string header) { }
 }
 
 /// <summary>
@@ -205,39 +205,39 @@ public sealed class AnswersWithUsageProvider : ILlmProvider
 }
 
 /// <summary>
-/// An IJobPanel that records rather than renders. Shared here for the same reason the providers
+/// An IToolObserver that records rather than renders. Shared here for the same reason the providers
 /// above are — there was one private copy per test file, and a third was about to be written.
 /// </summary>
-public sealed class NullJobPanel : IJobPanel
+public sealed class NullJobPanel : IToolObserver
 {
     /// <summary>
     /// The latest state of every job the loop reported, keyed by id — compression renders as one
     /// of these.
     /// </summary>
     /// <remarks>
-    /// BY ID, because Job is MUTATED IN PLACE: the loop hands the same instance to SetJobs while
-    /// running and to UpdateJob when it finishes, so appending to a list records one object twice
+    /// BY ID, because Job is MUTATED IN PLACE: the loop hands the same instance to ToolsChanged while
+    /// running and to ToolUpdated when it finishes, so appending to a list records one object twice
     /// and both entries show the final state. A real panel keys by id for the same reason.
     /// </remarks>
     private readonly Dictionary<string, Job> _jobs = new();
 
     public IReadOnlyCollection<Job> Jobs => _jobs.Values;
 
-    public void SetJobs(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
+    public void ToolsChanged(IReadOnlyList<Job> jobs) { foreach (var j in jobs) _jobs[j.Id] = j; }
 
-    /// <summary>Counted separately from progress ticks: UpdateJob is for REAL transitions, and a
+    /// <summary>Counted separately from progress ticks: ToolUpdated is for REAL transitions, and a
     /// repeating tick routed through it would re-expand and blank the row on every call.</summary>
-    public void UpdateJob(Job job) { _jobs[job.Id] = job; StateTransitions++; }
+    public void ToolUpdated(Job job) { _jobs[job.Id] = job; StateTransitions++; }
 
-    /// <summary>How many times UpdateJob was called — one per genuine state change.</summary>
+    /// <summary>How many times ToolUpdated was called — one per genuine state change.</summary>
     public int StateTransitions { get; private set; }
     /// <summary>Progress ticks land in the same map, so a test can assert what a running row was
     /// showing — which is the only place that text ever appears.</summary>
-    public void UpdateProgress(Job job) { _jobs[job.Id] = job; ProgressTicks++; }
+    public void ToolProgressed(Job job) { _jobs[job.Id] = job; ProgressTicks++; }
 
     /// <summary>How many progress ticks arrived — a frozen row is zero.</summary>
     public int ProgressTicks { get; private set; }
 
-    public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
-    public void AppendText(string jobId, string delta) { }
+    public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
+    public void ToolOutputAppended(string jobId, string delta) { }
 }

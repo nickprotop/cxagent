@@ -569,7 +569,7 @@ public sealed class MainWindow : IDisposable
         // width of half the screen whether or not a goal was running, and the conversation — the part
         // you actually read — was squeezed into the other half. JobPanelControl is still constructed
         // and still works; it is simply not placed. Nothing in the engine changed: AgentHost talks to
-        // IJobPanel, so swapping which implementation is wired is a UI-only decision.
+        // IToolObserver, so swapping which implementation is wired is a UI-only decision.
         // A RULE BETWEEN THE TRANSCRIPT AND THE COMPOSER. Without it the two run together: the
         // conversation ends and the box you type into begins, with nothing saying which is which,
         // and on a full screen of tool output the composer stops being findable at all.

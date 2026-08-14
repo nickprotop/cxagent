@@ -29,7 +29,7 @@ public class JobPanelControlTests : IDisposable
     public void SetJobs_CreatesOneBlockPerJob_KeyedById()
     {
         var panel = new JobPanelControl(_sys, _logs);
-        panel.SetJobs(new[] { J("a", JobState.Queued), J("b", JobState.Queued) });
+        panel.ToolsChanged(new[] { J("a", JobState.Queued), J("b", JobState.Queued) });
         Assert.Equal(2, panel.BlockCount);
         Assert.True(panel.TryGetBlock("a", out _));
         Assert.True(panel.TryGetBlock("b", out _));
@@ -39,8 +39,8 @@ public class JobPanelControlTests : IDisposable
     public void UpdateJob_UpdatesTheRightBlock()
     {
         var panel = new JobPanelControl(_sys, _logs);
-        panel.SetJobs(new[] { J("a", JobState.Queued), J("b", JobState.Queued) });
-        panel.UpdateJob(J("a", JobState.Running));
+        panel.ToolsChanged(new[] { J("a", JobState.Queued), J("b", JobState.Queued) });
+        panel.ToolUpdated(J("a", JobState.Running));
         Assert.True(panel.TryGetBlock("a", out var a));
         Assert.Equal(SharpConsoleUI.Themes.ColorRole.Info, a.ColorRole);
         // b unchanged
@@ -52,8 +52,8 @@ public class JobPanelControlTests : IDisposable
     public void UpdateJob_UnknownId_IsNoOp()
     {
         var panel = new JobPanelControl(_sys, _logs);
-        panel.SetJobs(new[] { J("a", JobState.Queued) });
-        var ex = Record.Exception(() => panel.UpdateJob(J("ghost", JobState.Running)));
+        panel.ToolsChanged(new[] { J("a", JobState.Queued) });
+        var ex = Record.Exception(() => panel.ToolUpdated(J("ghost", JobState.Running)));
         Assert.Null(ex);
         Assert.Equal(1, panel.BlockCount);
     }
@@ -62,8 +62,8 @@ public class JobPanelControlTests : IDisposable
     public void SetJobs_Twice_ReplacesBlocks()
     {
         var panel = new JobPanelControl(_sys, _logs);
-        panel.SetJobs(new[] { J("a", JobState.Queued) });
-        panel.SetJobs(new[] { J("x", JobState.Queued), J("y", JobState.Queued) });
+        panel.ToolsChanged(new[] { J("a", JobState.Queued) });
+        panel.ToolsChanged(new[] { J("x", JobState.Queued), J("y", JobState.Queued) });
         Assert.Equal(2, panel.BlockCount);
         Assert.False(panel.TryGetBlock("a", out _));
         Assert.True(panel.TryGetBlock("x", out _));

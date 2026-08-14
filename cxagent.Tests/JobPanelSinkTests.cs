@@ -31,9 +31,9 @@ public class JobPanelSinkTests : IDisposable
         var panel = new JobPanelControl(_sys, _logs);
         var sink = new JobPanelSink(_sys, panel);
 
-        await Task.Run(() => sink.SetJobs(new[] { J("a"), J("b") }));
+        await Task.Run(() => sink.ToolsChanged(new[] { J("a"), J("b") }));
 
-        // Marshalled: nothing applied synchronously — the panel has no blocks yet (the SetJobs was enqueued).
+        // Marshalled: nothing applied synchronously — the panel has no blocks yet (the ToolsChanged was enqueued).
         Assert.Equal(0, panel.BlockCount);
     }
 
@@ -44,8 +44,8 @@ public class JobPanelSinkTests : IDisposable
         var sink = new JobPanelSink(_sys, panel);
         var ex = Record.Exception(() =>
         {
-            sink.SetJobs(new[] { J("a") });
-            sink.UpdateJob(J("a"));
+            sink.ToolsChanged(new[] { J("a") });
+            sink.ToolUpdated(J("a"));
         });
         Assert.Null(ex);   // enqueue-only, no synchronous mutation, no throw
     }

@@ -935,21 +935,21 @@ public class AgentChallengeTests
         Usage = new LlmUsage { InputTokens = inputTokens },
     };
 
-    private sealed class RecordingSink : IChatSink
+    private sealed class RecordingSink : ISessionObserver
     {
         public readonly List<string> Errors = [];
-        public ChatMessageId AddUserTurn(string text) => new(0);
+        public ChatMessageId UserTurnAdded(string text) => new(0);
         public int Begins, Ends;
         public readonly List<string> Headers = [];
-        public ChatMessageId BeginAssistantTurn() { Begins++; return new(0); }
+        public ChatMessageId AssistantTurnBegan() { Begins++; return new(0); }
         /// <summary>Every body token, in order — reasoning now streams here rather than to the header.</summary>
         public readonly List<string> Appended = [];
-        public void AppendAssistant(ChatMessageId id, string token) => Appended.Add(token);
+        public void AssistantTextAppended(ChatMessageId id, string token) => Appended.Add(token);
         public readonly List<string> Reasoning = [];
-        public void AppendReasoning(ChatMessageId id, string text) => Reasoning.Add(text);
-        public void EndAssistantTurn(ChatMessageId id) => Ends++;
-        public void ShowError(string message) => Errors.Add(message);
-        public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);
+        public void AssistantReasoningAppended(ChatMessageId id, string text) => Reasoning.Add(text);
+        public void AssistantTurnEnded(ChatMessageId id) => Ends++;
+        public void Failed(string message) => Errors.Add(message);
+        public void AssistantLabelled(ChatMessageId id, string header) => Headers.Add(header);
     }
 
 }

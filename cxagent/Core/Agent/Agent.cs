@@ -39,8 +39,8 @@ public sealed class Agent
     private readonly ILlmProvider _provider;
     private readonly PluginRegistry _plugins;
     private readonly TokenLedger _ledger;
-    private readonly IChatSink _sink;
-    private readonly IJobPanel _jobs;
+    private readonly ISessionObserver _sink;
+    private readonly IToolObserver _jobs;
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
     private readonly string? _workingDir;
@@ -397,7 +397,7 @@ public sealed class Agent
     /// context still HAS one, rather than borrowing the caller's list.
     /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
-        IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
+        ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
         string? briefing = null,
@@ -759,7 +759,7 @@ public sealed class Agent
             if (turn >= _maxTurns)
             {
                 var summary = await SummariseAtCapAsync(messages, tools, ct);
-                _sink.ShowError($"stopped after {_maxTurns} turns without finishing.");
+                _sink.Failed($"stopped after {_maxTurns} turns without finishing.");
 
                 // The salvaged summary IS the answer on this path — the caller puts it on the
                 // transcript, exactly as it does for an ordinary reply. CAPPED, not Completed: it is
@@ -777,7 +777,7 @@ public sealed class Agent
             // one moment nothing needed indicating. Between a tool result and the next response the
             // transcript sat completely still, with no way to tell a model that is thinking from one
             // that has died somewhere in the silicon.
-            var turnId = _sink.BeginAssistantTurn();
+            var turnId = _sink.AssistantTurnBegan();
 
             // BEFORE the call, so what is recorded is what was actually sent — including on a turn
             // that then fails, which is the one you most want to look at afterwards. The token count
@@ -804,7 +804,7 @@ public sealed class Agent
                 // llama.cpp splits n_ctx across slots) and is silent entirely when no usage is
                 // reported. This is the endpoint saying so in its own words, so it is worth more
                 // than any estimate: compact and try the same turn again.
-                _sink.EndAssistantTurn(turnId);
+                _sink.AssistantTurnEnded(turnId);
 
                 // ONCE. If compacting did not make it fit, retrying the same refusal forever is
                 // worse than reporting it — the guard is a flag rather than a counter because a
@@ -834,7 +834,7 @@ public sealed class Agent
             {
                 // The turn MUST be closed on every path. A spinner left running after a failure is
                 // worse than no spinner: it says "still working" about a goal that is already over.
-                _sink.EndAssistantTurn(turnId);
+                _sink.AssistantTurnEnded(turnId);
                 throw;
             }
 
@@ -870,7 +870,7 @@ public sealed class Agent
 
             // Nothing more will be appended to this turn. Closing it stops the spinner; the text (if
             // any) was streamed in as it arrived.
-            _sink.EndAssistantTurn(turnId);
+            _sink.AssistantTurnEnded(turnId);
 
             // KEEP GOING IF THE SERVER SAID "tool_use" BUT WE PARSED NO CALLS. The two disagree only
             // when something went wrong in between — a truncated stream, a malformed arguments blob
@@ -949,7 +949,7 @@ public sealed class Agent
                 // did not compile, "Build FAILED" in the transcript, and a confident success summary
                 // in the same turn.
                 if (broken)
-                    _sink.ShowError(
+                    _sink.Failed(
                         "changes were written but the build did not succeed. The last build or test "
                         + "run reported a failure and it was not resolved.");
 
@@ -1166,7 +1166,7 @@ public sealed class Agent
             // session that stopped and a session that appears to still be running.
             if (stuckOn is not null)
             {
-                _sink.ShowError(
+                _sink.Failed(
                     $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
                     + "returned the same result each time. The run was not making progress.");
                 return new SendResult(text, SendOutcome.Stuck);
@@ -1206,7 +1206,7 @@ public sealed class Agent
             },
         };
 
-        var turnId = _sink.BeginAssistantTurn();
+        var turnId = _sink.AssistantTurnBegan();
         try
         {
             var response = await StreamTurnAsync(ask, tools, ct, turnId);
@@ -1222,7 +1222,7 @@ public sealed class Agent
         }
         finally
         {
-            _sink.EndAssistantTurn(turnId);
+            _sink.AssistantTurnEnded(turnId);
         }
     }
 
@@ -1363,7 +1363,7 @@ public sealed class Agent
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow,
         };
-        _jobs.SetJobs(new[] { job });
+        _jobs.ToolsChanged(new[] { job });
 
         var started = DateTimeOffset.UtcNow;   // rebased by ctx.WorkStarted below
 
@@ -1406,10 +1406,10 @@ public sealed class Agent
             childId = child.Agent.Id;
             spawned = child;
             job.ProgressMessage = "starting…";
-            // UpdateProgress, NEVER UpdateJob, for anything that fires repeatedly: UpdateJob
+            // ToolProgressed, NEVER ToolUpdated, for anything that fires repeatedly: ToolUpdated
             // force-expands the row and blanks its body on every call, so a per-second tick would
             // re-open a row the user collapsed and erase whatever was in it.
-            _jobs.UpdateProgress(job);
+            _jobs.ToolProgressed(job);
 
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session
@@ -1524,7 +1524,7 @@ public sealed class Agent
                 ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
                 : string.Join("\n", facts);
 
-            _jobs.UpdateProgress(job);
+            _jobs.ToolProgressed(job);
 
             // AND THE SESSION READOUT. Raised from Report rather than from the child's TurnCompleted
             // because Report is also driven by the one-second tick — a child that spends four minutes
@@ -1641,7 +1641,7 @@ public sealed class Agent
                 Duration = DateTimeOffset.UtcNow - started,
                 ErrorMessage = "cancelled",
             };
-            _jobs.UpdateJob(job);
+            _jobs.ToolUpdated(job);
 
             // CANCELLED IS AN OUTCOME, not an absence. A tool the user stopped is a fact about how
             // the session went, and dropping it here would make Escape invisible in history while
@@ -1759,7 +1759,7 @@ public sealed class Agent
             ErrorMessage = failed ? result : null,
             Output = new Dictionary<string, object?> { ["content"] = result },
         };
-        _jobs.UpdateJob(job);
+        _jobs.ToolUpdated(job);
 
         // EVERY TOOL CALL, at the single exit both spawns and ordinary tools pass through. Raised
         // after the row is closed so a subscriber that throws cannot leave a row open — and the
@@ -1808,7 +1808,7 @@ public sealed class Agent
                 var visible = ModelOutput.StripReasoning(accumulated);
                 if (visible.Length > shown)
                 {
-                    _sink.AppendAssistant(turnId, visible[shown..]);
+                    _sink.AssistantTextAppended(turnId, visible[shown..]);
                     shown = visible.Length;
                 }
 
@@ -1834,7 +1834,7 @@ public sealed class Agent
                 var reasoning = ModelOutput.ExtractReasoning(accumulated);
                 if (reasoning.Length > shownReasoning)
                 {
-                    _sink.AppendReasoning(turnId, reasoning[shownReasoning..]);
+                    _sink.AssistantReasoningAppended(turnId, reasoning[shownReasoning..]);
                     shownReasoning = reasoning.Length;
                 }
             }

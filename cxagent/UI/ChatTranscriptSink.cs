@@ -15,11 +15,11 @@ using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
 namespace CxAgent.UI;
 
 /// <summary>
-/// The real IChatSink: marshals every update onto the UI thread via EnqueueOnUIThread and maps the
+/// The real ISessionObserver: marshals every update onto the UI thread via EnqueueOnUIThread and maps the
 /// P5a ChatMessageId to the framework's ChatTranscriptControl message ids. AgentHost (which may run
 /// on a background thread) calls these; nothing here touches a control off the UI thread.
 /// </summary>
-public sealed class ChatTranscriptSink : IChatSink
+public sealed class ChatTranscriptSink : ISessionObserver
 {
     private readonly ConsoleWindowSystem _system;
     private readonly ChatTranscriptControl _chat;
@@ -32,7 +32,7 @@ public sealed class ChatTranscriptSink : IChatSink
         _chat = chat;
     }
 
-    public ChatMessageId AddUserTurn(string text)
+    public ChatMessageId UserTurnAdded(string text)
     {
         var id = new ChatMessageId(Interlocked.Increment(ref _nextId));
         _system.EnqueueOnUIThread(() =>
@@ -40,7 +40,7 @@ public sealed class ChatTranscriptSink : IChatSink
         return id;
     }
 
-    public ChatMessageId BeginAssistantTurn()
+    public ChatMessageId AssistantTurnBegan()
     {
         var id = new ChatMessageId(Interlocked.Increment(ref _nextId));
         _system.EnqueueOnUIThread(() =>
@@ -63,19 +63,19 @@ public sealed class ChatTranscriptSink : IChatSink
     ///
     /// <para>A turn that DID produce text is left alone; only the empty ones vanish.</para>
     /// </summary>
-    public void SetAssistantHeader(ChatMessageId id, string header) =>
+    public void AssistantLabelled(ChatMessageId id, string header) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.SetHeader(fwId, header);
         });
 
-    public void EndAssistantTurn(ChatMessageId id) =>
+    public void AssistantTurnEnded(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (!_map.TryGetValue(id.Value, out var fwId)) return;
 
             // IsThinking is still true exactly when no body content ever arrived — the control clears
-            // the flag on first content (see IChatSink's note).
+            // the flag on first content (see ISessionObserver's note).
             if (_chat.IsThinking(fwId))
             {
                 _chat.RemoveMessage(fwId);
@@ -93,7 +93,7 @@ public sealed class ChatTranscriptSink : IChatSink
     /// doubled passed straight through to the screen. Outside code spans the doubling is invisible,
     /// which is exactly why it survived: every existing test here used plain text.</para>
     ///
-    /// <para>THE ASYMMETRY WITH <see cref="AppendReasoning"/> IS CORRECT, and is the thing to
+    /// <para>THE ASYMMETRY WITH <see cref="AssistantReasoningAppended"/> IS CORRECT, and is the thing to
     /// understand before "fixing" it back. Reasoning is wrapped in a colour scope BY THIS SINK, which
     /// makes it markup, and markup must be escaped or a model writing "[red]" opens a style scope.
     /// Body text goes to a role whose <c>Markdown = true</c> (MainWindow.cs:330-335) routes it through
@@ -101,7 +101,7 @@ public sealed class ChatTranscriptSink : IChatSink
     /// what produced the doubling, and escaping neither would swallow tags in the reasoning stream.
     /// </para>
     /// </summary>
-    public void AppendAssistant(ChatMessageId id, string token) =>
+    public void AssistantTextAppended(ChatMessageId id, string token) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId)) _chat.Append(fwId, token);
@@ -115,7 +115,7 @@ public sealed class ChatTranscriptSink : IChatSink
     /// honour it produce grey mush. A colour of its own says "this is a different KIND of text"
     /// rather than "this text matters less", which is what reasoning actually is.</para>
     /// </summary>
-    public void AppendReasoning(ChatMessageId id, string text) =>
+    public void AssistantReasoningAppended(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (_map.TryGetValue(id.Value, out var fwId))
@@ -133,7 +133,7 @@ public sealed class ChatTranscriptSink : IChatSink
     /// and an escape nobody can test is how the missing one survived.</remarks>
     public static string Escape(string text) => text.Replace("[", "[[");
 
-    public void ShowError(string message) =>
+    public void Failed(string message) =>
         _system.EnqueueOnUIThread(() =>
             _chat.AddMessage(ChatRole.System, $"[red]✗ {message}[/]"));
 

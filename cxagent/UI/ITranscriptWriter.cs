@@ -3,7 +3,7 @@ namespace CxAgent.UI;
 /// <summary>
 /// How the UI writes to its own transcript.
 ///
-/// <para>WHY THIS IS NOT <c>IChatSink</c>. The UI used to print through the session's observer —
+/// <para>WHY THIS IS NOT <c>ISessionObserver</c>. The UI used to print through the session's observer —
 /// 26 call sites of <c>ShowSystemMessage</c>, none of them from Core. That made the session's port a
 /// general-purpose message bus, and meant the layer above needed a session-shaped object simply to
 /// say something to the user. A command reporting "reloaded 3 servers" is not the session reporting

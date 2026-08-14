@@ -35,7 +35,7 @@ public enum SendOutcome
 ///
 /// <para>WHY THE OUTCOME IS A FIELD RATHER THAN SOMETHING TO INFER. <c>SendAsync</c> returns text on
 /// all three of its exits — a normal answer, a salvaged summary at the turn cap, and a stuck run —
-/// and the two unhappy ones announce themselves only through <c>IChatSink.ShowError</c>. That is
+/// and the two unhappy ones announce themselves only through <c>ISessionObserver.Failed</c>. That is
 /// enough for a human watching a transcript and nothing at all for a caller: a sub-agent's sink is a
 /// buffer nobody is reading, so a capped run and a finished one are the same string.</para>
 ///

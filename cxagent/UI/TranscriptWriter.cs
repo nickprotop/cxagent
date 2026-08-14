@@ -6,7 +6,7 @@ namespace CxAgent.UI;
 /// <summary>
 /// The UI's own transcript writer, marshalling onto the UI thread.
 ///
-/// <para>WAS <c>LatestChatSink</c>, a forwarder that implemented the session's <c>IChatSink</c> so the
+/// <para>WAS <c>LatestChatSink</c>, a forwarder that implemented the session's <c>ISessionObserver</c> so the
 /// permission gate could print before the real transcript sink existed. It solved for the SINK's
 /// lifetime when the CONTROL's is what matters — the control is created with the window and never
 /// replaced, so there is nothing to forward to and nothing to keep current.</para>

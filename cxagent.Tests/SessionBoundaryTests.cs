@@ -19,9 +19,10 @@ public class SessionBoundaryTests
     [Fact]
     public void TheObserver_HasNoGeneralPurposeMessageMethod()
     {
-        var names = typeof(IChatSink).GetMethods().Select(m => m.Name).ToList();
+        var names = typeof(ISessionObserver).GetMethods().Select(m => m.Name).ToList();
 
         Assert.DoesNotContain("ShowSystemMessage", names);
+        Assert.DoesNotContain("Notice", names);
     }
 
     /// <summary>
@@ -31,7 +32,7 @@ public class SessionBoundaryTests
     [Fact]
     public void Core_DoesNotDependOnTheUiNamespace()
     {
-        var coreTypes = typeof(IChatSink).Assembly.GetTypes()
+        var coreTypes = typeof(ISessionObserver).Assembly.GetTypes()
             .Where(t => t.Namespace?.StartsWith("CxAgent.Core", StringComparison.Ordinal) == true);
 
         foreach (var type in coreTypes)

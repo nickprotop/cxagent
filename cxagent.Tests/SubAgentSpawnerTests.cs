@@ -823,18 +823,18 @@ public class SubAgentSpawnerTests
     }
 
     /// <summary>Notes each tool row as it opens, so a test can assert execution order.</summary>
-    private sealed class OrderRecordingJobPanel(List<string> order) : IJobPanel
+    private sealed class OrderRecordingJobPanel(List<string> order) : IToolObserver
     {
-        public void SetJobs(IReadOnlyList<Job> jobs)
+        public void ToolsChanged(IReadOnlyList<Job> jobs)
         {
             foreach (var job in jobs)
                 lock (order) order.Add(job.PlanLocalId ?? "?");
         }
 
-        public void UpdateJob(Job job) { }
-        public void UpdateProgress(Job job) { }
-        public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
-        public void AppendText(string jobId, string delta) { }
+        public void ToolUpdated(Job job) { }
+        public void ToolProgressed(Job job) { }
+        public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
+        public void ToolOutputAppended(string jobId, string delta) { }
     }
 
     /// <summary>Cancels the token as soon as the model is asked, standing in for Escape landing while
@@ -1156,7 +1156,7 @@ public class SubAgentSpawnerTests
 
         // The row carries progress text rather than staying blank. SendAsync has returned by now, so
         // the header has already switched to its finished form — the live "N turns · x% ctx · 12s"
-        // is what UpdateProgress carried DURING the run, counted below.
+        // is what ToolProgressed carried DURING the run, counted below.
         var row = Assert.Single(jobs.Jobs);
         Assert.False(string.IsNullOrWhiteSpace(row.ProgressMessage),
             "the row never reported progress — it would render as a frozen spinner");
@@ -1166,14 +1166,14 @@ public class SubAgentSpawnerTests
         // question of a row you expand after the fact.
         Assert.Contains("type: general", row.ProgressBody!, StringComparison.Ordinal);
 
-        // ...and EVERY tick arrived through UpdateProgress, NOT UpdateJob. That distinction is the
-        // whole point: UpdateJob force-expands the row and blanks its body on every call, so a
+        // ...and EVERY tick arrived through ToolProgressed, NOT ToolUpdated. That distinction is the
+        // whole point: ToolUpdated force-expands the row and blanks its body on every call, so a
         // per-second tick through it would re-open a row the user collapsed and erase its contents.
         //
         // COUNTED, NOT MERELY NON-ZERO. A first draft asserted ProgressTicks > 0 and passed even with
-        // the reporter routed back through UpdateJob, because the "starting…" tick alone satisfied
-        // it. The real invariant is that UpdateJob fires only for genuine state transitions — one
-        // here, when the tool call completes — and everything else goes through UpdateProgress.
+        // the reporter routed back through ToolUpdated, because the "starting…" tick alone satisfied
+        // it. The real invariant is that ToolUpdated fires only for genuine state transitions — one
+        // here, when the tool call completes — and everything else goes through ToolProgressed.
         Assert.True(jobs.ProgressTicks >= 2,
             $"expected the starting tick plus at least one turn report, saw {jobs.ProgressTicks}");
         Assert.Equal(1, jobs.StateTransitions);

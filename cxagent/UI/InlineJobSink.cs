@@ -12,7 +12,7 @@ using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
 namespace CxAgent.UI;
 
 /// <summary>
-/// An <see cref="IJobPanel"/> that writes jobs INTO the conversation instead of a side panel — the
+/// An <see cref="IToolObserver"/> that writes jobs INTO the conversation instead of a side panel — the
 /// Claude Code / opencode shape, one column, jobs interleaved with the turns that caused them.
 ///
 /// <para>Each job becomes one transcript message whose STATUS row is rewritten in place as the job
@@ -20,12 +20,12 @@ namespace CxAgent.UI;
 /// is keyed by message id, so a job's line updates where it already sits rather than appending a new
 /// line per transition — which would bury the conversation under status spam on a seven-job goal.</para>
 ///
-/// <para>This exists at all because <see cref="IJobPanel"/> was already the seam between AgentHost
-/// and the UI: the engine calls SetJobs/UpdateJob and never touches a control. Swapping the layout is
+/// <para>This exists at all because <see cref="IToolObserver"/> was already the seam between AgentHost
+/// and the UI: the engine calls ToolsChanged/ToolUpdated and never touches a control. Swapping the layout is
 /// therefore a UI-only change — no engine edits, and the copilot draft gate keeps working unchanged
 /// because it too speaks through this interface.</para>
 /// </summary>
-public sealed class InlineJobSink : IJobPanel
+public sealed class InlineJobSink : IToolObserver
 {
     private readonly ConsoleWindowSystem _system;
     private readonly ChatTranscriptControl _chat;
@@ -50,7 +50,7 @@ public sealed class InlineJobSink : IJobPanel
     /// The plan compiled. One message per job, in plan order, so the user reads the shape of the work
     /// before any of it runs — and in copilot mode, before deciding whether to let it.
     /// </summary>
-    public void SetJobs(IReadOnlyList<Job> jobs) =>
+    public void ToolsChanged(IReadOnlyList<Job> jobs) =>
         _system.EnqueueOnUIThread(() =>
         {
             // A re-plan (or a mid-goal addition) calls this again with the full set. Only add lines
@@ -84,7 +84,7 @@ public sealed class InlineJobSink : IJobPanel
                 _chat.UpdateMessage(id, string.Empty);
                 // EXPAND it too. The Tool role is StartCollapsed, so a newly-planned row opens with
                 // an "expand…" affordance over an empty body — an invitation to reveal nothing.
-                // UpdateJob already does this; SetJobs did not, so every row showed it until its
+                // ToolUpdated already does this; ToolsChanged did not, so every row showed it until its
                 // first transition.
                 //
                 // EXCEPT A WORKER. That reasoning holds only while the body IS empty, and a spawn
@@ -135,7 +135,7 @@ public sealed class InlineJobSink : IJobPanel
             }
         });
 
-    public void UpdateJob(Job job) =>
+    public void ToolUpdated(Job job) =>
         _system.EnqueueOnUIThread(() =>
         {
             _known[job.Id] = job;
@@ -144,7 +144,7 @@ public sealed class InlineJobSink : IJobPanel
             // adopt-on-first-update path below creates the line it never had.
             if (!ShouldShow(job)) return;
 
-            // A job the orchestrator added mid-goal can transition before any SetJobs mentions it —
+            // A job the orchestrator added mid-goal can transition before any ToolsChanged mentions it —
             // adopt it rather than dropping the update on the floor.
             if (!_lines.TryGetValue(job.Id, out var id))
             {
@@ -167,10 +167,10 @@ public sealed class InlineJobSink : IJobPanel
             else
             {
                 // THE HEADER, on the non-compact path too. This is the twin of the branch in
-                // SetJobs, and for a long time only that one set the header -- so a STREAMING
-                // worker, which AppendText switches out of compact mode on its first delta, kept
-                // the pending spinner it was born with for the rest of the session. SetJobs is the
-                // add path and rarely fires on completion; UpdateJob is where a job actually
+                // ToolsChanged, and for a long time only that one set the header -- so a STREAMING
+                // worker, which ToolOutputAppended switches out of compact mode on its first delta, kept
+                // the pending spinner it was born with for the rest of the session. ToolsChanged is the
+                // add path and rarely fires on completion; ToolUpdated is where a job actually
                 // finishes, so the row that most needed the header was the one never getting it.
                 // Seen live: a worker showing a spinning Braille frame beside its own finished
                 // review body, with "Goal completed." printed below it.
@@ -363,7 +363,7 @@ public sealed class InlineJobSink : IJobPanel
             // that already has a repair round.
             _chat.ClearActions(id);
 
-            // REFRESH THE DEPENDENTS. UpdateJob fires only for the job that transitioned, so a job
+            // REFRESH THE DEPENDENTS. ToolUpdated fires only for the job that transitioned, so a job
             // BLOCKED by this failure would never re-render and would sit on "pending" forever —
             // exactly what a live screenshot showed ("Save the review report — pending" under a
             // failed dependency, with nothing saying it would never run). Their state has not
@@ -482,13 +482,13 @@ public sealed class InlineJobSink : IJobPanel
     /// what matters. Resource data is still collected and still reaches the log file.
     /// </summary>
     /// <summary>
-    /// THE HEADER, AND NOTHING ELSE — the whole point of not routing a tick through UpdateJob, which
+    /// THE HEADER, AND NOTHING ELSE — the whole point of not routing a tick through ToolUpdated, which
     /// calls SetExpanded(id, true) and UpdateMessage(id, "") on every invocation.
     ///
     /// <para>Silently ignores a job with no row yet: a progress tick is not the add path, and adopting
-    /// an unknown job here would race SetJobs into drawing the row twice.</para>
+    /// an unknown job here would race ToolsChanged into drawing the row twice.</para>
     /// </summary>
-    public void UpdateProgress(Job job) =>
+    public void ToolProgressed(Job job) =>
         _system.EnqueueOnUIThread(() =>
         {
             _known[job.Id] = job;
@@ -496,7 +496,7 @@ public sealed class InlineJobSink : IJobPanel
 
             _chat.SetHeader(id, CompactHeader(job));
 
-            // THE BODY TOO, when there is one — but ONLY the body. This is still not UpdateJob: that
+            // THE BODY TOO, when there is one — but ONLY the body. This is still not ToolUpdated: that
             // method force-expands the row (SetExpanded(id, true)) and blanks it, and doing either
             // once a second would re-open a row the user collapsed and fight them for it.
             //
@@ -507,7 +507,7 @@ public sealed class InlineJobSink : IJobPanel
                 _chat.UpdateMessage(id, job.ProgressBody);
         });
 
-    public void UpdateResources(string jobId, ResourceSnapshot snapshot) { }
+    public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
 
     /// <summary>
     /// A chunk of a worker's generated text, appended to its message as it arrives.
@@ -525,7 +525,7 @@ public sealed class InlineJobSink : IJobPanel
     /// doing it here rather than guessing at plan time means a worker that returns nothing never
     /// pays for a block it does not use.</para>
     /// </summary>
-    public void AppendText(string jobId, string delta) =>
+    public void ToolOutputAppended(string jobId, string delta) =>
         _system.EnqueueOnUIThread(() =>
         {
             if (!_lines.TryGetValue(jobId, out var id)) return;
@@ -809,7 +809,7 @@ public sealed class InlineJobSink : IJobPanel
         new ChatTranscriptControl()).StatusText(job);
 
     /// <summary>
-    /// Every job the sink has been told about, by id — SetJobs/UpdateJob both record here. Needed
+    /// Every job the sink has been told about, by id — ToolsChanged/ToolUpdated both record here. Needed
     /// only to explain a
     /// BLOCKED job — a job whose dependency failed stays Pending forever (DagScheduler.DepsMet
     /// requires every dependency Succeeded or Skipped), so "pending" is honest and useless: a live

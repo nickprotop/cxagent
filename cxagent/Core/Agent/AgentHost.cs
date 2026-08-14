@@ -27,8 +27,8 @@ public sealed class AgentHost : IDisposable
 {
     private readonly AgentRuntime _runtime;
     private readonly SessionStores _stores;
-    private readonly IChatSink _sink;
-    private readonly IJobPanel _jobPanel;
+    private readonly ISessionObserver _sink;
+    private readonly IToolObserver _jobPanel;
 
 
     /// <summary>
@@ -373,7 +373,7 @@ public sealed class AgentHost : IDisposable
         public Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? AskUser { get; init; }
     }
 
-    public AgentHost(AgentRuntime runtime, IChatSink sink, IJobPanel jobPanel,
+    public AgentHost(AgentRuntime runtime, ISessionObserver sink, IToolObserver jobPanel,
         SessionStores? stores = null,
         SessionSnapshot? resume = null,
         TokenLedger? ledger = null)
@@ -455,18 +455,18 @@ public sealed class AgentHost : IDisposable
     {
         try
         {
-            _sink.AddUserTurn(echo ?? prompt);
+            _sink.UserTurnAdded(echo ?? prompt);
 
             // ONE AGENT WITH TOOLS, built once in the constructor and reused. The session IS the agent.
-            var assistantId = _sink.BeginAssistantTurn();
-            _sink.EndAssistantTurn(assistantId);   // the agent opens its own turns
+            var assistantId = _sink.AssistantTurnBegan();
+            _sink.AssistantTurnEnded(assistantId);   // the agent opens its own turns
 
             await _agent.SendAsync(prompt, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _sink.ShowError(ex.Message);   // residual fault → visible, not an unobserved faulted task
+            _sink.Failed(ex.Message);   // residual fault → visible, not an unobserved faulted task
         }
     }
 

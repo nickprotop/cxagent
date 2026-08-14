@@ -299,7 +299,7 @@ public static class AppBootstrap
             }
             // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
             // interleaved with the turns that caused them. JobPanelSink (and JobPanelControl) still
-            // exist and still work; they are simply not wired. Both speak IJobPanel, so this line is
+            // exist and still work; they are simply not wired. Both speak IToolObserver, so this line is
             // the entire switch: AgentHost never touches a control.
             // The failed-job buttons. Delegates rather than a AgentHost reference because `runner`
             // is assigned BELOW this line and REPLACED on every re-wire — capturing the instance
