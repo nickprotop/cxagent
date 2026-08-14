@@ -16,8 +16,7 @@ namespace CxAgent.Tests;
 /// </summary>
 public class SessionTests
 {
-    private static Session New() =>
-        new("/tmp/somewhere", PluginRegistry.CreateWithBuiltins());
+    private static Session New() => new("/tmp/somewhere");
 
     [Fact]
     public void TheWorkingDirectoryIsGiven_NotReadFromTheProcess()
@@ -115,16 +114,22 @@ public class SessionTests
 
     /// <summary>The registry travels with the wiring, so an F7 rebinding dispatches through the NEW
     /// resolution rather than the bindings that existed at launch.</summary>
+    /// <summary>
+    /// PLUGINS ARRIVE WITH THE FIRST WIRE, not with the constructor.
+    ///
+    /// <para>The session is built BEFORE the permission gate, because the gate needs the session's
+    /// root string — so a session that demanded a registry up front could not exist before the gate
+    /// that the registry itself needs. Null until wired is what breaks that cycle.</para>
+    /// </summary>
     [Fact]
-    public void ReplacingTheHost_SwapsThePluginRegistry()
+    public void ReplacingTheHost_SuppliesThePluginRegistry()
     {
         var s = New();
-        var seeded = s.Plugins;
-        var rewired = PluginRegistry.CreateWithBuiltins();
+        Assert.Null(s.Plugins);
 
+        var rewired = PluginRegistry.CreateWithBuiltins();
         s.ReplaceHost(null!, new MockLlmProvider(), "local", rewired);
 
-        Assert.NotSame(seeded, s.Plugins);
         Assert.Same(rewired, s.Plugins);
     }
 }

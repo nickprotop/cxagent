@@ -31,15 +31,15 @@ public sealed class Session
     /// prompt makes to the model — "relative paths resolve from the working directory" — is only
     /// true if this is the directory every tool call resolves against.
     /// </param>
-    /// <param name="plugins">
-    /// The registry to use before the first wire. Seeded rather than left null because nothing
-    /// should have to ask whether a session has plugins yet — a session always does, and a re-wire
-    /// replaces them.
-    /// </param>
-    public Session(string workingDirectory, PluginRegistry plugins)
+    /// <remarks>
+    /// TAKES ONLY ITS FOLDER. Everything else arrives with the first wire, which is what lets the
+    /// session be constructed BEFORE the permission gate — the gate needs this root string, and a
+    /// session that also demanded a plugin registry would have to be built after the gate that
+    /// needs the root the session holds. One of the two had to stop asking for more than it needs.
+    /// </remarks>
+    public Session(string workingDirectory)
     {
         WorkingDirectory = workingDirectory;
-        Plugins = plugins;
     }
 
     /// <summary>Where this session works. Fixed for its life — a session that moved would invalidate
@@ -63,9 +63,10 @@ public sealed class Session
     /// name. Two entries can serve one model, so the name is what identifies the endpoint.</summary>
     public string? InstanceName { get; private set; }
 
-    /// <summary>The plugin registry for the current wiring. Rebuilt per re-wire so an F7 rebinding
-    /// dispatches through the NEW resolution rather than the bindings that existed at launch.</summary>
-    public PluginRegistry Plugins { get; private set; }
+    /// <summary>The plugin registry for the current wiring, or null before the first wire. Rebuilt
+    /// per re-wire so an F7 rebinding dispatches through the NEW resolution rather than the bindings
+    /// that existed at launch.</summary>
+    public PluginRegistry? Plugins { get; private set; }
 
     /// <summary>
     /// A ledger that must survive the next re-wire, or null for the usual fresh start.

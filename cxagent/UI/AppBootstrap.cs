@@ -185,9 +185,25 @@ public static class AppBootstrap
         // reused across every WireRunner call: a fresh store per re-wire would forget every rule
         // and trust decision the user made earlier in the same session — ONE gate instance across
         // re-wires, matching PluginRegistry.CreateWithBuiltins being rebuilt around it below.
-        var workingDir = Path.GetFullPath(Environment.CurrentDirectory);
+        // THE SESSION, as an object rather than as six locals scattered through this method.
+        //
+        // Every field it holds was already here — host, provider, instance name, plugins, the
+        // carried ledger, the pending resume — captured by WireRunner's closure. A local is ONE
+        // slot, so a second session would need a second copy of this method; naming the state is
+        // what makes a second one possible. The comments below already reasoned in these terms
+        // ("owned by the SESSION, not by any one AgentHost") long before there was a type to say it.
+        //
+        // FIRST, BEFORE THE GATE, so its folder is the ONE source every layer below reads. The gate
+        // needs this root string, so a session that also demanded a plugin registry could not be
+        // built before the gate that needs the root the session holds — which is why the session
+        // takes only its folder and everything else arrives with the first wire.
+        //
+        // The directory is GIVEN, not read: that is the whole point of the type. It still comes from
+        // the process here, because one process runs one session — but every consumer now takes it
+        // FROM the session, so a second root is a change to this line rather than to eighteen sites.
+        var session = new Core.Agent.Session(Path.GetFullPath(Environment.CurrentDirectory));
         var permissionRules = new PermissionRulesStore(paths);
-        var permissionPolicy = new PermissionPolicy(workingDir, permissionRules);
+        var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules);
         // A forwarding sink rather than passing IChatSink directly: the gate is built here, before
         // WireRunner has created the real ChatTranscriptSink (which itself needs `system` and
         // `mainWindow`, already available, but is only constructed inside WireRunner, once per
@@ -195,7 +211,7 @@ public static class AppBootstrap
         // gate on every RequestAsync call, so the echo always lands in whichever transcript sink
         // is CURRENT — never a stale one captured before the first WireRunner ran.
         var permissionSink = new LatestChatSink();
-        var permissionGate = new InteractivePermissionGate(system, mainWindow, workingDir,
+        var permissionGate = new InteractivePermissionGate(system, mainWindow, session.WorkingDirectory,
             permissionPolicy, permissionRules, permissionSink);
         // Guards the LoadError echo below so it is reported once, on the FIRST WireRunner call
         // only — F5/F7/F8 re-wires reuse this same permissionRules instance, and its LoadError
@@ -219,25 +235,6 @@ public static class AppBootstrap
         // than opening a second dialog). Cleared in OpenSettingsAsync's `finally` — see its comment.
         SettingsDialog? openDialog = null;
 
-        // A REGISTRY BEFORE THE FIRST WIRE, so nothing has to ask whether the session has plugins
-        // yet. WireRunner rebuilds it on every call — an F7 role rebinding, or a catalog change via
-        // F5/F8, must dispatch through the NEW resolution rather than the bindings that existed at
-        // launch — and hands the replacement to the session with the host it built.
-        var startupPlugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate);
-
-        // THE SESSION, as an object rather than as six locals scattered through this method.
-        //
-        // Every field it holds was already here — host, provider, instance name, plugins, the
-        // carried ledger, the pending resume — captured by WireRunner's closure. A local is ONE
-        // slot, so a second session would need a second copy of this method; naming the state is
-        // what makes a second one possible. The comments below already reasoned in these terms
-        // ("owned by the SESSION, not by any one AgentHost") long before there was a type to say it.
-        //
-        // The working directory is GIVEN, not read: that is the whole point of the type. Today it
-        // comes from the process, because one process runs one session — but every consumer now
-        // reads it from the session, so a second root changes one construction site rather than
-        // every use.
-        var session = new Core.Agent.Session(workingDir, startupPlugins);
 
 
 
@@ -392,7 +389,7 @@ public static class AppBootstrap
                 // UNCAPPED UNLESS THE USER SAID OTHERWISE. Null is the common case and means every
                 // spawn the model emits runs — the barrier still holds them all inside the turn.
                 MaxConcurrentAgents = res.MaxConcurrentAgents,
-                WorkingDir = workingDir,
+                WorkingDir = session.WorkingDirectory,
             }),
                 agentTypes);
 
@@ -406,7 +403,7 @@ public static class AppBootstrap
                     // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
                     // Sessions and permission rules are both scoped to the project they belong to,
                     // and they must agree on what "this project" means.
-                    WorkingDir = workingDir,
+                    WorkingDir = session.WorkingDirectory,
 
                     // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                     GlobalInstructionsDir = paths.ConfigDir,
@@ -470,7 +467,7 @@ public static class AppBootstrap
             permissionGate.OnDecision = (kind, decision, requester) =>
                 history.SavePermission(new PermissionRecord(
                     runner?.SessionId ?? "unknown", DateTimeOffset.UtcNow,
-                    kind.ToString(), decision, requester, workingDir));
+                    kind.ToString(), decision, requester, session.WorkingDirectory));
 
             runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
@@ -515,7 +512,7 @@ public static class AppBootstrap
                 // The LOADED list is derived from the parent's window, so it empties itself when
                 // compaction removes a body. That silent stop is the thing worth showing.
                 mainWindow.SkillCount = Core.Skills.SkillCatalog
-                    .Find(workingDir, paths.ConfigDir).Skills.Count;
+                    .Find(session.WorkingDirectory, paths.ConfigDir).Skills.Count;
                 mainWindow.LoadedSkills = runner.LoadedSkills;
 
                 mainWindow.RefreshSessionPanel();
@@ -572,7 +569,7 @@ public static class AppBootstrap
         string? resumeNotice = null;
         if (options.Resume.Wanted)
         {
-            var (snapshot, problem) = FindResumeTarget(sessions, workingDir, options.Resume.Uid);
+            var (snapshot, problem) = FindResumeTarget(sessions, session.WorkingDirectory, options.Resume.Uid);
             if (snapshot is not null)
             {
                 session.PendResume(snapshot);
@@ -715,7 +712,7 @@ public static class AppBootstrap
                             // rather than a copy that could disagree with it.
                             new SkillsCommand(
                                 () => Core.Skills.SkillCatalog.Find(
-                                    workingDir, paths.ConfigDir),
+                                    session.WorkingDirectory, paths.ConfigDir),
                                 permissionSink).Handle();
                             return;
                         }
@@ -726,7 +723,7 @@ public static class AppBootstrap
                             // be: it is the same directory permissions are scoped to, and the one
                             // whose files the agent has been editing.
                             mainWindow.Chat.AddMessage(ChatRole.System,
-                                DiffCommand.Render(SessionCommands.Arguments(goalText), workingDir));
+                                DiffCommand.Render(SessionCommands.Arguments(goalText), session.WorkingDirectory));
                             return;
                         }
 
@@ -813,7 +810,7 @@ public static class AppBootstrap
                                 return;
                             }
 
-                            var target = InitCommand.Resolve(workingDir);
+                            var target = InitCommand.Resolve(session.WorkingDirectory);
                             if (target.Note is { } note)
                                 mainWindow.Chat.AddMessage(ChatRole.System,
                                     $"[{ColorScheme.MutedMarkup}]{note}[/]");
@@ -1113,8 +1110,12 @@ public static class AppBootstrap
             // this is defence in depth — but the two guards protect different things. Classify decides
             // WHERE to go; ForLoad makes it impossible for a session to exist over a config it would
             // destroy, no matter which entry point built it.
-            var session = SettingsSession.ForLoad(load);
-            var dialog = new SettingsDialog(system, mainWindow.Window, paths, session, permissionRules, workingDir);
+            // NAMED settingsSession, not `session`: the agent session is in scope here and the two are
+            // different objects. A shadowing local made `session.WorkingDirectory` silently mean the
+            // settings dialog's own state rather than the folder the agent works in.
+            var settingsSession = SettingsSession.ForLoad(load);
+            var dialog = new SettingsDialog(system, mainWindow.Window, paths, settingsSession,
+                permissionRules, session.WorkingDirectory);
             openDialog = dialog;
             try
             {
@@ -1153,9 +1154,9 @@ public static class AppBootstrap
         // composer cell is occupied), not a thread block.
         async Task AskTrustIfUnknownAsync()
         {
-            if (permissionRules.GetTrust(workingDir) != TrustState.Unknown) return;
+            if (permissionRules.GetTrust(session.WorkingDirectory) != TrustState.Unknown) return;
 
-            var prompt = new TrustQuestionControl(workingDir);
+            var prompt = new TrustQuestionControl(session.WorkingDirectory);
             var content = prompt.BuildContent();   // built ONCE — see PermissionPromptControl's contract
             mainWindow.ShowPermissionPrompt(content);
             try
@@ -1164,7 +1165,7 @@ public static class AppBootstrap
                 var state = trusted ? TrustState.Trusted : TrustState.Untrusted;
                 try
                 {
-                    permissionRules.SetTrust(workingDir, state);
+                    permissionRules.SetTrust(session.WorkingDirectory, state);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -1215,7 +1216,7 @@ public static class AppBootstrap
             system.WindowResized += (_, _) => system.EnqueueOnUIThread(mainWindow.RefreshSessionPanel);
 
             mainWindow.SetPermissionRuleCount(
-                permissionRules.RulesFor(workingDir).Rules.Count);
+                permissionRules.RulesFor(session.WorkingDirectory).Rules.Count);
             mainWindow.RefreshSessionPanel();
 
             // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
@@ -1250,7 +1251,7 @@ public static class AppBootstrap
         }
 
         IReadOnlyList<SessionInfo> ListSessions(bool all) =>
-            sessions.List(all ? null : workingDir, all);
+            sessions.List(all ? null : session.WorkingDirectory, all);
 
         void HandleSessions(string argument)
         {
@@ -1397,12 +1398,12 @@ public static class AppBootstrap
         // /sessions lists them and --resume opens one; this line only says the door exists.
         void HintAtResume()
         {
-            var here = sessions.List(workingDir).Count;
+            var here = sessions.List(session.WorkingDirectory).Count;
             if (here == 0) return;
 
             // THE UNFINISHED ONE IS WORTH NAMING, because "ended without closing" is the case where
             // someone lost work and is looking for it. Everything else is just a count.
-            var unfinished = sessions.LoadLatestUnfinished(workingDir);
+            var unfinished = sessions.LoadLatestUnfinished(session.WorkingDirectory);
 
             if (SessionsCommand.StartupHint(here, unfinished?.Context.Count) is { } line)
                 permissionSink.ShowSystemMessage(line);
