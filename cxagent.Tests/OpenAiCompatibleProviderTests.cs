@@ -179,6 +179,49 @@ public class OpenAiCompatibleProviderTests : IDisposable
         Assert.Equal("x", call.Arguments.GetProperty("summary").GetString());
     }
 
+    /// <summary>
+    /// THE DEFAULT IS OFF, AT THE PROVIDER — not merely at the wire builder.
+    ///
+    /// <para>The wire tests prove BuildRequestBody honours its parameter. This proves the PROVIDER
+    /// passes false when config did not ask, which is the property that keeps every existing user
+    /// and every local endpoint sending exactly what they sent before. Without it, forcing the flag
+    /// always-on passed the entire suite — verified.</para>
+    ///
+    /// <para>It matters because a cache WRITE is billed: Anthropic charges 1.25x normal input for a
+    /// five-minute entry and 2x for an hour. Opting someone in silently spends their money.</para>
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_WithoutCacheControl_SendsNoBreakpoint()
+    {
+        _srv.EnqueueJson(200, """{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}""");
+        await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.DoesNotContain("cache_control", _srv.LastRequestBody);
+    }
+
+    /// <summary>And it DOES send one when the provider was configured to — the other half, so the
+    /// test above cannot pass by the feature being broken outright.</summary>
+    [Fact]
+    public async Task ChatAsync_WithCacheControl_SendsTheBreakpoint()
+    {
+        _srv.EnqueueJson(200, """{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}""");
+
+        var caching = new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        {
+            ProviderId = "openai",
+            DisplayName = "OpenAI gpt-x",
+            Model = "gpt-x",
+            BaseUrl = _srv.BaseUrl,
+            ApiKey = "sk-test",
+            Retry = RetryPolicy.NoDelay,
+            CacheControl = true,
+        });
+        await caching.ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Contains("cache_control", _srv.LastRequestBody);
+        Assert.Contains("ephemeral", _srv.LastRequestBody);
+    }
+
     [Fact]
     public async Task ChatAsync_SendsSystemMessage_BearerKey_AndTools()
     {
