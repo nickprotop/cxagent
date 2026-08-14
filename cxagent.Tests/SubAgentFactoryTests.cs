@@ -209,4 +209,58 @@ public class SubAgentFactoryTests
         var factory = NewFactory();
         Assert.NotEqual(factory.Create().Agent.Id, factory.Create().Agent.Id);
     }
+
+    // --- what the child reports it ran on ---
+
+    /// <summary>
+    /// instance:model, the label the ledger keys by. This row is written to the same history database
+    /// the session rows are, so the two must agree — a bare model name here reads as a second model
+    /// in any stat that groups them.
+    /// </summary>
+    [Fact]
+    public void Create_ReportsTheInstanceAlongsideTheModel()
+    {
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = Answering(),
+            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            InstanceName = "local",
+        });
+
+        Assert.Equal("local:mock-model", factory.Create().ModelId);
+    }
+
+    /// <summary>
+    /// A TYPE THAT NAMES ITS OWN PROVIDER REPORTS THAT ONE — the whole point of carrying the label.
+    /// Two instances can serve one model, so a child routed from `local` to `small` differs only in
+    /// the instance; reporting the bare model would describe the interesting case as no change.
+    /// </summary>
+    [Fact]
+    public void Create_WhenATypeRoutesElsewhere_ReportsThatInstance()
+    {
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = Answering(),
+            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            InstanceName = "local",
+        });
+
+        var elsewhere = new AgentType("planner", "brief", Answering(), 32_000, null, "small");
+
+        Assert.Equal("small:mock-model", factory.Create(type: elsewhere).ModelId);
+    }
+
+    /// <summary>With no instance name there is nothing to qualify with, and the bare model is still
+    /// better than nothing — this is the path a test stub or an unnamed provider takes.</summary>
+    [Fact]
+    public void Create_WithNoInstanceName_ReportsTheBareModel()
+    {
+        Assert.Equal("mock-model", NewFactory().Create().ModelId);
+    }
 }

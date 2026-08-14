@@ -10,9 +10,11 @@ namespace CxAgent.Core.Agent;
 /// <param name="Jobs">Every tool it called.</param>
 /// <param name="TypeName">The resolved type — <c>general</c> unless config named another.</param>
 /// <param name="ModelId">
-/// The model this child actually runs on, which is NOT always the session's: a type may name its own
-/// provider. Carried here because the row is the only place a user learns a worker went somewhere
-/// else, and by the time it finishes the provider is no longer reachable from the row.
+/// The instance:model this child actually runs on, which is NOT always the session's: a type may
+/// name its own provider. Carried here because the row is the only place a user learns a worker went
+/// somewhere else, and by the time it finishes the provider is no longer reachable from the row.
+/// Qualified by instance because that is what "somewhere else" means — two instances can serve the
+/// same model, and a bare model name reports the interesting case as no change at all.
 /// </param>
 public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPanel Jobs,
     string TypeName, string? ModelId);
@@ -287,8 +289,14 @@ public sealed class SubAgentFactory
         //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what
         //     makes "no sub-agents of sub-agents" true rather than aspirational: it is not a rule the
         //     child is asked to follow, it is a tool it was never given.
+        // instance:model, THE SAME LABEL THE LEDGER KEYS BY. A bare model name is ambiguous — two
+        // instances can serve one model with different endpoints and windows — and this row is
+        // written to the same history database the session rows are, so the two must agree or a
+        // stat that groups them reads one model as two.
         return new SubAgent(agent, sink, jobs,
             TypeName: type?.Name ?? AgentTypeCatalog.DefaultTypeName,
-            ModelId: provider.ModelId);
+            ModelId: runtime.InstanceName is { Length: > 0 } instance
+                ? $"{instance}:{provider.ModelId}"
+                : provider.ModelId);
     }
 }
