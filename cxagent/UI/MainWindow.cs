@@ -340,7 +340,8 @@ public sealed class MainWindow : IDisposable
     /// from another.</summary>
     public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel, int subAgentTokens = 0,
         IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
-        double? cacheHitRate = null)
+        double? cacheHitRate = null,
+        (double? Own, double? Workers) cacheByAgent = default)
     {
         _spendByModel = byModel;
         _subAgentTokens = subAgentTokens;
@@ -350,11 +351,17 @@ public sealed class MainWindow : IDisposable
         // reporting mid-session should stop showing a rate, not freeze the last one it happened to
         // send.
         _cacheHitRate = cacheHitRate;
+        _ownCacheHitRate = cacheByAgent.Own;
+        _workerCacheHitRate = cacheByAgent.Workers;
         RefreshSessionPanel();
     }
 
     /// <summary>Share of input served from the provider's prefix cache; null when unreported.</summary>
     private double? _cacheHitRate;
+
+    /// <summary>The same, split by who spent it — see TokenLedger.CacheHitRateByAgent.</summary>
+    private double? _ownCacheHitRate;
+    private double? _workerCacheHitRate;
 
     /// <summary>Records the input/output split. Separate from SetTokenTotal because the total
     /// arrives through an event that predates the split and is raised from two different paths.</summary>
@@ -1079,6 +1086,8 @@ public sealed class MainWindow : IDisposable
             SpendByModel = _spendByModel,
             SplitByModel = _splitByModel,
             CacheHitRate = _cacheHitRate,
+            OwnCacheHitRate = _ownCacheHitRate,
+            WorkerCacheHitRate = _workerCacheHitRate,
 
             McpServers = _mcpServers,
 

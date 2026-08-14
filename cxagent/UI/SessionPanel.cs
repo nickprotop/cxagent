@@ -208,6 +208,11 @@ public sealed class SessionPanel
         /// <summary>Share of input served from the provider's prefix cache, or null when no provider
         /// reported it — see TokenLedger.CacheHitRate for why the distinction is not cosmetic.</summary>
         public double? CacheHitRate { get; init; }
+
+        /// <summary>The same rate for THIS agent and for its workers, separately. Null for either
+        /// when nothing reported — see TokenLedger.CacheHitRateByAgent.</summary>
+        public double? OwnCacheHitRate { get; init; }
+        public double? WorkerCacheHitRate { get; init; }
         public IReadOnlyDictionary<string, (int Input, int Output)>? SplitByModel { get; init; }
 
         // --- what bounds the run ---
@@ -436,7 +441,20 @@ public sealed class SessionPanel
         {
             Section(lines, "Tokens by agent");
             lines.Add(Value($"workers · {state.SubAgentTokens:N0}"));
+
+            // THE CACHE RATE BESIDE THE TOKENS THAT PAID FOR IT. A parent and its children hold
+            // different conversations against one endpoint, and whether that is cheap depends on the
+            // server: llama.cpp parks an idle slot's KV state in host memory (--cache-ram, 8 GiB by
+            // default) and restores it, so children do not thrash — but a server started with
+            // -cram 0 pays full price on every switch. The session-wide figure averages the two and
+            // hides which one you have: a parent at 95% conceals workers at 20%.
+            if (state.WorkerCacheHitRate is { } workerRate)
+                lines.Add(Muted($"  cache {workerRate:P0}"));
+
             lines.Add(Value($"this agent · {state.OwnTokens:N0}"));
+
+            if (state.OwnCacheHitRate is { } ownRate)
+                lines.Add(Muted($"  cache {ownRate:P0}"));
         }
 
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.

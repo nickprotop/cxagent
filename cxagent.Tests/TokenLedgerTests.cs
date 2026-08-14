@@ -60,6 +60,66 @@ public class TokenLedgerTests
         Assert.Equal(0.0, l.CacheHitRate!.Value, 3);
     }
 
+    // ---- cache, split by who spent it ---------------------------------------------------------
+
+    /// <summary>
+    /// THE QUESTION THE SESSION TOTAL CANNOT ANSWER. A local endpoint usually runs one slot, so a
+    /// parent and its children take turns through a single KV cache. Averaged together, a parent
+    /// hitting 95% hides workers hitting 20% — the session looks healthy while every spawn pays
+    /// full price.
+    /// </summary>
+    [Fact]
+    public void CacheHitRate_IsReportedSeparatelyForWorkersAndThisAgent()
+    {
+        var l = new TokenLedger();
+
+        // This agent: 1,000 in, 900 cached — a warm conversation.
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 10, CachedInputTokens = 900, CacheReported = true });
+
+        // Workers: 1,000 in, 200 cached — the cold-start cost of diverging contexts.
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 10, CachedInputTokens = 200, CacheReported = true },
+            subAgent: true);
+
+        var (own, workers) = l.CacheHitRateByAgent;
+
+        Assert.Equal(0.90, own!.Value, 3);
+        Assert.Equal(0.20, workers!.Value, 3);
+
+        // And the session-wide figure is the average that hides both.
+        Assert.Equal(0.55, l.CacheHitRate!.Value, 3);
+    }
+
+    /// <summary>
+    /// OWN IS THE REMAINDER, not a separate tally — so it cannot drift from the totals. With no
+    /// workers at all, this agent's rate IS the session rate.
+    /// </summary>
+    [Fact]
+    public void WithNoWorkers_ThisAgentsRateMatchesTheSessionRate()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 500, OutputTokens = 5, CachedInputTokens = 400, CacheReported = true });
+
+        var (own, workers) = l.CacheHitRateByAgent;
+
+        Assert.Equal(l.CacheHitRate!.Value, own!.Value, 3);
+        Assert.Null(workers);
+    }
+
+    /// <summary>NULL, NOT ZERO, per side. A provider that never reports must not make either side
+    /// look like a total miss — the distinction the whole feature rests on.</summary>
+    [Fact]
+    public void WithNothingReported_BothSidesAreNull()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 500, OutputTokens = 5 });
+        l.Record(new LlmUsage { InputTokens = 500, OutputTokens = 5 }, subAgent: true);
+
+        var (own, workers) = l.CacheHitRateByAgent;
+
+        Assert.Null(own);
+        Assert.Null(workers);
+    }
+
     // ---- concurrency ---------------------------------------------------------------------------
 
     /// <summary>

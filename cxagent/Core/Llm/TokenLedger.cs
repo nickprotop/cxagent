@@ -23,6 +23,12 @@ public sealed class TokenLedger
     private int _cached;
     private int _cacheReports;
 
+    // THE SAME FOUR NUMBERS, SPLIT BY WHO SPENT THEM. See CacheHitRateByAgent for why the session
+    // total hides the question a fan-out user actually has.
+    private int _workerInput;
+    private int _workerCached;
+    private int _workerReports;
+
     public TokenLedger() { }
 
     /// <summary>
@@ -71,6 +77,51 @@ public sealed class TokenLedger
     /// <para>NULL RATHER THAN ZERO, because "this provider does not tell us" and "every byte missed"
     /// are opposite facts and a 0% shown for the first is a lie the user would act on.</para>
     /// </summary>
+    /// <summary>
+    /// The prefix-cache hit rate for THIS agent and for its workers, separately — or null for either
+    /// when nothing reported.
+    ///
+    /// <para>WHY THE SESSION TOTAL IS NOT ENOUGH. A parent and its children spend against the same
+    /// endpoint but hold different conversations — measured on one fan-out, four children ended at
+    /// 85k, 43k, 31k and 58k tokens sharing only a ~5k prompt head. Whether that costs anything
+    /// depends entirely on the server, and the two cases look identical in a combined figure.</para>
+    ///
+    /// <para>IT DEPENDS ON THE SERVER, AND THE DEFAULT IS KIND. llama.cpp's slots cannot each hold
+    /// more than one conversation, but <c>--cache-ram</c> (8 GiB by default) parks an idle slot's KV
+    /// state in host memory and restores it when that conversation returns — 28ms against 5,850ms
+    /// to recompute 20k tokens, measured. So divergent children do NOT thrash a default server.
+    /// Started with <c>-cram 0</c>, or on a machine where that budget is lowered, the same fan-out
+    /// becomes expensive. Same app, different economics — which is why this is measured per agent
+    /// rather than assumed.</para>
+    ///
+    /// <para>Averaged together, a parent hitting 95% hides workers hitting 20%: the session looks
+    /// healthy while every spawn quietly pays full price. Split, the numbers answer a question a
+    /// user can act on — whether more slots would pay for themselves, which is a config change
+    /// rather than a code change.</para>
+    /// </summary>
+    public (double? Own, double? Workers) CacheHitRateByAgent
+    {
+        get
+        {
+            var workerInput = Volatile.Read(ref _workerInput);
+            var workerCached = Volatile.Read(ref _workerCached);
+            var workers = Volatile.Read(ref _workerReports) == 0 ? (double?)null
+                : workerInput == 0 ? 0
+                : (double)workerCached / workerInput;
+
+            // OWN IS THE REMAINDER, not a separate tally: every recorded call is either this agent's
+            // or a worker's, so subtracting is exact and cannot drift from the totals above.
+            var ownInput = InputTokens - workerInput;
+            var ownCached = CachedInputTokens - workerCached;
+            var own = Volatile.Read(ref _cacheReports) - Volatile.Read(ref _workerReports) == 0
+                ? (double?)null
+                : ownInput <= 0 ? 0
+                : (double)ownCached / ownInput;
+
+            return (own, workers);
+        }
+    }
+
     public double? CacheHitRate
     {
         get
@@ -152,7 +203,15 @@ public sealed class TokenLedger
             }
 
         if (subAgent)
+        {
             Interlocked.Add(ref _subAgent, usage.InputTokens + usage.OutputTokens);
+            Interlocked.Add(ref _workerInput, usage.InputTokens);
+            if (usage.CacheReported)
+            {
+                Interlocked.Add(ref _workerCached, usage.CachedInputTokens);
+                Interlocked.Increment(ref _workerReports);
+            }
+        }
 
         Interlocked.Add(ref _input, usage.InputTokens);
 

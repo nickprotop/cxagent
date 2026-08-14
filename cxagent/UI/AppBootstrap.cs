@@ -479,7 +479,8 @@ public static class AppBootstrap
                 // The PANEL keeps the session-wide figures — that is the division: bar is this agent,
                 // panel is everything, and "Tokens by agent" is where the two are reconciled.
                 mainWindow.SetSpendByModel(runner.Ledger.ByModel, runner.Ledger.SubAgentTokens,
-                    runner.Ledger.SplitByModel, runner.Ledger.CacheHitRate);
+                    runner.Ledger.SplitByModel, runner.Ledger.CacheHitRate,
+                    runner.Ledger.CacheHitRateByAgent);
             });
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
