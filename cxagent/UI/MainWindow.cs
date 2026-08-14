@@ -341,7 +341,8 @@ public sealed class MainWindow : IDisposable
     public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel, int subAgentTokens = 0,
         IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
         double? cacheHitRate = null,
-        (double? Own, double? Workers) cacheByAgent = default)
+        (double? Own, double? Workers) cacheByAgent = default,
+        int cacheWritten = 0)
     {
         _spendByModel = byModel;
         _subAgentTokens = subAgentTokens;
@@ -353,11 +354,15 @@ public sealed class MainWindow : IDisposable
         _cacheHitRate = cacheHitRate;
         _ownCacheHitRate = cacheByAgent.Own;
         _workerCacheHitRate = cacheByAgent.Workers;
+        _cacheWritten = cacheWritten;
         RefreshSessionPanel();
     }
 
     /// <summary>Share of input served from the provider's prefix cache; null when unreported.</summary>
     private double? _cacheHitRate;
+
+    /// <summary>Input tokens written into the provider's cache; zero where warming is free.</summary>
+    private int _cacheWritten;
 
     /// <summary>The same, split by who spent it — see TokenLedger.CacheHitRateByAgent.</summary>
     private double? _ownCacheHitRate;
@@ -1086,6 +1091,7 @@ public sealed class MainWindow : IDisposable
             SpendByModel = _spendByModel,
             SplitByModel = _splitByModel,
             CacheHitRate = _cacheHitRate,
+            CacheWrittenTokens = _cacheWritten,
             OwnCacheHitRate = _ownCacheHitRate,
             WorkerCacheHitRate = _workerCacheHitRate,
 

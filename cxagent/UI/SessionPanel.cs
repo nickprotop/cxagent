@@ -209,6 +209,10 @@ public sealed class SessionPanel
         /// reported it — see TokenLedger.CacheHitRate for why the distinction is not cosmetic.</summary>
         public double? CacheHitRate { get; init; }
 
+        /// <summary>Input tokens written into the provider's cache — zero where warming is free,
+        /// which is every local endpoint. See TokenLedger.CacheWrittenTokens.</summary>
+        public int CacheWrittenTokens { get; init; }
+
         /// <summary>The same rate for THIS agent and for its workers, separately. Null for either
         /// when nothing reported — see TokenLedger.CacheHitRateByAgent.</summary>
         public double? OwnCacheHitRate { get; init; }
@@ -430,7 +434,15 @@ public sealed class SessionPanel
             //
             // ABSENT, NOT ZERO, when nobody reported: see CacheHitRate.
             if (state.CacheHitRate is { } rate)
-                lines.Add(Muted($"  cache {rate:P0}"));
+            {
+                // THE WRITES BESIDE THE HITS, but only where warming was billed. A local endpoint
+                // fills its own RAM for free and reports no writes, so this stays a single clean
+                // figure there. On a paid provider — OpenAI charges 1.25x normal input to write,
+                // Anthropic up to 2x — a hit rate alone reads as pure saving when it is not.
+                lines.Add(Muted(state.CacheWrittenTokens > 0
+                    ? $"  cache {rate:P0} · wrote {Compact(state.CacheWrittenTokens)}"
+                    : $"  cache {rate:P0}"));
+            }
         }
 
         // WORKERS, WHENEVER THEY SPENT ANYTHING — the one split the model breakdown cannot express.

@@ -3,7 +3,8 @@ namespace CxAgent.Core.Storage;
 /// <summary>Totals for one window of time.</summary>
 public sealed record StatsTotals(
     int Sessions, int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
-    int CachedInputTokens = 0, int CacheReportingInputTokens = 0)
+    int CachedInputTokens = 0, int CacheReportingInputTokens = 0,
+    int CacheWrittenTokens = 0)
 {
     public int TotalTokens => InputTokens + OutputTokens;
 
@@ -76,7 +77,8 @@ public static class StatsQuery
             sessions.Sum(s => s.SubAgentTokens),
             sessions.Sum(s => s.Turns),
             sessions.Sum(s => s.CachedInputTokens),
-            sessions.Where(s => s.CacheReported).Sum(s => s.InputTokens));
+            sessions.Where(s => s.CacheReported).Sum(s => s.InputTokens),
+            sessions.Sum(s => s.CacheWrittenTokens));
 
     /// <summary>Busiest project first. Unattributed sessions are grouped rather than dropped: a
     /// session with no working directory is still spend, and hiding it would make the parts stop

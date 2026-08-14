@@ -480,7 +480,7 @@ public static class AppBootstrap
                 // panel is everything, and "Tokens by agent" is where the two are reconciled.
                 mainWindow.SetSpendByModel(runner.Ledger.ByModel, runner.Ledger.SubAgentTokens,
                     runner.Ledger.SplitByModel, runner.Ledger.CacheHitRate,
-                    runner.Ledger.CacheHitRateByAgent);
+                    runner.Ledger.CacheHitRateByAgent, runner.Ledger.CacheWrittenTokens);
             });
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
             runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));

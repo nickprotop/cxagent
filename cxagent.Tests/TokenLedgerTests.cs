@@ -120,6 +120,33 @@ public class TokenLedgerTests
         Assert.Null(workers);
     }
 
+    /// <summary>
+    /// THE LEDGER CARRIES WHAT THE WARMING COST. A session can show a healthy hit rate while the
+    /// writes that produced it cost more than the reads saved — true on OpenAI and Anthropic, never
+    /// true on a local endpoint, and indistinguishable without this figure.
+    /// </summary>
+    [Fact]
+    public void Record_AccumulatesCacheWrites()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 2000, OutputTokens = 5, CacheWriteTokens = 2000, CacheReported = true });
+        l.Record(new LlmUsage { InputTokens = 2000, OutputTokens = 5, CachedInputTokens = 1900, CacheReported = true });
+
+        Assert.Equal(2000, l.CacheWrittenTokens);
+        Assert.Equal(1900, l.CachedInputTokens);
+    }
+
+    /// <summary>Zero where warming is free — every local endpoint — so the readout stays a single
+    /// clean figure rather than claiming a cost that was never incurred.</summary>
+    [Fact]
+    public void WithNoWritesReported_TheWriteTallyStaysZero()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 5, CachedInputTokens = 900, CacheReported = true });
+
+        Assert.Equal(0, l.CacheWrittenTokens);
+    }
+
     // ---- concurrency ---------------------------------------------------------------------------
 
     /// <summary>

@@ -138,6 +138,14 @@ public static class StatsDashboard
             sb.AppendLine($"  {Bar(hit)} [bold]{hit:P0}[/] input cached  "
                         + Muted($"({Compact(totals.CachedInputTokens)} of "
                               + $"{Compact(totals.CacheReportingInputTokens)} sent)"));
+
+            // WHAT THE WARMING COST, where it cost anything. A local endpoint fills its own RAM for
+            // free and reports no writes, so this line never appears there. On a provider that bills
+            // for them — OpenAI 1.25x normal input, Anthropic up to 2x — a hit rate on its own reads
+            // as pure saving, and that is the number someone would plan against.
+            if (totals.CacheWrittenTokens > 0)
+                sb.AppendLine(Muted($"      {Compact(totals.CacheWrittenTokens)} written to cache "
+                                  + "— billed above normal input by most paid providers"));
         }
 
         // --- daily sparkline ---------------------------------------------------------------------

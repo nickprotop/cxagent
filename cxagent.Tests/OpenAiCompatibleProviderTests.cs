@@ -81,6 +81,66 @@ public class OpenAiCompatibleProviderTests : IDisposable
         Assert.True(usage.CacheReported);
     }
 
+    /// <summary>
+    /// CACHE WRITES, WHERE THEY ARE BILLED. OpenRouter reports cache_write_tokens alongside the
+    /// reads; a local llama.cpp reports neither, because filling its own RAM is free. Reading hits
+    /// without writes understates cost on exactly the providers that charge for warming — OpenAI at
+    /// 1.25x normal input, Anthropic up to 2x — and a number that looks trustworthy while being
+    /// wrong is worse than no number.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_ReadsCacheWriteTokens()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":2000,"completion_tokens":3,
+                  "prompt_tokens_details":{"cached_tokens":500,"cache_write_tokens":1500}}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Equal(500, r.Usage.CachedInputTokens);
+        Assert.Equal(1500, r.Usage.CacheWriteTokens);
+        Assert.True(r.Usage.CacheReported);
+    }
+
+    /// <summary>
+    /// A WRITE WITH NO READ STILL COUNTS AS REPORTED. The first turn against a paid provider warms
+    /// the cache and hits nothing — that is a real measurement of an expensive turn, not a silent
+    /// provider, and treating it as unreported would hide the cost entirely.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_AWriteWithoutAHit_IsStillReported()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":2000,"completion_tokens":3,
+                  "prompt_tokens_details":{"cache_write_tokens":2000}}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.True(r.Usage.CacheReported);
+        Assert.Equal(2000, r.Usage.CacheWriteTokens);
+        Assert.Equal(0, r.Usage.CachedInputTokens);
+    }
+
+    /// <summary>A local endpoint sends no cache block at all — writes stay zero and nothing claims
+    /// a cost that was never incurred.</summary>
+    [Fact]
+    public async Task ChatAsync_WithNoCacheBlock_ReportsNoWrites()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":1000,"completion_tokens":3}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.False(r.Usage.CacheReported);
+        Assert.Equal(0, r.Usage.CacheWriteTokens);
+    }
+
     [Fact]
     public async Task ChatAsync_MapsTextResponse_AndNormalizesStopReason()
     {

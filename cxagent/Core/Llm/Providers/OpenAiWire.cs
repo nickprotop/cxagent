@@ -292,14 +292,28 @@ public static class OpenAiWire
     private static LlmUsage ReadUsage(JsonElement u)
     {
         var cached = 0;
+        var written = 0;
         var reported = false;
         if (u.TryGetProperty("prompt_tokens_details", out var details)
-            && details.ValueKind == JsonValueKind.Object
-            && details.TryGetProperty("cached_tokens", out var ctok)
-            && ctok.ValueKind == JsonValueKind.Number)
+            && details.ValueKind == JsonValueKind.Object)
         {
-            cached = ctok.GetInt32();
-            reported = true;
+            if (details.TryGetProperty("cached_tokens", out var ctok)
+                && ctok.ValueKind == JsonValueKind.Number)
+            {
+                cached = ctok.GetInt32();
+                reported = true;
+            }
+
+            // WRITES, WHERE THEY ARE BILLED. OpenRouter reports this alongside the reads; a local
+            // llama.cpp does not send it at all, which is correct — filling its own RAM is free.
+            // A provider that reports writes but no reads still counts as reporting: the absence of
+            // hits on a turn that warmed the cache is a real measurement, not a silent provider.
+            if (details.TryGetProperty("cache_write_tokens", out var wtok)
+                && wtok.ValueKind == JsonValueKind.Number)
+            {
+                written = wtok.GetInt32();
+                reported = true;
+            }
         }
 
         return new LlmUsage
@@ -307,6 +321,7 @@ public static class OpenAiWire
             InputTokens = u.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0,
             OutputTokens = u.TryGetProperty("completion_tokens", out var ct) ? ct.GetInt32() : 0,
             CachedInputTokens = cached,
+            CacheWriteTokens = written,
             CacheReported = reported,
         };
     }

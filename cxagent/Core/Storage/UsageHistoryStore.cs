@@ -9,6 +9,10 @@ public sealed record SessionRecord(
     DateTimeOffset StartedAt, DateTimeOffset UpdatedAt,
     /// <summary>Input tokens the provider served from its prefix cache.</summary>
     int CachedInputTokens = 0,
+    /// <summary>Input tokens written INTO the provider's cache — zero where warming is free, which
+    /// is every local endpoint. Non-zero only where it is BILLED, and a hit rate reported without
+    /// it reads as pure saving on exactly those providers.</summary>
+    int CacheWrittenTokens = 0,
     /// <summary>Whether the provider reported cache figures at all. False makes
     /// <see cref="CachedInputTokens"/> mean "unknown" rather than "none", which is the difference
     /// between staying silent and claiming a 0% hit rate.</summary>
@@ -168,6 +172,7 @@ public sealed class UsageHistoryStore
             // the developer's own.
             AddColumnIfMissing(conn, "sessions", "cached_input_tokens", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(conn, "sessions", "cache_reported", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(conn, "sessions", "cache_written_tokens", "INTEGER NOT NULL DEFAULT 0");
         }
         catch (Exception)
         {
@@ -215,9 +220,9 @@ public sealed class UsageHistoryStore
                 INSERT INTO sessions
                     (agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
                      sub_agent_tokens, turns, started_at, updated_at,
-                     cached_input_tokens, cache_reported)
+                     cached_input_tokens, cache_reported, cache_written_tokens)
                 VALUES ($id, $dir, $model, $mode, $in, $out, $sub, $turns, $started, $updated,
-                        $cached, $creported)
+                        $cached, $creported, $cwritten)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     working_dir      = excluded.working_dir,
                     model_id         = excluded.model_id,
@@ -228,7 +233,8 @@ public sealed class UsageHistoryStore
                     turns            = excluded.turns,
                     updated_at       = excluded.updated_at,
                     cached_input_tokens = excluded.cached_input_tokens,
-                    cache_reported      = excluded.cache_reported;
+                    cache_reported      = excluded.cache_reported,
+                    cache_written_tokens = excluded.cache_written_tokens;
                 """;
             cmd.Parameters.AddWithValue("$id", r.AgentId);
             cmd.Parameters.AddWithValue("$dir", (object?)r.WorkingDir ?? DBNull.Value);
@@ -242,6 +248,7 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$updated", Stamp(r.UpdatedAt));
             cmd.Parameters.AddWithValue("$cached", r.CachedInputTokens);
             cmd.Parameters.AddWithValue("$creported", r.CacheReported ? 1 : 0);
+            cmd.Parameters.AddWithValue("$cwritten", r.CacheWrittenTokens);
             cmd.ExecuteNonQuery();
         }
         catch (Exception) { }
@@ -408,7 +415,7 @@ public sealed class UsageHistoryStore
         cmd.CommandText = """
             SELECT agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
                    sub_agent_tokens, turns, started_at, updated_at,
-                   cached_input_tokens, cache_reported
+                   cached_input_tokens, cache_reported, cache_written_tokens
             FROM sessions WHERE updated_at >= $since ORDER BY updated_at DESC;
             """;
         cmd.Parameters.AddWithValue("$since", Stamp(since));
@@ -424,7 +431,7 @@ public sealed class UsageHistoryStore
                 reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7),
                 DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture),
-                reader.GetInt32(10), reader.GetInt32(11) != 0));
+                reader.GetInt32(10), reader.GetInt32(12), reader.GetInt32(11) != 0));
         return list;
     }
 

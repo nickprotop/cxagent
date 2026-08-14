@@ -21,6 +21,7 @@ public sealed class TokenLedger
     private int _input;
     private int _output;
     private int _cached;
+    private int _cacheWritten;
     private int _cacheReports;
 
     // THE SAME FOUR NUMBERS, SPLIT BY WHO SPENT THEM. See CacheHitRateByAgent for why the session
@@ -70,6 +71,16 @@ public sealed class TokenLedger
     /// this the two are indistinguishable in every readout the app has.</para>
     /// </summary>
     public int CachedInputTokens => Volatile.Read(ref _cached);
+
+    /// <summary>
+    /// Input tokens written INTO the provider's cache, cumulatively.
+    ///
+    /// <para>ZERO EVERYWHERE THE CACHE IS FREE — a local endpoint fills its own RAM and reports
+    /// nothing. Non-zero only on a provider that BILLS for warming, where OpenAI charges 1.25x
+    /// normal input and Anthropic up to 2x. A hit rate shown without this reads as pure saving on
+    /// exactly the providers where it is not.</para>
+    /// </summary>
+    public int CacheWrittenTokens => Volatile.Read(ref _cacheWritten);
 
     /// <summary>
     /// The share of input served from cache, or null when no provider ever reported the figure.
@@ -220,6 +231,7 @@ public sealed class TokenLedger
         if (usage.CacheReported)
         {
             Interlocked.Add(ref _cached, usage.CachedInputTokens);
+            Interlocked.Add(ref _cacheWritten, usage.CacheWriteTokens);
             Interlocked.Increment(ref _cacheReports);
         }
         Interlocked.Add(ref _output, usage.OutputTokens);

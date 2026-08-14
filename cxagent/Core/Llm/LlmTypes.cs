@@ -28,6 +28,24 @@ public record LlmUsage
     /// <summary>Whether the provider reported cache figures at all — see
     /// <see cref="CachedInputTokens"/> for why the distinction matters.</summary>
     public bool CacheReported { get; init; }
+
+    /// <summary>
+    /// Input tokens WRITTEN to the provider's cache on this call.
+    ///
+    /// <para>A HIT IS NOT ALWAYS FREE, AND A WRITE IS SOMETIMES EXPENSIVE. On a local llama.cpp the
+    /// cache costs nothing to fill — it is the server's own RAM. Through OpenRouter it is billed:
+    /// OpenAI charges 1.25x normal input to write, Anthropic 1.25x for a 5-minute entry and 2x for a
+    /// one-hour one. So a session can show a healthy hit rate while the warming quietly cost more
+    /// than the reads saved.</para>
+    ///
+    /// <para>REPORTING HITS WITHOUT WRITES IS WORSE THAN REPORTING NEITHER, because the number
+    /// looks trustworthy. opencode carries this exact bug open (anomalyco/opencode#18440): cache
+    /// write tokens unaccounted, costs understated.</para>
+    ///
+    /// <para>Zero on a provider that never writes, and on every local endpoint — which is why it is
+    /// counted separately rather than folded into <see cref="CachedInputTokens"/>.</para>
+    /// </summary>
+    public int CacheWriteTokens { get; init; }
 }
 
 public record LlmResponse
