@@ -339,6 +339,12 @@ public static class OpenAiWire
             }
         }
 
+        // THE PROVIDER'S FIGURE, ABSENT WHEN UNREPORTED. GetDecimal rather than GetDouble: see
+        // LlmUsage.Cost for why money must not round-trip through binary floating point.
+        decimal? cost = u.TryGetProperty("cost", out var c) && c.ValueKind == JsonValueKind.Number
+            ? c.GetDecimal()
+            : null;
+
         return new LlmUsage
         {
             InputTokens = u.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0,
@@ -346,6 +352,7 @@ public static class OpenAiWire
             CachedInputTokens = cached,
             CacheWriteTokens = written,
             CacheReported = reported,
+            Cost = cost,
         };
     }
 

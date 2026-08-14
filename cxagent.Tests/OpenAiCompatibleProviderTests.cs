@@ -463,4 +463,58 @@ public class OpenAiCompatibleProviderTests : IDisposable
         Assert.Single(calls);
         Assert.Equal(JsonValueKind.Object, calls[0].Arguments.ValueKind);
     }
+
+    /// <summary>
+    /// THE PROVIDER'S OWN NUMBER, not ours. cxagent could compute a cost from token counts and
+    /// published rates — and that computation is exact today, verified against a real drive at
+    /// $0.014755 both ways — but it assumes our idea of the rates matches the provider's billing.
+    /// The response carries the figure; read it.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_ReadsTheReportedCost()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":100,"completion_tokens":5,"cost":0.00000220}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Equal(0.00000220m, r.Usage.Cost);
+    }
+
+    /// <summary>
+    /// NULL, NOT ZERO, when the provider says nothing. A local llama.cpp reports no cost field at
+    /// all — verified — and it is free, but cxagent cannot KNOW that from the response. It knows
+    /// only that nothing was reported, and "$0.00" claims a measurement that was never made.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_WithNoCostField_LeavesCostNull()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":100,"completion_tokens":5}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Null(r.Usage.Cost);
+    }
+
+    /// <summary>The STREAMING path carries usage on its own final chunk. It shares ReadUsage with
+    /// the non-streaming path, and this pins that they stay shared.</summary>
+    [Fact]
+    public async Task ChatStreamAsync_ReadsTheReportedCost()
+    {
+        _srv.EnqueueSse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":5,\"cost\":0.0000044}}\n\n",
+            "data: [DONE]\n\n");
+
+        LlmUsage? usage = null;
+        await foreach (var chunk in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+            if (chunk.Usage is not null) usage = chunk.Usage;
+
+        Assert.Equal(0.0000044m, usage!.Cost);
+    }
 }

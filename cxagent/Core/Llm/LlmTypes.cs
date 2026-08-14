@@ -46,6 +46,23 @@ public record LlmUsage
     /// counted separately rather than folded into <see cref="CachedInputTokens"/>.</para>
     /// </summary>
     public int CacheWriteTokens { get; init; }
+
+    /// <summary>
+    /// What the provider says this call cost, in its own currency — or null when it does not say.
+    ///
+    /// <para>NULL IS NOT ZERO. A local llama.cpp sends no cost field at all, and it IS free, but the
+    /// response cannot tell us that: it tells us only that nothing was reported. Rendering "$0.00"
+    /// for an unmeasured call is the same class of claim as a 0% cache rate for a provider that
+    /// never reported one.</para>
+    ///
+    /// <para>DECIMAL, NOT DOUBLE. This is money. A session sums thousands of calls at around 1e-06,
+    /// and binary floating point accumulates error exactly where these figures live — the fourth
+    /// decimal place.</para>
+    ///
+    /// <para>It arrives UNCONDITIONALLY on OpenRouter, contrary to what its documentation implies:
+    /// a request sending no usage block at all still came back with a cost.</para>
+    /// </summary>
+    public decimal? Cost { get; init; }
 }
 
 public record LlmResponse
