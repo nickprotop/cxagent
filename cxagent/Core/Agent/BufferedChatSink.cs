@@ -90,11 +90,6 @@ public sealed class BufferedChatSink : IChatSink
         }
     }
 
-    public void ShowSystemMessage(string message)
-    {
-        lock (_gate) _transcript.Append(message).AppendLine();
-    }
-
     // Ids need only be unique WITHIN a sink: nothing compares them across sinks, and each sink mints
     // its own. A child's ids colliding with its parent's is therefore not a hazard.
     private ChatMessageId NextId()

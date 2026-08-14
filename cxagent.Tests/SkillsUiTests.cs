@@ -19,11 +19,20 @@ public class SkillsUiTests
     private static SkillInfo Skill(string name, string description = "Use when testing.") =>
         new(name, description, $"/tmp/skills/{name}", "body");
 
+    /// <summary>Minimal <see cref="ITranscriptWriter"/> fake — SkillsCommand only ever calls
+    /// <see cref="Write"/>, so that is the only thing this records.</summary>
+    private sealed class RecordingTranscriptWriter : ITranscriptWriter
+    {
+        public readonly List<string> Messages = [];
+        public void Write(string markup) => Messages.Add(markup);
+        public void WriteError(string message) => Messages.Add(message);
+    }
+
     private static string Render(SkillCatalogResult result)
     {
-        var sink = new RecordingSink();
-        new SkillsCommand(() => result, sink).Handle();
-        return sink.Messages.LastOrDefault() ?? "";
+        var transcript = new RecordingTranscriptWriter();
+        new SkillsCommand(() => result, transcript).Handle();
+        return transcript.Messages.LastOrDefault() ?? "";
     }
 
     [Fact]

@@ -75,7 +75,6 @@ public sealed class RecordingSink : IChatSink
     }
 
     public void SetAssistantHeader(ChatMessageId id, string header) { }
-    public void ShowSystemMessage(string message) => MessageQueue.Enqueue(message);
 }
 
 /// <summary>

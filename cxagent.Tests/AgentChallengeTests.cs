@@ -950,7 +950,6 @@ public class AgentChallengeTests
         public void EndAssistantTurn(ChatMessageId id) => Ends++;
         public void ShowError(string message) => Errors.Add(message);
         public void SetAssistantHeader(ChatMessageId id, string header) => Headers.Add(header);
-        public void ShowSystemMessage(string message) { }
     }
 
 }

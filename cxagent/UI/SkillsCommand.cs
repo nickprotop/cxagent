@@ -1,4 +1,3 @@
-using CxAgent.Core.Agent;
 using CxAgent.Core.Skills;
 
 namespace CxAgent.UI;
@@ -19,7 +18,7 @@ namespace CxAgent.UI;
 /// next one. A command that looked like the way to apply changes would teach a ritual nobody
 /// needs.</para>
 /// </summary>
-public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, IChatSink sink)
+public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, ITranscriptWriter transcript)
 {
     public void Handle()
     {
@@ -76,6 +75,6 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, IChatSink si
             }
         }
 
-        sink.ShowSystemMessage(string.Join("\n", lines));
+        transcript.Write(string.Join("\n", lines));
     }
 }

@@ -204,15 +204,12 @@ public static class AppBootstrap
         var session = new Core.Agent.Session(Path.GetFullPath(Environment.CurrentDirectory));
         var permissionRules = new PermissionRulesStore(paths);
         var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules);
-        // A forwarding sink rather than passing IChatSink directly: the gate is built here, before
-        // WireRunner has created the real ChatTranscriptSink (which itself needs `system` and
-        // `mainWindow`, already available, but is only constructed inside WireRunner, once per
-        // re-wire). LatestChatSink.Current is set at the bottom of WireRunner and read live by the
-        // gate on every RequestAsync call, so the echo always lands in whichever transcript sink
-        // is CURRENT — never a stale one captured before the first WireRunner ran.
-        var permissionSink = new LatestChatSink();
+        // The UI's own transcript writer. The control it wraps is created with mainWindow above and
+        // never replaced, so — unlike the forwarder this used to be — there is no later lifetime to
+        // chase: every caller below can hold this one instance for good.
+        var transcript = new TranscriptWriter(system, mainWindow.Chat);
         var permissionGate = new InteractivePermissionGate(system, mainWindow, session.WorkingDirectory,
-            permissionPolicy, permissionRules, permissionSink);
+            permissionPolicy, permissionRules, transcript);
         // Guards the LoadError echo below so it is reported once, on the FIRST WireRunner call
         // only — F5/F7/F8 re-wires reuse this same permissionRules instance, and its LoadError
         // describes what happened at construction, not live state, so repeating it on every
@@ -274,7 +271,7 @@ public static class AppBootstrap
             accessToken: name => mcpTokens.Get(name)?.AccessToken);
 
         // /mcp lives in its own type: this file decides WHAT EXISTS, not what a command does.
-        var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, permissionSink, mainWindow);
+        var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, mainWindow);
 
 
         void WireRunner(ProviderResolution res)
@@ -288,10 +285,6 @@ public static class AppBootstrap
             // merely reassigned would leak it, and that is a step a caller can forget while the host
             // is a bare local.
             var sink = new ChatTranscriptSink(system, mainWindow.Chat);
-            // The permission gate is built once, above, before this sink exists — point it at the
-            // CURRENT transcript sink so a permission echo always lands in the visible transcript,
-            // even after an F5/F7/F8 re-wire replaces it.
-            permissionSink.Current = sink;
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             mainWindow.SetMode(AgentModes.Name(startupMode));
@@ -301,7 +294,7 @@ public static class AppBootstrap
             // anything else (the next grant backs the unreadable file up to permissions.json.bad).
             if (!permissionLoadErrorReported && permissionRules.LoadError is { } loadError)
             {
-                permissionSink.ShowSystemMessage($"[yellow]{loadError}[/]");
+                transcript.Write($"[yellow]{loadError}[/]");
                 permissionLoadErrorReported = true;
             }
             // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
@@ -458,7 +451,7 @@ public static class AppBootstrap
             // because a skipped server the user never hears about is indistinguishable from one
             // that is merely slow to connect.
             foreach (var warning in res.Warnings)
-                permissionSink.ShowSystemMessage($"[yellow]{warning}[/]");
+                transcript.Write($"[yellow]{warning}[/]");
 
             // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
             // because the session id does not exist until the host does — and reassigned on every
@@ -555,7 +548,7 @@ public static class AppBootstrap
             // Each failure named once, plus any tool dropped for colliding — both are things the
             // user configured and would otherwise watch silently not happen.
             foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                permissionSink.ShowSystemMessage($"[yellow]{message}[/]");
+                transcript.Write($"[yellow]{message}[/]");
         }
 
         // The panel shows what is live, including servers that failed.
@@ -596,7 +589,7 @@ public static class AppBootstrap
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
         if (resumeNotice is not null)
-            permissionSink.ShowSystemMessage(resumeNotice);
+            transcript.Write(resumeNotice);
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
         // next one — the shell's own convention, and Claude Code's.
@@ -713,7 +706,7 @@ public static class AppBootstrap
                             new SkillsCommand(
                                 () => Core.Skills.SkillCatalog.Find(
                                     session.WorkingDirectory, paths.ConfigDir),
-                                permissionSink).Handle();
+                                transcript).Handle();
                             return;
                         }
 
@@ -947,7 +940,7 @@ public static class AppBootstrap
             {
                 // A turn that dies must still release the flag, or the session accepts no further
                 // prompts and looks hung — the failure mode this whole guard exists to avoid.
-                permissionSink.ShowError(ex.Message);
+                transcript.WriteError(ex.Message);
             }
             finally
             {
@@ -1056,7 +1049,7 @@ public static class AppBootstrap
                         // loop, and any shell process, whose ProcessRunner kills its ENTIRE process
                         // tree on cancellation. The session, its context and its MCP servers survive.
                         turnCts!.Cancel();
-                        permissionSink.ShowSystemMessage("[yellow]Stopped.[/]");
+                        transcript.Write("[yellow]Stopped.[/]");
 
                         // ANYTHING QUEUED GOES BACK TO THE COMPOSER, not to the bin. That text was
                         // never sent, so cancelling a run must not eat what someone typed — they can
@@ -1169,9 +1162,9 @@ public static class AppBootstrap
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    permissionSink.ShowSystemMessage($"[yellow]could not save folder trust: {ex.Message}[/]");
+                    transcript.Write($"[yellow]could not save folder trust: {ex.Message}[/]");
                 }
-                permissionSink.ShowSystemMessage(trusted
+                transcript.Write(trusted
                     ? "[green]trusted this folder[/]"
                     : "[yellow]not trusted — file operations in this folder will ask every time[/]");
             }
@@ -1347,7 +1340,7 @@ public static class AppBootstrap
             // NOT COMPACTED HERE, deliberately. The turn loop measures pressure before every send
             // and compacts if it must — doing it now would be the same work in a worse place, and
             // would summarise a conversation the user might not send another turn on.
-            permissionSink.ShowSystemMessage(ModelCommand.Switched(
+            transcript.Write(ModelCommand.Switched(
                 decision.SwitchTo, next.Provider!.ModelId, next.ContextWindow, window, used));
         }
 
@@ -1370,7 +1363,7 @@ public static class AppBootstrap
             // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
             // model's memory, not this session's scrollback — so without a line here the user
             // faces an empty screen and an agent that mysteriously already knows things.
-            permissionSink.ShowSystemMessage(
+            transcript.Write(
                 $"[yellow]Resumed an earlier session: {snapshot.Context.Count} messages restored. "
                 + "They are not shown above, but the agent remembers them.[/]");
         }
@@ -1401,7 +1394,7 @@ public static class AppBootstrap
             var unfinished = sessions.LoadLatestUnfinished(session.WorkingDirectory);
 
             if (SessionsCommand.StartupHint(here, unfinished?.Context.Count) is { } line)
-                permissionSink.ShowSystemMessage(line);
+                transcript.Write(line);
         }
 
         int code = system.Run();

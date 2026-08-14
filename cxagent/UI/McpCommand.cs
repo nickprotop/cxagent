@@ -1,6 +1,6 @@
-using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
+using SharpConsoleUI.Controls;
 
 namespace CxAgent.UI;
 
@@ -22,7 +22,6 @@ public sealed class McpCommand(
     HttpClient http,
     AppPaths paths,
     IReadOnlyDictionary<string, string> env,
-    IChatSink sink,
     MainWindow window)
 {
     // /mcp, including the reload that makes config LIVE.
@@ -31,7 +30,7 @@ public sealed class McpCommand(
         if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var first, ..]
             && first.Equals("reload", StringComparison.OrdinalIgnoreCase))
         {
-            sink.ShowSystemMessage("Reloading MCP servers…");
+            window.Chat.AddMessage(ChatRole.System, "Reloading MCP servers…");
 
             // RE-READ FROM DISK, not from the startup resolution. The whole point is to pick up
             // a change made since launch — in Settings, or by hand-editing config.json.
@@ -44,7 +43,7 @@ public sealed class McpCommand(
             {
                 // An unrelated config error must not silently leave the old servers in place
                 // without saying why the reload did nothing.
-                sink.ShowSystemMessage(
+                window.Chat.AddMessage(ChatRole.System, 
                     $"[yellow]config.json could not be read: {string.Join("; ", ex.Errors)}[/]");
                 return;
             }
@@ -52,7 +51,7 @@ public sealed class McpCommand(
             await mcp.ReloadAsync(configured, CancellationToken.None);
 
             foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                sink.ShowSystemMessage($"[yellow]{message}[/]");
+                window.Chat.AddMessage(ChatRole.System, $"[yellow]{message}[/]");
 
             window.SetMcpServers(mcp.Statuses());
         }
@@ -64,7 +63,7 @@ public sealed class McpCommand(
             return;
         }
 
-        sink.ShowSystemMessage(SessionCommands.DescribeMcp(
+        window.Chat.AddMessage(ChatRole.System, SessionCommands.DescribeMcp(
             mcp.Statuses(), arguments, mcp.Toolset.Names().ToList()));
     }
 
@@ -75,13 +74,13 @@ public sealed class McpCommand(
     {
         if (mcp.AuthMetadataUrlFor(serverName) is not { } metadataUrl)
         {
-            sink.ShowSystemMessage(
+            window.Chat.AddMessage(ChatRole.System, 
                 $"[yellow]'{serverName}' has not asked for authorization. Only a remote server "
                 + "that answered 401 can be logged in to — run /mcp to see the servers.[/]");
             return;
         }
 
-        sink.ShowSystemMessage($"Opening a browser to log in to '{serverName}'…");
+        window.Chat.AddMessage(ChatRole.System, $"Opening a browser to log in to '{serverName}'…");
 
         var result = await Core.Mcp.Auth.McpLogin.RunAsync(
             http, tokens, serverName, metadataUrl,
@@ -95,21 +94,21 @@ public sealed class McpCommand(
                 if (!TryOpenBrowser(url))
                     // A headless or locked-down machine still gets its login: the URL is the
                     // whole of what a browser would have been handed.
-                    sink.ShowSystemMessage($"Open this URL to continue:\n{url}");
+                    window.Chat.AddMessage(ChatRole.System, $"Open this URL to continue:\n{url}");
             },
             ct: CancellationToken.None);
 
-        sink.ShowSystemMessage(
+        window.Chat.AddMessage(ChatRole.System, 
             result.Succeeded ? result.Message : $"[yellow]{result.Message}[/]");
 
         if (!result.Succeeded) return;
 
         // RECONNECT, so the tools are usable NOW. A login that leaves the server still
         // unauthorized until the next restart is a login the user would reasonably think failed.
-        sink.ShowSystemMessage("Reconnecting…");
+        window.Chat.AddMessage(ChatRole.System, "Reconnecting…");
         await mcp.ReloadAsync(mcp.Configured, CancellationToken.None);
         window.SetMcpServers(mcp.Statuses());
-        sink.ShowSystemMessage(SessionCommands.DescribeMcp(mcp.Statuses()));
+        window.Chat.AddMessage(ChatRole.System, SessionCommands.DescribeMcp(mcp.Statuses()));
     }
 
     /// <summary>

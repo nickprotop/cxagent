@@ -87,7 +87,7 @@ public class InteractivePermissionGateTests
         var dir = workingDir ?? MakeTempDir();
         var rules = store ?? new PermissionRulesStore(new AppPaths(MakeTempDir()));
         var policy = new PermissionPolicy(dir, rules);
-        return InteractivePermissionGate.ForTesting(policy, rules, dir, sink: null, script.Show);
+        return InteractivePermissionGate.ForTesting(policy, rules, dir, transcript: null, script.Show);
     }
 
     [Fact]

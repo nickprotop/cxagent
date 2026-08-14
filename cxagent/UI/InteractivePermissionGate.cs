@@ -1,4 +1,3 @@
-using CxAgent.Core.Agent;
 using CxAgent.Core.Permissions;
 using SharpConsoleUI;
 
@@ -32,7 +31,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
     private readonly PermissionPolicy _policy;
     private readonly PermissionRulesStore _store;
     private readonly string _workingDir;
-    private readonly IChatSink? _sink;
+    private readonly ITranscriptWriter? _transcript;
 
     // The UI seam: shows a prompt for `request` (offerTrust decides whether the fourth "Trust
     // this folder" button appears) and completes with the user's choice. The real constructor
@@ -61,8 +60,8 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// Path.GetFullPath(Environment.CurrentDirectory)) — PermissionPolicy doesn't expose its
     /// captured root, so the caller passes it again here rather than this class re-deriving it.</summary>
     public InteractivePermissionGate(ConsoleWindowSystem system, MainWindow mw,
-        string workingDir, PermissionPolicy policy, PermissionRulesStore store, IChatSink? sink)
-        : this(policy, store, workingDir, sink,
+        string workingDir, PermissionPolicy policy, PermissionRulesStore store, ITranscriptWriter? transcript)
+        : this(policy, store, workingDir, transcript,
             (request, offerTrust, ct) =>
             {
                 var prompt = new PermissionPromptControl(request, offerTrust);
@@ -98,12 +97,12 @@ public sealed class InteractivePermissionGate : IPermissionGate
     }
 
     private InteractivePermissionGate(PermissionPolicy policy, PermissionRulesStore store, string workingDir,
-        IChatSink? sink, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
+        ITranscriptWriter? transcript, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
     {
         _policy = policy;
         _store = store;
         _workingDir = workingDir;
-        _sink = sink;
+        _transcript = transcript;
         _promptHook = promptHook;
     }
 
@@ -113,9 +112,9 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// part of the gate's runtime API surface: production code always uses the UI-wired
     /// constructor above.</summary>
     public static InteractivePermissionGate ForTesting(PermissionPolicy policy, PermissionRulesStore store,
-        string workingDir, IChatSink? sink,
+        string workingDir, ITranscriptWriter? transcript,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
-        new(policy, store, workingDir, sink, promptHook);
+        new(policy, store, workingDir, transcript, promptHook);
 
     /// <summary>
     /// Called with every decision this gate makes. Set by the composition root to record history;
@@ -258,7 +257,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _sink?.ShowSystemMessage($"[yellow]could not save this rule for next time: {ex.Message}[/]");
+                    _transcript?.Write($"[yellow]could not save this rule for next time: {ex.Message}[/]");
                 }
                 // Silent on success. The rule IS visible — Settings → Permissions lists every stored
                 // rule for this folder — so this is discoverable rather than invisible, without a line
@@ -272,13 +271,13 @@ public sealed class InteractivePermissionGate : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _sink?.ShowSystemMessage($"[yellow]could not save folder trust for next time: {ex.Message}[/]");
+                    _transcript?.Write($"[yellow]could not save folder trust for next time: {ex.Message}[/]");
                 }
                 return true;   // silent; the trust state is shown on Settings → Permissions
 
             case PermissionChoice.Deny:
             default:
-                _sink?.ShowSystemMessage($"[red]denied: {request.Display}[/]");
+                _transcript?.Write($"[red]denied: {request.Display}[/]");
                 return false;
         }
     }

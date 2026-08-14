@@ -57,13 +57,4 @@ public interface IChatSink
     /// </summary>
     void SetAssistantHeader(ChatMessageId id, string header);
     void ShowError(string message);
-
-    /// <summary>
-    /// A plain informational line in the transcript — neither an error nor a goal result. Task 4's
-    /// permission gate uses this to echo every permission decision (allowed once / always allowing
-    /// &lt;rule&gt; / denied / trusted this folder): the transcript is the session's audit trail, and
-    /// a decision that leaves no trace is a decision nobody can review.
-    /// </summary>
-    void ShowSystemMessage(string message);
-
 }

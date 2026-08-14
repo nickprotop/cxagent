@@ -137,8 +137,4 @@ public sealed class ChatTranscriptSink : IChatSink
         _system.EnqueueOnUIThread(() =>
             _chat.AddMessage(ChatRole.System, $"[red]✗ {message}[/]"));
 
-    public void ShowSystemMessage(string message) =>
-        _system.EnqueueOnUIThread(() =>
-            _chat.AddMessage(ChatRole.System, message));
-
 }
