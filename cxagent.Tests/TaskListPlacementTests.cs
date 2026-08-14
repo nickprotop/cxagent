@@ -150,4 +150,39 @@ public class TaskListPlacementTests : IDisposable
         Assert.Equal("user", plan.Role);
         Assert.Null(plan.ToolCallId);
     }
+
+    /// <summary>
+    /// THE PROPERTY THAT ACTUALLY SAVES THE TIME. A prefix cache matches the longest common prefix
+    /// and stops at the first differing byte, so what matters is not merely that the system message
+    /// is stable — it is that EVERY message before the plan is unchanged. Only then does a rewritten
+    /// plan cost nothing but itself.
+    /// </summary>
+    [Fact]
+    public async Task AStatusFlip_LeavesEveryMessageBeforeThePlanUnchanged()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+        provider.EnqueueResponse(TodoCall(("a", "in_progress")));
+        provider.EnqueueResponse(Done("ok"));
+
+        var agent = Build(provider);
+        await agent.SendAsync("first", CancellationToken.None);
+
+        var before = provider.LastMessages!
+            .TakeWhile(m => !m.IsTaskList)
+            .Select(m => $"{m.Role} {m.Content}")
+            .ToList();
+
+        await agent.SendAsync("second", CancellationToken.None);
+
+        var after = provider.LastMessages!
+            .TakeWhile(m => !m.IsTaskList)
+            .Select(m => $"{m.Role} {m.Content}")
+            .ToList();
+
+        // The second turn adds real conversation, so `after` grows — but everything the first turn
+        // sent must still be there, byte for byte, in the same order.
+        Assert.Equal(before, after.Take(before.Count));
+    }
 }
