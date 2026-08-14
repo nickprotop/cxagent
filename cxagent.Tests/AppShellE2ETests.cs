@@ -32,7 +32,10 @@ public class AppShellE2ETests
 
         var sink = new ChatTranscriptSink(system, mw.Chat);
         var jobPanelSink = new JobPanelSink(system, mw.JobPanel);
-        var runner = new AgentHost(provider, sink, jobPanelSink, PluginRegistry.CreateWithBuiltins());
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = provider, Plugins = PluginRegistry.CreateWithBuiltins() },
+            sink,
+            jobPanelSink);
 
         // Set the multi-line composer content (public get/set), exactly what the Ctrl+Enter handler reads.
         mw.Input.Input = "do two steps";

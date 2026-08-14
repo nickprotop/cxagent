@@ -379,45 +379,59 @@ public static class AppBootstrap
             }),
                 agentTypes);
 
-            // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
-            // real: AgentHost takes OrchestratorSettings? and defaults to unbounded, so omitting it
-            // here silently disabled cost control in production while every unit test still passed.
-            runner = new AgentHost(res.Provider!, sink, jobPanelSink, plugins, logs,
-                orchestrator: res.Orchestrator,
-                // P11 Task 2: the real window (when config told us one), so auto-compression derives
-                // its threshold from actual headroom instead of always falling back to the fixed
-                // constant. Null on --mock/no-provider and whenever contextWindow isn't configured.
-                contextWindow: res.ContextWindow,
-                // Every completed turn lands here, so a crash leaves something to resume from.
-                store: sessions,
-                // And here, for /stats — a separate archive that outlives the session.
-                history: history,
-                // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one place
-                // that can put a question where the permission gate already asks. A sub-agent never
-                // gets it — Agent refuses regardless of what is passed here.
-                askUser: mainWindow.AskQuestionAsync,
-                // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
-                globalInstructionsDir: paths.ConfigDir,
+            runner = new AgentHost(
+                new AgentHost.AgentRuntime
+                {
+                    Provider = res.Provider!,
+                    Plugins = plugins,
+
+                    // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
+                    // Sessions and permission rules are both scoped to the project they belong to,
+                    // and they must agree on what "this project" means.
+                    WorkingDir = workingDir,
+
+                    // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
+                    GlobalInstructionsDir = paths.ConfigDir,
+
+                    // The real window (when config told us one), so auto-compression derives its
+                    // threshold from actual headroom instead of the fixed constant. Null on
+                    // --mock/no-provider and whenever contextWindow is not configured.
+                    ContextWindow = res.ContextWindow,
+
+                    // Passing this is what makes the cap real: the host defaults to unbounded, so
+                    // omitting it silently disabled the turn cap in production while every unit
+                    // test still passed.
+                    Orchestrator = res.Orchestrator,
+
+                    // The toolset, but NOT the servers: ownership stays with the session. Handing
+                    // those over would let an F5 re-wire dispose them, killing every server on a
+                    // provider change and leaving the new host with a toolset over dead pipes.
+                    Mcp = mcp.Toolset,
+
+                    Spawner = subAgents,
+                    Mode = startupMode,
+
+                    // HOW THE MODEL ASKS. The window owns the composer swap, so this is the one
+                    // place that can put a question where the permission gate already asks. A
+                    // sub-agent never gets it — Agent refuses regardless of what is passed here.
+                    AskUser = mainWindow.AskQuestionAsync,
+                },
+                sink,
+                jobPanelSink,
+                new AgentHost.SessionStores
+                {
+                    // Every completed turn lands here, so a crash leaves something to resume from.
+                    Resume = sessions,
+
+                    // And here, for /stats — a separate archive that outlives the session.
+                    History = history,
+                    Logs = logs,
+                },
                 resume: resumeSnapshot,
-                // The toolset, but NOT the servers: ownership stays with the session. Handing them
-                // over would let an F5 re-wire dispose them, killing every server on a provider
-                // change and leaving the new host with a toolset over dead pipes.
-                mcp: mcp.Toolset,
+
                 // Built above from the same snapshot `resume` came from, so a resumed session gets
                 // its spend back exactly as it did when AgentHost made this itself.
-                ledger: ledger,
-                spawner: subAgents,
-                mode: startupMode,
-                // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup. Sessions
-                // and permission rules are both scoped to the project they belong to, and they must
-                // agree on what "this project" means.
-                workingDir: workingDir)
-            {
-                // The user's OWN value, or null. res.Orchestrator is null exactly when the config
-                // THE NEW RESOLUTION'S VALUE, not the startup one: an F5 provider change re-runs
-                // this, and the panel must show the ceiling that now binds. Null stays null — it
-                // means "nobody said", which is what makes the default reachable.
-            };
+                ledger: ledger);
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one

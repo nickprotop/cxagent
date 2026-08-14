@@ -25,12 +25,11 @@ namespace CxAgent.Core.Agent;
 /// </summary>
 public sealed class AgentHost : IDisposable
 {
-    private readonly ILlmProvider _provider;
+    private readonly AgentRuntime _runtime;
+    private readonly SessionStores _stores;
     private readonly IChatSink _sink;
     private readonly IJobPanel _jobPanel;
-    private readonly PluginRegistry _plugins;
 
-    private readonly LogFileManager? _logs;
 
     /// <summary>
     /// cxagent's own config directory, where a user-level CXAGENT.md may sit — or null when there is
@@ -42,17 +41,14 @@ public sealed class AgentHost : IDisposable
     /// different agent with different tools. A repo's CLAUDE.md is different — it describes the
     /// PROJECT, so it is read where the project is.</para>
     /// </summary>
-    private readonly string? _globalInstructionsDir;
 
     /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
-    private readonly Core.Mcp.McpToolset? _mcp;
 
     /// <summary>What this host's agent was created to do, or null for a plain session. Fixed here so
     /// an F5 re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
-    private readonly string? _briefing;
 
     /// <summary>
-    /// The subprocesses behind <see cref="_mcp"/>, held only so <see cref="Dispose"/> can end them.
+    /// The subprocesses behind <see cref="_runtime.Mcp"/>, held only so <see cref="Dispose"/> can end them.
     ///
     /// <para>Separate from the toolset because ownership and use are different concerns: the toolset
     /// is asked what tools exist and never asked to shut anything down, and the host is the thing
@@ -67,13 +63,11 @@ public sealed class AgentHost : IDisposable
     /// not happen. Every call into it is best-effort inside the store itself, so a disk that is full
     /// or a database that is locked costs the ability to resume and nothing else.</para>
     /// </summary>
-    private readonly SqliteSessionStore? _store;
 
     /// <summary>
-    /// Usage history — a DIFFERENT database from <see cref="_store"/>, and optional for the same
+    /// Usage history — a DIFFERENT database from <see cref="_stores.Resume"/>, and optional for the same
     /// reason: a session that cannot record statistics is unaffected in every way that matters.
     /// </summary>
-    private readonly UsageHistoryStore? _history;
 
     /// <summary>Turns this session has completed, for the history row. Not derived from the message
     /// count, which compaction rewrites — a compacted session would appear to have run backwards.
@@ -99,12 +93,10 @@ public sealed class AgentHost : IDisposable
 
     // The whole settings record rather than the one field read today: the compaction threshold is
     // derived from it per-agent (see BuildAgent), and the turn ceiling reads MaxTurns.
-    private readonly OrchestratorSettings _orchestrator;
 
     /// <summary>How this session's agent spawns children, or null when sub-agents are not wired.
     /// Forwarded to the agent in BuildAgent — a field it must be, since BuildAgent runs after the
     /// constructor body.</summary>
-    private readonly ISubAgentSpawner? _spawner;
 
     /// <summary>The mode this session starts in — from the command line. Applied to the agent in
     /// BuildAgent, after which <see cref="Mode"/> is the live value.</summary>
@@ -117,21 +109,18 @@ public sealed class AgentHost : IDisposable
     /// OFFERED for resume, which is the safe direction: a row that cannot say where it came from
     /// could have come from anywhere.</para>
     /// </summary>
-    private readonly string? _workingDir;
 
     /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
     /// P11 Task 1), threaded through from ProviderResolution at construction time rather than read off
-    /// <see cref="_provider"/> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
+    /// <see cref="_runtime.Provider"/> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
     /// config-only number, and adding it to the interface would ripple into every vendor driver and
     /// test double for a value only ProviderResolver's config lookup actually has. Null when the user
     /// hasn't set contextWindow for this instance — EffectiveCompressThreshold treats that as "unknown"
     /// and falls back to the fixed constant, per its own precedence.
     /// </summary>
-    private readonly int? _contextWindow;
 
     /// <summary>How this session asks the user a question, or null when nothing can ask.</summary>
-    private readonly Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? _askUser;
 
     /// <summary>
     /// Whether this session works alone or may delegate. Forwarded straight to the agent, which reads
@@ -292,7 +281,7 @@ public sealed class AgentHost : IDisposable
     /// rather than completed. Called from the composition root after the run loop returns; if the
     /// process dies before that, the row correctly stays unfinished.</para>
     /// </summary>
-    public void MarkSessionFinished() => _store?.MarkFinished(_agent.Id);
+    public void MarkSessionFinished() => _stores.Resume?.MarkFinished(_agent.Id);
 
     /// <summary>
     /// <c>orchestrator.maxTurns</c> as the user set it, or null when they did not — what that
@@ -309,42 +298,86 @@ public sealed class AgentHost : IDisposable
     /// not worth persisting (every test that does not care, and any run whose store failed to open).
     /// Optional because an agent without one is degraded, not broken.
     /// </param>
-    public AgentHost(ILlmProvider provider, IChatSink sink, IJobPanel jobPanel,
-        PluginRegistry pluginRegistry, LogFileManager? logs = null,
-        OrchestratorSettings? orchestrator = null,
-        int? contextWindow = null,
-        SqliteSessionStore? store = null,
-        SessionSnapshot? resume = null,
-        string? globalInstructionsDir = null,
-        Core.Mcp.McpToolset? mcp = null,
-        IReadOnlyList<IAsyncDisposable>? mcpServers = null,
-        string? briefing = null,
-        TokenLedger? ledger = null,
-        ISubAgentSpawner? spawner = null,
-        AgentMode mode = AgentMode.FanOut,
-        string? workingDir = null,
-        UsageHistoryStore? history = null,
-        // ASKING THE USER, when there is one. Null in every headless path — a host with no UI must
-        // not offer a tool whose whole behaviour is to wait for a person.
-        Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null)
+    /// <summary>
+    /// Where a session's record goes. Both optional, and both are the composition root's to own.
+    ///
+    /// <para>SHARED ACROSS SESSIONS, DELIBERATELY. These are keyed by agent id, not by session, so
+    /// two sessions in one process write to one database rather than fighting over two handles to
+    /// it. If a session ever needs its own, the boundary is wrong.</para>
+    /// </summary>
+    public sealed record SessionStores
     {
-        _mode = mode;
-        _workingDir = workingDir;
-        _spawner = spawner;
-        _briefing = briefing;
-        _mcp = mcp;
-        _mcpServers = mcpServers ?? [];
-        _provider = provider;
+        /// <summary>Every completed turn lands here, so a crash leaves something to resume from.</summary>
+        public Storage.SqliteSessionStore? Resume { get; init; }
+
+        /// <summary>The archive <c>/stats</c> reads — a separate database that outlives the session.</summary>
+        public Storage.UsageHistoryStore? History { get; init; }
+
+        /// <summary>Per-job logs, nested under the agent that produced them.</summary>
+        public Storage.LogFileManager? Logs { get; init; }
+    }
+
+    /// <summary>
+    /// Everything the host FORWARDS to the agent it builds.
+    ///
+    /// <para>NINE OF THE NINETEEN PARAMETERS WERE PASS-THROUGH — stored once, read once, handed to
+    /// <see cref="BuildAgent"/>, never used by the host itself. They were on the constructor because
+    /// <see cref="Agent"/> needs them and the host is the only thing that builds one.</para>
+    ///
+    /// <para>THE FAILURE THIS REMOVES is named in BuildAgent's own comment: omitting a forwarded
+    /// argument "compiles perfectly and produces a session whose agent silently has no spawn tool."
+    /// A record cannot be half-passed.</para>
+    ///
+    /// <para>Immutable, like <see cref="SubAgentFactory.SubAgentRuntime"/> and for the same reason:
+    /// a host that could mutate what it forwards could change an agent's tools under it.</para>
+    /// </summary>
+    public sealed record AgentRuntime
+    {
+        public required ILlmProvider Provider { get; init; }
+        public required PluginRegistry Plugins { get; init; }
+
+        /// <summary>Where the session works. Data, never the process's own directory.</summary>
+        public string? WorkingDir { get; init; }
+
+        /// <summary>cxagent's config folder, so a user-level CXAGENT.md applies wherever they work.</summary>
+        public string? GlobalInstructionsDir { get; init; }
+
+        /// <summary>The real window, so compaction derives its threshold from actual headroom.</summary>
+        public int? ContextWindow { get; init; }
+
+        /// <summary>Turn cap and compaction threshold. Null means nothing was configured.</summary>
+        public OrchestratorSettings? Orchestrator { get; init; }
+
+        public Core.Mcp.McpToolset? Mcp { get; init; }
+
+        /// <summary>The servers themselves, held only so the session can dispose them.</summary>
+        public IReadOnlyList<IAsyncDisposable>? McpServers { get; init; }
+
+        public string? Briefing { get; init; }
+        public ISubAgentSpawner? Spawner { get; init; }
+        public AgentMode Mode { get; init; } = AgentMode.FanOut;
+
+        /// <summary>
+        /// How the model asks the user. Null in every headless path — a host with no UI must not
+        /// offer a tool whose whole behaviour is to wait for a person.
+        /// </summary>
+        public Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? AskUser { get; init; }
+    }
+
+    public AgentHost(AgentRuntime runtime, IChatSink sink, IJobPanel jobPanel,
+        SessionStores? stores = null,
+        SessionSnapshot? resume = null,
+        TokenLedger? ledger = null)
+    {
+        _runtime = runtime;
+        _stores = stores ?? new SessionStores();
         _sink = sink;
         _jobPanel = jobPanel;
-        _plugins = pluginRegistry;
-        _logs = logs;
-        _store = store;
-        _history = history;
-        _askUser = askUser;
-        _globalInstructionsDir = globalInstructionsDir;
-        _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
-        _contextWindow = contextWindow;
+
+        // MODE IS THE ONE FORWARDED VALUE THAT CHANGES MID-SESSION (/mode agent single), so it is a
+        // field rather than read back off the immutable runtime.
+        _mode = runtime.Mode;
+        _mcpServers = runtime.McpServers ?? [];
 
         // GIVEN, OR MADE HERE. A ledger constructed inside this constructor can only ever be THE
         // SESSION'S ONE LEDGER — and that is exactly the assumption per-model attribution has to
@@ -364,7 +397,7 @@ public sealed class AgentHost : IDisposable
             ? new TokenLedger()
             : new TokenLedger(resume.InputTokens, resume.OutputTokens));
 
-        Context = new AgentContext(contextWindow);
+        Context = new AgentContext(runtime.ContextWindow);
         if (resume is not null) Context.Replace(resume.Context);
         // Loaded FROM a stored row, so there is already something to come back to — see HasSavedTurn.
         _resumed = resume is not null;
@@ -488,28 +521,28 @@ public sealed class AgentHost : IDisposable
 
     private Agent BuildAgent()
     {
-        var agent = new Agent(_provider, _plugins, Ledger, _sink, _jobPanel, _logs,
+        var agent = new Agent(_runtime.Provider, _runtime.Plugins, Ledger, _sink, _jobPanel, _stores.Logs,
             TurnCeiling,
 
             // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a
             // single-agent run ends when it runs out of room, not at an arbitrary turn number.
             // The agent's own bound: it compresses its own context from inside its turn loop,
             // which is the only place the measurement that triggers it is taken.
-            compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
+            compressAbove: (_runtime.Orchestrator ?? OrchestratorSettings.Unbounded).EffectiveCompressThreshold(_runtime.ContextWindow)
                 ?? OrchestratorSettings.DefaultCompressThreshold,
 
             // THE HOST ALREADY KNEW THIS and used it for persistence and history; the agent read
             // the process instead. Same value in practice, different sources — which is only ever
             // true until something moves the process.
-            workingDir: _workingDir,
-            globalInstructionsDir: _globalInstructionsDir,
-            mcp: _mcp,
-            briefing: _briefing,
+            workingDir: _runtime.WorkingDir,
+            globalInstructionsDir: _runtime.GlobalInstructionsDir,
+            mcp: _runtime.Mcp,
+            briefing: _runtime.Briefing,
 
             // FORWARDED, and this is the third of the three signature changes the spec counted:
             // Agent takes it, AgentHost takes it, and BuildAgent must PASS it. Omitting this line
             // compiles perfectly and produces a session whose agent silently has no spawn tool.
-            spawner: _spawner,
+            spawner: _runtime.Spawner,
 
             // THE SAME CONTEXT THROUGHOUT. The agent is built once now, so this is the context it
             // keeps for its whole life — prompt N+1 begins with everything prompt N learned.
@@ -517,7 +550,7 @@ public sealed class AgentHost : IDisposable
 
             // AND THE WAY TO ASK. Null in every headless path, and refused outright for a child —
             // Agent enforces that itself rather than trusting whoever constructs it.
-            askUser: _askUser)
+            askUser: _runtime.AskUser)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more
@@ -542,16 +575,16 @@ public sealed class AgentHost : IDisposable
             // not happen. The whole context goes each time, because compression rewrites it wholesale
             // and an append-only log would have to be reconciled against a list that no longer
             // matches. The store swallows its own failures — see its class doc.
-            _store?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-                _workingDir);
+            _stores.Resume?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
+                _runtime.WorkingDir);
 
             // AND HISTORY, which is a different feature from resume and so a different database. The
             // resume store is a buffer worth nothing once a session ends cleanly; this survives, and
             // is the only place a question needing MANY sessions can be answered. Upserted every
             // turn for the same reason resume is: a crash is exactly when a final write never comes.
             _turns++;
-            _history?.SaveSession(new SessionRecord(
-                agent.Id, _workingDir, _provider.ModelId, Mode.ToString(),
+            _stores.History?.SaveSession(new SessionRecord(
+                agent.Id, _runtime.WorkingDir, _runtime.Provider.ModelId, Mode.ToString(),
                 Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
                 _startedAt, DateTimeOffset.UtcNow));
         };
@@ -566,20 +599,20 @@ public sealed class AgentHost : IDisposable
             // PRESSURE, not manual: this fires from the loop's own per-turn check. `/compress` writes
             // its own row with trigger "manual", and separating them is the point — a threshold that
             // fires too eagerly and one that never fires are indistinguishable from a bare count.
-            _history?.SaveCompaction(new CompactionRecord(agent.Id, DateTimeOffset.UtcNow, b, a, "pressure"));
+            _stores.History?.SaveCompaction(new CompactionRecord(agent.Id, DateTimeOffset.UtcNow, b, a, "pressure"));
         };
         agent.ContextEstimated += used => ContextEstimatedUpdated?.Invoke(this, used);
 
         // HISTORY SUBSCRIBES HERE, and nowhere in the loop. The kernel raises reports and does not
         // know a database exists; this is the one place that turns them into rows. Both writers
         // swallow their own failures, so a locked file costs statistics and nothing else.
-        agent.ToolCallFinished += r => _history?.SaveToolCall(new ToolCallRecord(
+        agent.ToolCallFinished += r => _stores.History?.SaveToolCall(new ToolCallRecord(
             r.CallId, r.AgentId, r.ToolName, r.PluginType, r.Outcome, r.DurationMs,
-            r.ResultChars, r.StartedAt, _workingDir));
+            r.ResultChars, r.StartedAt, _runtime.WorkingDir));
 
-        agent.ChildFinished += r => _history?.SaveRun(new RunRecord(
+        agent.ChildFinished += r => _stores.History?.SaveRun(new RunRecord(
             r.RunId, r.ParentAgentId, r.TypeName, r.ModelId, r.InputTokens, r.OutputTokens,
-            r.Turns, r.ToolCalls, r.Outcome, r.StartedAt, r.DurationMs, _workingDir));
+            r.Turns, r.ToolCalls, r.Outcome, r.StartedAt, r.DurationMs, _runtime.WorkingDir));
 
         // A CHILD'S SPEND, mid-turn. TokensUpdated otherwise fires only on THIS agent's turn
         // boundaries, and it completes none while blocked inside the spawn tool — so a worker
@@ -609,16 +642,16 @@ public sealed class AgentHost : IDisposable
         // THE AGENT'S ID. This used to be the id of whichever goal last ran, falling back to the
         // literal "session" before the first one — so a /compress issued before any prompt filed its
         // row under a name no log directory had. The agent has one id for its whole life.
-        CompressionRun.RunAsync(Context, _provider, _jobPanel, _agent.Id,
+        CompressionRun.RunAsync(Context, _runtime.Provider, _jobPanel, _agent.Id,
             "compress context · requested", usage =>
             {
-                Ledger.Record(usage, _provider.ModelId);
+                Ledger.Record(usage, _runtime.Provider.ModelId);
                 TokensUpdated?.Invoke(this, Ledger.TotalTokens);
             }, ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(this, (b, a));
-                _history?.SaveCompaction(new CompactionRecord(
-                    _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _workingDir));
+                _stores.History?.SaveCompaction(new CompactionRecord(
+                    _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _runtime.WorkingDir));
             });
 
 

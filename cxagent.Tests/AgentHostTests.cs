@@ -16,8 +16,13 @@ namespace CxAgent.Tests;
 public class AgentHostTests
 {
     private static AgentHost NewRunner(ILlmProvider provider, RecordingSink? sink = null) =>
-        new(provider, sink ?? new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins());
+        new(new AgentHost.AgentRuntime
+            {
+                Provider = provider,
+                Plugins = PluginRegistry.CreateWithBuiltins(),
+            },
+            sink ?? new RecordingSink(),
+            new NullJobPanel());
 
     [Fact]
     public async Task SendAsync_RecordsTokenUsage_IntoTheLedger()
@@ -129,8 +134,11 @@ public class AgentHostTests
 
             // WITH A WORKING DIRECTORY, as AppBootstrap wires it: resume is scoped to the folder a
             // session ran in, and a row saved without one is deliberately never offered.
-            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
+            var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new RecordingSink(),
+            new NullJobPanel(),
+            new AgentHost.SessionStores { Resume = store });
 
             await runner.SendAsync("remember this", CancellationToken.None);
 
@@ -160,8 +168,11 @@ public class AgentHostTests
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
+            var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new RecordingSink(),
+            new NullJobPanel(),
+            new AgentHost.SessionStores { Resume = store });
 
             Assert.False(runner.HasSavedTurn);
 
@@ -184,8 +195,11 @@ public class AgentHostTests
             OutputTokens: 5,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-        var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), resume: snapshot);
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            resume: snapshot);
 
         Assert.True(runner.HasSavedTurn);
     }
@@ -206,8 +220,11 @@ public class AgentHostTests
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-            var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-                PluginRegistry.CreateWithBuiltins(), store: store, workingDir: "/projects/here");
+            var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins(), WorkingDir = "/projects/here" },
+            new RecordingSink(),
+            new NullJobPanel(),
+            new AgentHost.SessionStores { Resume = store });
             await runner.SendAsync("hello", CancellationToken.None);
 
             // IT WAS OFFERABLE FIRST — otherwise this test passes vacuously, since an unscoped save
@@ -239,8 +256,11 @@ public class AgentHostTests
             InputTokens: 5_397, OutputTokens: 435,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), resume: snapshot);
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            resume: snapshot);
 
         Assert.Equal(3, runner.Context.Messages.Count);
         Assert.Equal("it defines Foo", runner.Context.Messages[2].Content);
@@ -271,8 +291,11 @@ public class AgentHostTests
         mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
 
-        var runner = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), ledger: mine);
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            ledger: mine);
 
         Assert.Same(mine, runner.Ledger);
 
@@ -288,8 +311,10 @@ public class AgentHostTests
     [Fact]
     public void Ledger_WhenNotGiven_IsStillMadeHere()
     {
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins());
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel());
 
         Assert.NotNull(runner.Ledger);
         Assert.Equal(0, runner.Ledger.TotalTokens);
@@ -314,16 +339,22 @@ public class AgentHostTests
             with { Usage = new LlmUsage { InputTokens = 900, OutputTokens = 100 } });
 
         var before = new TokenLedger();
-        var first = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), ledger: before);
+        var first = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            ledger: before);
         await first.SendAsync("spend something", CancellationToken.None);
         Assert.Equal(1_000, before.TotalTokens);
 
         // What WireRunner does on F5: dispose the outgoing host, build a fresh ledger, build a fresh
         // host over it.
         first.Dispose();
-        var second = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), ledger: new TokenLedger());
+        var second = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = mock, Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            ledger: new TokenLedger());
 
         Assert.Equal(0, second.Ledger.TotalTokens);
     }
@@ -348,8 +379,12 @@ public class AgentHostTests
         // by reading one local twice.
         var seeded = new TokenLedger(snapshot.InputTokens, snapshot.OutputTokens);
 
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), resume: snapshot, ledger: seeded);
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel(),
+            ledger: seeded,
+            resume: snapshot);
 
         Assert.Single(runner.Context.Messages);      // the conversation, NOT discarded
         Assert.Equal(5_397 + 435, runner.Ledger.TotalTokens);
@@ -366,8 +401,10 @@ public class AgentHostTests
     [Fact]
     public void TurnCeiling_OfZero_MeansUnbounded()
     {
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins())
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel())
         {
             ConfiguredMaxTurns = 0,
         };
@@ -395,8 +432,10 @@ public class AgentHostTests
     public void Dispose_DisposesTheMcpServers()
     {
         var server = new SpyDisposable();
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), mcpServers: [server]);
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins(), McpServers = [server] },
+            new RecordingSink(),
+            new NullJobPanel());
 
         runner.Dispose();
 
@@ -408,8 +447,10 @@ public class AgentHostTests
     [Fact]
     public void TurnCeiling_HonoursAConfiguredValue()
     {
-        var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins())
+        var runner = new AgentHost(
+            new AgentHost.AgentRuntime { Provider = new MockLlmProvider(), Plugins = PluginRegistry.CreateWithBuiltins() },
+            new RecordingSink(),
+            new NullJobPanel())
         {
             ConfiguredMaxTurns = 25,
         };
