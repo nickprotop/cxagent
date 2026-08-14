@@ -14,9 +14,14 @@ public class ModelCatalogTests : IDisposable
     public async Task OpenAiCompatible_ListsModels_FromDataArray()
     {
         _srv.EnqueueJson(200, """{"object":"list","data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"}]}""");
-        var p = new OpenAiCompatibleProvider("p", "d", "gpt-4o-mini",
-            baseUrl: _srv.BaseUrl.TrimEnd('/'), apiKey: null, extraHeaders: null,
-            retryPolicy: RetryPolicy.NoDelay);
+        var p = new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        {
+            ProviderId = "p",
+            DisplayName = "d",
+            Model = "gpt-4o-mini",
+            BaseUrl = _srv.BaseUrl.TrimEnd('/'),
+            Retry = RetryPolicy.NoDelay,
+        });
 
         var models = await ((IModelCatalog)p).ListModelsAsync(default);
 

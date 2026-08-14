@@ -14,9 +14,18 @@ public sealed class OllamaProvider : OpenAiCompatibleProvider
 
     public OllamaProvider(string providerId, string displayName, string model,
         string? baseUrl = null, HttpClient? client = null, RetryPolicy? retryPolicy = null)
-        : base(providerId, displayName, model,
-            baseUrl ?? "http://localhost:11434/v1", apiKey: null,
-            extraHeaders: null, client: client, retryPolicy: retryPolicy)
+        : base(new OpenAiProviderOptions
+        {
+            ProviderId = providerId,
+            DisplayName = displayName,
+            Model = model,
+            BaseUrl = baseUrl ?? "http://localhost:11434/v1",
+            Client = client,
+            Retry = retryPolicy,
+
+            // NO KEY AND NO CACHE CONTROL. Ollama is local: it needs no credential, and filling its
+            // own memory costs nothing, so a breakpoint would be a field it ignores.
+        })
     {
         var effectiveBaseUrl = (baseUrl ?? "http://localhost:11434/v1").TrimEnd('/');
         // Ollama's native API (tags, pull, etc.) lives outside the OpenAI-compatible /v1 prefix.

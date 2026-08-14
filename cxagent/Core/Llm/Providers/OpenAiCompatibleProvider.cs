@@ -19,6 +19,9 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     private readonly string? _apiKey;
     private readonly IReadOnlyDictionary<string, string>? _extraHeaders;
     private readonly RetryPolicy _retry;
+    /// <summary>See OpenAiProviderOptions.CacheControl. Read by ChatAsync and ChatStreamAsync when
+    /// they build a request body.</summary>
+    private readonly bool _cacheControl;
 
     public string ProviderId { get; }
     public string DisplayName { get; }
@@ -52,18 +55,17 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     /// Clones re-pass the original argument so a clone never silently swaps out a test's fake handler.
     /// </summary>
 
-    public OpenAiCompatibleProvider(string providerId, string displayName, string model,
-        string baseUrl, string? apiKey, IReadOnlyDictionary<string, string>? extraHeaders = null,
-        HttpClient? client = null, RetryPolicy? retryPolicy = null)
+    public OpenAiCompatibleProvider(OpenAiProviderOptions options)
     {
-        ProviderId = providerId;
-        DisplayName = displayName;
-        _model = model;
-        _baseUrl = baseUrl.TrimEnd('/');
-        _apiKey = apiKey;
-        _extraHeaders = extraHeaders;
-        _client = client ?? Shared;
-        _retry = retryPolicy ?? RetryPolicy.Default;
+        ProviderId = options.ProviderId;
+        DisplayName = options.DisplayName;
+        _model = options.Model;
+        _baseUrl = options.BaseUrl.TrimEnd('/');
+        _apiKey = options.ApiKey;
+        _extraHeaders = options.ExtraHeaders;
+        _client = options.Client ?? Shared;
+        _retry = options.Retry ?? RetryPolicy.Default;
+        _cacheControl = options.CacheControl;
     }
 
     /// <inheritdoc/>

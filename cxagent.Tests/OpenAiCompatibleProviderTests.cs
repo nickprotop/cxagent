@@ -13,8 +13,16 @@ public class OpenAiCompatibleProviderTests : IDisposable
     public void Dispose() => _srv.Dispose();
 
     private OpenAiCompatibleProvider Make(IReadOnlyDictionary<string, string>? extra = null) =>
-        new("openai", "OpenAI gpt-x", "gpt-x", _srv.BaseUrl, "sk-test", extra,
-            retryPolicy: RetryPolicy.NoDelay);
+        new(new OpenAiProviderOptions
+        {
+            ProviderId = "openai",
+            DisplayName = "OpenAI gpt-x",
+            Model = "gpt-x",
+            BaseUrl = _srv.BaseUrl,
+            ApiKey = "sk-test",
+            ExtraHeaders = extra,
+            Retry = RetryPolicy.NoDelay,
+        });
 
     private static List<ChatMessage> Msgs() => new()
     {

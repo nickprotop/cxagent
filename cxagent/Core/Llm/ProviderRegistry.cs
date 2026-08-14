@@ -116,8 +116,16 @@ public sealed class ProviderRegistry
         {
             "anthropic" => new AnthropicProvider(
                 name, display, cfg.Model, cfg.ApiKey ?? "", client: client),
-            "openai-compatible" => new OpenAiCompatibleProvider(
-                name, display, cfg.Model, cfg.BaseUrl ?? "", cfg.ApiKey, cfg.ExtraHeaders, client: client),
+            "openai-compatible" => new OpenAiCompatibleProvider(new OpenAiProviderOptions
+            {
+                ProviderId = name,
+                DisplayName = display,
+                Model = cfg.Model,
+                BaseUrl = cfg.BaseUrl ?? "",
+                ApiKey = cfg.ApiKey,
+                ExtraHeaders = cfg.ExtraHeaders,
+                Client = client,
+            }),
             "ollama" => new OllamaProvider(
                 name, display, cfg.Model, cfg.BaseUrl, client: client),
             _ => throw new InvalidOperationException(
