@@ -13,9 +13,10 @@ namespace CxAgent.Core.Llm.Providers;
 public static class OpenAiWire
 {
     public static JsonObject BuildRequestBody(string model, List<ChatMessage> messages,
-        List<ToolDefinition>? tools, bool stream)
+        List<ToolDefinition>? tools, bool stream, bool cacheSystemPrompt = false)
     {
         var msgs = new JsonArray();
+        var systemMarked = false;
         foreach (var m in messages)
         {
             var obj = new JsonObject { ["role"] = m.Role };
@@ -41,6 +42,28 @@ public static class OpenAiWire
                         }
                     });
                 obj["tool_calls"] = arr;
+            }
+            else if (cacheSystemPrompt && !systemMarked && m.Role == "system")
+            {
+                // THE BREAKPOINT, ON THE LONGEST STABLE PREFIX. Anthropic and Google cache nothing
+                // without it; the content array is the only shape that carries one.
+                //
+                // THE SYSTEM PROMPT IS THE RIGHT PLACE because it is provably stable: the task list
+                // was moved out of it and MCP instructions are pinned on first use, both precisely
+                // so this prefix stops churning. Marking a prefix that changes would pay the write
+                // cost and never collect the read.
+                //
+                // ONCE. A second breakpoint doubles what is stored, and therefore what is billed.
+                systemMarked = true;
+                obj["content"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["type"] = "text",
+                        ["text"] = m.Content,
+                        ["cache_control"] = new JsonObject { ["type"] = "ephemeral" },
+                    },
+                };
             }
             else obj["content"] = m.Content;
             msgs.Add(obj);

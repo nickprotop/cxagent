@@ -88,7 +88,8 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, CancellationToken ct)
     {
-        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false).ToJsonString();
+        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: false,
+            cacheSystemPrompt: _cacheControl).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         var json = await resp.Content.ReadAsStringAsync(ct);
@@ -99,7 +100,8 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
         List<ToolDefinition>? tools, [EnumeratorCancellation] CancellationToken ct)
     {
-        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true).ToJsonString();
+        var body = OpenAiWire.BuildRequestBody(_model, messages, tools, stream: true,
+            cacheSystemPrompt: _cacheControl).ToJsonString();
         using var resp = await LlmHttpRetry.SendWithRetryAsync(
             _client, () => BuildRequest(body), ProviderId, _retry, ct);
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
