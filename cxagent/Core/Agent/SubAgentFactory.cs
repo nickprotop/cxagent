@@ -67,6 +67,11 @@ public sealed class SubAgentFactory
         /// <summary>The session's provider, unless a type names its own.</summary>
         public required ILlmProvider Provider { get; init; }
 
+        /// <summary>Which `providers` entry that is, so a child's spend is attributed to the
+        /// instance it actually used rather than merged with another entry serving the same
+        /// model.</summary>
+        public string? InstanceName { get; init; }
+
         /// <summary>The tools a child may call — the parent's registry, not a narrowed copy.</summary>
         public required PluginRegistry Plugins { get; init; }
 
@@ -132,12 +137,18 @@ public sealed class SubAgentFactory
         /// failure the window field documents: the child measures pressure against a ceiling its
         /// model does not have. The threshold follows the window for the same reason.</para>
         /// </summary>
-        public SubAgentRuntime With(ILlmProvider provider, int? contextWindow) => this with
-        {
-            Provider = provider,
-            ContextWindow = contextWindow,
-            CompressAbove = ThresholdFor?.Invoke(contextWindow) ?? CompressAbove,
-        };
+        public SubAgentRuntime With(ILlmProvider provider, int? contextWindow, string? instanceName)
+            => this with
+            {
+                Provider = provider,
+                ContextWindow = contextWindow,
+                CompressAbove = ThresholdFor?.Invoke(contextWindow) ?? CompressAbove,
+
+                // THE NAME MOVES WITH THE PROVIDER, for the same reason the window does: a child on
+                // another entry attributed under the parent's name is spend recorded against a model
+                // it never called.
+                InstanceName = instanceName,
+            };
     }
 
     private readonly SubAgentRuntime _runtime;
@@ -224,7 +235,7 @@ public sealed class SubAgentFactory
         // A NEW RECORD PER CHILD, never a mutation of the shared one: two children spawned in one
         // turn must not be able to see each other's provider.
         var runtime = type?.Provider is not null
-            ? _runtime.With(type.Provider, type.ContextWindow)
+            ? _runtime.With(type.Provider, type.ContextWindow, type.InstanceName)
             : _runtime;
 
         var provider = runtime.Provider;
@@ -254,6 +265,7 @@ public sealed class SubAgentFactory
             // is the failure the whole design exists to prevent.
             context: new AgentContext(window),
             workingDir: _runtime.WorkingDir,
+            instanceName: runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
             mcp: _runtime.Mcp,
             // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what

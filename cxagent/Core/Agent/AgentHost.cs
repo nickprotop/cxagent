@@ -336,6 +336,15 @@ public sealed class AgentHost : IDisposable
         public required ILlmProvider Provider { get; init; }
         public required PluginRegistry Plugins { get; init; }
 
+        /// <summary>
+        /// Which <c>providers</c> entry this is, for spend attribution and the UI's label.
+        ///
+        /// <para>Two entries can serve the SAME model on different endpoints with different windows,
+        /// so <c>instance:model</c> is the smallest thing that identifies what was actually talked
+        /// to. The driver cannot supply it — an instance name belongs to config, not to a driver.</para>
+        /// </summary>
+        public string? InstanceName { get; init; }
+
         /// <summary>Where the session works. Data, never the process's own directory.</summary>
         public string? WorkingDir { get; init; }
 
@@ -519,6 +528,17 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public const int DefaultTurnCeiling = 300;
 
+    /// <summary>
+    /// How this session's spend is attributed: <c>instance:model</c> when the instance is known.
+    ///
+    /// <para>The same string the UI shows and the same one <c>/stats</c> groups by, so a figure in
+    /// the dashboard and a name in the panel do not have to be reconciled by the reader.</para>
+    /// </summary>
+    private string SpendLabel =>
+        _runtime.InstanceName is { Length: > 0 } instance
+            ? $"{instance}:{_runtime.Provider.ModelId}"
+            : _runtime.Provider.ModelId;
+
     private Agent BuildAgent()
     {
         var agent = new Agent(_runtime.Provider, _runtime.Plugins, Ledger, _sink, _jobPanel, _stores.Logs,
@@ -535,6 +555,7 @@ public sealed class AgentHost : IDisposable
             // the process instead. Same value in practice, different sources — which is only ever
             // true until something moves the process.
             workingDir: _runtime.WorkingDir,
+            instanceName: _runtime.InstanceName,
             globalInstructionsDir: _runtime.GlobalInstructionsDir,
             mcp: _runtime.Mcp,
             briefing: _runtime.Briefing,
@@ -584,7 +605,7 @@ public sealed class AgentHost : IDisposable
             // turn for the same reason resume is: a crash is exactly when a final write never comes.
             _turns++;
             _stores.History?.SaveSession(new SessionRecord(
-                agent.Id, _runtime.WorkingDir, _runtime.Provider.ModelId, Mode.ToString(),
+                agent.Id, _runtime.WorkingDir, SpendLabel, Mode.ToString(),
                 Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
                 _startedAt, DateTimeOffset.UtcNow));
         };
@@ -645,7 +666,7 @@ public sealed class AgentHost : IDisposable
         CompressionRun.RunAsync(Context, _runtime.Provider, _jobPanel, _agent.Id,
             "compress context · requested", usage =>
             {
-                Ledger.Record(usage, _runtime.Provider.ModelId);
+                Ledger.Record(usage, SpendLabel);
                 TokensUpdated?.Invoke(this, Ledger.TotalTokens);
             }, ct, compressed: (b, a) =>
             {

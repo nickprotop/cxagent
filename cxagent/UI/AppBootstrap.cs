@@ -359,6 +359,7 @@ public static class AppBootstrap
             var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = res.Provider!,
+                InstanceName = res.InstanceName,
                 Plugins = plugins,
 
                 // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
@@ -397,6 +398,7 @@ public static class AppBootstrap
                 new AgentHost.AgentRuntime
                 {
                     Provider = res.Provider!,
+                    InstanceName = res.InstanceName,
                     Plugins = plugins,
 
                     // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.

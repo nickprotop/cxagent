@@ -149,11 +149,11 @@ public static class StatsDashboard
                             + Muted($"{p.Sessions} session{(p.Sessions == 1 ? "" : "s")}"));
         }
 
-        // --- by model ----------------------------------------------------------------------------
+        // --- by instance:model ---------------------------------------------------------------------
         if (models.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine(Head("By model"));
+            sb.AppendLine(Head("By instance"));
             sb.AppendLine();
             var max = (double)models.Max(m => m.TotalTokens);
             foreach (var m in models.Take(6))

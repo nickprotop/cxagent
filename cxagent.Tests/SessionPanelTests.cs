@@ -261,9 +261,9 @@ public class SessionPanelTests
     // ---- spend by model -------------------------------------------------------------------------
 
     /// <summary>
-    /// TWO MODELS EARN A BREAKDOWN. It appears the moment a second model is involved — today that
-    /// means a sub-agent type on another provider instance, which is exactly when "what did that
-    /// cost" stops having an obvious answer.
+    /// TWO INSTANCES EARN A BREAKDOWN, and it is keyed by instance:model rather than by model.
+    /// Two `providers` entries can serve the SAME model against different endpoints with different
+    /// windows — merging them into one row answers nothing about what was actually called.
     /// </summary>
     [Fact]
     public void Refresh_WithTwoModels_ShowsSpendForEach()
@@ -279,7 +279,7 @@ public class SessionPanelTests
             SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 },
         });
 
-        Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Tokens by instance", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3.6-35b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3-1b", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
@@ -312,7 +312,7 @@ public class SessionPanelTests
             },
         });
 
-        Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Tokens by instance", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("↑3.8k", panel.RenderedText, StringComparison.Ordinal);
     }
 
@@ -341,7 +341,7 @@ public class SessionPanelTests
 
         var text = panel.RenderedText;
 
-        Assert.Contains("Tokens by model", text, StringComparison.Ordinal);
+        Assert.Contains("Tokens by instance", text, StringComparison.Ordinal);
         Assert.Contains("Tokens by agent", text, StringComparison.Ordinal);
 
         // And the two agent lines still sum to the session total the status bar shows — which is why
@@ -428,5 +428,59 @@ public class SessionPanelTests
         // "used", not "used.gguf" — Short() strips the extension every local model carries.
         Assert.DoesNotContain("unused", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("used · 4,000", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// TWO INSTANCES SERVING ONE MODEL STAY SEPARATE. This is the case the whole key exists for: a
+    /// user with `local` and `small` pointed at the same server, different windows, would otherwise
+    /// see one merged row and no way to tell which endpoint the spend went to.
+    /// </summary>
+    [Fact]
+    public void Refresh_TwoInstancesOfOneModel_AreNotMerged()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 3_000,
+            ContextWindow = 1000,
+            Endpoint = "",
+            SpendByModel = new Dictionary<string, int>
+            {
+                ["local:qwen3"] = 2_000,
+                ["small:qwen3"] = 1_000,
+            },
+        });
+
+        var text = panel.RenderedText;
+        Assert.Contains("local:qwen3", text, StringComparison.Ordinal);
+        Assert.Contains("small:qwen3", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE INSTANCE SURVIVES TRUNCATION. A long model id is shortened to fit 24 columns, but the
+    /// instance is the part the user chose and the part that tells two rows apart — trimming it
+    /// would undo the reason the breakdown is keyed this way.
+    /// </summary>
+    [Fact]
+    public void Refresh_ShorteningALongId_KeepsTheInstanceWhole()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 3_000,
+            ContextWindow = 1000,
+            Endpoint = "",
+            SpendByModel = new Dictionary<string, int>
+            {
+                ["local:qwen3.6-35b-a3b-ud-iq4_xs.gguf"] = 2_000,
+                ["small:qwen3.6-35b-a3b-ud-iq4_xs.gguf"] = 1_000,
+            },
+        });
+
+        var text = panel.RenderedText;
+        Assert.Contains("local:", text, StringComparison.Ordinal);
+        Assert.Contains("small:", text, StringComparison.Ordinal);
     }
 }

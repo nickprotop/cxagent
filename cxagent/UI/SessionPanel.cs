@@ -178,8 +178,9 @@ public sealed class SessionPanel
         // --- what the session is talking to ---
         //
         // NO Model FIELD. The panel does not name the model — the banner, the composer line and the
-        // status bar all do, and "Tokens by model" below is keyed by MODEL ID rather than instance
-        // because spend is attributed to the model two instances may share.
+        // status bar all do. The spend breakdown below is keyed by INSTANCE:MODEL, because two
+        // `providers` entries can serve the same model on different endpoints and merging them into
+        // one row answers nothing.
         public string Endpoint { get; init; } = "";
         public string? WorkingDirectory { get; init; }
         public string SessionId { get; init; } = "";
@@ -375,7 +376,7 @@ public sealed class SessionPanel
         // everything indented under it.
         if (byModel.Count > 0)
         {
-            Section(lines, "Tokens by model");
+            Section(lines, "Tokens by instance");
             foreach (var (modelId, spent) in byModel)
             {
                 lines.Add(Value($"{Short(modelId)} · {spent:N0}"));
@@ -569,12 +570,23 @@ public sealed class SessionPanel
     /// what distinguishes two models; the quantisation suffix rarely does, so the tail is what goes.
     /// </para>
     /// </summary>
-    private static string Short(string modelId)
+    private static string Short(string label)
     {
+        // THE INSTANCE IS KEPT WHOLE, and the model is what gets shortened. The label is
+        // `instance:model`, and the instance is the part a user chose and the part that
+        // distinguishes two rows serving the SAME model — trimming it would undo the whole reason
+        // the breakdown is keyed this way.
+        var cut = label.IndexOf(':');
+        if (cut > 0)
+        {
+            var instance = label[..cut];
+            return $"{instance}:{Short(label[(cut + 1)..])}";
+        }
+
         // A trailing file extension is noise here: every local model has one and none of them tells
         // a user which model they are looking at.
-        var name = modelId.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)
-            ? modelId[..^5] : modelId;
+        var name = label.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)
+            ? label[..^5] : label;
         if (name.Length <= 17) return name;
 
         // KEEP BOTH ENDS. Trimming only the tail was tried and is wrong on exactly the ids this

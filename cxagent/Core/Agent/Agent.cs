@@ -44,6 +44,18 @@ public sealed class Agent
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
     private readonly string? _workingDir;
+    private readonly string? _instanceName;
+
+    /// <summary>
+    /// How this agent's spend is attributed: <c>instance:model</c> when the instance is known.
+    ///
+    /// <para>The same label the UI shows, so a figure in <c>/stats</c> and a name in the panel are
+    /// the same string rather than two spellings a reader has to reconcile.</para>
+    /// </summary>
+    private string SpendLabel =>
+        _instanceName is { Length: > 0 } instance
+            ? $"{instance}:{_provider.ModelId}"
+            : _provider.ModelId;
 
     /// <summary>
     /// This agent's identity, for its whole life. Keys its log directory and its job rows.
@@ -371,8 +383,17 @@ public sealed class Agent
         string? callerContext = null,
         string? label = null,
         Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
-        string? workingDir = null)
+        string? workingDir = null,
+        string? instanceName = null)
     {
+        // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
+        //
+        // Two `providers` entries can serve the SAME model against different endpoints with
+        // different windows — `local:qwen3` and `small:qwen3` — and keying spend by model alone
+        // merges them into one row that answers nothing. The provider driver cannot supply this: an
+        // instance NAME is config's, not the driver's.
+        _instanceName = instanceName;
+
         // THE DIRECTORY THIS AGENT WORKS IN, as data.
         //
         // It used to read Directory.GetCurrentDirectory() at every use, which is PROCESS-global —
@@ -760,7 +781,7 @@ public sealed class Agent
             // model, and a summarisation turn that vanished from the per-model tally
             // would make the numbers disagree with the session total for no reason a
             // reader could work out.
-            u => { _ledger.Record(u, _provider.ModelId, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
+            u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
                     {
                         ContextCompressed?.Invoke(b, a);
                         if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
@@ -776,7 +797,7 @@ public sealed class Agent
                 throw;
             }
 
-            _ledger.Record(response.Usage, _provider.ModelId, _isSubAgent);
+            _ledger.Record(response.Usage, SpendLabel, _isSubAgent);
             RecordOwnSpend(response.Usage);
 
             // RECORD IT ON THE CONTEXT, which needs both the reading and the size it was taken at to
@@ -1148,7 +1169,7 @@ public sealed class Agent
         try
         {
             var response = await StreamTurnAsync(ask, tools, ct, turnId);
-            _ledger.Record(response.Usage, _provider.ModelId, _isSubAgent);
+            _ledger.Record(response.Usage, SpendLabel, _isSubAgent);
             RecordOwnSpend(response.Usage);
             return ModelOutput.StripReasoning(response.Text);
         }
@@ -1831,7 +1852,7 @@ public sealed class Agent
             // model, and a summarisation turn that vanished from the per-model tally
             // would make the numbers disagree with the session total for no reason a
             // reader could work out.
-            u => { _ledger.Record(u, _provider.ModelId, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
+            u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
             {
                 ContextCompressed?.Invoke(b, a);
                 // The context re-estimated its own occupancy while compacting; publish it so the

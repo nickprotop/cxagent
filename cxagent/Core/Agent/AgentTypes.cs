@@ -25,7 +25,14 @@ public sealed record AgentType(
     string Briefing,
     ILlmProvider? Provider,
     int? ContextWindow,
-    int? MaxTurns);
+    int? MaxTurns,
+    /// <summary>
+    /// Which `providers` entry <see cref="Provider"/> came from, for spend attribution.
+    ///
+    /// <para>Resolved here because this is where config's instance NAME is still in hand — the
+    /// driver itself does not carry one, and two entries can serve the same model.</para>
+    /// </summary>
+    string? InstanceName = null);
 
 /// <summary>
 /// The catalog a spawn resolves a type name against.
@@ -70,6 +77,7 @@ public sealed class AgentTypeCatalog
         {
             ILlmProvider? provider = null;
             int? window = null;
+            string? instanceName = null;
 
             // THE PROVIDER AND ITS WINDOW, RESOLVED TOGETHER. Config validation already rejected a
             // name that is not configured, so a miss here means the registry and the settings
@@ -78,10 +86,12 @@ public sealed class AgentTypeCatalog
                 && providers.TryGet(instance, out var resolved))
             {
                 provider = resolved;
+                instanceName = instance;
                 providers.InstanceWindows.TryGetValue(instance, out window);
             }
 
-            _types[name] = new AgentType(name, cfg.Briefing, provider, window, cfg.MaxTurns);
+            _types[name] = new AgentType(name, cfg.Briefing, provider, window, cfg.MaxTurns,
+                instanceName);
         }
 
         All = [_types[DefaultTypeName],
