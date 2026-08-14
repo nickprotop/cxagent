@@ -213,6 +213,13 @@ public sealed class SessionPanel
         /// which is every local endpoint. See TokenLedger.CacheWrittenTokens.</summary>
         public int CacheWrittenTokens { get; init; }
 
+        /// <summary>What each instance has cost, for those that reported. An instance that reported
+        /// nothing is ABSENT — see TokenLedger.CostByInstance.</summary>
+        public IReadOnlyDictionary<string, decimal>? CostByInstance { get; init; }
+
+        /// <summary>The session's total, or null when nothing reported.</summary>
+        public decimal? TotalCost { get; init; }
+
         /// <summary>The same rate for THIS agent and for its workers, separately. Null for either
         /// when nothing reported — see TokenLedger.CacheHitRateByAgent.</summary>
         public double? OwnCacheHitRate { get; init; }
@@ -421,6 +428,12 @@ public sealed class SessionPanel
                     && state.SplitByModel.TryGetValue(modelId, out var s)
                     && (s.Input > 0 || s.Output > 0))
                     lines.Add(Muted($"  ↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
+
+                // THIS INSTANCE'S COST, when it reported one. Indented under its row like the ↑/↓
+                // split above, because it describes that row rather than the section.
+                if (state.CostByInstance is not null
+                    && state.CostByInstance.TryGetValue(modelId, out var cost))
+                    lines.Add(Muted($"  {Money(cost)}"));
             }
 
             // CACHE HIT RATE, once, under the list rather than per instance — the ledger tracks it
@@ -443,6 +456,12 @@ public sealed class SessionPanel
                     ? $"  cache {rate:P0} · wrote {Compact(state.CacheWrittenTokens)}"
                     : $"  cache {rate:P0}"));
             }
+
+            // THE SESSION TOTAL, unindented like the cache line — both describe the section rather
+            // than any one row. Shown even on a single-instance session: a reader should not have to
+            // know whether one row or five produced the figure.
+            if (state.TotalCost is { } total)
+                lines.Add(Muted($"session {Money(total)}"));
         }
 
         // WORKERS, WHENEVER THEY SPENT ANYTHING — the one split the model breakdown cannot express.
@@ -606,6 +625,16 @@ public sealed class SessionPanel
         n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
         : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
         : n.ToString();
+
+    /// <summary>
+    /// Money, at the precision the figure deserves.
+    ///
+    /// <para>A REAL DRIVE COST $0.0147 — rendered as "$0.01" that is a number telling the reader
+    /// almost nothing, and as "$0.00" it would be a lie. Four decimals while the figure is
+    /// fractions of a cent, two once it is not.</para>
+    /// </summary>
+    private static string Money(decimal amount) =>
+        amount < 0.01m ? $"${amount:0.0000}" : $"${amount:0.00}";
 
     private static void Section(List<string> lines, string title)
     {

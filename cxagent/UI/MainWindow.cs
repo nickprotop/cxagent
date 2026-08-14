@@ -363,6 +363,12 @@ public sealed class MainWindow : IDisposable
 
         /// <summary>Zero where warming is free, which is every local endpoint.</summary>
         public int CacheWrittenTokens { get; init; }
+
+        /// <summary>What each instance has cost; absent for instances that reported nothing.</summary>
+        public IReadOnlyDictionary<string, decimal>? CostByInstance { get; init; }
+
+        /// <summary>The session total, or null when nothing reported.</summary>
+        public decimal? TotalCost { get; init; }
     }
 
     /// <summary>Takes one reading of the ledger and repaints. See <see cref="SpendReading"/>.</summary>
@@ -376,6 +382,8 @@ public sealed class MainWindow : IDisposable
         _ownCacheHitRate = reading.CacheByAgent.Own;
         _workerCacheHitRate = reading.CacheByAgent.Workers;
         _cacheWritten = reading.CacheWrittenTokens;
+        _costByInstance = reading.CostByInstance;
+        _totalCost = reading.TotalCost;
         RefreshSessionPanel();
     }
 
@@ -384,6 +392,12 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>Input tokens written into the provider's cache; zero where warming is free.</summary>
     private int _cacheWritten;
+
+    /// <summary>What each instance has cost; absent for instances that reported nothing.</summary>
+    private IReadOnlyDictionary<string, decimal>? _costByInstance;
+
+    /// <summary>The session total, or null when nothing reported.</summary>
+    private decimal? _totalCost;
 
     /// <summary>The same, split by who spent it — see TokenLedger.CacheHitRateByAgent.</summary>
     private double? _ownCacheHitRate;
@@ -1113,6 +1127,8 @@ public sealed class MainWindow : IDisposable
             SplitByModel = _splitByModel,
             CacheHitRate = _cacheHitRate,
             CacheWrittenTokens = _cacheWritten,
+            CostByInstance = _costByInstance,
+            TotalCost = _totalCost,
             OwnCacheHitRate = _ownCacheHitRate,
             WorkerCacheHitRate = _workerCacheHitRate,
 

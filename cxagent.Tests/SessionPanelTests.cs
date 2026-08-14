@@ -522,4 +522,103 @@ public class SessionPanelTests
         Assert.Contains("local:", text, StringComparison.Ordinal);
         Assert.Contains("small:", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// BOTH FIGURES: per instance, and a session total. Per instance because which endpoint is
+    /// spending is the actionable fact; a total because "what has this cost me" is the question
+    /// actually being asked, and making the reader add rows is arithmetic the panel can do.
+    /// </summary>
+    [Fact]
+    public void Refresh_ShowsCostPerInstance_AndASessionTotal()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int>
+            {
+                ["openrouter:gemini"] = 33_416,
+                ["other:model"] = 1_000,
+            },
+            CostByInstance = new Dictionary<string, decimal>
+            {
+                ["openrouter:gemini"] = 0.0026m,
+                ["other:model"] = 0.0004m,
+            },
+            TotalCost = 0.0030m,
+        });
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("$0.0026", text, StringComparison.Ordinal);
+        Assert.Contains("$0.0004", text, StringComparison.Ordinal);
+        Assert.Contains("session $0.0030", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NOTHING REPORTED, NOTHING SHOWN. A local-only session must not read "$0.00" — that claims a
+    /// measurement never made, the same way a 0% cache rate would for a provider that never
+    /// reported one.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithNoCostReported_ShowsNoCostAtAll()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["local:qwen3"] = 120_400 },
+        });
+
+        var text = panel.RenderedText;
+
+        Assert.DoesNotContain("$", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("session", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE TOTAL IS THE SUM OF THE ROWS. Saving the reader that addition is the reason the session
+    /// line exists, so the arithmetic is the thing most worth pinning: two paid instances, and the
+    /// unindented line must equal what they add to.
+    /// </summary>
+    [Fact]
+    public void Refresh_TheSessionTotal_EqualsTheSumOfTheInstanceCosts()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["a:m"] = 10, ["b:m"] = 20 },
+            CostByInstance = new Dictionary<string, decimal> { ["a:m"] = 0.0026m, ["b:m"] = 0.0011m },
+            TotalCost = 0.0037m,
+        });
+
+        Assert.Contains("session $0.0037", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>A MIXED SESSION shows a cost against the paid instance and none against the local
+    /// one — the honest split rather than an invented zero.</summary>
+    [Fact]
+    public void Refresh_WithAMixedSession_CostsOnlyTheInstanceThatReported()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int>
+            {
+                ["local:qwen3"] = 120_400,
+                ["openrouter:gemini"] = 33_416,
+            },
+            CostByInstance = new Dictionary<string, decimal> { ["openrouter:gemini"] = 0.0026m },
+            TotalCost = 0.0026m,
+        });
+
+        var lines = panel.RenderedText.Split('\n');
+        var localIndex = Array.FindIndex(lines, l => l.Contains("local:qwen3", StringComparison.Ordinal));
+
+        // The line after the local row is its ↑/↓ split or the next instance — never a cost.
+        Assert.DoesNotContain("$", lines[localIndex + 1], StringComparison.Ordinal);
+        Assert.Contains("$0.0026", panel.RenderedText, StringComparison.Ordinal);
+    }
 }

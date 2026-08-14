@@ -369,6 +369,8 @@ public static class AppBootstrap
                     CacheHitRate = runner.Ledger.CacheHitRate,
                     CacheByAgent = runner.Ledger.CacheHitRateByAgent,
                     CacheWrittenTokens = runner.Ledger.CacheWrittenTokens,
+                    CostByInstance = runner.Ledger.CostByInstance,
+                    TotalCost = runner.Ledger.TotalCost,
                 });
             });
             runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
