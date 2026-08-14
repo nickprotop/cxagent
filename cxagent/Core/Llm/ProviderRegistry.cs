@@ -80,9 +80,19 @@ public sealed class ProviderRegistry
     /// <paramref name="defaultName"/> may be null or name a missing instance, matching Build's
     /// tolerance of a config with no <c>defaultProvider</c>.
     /// </summary>
+    /// <param name="windows">
+    /// Per-instance context windows, when the caller knows them. Optional because the mock path and
+    /// most tests do not — and "unknown" is the honest answer there, not a guess.
+    /// </param>
     public static ProviderRegistry FromProviders(
-        IReadOnlyDictionary<string, ILlmProvider> providers, string? defaultName) =>
-        new(new Dictionary<string, ILlmProvider>(providers), defaultName);
+        IReadOnlyDictionary<string, ILlmProvider> providers, string? defaultName,
+        IReadOnlyDictionary<string, int?>? windows = null) =>
+        new(new Dictionary<string, ILlmProvider>(providers), defaultName)
+        {
+            _windows = windows is null
+                ? new Dictionary<string, int?>(StringComparer.Ordinal)
+                : new Dictionary<string, int?>(windows, StringComparer.Ordinal),
+        };
 
     public static ProviderRegistry Build(ProviderSettings settings, HttpClient? client = null)
     {

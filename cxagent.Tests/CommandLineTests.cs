@@ -201,4 +201,48 @@ public class CommandLineTests
         Assert.Equal(AgentMode.Single, options.Mode);
         Assert.Null(options.Error);
     }
+
+    // --- version and model ---
+
+    [Fact]
+    public void Version_AsksToPrintAndExit()
+    {
+        Assert.True(CommandLine.Parse(["--version"]).ShowVersion);
+        Assert.True(CommandLine.Parse(["-v"]).ShowVersion);
+        Assert.False(CommandLine.Parse([]).ShowVersion);
+    }
+
+    /// <summary>
+    /// --model NAMES A CONFIGURED INSTANCE, not a model id. A model belongs to an instance here,
+    /// along with its endpoint and its context window — accepting a bare id would mean inventing an
+    /// instance with no window, and an unknown window is the one thing that silently breaks
+    /// compaction.
+    /// </summary>
+    [Fact]
+    public void Model_TakesAnInstanceName_InBothForms()
+    {
+        Assert.Equal("claude", CommandLine.Parse(["--model", "claude"]).Instance);
+        Assert.Equal("claude", CommandLine.Parse(["--model=claude"]).Instance);
+        Assert.Null(CommandLine.Parse([]).Instance);
+    }
+
+    [Fact]
+    public void Model_WithNoValue_IsAnError()
+    {
+        Assert.NotNull(CommandLine.Parse(["--model"]).Error);
+        Assert.NotNull(CommandLine.Parse(["--model="]).Error);
+
+        // A FLAG IS NOT A VALUE — "--model --mock" is a missing name, not an instance called --mock.
+        Assert.NotNull(CommandLine.Parse(["--model", "--mock"]).Error);
+    }
+
+    [Fact]
+    public void Model_CombinesWithTheOtherFlags()
+    {
+        var options = CommandLine.Parse(["--model", "claude", "--mode", "single"]);
+
+        Assert.Equal("claude", options.Instance);
+        Assert.Equal(AgentMode.Single, options.Mode);
+        Assert.Null(options.Error);
+    }
 }

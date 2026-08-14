@@ -859,4 +859,48 @@ public class MainWindowTests
         Assert.True(mw.SessionPanel.Control.Visible);
         Assert.Equal(40, SessionPanel.WidthFor(200));
     }
+
+    /// <summary>
+    /// `general` IS ALWAYS SHOWN, whether or not config names a type.
+    ///
+    /// <para>The panel used to filter it out and read the raw config keys, so a session with no
+    /// configured types showed no Agent types section at all — and delegation looked unavailable to
+    /// anyone who had not written one. `general` is what a bare spawn uses; it is a capability the
+    /// session has, not a placeholder.</para>
+    /// </summary>
+    [Fact]
+    public void SessionPanel_ShowsGeneral_EvenWithNoConfiguredTypes()
+    {
+        var window = new MainWindow(SysOfWidth(140),
+            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>()),
+            Logs());
+        window.Build();
+        window.RefreshSessionPanel();
+
+        Assert.Contains("Agent types", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("general", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>...and it is listed once, first, even when config overrides it.</summary>
+    [Fact]
+    public void SessionPanel_ListsGeneralOnce_WhenConfigAlsoDefinesIt()
+    {
+        var configured = new Dictionary<string, AgentTypeConfig>
+        {
+            ["general"] = new("overridden briefing", null, null),
+            ["explore"] = new("read things", null, null),
+        };
+
+        var window = new MainWindow(SysOfWidth(140),
+            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+            {
+                AgentTypes = configured,
+            },
+            Logs());
+        window.Build();
+        window.RefreshSessionPanel();
+
+        var text = window.SessionPanel.RenderedText;
+        Assert.Contains("general, explore", text, StringComparison.Ordinal);
+    }
 }

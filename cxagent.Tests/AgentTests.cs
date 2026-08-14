@@ -713,6 +713,43 @@ public class AgentTests
     /// exactly <c>maxTurns</c> both when the cap fires AND when a run ends naturally on its last
     /// turn, and the salvage turn raises no <c>TurnCompleted</c> at all.</para>
     /// </summary>
+    /// <summary>
+    /// THE CAP IS PER GOAL, NOT PER SESSION. It bounds one request's tool loop — a runaway inside a
+    /// single prompt — and every new prompt starts counting again.
+    ///
+    /// <para>A session-wide ceiling would be a different feature and a worse one: a long
+    /// conversation of ordinary two-turn exchanges would eventually refuse to answer at all, with
+    /// nothing wrong and nothing to fix. The agent keeps a second counter for its own lifetime
+    /// (used to number log files); folding the two would silently tighten the cap on every prompt
+    /// after the first.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheTurnCap_RestartsForEachGoal()
+    {
+        var provider = new MockLlmProvider();
+
+        // Two goals, each spending a tool call and then answering — two turns apiece, against a
+        // cap of 2. Under a session-wide count the SECOND goal would start already at the limit.
+        for (var goal = 0; goal < 2; goal++)
+        {
+            provider.EnqueueResponse(new LlmResponse
+            {
+                Text = "", StopReason = "tool_use", ToolCalls = [ReadOfNothing($"g{goal}.txt")],
+            });
+            provider.EnqueueResponse(new LlmResponse { Text = $"answer {goal}", StopReason = "end_turn" });
+        }
+
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
+
+        var first = await agent.SendAsync("first goal", CancellationToken.None);
+        var second = await agent.SendAsync("second goal", CancellationToken.None);
+
+        Assert.Equal(SendOutcome.Completed, first.Outcome);
+        Assert.Equal(SendOutcome.Completed, second.Outcome);
+        Assert.Contains("answer 1", second.Text);
+    }
+
     [Fact]
     public async Task SendAsync_AtTheTurnCap_ReportsCapped_NotCompleted()
     {

@@ -12,6 +12,7 @@ but not completed.
 | Command | What it does |
 |---|---|
 | `/help` | Keys and commands |
+| `/model` | Show or switch which configured model this session uses |
 | `/mode` | Show how this session works |
 | `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
 | `/clear` | Wipe the conversation |
@@ -30,6 +31,42 @@ but not completed.
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
 | `/exit` | Quit |
+
+---
+
+## `/model`
+
+```
+Models · 2 configured
+
+  ▸ local     qwen3.6-35b-a3b    212k   · in use
+    small     qwen3.6-35b-a3b     32k
+
+  /model <name> to switch · the conversation is kept
+```
+
+**A `providers` entry is an instance**, not a vendor — a name bound to one endpoint and one model.
+So `fast` and `careful` can be the same server with different models, and switching "the model" and
+switching "the provider" are the same act. `/model <name>` takes an exact name or an unambiguous
+prefix; an ambiguous one names the candidates rather than guessing.
+
+**The conversation is kept.** That is the point — you switch because the work got harder or cheaper,
+not to start again. The spend carries too, so `/stats` still shows the whole session, split by model.
+
+**The context window follows the model**, which is the part worth watching. Switching to a smaller
+one does not fail — the turn loop measures pressure before every send and compacts if it must — but
+a conversation that fitted may now have to be summarised, so the switch says so:
+
+```
+small · qwen3.6-35b-a3b · 32k window
+The conversation is kept. Sub-agents use this too unless their type names another provider.
+Smaller window than before (212k → 32k); long conversations will compact sooner.
+```
+
+**Not persisted**, like `/mode`. Config is Settings' job (F5), which is also where you add a provider
+or edit an API key. `cxagent --model <name>` starts a session on one without touching config.
+
+Declined while a turn is running: re-wiring replaces the agent that turn is writing into.
 
 ---
 
@@ -329,6 +366,8 @@ An earlier session here ended without closing (13 messages). /sessions to see it
 Three flags that concern sessions, alongside `--mock` and `--mode <single|fan-out>`.
 
 ```bash
+cxagent --version               # print the version and exit
+cxagent --model claude          # start on a configured instance, without editing config
 cxagent --sessions              # print this folder's sessions and exit
 cxagent --sessions all          # every folder
 cxagent --resume                # continue the most recent unfinished session here

@@ -1,3 +1,4 @@
+using System.Reflection;
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
@@ -17,6 +18,22 @@ namespace CxAgent.UI;
 /// </summary>
 public static class AppBootstrap
 {
+    /// <summary>
+    /// What this build calls itself.
+    ///
+    /// <para>FROM THE ASSEMBLY, not a constant: the release workflow passes <c>-p:Version</c> at
+    /// publish, so a hardcoded string here would be right only until the next tag and wrong
+    /// silently thereafter. A local build reports whatever the SDK defaulted to, which is honest —
+    /// it is not a release.</para>
+    /// </summary>
+    private static string Version() =>
+        System.Reflection.Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            // A '+' suffix is the source-revision the SDK appends; the version is what precedes it.
+            ?.Split('+')[0]
+        ?? "unknown";
+
     /// <summary>
     /// The session <c>--resume</c> asked for, or why there is not one.
     ///
@@ -72,6 +89,15 @@ public static class AppBootstrap
             return 2;
         }
 
+        // --version PRINTS AND EXITS, before anything reads config or builds a window. It is the
+        // one question you ask a binary you are not sure about, and it must never depend on the app
+        // being able to start.
+        if (options.ShowVersion)
+        {
+            Console.WriteLine($"cxagent {Version()}");
+            return 0;
+        }
+
         bool useMock = options.UseMock;
         var startupMode = options.Mode;
         var paths = new AppPaths();
@@ -96,6 +122,20 @@ public static class AppBootstrap
             .ToDictionary(e => (string)e.Key, e => (string)(e.Value ?? ""));
 
         var resolution = ProviderResolver.Resolve(paths, env, useMock);
+
+        // --model OVERRIDES defaultProvider FOR THIS RUN ONLY, without touching config. Same rule
+        // /model follows: naming an instance that is not configured stops rather than falling back,
+        // because silently starting on the model the user was trying to avoid is the worst outcome.
+        if (options.Instance is { } wanted && !useMock)
+        {
+            if (ProviderResolver.ResolveInstance(paths, env, wanted) is not { } chosen)
+            {
+                Console.Error.WriteLine($"cxagent: no provider called '{wanted}' in config.");
+                return 2;
+            }
+
+            resolution = chosen;
+        }
 
         var driver = new NetConsoleDriver();
         var system = new ConsoleWindowSystem(driver,
@@ -176,6 +216,15 @@ public static class AppBootstrap
         // next WireRunner and cleared, so an F5 provider swap later in the session does not silently
         // re-restore a context the user has already moved past.
         SessionSnapshot? pendingResume = null;
+
+        /// The instance /model switches BY — the config key, not the driver's display name.
+        var activeInstance = resolution.InstanceName;
+
+        // A LEDGER THAT MUST SURVIVE THE NEXT RE-WIRE, or null for the usual fresh start. Only a
+        // model switch sets it: a reconfiguration is a new spend context, a switch is the same
+        // session continuing on another model — and the ledger already tallies per model, which is
+        // precisely the question switching creates.
+        TokenLedger? carriedLedger = null;
 
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
@@ -274,9 +323,14 @@ public static class AppBootstrap
             // This method re-runs on every F5 provider change and that RESETS the spend to zero.
             // Hoisting it to startup would make the ledger survive the re-wire and report one
             // session's spend across two providers as though it were one model's.
-            var ledger = resumeSnapshot is null
-                ? new TokenLedger()
-                : new TokenLedger(resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens);
+            // CONSUMED ONCE, like pendingResume: a later re-wire must start fresh rather than
+            // inherit a ledger from a switch two provider changes ago.
+            var carried = System.Threading.Interlocked.Exchange(ref carriedLedger, null);
+
+            var ledger = carried
+                ?? (resumeSnapshot is null
+                    ? new TokenLedger()
+                    : new TokenLedger(resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens));
 
             // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
             // it: the provider, the plugin registry, the ledger just built above, the context window
@@ -626,6 +680,12 @@ public static class AppBootstrap
                             // whose files the agent has been editing.
                             mainWindow.Chat.AddMessage(ChatRole.System,
                                 DiffCommand.Render(SessionCommands.Arguments(goalText), workingDir));
+                            return;
+                        }
+
+                        if (command.Name == "/model")
+                        {
+                            SwitchModel(SessionCommands.Arguments(goalText));
                             return;
                         }
 
@@ -1017,7 +1077,13 @@ public static class AppBootstrap
                 // Re-resolve and re-wire so an edit made here takes effect in THIS session rather than
                 // at next launch — exactly one re-wire, gated on a non-null result, matching the
                 // "exactly one re-wire on Save, none on Cancel" rule the retired F7/F8 handlers followed.
-                WireRunner(ProviderResolver.Resolve(paths, env, useMock: false));
+                // SAME REASON AS /model: a Save can change the provider, and the panel has to
+                // describe the session that is now running rather than the one that started.
+                var reresolved = ProviderResolver.Resolve(paths, env, useMock: false);
+                resolution = reresolved;
+                activeInstance = reresolved.InstanceName;
+                WireRunner(reresolved);
+                mainWindow.SetResolution(reresolved);
                 mainWindow.Chat.AddMessage(ChatRole.System, "Configuration saved.");
             }
             finally
@@ -1108,9 +1174,10 @@ public static class AppBootstrap
             // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
             // the store is the composition root's — SessionCommands stays a description of the
             // commands rather than a view of the database. Read on each keystroke, never cached.
-            SessionCommands.ValueSupplier = arg => arg switch
+            SessionCommands.ValueSupplier = source => source switch
             {
-                "/sessions resume" => SessionsCommand.Completions(SafeList()),
+                ValueSources.Sessions => SessionsCommand.Completions(SafeList()),
+                ValueSources.Providers => ModelCommand.Completions(resolution.Providers, activeInstance),
                 _ => [],
             };
 
@@ -1180,6 +1247,65 @@ public static class AppBootstrap
                 mainWindow.Chat.AddMessage(ChatRole.System,
                     $"[{ColorScheme.DangerMarkup}]Could not read sessions: {ex.Message}[/]");
             }
+        }
+
+        void SwitchModel(string argument)
+        {
+            var decision = ModelCommand.Decide(argument, resolution.Providers, activeInstance);
+
+            if (decision.SwitchTo is null)
+            {
+                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
+                return;
+            }
+
+            // REFUSED MID-TURN, like /mode and /compress. Re-wiring replaces the agent the running
+            // turn is appending to — its tool results would land in a conversation nobody is
+            // reading, which is the orphan shape that 400s a session permanently.
+            if (IsTurnRunning())
+            {
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    "[yellow]A turn is running — press Escape to stop it first.[/]");
+                return;
+            }
+
+            var next = ProviderResolver.ResolveInstance(paths, env, decision.SwitchTo);
+            if (next is null || !next.HasProvider)
+            {
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    $"[{ColorScheme.DangerMarkup}]Could not start {decision.SwitchTo}.[/]");
+                return;
+            }
+
+            // THE CONVERSATION AND THE SPEND BOTH CARRY.
+            //
+            // Through the same seam a resume uses: WireRunner reads `pendingResume` to build a host
+            // over an existing conversation. What differs is the LEDGER — a re-wire normally starts a
+            // fresh one, which is right when the provider is being reconfigured and wrong here: a
+            // user switching model mid-conversation expects /stats to show the whole session, and the
+            // ledger already tallies per model, which is exactly the question a switch creates.
+            var window = runner!.Context.Window;
+            var used = runner.Context.Used;
+
+            pendingResume = new SessionSnapshot(
+                runner.SessionId, runner.Context.Snapshot(),
+                runner.Ledger.InputTokens, runner.Ledger.OutputTokens, DateTimeOffset.UtcNow);
+            carriedLedger = runner.Ledger;
+
+            activeInstance = decision.SwitchTo;
+            resolution = next;
+            WireRunner(next);
+
+            // THE WINDOW HAS TO FOLLOW THE MODEL. MainWindow held its resolution readonly from
+            // startup, so the status bar went on quoting the old context window after any re-wire —
+            // F5 had the same defect, unnoticed because a reconfiguration usually keeps the model.
+            mainWindow.SetResolution(next);
+
+            // NOT COMPACTED HERE, deliberately. The turn loop measures pressure before every send
+            // and compacts if it must — doing it now would be the same work in a worse place, and
+            // would summarise a conversation the user might not send another turn on.
+            permissionSink.ShowSystemMessage(ModelCommand.Switched(
+                decision.SwitchTo, next.Provider!.ModelId, next.ContextWindow, window, used));
         }
 
         // THE ONE WAY BACK INTO A SESSION, shared by the startup offer and by /sessions resume.

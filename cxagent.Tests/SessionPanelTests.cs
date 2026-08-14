@@ -191,20 +191,23 @@ public class SessionPanelTests
     }
 
     /// <summary>
-    /// `general` ALONE IS NOT A SECTION. The catalog always holds it, so showing the catalog would
-    /// put a permanent line on every session including the ones that never spawn. What earns a line
-    /// is that the user CONFIGURED something — the same rule the MCP block follows, where a section
-    /// with nothing to say is absent rather than empty.
+    /// `general` ALONE IS STILL A SECTION, and this asserted the opposite.
+    ///
+    /// <para>The old rule was "a line is earned by the user CONFIGURING something", which reads the
+    /// panel as a summary of config. It is a summary of what the SESSION CAN DO — and `general` is a
+    /// real capability, the one a bare spawn uses. Hiding it meant anyone who had not written a type
+    /// of their own saw nothing, and had no way to tell that delegation was available at all.</para>
     /// </summary>
     [Fact]
-    public void Refresh_WithOnlyTheImplicitGeneral_ShowsNoSection()
+    public void Refresh_WithOnlyTheImplicitGeneral_StillShowsIt()
     {
         var panel = new SessionPanel();
         panel.Refresh(contextUsed: 100, spentTokens: 0, contextWindow: 1000,
             model: "m", endpoint: "", rules: 0,
             agentTypes: ["general"]);
 
-        Assert.DoesNotContain("Agent types", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("Agent types", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("general", panel.RenderedText, StringComparison.Ordinal);
     }
 
     // ---- spend by model -------------------------------------------------------------------------

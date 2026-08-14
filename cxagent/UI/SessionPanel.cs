@@ -344,16 +344,17 @@ public sealed class SessionPanel
             lines.Add(Value($"this agent · {Math.Max(0, spentTokens - subAgentTokens):N0}"));
         }
 
-        // AGENT TYPES, when any are CONFIGURED — and `general` alone does not count as configured.
+        // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.
         //
-        // The catalog always holds at least `general`, so a naive "show the catalog" would put a
-        // permanent one-line section on every session including the ones that never spawn. What is
-        // worth a panel line is that the user set something up: a type they wrote and might be
-        // wondering whether the model can see.
+        // This used to filter `general` out, on the reasoning that a permanent one-line section is
+        // noise on sessions that never spawn. That reads the panel as a summary of what the USER
+        // configured; it is a summary of what the SESSION can do. `general` is a real capability —
+        // it is what a bare spawn uses — and hiding it made delegation look unavailable to anyone
+        // who had not written a type of their own.
         //
         // NAMES ONLY. The briefing is what the MODEL reads; here it would not fit 24 columns and
         // would push the sections below it off screen. Anyone who wants the text has the config file.
-        var types = (agentTypes ?? []).Where(t => t != "general").ToList();
+        var types = agentTypes ?? [];
         if (types.Count > 0)
         {
             Section(lines, "Agent types");

@@ -410,7 +410,7 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_OffersLiveValuesPastTheSecondSpace()
     {
-        using var _ = new SuppliedValues("/sessions resume",
+        using var _ = new SuppliedValues(ValueSources.Sessions,
             [new("1", "7f3a2b  2h ago  add the arity table"), new("2", "01kzwz  yesterday  why")]);
 
         var values = SessionCommands.ArgumentsFor("/sessions resume ");
@@ -421,7 +421,7 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_NarrowsAsTheValueIsTyped()
     {
-        using var _ = new SuppliedValues("/sessions resume",
+        using var _ = new SuppliedValues(ValueSources.Sessions,
             [new("1", "one"), new("2", "two"), new("12", "twelve")]);
 
         var values = SessionCommands.ArgumentsFor("/sessions resume 1");
@@ -433,7 +433,7 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_AsksAboutTheSubcommandItIsUnder()
     {
-        using var _ = new SuppliedValues("/sessions resume", [new("1", "one")]);
+        using var _ = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
 
         Assert.Empty(SessionCommands.ArgumentsFor("/sessions all "));
     }
@@ -442,7 +442,7 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_StopsOnceTheValueIsTyped()
     {
-        using var _ = new SuppliedValues("/sessions resume", [new("1", "one")]);
+        using var _ = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
 
         Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume 1 extra"));
     }
@@ -455,8 +455,8 @@ public class SessionCommandTableTests
     /// the next through a static.</summary>
     private sealed class SuppliedValues : IDisposable
     {
-        public SuppliedValues(string forArgument, IReadOnlyList<CommandArgument> values) =>
-            SessionCommands.ValueSupplier = arg => arg == forArgument ? values : [];
+        public SuppliedValues(string forSource, IReadOnlyList<CommandArgument> values) =>
+            SessionCommands.ValueSupplier = source => source == forSource ? values : [];
 
         public void Dispose() => SessionCommands.ValueSupplier = null;
     }

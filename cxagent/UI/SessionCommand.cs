@@ -110,4 +110,33 @@ public readonly record struct SessionCommand(
 /// the composer that is not a command — the angle brackets are notation for the reader, not something
 /// to type. Such a row is shown to say the argument EXISTS and leaves the typing to the user.</para>
 /// </param>
-public readonly record struct CommandArgument(string Name, string Summary, bool Completes = true);
+/// <param name="Values">
+/// Names a source of LIVE rows for this argument, or null when the argument names nothing the app
+/// knows about.
+///
+/// <para>THE TABLE STAYS A DESCRIPTION OF THE COMMANDS, not a view of the world. It declares that
+/// <c>&lt;instance&gt;</c> is filled from "providers"; the composition root, which owns the registry,
+/// is what answers. Nothing here reads a session.</para>
+///
+/// <para>A NAME RATHER THAN A DELEGATE, because the table is static and a delegate would have to be
+/// bound at startup — turning a constant into something assembled. The supplier is keyed on this
+/// string, so an argument that names a missing source simply offers nothing.</para>
+/// </param>
+public readonly record struct CommandArgument(
+    string Name, string Summary, bool Completes = true, string? Values = null);
+
+/// <summary>
+/// The named sources a <see cref="CommandArgument"/> can be filled from.
+///
+/// <para>CONSTANTS RATHER THAN LOOSE STRINGS, so the declaration in the table and the supplier in
+/// the composition root cannot drift apart silently — a typo on either side would simply offer
+/// nothing, which is the failure that looks like "the palette is broken".</para>
+/// </summary>
+public static class ValueSources
+{
+    /// <summary>Configured provider instances, for <c>/model</c>.</summary>
+    public const string Providers = "providers";
+
+    /// <summary>Sessions in this folder, for <c>/sessions resume</c>.</summary>
+    public const string Sessions = "sessions";
+}

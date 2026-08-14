@@ -18,7 +18,15 @@ namespace CxAgent.UI;
 public sealed class MainWindow : IDisposable
 {
     private readonly ConsoleWindowSystem _system;
-    private readonly ProviderResolution _resolution;
+    /// <summary>
+    /// The provider this window reports on.
+    ///
+    /// <para>NOT READONLY, and it used to be. A re-wire replaces the session's provider — F5 has
+    /// always been able to, and <c>/model</c> now does it deliberately — while this stayed at
+    /// whatever startup resolved. The status bar went on quoting the old model's context window, so
+    /// occupancy was measured against a denominator the agent had stopped using.</para>
+    /// </summary>
+    private ProviderResolution _resolution;
 
     public ChatTranscriptControl Chat { get; } = new()
     {
@@ -1023,9 +1031,12 @@ public sealed class MainWindow : IDisposable
             _lastOutput,
             SessionId,
             _mcpServers,
-            // STRAIGHT OFF THE RESOLUTION — no new plumbing. It already carries the parsed types for
-            // AppBootstrap to build the catalog from, and the panel only wants their names.
-            [.. _resolution.AgentTypes.Keys],
+            // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys. `general` always exists
+            // whether or not config mentions it — it is what a bare spawn uses — so a panel built
+            // from config alone showed nothing at all to anyone who had not written a type, and
+            // made delegation look unavailable when it was not.
+            [AgentTypeCatalog.DefaultTypeName,
+             .. _resolution.AgentTypes.Keys.Where(n => n != AgentTypeCatalog.DefaultTypeName)],
             _spendByModel,
             _subAgentTokens,
             _splitByModel,
@@ -1236,6 +1247,19 @@ public sealed class MainWindow : IDisposable
     /// <c>/mode</c> — the row is the only place the mode is visible, so it has to move when the mode
     /// does or the command has no observable effect.
     /// </summary>
+    /// <summary>
+    /// Point the window at a different provider — after a <c>/model</c> switch or an F5 re-wire.
+    ///
+    /// <para>The window, the model name and the agent types all come off the resolution, so this is
+    /// the one assignment that keeps the panel describing the session that is actually running.</para>
+    /// </summary>
+    public void SetResolution(ProviderResolution resolution)
+    {
+        _resolution = resolution;
+        RefreshSessionPanel();
+        RefreshTokenItem();
+    }
+
     public void SetMode(string mode)
     {
         _mode = mode;

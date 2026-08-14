@@ -41,6 +41,16 @@ public sealed record ProviderResolution(
 {
     public bool HasProvider => Provider is not null;
 
+    /// <summary>
+    /// Which <c>providers</c> entry is in use, or null when it cannot be named (the mock).
+    ///
+    /// <para>DISTINCT FROM <see cref="DisplayName"/>, which is the driver's own label — "Anthropic",
+    /// "Mock". This is the key a user typed in config and the one <c>/model</c> switches by, and
+    /// nothing carried it before: the resolution knew the window it had resolved but not which
+    /// instance produced it.</para>
+    /// </summary>
+    public string? InstanceName { get; init; }
+
     /// <summary>Configured MCP servers, empty when none are — carried here because this is the one
     /// place config.json is read, and the servers have to be started from what it said.</summary>
     /// <summary>Configured sub-agent types, empty when none are. Carried for the same reason
@@ -63,6 +73,47 @@ public sealed record ProviderResolution(
 /// </summary>
 public static class ProviderResolver
 {
+    /// <summary>
+    /// The same resolution, against a NAMED instance rather than <c>defaultProvider</c>.
+    ///
+    /// <para>For <c>/model</c>. Everything that makes a session — the registry, the orchestrator
+    /// settings, MCP servers, agent types — is identical; only which entry of <c>providers</c>
+    /// answers, and therefore which model and which context window, differs.</para>
+    ///
+    /// <para>Null when the name is not configured or the config cannot be read. The caller says so;
+    /// this returns nothing rather than falling back to the default, because silently continuing on
+    /// the model the user was trying to leave is the worst available outcome.</para>
+    /// </summary>
+    public static ProviderResolution? ResolveInstance(
+        AppPaths paths, IReadOnlyDictionary<string, string> env, string instanceName)
+    {
+        try
+        {
+            var settings = ProviderConfigLoader.LoadAndValidate(paths, env);
+            var registry = ProviderRegistry.Build(settings);
+
+            if (!registry.TryGet(instanceName, out var provider)) return null;
+            if (!settings.Providers.TryGetValue(instanceName, out var cfg)) return null;
+
+            int? contextWindow = cfg.ContextWindow
+                ?? ContextWindowProbe.TryGetAsync(cfg.BaseUrl, cfg.Model, cfg.ApiKey)
+                    .GetAwaiter().GetResult();
+
+            return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
+                settings.Orchestrator, registry, contextWindow, cfg.MaxConcurrentAgents)
+            {
+                InstanceName = instanceName,
+                McpServers = settings.McpServers,
+                AgentTypes = settings.AgentTypes,
+                Warnings = settings.Warnings,
+            };
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Seeds the --mock provider with a canned create_plan so `--mock` is a WORKING demo path.
     /// MockLlmProvider is queue-driven (ChatAsync = Queue.Dequeue()), so an unseeded instance throws
@@ -139,6 +190,7 @@ public static class ProviderResolver
             return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
                 settings.Orchestrator, registry, contextWindow, cfg?.MaxConcurrentAgents)
             {
+                InstanceName = settings.DefaultProvider,
                 McpServers = settings.McpServers,
                 AgentTypes = settings.AgentTypes,
                 Warnings = settings.Warnings,

@@ -65,8 +65,17 @@ public static class SessionCommands
             // NOT COMPLETABLE: the value is a number off a listing the user has to read first, or an
             // id. Neither is something this static table could offer.
             new("resume <number|id>", "restore one — the number from this list, or its id",
-                Completes: false),
+                Completes: false, Values: ValueSources.Sessions),
             new("all", "every folder, not just this one"),
+        ]),
+        // NeedsWindow: the registry of configured instances belongs to the composition root, and
+        // this table holds nothing but the conversation. ONE ARGUMENT, and it is a live value — so
+        // the palette offers the instances themselves rather than a placeholder to type over.
+        new("/model", "show or switch which configured model this session uses",
+            CommandOutcome.NeedsWindow,
+        [
+            new("<instance>", "a name from `providers` in config", Completes: false,
+                Values: ValueSources.Providers),
         ]),
         // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
         // this type deliberately holds nothing but the conversation.
@@ -140,16 +149,36 @@ public static class SessionCommands
         // A SECOND SPACE MEANS THE ARGUMENT IS TYPED and the user has moved past choosing one —
         // "/mcp login serv" is naming a server, not still picking between login and reload.
         //
-        // ...UNLESS SOMETHING CAN SUPPLY THE VALUES. `/sessions resume ` is a second space whose
-        // right answer is a short list the app already has on hand, and offering nothing there sends
-        // the user back to read a number off a listing they have scrolled past. See
-        // <see cref="ValueSupplier"/> for why this is one hook rather than a general mechanism.
+        // ...UNLESS THE ARGUMENT NAMES A SOURCE. `/sessions resume ` is a second space whose right
+        // answer is a short list the app has on hand, and offering nothing there sends the user back
+        // to read a number off a listing they have scrolled past.
         var rest = input[(space + 1)..];
-        if (rest.Contains(' ')) return Values(input[..space], rest);
+        var name = input[..space];
 
         var command = All.FirstOrDefault(c =>
-            string.Equals(c.Name, input[..space], StringComparison.OrdinalIgnoreCase));
+            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (!command.TakesArguments) return [];
+
+        if (rest.Contains(' '))
+        {
+            // Two words in: the first named a subcommand, so the values belong to THAT argument.
+            var cut = rest.IndexOf(' ');
+            var sub = rest[..cut];
+            var typed = rest[(cut + 1)..];
+
+            // ONLY THE LAST WORD MAY BE INCOMPLETE. "/sessions resume 3 extra" is past choosing.
+            if (typed.Contains(' ')) return [];
+
+            var under = command.Args.FirstOrDefault(a =>
+                a.Name.StartsWith(sub, StringComparison.OrdinalIgnoreCase));
+
+            return Narrow(Supplied(under.Values), typed);
+        }
+
+        // ONE WORD IN. Offer the declared arguments — and, for a command whose SOLE argument is a
+        // live value (`/model <instance>`), the values themselves: there is nothing else to pick.
+        var live = command.Args.Count == 1 ? Supplied(command.Args[0].Values) : [];
+        if (live.Count > 0) return Narrow(live, rest);
 
         if (rest.Length == 0) return command.Args;
 
@@ -157,42 +186,30 @@ public static class SessionCommands
             a.Name.StartsWith(rest, StringComparison.OrdinalIgnoreCase))];
     }
 
+    /// <summary>Rows from a named source, or empty when nothing supplies it.</summary>
+    private static IReadOnlyList<CommandArgument> Supplied(string? source) =>
+        source is null || ValueSupplier is null ? [] : ValueSupplier(source);
+
+    /// <summary>Filtered by what has been typed so far, so a long list narrows as you go.</summary>
+    private static IReadOnlyList<CommandArgument> Narrow(
+        IReadOnlyList<CommandArgument> rows, string typed) =>
+        typed.Length == 0
+            ? rows
+            : [.. rows.Where(r => r.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))];
+
     /// <summary>
     /// Live values for an argument that names something the app knows about, or null for the great
     /// majority that name nothing.
     ///
-    /// <para>THE TABLE IS STATIC AND STAYS STATIC. <c>/mcp &lt;server&gt;</c> documents the reason:
-    /// coupling this list to session state makes a description of the commands into a view of the
-    /// world. This hook does not change that — the table still declares <c>resume &lt;number|id&gt;</c>
-    /// as a shape, and the composition root, which owns the store, is what fills it in. Nothing here
-    /// reads a session.</para>
+    /// <para>KEYED ON THE SOURCE NAME an argument declares, not on the command path. It was keyed on
+    /// <c>"/sessions resume"</c> when one command needed it, with the note that a third would be
+    /// worth generalising — <c>/model</c> is the third, and it needs values one level UP, where a
+    /// path-keyed switch had nowhere to put them.</para>
     ///
-    /// <para>ONE HOOK RATHER THAN AN INTERFACE PER COMMAND, because there is one command that needs
-    /// it. A second — <c>/mcp login</c> offering live servers — would use the same field and the same
-    /// shape, and a third is when this is worth generalising.</para>
+    /// <para>The table stays a description of the commands: it declares WHICH source fills an
+    /// argument, and the composition root, which owns the stores and the registry, answers.</para>
     /// </summary>
     public static Func<string, IReadOnlyList<CommandArgument>>? ValueSupplier { get; set; }
-
-    /// <summary>
-    /// The values offered once a subcommand is typed and a space follows it — filtered by whatever
-    /// has been typed since, so <c>/sessions resume 7f</c> narrows rather than listing everything.
-    /// </summary>
-    private static IReadOnlyList<CommandArgument> Values(string name, string rest)
-    {
-        if (ValueSupplier is null) return [];
-
-        var cut = rest.IndexOf(' ');
-        var sub = rest[..cut];
-        var typed = rest[(cut + 1)..];
-
-        // ONLY THE LAST WORD MAY BE INCOMPLETE. "/sessions resume 3 extra" is past choosing.
-        if (typed.Contains(' ')) return [];
-
-        var values = ValueSupplier($"{name} {sub}");
-        if (typed.Length == 0) return values;
-
-        return [.. values.Where(v => v.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))];
-    }
 
     /// <summary>
     /// Everything after the command name, trimmed — empty when there is nothing.

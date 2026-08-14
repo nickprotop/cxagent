@@ -35,6 +35,8 @@ public readonly record struct CommandLineOptions(
     bool UseMock,
     AgentMode Mode,
     string? Error,
+    bool ShowVersion = false,
+    string? Instance = null,
     bool ListSessions = false,
     ResumeRequest Resume = default,
     bool ListAllSessions = false);
@@ -77,11 +79,41 @@ public static class CommandLine
         var mode = AgentMode.FanOut;
         var listSessions = false;
         var listAll = false;
+        var showVersion = false;
+        string? instance = null;
         var resume = ResumeRequest.No;
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
+
+            if (string.Equals(arg, "--version", StringComparison.Ordinal)
+             || string.Equals(arg, "-v", StringComparison.Ordinal))
+            {
+                showVersion = true;
+                continue;
+            }
+
+            // --model NAMES A CONFIGURED INSTANCE, the same thing /model switches between and the
+            // same thing `defaultProvider` names. It does not name a model id: a model belongs to an
+            // instance here, along with its endpoint and its context window, and accepting a bare id
+            // would mean inventing an instance with no window — which is the one field whose absence
+            // silently breaks compaction.
+            if (arg.StartsWith("--model=", StringComparison.Ordinal))
+            {
+                instance = arg["--model=".Length..];
+                if (string.IsNullOrWhiteSpace(instance))
+                    return new(useMock, mode, "--model= needs an instance name from `providers`.");
+                continue;
+            }
+
+            if (string.Equals(arg, "--model", StringComparison.Ordinal))
+            {
+                instance = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
+                if (string.IsNullOrWhiteSpace(instance))
+                    return new(useMock, mode, "--model needs an instance name from `providers`.");
+                continue;
+            }
 
             if (string.Equals(arg, "--sessions", StringComparison.Ordinal))
             {
@@ -142,8 +174,9 @@ public static class CommandLine
                 value = i + 1 < args.Length ? args[++i] : null;
             else
                 return new(useMock, mode,
-                    $"unknown argument '{arg}'. Valid: --mock, --mode <{AgentModes.Valid}>, "
-                    + "--sessions, --resume [<id>].");
+                    $"unknown argument '{arg}'. Valid: --version, --mock, "
+                    + $"--mode <{AgentModes.Valid}>, --model <instance>, --sessions, "
+                    + "--resume [<id>].");
 
             if (string.IsNullOrWhiteSpace(value))
                 return new(useMock, mode, $"--mode needs a value. Valid: {AgentModes.Valid}.");
@@ -162,6 +195,6 @@ public static class CommandLine
             return new(useMock, mode,
                 "--sessions prints the list and exits, so it cannot be combined with --resume.");
 
-        return new(useMock, mode, null, listSessions, resume, listAll);
+        return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll);
     }
 }
