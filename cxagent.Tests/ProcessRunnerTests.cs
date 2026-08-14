@@ -19,6 +19,7 @@ internal sealed class CollectingContext : IJobContext
     public void ReportPermissionWait(bool waiting) => PermissionWaits.Add(waiting);
 
     public string? Requester => null;
+    public string? WorkingDirectory => null;
 
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Lines.Enqueue(line);

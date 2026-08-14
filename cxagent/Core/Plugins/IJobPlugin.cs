@@ -57,6 +57,29 @@ public interface IJobContext
     /// tool call, which is exactly the granularity "who is asking" needs.</para>
     /// </summary>
     string? Requester { get; }
+
+    /// <summary>
+    /// The directory this job's paths are relative TO — null when the caller has no opinion, which
+    /// means the process's own.
+    ///
+    /// <para>THE SYSTEM PROMPT ALREADY PROMISES THIS: "Relative paths resolve from the working
+    /// directory." Until this existed that was true only by COINCIDENCE — a plugin handed
+    /// <c>src/foo.cs</c> passed it to the framework, which resolved it against the PROCESS
+    /// directory, and the two matched because nothing ever moved the process.</para>
+    ///
+    /// <para>WHAT IT COSTS TO BE WRONG, once a second session exists on another folder: the model
+    /// asks to edit <c>src/foo.cs</c>, the permission gate checks that path against THIS session's
+    /// root and allows it, and the framework then resolves it against the other session's. The write
+    /// lands in a checkout the user never approved, and every layer behaved correctly on the way.
+    /// That is why this rides on the context rather than being read at the point of use.</para>
+    ///
+    /// <para>On the CONTEXT, not the plugin, for the same reason <see cref="Requester"/> is: a
+    /// plugin instance is shared by every agent in the session, while a context is built per tool
+    /// call — which is exactly the granularity "whose folder is this" needs, since a sub-agent may
+    /// eventually work somewhere else.</para>
+    /// </summary>
+    string? WorkingDirectory { get; }
+
     void Log(string line);
     void Log(JobLogLevel level, string line);
     /// <summary>

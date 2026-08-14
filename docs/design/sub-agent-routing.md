@@ -144,6 +144,28 @@ and 36 rows of the history database (backfilled).
 
 **Silently defaulting an unknown type.** The user's briefing does not apply and nobody is told.
 
+## Where a path resolves
+
+A sibling of the same rule, and the reason it is here: **the agent's working directory is data, not
+the process's.**
+
+`IJobContext.WorkingDirectory` carries it to every tool call. `FileJobPlugin` resolves `path` and
+`dest` against it once, before any action runs; `ShellJobPlugin` uses it when the model omits
+`working_dir`; `PermissionPolicy.RequestsFor` takes it as `root` so the gate resolves the **same
+string against the same base** the plugin will.
+
+That last one is the safety property. The gate and the plugin resolving differently is not a
+near-miss — it is a check that passes on one file while another is written:
+
+```
+model: write "src/foo.cs"
+gate:    /home/nick/session-b/src/foo.cs   → inside root, allowed
+plugin:  /home/nick/session-a/src/foo.cs   → written
+```
+
+Every layer behaves correctly and the edit lands in a checkout the user never approved. Null root
+means the process's directory, which is what every caller did before this existed.
+
 ## Where each fact lives
 
 | Question | Answer from |

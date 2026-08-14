@@ -28,7 +28,14 @@ public class ShellJobPlugin : IJobPlugin
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
         var command = parameters.Get<string>("command");
-        var workingDir = parameters.Get<string?>("working_dir", null);
+
+        // THE AGENT'S FOLDER WHEN THE MODEL NAMES NONE, rather than the process's. `working_dir` is
+        // optional and rarely sent, so this fallback IS the common path — and it decides where every
+        // unqualified `ls`, `git status` and `npm test` actually runs. Falling through to
+        // Environment.CurrentDirectory made that the directory the app was LAUNCHED in, which is only
+        // the agent's by coincidence.
+        var workingDir = parameters.Get<string?>("working_dir", null)
+                         ?? context.WorkingDirectory;
         // A DEFAULT TIMEOUT, because `timeout_seconds` is optional and a model almost never sends
         // it. Without one, ProcessRunner builds a CancellationTokenSource that is never scheduled to
         // fire, so `run_shell {"command":"npm install"}` — or a curl to a dead host, or a grep over

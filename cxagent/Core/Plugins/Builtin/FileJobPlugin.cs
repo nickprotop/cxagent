@@ -580,10 +580,40 @@ public class FileJobPlugin : IJobPlugin
         return matches[0];
     }
 
+    /// <summary>
+    /// A path as the model wrote it, made absolute against the agent's folder.
+    ///
+    /// <para>An ALREADY-ABSOLUTE path is returned untouched — GetFullPath ignores the base for one,
+    /// and normalising it is still worth doing so `/tmp/x/../y` and `/tmp/y` are one path to every
+    /// layer that compares them, the permission gate included.</para>
+    ///
+    /// <para>NO ROOT MEANS THE PROCESS'S, which is what happened everywhere before this existed —
+    /// so a caller without an opinion (a test, a headless job) keeps the old behaviour rather than
+    /// being handed an empty base.</para>
+    /// </summary>
+    private static string Resolve(string path, IJobContext context) =>
+        context.WorkingDirectory is { Length: > 0 } root
+            ? Path.GetFullPath(path, root)
+            : Path.GetFullPath(path);
+
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
         var action = parameters.Get<string>("action");
-        var path = parameters.Get<string>("path");
+
+        // RESOLVED AGAINST THE AGENT'S FOLDER, ONCE, before any action sees it — which is what the
+        // system prompt already tells the model happens ("Relative paths resolve from the working
+        // directory"). Until the context carried a root that was true only by coincidence: an
+        // unqualified `src/foo.cs` went to the framework, which resolved it against the PROCESS
+        // directory, and the two agreed because nothing ever moved the process.
+        //
+        // THE DANGEROUS CASE IS NOT A FAILED READ, it is a successful write. With a second session
+        // rooted elsewhere, the gate checks `src/foo.cs` against THIS session's root and allows it,
+        // then the framework resolves it against the other's — so the edit lands in a checkout the
+        // user never approved, with every layer behaving correctly on the way.
+        //
+        // Doing it HERE covers every action including both `dest` reads below; doing it per-action
+        // is the same per-field-fallback mistake the sub-agent runtime is careful to avoid.
+        var path = Resolve(parameters.Get<string>("path"), context);
         var start = DateTimeOffset.UtcNow;
         try
         {
@@ -612,10 +642,10 @@ public class FileJobPlugin : IJobPlugin
                     File.Delete(path);
                     break;
                 case "copy":
-                    File.Copy(path, parameters.Get<string>("dest"), overwrite: true);
+                    File.Copy(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
                     break;
                 case "move":
-                    File.Move(path, parameters.Get<string>("dest"), overwrite: true);
+                    File.Move(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
                     break;
             }
             context.Log($"file {action}: {path}");

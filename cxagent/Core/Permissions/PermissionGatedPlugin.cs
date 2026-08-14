@@ -39,7 +39,10 @@ public sealed class PermissionGatedPlugin : IJobPlugin
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
-        var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters);
+        // THE CONTEXT'S ROOT, so the gate resolves a relative path against the SAME folder the
+        // plugin will. Still a pure function of its arguments — the root is passed in, not read —
+        // which keeps RequestsFor ignorant of which agent is running, as below.
+        var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters, context.WorkingDirectory);
         foreach (var request in requests)
         {
             // STAMPED HERE, not built into RequestsFor. That method is a pure policy function over

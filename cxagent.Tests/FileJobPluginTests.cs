@@ -762,4 +762,77 @@ public class FileJobPluginTests : IDisposable
 
         Assert.DoesNotContain("[in ", (string)r.Output["content"]!);
     }
+
+    // ---- relative paths resolve against the AGENT's folder, not the process's -------------------
+
+    /// <summary>
+    /// THE SYSTEM PROMPT PROMISES THIS: "Relative paths resolve from the working directory." Until
+    /// the context carried a root it was true only by coincidence — the process happened to be
+    /// pointed at the same place — and a second session rooted elsewhere would have broken it
+    /// silently, writing into a checkout the user never approved.
+    /// </summary>
+    [Fact]
+    public async Task RelativePath_ResolvesAgainstTheContextsWorkingDirectory()
+    {
+        var ctx = new TestJobContext { WorkingDirectory = _dir };
+        Directory.CreateDirectory(Path.Combine(_dir, "nested"));   // the plugin writes, it does not mkdir
+
+        var write = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "write"), ("path", "nested/f.txt"), ("content", "landed")),
+            ctx, CancellationToken.None);
+
+        // The file exists under the GIVEN root...
+        Assert.True(write.Success, write.ErrorMessage);
+        Assert.Equal("landed", File.ReadAllText(Path.Combine(_dir, "nested", "f.txt")));
+
+        // ...and NOT under the process's, which is where it went before.
+        Assert.False(File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "nested", "f.txt")));
+    }
+
+    /// <summary>Reading takes the same base as writing — otherwise a tool could write a file it
+    /// then cannot find.</summary>
+    [Fact]
+    public async Task RelativePath_ReadsFromTheSameRootItWroteTo()
+    {
+        var ctx = new TestJobContext { WorkingDirectory = _dir };
+        File.WriteAllText(Path.Combine(_dir, "here.txt"), "found me");
+
+        var read = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "read"), ("path", "here.txt")), ctx, CancellationToken.None);
+
+        Assert.True(read.Success, read.ErrorMessage);
+        Assert.Equal("found me", (string)read.Output["content"]!);
+    }
+
+    /// <summary>`dest` is a path too. A copy that resolved its source against the agent's folder and
+    /// its destination against the process's would be the same split-brain write, one layer down.</summary>
+    [Fact]
+    public async Task RelativePath_AppliesToCopyDestination()
+    {
+        var ctx = new TestJobContext { WorkingDirectory = _dir };
+        File.WriteAllText(Path.Combine(_dir, "src.txt"), "copy me");
+        Directory.CreateDirectory(Path.Combine(_dir, "out"));
+
+        var copy = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "copy"), ("path", "src.txt"), ("dest", "out/dst.txt")),
+            ctx, CancellationToken.None);
+
+        Assert.True(copy.Success, copy.ErrorMessage);
+        Assert.Equal("copy me", File.ReadAllText(Path.Combine(_dir, "out", "dst.txt")));
+    }
+
+    /// <summary>WITH NO ROOT GIVEN, nothing changes: the process's own directory, exactly as every
+    /// caller behaved before the property existed. An absolute path is unaffected either way.</summary>
+    [Fact]
+    public async Task WithNoWorkingDirectory_AnAbsolutePathIsUntouched()
+    {
+        var path = Path.Combine(_dir, "abs.txt");
+
+        var write = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "write"), ("path", path), ("content", "absolute")),
+            new TestJobContext(), CancellationToken.None);
+
+        Assert.True(write.Success, write.ErrorMessage);
+        Assert.Equal("absolute", File.ReadAllText(path));
+    }
 }

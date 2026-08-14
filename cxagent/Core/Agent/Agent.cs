@@ -1496,6 +1496,11 @@ public sealed class Agent
         {
             // Rides with every tool call this agent makes, so the gate can say who is asking.
             Requester = _requesterLabel,
+
+            // AND WHERE IT WORKS, so a relative path resolves against THIS agent's folder rather
+            // than the process's. Identical today, because one process runs one session from the
+            // directory it was launched in — and silently different the moment that stops holding.
+            WorkingDirectory = TryGetWorkingDirectory(),
         };
 
         // THIS AGENT MARKS ITSELF while one of its calls sits at a prompt. Set on the agent rather

@@ -52,6 +52,10 @@ public sealed class JobContext : IJobContext
     /// Settable rather than a constructor parameter so the ~20 construction sites are untouched.</summary>
     public string? Requester { get; set; }
 
+    /// <summary>The agent's own directory, so a relative path resolves where the model was told it
+    /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
+    public string? WorkingDirectory { get; set; }
+
     /// <summary>
     /// Raised true when this job stops at a permission prompt, false when it stops waiting.
     ///

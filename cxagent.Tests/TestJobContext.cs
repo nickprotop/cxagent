@@ -32,6 +32,10 @@ public sealed class TestJobContext : IJobContext
 
     public string? Requester => null;
 
+    /// <summary>Settable so a test can root a plugin somewhere real; null keeps the process's own,
+    /// which is what every test got before the property existed.</summary>
+    public string? WorkingDirectory { get; set; }
+
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Logs.Add((JobLogLevel.Info, line));
     public void Log(JobLogLevel level, string line) => Logs.Add((level, line));

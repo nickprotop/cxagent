@@ -25,7 +25,17 @@ public class PermissionPolicy
     /// request; file → per-action read/write requests (copy/move produce both a read of the
     /// source and a write of the dest, checked independently); http → one Http request for the
     /// URL's origin.</summary>
-    public static IReadOnlyList<PermissionRequest> RequestsFor(string pluginType, JobParameters parameters)
+    /// <param name="root">
+    /// What a RELATIVE path is relative to — the agent's folder. Null means the process's, which is
+    /// what every caller got before this parameter existed.
+    ///
+    /// <para>IT MUST MATCH THE PLUGIN'S BASE. The file plugin resolves `src/foo.cs` against the
+    /// agent's directory; a gate that resolved the same string against a different one would decide
+    /// about a file nobody is going to touch — allowing a write to a checkout the user never
+    /// approved, with every layer behaving correctly on the way.</para>
+    /// </param>
+    public static IReadOnlyList<PermissionRequest> RequestsFor(string pluginType,
+        JobParameters parameters, string? root = null)
     {
         switch (pluginType)
         {
@@ -33,7 +43,7 @@ public class PermissionPolicy
                 return new[] { ShellRequest(parameters) };
 
             case "file":
-                return FileRequests(parameters);
+                return FileRequests(parameters, root);
 
             case "http":
                 return new[] { HttpRequest(parameters) };
@@ -81,7 +91,7 @@ public class PermissionPolicy
             Subject: command);
     }
 
-    private static List<PermissionRequest> FileRequests(JobParameters parameters)
+    private static List<PermissionRequest> FileRequests(JobParameters parameters, string? root)
     {
         var action = parameters.Get<string>("action");
         var path = parameters.Get<string>("path");
@@ -91,20 +101,20 @@ public class PermissionPolicy
         switch (action)
         {
             case "read":
-                requests.Add(FileRequest(PermissionKind.FileRead, path));
+                requests.Add(FileRequest(PermissionKind.FileRead, path, root));
                 break;
             case "write":
             case "append":
-                requests.Add(FileRequest(PermissionKind.FileWrite, path));
+                requests.Add(FileRequest(PermissionKind.FileWrite, path, root));
                 break;
             case "delete":
-                requests.Add(FileRequest(PermissionKind.FileWrite, path));
+                requests.Add(FileRequest(PermissionKind.FileWrite, path, root));
                 break;
             case "copy":
             case "move":
-                requests.Add(FileRequest(PermissionKind.FileRead, path));
+                requests.Add(FileRequest(PermissionKind.FileRead, path, root));
                 if (dest is not null)
-                    requests.Add(FileRequest(PermissionKind.FileWrite, dest));
+                    requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
                 break;
         }
         return requests;
@@ -118,9 +128,9 @@ public class PermissionPolicy
     /// the affordance the spec promises. If the path fails to resolve, AlwaysRule is null — fail
     /// toward asking, exactly like the boundary check (<see cref="TryResolve"/>) already does,
     /// never toward a rule built from an unresolved string (that gap was C2).</summary>
-    private static PermissionRequest FileRequest(PermissionKind kind, string path)
+    private static PermissionRequest FileRequest(PermissionKind kind, string path, string? root)
     {
-        var resolved = TryResolve(path);
+        var resolved = TryResolve(path, root);
         if (resolved is null)
             return new PermissionRequest(kind, path, null);
 
@@ -199,10 +209,10 @@ public class PermissionPolicy
     /// so it is a loud prompt to decide, not a hard stop). A `_ =>` fallback would silence it and
     /// pick the unsafe branch by default, which is why there isn't one.
     /// </summary>
-    private static string? RuleSubject(PermissionRequest request) => request.Kind switch
+    private string? RuleSubject(PermissionRequest request) => request.Kind switch
     {
         // Path-bearing: resolve before matching, and fail toward asking if it cannot be resolved.
-        PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display),
+        PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display, _root),
 
         // SHELL MATCHES THE COMMAND, NOT THE RULE. This read AlwaysRule, which was the same string
         // as the command back when a rule WAS the whole command. It no longer is — a rule is now
@@ -234,7 +244,7 @@ public class PermissionPolicy
 
     private bool IsInsideBoundary(string path)
     {
-        var resolved = TryResolve(path);
+        var resolved = TryResolve(path, _root);
         if (resolved is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
         var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
@@ -247,17 +257,22 @@ public class PermissionPolicy
     /// that points outside counts as OUTSIDE (GetFullPath alone is lexical only — it collapses
     /// ".." but has no idea a directory is actually a door to somewhere else).
     ///
+    /// RELATIVE TO THE SESSION'S ROOT, not the process's. The model is told "relative paths resolve
+    /// from the working directory", and the file plugin now makes that true — so a gate resolving
+    /// the SAME string against a different base would check a path nobody is going to touch. That is
+    /// not a near-miss: it is a check that passes on one file while another is written.
+    ///
     /// Strategy: GetFullPath first (collapses "..", makes it absolute), then walk up to the
     /// deepest EXISTING ancestor and resolve THAT (ResolveLinkTarget needs a real entry to
     /// inspect), then re-append whatever doesn't exist yet. If resolution throws for any
     /// reason (permissions, a dangling link, a race), we return null and the caller treats
     /// that as outside the boundary — failing toward asking, never toward silent allow.
     /// </summary>
-    private static string? TryResolve(string path)
+    private static string? TryResolve(string path, string? root)
     {
         try
         {
-            var full = Path.GetFullPath(path);
+            var full = root is { Length: > 0 } ? Path.GetFullPath(path, root) : Path.GetFullPath(path);
 
             // Find the deepest existing ancestor (including the path itself if it exists).
             var existing = full;
