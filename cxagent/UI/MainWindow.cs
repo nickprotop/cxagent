@@ -339,13 +339,22 @@ public sealed class MainWindow : IDisposable
     /// fact, and separate setters would let the panel paint a breakdown from one moment beside a total
     /// from another.</summary>
     public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel, int subAgentTokens = 0,
-        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null)
+        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
+        double? cacheHitRate = null)
     {
         _spendByModel = byModel;
         _subAgentTokens = subAgentTokens;
         if (splitByModel is not null) _splitByModel = splitByModel;
+
+        // NULL MEANS "NOT REPORTED" AND IS KEPT, unlike splitByModel above: a provider that stops
+        // reporting mid-session should stop showing a rate, not freeze the last one it happened to
+        // send.
+        _cacheHitRate = cacheHitRate;
         RefreshSessionPanel();
     }
+
+    /// <summary>Share of input served from the provider's prefix cache; null when unreported.</summary>
+    private double? _cacheHitRate;
 
     /// <summary>Records the input/output split. Separate from SetTokenTotal because the total
     /// arrives through an event that predates the split and is raised from two different paths.</summary>
@@ -1064,6 +1073,7 @@ public sealed class MainWindow : IDisposable
             SubAgentTokens = _subAgentTokens,
             SpendByModel = _spendByModel,
             SplitByModel = _splitByModel,
+            CacheHitRate = _cacheHitRate,
 
             McpServers = _mcpServers,
 

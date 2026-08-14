@@ -109,11 +109,7 @@ public static class OpenAiWire
         string? finish = choice.TryGetProperty("finish_reason", out var fr) ? fr.GetString() : null;
         var usage = new LlmUsage();
         if (root.TryGetProperty("usage", out var u))
-            usage = new LlmUsage
-            {
-                InputTokens = u.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0,
-                OutputTokens = u.TryGetProperty("completion_tokens", out var ct) ? ct.GetInt32() : 0
-            };
+            usage = ReadUsage(u);
 
         return new LlmResponse
         {
@@ -278,12 +274,41 @@ public static class OpenAiWire
             return false;
         }
 
-        usage = new LlmUsage
+        usage = ReadUsage(u);
+        return true;
+    }
+
+    /// <summary>
+    /// One `usage` object, including the prefix-cache figure when the server reports one.
+    ///
+    /// <para>SHARED BY BOTH PATHS deliberately. The streaming and non-streaming parsers had
+    /// byte-identical copies of this, which is how the cached-token field came to be missing from
+    /// both: two places to remember is one place too many.</para>
+    ///
+    /// <para>`prompt_tokens_details.cached_tokens` is the OpenAI shape and is what llama.cpp,
+    /// vLLM and the OpenAI API itself emit. A server that omits it leaves CacheReported false —
+    /// NOT a zero hit rate, which is a different and much more alarming claim.</para>
+    /// </summary>
+    private static LlmUsage ReadUsage(JsonElement u)
+    {
+        var cached = 0;
+        var reported = false;
+        if (u.TryGetProperty("prompt_tokens_details", out var details)
+            && details.ValueKind == JsonValueKind.Object
+            && details.TryGetProperty("cached_tokens", out var ctok)
+            && ctok.ValueKind == JsonValueKind.Number)
+        {
+            cached = ctok.GetInt32();
+            reported = true;
+        }
+
+        return new LlmUsage
         {
             InputTokens = u.TryGetProperty("prompt_tokens", out var pt) ? pt.GetInt32() : 0,
-            OutputTokens = u.TryGetProperty("completion_tokens", out var ct) ? ct.GetInt32() : 0
+            OutputTokens = u.TryGetProperty("completion_tokens", out var ct) ? ct.GetInt32() : 0,
+            CachedInputTokens = cached,
+            CacheReported = reported,
         };
-        return true;
     }
 
     /// <summary>Parses one OpenAI SSE `data:` chunk JSON into a delta. Returns null for [DONE]/empty.</summary>

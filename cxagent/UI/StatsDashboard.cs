@@ -124,6 +124,22 @@ public static class StatsDashboard
                         + Muted($"({Compact(totals.SubAgentTokens)} of {Compact(totals.TotalTokens)})"));
         }
 
+        // THE CACHE HIT RATE, which decides what that ↑ actually COST. Input dominates every tool
+        // loop — a turn re-sends everything before it — so a large ↑ looks alarming and usually is
+        // not: a re-sent prefix that hits the cache is served in a fraction of the time a cold one
+        // takes (43ms against 1,420ms, measured on a local endpoint). A user tuning a slow session
+        // needs to know WHICH of those they have, and until now the app never asked the question.
+        //
+        // OMITTED ENTIRELY when no provider reported — a 0% here would send someone hunting for a
+        // cache problem they do not have.
+        if (totals.CacheHitRate is { } hit)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"  {Bar(hit)} [bold]{hit:P0}[/] input cached  "
+                        + Muted($"({Compact(totals.CachedInputTokens)} of "
+                              + $"{Compact(totals.CacheReportingInputTokens)} sent)"));
+        }
+
         // --- daily sparkline ---------------------------------------------------------------------
         if (daily.Count > 1 && daily.Any(d => d.Tokens > 0))
         {

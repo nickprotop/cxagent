@@ -607,7 +607,8 @@ public sealed class AgentHost : IDisposable
             _stores.History?.SaveSession(new SessionRecord(
                 agent.Id, _runtime.WorkingDir, SpendLabel, Mode.ToString(),
                 Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
-                _startedAt, DateTimeOffset.UtcNow));
+                _startedAt, DateTimeOffset.UtcNow,
+                Ledger.CachedInputTokens, Ledger.CacheHitRate is not null));
         };
 
         // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the

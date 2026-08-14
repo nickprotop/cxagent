@@ -193,6 +193,10 @@ public sealed class SessionPanel
         public int OutputTokens { get; init; }
         public int SubAgentTokens { get; init; }
         public IReadOnlyDictionary<string, int>? SpendByModel { get; init; }
+
+        /// <summary>Share of input served from the provider's prefix cache, or null when no provider
+        /// reported it — see TokenLedger.CacheHitRate for why the distinction is not cosmetic.</summary>
+        public double? CacheHitRate { get; init; }
         public IReadOnlyDictionary<string, (int Input, int Output)>? SplitByModel { get; init; }
 
         // --- what bounds the run ---
@@ -389,6 +393,19 @@ public sealed class SessionPanel
                     && (s.Input > 0 || s.Output > 0))
                     lines.Add(Muted($"  ↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
             }
+
+            // CACHE HIT RATE, once, under the list rather than per instance — the ledger tracks it
+            // session-wide, and inventing a per-instance figure it does not measure would be worse
+            // than one honest line.
+            //
+            // WHY IT EARNS THE SPACE: input dominates a tool loop and grows every turn, so a big ↑
+            // reads as expensive. It usually is not — a re-sent prefix that hits the cache costs a
+            // fraction of a cold one (43ms against 1,420ms, measured). Without this number the panel
+            // shows the alarming half of the fact and hides the reassuring half.
+            //
+            // ABSENT, NOT ZERO, when nobody reported: see CacheHitRate.
+            if (state.CacheHitRate is { } rate)
+                lines.Add(Muted($"  cache {rate:P0}"));
         }
 
         // WORKERS, WHENEVER THEY SPENT ANYTHING — the one split the model breakdown cannot express.

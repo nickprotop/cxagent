@@ -6,7 +6,13 @@ namespace CxAgent.Core.Storage;
 public sealed record SessionRecord(
     string AgentId, string? WorkingDir, string? ModelId, string Mode,
     int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
-    DateTimeOffset StartedAt, DateTimeOffset UpdatedAt);
+    DateTimeOffset StartedAt, DateTimeOffset UpdatedAt,
+    /// <summary>Input tokens the provider served from its prefix cache.</summary>
+    int CachedInputTokens = 0,
+    /// <summary>Whether the provider reported cache figures at all. False makes
+    /// <see cref="CachedInputTokens"/> mean "unknown" rather than "none", which is the difference
+    /// between staying silent and claiming a 0% hit rate.</summary>
+    bool CacheReported = false);
 
 /// <summary>One sub-agent run, written by the PARENT when the child finishes.</summary>
 public sealed record RunRecord(
@@ -155,11 +161,40 @@ public sealed class UsageHistoryStore
                     working_dir TEXT);
                 """;
             cmd.ExecuteNonQuery();
+
+            // COLUMNS ADDED AFTER A DATABASE ALREADY EXISTED. `CREATE TABLE IF NOT EXISTS` is a
+            // no-op against an older file, so a new column reaches a fresh install and NOTHING else
+            // — the failure being an app that works on a new machine and throws "no such column" on
+            // the developer's own.
+            AddColumnIfMissing(conn, "sessions", "cached_input_tokens", "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(conn, "sessions", "cache_reported", "INTEGER NOT NULL DEFAULT 0");
         }
         catch (Exception)
         {
             // No history means no /stats. It must not mean no app.
         }
+    }
+
+    /// <summary>
+    /// Adds a column when the table lacks it, and does nothing when it already has one.
+    ///
+    /// <para>SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>, so the check is a <c>PRAGMA</c> read
+    /// rather than a caught exception — catching would also swallow a genuinely broken schema and
+    /// leave the store silently missing a column it believes it added.</para>
+    /// </summary>
+    private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string decl)
+    {
+        using var probe = conn.CreateCommand();
+        probe.CommandText = $"PRAGMA table_info({table});";
+        using var reader = probe.ExecuteReader();
+        while (reader.Read())
+            if (string.Equals(reader.GetString(1), column, StringComparison.Ordinal))
+                return;
+        reader.Close();
+
+        using var alter = conn.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {decl};";
+        alter.ExecuteNonQuery();
     }
 
     private static string Stamp(DateTimeOffset t) =>
@@ -179,8 +214,10 @@ public sealed class UsageHistoryStore
             cmd.CommandText = """
                 INSERT INTO sessions
                     (agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
-                     sub_agent_tokens, turns, started_at, updated_at)
-                VALUES ($id, $dir, $model, $mode, $in, $out, $sub, $turns, $started, $updated)
+                     sub_agent_tokens, turns, started_at, updated_at,
+                     cached_input_tokens, cache_reported)
+                VALUES ($id, $dir, $model, $mode, $in, $out, $sub, $turns, $started, $updated,
+                        $cached, $creported)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     working_dir      = excluded.working_dir,
                     model_id         = excluded.model_id,
@@ -189,7 +226,9 @@ public sealed class UsageHistoryStore
                     output_tokens    = excluded.output_tokens,
                     sub_agent_tokens = excluded.sub_agent_tokens,
                     turns            = excluded.turns,
-                    updated_at       = excluded.updated_at;
+                    updated_at       = excluded.updated_at,
+                    cached_input_tokens = excluded.cached_input_tokens,
+                    cache_reported      = excluded.cache_reported;
                 """;
             cmd.Parameters.AddWithValue("$id", r.AgentId);
             cmd.Parameters.AddWithValue("$dir", (object?)r.WorkingDir ?? DBNull.Value);
@@ -201,6 +240,8 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$turns", r.Turns);
             cmd.Parameters.AddWithValue("$started", Stamp(r.StartedAt));
             cmd.Parameters.AddWithValue("$updated", Stamp(r.UpdatedAt));
+            cmd.Parameters.AddWithValue("$cached", r.CachedInputTokens);
+            cmd.Parameters.AddWithValue("$creported", r.CacheReported ? 1 : 0);
             cmd.ExecuteNonQuery();
         }
         catch (Exception) { }
@@ -366,7 +407,8 @@ public sealed class UsageHistoryStore
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
-                   sub_agent_tokens, turns, started_at, updated_at
+                   sub_agent_tokens, turns, started_at, updated_at,
+                   cached_input_tokens, cache_reported
             FROM sessions WHERE updated_at >= $since ORDER BY updated_at DESC;
             """;
         cmd.Parameters.AddWithValue("$since", Stamp(since));
@@ -381,7 +423,8 @@ public sealed class UsageHistoryStore
                 reader.GetString(3),
                 reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7),
                 DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture),
-                DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture)));
+                DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture),
+                reader.GetInt32(10), reader.GetInt32(11) != 0));
         return list;
     }
 

@@ -2,7 +2,8 @@ namespace CxAgent.Core.Storage;
 
 /// <summary>Totals for one window of time.</summary>
 public sealed record StatsTotals(
-    int Sessions, int InputTokens, int OutputTokens, int SubAgentTokens, int Turns)
+    int Sessions, int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
+    int CachedInputTokens = 0, int CacheReportingInputTokens = 0)
 {
     public int TotalTokens => InputTokens + OutputTokens;
 
@@ -10,6 +11,20 @@ public sealed record StatsTotals(
     /// would read as "no delegation" rather than "no data".</summary>
     public double? WorkerShare =>
         TotalTokens > 0 ? (double)SubAgentTokens / TotalTokens : null;
+
+    /// <summary>
+    /// Share of input served from the provider's prefix cache, over the sessions that reported it.
+    ///
+    /// <para>THE DENOMINATOR IS ONLY THE REPORTING SESSIONS, not all input. Mixing a provider that
+    /// reports with one that does not would divide real cache hits by a total including sessions
+    /// that never measured, and report a hit rate lower than any session actually had.</para>
+    ///
+    /// <para>Null when nothing reported — see TokenLedger.CacheHitRate.</para>
+    /// </summary>
+    public double? CacheHitRate =>
+        CacheReportingInputTokens > 0
+            ? (double)CachedInputTokens / CacheReportingInputTokens
+            : null;
 }
 
 /// <summary>One project's usage.</summary>
@@ -59,7 +74,9 @@ public static class StatsQuery
             sessions.Sum(s => s.InputTokens),
             sessions.Sum(s => s.OutputTokens),
             sessions.Sum(s => s.SubAgentTokens),
-            sessions.Sum(s => s.Turns));
+            sessions.Sum(s => s.Turns),
+            sessions.Sum(s => s.CachedInputTokens),
+            sessions.Where(s => s.CacheReported).Sum(s => s.InputTokens));
 
     /// <summary>Busiest project first. Unattributed sessions are grouped rather than dropped: a
     /// session with no working directory is still spend, and hiding it would make the parts stop

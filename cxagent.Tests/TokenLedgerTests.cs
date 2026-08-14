@@ -16,6 +16,50 @@ public class TokenLedgerTests
 
 
 
+    // ---- prefix cache ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// THE NUMBER THAT SAYS WHETHER A LONG SESSION IS EXPENSIVE. Input dominates a tool loop and
+    /// grows every turn, but a re-sent prefix that hits the cache is nearly free — so 6M input with
+    /// a 95% hit rate and 6M with none are wildly different sessions that looked identical here.
+    /// </summary>
+    [Fact]
+    public void Record_AccumulatesCachedInput_AndReportsTheRate()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 10, CachedInputTokens = 900, CacheReported = true });
+        l.Record(new LlmUsage { InputTokens = 1000, OutputTokens = 10, CachedInputTokens = 500, CacheReported = true });
+
+        Assert.Equal(1400, l.CachedInputTokens);
+        Assert.Equal(0.70, l.CacheHitRate!.Value, 3);
+    }
+
+    /// <summary>
+    /// NULL, NOT ZERO, when the provider never reports. "This endpoint does not tell us" and "every
+    /// byte missed the cache" are opposite facts, and showing 0% for the first sends a user hunting
+    /// for a cache problem they do not have.
+    /// </summary>
+    [Fact]
+    public void CacheHitRate_IsNullWhenNoProviderReported()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 5000, OutputTokens = 20 });
+
+        Assert.Null(l.CacheHitRate);
+        Assert.Equal(0, l.CachedInputTokens);
+    }
+
+    /// <summary>A provider that reports a genuine miss is NOT the same as one that stays silent —
+    /// this one must show 0%, where the test above must show nothing at all.</summary>
+    [Fact]
+    public void CacheHitRate_IsZeroWhenReportedAsAMiss()
+    {
+        var l = new TokenLedger();
+        l.Record(new LlmUsage { InputTokens = 5000, OutputTokens = 20, CachedInputTokens = 0, CacheReported = true });
+
+        Assert.Equal(0.0, l.CacheHitRate!.Value, 3);
+    }
+
     // ---- concurrency ---------------------------------------------------------------------------
 
     /// <summary>

@@ -9,6 +9,25 @@ public record LlmUsage
 {
     public int InputTokens { get; init; }
     public int OutputTokens { get; init; }
+
+    /// <summary>
+    /// How much of <see cref="InputTokens"/> the provider served from its prefix cache.
+    ///
+    /// <para>THE DOMINANT PERFORMANCE FACT OF A TOOL LOOP, and the one nothing here measured. Every
+    /// turn re-sends the whole conversation, so a 116-turn session sent 21.3 MB to produce 196 KB of
+    /// unique tool output — a 148:1 input-to-output ratio. Whether that is fast or slow is decided
+    /// almost entirely by how much of each re-send is cached: measured on a local endpoint, the same
+    /// prompt costs 43ms warm against 1,420ms cold.</para>
+    ///
+    /// <para>ZERO IS AMBIGUOUS and must not be read as "no cache": a provider that does not report
+    /// the field looks identical to one that missed entirely. <see cref="CacheReported"/> separates
+    /// them, so the UI can stay silent rather than claim a 0% hit rate it cannot know.</para>
+    /// </summary>
+    public int CachedInputTokens { get; init; }
+
+    /// <summary>Whether the provider reported cache figures at all — see
+    /// <see cref="CachedInputTokens"/> for why the distinction matters.</summary>
+    public bool CacheReported { get; init; }
 }
 
 public record LlmResponse

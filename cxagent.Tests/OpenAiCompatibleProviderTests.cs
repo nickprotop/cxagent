@@ -22,6 +22,65 @@ public class OpenAiCompatibleProviderTests : IDisposable
         new ChatMessage { Role = "user", Content = "decompose this goal" },
     };
 
+    // ---- prefix cache reporting -----------------------------------------------------------------
+
+    /// <summary>
+    /// THE FIELD THAT WAS ON THE WIRE ALL ALONG AND NOWHERE IN THE APP. A tool loop re-sends the
+    /// whole conversation every turn, so whether that is cheap or ruinous is decided by the prefix
+    /// cache — and nothing here read the number that says which.
+    /// </summary>
+    [Fact]
+    public async Task ChatAsync_ReadsCachedPromptTokens()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":1000,"completion_tokens":3,
+                  "prompt_tokens_details":{"cached_tokens":950}}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.Equal(1000, r.Usage.InputTokens);
+        Assert.Equal(950, r.Usage.CachedInputTokens);
+        Assert.True(r.Usage.CacheReported);
+    }
+
+    /// <summary>A server that omits the block leaves CacheReported FALSE — which is what stops the
+    /// UI claiming a 0% hit rate for an endpoint that simply never said.</summary>
+    [Fact]
+    public async Task ChatAsync_WithoutCacheDetails_ReportsNothingRatherThanZero()
+    {
+        _srv.EnqueueJson(200, """
+        {"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":1000,"completion_tokens":3}}
+        """);
+
+        var r = await Make().ChatAsync(Msgs(), null, CancellationToken.None);
+
+        Assert.False(r.Usage.CacheReported);
+        Assert.Equal(0, r.Usage.CachedInputTokens);
+    }
+
+    /// <summary>The STREAMING path carries usage on its own final chunk, and had a byte-identical
+    /// copy of the parser — which is how the field came to be missing from both.</summary>
+    [Fact]
+    public async Task ChatStreamAsync_ReadsCachedPromptTokens()
+    {
+        _srv.EnqueueSse(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":800,\"completion_tokens\":4,"
+            + "\"prompt_tokens_details\":{\"cached_tokens\":780}}}\n\n",
+            "data: [DONE]\n\n");
+
+        LlmUsage? usage = null;
+        await foreach (var chunk in Make().ChatStreamAsync(Msgs(), null, CancellationToken.None))
+            if (chunk.Usage is not null) usage = chunk.Usage;
+
+        Assert.NotNull(usage);
+        Assert.Equal(780, usage!.CachedInputTokens);
+        Assert.True(usage.CacheReported);
+    }
+
     [Fact]
     public async Task ChatAsync_MapsTextResponse_AndNormalizesStopReason()
     {

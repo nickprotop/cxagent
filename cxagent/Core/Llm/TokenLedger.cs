@@ -20,6 +20,8 @@ public sealed class TokenLedger
     private int _total;
     private int _input;
     private int _output;
+    private int _cached;
+    private int _cacheReports;
 
     public TokenLedger() { }
 
@@ -52,6 +54,32 @@ public sealed class TokenLedger
 
     /// <summary>Tokens GENERATED so far — the model's own production.</summary>
     public int OutputTokens => Volatile.Read(ref _output);
+
+    /// <summary>
+    /// How many of the input tokens the provider served from its prefix cache.
+    ///
+    /// <para>THE NUMBER THAT SAYS WHETHER A LONG SESSION IS EXPENSIVE. Input dominates a tool loop
+    /// and grows every turn, but a re-sent prefix that hits the cache is nearly free — so a session
+    /// with 6M input tokens and a 95% hit rate costs a fraction of one with 6M and no cache. Without
+    /// this the two are indistinguishable in every readout the app has.</para>
+    /// </summary>
+    public int CachedInputTokens => Volatile.Read(ref _cached);
+
+    /// <summary>
+    /// The share of input served from cache, or null when no provider ever reported the figure.
+    ///
+    /// <para>NULL RATHER THAN ZERO, because "this provider does not tell us" and "every byte missed"
+    /// are opposite facts and a 0% shown for the first is a lie the user would act on.</para>
+    /// </summary>
+    public double? CacheHitRate
+    {
+        get
+        {
+            if (Volatile.Read(ref _cacheReports) == 0) return null;
+            var input = InputTokens;
+            return input == 0 ? 0 : (double)CachedInputTokens / input;
+        }
+    }
 
     /// <summary>
     /// Spend so far, per model id — for the models that actually spent something.
@@ -127,6 +155,14 @@ public sealed class TokenLedger
             Interlocked.Add(ref _subAgent, usage.InputTokens + usage.OutputTokens);
 
         Interlocked.Add(ref _input, usage.InputTokens);
+
+        // COUNTED ONLY WHEN REPORTED, so a provider that stays silent leaves CacheHitRate null
+        // rather than dragging a real hit rate down toward zero with every unreported turn.
+        if (usage.CacheReported)
+        {
+            Interlocked.Add(ref _cached, usage.CachedInputTokens);
+            Interlocked.Increment(ref _cacheReports);
+        }
         Interlocked.Add(ref _output, usage.OutputTokens);
 
         Interlocked.Add(ref _total, usage.InputTokens + usage.OutputTokens);

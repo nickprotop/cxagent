@@ -101,6 +101,29 @@ public sealed class Agent
     private readonly Core.Mcp.McpToolset? _mcp;
 
     /// <summary>
+    /// The MCP guidance this agent puts in its system prompt, resolved ONCE and then held.
+    ///
+    /// <para>Null until the first prompt is built. See <see cref="McpPrompt"/> for why it is pinned
+    /// rather than read per turn.</para>
+    /// </summary>
+    private IReadOnlyDictionary<string, string>? _mcpPrompt;
+
+    /// <summary>
+    /// The MCP section's text, fixed at whatever was connected when this agent first built a prompt.
+    ///
+    /// <para>THE PREFIX MUST NOT MOVE. Everything before the first changed byte of a conversation is
+    /// served from the provider's cache; rewriting the system message re-processes the WHOLE context
+    /// at cold speed. A server that connects on turn 82 would otherwise charge that turn for a
+    /// decision made on turn 1.</para>
+    ///
+    /// <para>EMPTY IS PINNED TOO, and deliberately: "no servers had anything to say" is an answer,
+    /// and treating it as "not resolved yet" would re-check every turn and reintroduce the churn for
+    /// exactly the sessions where a server connects late.</para>
+    /// </summary>
+    private IReadOnlyDictionary<string, string> McpPrompt() =>
+        _mcpPrompt ??= _mcp?.InstructionsByServer() ?? new Dictionary<string, string>();
+
+    /// <summary>
     /// How this agent spawns children, or NULL — and null is what makes no-nesting structural.
     ///
     /// <para>A field rather than a parameter because <see cref="InvokeAndShowAsync"/> is an instance
@@ -543,12 +566,22 @@ public sealed class Agent
                     Today: _startedOn,
                     ModelId: _provider.ModelId)
                 {
-                    // Read fresh each prompt, like the instruction files above: a server that
-                    // connected since the last turn contributes its guidance from the next one, with
-                    // no restart. Empty when nothing is connected, which leaves the prompt — and so
-                    // the cache prefix — byte-identical for anyone without MCP.
-                    McpInstructions = _mcp?.InstructionsByServer()
-                                      ?? new Dictionary<string, string>(),
+                    // PINNED ON FIRST USE, unlike the instruction files above — and the difference is
+                    // who asked for the change.
+                    //
+                    // This used to be read fresh every prompt, so a server finishing its handshake
+                    // mid-session rewrote the system message and invalidated the cache prefix from
+                    // token ZERO. Measured on a 116-turn drive: a 134-character change at turn 82
+                    // forced a full reprocess of 67,367 tokens. On the same endpoint an identical
+                    // prompt costs 43ms cached against 1,420ms cold, so that one late connection
+                    // bought about 21 seconds of prompt-eval and changed nothing the model did.
+                    //
+                    // A user who edits AGENTS.md ASKED for the next prompt to differ and can see why
+                    // they paid. Nobody asks for an MCP handshake to land on turn 82. Tool
+                    // DEFINITIONS stay live — Definitions() is still read per turn, so a server that
+                    // connects late still offers its tools; it just cannot retroactively rewrite the
+                    // prose above them.
+                    McpInstructions = McpPrompt(),
 
                     // READ FROM DISK EACH PROMPT, exactly like the instruction files below and for
                     // the same reason: a skill edited mid-session takes effect on the next turn. The
