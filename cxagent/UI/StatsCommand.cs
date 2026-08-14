@@ -70,17 +70,21 @@ public static class StatsCommand
 
         var today = DateOnly.FromDateTime(DateTime.Now);
 
-        return StatsDashboard.Render(
-            days,
-            StatsQuery.Totals(sessions),
-            StatsQuery.ByProject(sessions),
-            StatsQuery.ByModel(sessions),
-            StatsQuery.ByType(runs),
-            StatsQuery.ByTool(calls),
+        return StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = days,
+            Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions),
+            Models = StatsQuery.ByModel(sessions),
+            Types = StatsQuery.ByType(runs),
+            Tools = StatsQuery.ByTool(calls),
+
             // THE SPARKLINE IS CAPPED AT 30 COLUMNS regardless of the window. "/stats all" over a
             // year would otherwise emit a line hundreds of characters wide that wraps into noise.
-            StatsQuery.ByDay(sessions, today.AddDays(-Math.Min(days, 30) + 1), today),
-            StatsQuery.Compaction(compactions),
-            StatsQuery.Permissions(permissions));
+            Daily = StatsQuery.ByDay(sessions, today.AddDays(-Math.Min(days, 30) + 1), today),
+
+            Compaction = StatsQuery.Compaction(compactions),
+            Permissions = StatsQuery.Permissions(permissions),
+        });
     }
 }

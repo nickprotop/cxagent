@@ -79,20 +79,38 @@ public static class StatsDashboard
     }
 
     /// <summary>
-    /// The whole dashboard.
+    /// Everything the dashboard draws, as one value.
+    ///
+    /// <para>A RECORD RATHER THAN NINE PARAMETERS. Five of them are <c>IReadOnlyList</c>, and
+    /// positional arguments of the same type are the shape where transposing two compiles cleanly
+    /// and renders the wrong section under the wrong heading. Named members make that a build
+    /// error.</para>
+    ///
+    /// <para>It grew this way one field at a time — the cache hit rate, then the per-agent split,
+    /// then the write count — which is exactly how the long-parameter methods this codebase has
+    /// already collapsed got long in the first place.</para>
     /// </summary>
-    /// <param name="days">How many days the window covers, for the heading.</param>
-    public static string Render(
-        int days,
-        StatsTotals totals,
-        IReadOnlyList<ProjectStat> projects,
-        IReadOnlyList<ModelStat> models,
-        IReadOnlyList<TypeStat> types,
-        IReadOnlyList<ToolStat> tools,
-        IReadOnlyList<(DateOnly Day, int Tokens)> daily,
-        (int Runs, int Reclaimed, int Manual) compaction,
-        (int Asked, int Allowed, int Denied, int Silent) permissions)
+    public sealed record StatsView
     {
+        /// <summary>How many days the window covers, for the heading.</summary>
+        public required int Days { get; init; }
+        public required StatsTotals Totals { get; init; }
+        public required IReadOnlyList<ProjectStat> Projects { get; init; }
+        public required IReadOnlyList<ModelStat> Models { get; init; }
+        public required IReadOnlyList<TypeStat> Types { get; init; }
+        public required IReadOnlyList<ToolStat> Tools { get; init; }
+        public required IReadOnlyList<(DateOnly Day, int Tokens)> Daily { get; init; }
+        public (int Runs, int Reclaimed, int Manual) Compaction { get; init; }
+        public (int Asked, int Allowed, int Denied, int Silent) Permissions { get; init; }
+    }
+
+    /// <summary>The whole dashboard.</summary>
+    public static string Render(StatsView view)
+    {
+        var (days, totals, projects, models, types, tools, daily, compaction, permissions) =
+            (view.Days, view.Totals, view.Projects, view.Models, view.Types, view.Tools,
+             view.Daily, view.Compaction, view.Permissions);
+
         var sb = new StringBuilder();
 
         // NOTHING RECORDED IS ITS OWN ANSWER, not an empty dashboard. Empty sections would read as

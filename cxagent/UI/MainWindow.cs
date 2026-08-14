@@ -334,27 +334,47 @@ public sealed class MainWindow : IDisposable
     private IReadOnlyDictionary<string, (int Input, int Output)> _splitByModel
         = new Dictionary<string, (int, int)>();
 
-    /// <summary>Records what each model has spent, its ↑/↓ split, and what sub-agents spent of the
-    /// total. All on ONE setter, pushed from AgentHost on a single event: they are views of the same
-    /// fact, and separate setters would let the panel paint a breakdown from one moment beside a total
-    /// from another.</summary>
-    public void SetSpendByModel(IReadOnlyDictionary<string, int> byModel, int subAgentTokens = 0,
-        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
-        double? cacheHitRate = null,
-        (double? Own, double? Workers) cacheByAgent = default,
-        int cacheWritten = 0)
+    /// <summary>
+    /// One reading of the ledger: what each instance spent, the ↑/↓ split, the worker share, and how
+    /// much of the input the provider served from — or wrote into — its cache.
+    ///
+    /// <para>ONE VALUE BECAUSE THEY ARE ONE MOMENT. The setter below takes this whole record rather
+    /// than a growing list of arguments, and the reason is the same one that put them on a single
+    /// setter to begin with: they are views of the same fact, and a panel painting a breakdown from
+    /// one moment beside a total from another is wrong in a way nobody would notice.</para>
+    ///
+    /// <para>It reached five parameters by accretion — the hit rate, then the per-agent split, then
+    /// the write count — which is how every long-parameter method in this codebase got long.</para>
+    /// </summary>
+    public sealed record SpendReading
     {
-        _spendByModel = byModel;
-        _subAgentTokens = subAgentTokens;
-        if (splitByModel is not null) _splitByModel = splitByModel;
+        public required IReadOnlyDictionary<string, int> ByInstance { get; init; }
+        public int SubAgentTokens { get; init; }
 
-        // NULL MEANS "NOT REPORTED" AND IS KEPT, unlike splitByModel above: a provider that stops
-        // reporting mid-session should stop showing a rate, not freeze the last one it happened to
-        // send.
-        _cacheHitRate = cacheHitRate;
-        _ownCacheHitRate = cacheByAgent.Own;
-        _workerCacheHitRate = cacheByAgent.Workers;
-        _cacheWritten = cacheWritten;
+        /// <summary>Null LEAVES THE PREVIOUS SPLIT STANDING, unlike the cache fields below: a
+        /// provider that reports no breakdown has not contradicted the last one it gave.</summary>
+        public IReadOnlyDictionary<string, (int Input, int Output)>? SplitByInstance { get; init; }
+
+        /// <summary>Null MEANS "NOT REPORTED" AND IS KEPT — a provider that stops reporting
+        /// mid-session should stop showing a rate, not freeze the last one it happened to send.</summary>
+        public double? CacheHitRate { get; init; }
+        public (double? Own, double? Workers) CacheByAgent { get; init; }
+
+        /// <summary>Zero where warming is free, which is every local endpoint.</summary>
+        public int CacheWrittenTokens { get; init; }
+    }
+
+    /// <summary>Takes one reading of the ledger and repaints. See <see cref="SpendReading"/>.</summary>
+    public void SetSpend(SpendReading reading)
+    {
+        _spendByModel = reading.ByInstance;
+        _subAgentTokens = reading.SubAgentTokens;
+        if (reading.SplitByInstance is not null) _splitByModel = reading.SplitByInstance;
+
+        _cacheHitRate = reading.CacheHitRate;
+        _ownCacheHitRate = reading.CacheByAgent.Own;
+        _workerCacheHitRate = reading.CacheByAgent.Workers;
+        _cacheWritten = reading.CacheWrittenTokens;
         RefreshSessionPanel();
     }
 

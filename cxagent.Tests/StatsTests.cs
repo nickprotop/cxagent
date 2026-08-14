@@ -209,7 +209,11 @@ public class StatsTests
     [Fact]
     public void Render_WithNoHistory_SaysSo_RatherThanShowingEmptySections()
     {
-        var text = StatsDashboard.Render(7, StatsQuery.Totals([]), [], [], [], [], [], (0, 0, 0), (0, 0, 0, 0));
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = StatsQuery.Totals([]),
+            Projects = [], Models = [], Types = [], Tools = [], Daily = [],
+        });
 
         Assert.Contains("No sessions recorded", text, StringComparison.Ordinal);
         Assert.DoesNotContain("By project", text, StringComparison.Ordinal);
@@ -219,9 +223,14 @@ public class StatsTests
     public void Render_ShowsTheHeadlineAndTheWorkerShare()
     {
         var sessions = new[] { S("a", 900_000, 20_000, sub: 800_000) };
-        var text = StatsDashboard.Render(7,
-            StatsQuery.Totals(sessions), StatsQuery.ByProject(sessions), StatsQuery.ByModel(sessions),
-            [], [], [], (0, 0, 0), (0, 0, 0, 0));
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7,
+            Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions),
+            Models = StatsQuery.ByModel(sessions),
+            Types = [], Tools = [], Daily = [],
+        });
 
         Assert.Contains("920,000", text, StringComparison.Ordinal);
         Assert.Contains("to workers", text, StringComparison.Ordinal);
@@ -234,13 +243,19 @@ public class StatsTests
     public void Render_ProducesBalancedMarkup()
     {
         var sessions = new[] { S("a", 900, 100, sub: 400) };
-        var text = StatsDashboard.Render(7,
-            StatsQuery.Totals(sessions), StatsQuery.ByProject(sessions), StatsQuery.ByModel(sessions),
-            StatsQuery.ByType([R("r1", "planner", 400, 40, 7)]),
-            StatsQuery.ByTool([C("c1", "read_file", 5_000)]),
-            StatsQuery.ByDay(sessions, DateOnly.FromDateTime(DateTime.Now).AddDays(-6),
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7,
+            Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions),
+            Models = StatsQuery.ByModel(sessions),
+            Types = StatsQuery.ByType([R("r1", "planner", 400, 40, 7)]),
+            Tools = StatsQuery.ByTool([C("c1", "read_file", 5_000)]),
+            Daily = StatsQuery.ByDay(sessions, DateOnly.FromDateTime(DateTime.Now).AddDays(-6),
                 DateOnly.FromDateTime(DateTime.Now)),
-            (1, 150_000, 0), (2, 1, 1, 3));
+            Compaction = (1, 150_000, 0),
+            Permissions = (2, 1, 1, 3),
+        });
 
         var opens = text.Split('[').Length - 1;
         var closes = text.Split("[/]").Length - 1;
