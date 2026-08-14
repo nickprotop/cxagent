@@ -207,12 +207,11 @@ public static class AppBootstrap
 
         // Mutable so first-run setup (and F5 settings) can install a runner that didn't exist at
         // startup. The PreviewKeyPressed handler below closes over THIS FIELD, not over a runner
-        // local, so a later assignment takes effect without re-registering the handler. activeProvider
+        // local, so a later assignment takes effect without re-registering the handler. session.Provider
         // tracks alongside it — F6's diagnose closure must call the CURRENT provider, not whichever
         // one was resolved at startup, or a provider change via F5 mid-session would silently keep
         // diagnosing against the old (possibly now-invalid) one.
         AgentHost? runner = null;
-        ILlmProvider? activeProvider = resolution.Provider;
 
         // The currently-open consolidated Settings dialog, or null when none is open. Captured by the
         // Escape global shortcut (routes Escape to Cancel while a dialog is open) and by
@@ -220,25 +219,28 @@ public static class AppBootstrap
         // than opening a second dialog). Cleared in OpenSettingsAsync's `finally` — see its comment.
         SettingsDialog? openDialog = null;
 
-        // Rebuilt on every WireRunner call rather than fixed at startup: an F7 role rebinding (or a
-        // catalog change via F5/F8) must produce a registry carrying the NEW resolution. A single
-        // startup registry would keep dispatching through the bindings that existed at launch. Seeded
-        // here so there is a registry before the first wire — nothing reads it between here and then.
-        var plugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate);
+        // A REGISTRY BEFORE THE FIRST WIRE, so nothing has to ask whether the session has plugins
+        // yet. WireRunner rebuilds it on every call — an F7 role rebinding, or a catalog change via
+        // F5/F8, must dispatch through the NEW resolution rather than the bindings that existed at
+        // launch — and hands the replacement to the session with the host it built.
+        var startupPlugins = PluginRegistry.CreateWithBuiltins(resolution.Providers, permissionGate);
 
-        // A crashed session waiting to be picked up, until the user answers. Consumed ONCE by the
-        // next WireRunner and cleared, so an F5 provider swap later in the session does not silently
-        // re-restore a context the user has already moved past.
-        SessionSnapshot? pendingResume = null;
+        // THE SESSION, as an object rather than as six locals scattered through this method.
+        //
+        // Every field it holds was already here — host, provider, instance name, plugins, the
+        // carried ledger, the pending resume — captured by WireRunner's closure. A local is ONE
+        // slot, so a second session would need a second copy of this method; naming the state is
+        // what makes a second one possible. The comments below already reasoned in these terms
+        // ("owned by the SESSION, not by any one AgentHost") long before there was a type to say it.
+        //
+        // The working directory is GIVEN, not read: that is the whole point of the type. Today it
+        // comes from the process, because one process runs one session — but every consumer now
+        // reads it from the session, so a second root changes one construction site rather than
+        // every use.
+        var session = new Core.Agent.Session(workingDir, startupPlugins);
 
-        /// The instance /model switches BY — the config key, not the driver's display name.
-        var activeInstance = resolution.InstanceName;
 
-        // A LEDGER THAT MUST SURVIVE THE NEXT RE-WIRE, or null for the usual fresh start. Only a
-        // model switch sets it: a reconfiguration is a new spend context, a switch is the same
-        // session continuing on another model — and the ledger already tallies per model, which is
-        // precisely the question switching creates.
-        TokenLedger? carriedLedger = null;
+
 
         // Owned by the SESSION, not by any one AgentHost: a re-wire swaps the model and must not
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
@@ -281,13 +283,13 @@ public static class AppBootstrap
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
-            activeProvider = res.Provider;
+
             // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
             // The new AgentHost below reads this field, not a startup copy.
-            plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate);
-            // F5 rewiring mid-session replaces `runner` with a fresh AgentHost — dispose the
-            // outgoing one rather than leaking it for the rest of the process's lifetime.
-            runner?.Dispose();
+            var plugins = PluginRegistry.CreateWithBuiltins(res.Providers, permissionGate);
+            // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
+            // merely reassigned would leak it, and that is a step a caller can forget while the host
+            // is a bare local.
             var sink = new ChatTranscriptSink(system, mainWindow.Chat);
             // The permission gate is built once, above, before this sink exists — point it at the
             // CURRENT transcript sink so a permission echo always lands in the visible transcript,
@@ -321,13 +323,13 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
-            // CONSUMED ONCE, READ TWICE. `pendingResume` is a one-shot: the Exchange nulls it so a
-            // later F5 re-wire does not resurrect a session the user already resumed. But BOTH the
-            // ledger's seed and the host's context now come from it, and calling Exchange in the
-            // argument list (as this used to) while also reading it for the ledger would hand the
-            // second reader a null — seeding the ledger and silently discarding the entire restored
-            // conversation, with every test still green. One local, both uses.
-            var resumeSnapshot = System.Threading.Interlocked.Exchange(ref pendingResume, null);
+            // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
+            // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
+            // seed and the host's context come from it, and taking it inline in the argument list
+            // (as this used to) while also reading it for the ledger would hand the second reader a
+            // null — seeding the ledger and silently discarding the entire restored conversation,
+            // with every test still green. One local, both uses.
+            var resumeSnapshot = session.TakePendingResume();
 
             // THE LEDGER IS THE COMPOSITION ROOT'S NOW (D7), not AgentHost's. Constructed here so
             // "which ledger does this agent get?" has an answer — the question per-model attribution
@@ -337,9 +339,9 @@ public static class AppBootstrap
             // This method re-runs on every F5 provider change and that RESETS the spend to zero.
             // Hoisting it to startup would make the ledger survive the re-wire and report one
             // session's spend across two providers as though it were one model's.
-            // CONSUMED ONCE, like pendingResume: a later re-wire must start fresh rather than
+            // CONSUMED ONCE, like the pending resume: a later re-wire must start fresh rather than
             // inherit a ledger from a switch two provider changes ago.
-            var carried = System.Threading.Interlocked.Exchange(ref carriedLedger, null);
+            var carried = session.TakeCarriedLedger();
 
             var ledger = carried
                 ?? (resumeSnapshot is null
@@ -394,7 +396,7 @@ public static class AppBootstrap
             }),
                 agentTypes);
 
-            runner = new AgentHost(
+            var host = new AgentHost(
                 new AgentHost.AgentRuntime
                 {
                     Provider = res.Provider!,
@@ -448,6 +450,12 @@ public static class AppBootstrap
                 // Built above from the same snapshot `resume` came from, so a resumed session gets
                 // its spend back exactly as it did when AgentHost made this itself.
                 ledger: ledger);
+
+            // THROUGH THE SESSION, which disposes the host it replaces and records the provider and
+            // instance alongside it — three facts that must move together, and used to be three
+            // assignments a re-wire had to remember.
+            session.ReplaceHost(host, res.Provider!, res.InstanceName, plugins);
+            runner = host;
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
@@ -556,7 +564,7 @@ public static class AppBootstrap
         // The panel shows what is live, including servers that failed.
         mainWindow.SetMcpServers(mcp.Statuses());
 
-        // --resume IS SEEDED BEFORE THE FIRST WIRE, not restored after it. `pendingResume` is what
+        // --resume IS SEEDED BEFORE THE FIRST WIRE, not restored after it. The session's pending resume is what
         // WireRunner reads to build a host over an existing conversation, so setting it here means
         // the session starts restored — no second wire, and no window that is briefly empty before
         // a context appears in it. The startup OFFER cannot do this (it needs a rendered window to
@@ -567,7 +575,7 @@ public static class AppBootstrap
             var (snapshot, problem) = FindResumeTarget(sessions, workingDir, options.Resume.Uid);
             if (snapshot is not null)
             {
-                pendingResume = snapshot;
+                session.PendResume(snapshot);
 
                 // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
                 // rows, and leaving the old one open would offer the same context again at the next
@@ -1120,7 +1128,7 @@ public static class AppBootstrap
                 // describe the session that is now running rather than the one that started.
                 var reresolved = ProviderResolver.Resolve(paths, env, useMock: false);
                 resolution = reresolved;
-                activeInstance = reresolved.InstanceName;
+
                 WireRunner(reresolved);
                 mainWindow.SetResolution(reresolved);
                 mainWindow.Chat.AddMessage(ChatRole.System, "Configuration saved.");
@@ -1216,7 +1224,7 @@ public static class AppBootstrap
             commandMenu.Values = source => source switch
             {
                 ValueSources.Sessions => SessionsCommand.Completions(SafeList()),
-                ValueSources.Providers => ModelCommand.Completions(resolution.Providers, activeInstance),
+                ValueSources.Providers => ModelCommand.Completions(resolution.Providers, session.InstanceName),
                 _ => [],
             };
 
@@ -1290,7 +1298,7 @@ public static class AppBootstrap
 
         void SwitchModel(string argument)
         {
-            var decision = ModelCommand.Decide(argument, resolution.Providers, activeInstance);
+            var decision = ModelCommand.Decide(argument, resolution.Providers, session.InstanceName);
 
             if (decision.SwitchTo is null)
             {
@@ -1318,7 +1326,7 @@ public static class AppBootstrap
 
             // THE CONVERSATION AND THE SPEND BOTH CARRY.
             //
-            // Through the same seam a resume uses: WireRunner reads `pendingResume` to build a host
+            // Through the same seam a resume uses: WireRunner takes the session's pending resume to build a host
             // over an existing conversation. What differs is the LEDGER — a re-wire normally starts a
             // fresh one, which is right when the provider is being reconfigured and wrong here: a
             // user switching model mid-conversation expects /stats to show the whole session, and the
@@ -1326,12 +1334,12 @@ public static class AppBootstrap
             var window = runner!.Context.Window;
             var used = runner.Context.Used;
 
-            pendingResume = new SessionSnapshot(
+            session.PendResume(new SessionSnapshot(
                 runner.SessionId, runner.Context.Snapshot(),
-                runner.Ledger.InputTokens, runner.Ledger.OutputTokens, DateTimeOffset.UtcNow);
-            carriedLedger = runner.Ledger;
+                runner.Ledger.InputTokens, runner.Ledger.OutputTokens, DateTimeOffset.UtcNow));
+            session.CarryLedger(runner.Ledger);
 
-            activeInstance = decision.SwitchTo;
+
             resolution = next;
             WireRunner(next);
 
@@ -1353,7 +1361,7 @@ public static class AppBootstrap
         // step quietly missing.
         void RestoreSession(SessionSnapshot snapshot)
         {
-            pendingResume = snapshot;
+            session.PendResume(snapshot);
             WireRunner(resolution);   // rebuilds the runner over the restored context
 
             // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
