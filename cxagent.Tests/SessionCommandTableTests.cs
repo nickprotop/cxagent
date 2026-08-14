@@ -410,10 +410,10 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_OffersLiveValuesPastTheSecondSpace()
     {
-        using var _ = new SuppliedValues(ValueSources.Sessions,
+        var supplied = new SuppliedValues(ValueSources.Sessions,
             [new("1", "7f3a2b  2h ago  add the arity table"), new("2", "01kzwz  yesterday  why")]);
 
-        var values = SessionCommands.ArgumentsFor("/sessions resume ");
+        var values = SessionCommands.ArgumentsFor("/sessions resume ", supplied.Supplier);
 
         Assert.Equal(["1", "2"], values.Select(v => v.Name));
     }
@@ -421,10 +421,10 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_NarrowsAsTheValueIsTyped()
     {
-        using var _ = new SuppliedValues(ValueSources.Sessions,
+        var supplied = new SuppliedValues(ValueSources.Sessions,
             [new("1", "one"), new("2", "two"), new("12", "twelve")]);
 
-        var values = SessionCommands.ArgumentsFor("/sessions resume 1");
+        var values = SessionCommands.ArgumentsFor("/sessions resume 1", supplied.Supplier);
 
         Assert.Equal(["1", "12"], values.Select(v => v.Name));
     }
@@ -433,32 +433,38 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_WithASupplier_AsksAboutTheSubcommandItIsUnder()
     {
-        using var _ = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
+        var supplied = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
 
-        Assert.Empty(SessionCommands.ArgumentsFor("/sessions all "));
+        Assert.Empty(SessionCommands.ArgumentsFor("/sessions all ", supplied.Supplier));
     }
 
     /// <summary>Three words in: the value is typed, and there is nothing left to choose.</summary>
     [Fact]
     public void ArgumentsFor_WithASupplier_StopsOnceTheValueIsTyped()
     {
-        using var _ = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
+        var supplied = new SuppliedValues(ValueSources.Sessions, [new("1", "one")]);
 
-        Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume 1 extra"));
+        Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume 1 extra", supplied.Supplier));
     }
 
     [Fact]
     public void ArgumentsFor_WithoutASupplier_StillStopsAtTheSecondSpace() =>
         Assert.Empty(SessionCommands.ArgumentsFor("/sessions resume "));
 
-    /// <summary>Registers a value supplier and removes it again, so one test cannot leak into
-    /// the next through a static.</summary>
-    private sealed class SuppliedValues : IDisposable
+    /// <summary>A value supplier for one source, handed to ArgumentsFor by the caller — the menu
+    /// owns it per instance, so there is no static for a test to leak through.</summary>
+    private sealed class SuppliedValues
     {
-        public SuppliedValues(string forSource, IReadOnlyList<CommandArgument> values) =>
-            SessionCommands.ValueSupplier = source => source == forSource ? values : [];
+        private readonly string _source;
+        private readonly IReadOnlyList<CommandArgument> _values;
 
-        public void Dispose() => SessionCommands.ValueSupplier = null;
+        public SuppliedValues(string forSource, IReadOnlyList<CommandArgument> values) =>
+            (_source, _values) = (forSource, values);
+
+        /// <summary>The supplier a caller passes in — no longer a static to reset.</summary>
+        public Func<string, IReadOnlyList<CommandArgument>> Supplier =>
+            source => source == _source ? _values : [];
+
     }
 
     [Fact]

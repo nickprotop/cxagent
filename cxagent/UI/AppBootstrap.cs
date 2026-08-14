@@ -367,7 +367,8 @@ public static class AppBootstrap
                     ?? OrchestratorSettings.DefaultCompressThreshold,
                 // UNCAPPED UNLESS THE USER SAID OTHERWISE. Null is the common case and means every
                 // spawn the model emits runs — the barrier still holds them all inside the turn.
-                maxConcurrentAgents: res.MaxConcurrentAgents),
+                maxConcurrentAgents: res.MaxConcurrentAgents,
+                workingDir: workingDir),
                 agentTypes);
 
             // res.Orchestrator carries config.json's token budgets. Passing it is what makes the cap
@@ -468,7 +469,7 @@ public static class AppBootstrap
                 // The LOADED list is derived from the parent's window, so it empties itself when
                 // compaction removes a body. That silent stop is the thing worth showing.
                 mainWindow.SkillCount = Core.Skills.SkillCatalog
-                    .Find(Directory.GetCurrentDirectory(), paths.ConfigDir).Skills.Count;
+                    .Find(workingDir, paths.ConfigDir).Skills.Count;
                 mainWindow.LoadedSkills = runner.LoadedSkills;
 
                 mainWindow.RefreshSessionPanel();
@@ -668,7 +669,7 @@ public static class AppBootstrap
                             // rather than a copy that could disagree with it.
                             new SkillsCommand(
                                 () => Core.Skills.SkillCatalog.Find(
-                                    Directory.GetCurrentDirectory(), paths.ConfigDir),
+                                    workingDir, paths.ConfigDir),
                                 permissionSink).Handle();
                             return;
                         }
@@ -1168,13 +1169,13 @@ public static class AppBootstrap
             system.WindowResized += (_, _) => system.EnqueueOnUIThread(mainWindow.RefreshSessionPanel);
 
             mainWindow.SetPermissionRuleCount(
-                permissionRules.RulesFor(Directory.GetCurrentDirectory()).Rules.Count);
+                permissionRules.RulesFor(workingDir).Rules.Count);
             mainWindow.RefreshSessionPanel();
 
             // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
             // the store is the composition root's — SessionCommands stays a description of the
             // commands rather than a view of the database. Read on each keystroke, never cached.
-            SessionCommands.ValueSupplier = source => source switch
+            commandMenu.Values = source => source switch
             {
                 ValueSources.Sessions => SessionsCommand.Completions(SafeList()),
                 ValueSources.Providers => ModelCommand.Completions(resolution.Providers, activeInstance),

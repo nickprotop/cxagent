@@ -199,6 +199,9 @@ public sealed class SessionPanel
         Section(lines, "Location");
         // The branch used to sit here too. It moved to the Git block at the foot of the panel, where
         // it reads with the working-tree state it belongs to rather than as a footnote to the path.
+        // THE PROCESS'S DIRECTORY, which is this session's only because there is one session per
+        // process. When that stops being true this has to become a value the panel is given, like
+        // everything else here — the agent already takes its own rather than reading this.
         lines.Add(Value(ShortPath(Directory.GetCurrentDirectory())));
 
         // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no

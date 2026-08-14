@@ -62,6 +62,16 @@ public sealed class CommandMenu
         _owner = owner;
     }
 
+    /// <summary>
+    /// Where live argument rows come from — the instances for <c>/model</c>, the sessions for
+    /// <c>/sessions resume</c>.
+    ///
+    /// <para>PER MENU, NOT PER PROCESS. This was a mutable static on <see cref="SessionCommands"/>,
+    /// which is fine while exactly one session exists and a latent bug the moment a second one does:
+    /// two menus would overwrite each other's source and each offer the other's rows.</para>
+    /// </summary>
+    public Func<string, IReadOnlyList<CommandArgument>>? Values { get; set; }
+
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
 
@@ -106,7 +116,7 @@ public sealed class CommandMenu
         List<Row> matches;
         if (text.Contains(' '))
         {
-            var args = SessionCommands.ArgumentsFor(text);
+            var args = SessionCommands.ArgumentsFor(text, Values);
 
             // THE PREFIX IS EVERYTHING ALREADY COMMITTED TO, not just the command name. At one level
             // down those are the same string; at two — "/sessions resume 3" — they are not, and

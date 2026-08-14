@@ -141,7 +141,8 @@ public static class SessionCommands
     /// which is a command and which is a modifier. The hierarchy is real, so the palette shows it.
     /// </para>
     /// </summary>
-    public static IReadOnlyList<CommandArgument> ArgumentsFor(string input)
+    public static IReadOnlyList<CommandArgument> ArgumentsFor(
+        string input, Func<string, IReadOnlyList<CommandArgument>>? values = null)
     {
         var space = input.IndexOf(' ');
         if (space < 0) return [];
@@ -172,12 +173,12 @@ public static class SessionCommands
             var under = command.Args.FirstOrDefault(a =>
                 a.Name.StartsWith(sub, StringComparison.OrdinalIgnoreCase));
 
-            return Narrow(Supplied(under.Values), typed);
+            return Narrow(Supplied(values, under.Values), typed);
         }
 
         // ONE WORD IN. Offer the declared arguments — and, for a command whose SOLE argument is a
         // live value (`/model <instance>`), the values themselves: there is nothing else to pick.
-        var live = command.Args.Count == 1 ? Supplied(command.Args[0].Values) : [];
+        var live = command.Args.Count == 1 ? Supplied(values, command.Args[0].Values) : [];
         if (live.Count > 0) return Narrow(live, rest);
 
         if (rest.Length == 0) return command.Args;
@@ -187,8 +188,9 @@ public static class SessionCommands
     }
 
     /// <summary>Rows from a named source, or empty when nothing supplies it.</summary>
-    private static IReadOnlyList<CommandArgument> Supplied(string? source) =>
-        source is null || ValueSupplier is null ? [] : ValueSupplier(source);
+    private static IReadOnlyList<CommandArgument> Supplied(
+        Func<string, IReadOnlyList<CommandArgument>>? values, string? source) =>
+        source is null || values is null ? [] : values(source);
 
     /// <summary>Filtered by what has been typed so far, so a long list narrows as you go.</summary>
     private static IReadOnlyList<CommandArgument> Narrow(
@@ -196,20 +198,6 @@ public static class SessionCommands
         typed.Length == 0
             ? rows
             : [.. rows.Where(r => r.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))];
-
-    /// <summary>
-    /// Live values for an argument that names something the app knows about, or null for the great
-    /// majority that name nothing.
-    ///
-    /// <para>KEYED ON THE SOURCE NAME an argument declares, not on the command path. It was keyed on
-    /// <c>"/sessions resume"</c> when one command needed it, with the note that a third would be
-    /// worth generalising — <c>/model</c> is the third, and it needs values one level UP, where a
-    /// path-keyed switch had nowhere to put them.</para>
-    ///
-    /// <para>The table stays a description of the commands: it declares WHICH source fills an
-    /// argument, and the composition root, which owns the stores and the registry, answers.</para>
-    /// </summary>
-    public static Func<string, IReadOnlyList<CommandArgument>>? ValueSupplier { get; set; }
 
     /// <summary>
     /// Everything after the command name, trimmed — empty when there is nothing.

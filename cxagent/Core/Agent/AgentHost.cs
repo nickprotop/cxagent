@@ -498,6 +498,10 @@ public sealed class AgentHost : IDisposable
             compressAbove: _orchestrator.EffectiveCompressThreshold(_contextWindow)
                 ?? OrchestratorSettings.DefaultCompressThreshold,
 
+            // THE HOST ALREADY KNEW THIS and used it for persistence and history; the agent read
+            // the process instead. Same value in practice, different sources — which is only ever
+            // true until something moves the process.
+            workingDir: _workingDir,
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
             briefing: _briefing,

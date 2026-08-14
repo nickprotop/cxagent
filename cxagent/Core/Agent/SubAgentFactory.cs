@@ -37,6 +37,7 @@ public sealed class SubAgentFactory
     private readonly PluginRegistry _plugins;
     private readonly TokenLedger _ledger;
     private readonly LogFileManager? _logs;
+    private readonly string? _workingDir;
     private readonly int _maxTurns;
     private readonly int? _compressAbove;
     private readonly int? _contextWindow;
@@ -93,11 +94,16 @@ public sealed class SubAgentFactory
         LogFileManager? logs, int maxTurns, int? compressAbove, int? contextWindow,
         string? globalInstructionsDir, Core.Mcp.McpToolset? mcp,
         Func<int?, int?>? thresholdFor = null,
-        int? maxConcurrentAgents = null)
+        int? maxConcurrentAgents = null,
+        string? workingDir = null)
     {
         // 0 AND NULL BOTH MEAN UNLIMITED, matching maxTurns. A semaphore of 0 would deadlock every
         // spawn forever, which is the one reading of "zero" nobody wants.
         ConcurrencySlot = maxConcurrentAgents is > 0 ? new SemaphoreSlim(maxConcurrentAgents.Value) : null;
+        // A CHILD WORKS WHERE ITS PARENT DOES. It inherits the directory rather than reading the
+        // process, so a session's children stay inside that session's folder even when another
+        // session is running elsewhere in the same process.
+        _workingDir = workingDir;
 
         _provider = provider;
         _plugins = plugins;
@@ -209,6 +215,7 @@ public sealed class SubAgentFactory
             // A FRESH CONTEXT WITH THE WINDOW SET. Not the parent's: two agents sharing one context
             // is the failure the whole design exists to prevent.
             context: new AgentContext(window),
+            workingDir: _workingDir,
             globalInstructionsDir: _globalInstructionsDir,
             mcp: _mcp,
             // THE TYPE'S BRIEFING WINS over the parameter: the parameter is the caller saying what

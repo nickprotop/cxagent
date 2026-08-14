@@ -43,6 +43,7 @@ public sealed class Agent
     private readonly IJobPanel _jobs;
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
+    private readonly string? _workingDir;
 
     /// <summary>
     /// This agent's identity, for its whole life. Keys its log directory and its job rows.
@@ -369,8 +370,19 @@ public sealed class Agent
         bool isSubAgent = false,
         string? callerContext = null,
         string? label = null,
-        Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null)
+        Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
+        string? workingDir = null)
     {
+        // THE DIRECTORY THIS AGENT WORKS IN, as data.
+        //
+        // It used to read Directory.GetCurrentDirectory() at every use, which is PROCESS-global —
+        // so the skills it discovered, the AGENTS.md it read and the path it told the model came
+        // from wherever the process happened to be pointing, while its OWN host recorded sessions
+        // against the directory it was constructed for. Two sources for one fact, identical only
+        // because nothing ever moved the process.
+        //
+        // Null still falls back to the process, so a caller that has no opinion behaves as before.
+        _workingDir = workingDir;
         // NAMED callerContext, NOT context: `context` on this constructor is already the
         // AgentContext — the conversation itself. Two different things called the same word at one
         // call site is how a caller passes the wrong one and gets a child that shares its parent's
@@ -2153,8 +2165,18 @@ public sealed class Agent
         return result;
     }
 
-    private static string? TryGetWorkingDirectory()
+    /// <summary>
+    /// Where this agent works — what it was given, or the process's own directory when it was given
+    /// nothing.
+    ///
+    /// <para>THE FALLBACK IS FOR CALLERS WITHOUT AN OPINION, not a second source of truth. Anything
+    /// that owns a session should pass one: two sessions in one process share a cwd and cannot each
+    /// have their own by reading it.</para>
+    /// </summary>
+    private string? TryGetWorkingDirectory()
     {
+        if (_workingDir is { Length: > 0 }) return _workingDir;
+
         try { return Directory.GetCurrentDirectory(); }
         catch (Exception) { return null; }
     }
