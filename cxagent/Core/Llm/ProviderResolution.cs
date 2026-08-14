@@ -1,7 +1,6 @@
-using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Llm;
 
 /// <summary>Outcome of resolving a provider at startup: either a live provider, or the errors to show.</summary>
 /// <param name="Orchestrator">

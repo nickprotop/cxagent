@@ -1,4 +1,5 @@
 using CxAgent.Core.Agent;
+using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;

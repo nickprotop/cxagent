@@ -1,3 +1,4 @@
+using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using CxAgent.UI;
 using Xunit;
