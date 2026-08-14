@@ -337,6 +337,15 @@ public class SessionPanelTests
             Rules = 0,
             SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 895 },
             SubAgentTokens = 730,
+
+            // WHAT PRODUCTION ACTUALLY FEEDS. SpentTokens is the PARENT'S OWN spend — the status bar
+            // is this agent's readout and is fed OwnSpend — while SubAgentTokens is the session-wide
+            // worker total. This test used to set SpentTokens to the session total (895) and assert
+            // "this agent · 165", i.e. 895 - 730. That encoded a subtraction the app never performs
+            // on comparable numbers: in the real wiring both terms came from different scopes, so
+            // "this agent" clamped to 0 the moment any worker spent anything, and the test passed
+            // while the panel was wrong.
+            OwnTokens = 165,
         });
 
         var text = panel.RenderedText;
@@ -344,10 +353,40 @@ public class SessionPanelTests
         Assert.Contains("Tokens by instance", text, StringComparison.Ordinal);
         Assert.Contains("Tokens by agent", text, StringComparison.Ordinal);
 
-        // And the two agent lines still sum to the session total the status bar shows — which is why
-        // "this agent" is subtraction rather than a second counter that could drift from it.
         Assert.Contains("workers · 730", text, StringComparison.Ordinal);
         Assert.Contains("this agent · 165", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE REGRESSION: "this agent" showed 0 whenever workers had spent anything.
+    ///
+    /// <para>It was rendered as <c>SpentTokens - SubAgentTokens</c>, but those come from different
+    /// scopes — SpentTokens is the parent's OWN spend, SubAgentTokens is the session-wide worker
+    /// total. On any real fan-out the workers' figure exceeds the parent's own, so the subtraction
+    /// went negative and Math.Max clamped it to zero. A measured value cannot drift like a derived
+    /// one can.</para>
+    /// </summary>
+    [Fact]
+    public void Refresh_ShowsThisAgentsOwnSpend_EvenWhenWorkersSpentMore()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "",
+            Rules = 0,
+
+            // The shape of a real fan-out: workers dominate, and the parent's own spend is smaller
+            // than theirs — exactly the case the old subtraction rendered as 0.
+            SubAgentTokens = 9_000,
+            SpentTokens = 1_200,
+            OwnTokens = 1_200,
+        });
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("workers · 9,000", text, StringComparison.Ordinal);
+        Assert.Contains("this agent · 1,200", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("this agent · 0", text, StringComparison.Ordinal);
     }
 
     /// <summary>

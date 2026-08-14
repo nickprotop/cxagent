@@ -192,6 +192,17 @@ public sealed class SessionPanel
         public int InputTokens { get; init; }
         public int OutputTokens { get; init; }
         public int SubAgentTokens { get; init; }
+
+        /// <summary>
+        /// What THIS agent spent, excluding its children — measured, never derived.
+        ///
+        /// <para>IT USED TO BE <c>SpentTokens - SubAgentTokens</c>, and that subtraction was wrong on
+        /// both terms. SpentTokens is the parent's OWN spend (the status bar is this agent's readout,
+        /// so it is fed OwnSpend), while SubAgentTokens is the SESSION-wide worker total from the
+        /// shared ledger. Subtracting a session figure from an own figure drove "this agent" to zero
+        /// — clamped by Math.Max — the moment any worker spent anything.</para>
+        /// </summary>
+        public int OwnTokens { get; init; }
         public IReadOnlyDictionary<string, int>? SpendByModel { get; init; }
 
         /// <summary>Share of input served from the provider's prefix cache, or null when no provider
@@ -274,9 +285,18 @@ public sealed class SessionPanel
         // THE CEILING THAT BINDS, resolved by the caller — the default when nothing was configured,
         // and 0 only for an explicit opt-out. This used to receive the raw configured value, so an
         // unconfigured session read "no cap" while a real ceiling was in force.
+        //
+        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. It used to render "{_turns}/{max}",
+        // pairing a session-lifetime count with a limit that resets on every prompt — so a long
+        // session read "290/300 turns" and looked one prompt from death while the current goal had
+        // taken three. Two different denominators sharing one slash.
+        //
+        // The cap is now stated ALONE, as the rule it is. The session's own turn count already has a
+        // home in the Session block above, where it is not standing next to a limit it is not
+        // measured against.
         lines.Add(state.HasTurnCap
-            ? Value($"{_turns}/{state.MaxTurns} turns")
-            : Muted($"{_turns} turns · no cap"));
+            ? Value($"{state.MaxTurns} turns per goal")
+            : Muted("no turn cap"));
 
         lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
 
@@ -416,7 +436,7 @@ public sealed class SessionPanel
         {
             Section(lines, "Tokens by agent");
             lines.Add(Value($"workers · {state.SubAgentTokens:N0}"));
-            lines.Add(Value($"this agent · {Math.Max(0, state.SpentTokens - state.SubAgentTokens):N0}"));
+            lines.Add(Value($"this agent · {state.OwnTokens:N0}"));
         }
 
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.

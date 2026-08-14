@@ -1055,6 +1055,11 @@ public sealed class MainWindow : IDisposable
             // the SPEND, which is what it has always been.
             ContextUsed = _contextUsed,
             SpentTokens = _lastTokens,
+
+            // MEASURED, NOT DERIVED — see SessionPanelState.OwnTokens. _lastTokens IS this agent's
+            // own spend (SetTokenTotal is fed OwnSpend), so the panel can use it directly rather
+            // than subtracting a session-wide worker total from it.
+            OwnTokens = _lastTokens,
             ContextWindow = _resolution.ContextWindow,
 
             WorkingDirectory = WorkingDirectory,

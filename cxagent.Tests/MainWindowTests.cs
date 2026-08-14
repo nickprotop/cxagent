@@ -544,7 +544,10 @@ public class MainWindowTests
             MaxTurns = 200,
         });
 
-        Assert.Contains("1/200 turns", panel.RenderedText, StringComparison.Ordinal);
+        // PER GOAL, STATED ALONE. This asserted "1/200 turns", pairing the session's lifetime turn
+        // count with a cap that resets on every prompt — two different denominators sharing one
+        // slash, so a long session read "290/300" while the current goal had taken three.
+        Assert.Contains("200 turns per goal", panel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -565,9 +568,9 @@ public class MainWindowTests
         window.Build();
         window.RefreshSessionPanel();
 
-        Assert.Contains($"/{AgentHost.DefaultTurnCeiling} turns", window.SessionPanel.RenderedText,
+        Assert.Contains($"{AgentHost.DefaultTurnCeiling} turns per goal", window.SessionPanel.RenderedText,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("no cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("no turn cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>...and "no cap" is reserved for the explicit opt-out.</summary>
@@ -581,7 +584,7 @@ public class MainWindowTests
         window.Build();
         window.RefreshSessionPanel();
 
-        Assert.Contains("no cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("no turn cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -601,7 +604,7 @@ public class MainWindowTests
             Rules = 0,
         });
 
-        Assert.Contains("1 turns · no cap", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("no turn cap", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
         Assert.DoesNotContain("/200", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -625,7 +628,7 @@ public class MainWindowTests
         });
 
         Assert.Contains("Limits", panel.RenderedText, StringComparison.Ordinal);
-        Assert.Contains("0/200 turns", panel.RenderedText, StringComparison.Ordinal);
+        Assert.Contains("200 turns per goal", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
     }
 
