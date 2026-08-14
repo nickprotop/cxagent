@@ -619,16 +619,17 @@ public sealed class Agent
                 // CONTEXT BELOW THE BRIEFING. Both survive compaction; only the briefing carries
                 // authority. See _context for why a parent-written instruction must not outrank a
                 // config-written one.
-                + RenderContext(_callerContext)
-                // THE PLAN LAST, because it changes most often and everything above it is stable.
-                // Putting it here means a rewritten list invalidates only the tail of the cached
-                // prefix rather than the instructions above it.
-                //
-                // IN THE SYSTEM MESSAGE AT ALL is the point: this is why the model's plan outlives
-                // compaction. Held as a tool result it would be an ordinary message and the older
-                // half would take it — deleting the plan exactly when the conversation got long
-                // enough to need one.
-                + _todos.Render();
+                + RenderContext(_callerContext);
+
+            // THE PLAN IS NOT HERE ANY MORE — see PlaceTaskList. It used to be appended above, on
+            // the reasoning that a rewrite "invalidates only the tail of the cached prefix". A
+            // prefix cache has no tail: it matches the longest common prefix and stops at the first
+            // differing byte, so a change at the END of this message invalidates the whole
+            // conversation after it. Measured, a 134-character plan edit re-processed 67,367 tokens.
+            //
+            // The other half of the old argument — that the system message is how the plan outlives
+            // compaction — described a property this code never relied on. The system message is
+            // rebuilt from _todos every turn, so the plan was always RE-INJECTED, never preserved.
 
             var existing = messages.FirstOrDefault(m => m.Role == "system");
             if (existing is null)
@@ -735,6 +736,13 @@ public sealed class Agent
             // AgentContext.IsUnderPressure — rather than a separately configured number that can
             // disagree with the window the panel shows.
             await MaybeCompressAsync(Id, ct);
+
+            // AFTER COMPACTION, AND EVERY TURN. After, because compacting a list that was just
+            // placed could cut it or leave it mid-conversation when the entire point is that it is
+            // last. Every turn rather than once per goal, because a todowrite issued during a tool
+            // loop has to reach the model on the following turn — which is precisely when the model
+            // is acting on it.
+            PlaceTaskList();
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
@@ -1858,6 +1866,43 @@ public sealed class Agent
     /// SessionCompressor falls back to truncation on a provider error, and its result says which
     /// happened so the transcript can be honest about it.</para>
     /// </summary>
+    /// <summary>
+    /// Puts the model's task list at the newest end of the conversation, as the one message marked
+    /// <see cref="ChatMessage.IsTaskList"/>.
+    ///
+    /// <para>NEWEST, NOT IN THE SYSTEM MESSAGE. Everything before the first changed byte is served
+    /// from the provider's prefix cache, so a plan that lives in the prefix re-processes the entire
+    /// context every time a marker flips. At the end it costs nothing, and it is also the last thing
+    /// the model reads before answering — which is where an instruction lands hardest.</para>
+    ///
+    /// <para>REPLACED, NEVER APPENDED. <c>_context.Messages</c> is the agent's persistent list, not a
+    /// per-turn copy, so appending would leave a trail of stale plans for the model to reconcile.
+    /// Found by PROPERTY: matching rendered text would delete a user message that quoted the plan
+    /// back.</para>
+    ///
+    /// <para>EMPTY REMOVES IT. A cleared list must not leave a stale plan behind, and a session that
+    /// never plans keeps a context byte-identical to one from before this existed.</para>
+    /// </summary>
+    private void PlaceTaskList()
+    {
+        var messages = _context.Messages;
+        messages.RemoveAll(m => m.IsTaskList);
+
+        var rendered = _todos.Render();
+        if (string.IsNullOrWhiteSpace(rendered)) return;
+
+        // USER ROLE, NO ToolCallId. Both compaction cut paths (SessionCompressor.SafeCut and
+        // .Truncate) walk on `ToolCallId is not null` to keep a tool result with the call that
+        // produced it; a synthetic tool result here would be exactly the orphan they prevent.
+        messages.Add(new ChatMessage
+        {
+            Role = "user",
+            Content = rendered,
+            IsTaskList = true,
+            Timestamp = DateTimeOffset.UtcNow,
+        });
+    }
+
     private async Task MaybeCompressAsync(string agentId, CancellationToken ct)
     {
         // TWO WAYS TO BE OVER, and a configured number wins where it applies: someone who set an

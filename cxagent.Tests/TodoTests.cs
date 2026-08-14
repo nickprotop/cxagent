@@ -267,9 +267,13 @@ public class TodoTests
     }
 
     /// <summary>
-    /// THE PROPERTY THE WHOLE DESIGN EXISTS FOR. Held as a tool result the plan would be an ordinary
-    /// message, and compaction removes the older half — deleting the model's plan exactly when the
-    /// conversation got long enough to need one. In the system message it survives.
+    /// THE PROPERTY THE WHOLE DESIGN EXISTS FOR: the plan outlives compaction.
+    ///
+    /// <para>NOT BECAUSE IT IS PRESERVED — because it is RE-INJECTED. The plan lives in the agent's
+    /// TodoList, outside the conversation entirely, and is written into the messages fresh on every
+    /// turn. Compaction may delete a copy; the next turn writes another. That was always the real
+    /// mechanism, which is why the plan could move out of the system message without weakening
+    /// this.</para>
     /// </summary>
     [Fact]
     public async Task ThePlan_SurvivesCompaction()
@@ -304,8 +308,8 @@ public class TodoTests
         provider.EnqueueResponse(new LlmResponse { Text = "still here", StopReason = "end_turn" });
         await agent.SendAsync("what were you doing?", CancellationToken.None);
 
-        var system = agent.Context.Messages.First(m => m.Role == "system").Content;
-        Assert.Contains("the surviving step", system, StringComparison.Ordinal);
+        var plan = Assert.Single(agent.Context.Messages, m => m.IsTaskList);
+        Assert.Contains("the surviving step", plan.Content, StringComparison.Ordinal);
     }
 
     /// <summary>The tool is offered whether or not the list has anything in it.</summary>

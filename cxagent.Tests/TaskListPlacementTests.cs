@@ -1,0 +1,153 @@
+using System.Text.Json;
+using CxAgent.Core.Agent;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
+using CxAgent.Core.Plugins;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// THE TASK LIST MUST NOT SIT IN THE CACHE PREFIX.
+///
+/// <para>It used to be appended to the system message, so flipping one marker from <c>- [ ]</c> to
+/// <c>- [&gt;]</c> rewrote that message and invalidated the provider's prompt cache from token zero.
+/// Measured on a 116-turn drive: a 134-character change re-processed a 67,367-token context, on an
+/// endpoint where an identical prompt costs 43ms warm against 1,420ms cold.</para>
+///
+/// <para>The compaction argument that justified the old placement did not hold — the system message
+/// is rebuilt from the TodoList every turn, so the plan was always RE-INJECTED rather than
+/// preserved. Moving it to the newest end keeps that mechanism and costs the cache nothing.</para>
+/// </summary>
+public class TaskListPlacementTests : IDisposable
+{
+    private readonly string _dir =
+        Path.Combine(Path.GetTempPath(), "cxagent-todo-" + Guid.NewGuid().ToString("N"));
+    public TaskListPlacementTests() => Directory.CreateDirectory(_dir);
+    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    private Agent Build(MockLlmProvider provider) =>
+        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 10,
+            workingDir: _dir);
+
+    private static LlmResponse Done(string text) =>
+        new() { Text = text, ToolCalls = [], StopReason = "end_turn", Usage = new LlmUsage() };
+
+    /// <summary>One todowrite call, with the given items.</summary>
+    private static LlmResponse TodoCall(params (string Text, string Status)[] items)
+    {
+        var todos = items.Select(i => new { text = i.Text, status = i.Status }).ToArray();
+        return LlmResponse.WithToolCall("todowrite", new { todos });
+    }
+
+    private static string SystemOf(MockLlmProvider p) =>
+        p.LastMessages!.First(m => m.Role == "system").Content;
+
+    /// <summary>
+    /// THE REGRESSION. A status flip must leave the system message byte-identical — that message is
+    /// the cache prefix, and rewriting it re-processes the whole conversation.
+    /// </summary>
+    [Fact]
+    public async Task AStatusFlip_LeavesTheSystemMessageByteIdentical()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("wire the flag", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+        provider.EnqueueResponse(TodoCall(("wire the flag", "in_progress")));
+        provider.EnqueueResponse(Done("ok"));
+
+        var agent = Build(provider);
+        await agent.SendAsync("first", CancellationToken.None);
+        var before = SystemOf(provider);
+
+        await agent.SendAsync("second", CancellationToken.None);
+
+        Assert.Equal(before, SystemOf(provider));
+    }
+
+    /// <summary>The plan still reaches the model — moving it must not mean dropping it.</summary>
+    [Fact]
+    public async Task TheTaskList_IsSentToTheModel()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("wire the flag", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+
+        await Build(provider).SendAsync("go", CancellationToken.None);
+
+        Assert.Contains(provider.LastMessages!, m => m.IsTaskList);
+        Assert.Contains(provider.LastMessages!,
+            m => m.IsTaskList && m.Content.Contains("wire the flag", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// EXACTLY ONE, EVER. _context.Messages is the agent's persistent list, not a per-turn copy, so
+    /// appending each turn would leave a trail of stale plans the model has to reconcile.
+    /// </summary>
+    [Fact]
+    public async Task ThreeRewrites_LeaveExactlyOneTaskListMessage()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+        provider.EnqueueResponse(TodoCall(("a", "in_progress")));
+        provider.EnqueueResponse(Done("ok"));
+        provider.EnqueueResponse(TodoCall(("a", "completed")));
+        provider.EnqueueResponse(Done("ok"));
+
+        var agent = Build(provider);
+        await agent.SendAsync("one", CancellationToken.None);
+        await agent.SendAsync("two", CancellationToken.None);
+        await agent.SendAsync("three", CancellationToken.None);
+
+        Assert.Single(provider.LastMessages!, m => m.IsTaskList);
+    }
+
+    /// <summary>
+    /// LAST, which is the whole point: everything before it stays cached, and the plan is the final
+    /// thing the model reads before answering.
+    /// </summary>
+    [Fact]
+    public async Task TheTaskList_IsTheFinalMessage()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+
+        await Build(provider).SendAsync("go", CancellationToken.None);
+
+        Assert.True(provider.LastMessages![^1].IsTaskList);
+    }
+
+    /// <summary>
+    /// A SESSION THAT NEVER PLANS PAYS NOTHING. No todos means no message at all — not an empty one.
+    /// </summary>
+    [Fact]
+    public async Task WithNoTodos_NoTaskListMessageIsAdded()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Done("ok"));
+
+        await Build(provider).SendAsync("go", CancellationToken.None);
+
+        Assert.DoesNotContain(provider.LastMessages!, m => m.IsTaskList);
+    }
+
+    /// <summary>The plan is user-role with no ToolCallId. Both compaction cut paths key on
+    /// ToolCallId to keep a tool result with its call; a synthetic result would be the orphan those
+    /// walks exist to prevent.</summary>
+    [Fact]
+    public async Task TheTaskList_IsAUserMessageWithNoToolCallId()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("ok"));
+
+        await Build(provider).SendAsync("go", CancellationToken.None);
+
+        var plan = Assert.Single(provider.LastMessages!, m => m.IsTaskList);
+        Assert.Equal("user", plan.Role);
+        Assert.Null(plan.ToolCallId);
+    }
+}
