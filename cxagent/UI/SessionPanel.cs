@@ -160,17 +160,67 @@ public sealed class SessionPanel
     /// <param name="model">Model identifier, e.g. <c>qwen3.6-35b-a3b</c>.</param>
     /// <param name="endpoint">Where it runs, e.g. <c>local :8771</c>.</param>
     /// <param name="rules">Count of always-allow rules live for this folder.</param>
-    public void Refresh(int? contextUsed, int spentTokens, int? contextWindow, string model,
-        string endpoint, int rules,
-        int maxTurns = 0, int inputTokens = 0, int outputTokens = 0,
-        string sessionId = "",
-        IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null,
-        IReadOnlyList<string>? agentTypes = null,
-        IReadOnlyDictionary<string, int>? spendByModel = null,
-        int subAgentTokens = 0,
-        IReadOnlyDictionary<string, (int Input, int Output)>? splitByModel = null,
-        int skillCount = 0,
-        IReadOnlyList<string>? loadedSkills = null)
+    /// <summary>
+    /// Everything the panel draws, in one object.
+    ///
+    /// <para>IT WAS FOURTEEN PARAMETERS, most of them optional and several the same type. Callers
+    /// had to count positions to add one, a named argument in the middle stopped compiling as soon
+    /// as anything followed it positionally, and two adjacent <c>int</c>s could be swapped without
+    /// the compiler noticing. A record makes every value named at the call site and lets new ones
+    /// arrive without touching a single existing caller.</para>
+    ///
+    /// <para>Defaults are on the properties rather than the constructor, so a caller supplies what
+    /// it knows and says nothing about the rest — a test that cares only about caps writes two
+    /// lines instead of counting commas to reach the right slot.</para>
+    /// </summary>
+    public sealed record SessionPanelState
+    {
+        // --- what the session is talking to ---
+        public string Model { get; init; } = "";
+        public string Endpoint { get; init; } = "";
+        public string? WorkingDirectory { get; init; }
+        public string SessionId { get; init; } = "";
+
+        // --- context and spend ---
+        public int? ContextUsed { get; init; }
+        public int? ContextWindow { get; init; }
+        public int SpentTokens { get; init; }
+        public int InputTokens { get; init; }
+        public int OutputTokens { get; init; }
+        public int SubAgentTokens { get; init; }
+        public IReadOnlyDictionary<string, int>? SpendByModel { get; init; }
+        public IReadOnlyDictionary<string, (int Input, int Output)>? SplitByModel { get; init; }
+
+        // --- what bounds the run ---
+        public int MaxTurns { get; init; }
+
+        // --- what the session can reach ---
+        public int Rules { get; init; }
+        public IReadOnlyList<Core.Mcp.McpServerStatus>? McpServers { get; init; }
+        public IReadOnlyList<string>? AgentTypes { get; init; }
+        public int SkillCount { get; init; }
+        public IReadOnlyList<string>? LoadedSkills { get; init; }
+
+        /// <summary>
+        /// The folder to show — what the session was given, or the process's own when it was given
+        /// nothing.
+        ///
+        /// <para>ON THE STATE RATHER THAN IN THE RENDERING, because it is a decision about what is
+        /// true, not about how to draw it. The rendering asks one question and gets one answer.</para>
+        /// </summary>
+        public string Folder =>
+            WorkingDirectory is { Length: > 0 } given ? given : SafeCurrentDirectory();
+
+        /// <summary>
+        /// Is there a turn ceiling worth showing?
+        ///
+        /// <para>Zero reaches here only for an EXPLICIT opt-out — an unconfigured session resolves
+        /// to the default before the panel sees it — so "no cap" now means what it says.</para>
+        /// </summary>
+        public bool HasTurnCap => MaxTurns > 0;
+    }
+
+    public void Refresh(SessionPanelState state)
     {
         var lines = new List<string>();
 
@@ -181,10 +231,10 @@ public sealed class SessionPanel
         //
         // The window alone is still worth a line before any measurement exists, since the status bar
         // shows a fraction it has no numerator for yet.
-        if (contextUsed is null && contextWindow is > 0)
+        if (state.ContextUsed is null && state.ContextWindow is > 0)
         {
             Section(lines, "Context");
-            lines.Add(Muted($"window {Compact(contextWindow.Value)}"));
+            lines.Add(Muted($"window {Compact(state.ContextWindow.Value)}"));
         }
 
         // NO MODEL BLOCK. It moved to the line under the composer, where opencode puts it and
@@ -199,10 +249,11 @@ public sealed class SessionPanel
         Section(lines, "Location");
         // The branch used to sit here too. It moved to the Git block at the foot of the panel, where
         // it reads with the working-tree state it belongs to rather than as a footnote to the path.
-        // THE PROCESS'S DIRECTORY, which is this session's only because there is one session per
-        // process. When that stops being true this has to become a value the panel is given, like
-        // everything else here — the agent already takes its own rather than reading this.
-        lines.Add(Value(ShortPath(Directory.GetCurrentDirectory())));
+        // GIVEN, NOT READ. The panel used to call Directory.GetCurrentDirectory() here, which is
+        // the session's directory only while there is one session per process — the same ambient
+        // read the agent stopped making. Falling back to the process keeps a caller that has no
+        // opinion working, exactly as the agent's own fallback does.
+        lines.Add(Value(ShortPath(state.Folder)));
 
         // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
         // reason" has almost always hit one.
@@ -215,8 +266,8 @@ public sealed class SessionPanel
         // THE CEILING THAT BINDS, resolved by the caller — the default when nothing was configured,
         // and 0 only for an explicit opt-out. This used to receive the raw configured value, so an
         // unconfigured session read "no cap" while a real ceiling was in force.
-        lines.Add(maxTurns > 0
-            ? Value($"{_turns}/{maxTurns} turns")
+        lines.Add(state.HasTurnCap
+            ? Value($"{_turns}/{state.MaxTurns} turns")
             : Muted($"{_turns} turns · no cap"));
 
         lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
@@ -225,10 +276,10 @@ public sealed class SessionPanel
         // but it is the ONE string that connects what is on screen to the logs on disk, and without
         // it a user who wants to look at a session afterwards has to guess which directory by
         // timestamp.
-        if (sessionId.Length > 0)
+        if (state.SessionId.Length > 0)
         {
             Section(lines, "Session id");
-            lines.Add(Muted(sessionId));
+            lines.Add(Muted(state.SessionId));
         }
 
         // MCP SERVERS, when any are configured and switched on.
@@ -241,7 +292,7 @@ public sealed class SessionPanel
         //
         // Absent entirely when there is nothing to say, like the session-id block above rather than
         // a heading over an empty list.
-        var servers = (mcpServers ?? []).Where(s => s.Enabled).ToList();
+        var servers = (state.McpServers ?? []).Where(s => s.Enabled).ToList();
         if (servers.Count > 0)
         {
             Section(lines, "MCP");
@@ -265,11 +316,11 @@ public sealed class SessionPanel
         // THE PARENT'S ONLY. A child's skills live and die inside its own row, which already names
         // them, and a child is gone by the next turn while this panel persists — attributing one to
         // the session would be worse than omitting it, because a skill is not a quantity to total.
-        if (skillCount > 0)
+        if (state.SkillCount > 0)
         {
             Section(lines, "Skills");
-            lines.Add(Muted($"{skillCount} available"));
-            foreach (var skill in loadedSkills ?? [])
+            lines.Add(Muted($"{state.SkillCount} available"));
+            foreach (var skill in state.LoadedSkills ?? [])
                 lines.Add(Value(skill));
         }
 
@@ -292,7 +343,7 @@ public sealed class SessionPanel
         // MODEL ID, NOT INSTANCE NAME. Two instances can serve the same model (a shared endpoint, a
         // second base URL), and what a user is deciding about when they read this is the MODEL —
         // instance names would split one cost across two lines for no reason they could act on.
-        var byModel = (spendByModel ?? new Dictionary<string, int>())
+        var byModel = (state.SpendByModel ?? new Dictionary<string, int>())
             .Where(kv => kv.Value > 0)
             .OrderByDescending(kv => kv.Value)
             .ToList();
@@ -329,8 +380,8 @@ public sealed class SessionPanel
                 // The split, indented under its model. Absent when the provider reported no usage
                 // breakdown — a local llama.cpp build often does not — rather than showing ↑0 ↓0,
                 // which would read as a measurement of nothing rather than the absence of one.
-                if (splitByModel is not null
-                    && splitByModel.TryGetValue(modelId, out var s)
+                if (state.SplitByModel is not null
+                    && state.SplitByModel.TryGetValue(modelId, out var s)
                     && (s.Input > 0 || s.Output > 0))
                     lines.Add(Muted($"  ↑{Compact(s.Input)} ↓{Compact(s.Output)}"));
             }
@@ -340,11 +391,11 @@ public sealed class SessionPanel
         // A fan-out session normally runs its children on the PARENT'S provider, so every agent lands
         // under one model id and the list above cannot say which of them spent it. "A worker spent
         // this" is the question a fan-out session asks, and model identity never answered it.
-        if (subAgentTokens > 0)
+        if (state.SubAgentTokens > 0)
         {
             Section(lines, "Tokens by agent");
-            lines.Add(Value($"workers · {subAgentTokens:N0}"));
-            lines.Add(Value($"this agent · {Math.Max(0, spentTokens - subAgentTokens):N0}"));
+            lines.Add(Value($"workers · {state.SubAgentTokens:N0}"));
+            lines.Add(Value($"this agent · {Math.Max(0, state.SpentTokens - state.SubAgentTokens):N0}"));
         }
 
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.
@@ -357,7 +408,7 @@ public sealed class SessionPanel
         //
         // NAMES ONLY. The briefing is what the MODEL reads; here it would not fit 24 columns and
         // would push the sections below it off screen. Anyone who wants the text has the config file.
-        var types = agentTypes ?? [];
+        var types = state.AgentTypes ?? [];
         if (types.Count > 0)
         {
             Section(lines, "Agent types");
@@ -368,9 +419,9 @@ public sealed class SessionPanel
         // unless the user opened Settings — you granted them, you should be able to see that you
         // did. The detail stays in Settings; this is the reminder that there is detail.
         Section(lines, "Permissions");
-        lines.Add(rules == 0
+        lines.Add(state.Rules == 0
             ? Muted("none granted")
-            : Value($"{rules} always-allow rule{(rules == 1 ? "" : "s")}"));
+            : Value($"{state.Rules} always-allow rule{(state.Rules == 1 ? "" : "s")}"));
 
         // GIT LAST, at the foot of the panel. It is the one block about the REPOSITORY rather than
         // the session, and it is what you check before committing rather than while working — so it
@@ -529,6 +580,14 @@ public sealed class SessionPanel
         // nothing. What distinguishes local model ids is usually the suffix — the quantisation, a
         // variant tag — which is precisely what a tail-trim throws away.
         return name[..9] + "…" + name[^7..];
+    }
+
+    /// <summary>The process's directory, or "?" when it cannot be read — never a throw from a
+    /// panel refresh.</summary>
+    private static string SafeCurrentDirectory()
+    {
+        try { return Directory.GetCurrentDirectory(); }
+        catch (Exception) { return "?"; }
     }
 
     private static string ShortPath(string path)

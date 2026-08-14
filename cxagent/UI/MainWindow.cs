@@ -136,6 +136,15 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public string SessionId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The folder this session works in, for the panel to show.
+    ///
+    /// <para>SET BY THE COMPOSITION ROOT, which computes it once, rather than read here from the
+    /// process. The agent stopped making that ambient read; the panel showing a different answer
+    /// than the agent is using would be the same two-sources bug in a place nobody would check.</para>
+    /// </summary>
+    public string? WorkingDirectory { get; set; }
+
 
     // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
     // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
@@ -1004,50 +1013,56 @@ public sealed class MainWindow : IDisposable
         // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
         // provider will actually send. Both are shown because they differ often enough that seeing
         // only one leaves the question open.
-        SessionPanel.Refresh(
-            // OCCUPANCY FIRST, and _lastTokens is NOT it. _lastTokens is Ledger.TotalTokens — a
-            // cumulative sum that only ever grows — and passing it as the context size is what put
-            // "9%" on a context measured at 2%, and what stopped the gauge falling after a
-            // compression. It goes in the `spent` slot, which is what it has always been.
-            _contextUsed,
-            // THE SESSION'S SPEND, not the bar's. _lastTokens is now the PARENT's alone — the status
-            // bar is this agent's readout — but the panel is where the whole session is accounted
-            // for, and "Tokens by agent" subtracts workers from this figure to show the split. Adding
-            // them back here keeps that arithmetic honest: parent + workers is the session.
-            _lastTokens + _subAgentTokens,
-            _resolution.ContextWindow,
-            // ModelId ONLY. DisplayName is "openai-compatible <the same model id>", so showing both
-            // printed the model twice — and at 24 columns a long gguf name wraps to three lines, so
-            // the duplicate cost six lines to say one thing.
-            _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
-            string.Empty,
-            _permissionRuleCount,
-            // THE CEILING THAT ACTUALLY BINDS, not the configured value. The panel used to show
-            // the raw setting, so an unconfigured session printed "no cap" while 500 was quietly in
-            // force — a live drive read "66 turns · no cap" and the cap was real all along. int.MaxValue
-            // is the genuine no-cap case (an explicit 0), and the panel renders that as "no cap".
-            AgentHost.CeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling && ceiling == int.MaxValue ? 0 : ceiling,
-            _lastInput,
-            _lastOutput,
-            SessionId,
-            _mcpServers,
+        SessionPanel.Refresh(new SessionPanel.SessionPanelState
+        {
+            // OCCUPANCY, and _lastTokens is NOT it. _lastTokens is Ledger.TotalTokens — a cumulative
+            // sum that only ever grows — and passing it as the context size is what put "9%" on a
+            // context measured at 2%, and what stopped the gauge falling after a compression. It is
+            // the SPEND, which is what it has always been.
+            ContextUsed = _contextUsed,
+            SpentTokens = _lastTokens,
+            ContextWindow = _resolution.ContextWindow,
+
+            // DisplayName is the instance label ("openai-compatible qwen3.6-…"); ModelId is what the
+            // provider will actually send. Both differ often enough that showing one leaves the
+            // question open.
+            Model = _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
+            WorkingDirectory = WorkingDirectory,
+            SessionId = SessionId,
+
+            Rules = _permissionRuleCount,
+
+            // THE CEILING THAT ACTUALLY BINDS, not the configured value. The panel used to show the
+            // raw setting, so an unconfigured session printed "no cap" while a real ceiling was in
+            // force. int.MaxValue is the genuine no-cap case (an explicit 0), rendered as "no cap".
+            MaxTurns = AgentHost.CeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling
+                && ceiling == int.MaxValue ? 0 : ceiling,
+
+            InputTokens = _lastInput,
+            OutputTokens = _lastOutput,
+            SubAgentTokens = _subAgentTokens,
+            SpendByModel = _spendByModel,
+            SplitByModel = _splitByModel,
+
+            McpServers = _mcpServers,
+
             // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys. `general` always exists
             // whether or not config mentions it — it is what a bare spawn uses — so a panel built
-            // from config alone showed nothing at all to anyone who had not written a type, and
-            // made delegation look unavailable when it was not.
-            [AgentTypeCatalog.DefaultTypeName,
-             .. _resolution.AgentTypes.Keys.Where(n => n != AgentTypeCatalog.DefaultTypeName)],
-            _spendByModel,
-            _subAgentTokens,
-            _splitByModel,
-            // WHAT EXISTS, AND WHAT IS IN FORCE. The count comes from discovery; the loaded names are
-            // DERIVED from this agent's window, so the line vanishes by itself when compaction takes
-            // a body — which is the silent behaviour change the panel exists to make visible.
-            //
-            // THE PARENT'S, not the session's: a child's skills are reported on the child's own row,
-            // and a child is gone by the next turn while this panel persists.
-            SkillCount,
-            LoadedSkills);
+            // from config alone showed nothing to anyone who had not written a type, and made
+            // delegation look unavailable when it was not.
+            AgentTypes =
+            [
+                AgentTypeCatalog.DefaultTypeName,
+                .. _resolution.AgentTypes.Keys.Where(n => n != AgentTypeCatalog.DefaultTypeName),
+            ],
+
+            // WHAT EXISTS, AND WHAT IS IN FORCE. The count comes from discovery; the loaded names
+            // are derived from this agent's window, so the line vanishes by itself when compaction
+            // takes a body — the silent change the panel exists to make visible. THE PARENT'S, not a
+            // child's: a child reports its skills on its own row and is gone by the next turn.
+            SkillCount = SkillCount,
+            LoadedSkills = LoadedSkills,
+        });
     }
 
     /// <summary>How many skills discovery found. Set by the composition root, which owns the read.</summary>
@@ -1428,12 +1443,6 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-
-    private static string? TryGetWorkingDirectory()
-    {
-        try { return Directory.GetCurrentDirectory(); }
-        catch (Exception) { return null; }
-    }
 
     /// <summary>
     /// The bottom-right readout: how full the context is, and what the session has spent.

@@ -515,7 +515,15 @@ public class MainWindowTests
             StringComparison.Ordinal);
 
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 5_000, spentTokens: 5_000, contextWindow: null, model: "m", endpoint: "", rules: 0);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 5_000,
+            SpentTokens = 5_000,
+            ContextWindow = null,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+        });
 
         Assert.Contains("none granted", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -527,8 +535,16 @@ public class MainWindowTests
         // in config.json — readable after the fact, when the run was already over.
         var panel = new SessionPanel();
         panel.RecordTurn(toolCalls: 1);
-        panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
-            maxTurns: 200);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 100,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            MaxTurns = 200,
+        });
 
         Assert.Contains("1/200 turns", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -578,7 +594,15 @@ public class MainWindowTests
         // what it says — it used to print for every unconfigured session while a real ceiling bound.
         var panel = new SessionPanel();
         panel.RecordTurn(toolCalls: 2);
-        panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 100,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+        });
 
         Assert.Contains("1 turns · no cap", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("65.5k tool result", panel.RenderedText, StringComparison.Ordinal);
@@ -593,8 +617,16 @@ public class MainWindowTests
         // as invisible as before the panel existed. But they still APPLY. A cap you cannot see is
         // one you cannot plan around.
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
-            maxTurns: 200);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 100,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            MaxTurns = 200,
+        });
 
         Assert.Contains("Limits", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("0/200 turns", panel.RenderedText, StringComparison.Ordinal);
@@ -676,8 +708,16 @@ public class MainWindowTests
         // screen to the logs on disk, which are written to a directory named by exactly this. It is
         // the AGENT's id, fixed for the session, so the directory it names does not move mid-session.
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: null, spentTokens: 0, contextWindow: null, model: "m", endpoint: "", rules: 0,
-            sessionId: "01KZEF93C6K66HP6T2SJ9WKMHR");
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = null,
+            SpentTokens = 0,
+            ContextWindow = null,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SessionId = "01KZEF93C6K66HP6T2SJ9WKMHR",
+        });
 
         Assert.Contains("01KZEF93C6K66HP6T2SJ9WKMHR", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -807,12 +847,20 @@ public class MainWindowTests
         // the parent's when it was in fact the sum of every agent including children on other
         // providers. The panel is the aggregator; its figures must say what they aggregate.
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 96_500, spentTokens: 96_500, contextWindow: 200_000, model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 96_500 },
-            splitByModel: new Dictionary<string, (int Input, int Output)>
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 96_500,
+            SpentTokens = 96_500,
+            ContextWindow = 200_000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 96_500 },
+            SplitByModel = new Dictionary<string, (int Input, int Output)>
             {
                 ["qwen3.6-35b.gguf"] = (94_000, 2_500),
-            });
+            },
+        });
 
         // Compact, because 24 columns cannot hold two full counts on one line — and at this
         // magnitude the exact digits are never what the number is read for.
@@ -826,7 +874,15 @@ public class MainWindowTests
         // "↑0 ↓0" is noise: it takes a line to say nothing has happened yet, and a provider that
         // never reports usage would show it for the whole session.
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: null, spentTokens: 0, contextWindow: 200_000, model: "m", endpoint: "", rules: 0);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = null,
+            SpentTokens = 0,
+            ContextWindow = 200_000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+        });
 
         Assert.DoesNotContain("↑", panel.RenderedText, StringComparison.Ordinal);
     }

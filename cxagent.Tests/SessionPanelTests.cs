@@ -43,8 +43,15 @@ public class SessionPanelTests
     public void Refresh_OmitsThePercentage_WhenOccupancyIsUnknown()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: null, spentTokens: 19_559, contextWindow: 212_992,
-            model: "m", endpoint: "", rules: 0);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = null,
+            SpentTokens = 19_559,
+            ContextWindow = 212_992,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+        });
 
         Assert.DoesNotContain("%", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -87,13 +94,20 @@ public class SessionPanelTests
     public void Refresh_DoesNotRepeatWhatTheStatusBarAlreadyShows()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 9_140, spentTokens: 160_084, contextWindow: 212_992,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 160_084 },
-            splitByModel: new Dictionary<string, (int Input, int Output)>
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 9_140,
+            SpentTokens = 160_084,
+            ContextWindow = 212_992,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 160_084 },
+            SplitByModel = new Dictionary<string, (int Input, int Output)>
             {
                 ["qwen3.6-35b.gguf"] = (153_100, 6_900),
-            });
+            },
+        });
 
         var text = panel.RenderedText;
 
@@ -118,9 +132,16 @@ public class SessionPanelTests
     public void Refresh_NamesEachConnectedServer_AndItsToolCount()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            mcpServers: [Server("context7", tools: 2)]);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 1,
+            SpentTokens = 1,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            McpServers = [Server("context7", tools: 2)],
+        });
 
         Assert.Contains("context7", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("2 tools", panel.RenderedText, StringComparison.Ordinal);
@@ -135,9 +156,16 @@ public class SessionPanelTests
     public void Refresh_ShowsAFailedServer_RatherThanOmittingIt()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            mcpServers: [Server("broken", tools: 0, error: "npx: command not found")]);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 1,
+            SpentTokens = 1,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            McpServers = [Server("broken", tools: 0, error: "npx: command not found")],
+        });
 
         Assert.Contains("broken", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("failed", panel.RenderedText, StringComparison.OrdinalIgnoreCase);
@@ -149,9 +177,16 @@ public class SessionPanelTests
     public void Refresh_OmitsADisabledServer()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            mcpServers: [Server("off", enabled: false, tools: 0)]);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 1,
+            SpentTokens = 1,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            McpServers = [Server("off", enabled: false, tools: 0)],
+        });
 
         Assert.DoesNotContain("off", panel.RenderedText, StringComparison.Ordinal);
     }
@@ -165,8 +200,15 @@ public class SessionPanelTests
     public void Refresh_OmitsTheSectionEntirely_WhenNoServersAreConfigured()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 1, spentTokens: 1, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 1,
+            SpentTokens = 1,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+        });
 
         Assert.DoesNotContain("MCP", panel.RenderedText, StringComparison.OrdinalIgnoreCase);
     }
@@ -181,9 +223,16 @@ public class SessionPanelTests
     public void Refresh_ShowsConfiguredAgentTypes()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 0, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            agentTypes: ["general", "explore", "review"]);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 0,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            AgentTypes = ["general", "explore", "review"],
+        });
 
         Assert.Contains("Agent types", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("explore", panel.RenderedText, StringComparison.Ordinal);
@@ -202,9 +251,16 @@ public class SessionPanelTests
     public void Refresh_WithOnlyTheImplicitGeneral_StillShowsIt()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 0, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            agentTypes: ["general"]);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 0,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            AgentTypes = ["general"],
+        });
 
         Assert.Contains("Agent types", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("general", panel.RenderedText, StringComparison.Ordinal);
@@ -221,9 +277,16 @@ public class SessionPanelTests
     public void Refresh_WithTwoModels_ShowsSpendForEach()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 4_500, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 });
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 4_500,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000, ["qwen3-1b.gguf"] = 500 },
+        });
 
         Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("qwen3.6-35b", panel.RenderedText, StringComparison.Ordinal);
@@ -244,13 +307,20 @@ public class SessionPanelTests
     public void Refresh_WithOneModel_StillShowsTheSplit()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 },
-            splitByModel: new Dictionary<string, (int Input, int Output)>
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 4_000,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 },
+            SplitByModel = new Dictionary<string, (int Input, int Output)>
             {
                 ["qwen3.6-35b.gguf"] = (3_800, 200),
-            });
+            },
+        });
 
         Assert.Contains("Tokens by model", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("↑3.8k", panel.RenderedText, StringComparison.Ordinal);
@@ -268,10 +338,17 @@ public class SessionPanelTests
     public void Refresh_NamesTheUnit_OnEveryFigureBlock()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 895, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 895 },
-            subAgentTokens: 730);
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 895,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 895 },
+            SubAgentTokens = 730,
+        });
 
         var text = panel.RenderedText;
 
@@ -293,9 +370,16 @@ public class SessionPanelTests
     public void Refresh_OmitsTheSplit_WhenTheProviderReportedNone()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 });
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 4_000,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["qwen3.6-35b.gguf"] = 4_000 },
+        });
 
         Assert.Contains("4,000", panel.RenderedText, StringComparison.Ordinal);
         Assert.DoesNotContain("↑", panel.RenderedText, StringComparison.Ordinal);
@@ -311,13 +395,20 @@ public class SessionPanelTests
     public void Refresh_WithSimilarModelIds_KeepsThemDistinguishable()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 900, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int>
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 900,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int>
             {
                 ["qwen3.6-35b-a3b-ud-iq4_xs.gguf"] = 600,
                 ["qwen3.6-35b-a3b-ud-iq4_xs-alt.gguf"] = 300,
-            });
+            },
+        });
 
         var lines = panel.RenderedText.Split('\n')
             .Where(l => l.Contains('·') && (l.Contains("600") || l.Contains("300")))
@@ -333,9 +424,16 @@ public class SessionPanelTests
     public void Refresh_IgnoresModelsThatSpentNothing()
     {
         var panel = new SessionPanel();
-        panel.Refresh(contextUsed: 100, spentTokens: 4_000, contextWindow: 1000,
-            model: "m", endpoint: "", rules: 0,
-            spendByModel: new Dictionary<string, int> { ["used.gguf"] = 4_000, ["unused.gguf"] = 0 });
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            ContextUsed = 100,
+            SpentTokens = 4_000,
+            ContextWindow = 1000,
+            Model = "m",
+            Endpoint = "",
+            Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["used.gguf"] = 4_000, ["unused.gguf"] = 0 },
+        });
 
         // The FILTER is the invariant, not the section hiding. This used to also assert the heading
         // was absent — true only as a side effect, since filtering left a single model and a lone
