@@ -157,7 +157,7 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var child = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var child = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
             isSubAgent: true,
             askUser: (_, _) => Task.FromResult(new QuestionAnswers(["never reachable"])));
@@ -173,7 +173,7 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
             askUser: (_, _) => Task.FromResult(new QuestionAnswers(["ok"])));
 
@@ -188,7 +188,7 @@ public class AskUserTests
     {
         var provider = new ToolCapturingProvider();
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
         await agent.SendAsync("do something", CancellationToken.None);

@@ -120,7 +120,7 @@ public record JobDigest(
         if (Truncated)
             sb.AppendLine("  ⚠ INCOMPLETE — this worker hit its turn limit and returned partial output. "
                         + "Its answer is NOT the whole task. Split the remaining work into smaller jobs, "
-                        + "or raise orchestrator.maxWorkerTurns.");
+                        + "or raise orchestrator.maxTurns.");
 
         if (Duration is { } d) sb.AppendLine($"  duration: {d.TotalSeconds:0.0}s");
         if (ExitCode is { } code && code != 0) sb.AppendLine($"  exit code: {code}");

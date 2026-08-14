@@ -56,8 +56,7 @@ public class ProviderConfigWriterTests : IDisposable
     [Fact]
     public void OrchestratorSettings_RoundTripThroughWriteAndLoad()
     {
-        var orch = new OrchestratorSettings(5000, 100_000,
-            MaxWorkerTurns: 6, ContextCompressThreshold: 30_000);
+        var orch = new OrchestratorSettings(MaxTurns: 6);
         ProviderConfigWriter.Write(Paths(),
             Settings(("claude", new ProviderInstanceConfig("anthropic", "claude-x", "sk-abc", null, null)))
                 with { Orchestrator = orch });
@@ -78,29 +77,29 @@ public class ProviderConfigWriterTests : IDisposable
 
         var raw = File.ReadAllText(ConfigPath);
         Assert.DoesNotContain("contextCompressThreshold", raw);
-        Assert.DoesNotContain("maxTokensPerCall", raw);
+        Assert.DoesNotContain("maxTurns", raw);
 
         var loaded = ProviderConfigLoader.LoadAndValidate(Paths(), new Dictionary<string, string>());
         Assert.Null(loaded.Orchestrator.ContextCompressThreshold);
-        Assert.Null(loaded.Orchestrator.MaxTokensPerCall);
+        Assert.Null(loaded.Orchestrator.MaxTurns);
     }
 
     [Fact]
     public void Write_PreservesUnknownKeysInsideTheOrchestratorBlock()
     {
-        // Same contract the llmAgent block honours (ProviderConfigWriter.cs:62): own only the known
-        // keys, merge into the existing object — a hand-edited future knob must survive a Save.
+        // Same contract the rest of the file honours: own only the known keys, merge into the
+        // existing object — a hand-edited future knob must survive a Save.
         File.WriteAllText(ConfigPath,
-            """{"providers":{},"defaultProvider":null,"orchestrator":{"futureKnob":1,"maxWorkerTurns":9}}""");
+            """{"providers":{},"defaultProvider":null,"orchestrator":{"futureKnob":1}}""");
 
         ProviderConfigWriter.Write(Paths(),
             Settings(("local", new ProviderInstanceConfig("ollama", "llama3.1", null, "http://localhost:11434", null)))
-                with { Orchestrator = new OrchestratorSettings(null, null, MaxWorkerTurns: 12) });
+                with { Orchestrator = new OrchestratorSettings(MaxTurns: 12) });
 
         var orch = JsonNode.Parse(File.ReadAllText(ConfigPath))!
             .AsObject()["orchestrator"]!.AsObject();
         Assert.Equal(1, (int)orch["futureKnob"]!);
-        Assert.Equal(12, (int)orch["maxWorkerTurns"]!);
+        Assert.Equal(12, (int)orch["maxTurns"]!);
     }
 
     [Fact]

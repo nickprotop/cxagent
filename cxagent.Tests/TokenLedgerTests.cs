@@ -8,51 +8,14 @@ public class TokenLedgerTests
     [Fact]
     public void Record_AccumulatesInputAndOutput()
     {
-        var l = new TokenLedger(goalTokenBudget: null);
+        var l = new TokenLedger();
         l.Record(new LlmUsage { InputTokens = 100, OutputTokens = 50 });
         l.Record(new LlmUsage { InputTokens = 10, OutputTokens = 5 });
         Assert.Equal(165, l.TotalTokens);
     }
 
-    [Fact]
-    public void NullBudget_NeverBreaches()
-    {
-        var l = new TokenLedger(goalTokenBudget: null);
-        l.Record(new LlmUsage { InputTokens = 10_000_000, OutputTokens = 0 });
-        Assert.False(l.IsBreached);
-        Assert.False(l.WouldBreach(10_000_000));
-    }
 
-    [Fact]
-    public void Breached_RaisesOnce_WhenBudgetCrossed()
-    {
-        var l = new TokenLedger(goalTokenBudget: 100);
-        int raised = 0;
-        l.Breached += (_, _) => raised++;
 
-        l.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 });   // 60 — under
-        Assert.False(l.IsBreached);
-        Assert.Equal(0, raised);
-
-        l.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 });   // 120 — over
-        Assert.True(l.IsBreached);
-        Assert.Equal(1, raised);
-
-        l.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 });   // still over
-        Assert.Equal(1, raised);   // must NOT re-raise on every later call
-    }
-
-    [Fact]
-    public void WouldBreach_IsPredictive_AndDoesNotMutate()
-    {
-        var l = new TokenLedger(goalTokenBudget: 100);
-        l.Record(new LlmUsage { InputTokens = 90, OutputTokens = 0 });
-
-        Assert.True(l.WouldBreach(20));    // 110 > 100
-        Assert.False(l.WouldBreach(5));    // 95 <= 100
-        Assert.Equal(90, l.TotalTokens);   // asking must not spend
-        Assert.False(l.IsBreached);
-    }
     // ---- concurrency ---------------------------------------------------------------------------
 
     /// <summary>
@@ -70,7 +33,7 @@ public class TokenLedgerTests
     public void Record_FromManyThreads_LosesNothing()
     {
         const int threads = 8, perThread = 500;
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
 
         Parallel.For(0, threads, _ =>
         {
@@ -83,53 +46,20 @@ public class TokenLedgerTests
         Assert.Equal(threads * perThread * 5, ledger.TotalTokens);
     }
 
-    /// <summary>
-    /// THE BREACH IS ANNOUNCED ONCE, however many threads cross it together.
-    ///
-    /// <para>The flag was tested and then assigned — two threads could both see "not yet" and both
-    /// raise, reporting one budget crossing as two separate problems. A compare-and-swap makes the
-    /// check and the set one operation.</para>
-    /// </summary>
-    [Fact]
-    public void Breached_FiresExactlyOnce_UnderConcurrentRecords()
-    {
-        var ledger = new TokenLedger(goalTokenBudget: 100);
-        var raised = 0;
-        ledger.Breached += (_, _) => Interlocked.Increment(ref raised);
 
-        // Every one of these crosses the budget on its own, so a racy check-and-set has every chance
-        // to fire more than once.
-        Parallel.For(0, 16, _ => ledger.Record(new LlmUsage { InputTokens = 50, OutputTokens = 50 }));
-
-        Assert.Equal(1, raised);
-    }
-
-    /// <summary>The total carried by the event is one that actually existed — taken from the add that
-    /// crossed, not re-read afterwards when another thread may already have moved it.</summary>
-    [Fact]
-    public void Breached_CarriesATotalAtOrAboveTheBudget()
-    {
-        var ledger = new TokenLedger(goalTokenBudget: 100);
-        var reported = 0;
-        ledger.Breached += (_, total) => reported = total;
-
-        ledger.Record(new LlmUsage { InputTokens = 80, OutputTokens = 40 });
-
-        Assert.True(reported > 100, $"reported {reported}, which is not over the budget it breached");
-    }
 
     // ---- per-model attribution ------------------------------------------------------------------
 
     /// <summary>
-    /// ONE LEDGER, TALLIED BY MODEL — not a ledger per model. The BUDGET is a property of the
-    /// session: a user who sets one means "this conversation may cost this much", not "each model
-    /// may". Splitting would give each model its own budget and its own Breached, so a session could
-    /// cross the real limit several times over without ever raising.
+    /// ONE LEDGER, TALLIED BY MODEL — not a ledger per model. Spend is a property of the SESSION:
+    /// the figure a user wants is what this conversation cost, not what each model cost in
+    /// isolation. Splitting would make the total the status bar shows a sum of things nobody asked
+    /// to have summed.
     /// </summary>
     [Fact]
     public void Record_TalliesByModel_WhileTotalsStaySessionWide()
     {
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
 
         ledger.Record(new LlmUsage { InputTokens = 100, OutputTokens = 20 }, "big-model");
         ledger.Record(new LlmUsage { InputTokens = 30, OutputTokens = 5 }, "small-model");
@@ -149,7 +79,7 @@ public class TokenLedgerTests
     [Fact]
     public void Record_WithNoModel_CountsTowardTheTotalButNotTheBreakdown()
     {
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
 
         ledger.Record(new LlmUsage { InputTokens = 50, OutputTokens = 10 });
 
@@ -157,19 +87,4 @@ public class TokenLedgerTests
         Assert.Empty(ledger.ByModel);
     }
 
-    /// <summary>The budget is untouched by attribution: it still fires once, on the session total.</summary>
-    [Fact]
-    public void Breached_StillFiresOnce_OnTheSessionTotal_NotPerModel()
-    {
-        var ledger = new TokenLedger(100);
-        var fired = 0;
-        ledger.Breached += (_, _) => fired++;
-
-        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "a");
-        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "b");
-        ledger.Record(new LlmUsage { InputTokens = 60, OutputTokens = 0 }, "a");
-
-        // Neither model alone crossed 100; the SESSION did, once.
-        Assert.Equal(1, fired);
-    }
 }

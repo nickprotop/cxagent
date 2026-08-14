@@ -17,34 +17,25 @@ namespace CxAgent.Core.Llm;
 /// </summary>
 public sealed class TokenLedger
 {
-    private readonly int? _budget;
     private int _total;
     private int _input;
     private int _output;
-    /// <summary>0 until the breach event has fired, then 1. An int rather than a bool so the
-    /// check-and-set is ONE atomic operation — a bool tested and then assigned lets two threads both
-    /// see false and both raise, reporting one crossing twice.</summary>
-    private int _breachRaised;
 
-    public TokenLedger(int? goalTokenBudget) => _budget = goalTokenBudget;
+    public TokenLedger() { }
 
     /// <summary>
     /// A ledger carrying spend that already happened — for a session restored from disk.
     ///
-    /// <para>A CONSTRUCTOR RATHER THAN A REPLAYED <see cref="Record"/> CALL, and the difference
-    /// matters. Replaying one synthetic <see cref="LlmUsage"/> would reach the budget check and fire
-    /// <see cref="Breached"/> on any session resumed above its budget — reporting as new an error the
-    /// user was already shown in the process that crashed, at the moment they are trying to pick the
-    /// work back up. The breach flag starts already-raised for the same reason: if the total is over
-    /// budget on arrival, that crossing is history, and only a FURTHER crossing is news.</para>
+    /// <para>A CONSTRUCTOR RATHER THAN A REPLAYED <see cref="Record"/> CALL: the restored totals are
+    /// history, not usage this process observed, and <see cref="Record"/> also drives the per-model
+    /// and sub-agent splits — replaying one synthetic <see cref="LlmUsage"/> would attribute a whole
+    /// session's spend to whichever model happened to be current.</para>
     /// </summary>
-    public TokenLedger(int? goalTokenBudget, int inputTokens, int outputTokens)
+    public TokenLedger(int inputTokens, int outputTokens)
     {
-        _budget = goalTokenBudget;
         _input = inputTokens;
         _output = outputTokens;
         _total = inputTokens + outputTokens;
-        _breachRaised = IsBreached ? 1 : 0;
     }
 
     public int TotalTokens => Volatile.Read(ref _total);
@@ -62,23 +53,14 @@ public sealed class TokenLedger
     /// <summary>Tokens GENERATED so far — the model's own production.</summary>
     public int OutputTokens => Volatile.Read(ref _output);
 
-    public bool IsBreached => _budget is { } b && Volatile.Read(ref _total) > b;
-
-    /// <summary>Raised ONCE, the first time the running total crosses the budget.</summary>
-    public event EventHandler<int>? Breached;
-
     /// <summary>
     /// Spend so far, per model id — for the models that actually spent something.
     ///
-    /// <para>ONE LEDGER, TALLIED BY MODEL, rather than a ledger per model. The BUDGET is a property
-    /// of the session: a user who sets one means "this conversation may cost this much", not "each
-    /// model may". Splitting the ledger would give each model its own budget and its own
-    /// <see cref="Breached"/>, so a session could cross the user's real limit several times over
-    /// without ever raising — and the total the status bar shows would become a sum of things nobody
-    /// asked to be summed.</para>
-    ///
-    /// <para>So attribution is added here and the budget is untouched. A caller that does not name a
-    /// model still records into the totals; it simply does not appear in this map.</para>
+    /// <para>ONE LEDGER, TALLIED BY MODEL, rather than a ledger per model. Spend is a property of
+    /// the SESSION — the figure a user wants is what this conversation cost, not what each model
+    /// cost in isolation — so the totals are authoritative and this map is attribution laid over
+    /// them. A caller that does not name a model still records into the totals; it simply does not
+    /// appear here.</para>
     /// </summary>
     public IReadOnlyDictionary<string, int> ByModel
     {
@@ -147,18 +129,6 @@ public sealed class TokenLedger
         Interlocked.Add(ref _input, usage.InputTokens);
         Interlocked.Add(ref _output, usage.OutputTokens);
 
-        // The TOTAL from this add, not a re-read: between adding and reading, another thread may have
-        // recorded too, and the event should carry a total that actually existed.
-        var total = Interlocked.Add(ref _total, usage.InputTokens + usage.OutputTokens);
-
-        // COMPARE-AND-SWAP, so exactly one caller ever raises. Testing a flag and then setting it
-        // lets two threads both see "not yet" and both fire — announcing one budget crossing twice,
-        // which reads as two separate problems.
-        if (_budget is { } b && total > b && Interlocked.CompareExchange(ref _breachRaised, 1, 0) == 0)
-            Breached?.Invoke(this, total);
+        Interlocked.Add(ref _total, usage.InputTokens + usage.OutputTokens);
     }
-
-    /// <summary>Would spending <paramref name="estimatedTokens"/> more cross the budget? Does not spend.</summary>
-    public bool WouldBreach(int estimatedTokens) =>
-        _budget is { } b && Volatile.Read(ref _total) + estimatedTokens > b;
 }

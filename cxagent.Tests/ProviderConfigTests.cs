@@ -116,71 +116,63 @@ public class ProviderConfigTests : IDisposable
     }
 
     [Fact]
-    public void Orchestrator_BudgetsAreParsed()
+    public void Orchestrator_MaxTurnsRoundTrips()
     {
         WriteConfig("""
         { "providers": { "p": { "kind":"ollama", "model":"m", "baseUrl":"http://x" } },
           "defaultProvider":"p",
-          "orchestrator": { "maxTokensPerCall": 8000, "goalTokenBudget": 200000 } }
+          "orchestrator": { "maxTurns": 42 } }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.Equal(8000, s.Orchestrator.MaxTokensPerCall);
-        Assert.Equal(200000, s.Orchestrator.GoalTokenBudget);
+        Assert.Equal(42, s.Orchestrator.MaxTurns);
     }
 
+    /// <summary>
+    /// ABSENT STAYS NULL, and that is the whole reason this field is nullable.
+    ///
+    /// <para>It used to default to a real 200, which made "the user chose 200" and "the user chose
+    /// nothing" the same value — and the app worked around it by opening config.json a second time,
+    /// by hand, to recover the distinction. What absence MEANS is decided by the reader
+    /// (AgentHost.CeilingFor), not smuggled into the parse.</para>
+    /// </summary>
     [Fact]
-    public void Orchestrator_Absent_MeansUnbounded_NotZero()
+    public void Orchestrator_MaxTurnsAbsent_StaysNull()
     {
-        // A missing block must NOT parse as 0 — that would make every goal breach instantly.
         WriteConfig("""
         { "providers": { "p": { "kind":"ollama", "model":"m", "baseUrl":"http://x" } },
           "defaultProvider":"p" }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.Null(s.Orchestrator.GoalTokenBudget);
-        Assert.Null(s.Orchestrator.MaxTokensPerCall);
+        Assert.Null(s.Orchestrator.MaxTurns);
     }
 
+    /// <summary>Zero is the explicit no-cap, so it must survive the parse as zero.</summary>
     [Fact]
-    public void Orchestrator_MaxWorkerTurnsRoundTrips()
+    public void Orchestrator_MaxTurnsZero_IsKept_AndNegativeIsIgnored()
     {
-        // A setting that parses but is never read is the rot pattern this project has hit twice
-        // (llmAgent.routing, RoleDefinition.Tools). Pin the parse; Task 3's plugin reads it.
         WriteConfig("""
-        {
-          "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local",
-          "orchestrator": { "maxWorkerTurns": 4 }
-        }
+        { "providers": { "p": { "kind":"ollama", "model":"m", "baseUrl":"http://x" } },
+          "defaultProvider":"p",
+          "orchestrator": { "maxTurns": 0 } }
         """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        Assert.Equal(4, s.Orchestrator.MaxWorkerTurns);
-    }
+        Assert.Equal(0, ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv).Orchestrator.MaxTurns);
 
-    [Fact]
-    public void Orchestrator_MaxWorkerTurns_DefaultsWhenAbsent()
-    {
-        // Absent must mean the real default, never 0 — a 0 cap would make the agent return
-        // empty before its first provider call. Asserted so a
-        // silent change fails HERE rather than on a drive: this cap is generous on purpose, and
-        // when it was tight (MaxWorkerTurns at 10) it silently broke real work.
         WriteConfig("""
-        { "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
-          "defaultProvider": "local" }
+        { "providers": { "p": { "kind":"ollama", "model":"m", "baseUrl":"http://x" } },
+          "defaultProvider":"p",
+          "orchestrator": { "maxTurns": -5 } }
         """);
-        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
-        // Was 10. Measured: an implementer asked to edit six files spent all ten turns READING
-        // them (16 read_file calls, zero writes) and reported done. Set where a LOOP lives, not
-        // where work lives -- editing N files costs ~2N turns before discovery or a retry.
-        Assert.Equal(200, s.Orchestrator.MaxWorkerTurns);
+        var negative = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+        Assert.Null(negative.Orchestrator.MaxTurns);
+        Assert.Contains(negative.Warnings, w => w.Contains("negative"));
     }
 
     [Fact]
     public void Orchestrator_ContextCompressThresholdRoundTrips()
     {
-        // A setting that parses but is never read is this project's recurring rot pattern
-        // (llmAgent.routing, RoleDefinition.Tools, and MaxTokensPerCall — which is STILL unread today).
-        // Pin the parse AND the default.
+        // A setting that parses but is never read is this project's recurring rot pattern — it has
+        // cost llmAgent.routing, RoleDefinition.Tools and two orchestrator keys so far. Pin the
+        // parse AND the default, so this one cannot join them.
         WriteConfig("""
         {
           "providers": { "local": { "kind": "ollama", "model": "m", "baseUrl": "http://x" } },
@@ -241,7 +233,7 @@ public class ProviderConfigTests : IDisposable
     {
         // A fixed 40,000 compresses at 19% of this machine's real 212,992-token window — throwing away
         // context while 81% sits unused. A fraction of the REAL window is the honest trigger.
-        var settings = new OrchestratorSettings(null, null);
+        var settings = new OrchestratorSettings();
         Assert.Equal(160_000, settings.EffectiveCompressThreshold(contextWindow: 200_000));
     }
 
@@ -249,7 +241,7 @@ public class ProviderConfigTests : IDisposable
     public void Threshold_FallsBackToTheFixedValue_WhenTheWindowIsUnknown()
     {
         // Unknown window => the configured constant, unchanged. No guessing a window from nothing.
-        var settings = new OrchestratorSettings(null, null);
+        var settings = new OrchestratorSettings();
         Assert.Equal(settings.ContextCompressThreshold,
                      settings.EffectiveCompressThreshold(contextWindow: null));
     }
@@ -258,7 +250,7 @@ public class ProviderConfigTests : IDisposable
     public void Threshold_AnExplicitConfiguredValueAlwaysWins()
     {
         // If the user set a number, honour it — they may know something about their setup we do not.
-        var settings = new OrchestratorSettings(null, null, ContextCompressThreshold: 5_000);
+        var settings = new OrchestratorSettings(ContextCompressThreshold: 5_000);
         Assert.Equal(5_000, settings.EffectiveCompressThreshold(contextWindow: 200_000));
     }
     // ---- MCP servers -------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
@@ -527,19 +528,54 @@ public class MainWindowTests
         var panel = new SessionPanel();
         panel.RecordTurn(toolCalls: 1);
         panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
-            maxTurns: 200, goalTokenBudget: 50_000);
+            maxTurns: 200);
 
         Assert.Contains("1/200 turns", panel.RenderedText, StringComparison.Ordinal);
-        // Compact now, like every other count in a 24-column panel.
-        Assert.Contains("50.0k token budget", panel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE PANEL SHOWS THE CEILING THAT BINDS, not the one that was typed.
+    ///
+    /// <para>It used to render the raw configured value, so an unconfigured session printed
+    /// "no cap" while a real ceiling was in force — a live drive read "66 turns · no cap" and the
+    /// cap was there the whole time. A limit you are told you do not have is worse than one you
+    /// cannot see.</para>
+    /// </summary>
+    [Fact]
+    public void SessionPanel_ShowsTheDefaultCeiling_WhenNothingIsConfigured()
+    {
+        var window = new MainWindow(SysOfWidth(140),
+            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
+                new OrchestratorSettings()),
+            Logs());
+        window.Build();
+        window.RefreshSessionPanel();
+
+        Assert.Contains($"/{AgentHost.DefaultTurnCeiling} turns", window.SessionPanel.RenderedText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("no cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
+    }
+
+    /// <summary>...and "no cap" is reserved for the explicit opt-out.</summary>
+    [Fact]
+    public void SessionPanel_SaysNoCap_OnlyForAnExplicitZero()
+    {
+        var window = new MainWindow(SysOfWidth(140),
+            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
+                new OrchestratorSettings(MaxTurns: 0)),
+            Logs());
+        window.Build();
+        window.RefreshSessionPanel();
+
+        Assert.Contains("no cap", window.SessionPanel.RenderedText, StringComparison.Ordinal);
     }
 
     [Fact]
     public void SessionPanel_SaysNoCapWhenTheSessionIsUnbounded()
     {
-        // Single-agent no longer defaults to 200 turns, so printing "3/200" would advertise a
-        // ceiling that was removed precisely because it ended real work at an arbitrary number. The
-        // tool-result cap is still shown, because that one always applies.
+        // Zero reaches the panel only for an EXPLICIT opt-out (orchestrator.maxTurns: 0). An
+        // unconfigured session now resolves to the default before it gets here, so "no cap" means
+        // what it says — it used to print for every unconfigured session while a real ceiling bound.
         var panel = new SessionPanel();
         panel.RecordTurn(toolCalls: 2);
         panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0);
@@ -554,9 +590,8 @@ public class MainWindowTests
     {
         // This asserted the OPPOSITE and was wrong. The block was gated on the orchestrator CONFIG,
         // so with no such block — the common case — it rendered nothing, and the caps stayed exactly
-        // as invisible as before the panel existed. But they still APPLY: MaxWorkerTurns falls back
-        // to 200 at the call site whether configured or not, and the tool-result cap is a const no
-        // config touches. A cap you cannot see is one you cannot plan around.
+        // as invisible as before the panel existed. But they still APPLY. A cap you cannot see is
+        // one you cannot plan around.
         var panel = new SessionPanel();
         panel.Refresh(contextUsed: 100, spentTokens: 100, contextWindow: 1000, model: "m", endpoint: "", rules: 0,
             maxTurns: 200);
@@ -647,23 +682,6 @@ public class MainWindowTests
         Assert.Contains("01KZEF93C6K66HP6T2SJ9WKMHR", panel.RenderedText, StringComparison.Ordinal);
     }
 
-    [Fact(Skip = "Superseded: the turn cap binds in BOTH modes, so it is shown in both.")]
-    public void SessionPanel_HidesTheWorkerTurnCap_InSingleAgent()
-    {
-        // MaxWorkerTurns' own documentation calls it "a cap one level DOWN: it bounds a single
-        // llm_agent WORKER's tool loop". Single-agent has no workers, so there it silently becomes
-        // the whole session's budget at a number no real session approaches. Advertising it invites
-        // the user to plan around a constraint that never binds.
-        var orch = new OrchestratorSettings(null, null, MaxWorkerTurns: 200);
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock",
-            System.Array.Empty<string>(), orch);
-
-        var single = new MainWindow(SysOfWidth(140), res, Logs());
-        single.Build();
-        single.RefreshSessionPanel();
-        Assert.DoesNotContain("200 turns", single.SessionPanel.RenderedText, StringComparison.Ordinal);
-    }
-
     /// <summary>
     /// THE OPENING BANNER NAMES THE MODE THE SESSION ACTUALLY STARTED IN.
     ///
@@ -702,7 +720,7 @@ public class MainWindowTests
     [Fact]
     public void OwnSpend_ExcludesSubAgents_WhileTheLedgerIncludesThem()
     {
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
 
         // A parent turn and a child turn, into the one shared ledger.
         ledger.Record(new LlmUsage { InputTokens = 100, OutputTokens = 10 }, "m");

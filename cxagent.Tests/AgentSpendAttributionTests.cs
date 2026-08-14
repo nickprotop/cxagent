@@ -15,7 +15,7 @@ public class AgentSpendAttributionTests
     [Fact]
     public async Task AnAgentsSpendIsAttributedToItsModel()
     {
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
         var provider = new MockLlmProvider("the-model");
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 100, OutputTokens = 20 } });

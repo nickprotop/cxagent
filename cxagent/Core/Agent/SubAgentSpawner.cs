@@ -221,24 +221,6 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
             parentAgentId: parentAgentId);
         onChild?.Invoke(child);
 
-        // A BUDGET ALREADY BREACHED REFUSES THE CHILD RATHER THAN RUNNING IT.
-        //
-        // `Breached` is a warning that fires exactly once and stops nothing. With one child at a
-        // time that was tolerable — the user sees it and can press Escape. With several, N children
-        // can each burn a window past a limit that announced itself one time, and the announcement
-        // is long gone by the third.
-        //
-        // ESTIMATE ZERO, deliberately: refuse only what is ALREADY over, never what might go over.
-        // We cannot know what a child will cost, and guessing would refuse work the user's budget
-        // could afford. This is a floor, not a forecast.
-        //
-        // Refused as an ENVELOPE, not an exception: the parent reads it, knows why, and can say so —
-        // the same contract every other spawn failure has.
-        if (_factory.Ledger.WouldBreach(0))
-            return SubAgentEnvelope.Render(child.Agent.Id, SendOutcome.Capped,
-                "not started: the session's token budget is already spent. Raise "
-              + "orchestrator.goalTokenBudget or start a new session.");
-
         // THE CAP, WAITED HERE — inside the started task, never on the parent's walk. Waiting on the
         // walk would stall the turn's INLINE tools behind a queued child, turning a limit on
         // concurrency into a serialiser for work that was never capped.

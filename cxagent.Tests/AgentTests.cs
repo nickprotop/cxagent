@@ -114,7 +114,7 @@ public class AgentTests
             provider.EnqueueResponse(new LlmResponse { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
 
         var sink = new RecordingSink();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 2);
 
         await agent.SendAsync("first", CancellationToken.None);
@@ -145,7 +145,7 @@ public class AgentTests
     {
         provider ??= NewProvider();
 
-        return new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        return new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
     }
     // ---- self-containment ----------------------------------------------------------------------
@@ -225,7 +225,7 @@ public class AgentTests
             Role = "user", Content = "restored from an earlier session",
         });
 
-        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, context: context);
 
         await agent.SendAsync("carry on", CancellationToken.None);
@@ -236,7 +236,7 @@ public class AgentTests
     // ---- the briefing --------------------------------------------------------------------------
 
     private static Agent BriefedAgent(string briefing, MockLlmProvider? provider = null) =>
-        new(provider ?? NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        new(provider ?? NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, briefing: briefing);
 
     /// <summary>
@@ -382,7 +382,7 @@ public class AgentTests
         // and for the salvage call, so the returned string cannot tell them apart. What CAN is the
         // error the cap path announces before returning.
         var sink = new RecordingSink();
-        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 0);
 
         await agent.SendAsync("hello", CancellationToken.None);
@@ -468,7 +468,7 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(null),
+        var agent = new Agent(provider, plugins, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         using var cts = new CancellationTokenSource();
@@ -508,7 +508,7 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(null),
+        var agent = new Agent(provider, plugins, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         using var cts = new CancellationTokenSource();
@@ -543,7 +543,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(null),
+        var agent = new Agent(provider, plugins, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("go", CancellationToken.None);
@@ -629,7 +629,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(null),
+        var agent = new Agent(provider, plugins, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("run it", CancellationToken.None);
@@ -668,7 +668,7 @@ public class AgentTests
             // flattened those.
             var prompt = "REMEMBER THIS MARKER: " + new string('x', 300) + "\nand a second line.";
 
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs, maxTurns: 50);
             await agent.SendAsync(prompt, CancellationToken.None);
             await Task.Delay(300);   // AppendAsync is fire-and-forget
@@ -727,7 +727,7 @@ public class AgentTests
             });
         provider.EnqueueResponse(new LlmResponse { Text = "here is what I got through", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
         var result = await agent.SendAsync("do something long", CancellationToken.None);
@@ -754,7 +754,7 @@ public class AgentTests
                 ToolCalls = [ReadOfNothing("does-not-exist.txt")],
             });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
 
         var result = await agent.SendAsync("read that file", CancellationToken.None);

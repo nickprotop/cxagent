@@ -117,7 +117,6 @@ public static class AppBootstrap
 
         var mainWindow = new MainWindow(system, resolution, logs)
         {
-            ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
             // The SetMode call further down still fixes the composer line on every /mode; this is the
             // one readout that has to be right the first time.
@@ -272,16 +271,12 @@ public static class AppBootstrap
             // and sub-agent factories both have to ask.
             //
             // IN WireRunner, NOT AT THE TOP OF AppBootstrap, and the distinction is behavioural.
-            // This method re-runs on every F5 provider change and today that RESETS the spend to
-            // zero. Hoisting it to startup would make the ledger SURVIVE the re-wire — which sounds
-            // like an improvement and quietly breaks two things: Breached fires once per ledger, so
-            // a surviving one can never warn again; and the budget below comes from the NEW
-            // provider's settings, which a surviving ledger would never adopt. Constructing it here
-            // preserves today's semantics exactly and still satisfies D7.
-            var sessionBudget = (res.Orchestrator ?? OrchestratorSettings.Unbounded).GoalTokenBudget;
+            // This method re-runs on every F5 provider change and that RESETS the spend to zero.
+            // Hoisting it to startup would make the ledger survive the re-wire and report one
+            // session's spend across two providers as though it were one model's.
             var ledger = resumeSnapshot is null
-                ? new TokenLedger(sessionBudget)
-                : new TokenLedger(sessionBudget, resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens);
+                ? new TokenLedger()
+                : new TokenLedger(resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens);
 
             // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
             // it: the provider, the plugin registry, the ledger just built above, the context window
@@ -299,10 +294,10 @@ public static class AppBootstrap
                 // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
                 ledger,
                 logs,
-                // THE PARENT'S CEILING, not a number invented for children.
-                maxTurns: mainWindow.ConfiguredMaxWorkerTurns is { } configured and > 0
-                    ? configured
-                    : AgentHost.DefaultTurnCeiling,
+                // THE SAME CEILING THE PARENT GETS, resolved once. Two expressions for one number
+                // is how a configured 0 came to mean "unbounded" for the session and "the default"
+                // for its children.
+                maxTurns: AgentHost.CeilingFor(orchestrator.MaxTurns),
                 // THE CONSTANT, never the literal — two copies of this number desynchronise the
                 // moment either moves, and a child that never compresses dies on an overflow.
                 compressAbove: orchestrator.EffectiveCompressThreshold(res.ContextWindow)
@@ -356,14 +351,9 @@ public static class AppBootstrap
                 workingDir: workingDir)
             {
                 // The user's OWN value, or null. res.Orchestrator is null exactly when the config
-                // said nothing — the Unbounded placeholder substituted elsewhere would report 200
-                // and make "unconfigured" indistinguishable from "configured to 200".
-                // Read the RAW JSON, not the settings record. ProviderConfig.Orchestrator is a
-                // non-nullable property that shadows its own nullable parameter and defaults to
-                // Unbounded (ProviderConfig.cs:140) — so it is NEVER null, every `?? ` against it is
-                // dead code, and "the user configured 200" is indistinguishable from "the config
-                // said nothing" at every layer above the file itself.
-                ConfiguredMaxWorkerTurns = ReadConfiguredMaxWorkerTurns(paths),
+                // THE NEW RESOLUTION'S VALUE, not the startup one: an F5 provider change re-runs
+                // this, and the panel must show the ceiling that now binds. Null stays null — it
+                // means "nobody said", which is what makes the default reachable.
             };
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
@@ -1323,34 +1313,6 @@ public static class AppBootstrap
         mainWindow.Chat.AddMessage(ChatRole.System, reResolved.HasProvider
             ? $"Configuration saved. Provider: {reResolved.DisplayName}. Type a goal and press Enter."
             : "Configuration saved, but it did not load cleanly: " + string.Join("; ", reResolved.Errors));
-    }
-
-    /// <summary>
-    /// <c>orchestrator.maxWorkerTurns</c> exactly as the user wrote it, or null when absent.
-    ///
-    /// <para>Goes to the FILE because the settings record cannot answer the question: its
-    /// Orchestrator property is non-nullable and falls back to Unbounded, which carries
-    /// MaxWorkerTurns = 200 from the record's own default. Single-agent needs "nobody said" and
-    /// "somebody said 200" to be different, and only the raw JSON still knows.</para>
-    /// </summary>
-    private static int? ReadConfiguredMaxWorkerTurns(AppPaths paths)
-    {
-        try
-        {
-            var path = Path.Combine(paths.ConfigDir, "config.json");
-            if (!File.Exists(path)) return null;
-
-            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
-            return doc.RootElement.TryGetProperty("orchestrator", out var o)
-                && o.TryGetProperty("maxWorkerTurns", out var v)
-                && v.TryGetInt32(out var turns)
-                    ? turns
-                    : null;
-        }
-        catch (Exception)
-        {
-            return null;   // unreadable config is the loader's problem to report, not this one's
-        }
     }
 
     /// <summary>

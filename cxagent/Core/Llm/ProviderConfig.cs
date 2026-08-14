@@ -6,7 +6,7 @@ namespace CxAgent.Core.Llm;
 /// <summary>
 /// ContextWindow (P11 Task 1) is the model's real context size in tokens — a property of the MODEL,
 /// not of cxagent, so only the user (who knows what a custom endpoint is serving) can set it
-/// reliably. Trailing default for the same reason MaxWorkerTurns/Copilot are: nothing recomputes
+/// reliably. Trailing default for the same reason the others are: nothing recomputes
 /// this record after construction, so appending a defaulted field can't break any of the 26
 /// existing positional construction sites.
 ///
@@ -33,51 +33,47 @@ public record ProviderInstanceConfig(
 public record RoutingTarget(string Provider, string Model);
 
 /// <summary>
-/// Orchestrator-level cost caps. MaxTokensPerCall/GoalTokenBudget both null means unbounded — the
-/// default, so cost control is opt-in and an absent 'orchestrator' block never makes a goal breach
-/// instantly on its first call.
-///
-/// MaxWorkerTurns bounds the agent's tool loop (call model → run tool → call model → ...), which
-/// without it can spend the whole token budget inside one session. A real non-zero default, never
-/// null-means-unbounded.
-///
-/// THE VALUES ARE SET WHERE A LOOP LIVES, NOT WHERE WORK LIVES. They exist to stop a runaway, and a
-/// cap tight enough to bite ordinary work is worse than none: it fails silently, mid-task, with a
+/// A TURN CAP IS SET WHERE A LOOP LIVES, NOT WHERE WORK LIVES. It exists to stop a runaway, and one
+/// tight enough to bite ordinary work is worse than none: it fails silently, mid-task, with a
 /// partial result the caller reports as success.
 ///
-/// Measured — MaxWorkerTurns was 10, and an implementer asked to edit six files spent all ten turns
-/// READING them (16 read_file calls across two jobs, zero writes) and reported done. Editing N files
-/// costs roughly 2N turns before discovery or a retry on a failed match, so ten files is already
-/// ~25; 10 had no idea how many files the job named, and even 40 would bind a real refactor.
+/// <para>Measured — the cap was once 10, and an implementer asked to edit six files spent all ten
+/// turns READING them (16 read_file calls, zero writes) and reported done. Editing N files costs
+/// roughly 2N turns before discovery or a retry on a failed match, so ten files is already ~25.</para>
 ///
-/// NOT unbounded, though, and the reason is specific: the token budget that would otherwise be the
-/// backstop defaults to NULL — unbounded. Uncapped turns plus unbounded tokens means nothing stops an
-/// agent stuck in a read-loop from spending the whole session. 200 is far past any plausible piece of
-/// real work and still catches a loop.
+/// <para><c>ContextCompressThreshold</c> is a MEASURED trigger rather than a cap: it names the live
+/// context size — the provider's own count of what it just received — above which the agent
+/// compresses. Null means "nobody said", which is what lets
+/// <see cref="OrchestratorSettings.EffectiveCompressThreshold"/> tell an explicit choice apart from
+/// an absent one and derive something better from the model's window.</para>
 ///
-/// ContextCompressThreshold (P10 Task 3, reshaped by P11 Task 2) is a MEASURED trigger, not a cap: it
-/// names the live context size (LlmResponse.Usage.InputTokens — the provider's own count of what it
-/// just received) above which AgentHost compresses the shared conversation after a goal completes.
+/// <para>THERE WERE FOUR, AND TWO OF THEM WERE PROMISES. <c>goalTokenBudget</c> was documented as
+/// "the real bound on cost" and enforced nothing — it raised one event into a message and the turn
+/// carried on spending. <c>maxTokensPerCall</c> was parsed, written, and editable in Settings while
+/// being read by no code at all. A configured limit that does not limit is worse than an absent one:
+/// the user believes they are covered.</para>
 ///
-/// int?, null meaning "not configured" — NOT null-means-unbounded like the token fields above.
-/// Before P11 this was a plain int defaulting to 40,000, which made an explicit
-/// `"contextCompressThreshold": 40000` in config indistinguishable from an absent one. That
-/// collapsed two different states that <see cref="EffectiveCompressThreshold"/> must tell apart: "the
-/// user chose this number" (honour it, even over a known context window) vs "nobody said" (derive
-/// something better if we can). Default null, both here and as parsed by
-/// <see cref="ProviderConfigLoader.LoadAndValidate"/> when the key is absent — the 40,000 constant
-/// only enters at the very end of the chain, in <see cref="AgentHost"/>'s own fallback, once no
-/// caller (neither this record nor a known window) had an opinion.
+/// <para>ONE TURN CAP, FOR EVERYONE. It was <c>maxWorkerTurns</c> and applied to the session agent
+/// as well, so the name described a subset of what it did. Sub-agents inherit it unless their type
+/// says otherwise — see <c>agents.&lt;name&gt;.maxTurns</c>.</para>
 /// </summary>
+/// <param name="MaxTurns">
+/// Turns one request may take before it is stopped, or null when nobody said.
+///
+/// <para>NULLABLE IS THE POINT. It was <c>int</c> with a default of 200, which made "the user chose
+/// 200" and "the user chose nothing" the same value — and the app worked around that by reading
+/// <c>config.json</c> a second time, by hand, to recover the distinction. Making the absence
+/// representable deleted that reader.</para>
+///
+/// <para>Zero means no cap, the same explicit opt-out an agent type gets.</para>
+/// </param>
 public record OrchestratorSettings(
-    int? MaxTokensPerCall, int? GoalTokenBudget,
-    int MaxWorkerTurns = 200, int? ContextCompressThreshold = null)
+    int? MaxTurns = null, int? ContextCompressThreshold = null)
 {
-    // NOTE: "Unbounded" only describes the token fields — MaxWorkerTurns always takes its real
-    // (non-null, non-zero) default here too. ContextCompressThreshold
-    // is unconfigured here too (null): Unbounded means "nothing was said," and EffectiveCompressThreshold
-    // (plus AgentHost's own last-resort constant) decides what happens when nothing was said.
-    public static readonly OrchestratorSettings Unbounded = new(null, null);
+    /// <summary>Nothing was said about either. What that MEANS is decided by the readers:
+    /// <see cref="AgentHost.TurnCeiling"/> for turns, <see cref="EffectiveCompressThreshold"/> for
+    /// compaction.</summary>
+    public static readonly OrchestratorSettings Unbounded = new();
 
     /// <summary>
     /// The fixed fallback trigger for a provider whose context window nobody has told us: sized
@@ -350,27 +346,34 @@ public static class ProviderConfigLoader
 
             }
 
+            // HOISTED ABOVE THE ORCHESTRATOR BLOCK, which now warns about removed keys and about a
+            // negative cap. One list for the whole load; the MCP block below appends to the same one.
+            var warnings = new List<string>();
+
             var orchestrator = OrchestratorSettings.Unbounded;
             if (root.TryGetProperty("orchestrator", out var orch) && orch.ValueKind == JsonValueKind.Object)
             {
-                int? maxTokensPerCall = orch.TryGetProperty("maxTokensPerCall", out var mtpc) && mtpc.ValueKind == JsonValueKind.Number
-                    ? mtpc.GetInt32() : null;
-                int? goalTokenBudget = orch.TryGetProperty("goalTokenBudget", out var gtb) && gtb.ValueKind == JsonValueKind.Number
-                    ? gtb.GetInt32() : null;
-                int maxWorkerTurns = orch.TryGetProperty("maxWorkerTurns", out var mwt) && mwt.ValueKind == JsonValueKind.Number
-                    ? mwt.GetInt32() : OrchestratorSettings.Unbounded.MaxWorkerTurns;
-                // int? now (P11 Task 2): null must stay distinguishable from "explicitly 40000" so
-                // EffectiveCompressThreshold's precedence can tell "the user chose this" apart from
-                // "nobody said" — an absent key here means the derived-from-window path stays live.
+                // ABSENT STAYS NULL, for both. "Nobody said" and "somebody said the default" are
+                // different states, and collapsing them is what forced the old raw-JSON re-read.
+                int? maxTurns = null;
+                if (orch.TryGetProperty("maxTurns", out var mt) && mt.ValueKind == JsonValueKind.Number)
+                {
+                    var value = mt.GetInt32();
+                    // NEGATIVE IS IGNORED, ZERO IS KEPT — zero is the explicit "no cap", the same
+                    // opt-out an agent type gets, so it cannot be clamped away with the invalid ones.
+                    if (value < 0) warnings.Add("orchestrator.maxTurns is negative; ignored.");
+                    else maxTurns = value;
+                }
+
                 int? contextCompressThreshold = orch.TryGetProperty("contextCompressThreshold", out var cct) && cct.ValueKind == JsonValueKind.Number
                     ? cct.GetInt32() : null;
-                orchestrator = new OrchestratorSettings(maxTokensPerCall, goalTokenBudget, maxWorkerTurns, contextCompressThreshold);
+
+                orchestrator = new OrchestratorSettings(maxTurns, contextCompressThreshold);
             }
 
             // MCP SERVERS ARE NEVER FATAL. A bad entry is skipped with a warning naming it; the rest
             // of the config — every provider, the whole session — loads regardless. See
             // ProviderSettings.Warnings for why this one block is not on the errors list.
-            var warnings = new List<string>();
             var mcpServers = new Dictionary<string, McpServerConfig>();
             if (root.TryGetProperty("mcp", out var mcp) && mcp.ValueKind == JsonValueKind.Object)
                 foreach (var entry in mcp.EnumerateObject())

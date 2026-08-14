@@ -33,10 +33,10 @@ public class AgentHostTests
     }
 
     /// <summary>
-    /// AppBootstrap's status-bar cost readout has no per-Record event on TokenLedger to subscribe to
-    /// (only Breached, which fires once) — so AgentHost raises TokensUpdated itself at the same point
-    /// it calls Ledger.Record, giving AppBootstrap a live hook without adding a public event to the
-    /// ledger's own object model.
+    /// AppBootstrap's status-bar cost readout has no per-Record event on TokenLedger to subscribe
+    /// to, so AgentHost raises TokensUpdated itself at the same point it calls Ledger.Record —
+    /// giving AppBootstrap a live hook without adding a public event to the ledger's own object
+    /// model.
     /// </summary>
     [Fact]
     public async Task SendAsync_RaisesTokensUpdated_MatchingLedgerTotal()
@@ -97,8 +97,8 @@ public class AgentHostTests
     /// <summary>
     /// An unconfigured session is still bounded.
     ///
-    /// <para><c>ConfiguredMaxWorkerTurns ?? int.MaxValue</c> meant the COMMON case — no orchestrator
-    /// block in config — had no ceiling at all. The reasoning that removed the invented 200 was
+    /// <para>An earlier version left the COMMON case — no orchestrator block in config — with no
+    /// ceiling at all. The reasoning that removed the invented 200 was
     /// sound, but "no arbitrary limit" and "no limit" are different claims and only the first was
     /// argued for.</para>
     /// </summary>
@@ -266,7 +266,7 @@ public class AgentHostTests
     [Fact]
     public async Task Ledger_WhenGiven_IsTheOneUsed()
     {
-        var mine = new TokenLedger(null);
+        var mine = new TokenLedger();
         var mock = new MockLlmProvider();
         mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
@@ -300,10 +300,9 @@ public class AgentHostTests
     /// whole reason ledger construction moved into <c>WireRunner</c> rather than to the top of
     /// <c>AppBootstrap</c>.
     ///
-    /// <para>Hoisting it to startup would make one ledger SURVIVE the re-wire, which sounds like an
-    /// improvement and quietly breaks two things: <c>Breached</c> fires once per ledger, so a
-    /// surviving one can never warn again; and the budget comes from the NEW provider's settings,
-    /// which a surviving ledger would never adopt. Since <c>WireRunner</c> constructs a fresh
+    /// <para>Hoisting it to startup would make one ledger SURVIVE the re-wire, reporting one
+    /// session's spend across two providers as though it were one model's. Since <c>WireRunner</c>
+    /// constructs a fresh
     /// <c>AgentHost</c> per re-wire, this asserts the seam it uses — a new host with a new ledger
     /// starts at zero however much the outgoing one had spent.</para>
     /// </summary>
@@ -314,7 +313,7 @@ public class AgentHostTests
         mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 900, OutputTokens = 100 } });
 
-        var before = new TokenLedger(null);
+        var before = new TokenLedger();
         var first = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins(), ledger: before);
         await first.SendAsync("spend something", CancellationToken.None);
@@ -324,7 +323,7 @@ public class AgentHostTests
         // host over it.
         first.Dispose();
         var second = new AgentHost(mock, new RecordingSink(), new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(), ledger: new TokenLedger(null));
+            PluginRegistry.CreateWithBuiltins(), ledger: new TokenLedger());
 
         Assert.Equal(0, second.Ledger.TotalTokens);
     }
@@ -347,34 +346,13 @@ public class AgentHostTests
 
         // Seeded from the SAME snapshot that is passed as `resume` — the invariant WireRunner keeps
         // by reading one local twice.
-        var seeded = new TokenLedger(null, snapshot.InputTokens, snapshot.OutputTokens);
+        var seeded = new TokenLedger(snapshot.InputTokens, snapshot.OutputTokens);
 
         var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins(), resume: snapshot, ledger: seeded);
 
         Assert.Single(runner.Context.Messages);      // the conversation, NOT discarded
         Assert.Equal(5_397 + 435, runner.Ledger.TotalTokens);
-    }
-
-    /// <summary>
-    /// A restored ledger must not fire Breached. The budget was already crossed in the previous
-    /// process and the user was already told; re-announcing it on resume reports as new an error
-    /// that is neither new nor actionable.
-    /// </summary>
-    [Fact]
-    public void Resume_WithSpendOverBudget_DoesNotReRaiseTheBreach()
-    {
-        var sink = new RecordingSink();
-        var snapshot = new CxAgent.Core.Storage.SessionSnapshot(
-            "old-agent", [new ChatMessage { Role = "user", Content = "hello" }],
-            InputTokens: 900_000, OutputTokens: 100_000, UpdatedAt: DateTimeOffset.UtcNow);
-
-        _ = new AgentHost(new MockLlmProvider(), sink, new NullJobPanel(),
-            PluginRegistry.CreateWithBuiltins(),
-            orchestrator: new OrchestratorSettings(MaxTokensPerCall: null, GoalTokenBudget: 1_000),
-            resume: snapshot);
-
-        Assert.Empty(sink.Errors);
     }
 
     /// <summary>
@@ -391,7 +369,7 @@ public class AgentHostTests
         var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins())
         {
-            ConfiguredMaxWorkerTurns = 0,
+            ConfiguredMaxTurns = 0,
         };
 
         Assert.Equal(int.MaxValue, runner.TurnCeiling);
@@ -433,9 +411,36 @@ public class AgentHostTests
         var runner = new AgentHost(new MockLlmProvider(), new RecordingSink(), new NullJobPanel(),
             PluginRegistry.CreateWithBuiltins())
         {
-            ConfiguredMaxWorkerTurns = 25,
+            ConfiguredMaxTurns = 25,
         };
 
         Assert.Equal(25, runner.TurnCeiling);
+    }
+
+    /// <summary>
+    /// ONE RESOLUTION FOR PARENT AND CHILDREN, which is the bug this static exists to prevent.
+    ///
+    /// <para>The ceiling used to be computed twice — here for the session agent, and again by a
+    /// separate expression in the composition root for sub-agents. They disagreed on the one value
+    /// that has a documented meaning: a configured 0 left the parent unbounded while children
+    /// silently fell back to the default.</para>
+    /// </summary>
+    [Fact]
+    public void CeilingFor_GivesOneAnswer_ForEveryCaller()
+    {
+        Assert.Equal(AgentHost.DefaultTurnCeiling, AgentHost.CeilingFor(null));
+        Assert.Equal(int.MaxValue, AgentHost.CeilingFor(0));
+        Assert.Equal(42, AgentHost.CeilingFor(42));
+    }
+
+    /// <summary>The default is a real number, not "unbounded by accident".</summary>
+    [Fact]
+    public void DefaultTurnCeiling_IsFiniteAndGenerous()
+    {
+        Assert.Equal(300, AgentHost.DefaultTurnCeiling);
+
+        // A live agentic drive on a real repo used 66 turns. The default has to clear that by a
+        // wide margin and still bound a model that has stopped making progress.
+        Assert.True(AgentHost.DefaultTurnCeiling > 66 * 2);
     }
 }

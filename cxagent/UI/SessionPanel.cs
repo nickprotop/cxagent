@@ -162,7 +162,7 @@ public sealed class SessionPanel
     /// <param name="rules">Count of always-allow rules live for this folder.</param>
     public void Refresh(int? contextUsed, int spentTokens, int? contextWindow, string model,
         string endpoint, int rules,
-        int maxTurns = 0, int? goalTokenBudget = null, int inputTokens = 0, int outputTokens = 0,
+        int maxTurns = 0, int inputTokens = 0, int outputTokens = 0,
         string sessionId = "",
         IReadOnlyList<Core.Mcp.McpServerStatus>? mcpServers = null,
         IReadOnlyList<string>? agentTypes = null,
@@ -205,23 +205,18 @@ public sealed class SessionPanel
         // reason" has almost always hit one.
         //
         // SHOWN UNCONDITIONALLY, which is the correction. The first version gated this on the
-        // orchestrator CONFIG block, so with no such block — the common case, and the sandbox's —
-        // it rendered nothing at all, and the caps stayed exactly as invisible as before. But the
-        // limits still APPLY: MaxWorkerTurns falls back to 200 (`?? 200` at the call site) whether
-        // or not it is configured, and the tool-result cap is a const that no config touches. A cap
-        // you cannot see is one you cannot plan around.
+        // orchestrator CONFIG block, so with no such block — the common case — it rendered nothing
+        // and the caps stayed as invisible as before. The limits apply either way.
         Section(lines, "Limits");
 
-        // A TURN CEILING ONLY WHEN ONE EXISTS. Single-agent runs unbounded unless configured, so
-        // printing "3/200" there would advertise a limit that was removed precisely because it
-        // ended real work at an arbitrary number.
+        // THE CEILING THAT BINDS, resolved by the caller — the default when nothing was configured,
+        // and 0 only for an explicit opt-out. This used to receive the raw configured value, so an
+        // unconfigured session read "no cap" while a real ceiling was in force.
         lines.Add(maxTurns > 0
             ? Value($"{_turns}/{maxTurns} turns")
             : Muted($"{_turns} turns · no cap"));
 
         lines.Add(Muted($"{Compact(MaxToolResultChars)} tool result"));
-        if (goalTokenBudget is > 0)
-            lines.Add(Muted($"{Compact(goalTokenBudget.Value)} token budget"));
 
         // THE SESSION ID, last and muted. It is not glanceable information — nobody reads a ULID —
         // but it is the ONE string that connects what is on screen to the logs on disk, and without

@@ -128,9 +128,6 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public string SessionId { get; set; } = string.Empty;
 
-    /// <summary>maxWorkerTurns as the user configured it, or null. Set by AppBootstrap, which reads
-    /// the file — see ReadConfiguredMaxWorkerTurns for why the settings record cannot answer.</summary>
-    public int? ConfiguredMaxWorkerTurns { get; set; }
 
     // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
     // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
@@ -1017,12 +1014,11 @@ public sealed class MainWindow : IDisposable
             _resolution.Provider?.ModelId ?? _resolution.DisplayName ?? "(no provider)",
             string.Empty,
             _permissionRuleCount,
-            // The CONFIGURED cap only, supplied by AppBootstrap from the raw JSON. NOT read off
-            // _resolution.Orchestrator: that property is non-nullable and defaults to Unbounded,
-            // which carries MaxWorkerTurns = 200 — so it reports a ceiling for a session that has
-            // none, which is exactly the fiction this panel exists to stop. 0 means "say no cap".
-            ConfiguredMaxWorkerTurns ?? 0,
-            _resolution.Orchestrator?.GoalTokenBudget,
+            // THE CEILING THAT ACTUALLY BINDS, not the configured value. The panel used to show
+            // the raw setting, so an unconfigured session printed "no cap" while 500 was quietly in
+            // force — a live drive read "66 turns · no cap" and the cap was real all along. int.MaxValue
+            // is the genuine no-cap case (an explicit 0), and the panel renders that as "no cap".
+            AgentHost.CeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling && ceiling == int.MaxValue ? 0 : ceiling,
             _lastInput,
             _lastOutput,
             SessionId,

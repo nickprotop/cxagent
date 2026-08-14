@@ -284,7 +284,7 @@ public class TodoTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 10);
 
         await agent.SendAsync("plan it", CancellationToken.None);
@@ -313,7 +313,7 @@ public class TodoTests
     public async Task TheTool_IsAlwaysOffered()
     {
         var provider = new ToolCapturingProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
         await agent.SendAsync("do something", CancellationToken.None);

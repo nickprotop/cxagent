@@ -28,8 +28,8 @@ public class SettingsSessionTests
     public void OrchestratorEdits_RideTheSameCompose()
     {
         var session = new SettingsSession(OneProvider("first", "m1"));
-        session.UpdateOrchestrator(session.Working.Orchestrator with { MaxWorkerTurns = 4 });
-        Assert.Equal(4, session.TryCompose()!.Orchestrator.MaxWorkerTurns);
+        session.UpdateOrchestrator(session.Working.Orchestrator with { MaxTurns = 4 });
+        Assert.Equal(4, session.TryCompose()!.Orchestrator.MaxTurns);
     }
 
     [Fact]

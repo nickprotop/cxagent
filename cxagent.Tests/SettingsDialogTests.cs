@@ -140,16 +140,16 @@ public class SettingsDialogTests
         var paths = new AppPaths(MakeTempDir());
         ProviderConfigWriter.Write(paths, OneProvider("first", "m1"));
         var session = new SettingsSession(OneProvider("first", "m1"));
-        session.UpdateOrchestrator(session.Working.Orchestrator with { MaxWorkerTurns = 7 });
+        session.UpdateOrchestrator(session.Working.Orchestrator with { MaxTurns = 7 });
 
         var dialog = NewDialog(paths, session);
         var task = dialog.RunAsync(SettingsPage.Orchestrator, CancellationToken.None);
         dialog.Save();
 
         var result = await task;
-        Assert.Equal(7, result!.Orchestrator.MaxWorkerTurns);
+        Assert.Equal(7, result!.Orchestrator.MaxTurns);
         var loaded = ProviderConfigLoader.LoadAndValidate(paths, new Dictionary<string, string>());
-        Assert.Equal(7, loaded.Orchestrator.MaxWorkerTurns);
+        Assert.Equal(7, loaded.Orchestrator.MaxTurns);
     }
 
     [Fact]
@@ -157,10 +157,10 @@ public class SettingsDialogTests
     {
         // A shell test that only asserts "it builds" would still pass with an empty page (the same
         // trap RunAsync_ExposesEveryNavItem_ByName calls out for the nav items themselves). This
-        // asserts the page actually seeded a prompt with the session's real MaxWorkerTurns value.
+        // asserts the page actually seeded a prompt with the session's real MaxTurns value.
         var settings = OneProvider("first", "m1") with
         {
-            Orchestrator = OrchestratorSettings.Unbounded with { MaxWorkerTurns = 13 },
+            Orchestrator = OrchestratorSettings.Unbounded with { MaxTurns = 13 },
         };
         var paths = new AppPaths(MakeTempDir());
         var dialog = NewDialog(paths, new SettingsSession(settings));

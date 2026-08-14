@@ -240,8 +240,9 @@ ask. A model can propose a command that deletes things, and if you approve it, i
 **It spends your money.** Every turn is a request to whichever provider you configured, and a
 sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand
 tokens. The session panel shows the running total and the parent/worker split, `/stats` shows what
-past sessions cost and which tools fill the context, and `goalTokenBudget` warns once past a figure
-you set. **None of them stops a bill.** If you point cxagent at a paid API, **you are paying for what
+past sessions cost and which tools fill the context, and `orchestrator.maxTurns` stops a request
+after a set number of turns. **A turn cap bounds iterations, not spend** — one turn that reads a
+large file costs more than ten that do not, so it is a backstop against a runaway, not a budget. If you point cxagent at a paid API, **you are paying for what
 it does**, including work that turns out to be wrong.
 
 A measured example, on a local model where the cost was only electricity: one evening of six sessions

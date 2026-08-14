@@ -166,10 +166,10 @@ public class SkillsUiTests
             childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
             var jobs = new NullJobPanel();
-            var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), jobs, logs: null, maxTurns: 50,
                 spawner: new SubAgentSpawner(new SubAgentFactory(
-                    childProvider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+                    childProvider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                     logs: null, maxTurns: 50, compressAbove: 40_000, contextWindow: 200_000,
                     globalInstructionsDir: null, mcp: null)))
             {
@@ -210,7 +210,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
             await agent.SendAsync("do something", CancellationToken.None);
@@ -236,7 +236,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null),
+            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
             await agent.SendAsync("do something", CancellationToken.None);

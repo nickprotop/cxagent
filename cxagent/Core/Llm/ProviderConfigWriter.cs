@@ -62,16 +62,12 @@ public static class ProviderConfigWriter
         {
             var orch = root["orchestrator"]?.AsObject() ?? new JsonObject();
             var o = settings.Orchestrator;
-            // Required fields with real (non-null) defaults are always written — the loader treats
-            // absent and default identically for these, so this is safe and makes the file
-            // self-documenting (ProviderConfig.cs:293-314).
-            orch["maxWorkerTurns"] = o.MaxWorkerTurns;
-            // MaxTokensPerCall/GoalTokenBudget/ContextCompressThreshold are null-means-unconfigured
-            // (ProviderConfig.cs:25-27,46-58) — omit the key entirely rather than writing null, so
-            // "nobody said" survives a round-trip instead of collapsing into an explicit value.
-            if (o.MaxTokensPerCall is { } mtpc) orch["maxTokensPerCall"] = mtpc; else orch.Remove("maxTokensPerCall");
-            if (o.GoalTokenBudget is { } gtb) orch["goalTokenBudget"] = gtb; else orch.Remove("goalTokenBudget");
+            // BOTH ARE NULL-MEANS-UNCONFIGURED, so an absent key is written as absent rather than as
+            // an explicit value. "Nobody said" has to survive a round-trip: collapsing it into a
+            // number is what made the loader read config.json a second time by hand to recover it.
+            if (o.MaxTurns is { } mt) orch["maxTurns"] = mt; else orch.Remove("maxTurns");
             if (o.ContextCompressThreshold is { } cct) orch["contextCompressThreshold"] = cct; else orch.Remove("contextCompressThreshold");
+
             root["orchestrator"] = orch;
         }
 

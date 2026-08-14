@@ -46,7 +46,7 @@
         "cxagent cannot discover what an endpoint tolerates, so it does not guess — set this when",
         "you know. A single-threaded local server queues concurrent children at the socket and",
         "splits its context across slots; a hosted API answers them and returns 429s.",
-        "See CONFIG.md. The real bound on cost is orchestrator.goalTokenBudget, not this."
+        "See CONFIG.md. The real bound on a run is orchestrator.maxTurns, not this."
       ],
       "maxConcurrentAgents": 0
     }
@@ -66,7 +66,7 @@
     "  is not in `providers` is a startup error, not a surprise at spawn time.",
     "",
     "maxTurns: how many turns this type gets before it stops and summarises what it has. Omit",
-    "  to inherit the session ceiling (`orchestrator.maxWorkerTurns`), which is the right",
+    "  to inherit the session ceiling (`orchestrator.maxTurns`), which is the right",
     "  default and what every child got before this key existed.",
     "",
     "  SET IT ONLY WHEN THE JOB HAS A KNOWN SHAPE. A search that should take four turns and",
@@ -122,21 +122,19 @@
   },
 
   "//orchestrator": [
-    "Caps and thresholds. Every one is optional.",
+    "The two settings that bind a run. Both optional.",
     "",
-    "goalTokenBudget: tokens for the whole session before it warns. null/absent = unbounded.",
-    "maxTokensPerCall: per-request cap. null/absent = the provider's own.",
-    "maxWorkerTurns: turns per request before the agent stops and summarises what it got.",
-    "  0 means NO CAP — an explicit opt-out. Absent means the built-in ceiling, which is NOT",
-    "  the same as no cap. It applies to sub-agents too: a child inherits this ceiling rather",
-    "  than getting a smaller one of its own.",
+    "maxTurns: turns one request may take before the agent stops and summarises what it got.",
+    "  Absent means the built-in ceiling (300), which is NOT the same as no cap.",
+    "  0 means NO CAP — the explicit opt-out.",
+    "  It applies to the session agent AND to sub-agents: a child inherits this unless its own",
+    "  type sets `agents.<name>.maxTurns`.",
     "contextCompressThreshold: compact above this many tokens. Absent and a contextWindow is",
     "  known, it is 80% of that window — which is the better answer, since it tracks the model",
     "  rather than a number that was right for whatever was configured when it was written.",
     "  Absent with no window either, a fixed built-in threshold is used."
   ],
   "orchestrator": {
-    "goalTokenBudget": null,
-    "maxWorkerTurns": 500
+    "maxTurns": 300
   }
 }

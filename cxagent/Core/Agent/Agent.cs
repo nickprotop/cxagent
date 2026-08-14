@@ -417,7 +417,7 @@ public sealed class Agent
         _sink = sink;
         _jobs = jobs;
         _logs = logs;
-        // ZERO MEANS NO CAP, the same meaning AgentHost's ConfiguredMaxWorkerTurns already carries
+        // ZERO MEANS NO CAP, the same meaning AgentHost.CeilingFor gives a configured 0
         // and opencode's `agent.steps ?? Infinity`. Taken literally 0 is a ceiling of zero turns: the
         // agent stops before its first call — and NOT harmlessly, because the cap path makes a real
         // provider call to salvage a summary, so it costs a request and returns a plausible-sounding

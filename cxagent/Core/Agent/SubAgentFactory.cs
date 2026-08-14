@@ -68,7 +68,7 @@ public sealed class SubAgentFactory
     /// </param>
     /// <param name="maxTurns">
     /// THE PARENT'S CEILING, not a smaller number invented here. A figure chosen for children is the
-    /// same mistake as the old <c>MaxWorkerTurns: 10</c>: it caps mid-work and returns a salvage
+    /// same mistake a tight session cap makes: it caps mid-work and returns a salvage
     /// summary that the caller reads as a finished answer. Zero means unbounded, and
     /// <see cref="Agent"/> translates it.
     /// </param>

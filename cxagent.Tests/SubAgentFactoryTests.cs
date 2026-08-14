@@ -21,7 +21,7 @@ public class SubAgentFactoryTests
         PluginRegistry? plugins = null, MockLlmProvider? provider = null) =>
         new(provider ?? Answering(),
             plugins ?? PluginRegistry.CreateWithBuiltins(),
-            ledger ?? new TokenLedger(null),
+            ledger ?? new TokenLedger(),
             logs: null,
             maxTurns: maxTurns,
             compressAbove: 40_000,
@@ -81,7 +81,7 @@ public class SubAgentFactoryTests
     [Fact]
     public async Task Create_RecordsTheChildsSpend_IntoTheGivenLedger()
     {
-        var ledger = new TokenLedger(null);
+        var ledger = new TokenLedger();
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 300, OutputTokens = 40 } });

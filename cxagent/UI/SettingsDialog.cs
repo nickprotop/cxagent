@@ -326,34 +326,32 @@ public sealed class SettingsDialog
     /// through <see cref="SettingsSession.UpdateOrchestrator"/>, which is itself a no-op (no Dirty)
     /// when the composed value doesn't actually differ from what's already there.
     ///
-    /// MaxTokensPerCall/GoalTokenBudget/ContextCompressThreshold: blank is a valid, meaningful
-    /// state (unbounded / unbounded / derive-from-context-window — see the record's own doc
-    /// comment), so an empty box parses to null rather than being rejected.
+    /// BOTH FIELDS TAKE A BLANK, because for both of them "nobody said" is a real state with its own
+    /// meaning — the built-in ceiling for MaxTurns, derive-from-context-window for the threshold. An
+    /// empty box parses to null rather than being rejected.
     ///
-    /// MaxWorkerTurns: a never-null real default (see OrchestratorSettings' doc)
-    /// — a blank or non-positive entry is rejected outright (the box's last-accepted value is kept)
-    /// rather than silently coerced to some other number, so a mistyped field can't reopen the
-    /// runaway loop these caps exist to stop.</summary>
+    /// <para>MaxTurns also takes 0, which is the explicit no-cap. The prompt that used to sit here
+    /// demanded ">= 1" and so made the one value with a documented meaning the one value you could
+    /// not type.</para></summary>
     private void BuildOrchestratorPage(ScrollablePanelControl panel)
     {
         var o = _session.Working.Orchestrator;
 
-        panel.AddControl(Ctl.Markup().AddLine("[dim]Blank = unbounded for the two token fields below.[/]").Build());
-        AddNullableIntPrompt(panel, "Max tokens/call", o.MaxTokensPerCall,
-            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxTokensPerCall = v }));
-        AddNullableIntPrompt(panel, "Goal token budget", o.GoalTokenBudget,
-            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { GoalTokenBudget = v }));
+        panel.AddControl(Ctl.Markup()
+            .AddLine("[dim]Blank means unconfigured — the app's own default applies.[/]")
+            .Build());
+
+        // ZERO IS ENTERABLE ON PURPOSE. It is the explicit no-cap, so this cannot be the
+        // positive-only prompt that used to sit here insisting on ">= 1" — that prompt made the one
+        // value with a documented meaning the one value you could not type.
+        AddNullableIntPrompt(panel, "Max turns per request (0 = no cap)", o.MaxTurns,
+            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxTurns = v }));
         AddNullableIntPrompt(panel, "Compress threshold (blank = derive from context window)", o.ContextCompressThreshold,
             v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { ContextCompressThreshold = v }));
-
-        panel.AddControl(Ctl.Markup().AddLine("[dim]The one below always needs a real value (>= 1).[/]").Build());
-        AddPositiveIntPrompt(panel, "Max worker turns", o.MaxWorkerTurns,
-            v => _session.UpdateOrchestrator(_session.Working.Orchestrator with { MaxWorkerTurns = v }));
     }
 
-    /// <summary>A prompt whose blank input means "unconfigured" (null) rather than being rejected —
-    /// for MaxTokensPerCall/GoalTokenBudget/ContextCompressThreshold, where null is a real,
-    /// meaningful state. A non-blank, non-numeric entry is ignored (last-accepted value stands);
+    /// <summary>A prompt whose blank input means "unconfigured" (null) rather than being rejected,
+    /// which is a real and meaningful state for both orchestrator settings. A non-blank, non-numeric entry is ignored (last-accepted value stands);
     /// there is no error UI in this dialog to surface a rejection.</summary>
     private static void AddNullableIntPrompt(ScrollablePanelControl panel, string label, int? initial, Action<int?> onAccepted)
     {
@@ -365,24 +363,6 @@ public sealed class SettingsDialog
         {
             if (string.IsNullOrWhiteSpace(text)) { onAccepted(null); return; }
             if (int.TryParse(text.Trim(), out var parsed)) onAccepted(parsed);
-        };
-        panel.AddControl(prompt);
-    }
-
-    /// <summary>A prompt for a field that must always hold a real value >= 1 (MaxWorkerTurns — a
-    /// never-null real default). Blank or
-    /// non-positive input is rejected — the session keeps whatever value it already had — rather
-    /// than silently substituting some other number, since these caps exist specifically to stop a
-    /// runaway consult/edit/tool loop.</summary>
-    private static void AddPositiveIntPrompt(ScrollablePanelControl panel, string label, int initial, Action<int> onAccepted)
-    {
-        var prompt = Ctl.Prompt(label)
-            .WithInput(initial.ToString())
-            .WithMargin(1, 0, 1, 0)
-            .Build();
-        prompt.InputChanged += (_, text) =>
-        {
-            if (int.TryParse(text.Trim(), out var parsed) && parsed >= 1) onAccepted(parsed);
         };
         panel.AddControl(prompt);
     }

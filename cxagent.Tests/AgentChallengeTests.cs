@@ -22,7 +22,7 @@ public class AgentChallengeTests
 {
     private static Agent Build(ILlmProvider provider, RecordingSink sink,
         int? compressAbove = null, NullJobPanel? panel = null) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(null), sink,
+        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(), sink,
             panel ?? new NullJobPanel(), logs: null, maxTurns: 50, compressAbove: compressAbove);
 
     private static List<ChatMessage> Goal(string text) =>
@@ -404,7 +404,7 @@ public class AgentChallengeTests
 
         var sink = new RecordingSink();
         var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
-            new TokenLedger(null), sink, new NullJobPanel(), logs: null, maxTurns: 2);
+            new TokenLedger(), sink, new NullJobPanel(), logs: null, maxTurns: 2);
 
         var answer = await agent.SendAsync("fix the parser", CancellationToken.None);
 
@@ -526,7 +526,7 @@ public class AgentChallengeTests
             provider.EnqueueResponse(Prose("### A heading\n\n- **bold** item"));
 
             var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
-                new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
+                new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
 
             await agent.SendAsync("what is this?", CancellationToken.None);
 
@@ -586,7 +586,7 @@ public class AgentChallengeTests
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("ok"));
 
             var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(),
-                new TokenLedger(null), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
+                new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs, maxTurns: 10);
 
             await agent.SendAsync("say hello", CancellationToken.None);
             await agent.SendAsync("say goodbye", CancellationToken.None);

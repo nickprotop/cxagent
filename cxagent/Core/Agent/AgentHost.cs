@@ -84,7 +84,6 @@ public sealed class AgentHost : IDisposable
     /// the axis every "where did my week go" view wants.</summary>
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
 
-    private readonly int? _sessionTokenBudget;
 
     /// <summary>
     /// The agent this runner drives, built once and kept.
@@ -98,9 +97,8 @@ public sealed class AgentHost : IDisposable
     private readonly Agent _agent;
 
 
-    // The whole settings record, not just the token budget: OrchestratorLoop needs MaxConsults and
-    // MaxEditsPerJob too, and those are NOT null-means-unbounded (see OrchestratorSettings' doc) — an
-    // absent 'orchestrator' config block must still hand the loop real caps.
+    // The whole settings record rather than the one field read today: the compaction threshold is
+    // derived from it per-agent (see BuildAgent), and the turn ceiling reads MaxTurns.
     private readonly OrchestratorSettings _orchestrator;
 
     /// <summary>How this session's agent spawns children, or null when sub-agents are not wired.
@@ -164,10 +162,9 @@ public sealed class AgentHost : IDisposable
     public AgentContext Context { get; }
 
     /// <summary>
-    /// Raised every time Ledger.Record runs, carrying the new running total. TokenLedger itself only
-    /// exposes Breached (fires once, on crossing the budget) — this gives the UI (the status-bar cost
-    /// readout, Task 11) a live per-call hook without adding a general-purpose event to the ledger's
-    /// own object model.
+    /// Raised every time Ledger.Record runs, carrying the new running total — the status-bar cost
+    /// readout's live hook, kept here rather than as a general-purpose event on the ledger's own
+    /// object model.
     /// </summary>
     public event EventHandler<int>? TokensUpdated;
 
@@ -298,14 +295,10 @@ public sealed class AgentHost : IDisposable
     public void MarkSessionFinished() => _store?.MarkFinished(_agent.Id);
 
     /// <summary>
-    /// MaxWorkerTurns as the USER set it, or null when they did not.
-    ///
-    /// <para>Distinct from <c>_orchestrator.MaxWorkerTurns</c>, which is 200 whenever the settings
-    /// object exists — including the placeholder AppBootstrap supplies for an absent config block.
-    /// Single-agent needs to tell "the user asked for 200" apart from "nobody said anything", and
-    /// the settings record cannot express that difference.</para>
+    /// <c>orchestrator.maxTurns</c> as the user set it, or null when they did not — what that
+    /// absence MEANS is <see cref="CeilingFor"/>'s to decide, not the parser's.
     /// </summary>
-    public int? ConfiguredMaxWorkerTurns { get; init; }
+    public int? ConfiguredMaxTurns { get; init; }
 
     /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
     /// knows a turn boundary.</summary>
@@ -352,7 +345,6 @@ public sealed class AgentHost : IDisposable
         _globalInstructionsDir = globalInstructionsDir;
         _orchestrator = orchestrator ?? OrchestratorSettings.Unbounded;
         _contextWindow = contextWindow;
-        _sessionTokenBudget = _orchestrator.GoalTokenBudget;
 
         // GIVEN, OR MADE HERE. A ledger constructed inside this constructor can only ever be THE
         // SESSION'S ONE LEDGER — and that is exactly the assumption per-model attribution has to
@@ -369,18 +361,13 @@ public sealed class AgentHost : IDisposable
         // a caller handing in a ledger for a resumed session must seed it from the same snapshot —
         // see WireRunner, where both come off one local for exactly that reason.
         Ledger = ledger ?? (resume is null
-            ? new TokenLedger(_sessionTokenBudget)
-            : new TokenLedger(_sessionTokenBudget, resume.InputTokens, resume.OutputTokens));
+            ? new TokenLedger()
+            : new TokenLedger(resume.InputTokens, resume.OutputTokens));
 
         Context = new AgentContext(contextWindow);
         if (resume is not null) Context.Replace(resume.Context);
         // Loaded FROM a stored row, so there is already something to come back to — see HasSavedTurn.
         _resumed = resume is not null;
-        // On breach, pause and ask — never silently keep spending. For now (Task 4) that means
-        // surfacing an error; the interactive raise/continue/cancel dialog is Task 9.
-        Ledger.Breached += (_, total) =>
-            _sink.ShowError($"token budget exceeded: spent {total}, budget was {_sessionTokenBudget}.");
-
         // LAST: BuildAgent reads Ledger and Context, so both must already be assigned.
         _agent = BuildAgent();
     }
@@ -445,7 +432,7 @@ public sealed class AgentHost : IDisposable
     /// A backstop, not a budget. The user's configured value when they set one, otherwise
     /// <see cref="DefaultTurnCeiling"/>.
     ///
-    /// <para>NO LOW DEFAULT, and that reasoning is unchanged: MaxWorkerTurns existed to bound a
+    /// <para>NO LOW DEFAULT, and that reasoning is unchanged: the cap exists to bound a
     /// WORKER inside a fan-out — one job among many, where a runaway cost the whole plan. A session
     /// is not that. The user is watching it and can stop it, and a ceiling in the low hundreds just
     /// ends real work at a number that has nothing to do with the task. crush ships no step cap at
@@ -461,23 +448,43 @@ public sealed class AgentHost : IDisposable
     /// on purpose, so the number is free to carry the meaning someone actually intends by it. It
     /// matches opencode's <c>agent.steps ?? Infinity</c>: a session nobody asked to bound is not
     /// bounded.</para>
-    public int TurnCeiling => ConfiguredMaxWorkerTurns switch
+    /// <summary>
+    /// Turns one request may take before it is stopped — this agent's, and every child's.
+    ///
+    /// <para>ONE RESOLUTION, SHARED. It used to be computed here for the session agent and again, by
+    /// a separate expression, for sub-agents — and the two disagreed: a configured <c>0</c> made the
+    /// parent unbounded while children silently fell back to the default. A static so the
+    /// composition root can resolve it once, before the host exists, and hand the same number to the
+    /// factory.</para>
+    /// </summary>
+    public int TurnCeiling => CeilingFor(ConfiguredMaxTurns);
+
+    /// <summary>
+    /// What a configured <c>orchestrator.maxTurns</c> means.
+    ///
+    /// <para>ZERO IS THE OPT-OUT, not a mistake — the same meaning an agent type's <c>maxTurns</c>
+    /// carries, and the reason nobody configures zero by accident: it would mean an agent that stops
+    /// before its first call. Null is "nobody said", which is what the default is for.</para>
+    /// </summary>
+    public static int CeilingFor(int? configured) => configured switch
     {
         null => DefaultTurnCeiling,
         0 => int.MaxValue,
-        int configured => configured,
+        int turns => turns,
     };
 
     /// <summary>
     /// Turns a single request may take before it is stopped, absent configuration.
     ///
-    /// <para>Chosen to be unreachable by real work and still finite. A live three-prompt drive used
-    /// four turns; a hard debugging session might use sixty. Five hundred is an order of magnitude
-    /// beyond that, so nothing legitimate meets it — while a loop that slips past stuck detection
-    /// (different arguments each time, so no repeat signature ever matches) still terminates instead
-    /// of running until the user notices.</para>
+    /// <para>Chosen to be unreachable by ordinary work and still finite. A live three-prompt drive
+    /// used four turns; a long agentic session on a real repo used sixty-six. Three hundred leaves
+    /// room for work several times harder than anything measured, while still bounding a model that
+    /// has stopped making progress in a way the stuck-detector cannot see — one that varies its
+    /// calls slightly each time and so never repeats a signature.</para>
+    ///
+    /// <para>Set <c>orchestrator.maxTurns</c> to <c>0</c> for no cap at all.</para>
     /// </summary>
-    public const int DefaultTurnCeiling = 500;
+    public const int DefaultTurnCeiling = 300;
 
     private Agent BuildAgent()
     {

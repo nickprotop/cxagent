@@ -62,24 +62,23 @@ public class ProviderResolutionTests : IDisposable
         Write("""
         { "providers": { "claude": { "kind":"anthropic", "apiKey":"sk", "model":"m" } },
           "defaultProvider":"claude",
-          "orchestrator": { "maxTokensPerCall": 8000, "goalTokenBudget": 200000 } }
+          "orchestrator": { "maxTurns": 42 } }
         """);
 
         var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: false);
 
         Assert.True(r.HasProvider);
         Assert.NotNull(r.Orchestrator);
-        Assert.Equal(200000, r.Orchestrator!.GoalTokenBudget);
-        Assert.Equal(8000, r.Orchestrator.MaxTokensPerCall);
+        Assert.Equal(42, r.Orchestrator!.MaxTurns);
     }
 
-    /// <summary>--mock has no config file, so it must resolve with unbounded (null) budgets, not crash.</summary>
+    /// <summary>--mock has no config file, so it must resolve unconfigured (null), not crash.</summary>
     [Fact]
     public void Mock_HasNoOrchestratorBudgets()
     {
         var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: true);
         Assert.True(r.HasProvider);
-        Assert.Null(r.Orchestrator?.GoalTokenBudget);
+        Assert.Null(r.Orchestrator?.MaxTurns);
     }
 
     [Fact]

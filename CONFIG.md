@@ -58,8 +58,8 @@ know your endpoint's shape. What uncapped costs, so the choice is informed:
   gets `n_ctx / N` while its own accounting believes it has the whole window — so compaction fires
   far too late and children die on overflow rather than compacting.
 
-The real bound on runaway cost is `orchestrator.goalTokenBudget`, not this: a child is refused
-outright once the session's budget is already spent, whatever the concurrency.
+The real bound on a runaway is `orchestrator.maxTurns`, not this: concurrency limits how many
+children run at once, not how long any of them goes on.
 
 **`defaultProvider` is optional** and names one of the instances above. Without it, a session with
 more than one configured provider has no way to choose.
@@ -127,11 +127,18 @@ never in the config file.
 ## `orchestrator` — caps
 
 ```json
-"orchestrator": { "goalTokenBudget": null, "maxWorkerTurns": 500 }
+"orchestrator": { "maxTurns": 300 }
 ```
 
-`goalTokenBudget` is a ceiling for the whole session, `null` for none. `maxWorkerTurns` is the
-default turn ceiling an agent type inherits when it names none.
+`maxTurns` is how many turns one request may take before the agent stops and summarises what it
+got. **Absent means the built-in ceiling of 300** — which is not the same as no cap. **`0` means no
+cap**, the explicit opt-out.
+
+It applies to the session agent *and* to sub-agents: a child inherits it unless its own type sets
+`agents.<name>.maxTurns`.
+
+`contextCompressThreshold` is the other key here — compact above this many tokens. Absent, it is
+80% of the model's context window when that is known, and a built-in threshold when it is not.
 
 ---
 
