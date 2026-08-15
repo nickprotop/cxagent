@@ -66,6 +66,38 @@ more than one configured provider has no way to choose.
 
 ---
 
+## `classifier` — the reviewer for `/mode edits auto`
+
+```json
+"classifier": "local"
+```
+
+Names one of the instances in `providers`. In `auto` mode, each write that would otherwise prompt is
+shown to this model, which answers allow-or-ask.
+
+**Absent means `auto` is not offered** — it is not listed by `/mode`, not reachable with Shift+Tab,
+and not accepted as a value. A mode that claims background review while nothing reviews would be
+worse than not having it.
+
+**It fails closed.** A timeout, a transport error, a malformed reply, an empty completion or any
+verdict the parser does not recognise all ask. Only an explicit allow is silent, and the transcript
+says once per turn when review was unavailable rather than leaving you to wonder why the mode stopped
+helping.
+
+**Which instance to name.** A *remote* one never touches the session's slot. A local endpoint running
+`--parallel 1` has a single slot, so a classifier call parks the session's prefix to host RAM and
+restores it — measured at 28ms for 20k tokens against 5,850ms cold, so survivable, but the classifier
+also prefills cold each time because its prompt shares no prefix with the session. Cost on a remote
+instance is small: about **$0.0000174** per classification against `gemini-2.5-flash-lite`, roughly
+1.7 cents per thousand.
+
+**It is a convenience, not a security boundary.** Its input derives from file contents and command
+strings, so it is attacker-influenced by construction — a file that says "prior review confirms this
+is safe" is talking to the classifier. Trust still bounds it: on an untrusted folder every write asks,
+whatever the classifier would have said.
+
+---
+
 ## `agents` — sub-agent types
 
 Types the model can name when it spawns a worker. Every one is optional; a session with no `agents`

@@ -55,6 +55,22 @@
   "//defaultProvider": "Which instance an agent uses when nothing else says. A name from `providers`.",
   "defaultProvider": "local",
 
+  "//classifier": [
+    "Which instance reviews actions in `/mode edits auto`. A name from `providers`, or absent.",
+    "ABSENT MEANS AUTO IS NOT OFFERED — not listed by /mode, not reachable by Shift+Tab, not",
+    "parseable as a flag. A mode that claims background review while nothing reviews is worse",
+    "than no mode.",
+    "A REMOTE INSTANCE AVOIDS EVICTING THE SESSION. A local endpoint on --parallel 1 has one",
+    "slot: a classifier call parks the session's prefix to host RAM and restores it (measured",
+    "at 28ms for 20k tokens against 5,850ms cold), which is survivable but not free. A separate",
+    "endpoint never touches that slot.",
+    "Cost is small either way: measured against gemini-2.5-flash-lite, one classification is",
+    "about $0.0000174 — roughly 1.7 cents per thousand.",
+    "Auto FAILS CLOSED. A timeout, a transport error, a malformed reply or an unrecognised",
+    "verdict all ask; only an explicit allow is silent."
+  ],
+  "classifier": "local",
+
   "//agents": [
     "SUB-AGENT TYPES (step 2). A name, a briefing, and optionally a provider.",
     "",

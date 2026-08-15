@@ -126,8 +126,16 @@ finished.
 `--mode single` starts that way. Single mode's prompt is what shipped before sub-agents existed —
 turning it off really does turn it off.
 
-The axis is named because there will be more than one: file editing and a build/plan mode are
-coming, and `/mode` on its own reports every axis rather than guessing which one you meant.
+The axis is named because there is more than one, and `/mode` on its own reports every axis rather
+than guessing which one you meant.
+
+**`/mode edits`** decides when a file write happens without asking. `accept-edits` — the default —
+keeps writes inside the working directory silent and asks everywhere else; `always-ask` prompts for
+every one. **Shift+Tab cycles it** from the composer. It names what cxagent already did rather than
+granting anything new, and it cannot widen past your trust decision: on a folder you did not trust,
+`accept-edits` still asks for everything, and the listing says so. Writes to `.git/`, `.vscode/`,
+`.claude/` and `.idea/` keep asking regardless — a hook that runs on your next git command is not
+what anyone means by "accept edits".
 
 **Named types** let you say how a delegated job should be done — a briefing, optionally its own
 provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and

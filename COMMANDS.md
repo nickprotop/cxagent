@@ -15,6 +15,7 @@ but not completed.
 | `/model` | Show or switch which configured model this session uses |
 | `/mode` | Show how this session works |
 | `/mode agent single` · `/mode agent fan-out` | Set delegation, live |
+| `/mode edits always-ask` · `/mode edits accept-edits` | Set when writes ask, live (Shift+Tab cycles) |
 | `/clear` | Wipe the conversation |
 | `/compress` | Summarise the conversation to free room |
 | `/stats` | Usage: tokens, projects, agent types, what fills the context |
@@ -78,21 +79,55 @@ Declined while a turn is running: re-wiring replaces the agent that turn is writ
                            agent  fan-out
                              can spawn sub-agents
 
+                           edits  accept-edits
+                             writes inside /repo are silent; elsewhere asks
+
                            set with /mode agent single | fan-out
+                                    /mode edits always-ask | accept-edits
 
 /mode agent single       agent: single — this agent works alone; the spawn tool is
                          withdrawn. The conversation is unchanged.
 /mode agent fan-out      agent: fan-out — this agent can now spawn sub-agents.
+/mode edits always-ask   edits: always-ask — every write asks; stored rules still apply.
 ```
 
-**The axis is named because there will be more than one.** Delegation is one way a session can be
-set up; file editing and a build/plan mode are coming, and each would otherwise have wanted a
-command of its own — three entries in the palette where one will do, with no single place showing
-the whole picture. A bare `/mode` reports every axis for that reason.
+**The axis is named because there is more than one.** Delegation is one way a session can be set up;
+when a write happens without asking is another, and a build/plan mode is still to come. Each would
+otherwise have wanted a command of its own — three entries in the palette where one will do, with no
+single place showing the whole picture. A bare `/mode` reports every axis for that reason.
 
-`/mode fan-out` without the axis still works. Agent is the only axis today, so naming it is ceremony
-for the one thing anyone is switching — the day a value means something on two axes is the day that
-value stops being unambiguous on its own.
+`/mode fan-out` without the axis still works, because agent values are unambiguous. The edits axis
+must be named: `ask` and `edits` say nothing about which axis they belong to.
+
+### `edits` — when a write happens without asking
+
+| | |
+| --- | --- |
+| `always-ask` | Every write asks. Rules you saved with **Always** still apply. |
+| `accept-edits` | Writes inside the working directory are silent; everywhere else asks. **Default.** |
+
+**Shift+Tab cycles this axis** from the composer, and the mode line shows where you are. Delegation
+stays on `/mode` — it changes what the model is offered and what a turn may spend, which is the wrong
+weight for a keystroke.
+
+`accept-edits` is the default because it is what cxagent already did: writes under the working
+directory on a *trusted* folder never prompted. The axis names that behaviour so you can turn it off,
+not a new permission.
+
+**Trust bounds the mode; the mode cannot widen past it.** On a folder you did not trust,
+`accept-edits` still asks for everything — and the `/mode` listing says so rather than reporting what
+the name promises. A mode can add friction; it can never remove friction below what your trust
+decision permits.
+
+**Inside the working directory is a scope, not a safety guarantee.** Writes to `.git/`, `.vscode/`,
+`.claude/` and `.idea/` keep asking even under `accept-edits`: `.git/hooks/*` runs on your next git
+command and `.git/config` can name a program to execute, and "accept edits" should not quietly mean
+"accept a hook". Reading those files is unaffected.
+
+**Shell is not affected by this axis.** Read-only commands stay silent on a trusted folder and
+everything else asks, in every mode. A command's safety lives in its arguments — `mkdir` is fine,
+`mkdir /etc/x` is not — and cxagent does not parse arguments well enough to bound that, so it does
+not pretend to.
 
 **Fan-out is the default.** Single mode withdraws the spawn tool and removes the sub-agent guidance
 from the system prompt — its prompt is what shipped before sub-agents existed, so turning delegation
