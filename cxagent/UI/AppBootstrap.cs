@@ -273,6 +273,59 @@ public static class AppBootstrap
         // thought completed, and dropping either half is silent data loss the user cannot see.
         var queuedPrompts = new List<string>();
 
+        // THE ONE BLOCK QUEUED MESSAGES SHARE, or null when nothing is queued. One row that updates
+        // beats a row per message: three quick corrections are one thought, and three transcript
+        // lines for them push the running turn's own output off the screen just when it matters.
+        SharpConsoleUI.Controls.ChatMessageId? queuedBlock = null;
+
+            // ONE BLOCK, REWRITTEN. Adding a message updates the row rather than appending a new
+            // one, so a burst of corrections stays one line and the running turn keeps the screen.
+            void ShowQueued()
+            {
+                var body = PromptQueue.Join(queuedPrompts);
+                var heading = queuedPrompts.Count == 1
+                    ? "[dim]queued[/]"
+                    : $"[dim]queued · {queuedPrompts.Count} messages[/]";
+                var text = $"{heading} {ChatTranscriptSink.Escape(body)}";
+
+                if (queuedBlock is { } existing)
+                {
+                    mainWindow.Chat.UpdateMessage(existing, text);
+                    return;
+                }
+
+                queuedBlock = mainWindow.Chat.AddMessage(ChatRole.System, text);
+
+                // CANCEL PUTS THEM BACK IN THE COMPOSER, not in the bin. What was typed was meant,
+                // and the same Restore that Escape uses places it ABOVE anything typed since — the
+                // queued thought came first, so it reads first.
+                mainWindow.Chat.SetActions(queuedBlock.Value,
+                [
+                    new ChatMessageAction
+                    {
+                        Id = "cancel-queued",
+                        Label = "Cancel · back to composer",
+                        AfterPress = ChatActionAfterPress.Hide,
+                        OnClick = _ => DrainQueuedToComposer(),
+                    },
+                ]);
+            }
+
+            // THE ONE PLACE QUEUED TEXT GOES BACK. Escape and the Cancel action are the same act
+            // reached two ways, and a second copy of this would be the copy that forgets to clear
+            // the block or the list.
+            void DrainQueuedToComposer()
+            {
+                if (queuedPrompts.Count == 0) return;
+
+                mainWindow.Input.Input = PromptQueue.Restore(queuedPrompts, mainWindow.Input.Input);
+                queuedPrompts.Clear();
+                if (queuedBlock is { } id)
+                    mainWindow.Chat.UpdateMessage(id, "[dim]queued — returned to the composer[/]");
+                queuedBlock = null;
+            }
+
+
         // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
         // rather than per-login: a new one per attempt leaks sockets in TIME_WAIT.
         var mcpTokens = new Core.Mcp.Auth.TokenStore(paths);
@@ -872,8 +925,7 @@ public static class AppBootstrap
             if (IsTurnRunning())
             {
                 queuedPrompts.Add(goalText);
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    $"[dim]queued[/] {ChatTranscriptSink.Escape(goalText)}");
+                ShowQueued();
                 return;
             }
 
@@ -938,6 +990,7 @@ public static class AppBootstrap
 
             var joined = PromptQueue.Join(queuedPrompts);
             queuedPrompts.Clear();
+            queuedBlock = null;   // sent, so the next queue starts its own block
             mainWindow.Input.Input = joined;
             SubmitComposer();
         }
@@ -1046,12 +1099,7 @@ public static class AppBootstrap
                         //
                         // ABOVE any text already in the composer, preserving the order things were
                         // written in: the queued lines were typed first.
-                        if (queuedPrompts.Count > 0)
-                        {
-                            mainWindow.Input.Input =
-                                PromptQueue.Restore(queuedPrompts, mainWindow.Input.Input);
-                            queuedPrompts.Clear();
-                        }
+                        DrainQueuedToComposer();
                         break;
                 }
             });

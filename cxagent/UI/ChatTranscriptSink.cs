@@ -31,9 +31,26 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _chat = chat;
     }
 
+    /// <summary>
+    /// Adds what the user said, and marks it with a rail down the gutter.
+    ///
+    /// <para>THE TRANSCRIPT IS MOSTLY NOT THEM. An assistant reply, a dozen tool rows, a worker's
+    /// report — finding "where did I ask for that" means re-reading the conversation, because the
+    /// only signal is a surface colour that a running turn's own output competes with. The rail is a
+    /// different channel: one column in the gutter, scannable without reading anything.</para>
+    ///
+    /// <para>EXPLICIT, BECAUSE THE DEFAULT IS FOOTER PRESENCE. A message wants a rail when it has
+    /// actions or a status row (ChatTranscriptControl's <c>RailOverride ?? HasFooter</c>), which is a
+    /// good default and not this one — a user's message has no footer and should still be marked, and
+    /// the messages that do have footers are not the user's.</para>
+    /// </summary>
     public void UserTurnAdded(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
-            _map[id.Value] = _chat.AddMessage(ChatRole.User, text));
+        {
+            var added = _chat.AddMessage(ChatRole.User, text);
+            _chat.SetMessageRail(added, true);
+            _map[id.Value] = added;
+        });
 
     public void AssistantTurnBegan(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>

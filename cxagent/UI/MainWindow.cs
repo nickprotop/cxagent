@@ -500,6 +500,19 @@ public sealed class MainWindow : IDisposable
         // Spectre markup, so those roles must render as MARKUP (Markdown = false). The Assistant role
         // KEEPS markdown ON, because the LLM's chat responses are genuine markdown (headers, bold,
         // lists) and contain no cxagent markup. (Preserve each role's seeded ColorRole/Header/Collapse.)
+        // A RAIL DOWN THE LEFT OF YOUR OWN MESSAGES, and nothing else's.
+        //
+        // The transcript is mostly not you: an assistant reply, a dozen tool rows, a worker's report.
+        // Finding what you actually asked means reading colour, and colour is what a surface already
+        // uses. A rail is a different channel — a vertical line in the gutter — so "where did I say
+        // that" is answered by scanning one column rather than re-reading the conversation.
+        //
+        // ON FOR EVERYTHING HERE, then turned OFF per message for every role but User (see
+        // ChatTranscriptSink). The control resolves a rail's colour from its message's role, so
+        // leaving it on everywhere would give tool rows and system notices their own rails too — and
+        // a marker that marks everything marks nothing.
+        Chat.MessageRailEnabled = true;
+
         Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
             Markdown = false,
