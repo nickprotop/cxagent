@@ -591,6 +591,30 @@ public class FileJobPlugin : IJobPlugin
     /// so a caller without an opinion (a test, a headless job) keeps the old behaviour rather than
     /// being handed an empty base.</para>
     /// </summary>
+    /// <summary>
+    /// Creates the directory a write is about to land in, when it does not already exist.
+    ///
+    /// <para>WITHOUT THIS, WRITING TO A NEW SUBDIRECTORY THROWS. File.WriteAllTextAsync does not
+    /// create parent directories, so `write_file` to `plans/design.md` in a repo with no `plans/`
+    /// fails with DirectoryNotFoundException — and the model has no way to tell that apart from a
+    /// permission problem or a bad path.</para>
+    ///
+    /// <para>OBSERVED, not theorised. In a live drive the agent wrote a plan to `./plans/x.md`, the
+    /// write failed, it ran `mkdir -p plans` on the next turn to fix it, and then never retried the
+    /// write — leaving an empty directory and a downstream agent pointed at a file that did not
+    /// exist. Two turns spent, and the failure survived both.</para>
+    ///
+    /// <para>THE BOUNDARY IS UNAFFECTED. The path was resolved and permission-checked before this
+    /// runs, so creating its parent cannot reach anywhere the write itself could not. A path with no
+    /// directory part (a bare filename) yields null or empty here and is left alone.</para>
+    /// </summary>
+    private static void EnsureParentDirectory(string path)
+    {
+        var parent = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
+            Directory.CreateDirectory(parent);
+    }
+
     private static string Resolve(string path, IJobContext context) =>
         context.WorkingDirectory is { Length: > 0 } root
             ? Path.GetFullPath(path, root)
@@ -633,9 +657,11 @@ public class FileJobPlugin : IJobPlugin
                     await ReplaceAsync(path, parameters, output, ct);
                     break;
                 case "write":
+                    EnsureParentDirectory(path);
                     await File.WriteAllTextAsync(path, parameters.Get<string>("content"), ct);
                     break;
                 case "append":
+                    EnsureParentDirectory(path);
                     await File.AppendAllTextAsync(path, parameters.Get<string>("content"), ct);
                     break;
                 case "delete":
