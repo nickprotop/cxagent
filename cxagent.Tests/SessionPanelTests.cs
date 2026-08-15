@@ -621,4 +621,51 @@ public class SessionPanelTests
         Assert.DoesNotContain("$", lines[localIndex + 1], StringComparison.Ordinal);
         Assert.Contains("$0.0026", panel.RenderedText, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// THE THRESHOLD, PINNED AT THE FIGURE THAT MOTIVATED IT. Money's own doc comment cites $0.0147
+    /// — a real drive's cost — as the case four decimals exist for, but the cutover was written at
+    /// $0.01, which routes exactly that value to the two-decimal branch and renders "$0.01". The
+    /// comment and the code disagreed for a whole task because every other test sat at $0.0026,
+    /// below both thresholds, where the two readings are indistinguishable.
+    ///
+    /// <para>A test that cannot tell the two apart is not pinning the behaviour it names. This one
+    /// sits ABOVE $0.01 and below $1, so it fails under either wrong threshold.</para>
+    /// </summary>
+    [Fact]
+    public void Refresh_WithACostAboveACent_StillShowsFourDecimals()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["openrouter:gemini"] = 33_416 },
+            CostByInstance = new Dictionary<string, decimal> { ["openrouter:gemini"] = 0.0147m },
+            TotalCost = 0.0147m,
+        });
+
+        var text = panel.RenderedText;
+
+        Assert.Contains("$0.0147", text, StringComparison.Ordinal);
+        Assert.Contains("session $0.0147", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("$0.01 ", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>ONCE IT IS REAL MONEY, two decimals — the four-decimal branch is for fractions of a
+    /// cent, and "$1.4200" reads as false precision on a figure a user would say aloud as $1.42.
+    /// </summary>
+    [Fact]
+    public void Refresh_WithACostOverADollar_DropsToTwoDecimals()
+    {
+        var panel = new SessionPanel();
+        panel.Refresh(new SessionPanel.SessionPanelState
+        {
+            Endpoint = "", Rules = 0,
+            SpendByModel = new Dictionary<string, int> { ["openrouter:gemini"] = 33_416 },
+            CostByInstance = new Dictionary<string, decimal> { ["openrouter:gemini"] = 1.42m },
+            TotalCost = 1.42m,
+        });
+
+        Assert.Contains("session $1.42", panel.RenderedText, StringComparison.Ordinal);
+    }
 }
