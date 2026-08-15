@@ -174,7 +174,7 @@ public static class AppBootstrap
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
             // The SetMode call further down still fixes the composer line on every /mode; this is the
             // one readout that has to be right the first time.
-            StartupMode = AgentModes.Name(startupMode),
+            StartupMode = startupMode,
         };
         var window = mainWindow.Build();
 
@@ -284,7 +284,7 @@ public static class AppBootstrap
             var sink = new ChatTranscriptSink(system, mainWindow.Chat);
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
-            mainWindow.SetMode(AgentModes.Name(startupMode));
+            mainWindow.SetMode(startupMode);
             // I3: permissionRules.Load ran at construction, before any sink existed to tell the
             // user. Echo a load failure here, once — a bad hand-edit to permissions.json silently
             // dropped every rule and all folder trust, and the user needs to know before they grant
@@ -520,6 +520,45 @@ public static class AppBootstrap
         window.PreviewKeyPressed += (_, e) =>
         {
 
+            // SHIFT+TAB CYCLES THE EDIT AXIS ONLY. Delegation changes what the model is offered and
+            // what a turn may spend, so a keystroke beside the composer is the wrong weight for that
+            // decision and it stays on /mode. Claude Code cycles only its permission dial for the
+            // same reason.
+            //
+            // Gated on composer focus exactly as the Enter interception below is, so Shift+Tab keeps
+            // its ordinary reverse-navigation meaning everywhere else in the UI.
+            if (e.KeyInfo.Key == ConsoleKey.Tab
+                && (e.KeyInfo.Modifiers & ConsoleModifiers.Shift) != 0
+                && mainWindow.Input.HasFocus)
+            {
+                e.Handled = true;
+
+                if (runner is null) return;   // no agent to set a mode on
+
+                // A TURN IN FLIGHT IS DECLINED, the same predicate /mode uses: the tool list is fixed
+                // once a request begins, and a silent flip mid-turn is exactly what that guards.
+                if (IsTurnRunning())
+                {
+                    mainWindow.Chat.AddMessage(ChatRole.System,
+                        "[yellow]A turn is running — press Escape to stop it first.[/]");
+                    return;
+                }
+
+                var nextEdits = runner.Mode.Edits == EditMode.AcceptEdits
+                    ? EditMode.AlwaysAsk
+                    : EditMode.AcceptEdits;
+
+                runner.Mode = runner.Mode with { Edits = nextEdits };
+                permissionPolicy.Edits = nextEdits;
+                mainWindow.SetMode(runner.Mode);
+
+                // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
+                // be silent itself — and the composer line alone is easy to miss mid-flow.
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    $"edits: {EditModes.Name(nextEdits)}.");
+                return;
+            }
+
             if (e.KeyInfo.Key != ConsoleKey.Enter) return;
             if (!mainWindow.Input.HasFocus) return;   // let the job panel etc. handle Enter when focused there
 
@@ -657,16 +696,23 @@ public static class AppBootstrap
                                 return;
                             }
 
-                            var decision = ModeCommand.Decide(
-                                SessionCommands.Arguments(goalText), runner.Mode.Agent, IsTurnRunning());
+                            var decision = ModeCommand.Decide(new ModeQuery(
+                                SessionCommands.Arguments(goalText), runner.Mode, IsTurnRunning(),
+                                permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
+                                session.WorkingDirectory));
 
                             // LIVE, NO RESTART. Both things a mode changes are rebuilt on the next
                             // prompt anyway — the tool list and the system message — so this is one
                             // assignment rather than a re-wire, and the conversation is untouched.
+                            //
+                            // THE POLICY IS ASSIGNED, NOT REBUILT. The gate holds it in a readonly
+                            // field, so replacing it would mean reconstructing the gate and
+                            // discarding any prompt already queued behind it.
                             if (decision.NewMode is { } next)
                             {
                                 runner.Mode = next;
-                                mainWindow.SetMode(AgentModes.Name(next));
+                                permissionPolicy.Edits = next.Edits;
+                                mainWindow.SetMode(next);
                             }
 
                             mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);

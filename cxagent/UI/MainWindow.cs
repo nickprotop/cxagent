@@ -267,7 +267,7 @@ public sealed class MainWindow : IDisposable
     /// while the agent held a spawn tool. A status line that lies is worse than no status line,
     /// because it is the one thing a user checks INSTEAD of asking.</para>
     /// </summary>
-    private string _mode = "single";
+    private WorkingMode _mode = WorkingMode.Default;
 
     /// <summary>
     /// The mode this session starts in, set BEFORE <see cref="Build"/>.
@@ -277,17 +277,20 @@ public sealed class MainWindow : IDisposable
     /// later <see cref="SetMode"/> corrects the composer line while leaving the banner claiming
     /// something else. That is precisely what happened — the banner said "single agent" for the life
     /// of a fan-out session, because the word was hardcoded and the correction came too late to
-    /// matter anyway.</para>
+    /// matter anyway. A SECOND AXIS MAKES THAT EASIER TO REINTRODUCE, not harder: there are now two
+    /// words that can go stale, so both come from one value set once.</para>
     /// </summary>
-    public string StartupMode
+    public WorkingMode StartupMode
     {
         init => _mode = value;
     }
 
-    /// <summary>The mode both the banner and the composer line are showing. Readable so a test can
-    /// assert what was rendered without reaching into the transcript, which exposes ids and not
-    /// text.</summary>
-    public string CurrentMode => _mode;
+    /// <summary>The mode the session is in — both axes.</summary>
+    public WorkingMode CurrentMode => _mode;
+
+    /// <summary>What the banner and the composer line are SHOWING. Readable so a test can assert what
+    /// was rendered without reaching into the transcript, which exposes ids and not text.</summary>
+    public string CurrentModeText => _mode.ToString();
 
     /// <summary>The right-hand session panel — context, model, session, location, permissions.</summary>
     public SessionPanel SessionPanel { get; } = new();
@@ -1369,7 +1372,7 @@ public sealed class MainWindow : IDisposable
         RefreshTokenItem();
     }
 
-    public void SetMode(string mode)
+    public void SetMode(WorkingMode mode)
     {
         _mode = mode;
         var model = ModelLabel;
@@ -1379,14 +1382,21 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
-    /// The row's text: mode accented, model muted.
+    /// The row's text: agent mode accented, edit mode and model muted, shortcut hinted.
     ///
     /// <para>Mode first because it is a property of the SESSION and the model is a detail of it —
-    /// reading them the other way round invites a user to think the model is what they chose. The
-    /// model name is escaped (it comes from config); the mode word is ours.</para>
+    /// reading them the other way round invites a user to think the model is what they chose. AGENT
+    /// BEFORE EDITS for the same reason one step down: whether there is one agent or several frames
+    /// everything else, including whose edits are being accepted.</para>
+    ///
+    /// <para>THE HINT RIDES THE LINE because a shortcut nobody is told about is a shortcut nobody
+    /// uses, and this row is where a user already looks when wondering what mode they are in.</para>
+    ///
+    /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private static string ModeLineText(string mode, string model) =>
-        $"[{ColorScheme.AccentMarkup}]{mode}[/]"
+    private static string ModeLineText(WorkingMode mode, string model) =>
+        $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
+      + $"[{ColorScheme.MutedMarkup}] · {EditModes.Name(mode.Edits)} · shift+tab[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]";
 
     public void SetContextUsed(int inputTokens, bool estimated = false)

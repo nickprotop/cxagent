@@ -730,18 +730,44 @@ public class MainWindowTests
     /// Build(), which is what StartupMode is for.</para>
     /// </summary>
     [Theory]
-    [InlineData("fan-out")]
-    [InlineData("single")]
-    public void TheBanner_NamesTheStartupMode(string mode)
+    [InlineData(AgentMode.FanOut, "fan-out")]
+    [InlineData(AgentMode.Single, "single")]
+    public void TheBanner_NamesTheStartupMode(AgentMode agent, string expected)
     {
         var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
-        var mw = new MainWindow(SysOfWidth(200), res, Logs()) { StartupMode = mode };
+        var mw = new MainWindow(SysOfWidth(200), res, Logs())
+        {
+            StartupMode = new WorkingMode(agent, EditMode.AcceptEdits),
+        };
         mw.Build();
 
         // The BANNER'S subtitle, which is what Build wrote into the transcript. Asserted through the
         // same seam the composer line uses rather than by reading the chat control back: the
         // transcript exposes ids, not text, and the mode is what is under test here — not markup.
-        Assert.Equal(mode, mw.CurrentMode);
+        Assert.Equal(agent, mw.CurrentMode.Agent);
+        Assert.Contains(expected, mw.CurrentModeText, System.StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// BOTH AXES ON THE LINE, agent first — it is the coarser fact, framing whose edits are being
+    /// accepted — with the shortcut hint attached where a user is already looking for it.
+    /// </summary>
+    [Fact]
+    public void TheModeLine_ShowsBothAxes_AndTheShortcutHint()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(SysOfWidth(200), res, Logs())
+        {
+            StartupMode = new WorkingMode(AgentMode.FanOut, EditMode.AlwaysAsk),
+        };
+        mw.Build();
+
+        var text = mw.CurrentModeText;
+
+        Assert.Contains("fan-out", text, System.StringComparison.Ordinal);
+        Assert.Contains("always-ask", text, System.StringComparison.Ordinal);
+        Assert.True(text.IndexOf("fan-out", System.StringComparison.Ordinal)
+                  < text.IndexOf("always-ask", System.StringComparison.Ordinal));
     }
 
     /// <summary>
