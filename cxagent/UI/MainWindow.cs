@@ -1398,7 +1398,7 @@ public sealed class MainWindow : IDisposable
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
-      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change)[/]"
+      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change · F4 focus)[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]";
 
     /// <summary>
@@ -1694,6 +1694,7 @@ public sealed class MainWindow : IDisposable
             + "  [cyan]↑[/] / [cyan]↓[/]        recall an earlier goal\n"
             + "  [cyan]F1[/]           this help\n"
             + "  [cyan]F3[/]           show or hide the session panel\n"
+            + "  [cyan]F4[/]           put the cursor back in the composer\n"
             + "  [cyan]F5[/]           settings — providers, roles, orchestrator, permissions\n"
             + "  [cyan]Ctrl+Q[/]       quit\n"
             + "\n[cyan]Commands[/]\n"

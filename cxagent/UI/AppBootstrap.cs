@@ -956,7 +956,19 @@ public static class AppBootstrap
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5, () => { _ = mainWindow.ShowSettings?.Invoke(); });
-        // F2, F4 and F6 are GONE, and F6 was DEAD CODE the whole time.
+        // F4 IS BACK, and the reason it left was half right. It focused the composer, and was
+        // removed as "a route back from a focus that can no longer happen" — true of the job panel it
+        // was written for, which is gone. But two things still take focus away deliberately:
+        // MainWindow.FocusQuestion moves it to a question's first option, and the permission prompt
+        // moves it into the prompt panel. Both restore it on the way out; a user who reaches either
+        // by another path, or a control that keeps focus after being dismissed, is left typing into
+        // nothing with no way back that does not involve guessing at Tab order.
+        //
+        // A KEY THAT IS USUALLY UNNECESSARY IS STILL WORTH HAVING when the failure it covers is "the
+        // keyboard does nothing and I cannot tell why". That is not a cost the user can debug.
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusComposer);
+
+        // F2 and F6 are GONE, and F6 was DEAD CODE the whole time.
         //
         // F6 diagnosed "whatever job has focus", resolved through FocusedJobId() — which walks the
         // focus path for a JobBlockControl. Those are created only by JobPanelControl, and the job
@@ -965,10 +977,9 @@ public static class AppBootstrap
         // same flow is still reachable from the Diagnose button on a failed job's own block, which
         // addresses its job by id rather than by focus.
         //
-        // F2 cleared the composer and refocused it; F4 focused the composer. Both were routes back
-        // from a focus that can no longer happen — the job panel they existed to return from is gone,
-        // and the composer now keeps focus across submits (UnfocusOnEnter = false). Clearing is
-        // Ctrl+U, and history on the up-arrow made "empty the box" the rarer intent anyway.
+        // F2 cleared the composer and refocused it. The clearing half is what made it redundant:
+        // Ctrl+U does that, and history on the up-arrow made "empty the box" the rarer intent anyway.
+        // The refocusing half came back as F4 above, on its own, where it is one job and not two.
         // F7/F8 are GONE. They existed because roles and providers were separate dialogs, and the
         // old comment justified them as "each does one thing and the status bar can name both" —
         // neither is true now. Both opened the SAME consolidated dialog, differing only in which

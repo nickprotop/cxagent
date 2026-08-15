@@ -771,6 +771,28 @@ public class MainWindowTests
     }
 
     /// <summary>
+    /// THE WAY BACK TO THE COMPOSER EXISTS AND IS PUBLIC. F4 is bound to this in AppBootstrap, and
+    /// the binding is the kind of one-liner that gets tidied away — this method was removed once
+    /// already, on the reasoning that focus could no longer be lost.
+    ///
+    /// <para>It still can: a question moves focus to its first option and the permission prompt moves
+    /// it into the prompt panel. Both restore it, but a user who ends up outside the composer has no
+    /// way back except guessing at Tab order, and a keyboard that does nothing is not a state anyone
+    /// can debug from the outside.</para>
+    /// </summary>
+    [Fact]
+    public void FocusComposer_IsReachable_ForTheF4Binding()
+    {
+        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var mw = new MainWindow(SysOfWidth(200), res, Logs());
+        mw.Build();
+
+        // Before Build's window exists this is a no-op rather than a throw, and after it focuses the
+        // composer. Either way it must not fault: a shortcut that throws takes the UI with it.
+        mw.FocusComposer();
+    }
+
+    /// <summary>
     /// THE BAR IS THIS AGENT; THE PANEL IS EVERYTHING. The ledger is shared — children record into it
     /// deliberately, because a budget belongs to the conversation rather than to whichever agent did
     /// the work — so <c>Ledger.TotalTokens</c> is session-wide and was wrong for a readout sitting
