@@ -14,7 +14,6 @@
     "JSON has no comments. These `//` arrays are data the parser ignores, which is the",
     "conventional way to annotate a JSON sample and the reason they read oddly."
   ],
-
   "//providers": [
     "THE MODEL CATALOG. Each entry is an INSTANCE: a name you choose, bound to one endpoint",
     "and one model. Names are referenced elsewhere in this file — `defaultProvider` and, from",
@@ -40,7 +39,6 @@
       "baseUrl": "http://localhost:8771/v1",
       "apiKey": "sk-local",
       "contextWindow": 212992,
-
       "//maxConcurrentAgents": [
         "How many sub-agents may call THIS endpoint at once. Absent or 0 = unlimited (the default).",
         "cxagent cannot discover what an endpoint tolerates, so it does not guess — set this when",
@@ -51,10 +49,8 @@
       "maxConcurrentAgents": 0
     }
   },
-
   "//defaultProvider": "Which instance an agent uses when nothing else says. A name from `providers`.",
   "defaultProvider": "local",
-
   "//classifier": [
     "Which instance reviews actions in `/mode edits auto`. A name from `providers`, or absent.",
     "ABSENT MEANS AUTO IS NOT OFFERED — not listed by /mode, not reachable by Shift+Tab, not",
@@ -70,7 +66,6 @@
     "verdict all ask; only an explicit allow is silent."
   ],
   "classifier": "local",
-
   "//agents": [
     "SUB-AGENT TYPES (step 2). A name, a briefing, and optionally a provider.",
     "",
@@ -106,7 +101,7 @@
   ],
   "agents": {
     "explore": {
-      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything. If the thing asked for does not appear to exist, say so and say where you looked \u2014 a confident negative is an answer, and is worth more than more searching. Before you report a path, check it against what you actually opened.",
+      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything. If the thing asked for does not appear to exist, say so and say where you looked — a confident negative is an answer, and is worth more than more searching. Before you report a path, check it against what you actually opened.",
       "maxTurns": 30
     },
     "review": {
@@ -116,11 +111,13 @@
       "briefing": "You run and diagnose tests. Read the actual output before drawing a conclusion — a command that exits 0 has not necessarily verified anything, and a filter that matched nothing exits 0. Report the counts you saw."
     },
     "planner": {
-      "briefing": "You produce a plan and change nothing. Read enough of the code to be specific: name the files that must change and what each change is, in the order they can be made without breaking the build in between. Say which step is the one most likely to be wrong, and what would prove it early. Where the code already decides something, follow it rather than inventing a parallel way — and if the existing design blocks the request, say so instead of planning around it. A step nobody could carry out without asking you a question is not finished.",
+      "briefing": "You produce a plan and change nothing. Read enough of the code to be specific: name the files that must change and what each change is, in the order they can be made without breaking the build in between. Say which step is the one most likely to be wrong, and what would prove it early. Where the code already decides something, follow it rather than inventing a parallel way — and if the existing design blocks the request, say so instead of planning around it. WRITE FOR SOMEONE WHO CANNOT ASK YOU ANYTHING. Whoever carries this out — a person, or another agent with none of your context — sees only what you wrote, so a step that assumes something you found and did not state is a step that will be done wrong or not at all. Give exact paths, and quote the identifiers a step depends on rather than describing them. A step nobody could carry out without asking you a question is not finished.",
       "maxTurns": 40
+    },
+    "builder": {
+      "briefing": "You implement a plan you are given, in the order it was written. Do not re-decide it: if a step is wrong, or cannot be carried out as written, stop and say which step and why rather than substituting an approach nobody asked for — the plan may encode a constraint you cannot see from here, and a plan silently improved is a plan nobody reviewed. Make each change, then run what proves it before moving on: a step whose verification you skipped is a step you have not finished, and finding out at step 9 costs more than checking at step 3. Report what you actually ran and what it said. Name any step you did not complete and why, and never report success for work you did not verify — a wrong 'done' is worse than a clear 'stuck'."
     }
   },
-
   "//mcp": [
     "MCP servers, by name. `command` is argv — no shell, so no pipes or globs.",
     "Optional: `enabled` (default true), `cwd`, `env`, `timeoutMs`.",
@@ -132,11 +129,14 @@
   ],
   "mcp": {
     "context7": {
-      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "command": [
+        "npx",
+        "-y",
+        "@upstash/context7-mcp"
+      ],
       "enabled": true
     }
   },
-
   "//orchestrator": [
     "The two settings that bind a run. Both optional.",
     "",
