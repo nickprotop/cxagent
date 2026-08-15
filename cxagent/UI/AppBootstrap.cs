@@ -171,7 +171,7 @@ public static class AppBootstrap
         // opened.
         var history = new UsageHistoryStore(paths);
 
-        var mainWindow = new MainWindow(system, resolution, logs)
+        var mainWindow = new MainWindow(system, resolution, logs, options.NoColor)
         {
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
             // The SetMode call further down still fixes the composer line on every /mode; this is the
