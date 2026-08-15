@@ -591,6 +591,43 @@ public class FileJobPlugin : IJobPlugin
     /// so a caller without an opinion (a test, a headless job) keeps the old behaviour rather than
     /// being handed an empty base.</para>
     /// </summary>
+    private static string Resolve(string path, IJobContext context)
+    {
+        var resolved = context.WorkingDirectory is { Length: > 0 } root
+            ? Path.GetFullPath(path, root)
+            : Path.GetFullPath(path);
+
+        // A DROPPED LEADING SLASH, NAMED AS ITSELF. A model that means /tmp/x/App.cs and sends
+        // "tmp/x/App.cs" has written a RELATIVE path that looks absolute, and resolving it against
+        // /tmp/x is correct — it yields /tmp/x/tmp/x/App.cs, which does not exist.
+        //
+        // The framework's message for that is "Could not find a part of the path
+        // '/tmp/x/tmp/x/App.cs'". Everything needed to see the mistake is in there, and a model
+        // reading it concludes the FILE is missing rather than that its path was malformed: it then
+        // globs for the file, gets the same treatment, and spends its run hunting something it
+        // already had the path to.
+        //
+        // MEASURED: 450 such errors across three consecutive drives, none before them. One planner
+        // burned all eleven of its turns this way and returned without writing anything, which read
+        // as the agent ignoring its briefing rather than as a path bug.
+        //
+        // So say it. The check is cheap and only fires on a path that genuinely repeats the root.
+        if (context.WorkingDirectory is { Length: > 0 } wd && !File.Exists(resolved) && !Directory.Exists(resolved))
+        {
+            var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(wd));
+            var doubled = normalizedRoot + Path.DirectorySeparatorChar
+                        + normalizedRoot.TrimStart(Path.DirectorySeparatorChar);
+
+            if (resolved.StartsWith(doubled, StringComparison.Ordinal))
+                throw new FileNotFoundException(
+                    $"'{path}' looks like an absolute path with its leading separator missing, so it "
+                    + $"resolved to '{resolved}'. Send '{Path.DirectorySeparatorChar}{path}' for the "
+                    + "absolute path, or a path relative to the working directory.");
+        }
+
+        return resolved;
+    }
+
     /// <summary>
     /// Creates the directory a write is about to land in, when it does not already exist.
     ///
@@ -615,10 +652,6 @@ public class FileJobPlugin : IJobPlugin
             Directory.CreateDirectory(parent);
     }
 
-    private static string Resolve(string path, IJobContext context) =>
-        context.WorkingDirectory is { Length: > 0 } root
-            ? Path.GetFullPath(path, root)
-            : Path.GetFullPath(path);
 
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
@@ -637,10 +670,14 @@ public class FileJobPlugin : IJobPlugin
         //
         // Doing it HERE covers every action including both `dest` reads below; doing it per-action
         // is the same per-field-fallback mistake the sub-agent runtime is careful to avoid.
-        var path = Resolve(parameters.Get<string>("path"), context);
         var start = DateTimeOffset.UtcNow;
         try
         {
+            // RESOLVED INSIDE THE TRY, so a bad path becomes a failed RESULT rather than an escaping
+            // exception. It sat outside, which meant the one error most worth explaining to a model
+            // — a path it can fix — was the one that bypassed the plugin's own error handling.
+            var path = Resolve(parameters.Get<string>("path"), context);
+
             var output = new Dictionary<string, object?>();
             switch (action)
             {

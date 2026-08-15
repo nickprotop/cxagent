@@ -789,6 +789,48 @@ public class FileJobPluginTests : IDisposable
         Assert.False(File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "nested", "f.txt")));
     }
 
+    /// <summary>
+    /// A DROPPED LEADING SLASH IS NAMED, not left as "not found".
+    ///
+    /// <para>A model that means /tmp/x/App.cs and sends "tmp/x/App.cs" has written a relative path
+    /// that looks absolute. Resolving it against /tmp/x is correct and yields /tmp/x/tmp/x/App.cs,
+    /// and the framework's "Could not find a part of the path" reads to a model as "the file is
+    /// missing" — so it hunts for the file instead of fixing the path.</para>
+    ///
+    /// <para>MEASURED: 450 of these across three drives. One planner spent all eleven of its turns
+    /// on them and returned having written nothing, which looked like an agent ignoring its
+    /// briefing.</para>
+    /// </summary>
+    [Fact]
+    public async Task APathMissingItsLeadingSeparator_SaysSo()
+    {
+        var ctx = new TestJobContext { WorkingDirectory = _dir };
+
+        // _dir is absolute, e.g. /tmp/xyz — send it back with the leading separator dropped.
+        var mangled = _dir.TrimStart(Path.DirectorySeparatorChar) + "/f.txt";
+
+        var result = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "read"), ("path", mangled)), ctx, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("leading separator", result.ErrorMessage!, StringComparison.Ordinal);
+        Assert.Contains(mangled, result.ErrorMessage!, StringComparison.Ordinal);
+    }
+
+    /// <summary>An ordinary missing file is still an ordinary missing file — the hint must not fire
+    /// on every not-found, or it becomes noise that hides the real cause.</summary>
+    [Fact]
+    public async Task AnOrdinaryMissingFile_DoesNotClaimASeparatorProblem()
+    {
+        var ctx = new TestJobContext { WorkingDirectory = _dir };
+
+        var result = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "read"), ("path", "nope/missing.txt")), ctx, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain("leading separator", result.ErrorMessage!, StringComparison.Ordinal);
+    }
+
     /// <summary>Reading takes the same base as writing — otherwise a tool could write a file it
     /// then cannot find.</summary>
     [Fact]
