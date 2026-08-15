@@ -641,6 +641,46 @@ public class PermissionPolicyTests
     }
 
     /// <summary>
+    /// TRUST FLOORS AUTO TOO. The classifier runs only after IsSilentlyAllowed has said no, so the
+    /// floor it must respect is exposed separately — and on an untrusted folder that predicate is
+    /// false, which is what stops a classifier's ALLOW from widening past a decision the user made.
+    ///
+    /// <para>Caught in a live drive: without this the gate consulted the classifier on an untrusted
+    /// folder and would have returned true on an allow — the one power no mode may have.</para>
+    /// </summary>
+    [Fact]
+    public void AllowsSilentWrites_IsFalse_OnAnUntrustedFolder()
+    {
+        var root = MakeTempDir();
+
+        Assert.False(new PermissionPolicy(root, EmptyRules(), EditMode.Auto)
+            .AllowsSilentWrites(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>...and false for the executable-config directories, so auto cannot silently write a
+    /// git hook either.</summary>
+    [Fact]
+    public void AllowsSilentWrites_IsFalse_ForExecutableConfig()
+    {
+        var root = MakeTempDir();
+        var policy = TrustedPolicy(root, EditMode.Auto);
+
+        Assert.False(policy.AllowsSilentWrites(FileWrite(Path.Combine(root, ".git", "hooks", "pre-commit"))));
+        Assert.True(policy.AllowsSilentWrites(FileWrite(Path.Combine(root, "src.cs"))));
+    }
+
+    /// <summary>AUTO IS NEVER SILENT BY POLICY ALONE — it must reach the classifier, which is the one
+    /// answer the policy cannot give.</summary>
+    [Fact]
+    public void Auto_IsNotSilentlyAllowed_EvenInBoundaryAndTrusted()
+    {
+        var root = MakeTempDir();
+
+        Assert.False(TrustedPolicy(root, EditMode.Auto)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>
     /// MCP IS NOT A FILE WRITE. It has no path and no boundary — RuleSubject returns AlwaysRule for
     /// it — and "accept edits" is a name broad enough that a later reader could think otherwise.
     /// </summary>

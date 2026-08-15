@@ -190,11 +190,15 @@ public class PermissionPolicy
         // READS KEEP THEIR FREE PASS UNDER AlwaysAsk. The axis is named EDITS, and making the agent
         // prompt to read a file would break every ordinary investigation for no safety gain — a read
         // inside a trusted folder is what the boundary was drawn to permit.
-        if (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
-            && _rules.GetTrust(_root) == TrustState.Trusted
-            && (request.Kind == PermissionKind.FileRead || Edits != EditMode.AlwaysAsk)
-            && IsInsideBoundary(request.Display)
-            && !IsExecutableConfig(request))
+        // ONE DEFINITION OF THE FLOOR, in AllowsSilentWrites, because Auto has to consult it
+        // separately — the classifier runs after this method has returned false, and a second copy of
+        // "trusted and in-boundary" would be the copy that drifts.
+        //
+        // AUTO IS NOT SILENT HERE. It reaches the classifier instead, which is the only mode whose
+        // answer this method cannot give.
+        if (AllowsSilentWrites(request)
+            && (request.Kind == PermissionKind.FileRead
+                || Edits == EditMode.AcceptEdits))
             return true;
 
         // A COMMAND THAT CAN ONLY LOOK, in a folder the user has trusted. The comment above used to
@@ -307,6 +311,23 @@ public class PermissionPolicy
     /// a dangling link, a race), we return null and the caller treats that as outside the boundary —
     /// failing toward asking, never toward silent allow.
     /// </summary>
+    /// <summary>
+    /// Whether a silent write here is permissible AT ALL, ignoring which edit mode is set.
+    ///
+    /// <para>THE FLOOR, FACTORED OUT SO <c>Auto</c> CANNOT STEP OVER IT. Every other mode meets the
+    /// floor inside <see cref="IsSilentlyAllowed"/>; the classifier runs after that method has already
+    /// said no, so without this it would have been the one mode able to widen past a trust decision —
+    /// exactly the power the trust-bounds rule exists to deny. A classifier is still a mode.</para>
+    ///
+    /// <para>Trusted folder, inside the boundary, and not an executable-config directory. It says
+    /// nothing about whether the write SHOULD happen — that is the classifier's question.</para>
+    /// </summary>
+    public bool AllowsSilentWrites(PermissionRequest request) =>
+        request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
+        && _rules.GetTrust(_root) == TrustState.Trusted
+        && IsInsideBoundary(request.Display)
+        && !IsExecutableConfig(request);
+
     /// <summary>
     /// True when this WRITE lands in a directory whose contents execute — see
     /// <see cref="ExecutableConfigDirs"/> for why in-cwd is scope rather than safety.

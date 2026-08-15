@@ -548,9 +548,12 @@ public static class AppBootstrap
             //
             // Gated on composer focus exactly as the Enter interception below is, so Shift+Tab keeps
             // its ordinary reverse-navigation meaning everywhere else in the UI.
-            if (e.KeyInfo.Key == ConsoleKey.Tab
-                && (e.KeyInfo.Modifiers & ConsoleModifiers.Shift) != 0
-                && mainWindow.Input.HasFocus)
+            // TAB, WITH OR WITHOUT A REPORTED SHIFT. Shift+Tab arrives on a Unix terminal as its own
+            // escape sequence (CSI Z) rather than as Tab-plus-a-modifier, and whether the modifier
+            // survives depends on the terminal — measured under tmux, it does not. Plain Tab has no
+            // other meaning in the composer (there is nothing to indent to and no field to leave), so
+            // accepting both spellings costs nothing and makes the documented shortcut actually work.
+            if (e.KeyInfo.Key == ConsoleKey.Tab && mainWindow.Input.HasFocus)
             {
                 e.Handled = true;
 

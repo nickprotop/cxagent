@@ -183,7 +183,12 @@ public sealed class InteractivePermissionGate : IPermissionGate
         // AUTO MODE'S SECOND OPINION, consulted only for what would otherwise prompt — never to
         // OVERRIDE a decision already made. A stored rule and the boundary pass are settled above; a
         // denial is settled below by the user. This sits in the one gap where nothing has decided yet.
-        if (_policy.Edits == EditMode.Auto && Classifier is not null)
+        // TRUST FLOORS AUTO TOO, and this guard is what makes that true. IsSilentlyAllowed holds the
+        // floor for the other modes, and reaching this line means it said no — which on an untrusted
+        // folder it says for EVERY write. Without AllowsSilentWrites here, a classifier's ALLOW would
+        // return true below and hand auto the one power no mode is allowed to have: widening past a
+        // trust decision the user made. Modes narrow, trust bounds — a classifier is still a mode.
+        if (_policy.Edits == EditMode.Auto && Classifier is not null && _policy.AllowsSilentWrites(request))
         {
             if (await Classifier.AllowsAsync(request, ct))
             {
