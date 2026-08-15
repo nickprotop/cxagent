@@ -468,6 +468,37 @@ public class SystemPromptTests
     /// phrased as a rule about where the reading LANDS rather than as a preference for a tool: a model
     /// can check "am I about to read files I will not need afterwards" against what it is doing.</para>
     /// </summary>
+    /// <summary>
+    /// THE CONTEXT RULE, and it is here because three statements of it elsewhere did not land.
+    ///
+    /// <para>The spawn tool has said "Put the TASK in prompt, and what you already KNOW in context"
+    /// since spawning existed, and the explore and planner type descriptions repeat it. Measured
+    /// across three consecutive drives, the parent wrote "Here's what I know about the codebase:" —
+    /// entry points, line numbers, a data-flow summary — into the PROMPT, with context empty, every
+    /// time. A planner given its facts that way spent ten turns re-reading what it had been told.</para>
+    ///
+    /// <para>Pinned because a one-line prompt rule is exactly what gets tidied away, and the failure
+    /// it prevents is invisible: an agent that rediscovers what it was given looks like an agent
+    /// working, not an agent wasting its run.</para>
+    /// </summary>
+    [Fact]
+    public void FanOut_TellsTheModelWhereKnownFactsGo()
+    {
+        var fanOut = Parent();
+
+        Assert.Contains("put it in `context`, not in the prompt", fanOut, StringComparison.Ordinal);
+        Assert.Contains("rediscovers them", fanOut, StringComparison.Ordinal);
+    }
+
+    /// <summary>Single mode cannot spawn, so the rule is noise in its prompt — the same gating every
+    /// other spawn line gets.</summary>
+    [Fact]
+    public void SingleMode_DoesNotCarryTheContextRule()
+    {
+        Assert.DoesNotContain("put it in `context`, not in the prompt", SingleModeParent(),
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void FanOut_TellsTheModelToDelegateWideReading()
     {

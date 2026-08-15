@@ -200,6 +200,26 @@ public static class SystemPrompt
             // HARMLESS UNTIL TYPES EXIST. With only the implicit `general` there is nothing to
             // match, so this reads as a restatement of the rule above rather than as a false
             // promise — no session is told about a capability it does not have.
+            // WHERE WHAT YOU ALREADY KNOW LANDS — the third rule, and the one with the most
+            // evidence behind it. The tool description has said "Put the TASK in prompt, and what you
+            // already KNOW in context" since spawning existed, and both the explore and planner type
+            // descriptions now repeat it. Measured across three consecutive drives: the parent typed
+            // "Here's what I know about the codebase:" followed by entry points, line numbers and a
+            // data-flow summary — INTO THE PROMPT, with context left empty, every time.
+            //
+            // THE COST IS MEASURED, not theoretical. A planner given its facts that way spent ten
+            // turns re-reading files the parent had already described to it, because — as the tool
+            // description itself says — "the prompt does not survive a long one". Three statements
+            // of the rule in the places a model reads while CHOOSING did not move it; this is the
+            // place it reads while forming judgement, which is where the other two spawn rules live
+            // and where they worked.
+            sb.AppendLine("When you send a sub-agent something you already know — where a thing "
+                        + "lives, a convention this repo follows, what an earlier agent found — put "
+                        + "it in `context`, not in the prompt. A prompt is read once and fades as an "
+                        + "agent's own work fills its window; context stays for the whole run. An "
+                        + "agent that loses the facts you gave it goes and rediscovers them, and "
+                        + "spends its turns doing that instead of the task.");
+            sb.AppendLine();
             sb.AppendLine("If one of the agent types you are offered fits the task at hand, use it "
                         + "rather than doing the work yourself — a type exists because someone "
                         + "decided that work is better done by an agent briefed for it.");
