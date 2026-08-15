@@ -138,8 +138,10 @@ granting anything new, and it cannot widen past your trust decision: on a folder
 what anyone means by "accept edits".
 
 **Named types** let you say how a delegated job should be done — a briefing, optionally its own
-provider and turn cap. See [CONFIG.md](CONFIG.md) for the `agents` block, and
-[COMMANDS.md](COMMANDS.md) for `/mode` and `/stats`.
+provider and turn cap. The sample ships five, including a **planner** that writes a plan to `./plans/`
+and reports what it decided, and a **builder** that implements one and refuses to start without it.
+See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md) for `/mode` and
+`/stats`.
 
 **Honest about the limits**, because they are the sort you would otherwise find out the hard way:
 
@@ -227,7 +229,9 @@ absence means.
 | `Esc` | Stop the running turn. Anything queued goes back into the composer rather than being lost |
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
+| `F4` | Put the cursor back in the composer |
 | `F5` | Settings |
+| `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 
 Commands are typed in the composer — see [COMMANDS.md](COMMANDS.md).
