@@ -19,6 +19,13 @@ namespace CxAgent.Core.Agent;
 /// way. <see cref="EditMode"/> arrived as a property here and a default — the implicit conversion
 /// below kept two dozen call sites compiling, and no signature outside this file had to change to
 /// admit it.</para>
+///
+/// <para>THE THIRD AXIS NAMED ABOVE — planning versus building — WAS CONSIDERED AND DECLINED. It
+/// would have withdrawn the write tools and restricted shell to <c>ReadOnlyCommands</c>, but
+/// withholding tools does not make a model plan well: the briefing does, and the <c>planner</c> agent
+/// type already carries one. Two mechanisms for one intent would owe an answer to which governs. The
+/// example in the paragraph above is left as written because it is still the right argument for the
+/// SHAPE, whether or not that particular axis was ever built.</para>
 /// </summary>
 /// <param name="Agent">Whether this agent works alone or may delegate to sub-agents.</param>
 /// <param name="Edits">When a file write happens without asking.</param>

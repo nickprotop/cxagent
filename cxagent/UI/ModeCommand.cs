@@ -198,8 +198,21 @@ public static class ModeCommand
     private static readonly HashSet<string> KnownAxes = new(StringComparer.Ordinal)
     {
         // "files", "file", "edit", "editing" LEFT THIS SET when the edits axis became real — they are
-        // handled by IsEditsAxis above and would never reach here. What remains is the planning axis,
-        // still unbuilt: `/mode work plan` should say so rather than blaming the value.
+        // handled by IsEditsAxis above and would never reach here.
+        //
+        // A PLANNING AXIS WAS CONSIDERED AND DECLINED. WorkingMode's doc named it as a third axis, and
+        // it would have withdrawn the write tools, restricted shell to ReadOnlyCommands, and swapped
+        // in a planning prompt. The reason not to: withholding tools does not make a model plan well —
+        // the BRIEFING does, and the `planner` agent type already carries one. A session axis would
+        // re-implement that through a weaker mechanism and then owe an answer to "which governs" when
+        // a user sets both.
+        //
+        // What it would have added is the model not ATTEMPTING writes, which costs turns rather than
+        // safety. `/mode edits always-ask` plus the planner type covers the safety half today.
+        //
+        // These words stay here so `/mode work plan` still says "not settable yet" rather than
+        // blaming the value — the user reaching for it has a real intent, and the planner type is
+        // where it is served.
         "work", "task", "plan", "planning",
     };
 }

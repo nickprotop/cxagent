@@ -92,9 +92,14 @@ Declined while a turn is running: re-wiring replaces the agent that turn is writ
 ```
 
 **The axis is named because there is more than one.** Delegation is one way a session can be set up;
-when a write happens without asking is another, and a build/plan mode is still to come. Each would
-otherwise have wanted a command of its own — three entries in the palette where one will do, with no
-single place showing the whole picture. A bare `/mode` reports every axis for that reason.
+when a write happens without asking is another. Each would otherwise have wanted a command of its
+own — two entries in the palette where one does, with no single place showing the whole picture. A
+bare `/mode` reports every axis for that reason.
+
+A **planning** axis was considered and declined: withholding the write tools does not make a model
+plan well, and the `planner` agent type already carries a briefing that does. `/mode edits
+always-ask` covers the safety half. `/mode work plan` therefore answers "not settable yet" rather
+than pretending — the intent is real, and the planner type is where it is served.
 
 `/mode fan-out` without the axis still works, because agent values are unambiguous. The edits axis
 must be named: `ask` and `edits` say nothing about which axis they belong to.
