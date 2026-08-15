@@ -1,4 +1,5 @@
 using System.Text;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Permissions;
@@ -15,11 +16,41 @@ public class PermissionPolicy
     private readonly string _root;
     private readonly PermissionRulesStore _rules;
 
-    public PermissionPolicy(string workingDirRoot, PermissionRulesStore rules)
+    public PermissionPolicy(string workingDirRoot, PermissionRulesStore rules,
+        EditMode edits = EditMode.AcceptEdits)
     {
         _root = workingDirRoot;
         _rules = rules;
+        Edits = edits;
     }
+
+    /// <summary>
+    /// When a write happens without asking.
+    ///
+    /// <para>SETTABLE, because the mode is session state a user flips mid-session with Shift+Tab, and
+    /// <c>InteractivePermissionGate</c> holds its policy in a readonly field — rebuilding the gate to
+    /// change one enum would mean reconstructing six constructor arguments AND discarding any prompt
+    /// already queued behind it, so a user answering a prompt would watch it vanish.</para>
+    ///
+    /// <para>A TURN READS IT WHEN IT ASKS, so a flip takes effect on the NEXT action rather than
+    /// retroactively. That matches <see cref="WorkingMode"/>'s immutability reasoning: a mid-turn
+    /// switch must not change the answer to a question already being asked.</para>
+    /// </summary>
+    public EditMode Edits { get; set; }
+
+    // IN-CWD IS A SCOPE BOUNDARY, NOT A SAFETY ONE. The working directory is a git repo, so "inside
+    // the boundary" includes .git/hooks/* — which executes as the user on the next git command — and
+    // .git/config, which carries core.pager and core.fsmonitor. A user reading "accept edits" on the
+    // composer pictures source files, not a hook that runs as them.
+    //
+    // DELIBERATELY SHORT: directories whose contents EXECUTE, not everything that might matter. An
+    // agent legitimately editing a git hook or an editor task is rare enough that one prompt is the
+    // right price, and it is the prompt a user would most want to see.
+    //
+    // One accidental mitigation exists and is NOT relied on here: `git` is absent from
+    // ReadOnlyCommands' safe verbs, so the agent can write a hook silently but cannot silently
+    // trigger it. The user runs `git commit` themselves constantly, which is the point of a hook.
+    private static readonly string[] ExecutableConfigDirs = [".git", ".vscode", ".claude", ".idea"];
 
     /// <summary>The one mapping from plugin params to permission requests: shell → one Shell
     /// request; file → per-action read/write requests (copy/move produce both a read of the
@@ -152,9 +183,18 @@ public class PermissionPolicy
     /// only via a matching rule.</summary>
     public bool IsSilentlyAllowed(PermissionRequest request)
     {
+        // THE MODE TEST SITS INSIDE THE TRUST GUARD, AND-ed with it, so an untrusted folder is
+        // STRUCTURALLY incapable of a silent write: modes narrow, trust bounds. Placing it here makes
+        // the floor a property of the code's shape rather than a rule someone has to remember.
+        //
+        // READS KEEP THEIR FREE PASS UNDER AlwaysAsk. The axis is named EDITS, and making the agent
+        // prompt to read a file would break every ordinary investigation for no safety gain — a read
+        // inside a trusted folder is what the boundary was drawn to permit.
         if (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
             && _rules.GetTrust(_root) == TrustState.Trusted
-            && IsInsideBoundary(request.Display))
+            && (request.Kind == PermissionKind.FileRead || Edits != EditMode.AlwaysAsk)
+            && IsInsideBoundary(request.Display)
+            && !IsExecutableConfig(request))
             return true;
 
         // A COMMAND THAT CAN ONLY LOOK, in a folder the user has trusted. The comment above used to
@@ -267,6 +307,30 @@ public class PermissionPolicy
     /// a dangling link, a race), we return null and the caller treats that as outside the boundary —
     /// failing toward asking, never toward silent allow.
     /// </summary>
+    /// <summary>
+    /// True when this WRITE lands in a directory whose contents execute — see
+    /// <see cref="ExecutableConfigDirs"/> for why in-cwd is scope rather than safety.
+    /// </summary>
+    /// <remarks>
+    /// WRITES ONLY. Reading <c>.git/config</c> to answer a question about the repo is ordinary, and
+    /// making reads prompt here would be friction with no safety behind it.
+    /// </remarks>
+    private bool IsExecutableConfig(PermissionRequest request)
+    {
+        if (request.Kind != PermissionKind.FileWrite) return false;
+
+        var resolved = TryResolve(request.Display, _root);
+        if (resolved is null) return true;   // unresolvable: fail toward asking, as everywhere here
+
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
+        if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            return false;   // outside the boundary entirely; the caller already refuses it
+
+        var first = resolved[(root.Length + 1)..].Split(Path.DirectorySeparatorChar)[0];
+
+        return ExecutableConfigDirs.Contains(first, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static string? TryResolve(string path, string? root)
     {
         try

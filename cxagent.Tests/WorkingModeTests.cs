@@ -3,84 +3,117 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
-/// <summary>
-/// How a session is set up to work.
-///
-/// <para>One axis today. The tests that matter are the ones pinning the SHAPE — that adding an axis
-/// costs a property and a default, and that nothing existing has to change — because that is the
-/// entire reason this type exists ahead of the axes it will hold.</para>
-/// </summary>
 public class WorkingModeTests
 {
-    [Fact]
-    public void ASessionStartsAlone()
-    {
-        Assert.Equal(AgentMode.Single, WorkingMode.Default.Agent);
-        Assert.False(WorkingMode.Default.CanDelegate);
-    }
-
     /// <summary>
-    /// THE CONVERSION THAT MADE THE REFACTOR MECHANICAL. Twenty-two test initialisers say
-    /// <c>Mode = AgentMode.FanOut</c> and none had to change: an agent mode IS a working mode with
-    /// nothing else set, so this is a widening and cannot mean something different from the explicit
-    /// form.
+    /// THE AXES ARE INDEPENDENT — the whole reason this is a record and not a wider enum. Folding
+    /// them into one enum would make "fan-out, always-ask" unrepresentable without a value per
+    /// combination, which is the mistake the shape exists to avoid.
     /// </summary>
     [Fact]
-    public void AnAgentMode_IsAWorkingMode()
+    public void TheAxesAreIndependent()
     {
-        WorkingMode implicitly = AgentMode.FanOut;
+        var mode = new WorkingMode(AgentMode.FanOut, EditMode.AlwaysAsk);
 
-        Assert.Equal(new WorkingMode(AgentMode.FanOut), implicitly);
-        Assert.True(implicitly.CanDelegate);
+        Assert.True(mode.CanDelegate);
+        Assert.Equal(EditMode.AlwaysAsk, mode.Edits);
     }
 
     /// <summary>
-    /// CHANGED BY REPLACEMENT, NOT MUTATION. A mutable value shared between the host and a running
-    /// turn would let a mid-turn switch change what the model is judged against halfway through a
-    /// request; a new value means a turn reads whatever was true when it started.
+    /// The implicit widening from a bare AgentMode still compiles and still means what it meant. It
+    /// exists so two dozen call sites did not change when the record arrived, and this pins that
+    /// adding a second axis did not quietly break that promise.
     /// </summary>
     [Fact]
-    public void ChangingAnAxis_ProducesANewValue()
+    public void ABareAgentMode_StillWidens_AndKeepsTheDefaultEdits()
     {
-        var before = WorkingMode.Default;
-        var after = before with { Agent = AgentMode.FanOut };
+        WorkingMode mode = AgentMode.FanOut;
 
-        Assert.False(before.CanDelegate);   // the original is untouched
-        Assert.True(after.CanDelegate);
+        Assert.True(mode.CanDelegate);
+        Assert.Equal(EditMode.AcceptEdits, mode.Edits);
+    }
+
+    /// <summary>Agent first, because it is the coarser fact: whether there is one agent or several
+    /// frames everything else, including whose edits are being accepted.</summary>
+    [Fact]
+    public void ToString_RendersBothAxes_AgentFirst()
+    {
+        var text = new WorkingMode(AgentMode.FanOut, EditMode.AlwaysAsk).ToString();
+
+        Assert.Contains("fan-out", text, System.StringComparison.Ordinal);
+        Assert.Contains("always-ask", text, System.StringComparison.Ordinal);
+        Assert.True(text.IndexOf("fan-out", System.StringComparison.Ordinal)
+                  < text.IndexOf("always-ask", System.StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// The name comes from one place, so the CLI, /mode and the status bar cannot disagree — and so
-    /// there is a single place to decide how a COMBINATION is spelled once there is more than one
-    /// axis to combine.
+    /// A DEFAULT-CONSTRUCTED STRUCT LANDS ON THE STRICT MODE, and that must stay true.
+    ///
+    /// <para>WorkingMode is a record struct, so `new WorkingMode()` and `default(WorkingMode)`
+    /// zero-initialise and IGNORE the parameter defaults — they do NOT produce WorkingMode.Default.
+    /// AlwaysAsk is therefore first in the enum on purpose: the worst a forgotten initialiser can do
+    /// is ask too often, never write silently. Reordering EditMode would silently invert that, which
+    /// is why it is pinned here rather than left to the comment.</para>
+    /// </summary>
+    [Fact]
+    public void ADefaultConstructedMode_FallsToTheStrictEditMode()
+    {
+        Assert.Equal(EditMode.AlwaysAsk, new WorkingMode().Edits);
+        Assert.Equal(EditMode.AlwaysAsk, default(WorkingMode).Edits);
+        Assert.Equal(0, (int)EditMode.AlwaysAsk);
+
+        // The session default is the explicit one, and it is the permissive mode.
+        Assert.Equal(EditMode.AcceptEdits, WorkingMode.Default.Edits);
+    }
+
+    [Theory]
+    [InlineData("always-ask", EditMode.AlwaysAsk)]
+    [InlineData("alwaysask", EditMode.AlwaysAsk)]
+    [InlineData("always_ask", EditMode.AlwaysAsk)]
+    [InlineData("accept-edits", EditMode.AcceptEdits)]
+    [InlineData("acceptedits", EditMode.AcceptEdits)]
+    [InlineData("ACCEPT-EDITS", EditMode.AcceptEdits)]
+    [InlineData("  accept-edits  ", EditMode.AcceptEdits)]
+    public void Parse_AcceptsTheNearMissesPeopleType(string text, EditMode expected)
+    {
+        Assert.Equal(expected, EditModes.Parse(text));
+    }
+
+    /// <summary>A value that silently defaults is how someone concludes a mode is broken when they
+    /// merely misspelled it.</summary>
+    [Theory]
+    [InlineData("nonsense")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Parse_RejectsAnythingElse(string? text)
+    {
+        Assert.Null(EditModes.Parse(text));
+    }
+
+    /// <summary>
+    /// AUTO IS NOT SELECTABLE BY NAME while no classifier is configured. A mode that claims
+    /// background review while nothing reviews is worse than no mode, and a CLI flag must not be able
+    /// to reach one.
+    /// </summary>
+    [Fact]
+    public void Parse_DoesNotAcceptAuto_WhileNoClassifierIsConfigured()
+    {
+        Assert.Null(EditModes.Parse("auto"));
+        Assert.DoesNotContain("auto", EditModes.Valid, System.StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// One source for the name, so the CLI, /mode and the composer cannot drift apart.
+    ///
+    /// <para>Auto HAS a name while not being parseable — display and selectability are different
+    /// questions. A configured Auto session must still be able to say what mode it is in.</para>
     /// </summary>
     [Theory]
-    [InlineData(AgentMode.Single, "single")]
-    [InlineData(AgentMode.FanOut, "fan-out")]
-    public void ItReadsBackAsTheNameTheUserTyped(AgentMode agent, string expected) =>
-        Assert.Equal(expected, new WorkingMode(agent).ToString());
-
-    /// <summary>
-    /// Two sessions set up the same way are the same mode. Value equality is what makes "did this
-    /// change?" answerable without comparing axis by axis — which is the check that would silently
-    /// stop being complete the moment a second axis is added.
-    /// </summary>
-    [Fact]
-    public void TwoModesWithTheSameAxes_AreEqual()
+    [InlineData(EditMode.AlwaysAsk, "always-ask")]
+    [InlineData(EditMode.AcceptEdits, "accept-edits")]
+    [InlineData(EditMode.Auto, "auto")]
+    public void Name_IsStableForEveryMode(EditMode mode, string expected)
     {
-        Assert.Equal(new WorkingMode(AgentMode.FanOut), new WorkingMode(AgentMode.FanOut));
-        Assert.NotEqual(new WorkingMode(AgentMode.FanOut), new WorkingMode(AgentMode.Single));
-    }
-
-    /// <summary>
-    /// CanDelegate is not decoration: it is the question every caller actually asks, and it kept
-    /// `Mode == AgentMode.FanOut` out of the agent's spawn check — where a second axis would
-    /// otherwise have had to be remembered by hand.
-    /// </summary>
-    [Fact]
-    public void CanDelegate_AnswersTheQuestionCallersAsk()
-    {
-        Assert.True(new WorkingMode(AgentMode.FanOut).CanDelegate);
-        Assert.False(new WorkingMode(AgentMode.Single).CanDelegate);
+        Assert.Equal(expected, EditModes.Name(mode));
     }
 }

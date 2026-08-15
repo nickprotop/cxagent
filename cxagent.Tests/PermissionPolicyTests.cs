@@ -1,4 +1,5 @@
 using System.Linq;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using Xunit;
@@ -506,5 +507,151 @@ public class PermissionPolicyTests
 
         Assert.True(policy.IsSilentlyAllowed(FileWrite(Path.Combine(root, "src", "existing.cs"))));
         Assert.True(policy.IsSilentlyAllowed(FileWrite(Path.Combine(root, "src", "brand-new.cs"))));
+    }
+
+    // ---- the edit mode --------------------------------------------------------------------------
+
+    private static PermissionPolicy TrustedPolicy(string root, EditMode edits)
+    {
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        return new PermissionPolicy(root, rules, edits);
+    }
+
+    /// <summary>ALWAYSASK SUPPRESSES THE BOUNDARY FREE PASS — the silent path nobody opted into
+    /// per-item — even on a trusted folder, inside the boundary.</summary>
+    [Fact]
+    public void AlwaysAsk_SuppressesTheInBoundaryFreePass()
+    {
+        var root = MakeTempDir();
+
+        Assert.False(TrustedPolicy(root, EditMode.AlwaysAsk)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>
+    /// BUT IT DOES NOT VOID STORED RULES. A mode that silently disabled every saved "Always allow"
+    /// would make the user conclude the rules feature is broken, having never been told the mode did
+    /// it. AlwaysAsk suppresses the free pass, not decisions made one at a time.
+    /// </summary>
+    [Fact]
+    public void AlwaysAsk_StillHonoursAStoredRule()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var target = Path.Combine(root, "notes.txt");
+        rules.Add(root, PermissionKind.FileWrite, target);
+
+        Assert.True(new PermissionPolicy(root, rules, EditMode.AlwaysAsk)
+            .IsSilentlyAllowed(FileWrite(target)));
+    }
+
+    /// <summary>
+    /// READS KEEP THEIR FREE PASS UNDER ALWAYSASK. The axis is named edits; prompting to read a file
+    /// inside a trusted folder would break every ordinary investigation for no safety gain.
+    /// </summary>
+    [Fact]
+    public void AlwaysAsk_DoesNotAffectReads()
+    {
+        var root = MakeTempDir();
+
+        Assert.True(TrustedPolicy(root, EditMode.AlwaysAsk)
+            .IsSilentlyAllowed(FileRead(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>
+    /// TRUST FLOORS THE WIDENING. AcceptEdits on an UNTRUSTED folder still asks — a mode may add
+    /// friction, never remove it below what the folder's trust permits.
+    ///
+    /// <para>The rule most likely to be broken by a later refactor, because it reads like an
+    /// exception rather than the invariant it is.</para>
+    /// </summary>
+    [Fact]
+    public void AcceptEdits_OnAnUntrustedFolder_StillAsks()
+    {
+        var root = MakeTempDir();
+
+        Assert.False(new PermissionPolicy(root, EmptyRules(), EditMode.AcceptEdits)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>The default NAMES WHAT CXAGENT ALREADY DID. This is the test that says the axis
+    /// shipped as a pure addition rather than a behaviour change.</summary>
+    [Fact]
+    public void AcceptEdits_IsTheDefault_AndMatchesTheOldBehaviour()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+
+        // WorkingMode.Default, not new WorkingMode(): a record struct's parameterless constructor
+        // zero-initialises and ignores the parameter defaults, so `new WorkingMode()` is AlwaysAsk.
+        // That ordering is deliberate — see EditMode.AlwaysAsk — and Default is the only thing that
+        // states the session default.
+        Assert.Equal(EditMode.AcceptEdits, WorkingMode.Default.Edits);
+        Assert.True(new PermissionPolicy(root, rules)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>
+    /// IN-CWD IS SCOPE, NOT SAFETY. .git/hooks/* executes on the next git command and .git/config
+    /// carries core.pager and core.fsmonitor, while a user reading "accept edits" pictures source
+    /// files.
+    /// </summary>
+    [Theory]
+    [InlineData(".git/hooks/pre-commit")]
+    [InlineData(".git/config")]
+    [InlineData(".vscode/tasks.json")]
+    [InlineData(".claude/settings.json")]
+    [InlineData(".idea/workspace.xml")]
+    public void AcceptEdits_StillAsksForExecutableConfig(string relative)
+    {
+        var root = MakeTempDir();
+        var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.False(TrustedPolicy(root, EditMode.AcceptEdits).IsSilentlyAllowed(FileWrite(path)));
+    }
+
+    /// <summary>READS ARE NOT EDITS. The deny-list guards writes; reading .git/config to answer a
+    /// question about the repo is ordinary and must not start prompting.</summary>
+    [Fact]
+    public void TheExecutableConfigDenyList_DoesNotAffectReads()
+    {
+        var root = MakeTempDir();
+        var path = Path.Combine(root, ".git", "config");
+
+        Assert.True(TrustedPolicy(root, EditMode.AcceptEdits).IsSilentlyAllowed(FileRead(path)));
+    }
+
+    /// <summary>
+    /// SHELL IS UNCHANGED IN EVERY MODE. The write-command list was cut deliberately — a verb-only
+    /// check cannot bound where a write command writes — and this says it stayed out.
+    /// </summary>
+    [Theory]
+    [InlineData(EditMode.AlwaysAsk)]
+    [InlineData(EditMode.AcceptEdits)]
+    public void Shell_BehavesIdentically_UnderEveryEditMode(EditMode mode)
+    {
+        var root = MakeTempDir();
+        var policy = TrustedPolicy(root, mode);
+
+        Assert.True(policy.IsSilentlyAllowed(Shell("ls")));         // read-only verb, trusted: silent
+        Assert.False(policy.IsSilentlyAllowed(Shell("mkdir x")));   // not read-only: asks, every mode
+    }
+
+    /// <summary>
+    /// MCP IS NOT A FILE WRITE. It has no path and no boundary — RuleSubject returns AlwaysRule for
+    /// it — and "accept edits" is a name broad enough that a later reader could think otherwise.
+    /// </summary>
+    [Theory]
+    [InlineData(EditMode.AlwaysAsk)]
+    [InlineData(EditMode.AcceptEdits)]
+    public void EditMode_NeverWidensMcp(EditMode mode)
+    {
+        var root = MakeTempDir();
+
+        Assert.False(TrustedPolicy(root, mode).IsSilentlyAllowed(
+            new PermissionRequest(PermissionKind.Mcp, "server/tool", "server/tool")));
     }
 }
