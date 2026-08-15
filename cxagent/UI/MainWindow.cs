@@ -19,7 +19,6 @@ namespace CxAgent.UI;
 public sealed class MainWindow : IDisposable
 {
     private readonly ConsoleWindowSystem _system;
-    private readonly bool _noColor;
     /// <summary>
     /// The provider this window reports on.
     ///
@@ -87,8 +86,8 @@ public sealed class MainWindow : IDisposable
         // BOTH states, so the composer does not change colour when focus enters it. Unfocused it was
         // falling through to the app background and focused to the framework's own grey — two
         // surfaces for one control, and neither matched the mode line below it.
-        InputBackgroundColor = _noColor ? ConsoleColor.Black : ColorScheme.ComposerSurface,
-        InputFocusedBackgroundColor = _noColor ? ConsoleColor.Black : ColorScheme.ComposerSurface,
+        InputBackgroundColor = ColorScheme.ComposerSurface,
+        InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
     public JobPanelControl JobPanel { get; }
     /// <summary>
@@ -111,7 +110,7 @@ public sealed class MainWindow : IDisposable
         // TRIED AND REVERTED: a lighter bar (#3a3a3a, then #32) read as a bright stripe competing
         // with the composer, and a darker-than-composer one (#1c) added an edge that bought nothing.
         // Matching the chat is what makes the bottom of the pane continuous.
-        BackgroundColor = _noColor ? ConsoleColor.Black : ColorScheme.ChatSurface,
+        BackgroundColor = ColorScheme.ChatSurface,
 
         // A column each side so the cwd and the shortcut keys are not flush against the pane edges.
         // StatusBarControl insets its CONTENT by Margin but fills the whole bar with its background,
@@ -448,11 +447,10 @@ public sealed class MainWindow : IDisposable
     /// the render loop on GridControl.ReplaceControl's "not currently placed" ArgumentException.</summary>
     private IWindowControl? _activePrompt;
 
-    public MainWindow(ConsoleWindowSystem system, ProviderResolution resolution, LogFileManager logs, bool noColor)
+    public MainWindow(ConsoleWindowSystem system, ProviderResolution resolution, LogFileManager logs)
     {
         _system = system;
         _resolution = resolution;
-        _noColor = noColor;
         JobPanel = new JobPanelControl(system, logs);
     }
 
@@ -472,28 +470,23 @@ public sealed class MainWindow : IDisposable
     /// output, help) without each one being wired. This is cxagent's choice alone — the framework
     /// default is untouched, and the other cx apps keep their restrained look.</para>
     /// </summary>
-    private void InstallMarkdownStyle()
+    private static void InstallMarkdownStyle() => MarkdownStyle.Default = MarkdownStyle.Default with
     {
-        if (_noColor) return;
+        // ONE colour at every level. opencode does not step the hue down by depth; it distinguishes
+        // h1 by underline alone, and stepping it produced exactly the muddiness being fixed.
+        H1Color = ColorScheme.Heading,
+        H2Color = ColorScheme.Heading,
+        H3Color = ColorScheme.Heading,
+        H4Color = ColorScheme.Heading,
+        H5Color = ColorScheme.Heading,
+        H6Color = ColorScheme.Heading,
 
-        MarkdownStyle.Default = MarkdownStyle.Default with
-        {
-            // ONE colour at every level. opencode does not step the hue down by depth; it distinguishes
-            // h1 by underline alone, and stepping it produced exactly the muddiness being fixed.
-            H1Color = ColorScheme.Heading,
-            H2Color = ColorScheme.Heading,
-            H3Color = ColorScheme.Heading,
-            H4Color = ColorScheme.Heading,
-            H5Color = ColorScheme.Heading,
-            H6Color = ColorScheme.Heading,
-
-            CodeForeground = ColorScheme.Code,
-            CodeBackground = ColorScheme.CodeBackground,
-            QuoteColor = ColorScheme.Quote,
-            LinkColor = ColorScheme.Link,
-            BorderColor = ColorScheme.MarkdownBorder,
-        };
-    }
+        CodeForeground = ColorScheme.Code,
+        CodeBackground = ColorScheme.CodeBackground,
+        QuoteColor = ColorScheme.Quote,
+        LinkColor = ColorScheme.Link,
+        BorderColor = ColorScheme.MarkdownBorder,
+    };
 
     public Window Build()
     {
@@ -507,87 +500,84 @@ public sealed class MainWindow : IDisposable
         // Spectre markup, so those roles must render as MARKUP (Markdown = false). The Assistant role
         // KEEPS markdown ON, because the LLM's chat responses are genuine markdown (headers, bold,
         // lists) and contain no cxagent markup. (Preserve each role's seeded ColorRole/Header/Collapse.)
-        if (!_noColor)
+        Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
-            Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
-            {
-                Markdown = false,
-                ColorRole = ColorRole.Info,
-                HeaderStyle = CollapsibleHeaderStyle.Borderless,
-                Collapsible = true,
-                // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
-                // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
-                // live-drive agent read exactly that, concluded the app "does not accept typed input",
-                // filed a blocking defect and marked four other scenarios NOT RUN. Typing worked fine.
-                //
-                // System lines are short and few — a goal starting, a warning, a permission denial — and
-                // every one of them is something the user is meant to ACT on. Collapsing them hides the
-                // message behind a control nobody opens. The bulky output that motivated collapsing is
-                // jobs, and those are ChatRole.Tool, which keeps StartCollapsed.
-                StartCollapsed = false,
-                Header = static (_, author) => author ?? "System",
-            });
-            // A FLAT BLOCK, NOT A BOX. opencode marks whose turn it is with a surface; ours drew a
-            // rounded border, which is chrome around the text rather than the text on its own ground —
-            // and it competed with the code blocks and tables inside assistant answers, so the loudest
-            // frame on screen belonged to the shortest message.
+            Markdown = false,
+            ColorRole = ColorRole.Info,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
+            // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
+            // live-drive agent read exactly that, concluded the app "does not accept typed input",
+            // filed a blocking defect and marked four other scenarios NOT RUN. Typing worked fine.
             //
-            // NO HEADER EITHER. Stripping the border leaves a bare "You" label captioning a block that
-            // already reads as the user's by its colour; opencode has no such label. The surface says
-            // whose turn it is, which is all the label ever said.
-            Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
-            {
-                Markdown = false,
-                ColorRole = ColorRole.Primary,
-                HeaderStyle = CollapsibleHeaderStyle.Borderless,
-                ShowHeader = false,
-                Background = ColorScheme.UserSurface,
-                Header = static (_, author) => author ?? "You",
-            });
+            // System lines are short and few — a goal starting, a warning, a permission denial — and
+            // every one of them is something the user is meant to ACT on. Collapsing them hides the
+            // message behind a control nobody opens. The bulky output that motivated collapsing is
+            // jobs, and those are ChatRole.Tool, which keeps StartCollapsed.
+            StartCollapsed = false,
+            Header = static (_, author) => author ?? "System",
+        });
+        // A FLAT BLOCK, NOT A BOX. opencode marks whose turn it is with a surface; ours drew a
+        // rounded border, which is chrome around the text rather than the text on its own ground —
+        // and it competed with the code blocks and tables inside assistant answers, so the loudest
+        // frame on screen belonged to the shortest message.
+        //
+        // NO HEADER EITHER. Stripping the border leaves a bare "You" label captioning a block that
+        // already reads as the user's by its colour; opencode has no such label. The surface says
+        // whose turn it is, which is all the label ever said.
+        Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
+        {
+            Markdown = false,
+            ColorRole = ColorRole.Primary,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            ShowHeader = false,
+            Background = ColorScheme.UserSurface,
+            Header = static (_, author) => author ?? "You",
+        });
 
-            // The assistant gets ground of its own too, one step quieter than the user's — see
-            // ColorScheme.AssistantSurface for why the longer voice is the darker one. Markdown stays ON
-            // (the default): LLM output is genuine markdown.
-            //
-            // The "Assistant" header STAYS. Unlike "You", it is not redundant: an answer can be many
-            // screens long and its start is worth marking, and the reasoning stream that now precedes it
-            // in the body would otherwise run straight into the prose with nothing dividing them.
-            // BUILT FROM THE SEEDED STYLE, not from scratch. SetRoleStyle REPLACES the entry outright
-            // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
-            // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
-            // would vanish, which is the opposite of what is wanted here.
-            var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
-            Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
-            {
-                Markdown = assistant.Markdown,
-                ColorRole = assistant.ColorRole,
-                HeaderStyle = assistant.HeaderStyle,
-                ShowHeader = assistant.ShowHeader,
-                Collapsible = assistant.Collapsible,
-                StartCollapsed = assistant.StartCollapsed,
-                Margin = assistant.Margin,
-                Header = assistant.Header,
-                Background = ColorScheme.AssistantSurface,
-            });
+        // The assistant gets ground of its own too, one step quieter than the user's — see
+        // ColorScheme.AssistantSurface for why the longer voice is the darker one. Markdown stays ON
+        // (the default): LLM output is genuine markdown.
+        //
+        // The "Assistant" header STAYS. Unlike "You", it is not redundant: an answer can be many
+        // screens long and its start is worth marking, and the reasoning stream that now precedes it
+        // in the body would otherwise run straight into the prose with nothing dividing them.
+        // BUILT FROM THE SEEDED STYLE, not from scratch. SetRoleStyle REPLACES the entry outright
+        // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
+        // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
+        // would vanish, which is the opposite of what is wanted here.
+        var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
+        Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
+        {
+            Markdown = assistant.Markdown,
+            ColorRole = assistant.ColorRole,
+            HeaderStyle = assistant.HeaderStyle,
+            ShowHeader = assistant.ShowHeader,
+            Collapsible = assistant.Collapsible,
+            StartCollapsed = assistant.StartCollapsed,
+            Margin = assistant.Margin,
+            Header = assistant.Header,
+            Background = ColorScheme.AssistantSurface,
+        });
 
-            // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
-            // render as markdown, exactly like Assistant. They used to post as System, which is
-            // Markdown = false because cxagent authors its OWN [red]/[cyan] markup in system lines; that
-            // setting is right for system lines and wrong for a worker's prose, which arrived with its
-            // headings and lists shown as literal syntax.
-            //
-            // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
-            // screen. The header stays readable, and the detail is one keypress away.
-            Chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
-            {
-                Markdown = true,
-                ColorRole = ColorRole.Info,
-                HeaderStyle = CollapsibleHeaderStyle.Borderless,
-                Collapsible = true,
-                StartCollapsed = true,
-                Header = static (_, author) => author ?? "Job",
-            });
-        }
+        // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
+        // render as markdown, exactly like Assistant. They used to post as System, which is
+        // Markdown = false because cxagent authors its OWN [red]/[cyan] markup in system lines; that
+        // setting is right for system lines and wrong for a worker's prose, which arrived with its
+        // headings and lists shown as literal syntax.
+        //
+        // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
+        // screen. The header stays readable, and the detail is one keypress away.
+        Chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
+        {
+            Markdown = true,
+            ColorRole = ColorRole.Info,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            StartCollapsed = true,
+            Header = static (_, author) => author ?? "Job",
+        });
 
         if (_resolution.HasProvider)
         {
@@ -612,6 +602,7 @@ public sealed class MainWindow : IDisposable
             // Input stays constructed but the submission gate ignores Enter when !SubmissionEnabled.
         }
         Input.Placeholder = SubmissionEnabled ? ComposerPlaceholder : NoProviderPlaceholder;
+
         // Apply Fill/Stretch so the JobPanelControl fills its Star grid cell (same fix Chat needed).
         JobPanel.VerticalAlignment = VerticalAlignment.Fill;
         JobPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -1320,8 +1311,9 @@ public sealed class MainWindow : IDisposable
     {
         if (_composerHint is not null) return;   // idempotent — a second call must not stack items
         _composerHint = StatusBar.AddRight(string.Empty,
-            _noColor ? "Type your goal below → Enter to run" : $"[{ColorScheme.MutedMarkup}]Type your goal below → Enter to run[/]");
+            $"[{ColorScheme.MutedMarkup}]Type your goal below → Enter to run[/]");
     }
+
     /// <summary>
     /// Retires the composer hint. Called when a goal STARTS, not when tokens first arrive.
     ///
@@ -1402,9 +1394,8 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>The model name is escaped (it comes from config); the mode words are ours.</para>
     /// </summary>
-    private string ModeLineText(WorkingMode mode, string model) =>
-        _noColor ? $"{AgentModes.Name(mode.Agent)} · {EditModes.Name(mode.Edits)} · (shift+tab to change) · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}"
-        : $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
+    private static string ModeLineText(WorkingMode mode, string model) =>
+        $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
       + $"[{ColorScheme.MutedMarkup}] · [/]"
       + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
       + $"[{ColorScheme.MutedMarkup}] (shift+tab to change)[/]"
@@ -1598,7 +1589,7 @@ public sealed class MainWindow : IDisposable
     /// Test seam for <see cref="ContextLabel"/>. Public because this codebase has no
     /// InternalsVisibleTo grant; the ForTest suffix follows the convention used elsewhere here.
     /// </summary>
-    public string ContextLabelForTest(int? used, int spent, int? window, bool stale = false,
+    public static string ContextLabelForTest(int? used, int spent, int? window, bool stale = false,
         string? delta = null, int input = 0, int output = 0)
         => ContextLabel(used, spent, window, stale, delta, input, output);
 
@@ -1606,12 +1597,12 @@ public sealed class MainWindow : IDisposable
     /// so thousands collapse. Its own helper rather than SessionPanel's — that one is private to a
     /// control this class does not own, and sharing it would couple the bar to the panel's layout.
     /// </summary>
-    private string CompactTokens(int n) =>
+    private static string CompactTokens(int n) =>
         n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
         : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
         : n.ToString();
 
-    private string ContextLabel(int? used, int spent, int? window, bool stale = false,
+    private static string ContextLabel(int? used, int spent, int? window, bool stale = false,
         string? delta = null, int input = 0, int output = 0)
     {
         var parts = new List<string>(2);
@@ -1676,6 +1667,7 @@ public sealed class MainWindow : IDisposable
 
         return string.Join($"[{ColorScheme.MutedMarkup}] · [/]", parts);
     }
+
     /// <summary>
     /// Flips submission on/off. Not a plain setter: <see cref="Build"/> derives <see cref="Input"/>'s
     /// placeholder text from the same flag at construction time, so anything that changes the flag

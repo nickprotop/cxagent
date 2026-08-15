@@ -39,8 +39,7 @@ public readonly record struct CommandLineOptions(
     string? Instance = null,
     bool ListSessions = false,
     ResumeRequest Resume = default,
-    bool ListAllSessions = false,
-    bool NoColor = false);
+    bool ListAllSessions = false);
 
 /// <summary>Which session <c>--resume</c> asked for, if any.</summary>
 /// <param name="Wanted">Was <c>--resume</c> given at all?</param>
@@ -155,12 +154,6 @@ public static class CommandLine
                 {
                     resume = ResumeRequest.Latest;
                 }
-                continue;
-            }
-
-            if (string.Equals(arg, "--no-color", StringComparison.Ordinal))
-            {
-                NoColor = true;
                 continue;
             }
 
