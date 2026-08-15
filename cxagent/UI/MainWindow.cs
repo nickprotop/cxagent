@@ -513,6 +513,19 @@ public sealed class MainWindow : IDisposable
         // a marker that marks everything marks nothing.
         Chat.MessageRailEnabled = true;
 
+        // HEAVY, NOT LIGHT. The control defaults to '│' (U+2502), which at the rail's dimmed colour
+        // is thin enough to read as an artefact of the border rather than a deliberate mark. '┃'
+        // (U+2503) is the same shape at the box-drawing family's heavy weight, so it stays a LINE —
+        // a margin marker — where a block glyph would read as a highlight over the message.
+        Chat.MessageRailGlyph = '┃';
+
+        // AND THE GRIP'S COLOUR, not a dimmed role colour. Left to itself the control blends the
+        // message's role colour 50% toward the background, which is right for a rail that marks
+        // every role and wrong for one that marks only the user: these two rails are one idea —
+        // opencode's, recorded on ColorScheme.Grip — and a mark that means "yours" should not change
+        // shade between the thing you typed and the box you type into.
+        Chat.MessageRailColor = ColorScheme.Grip;
+
         Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
             Markdown = false,
@@ -707,7 +720,12 @@ public sealed class MainWindow : IDisposable
         // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
         _promptGrip = Controls.Markup()
             .AddLine(string.Join('\n',
-                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▏[/]",
+                // ┃ (U+2503), THE SAME GLYPH THE USER'S MESSAGES CARRY. This was ▏ (U+258F), a
+                // one-eighth block — thinner than the message rail and from a different family, so
+                // the two marks that both mean "yours" did not look related. Matching them is the
+                // point: the grip says "this is where you type", the message rail says "this is
+                // what you typed", and one shape says they are the same thing at two moments.
+                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]┃[/]",
                     PromptRows + 1)))
             .WithAlignment(HorizontalAlignment.Left)
             .Build();
