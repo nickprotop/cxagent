@@ -1026,17 +1026,27 @@ public class SubAgentSpawnerTests
 
     /// <summary>
     /// CONFIGURED TYPES APPEAR WITH WHAT THEY ARE FOR. A model cannot pick from a catalog it has never
-    /// seen (D5), and a type's briefing IS its description — nothing extra needs writing in config.
+    /// seen (D5).
+    ///
+    /// <para>THIS TEST USED TO ASSERT THE OPPOSITE OF WHAT IT NOW DOES, and the change is the point.
+    /// It read "a type's briefing IS its description — nothing extra needs writing in config", and
+    /// checked that the catalog showed the briefing's first sentence with the rest dropped. That
+    /// produced "- explore: You search and report." — text written in the second person for the
+    /// CHILD, which tells a parent nothing about when to reach for it. The briefing is no longer
+    /// consulted here at all.</para>
     /// </summary>
     [Fact]
-    public void Definition_ListsConfiguredTypes_WithTheirBriefings()
+    public void Definition_ListsConfiguredTypes_WithTheirDescriptions()
     {
-        var d = new SubAgentSpawner(FactoryOver(Answering("x")),
-            Catalog(("explore", "You search and report. Never edit files."))).Definition.Description;
+        var d = SpawnerWith(("explore", "You search and report. Never edit files.",
+            "when answering means reading across several files")).Definition.Description;
 
-        Assert.Contains("- explore: You search and report.", d, StringComparison.Ordinal);
-        // The second sentence is dropped: a briefing is written for the CHILD and can run long; the
-        // parent needs enough to choose by.
+        Assert.Contains("- explore: when answering means reading across several files", d,
+            StringComparison.Ordinal);
+
+        // NEITHER HALF of the briefing reaches the catalog now — not the first sentence it used to
+        // show, and not the rest it used to drop.
+        Assert.DoesNotContain("You search and report", d, StringComparison.Ordinal);
         Assert.DoesNotContain("Never edit files", d, StringComparison.Ordinal);
     }
 
@@ -1699,5 +1709,89 @@ public class SubAgentSpawnerTests
 
         Assert.Contains("state=\"capped\"", result!, StringComparison.Ordinal);
         Assert.Contains("NOT a completed answer", result!, StringComparison.Ordinal);
+    }
+
+    // ---- the type catalog in the tool description -----------------------------------------------
+
+    /// <summary>Builds a spawner over a catalog of (name, briefing, description) types.</summary>
+    private static SubAgentSpawner SpawnerWith(params (string Name, string Briefing, string? Desc)[] types)
+    {
+        var configured = types.ToDictionary(
+            t => t.Name,
+            t => new AgentTypeConfig(t.Briefing, Description: t.Desc),
+            StringComparer.Ordinal);
+
+        return new SubAgentSpawner(FactoryOver(Answering("x")),
+            new AgentTypeCatalog(configured, null));
+    }
+
+    /// <summary>The description is what the catalog shows, verbatim. This is the whole feature.</summary>
+    [Fact]
+    public void TheCatalog_ShowsTheDescription()
+    {
+        var text = SpawnerWith(("explore", "You search and report.", "when a search spans files"))
+            .Definition.Description;
+
+        Assert.Contains("- explore: when a search spans files", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// SUMMARISE IS GONE, and this is the test that says so rather than merely not exercising it.
+    /// A type with a briefing and no description shows the neutral line — NOT the briefing's first
+    /// sentence, which is written in the second person for the child and tells a chooser nothing.
+    /// </summary>
+    [Fact]
+    public void AtypeWithNoDescription_ShowsTheNeutralLine_NotTheBriefing()
+    {
+        var text = SpawnerWith(("explore", "You search and report. Then stop.", null))
+            .Definition.Description;
+
+        Assert.Contains("- explore: runs where you do, no special instructions", text,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("You search and report", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A type with neither gets the same line — one answer for "nothing was said".</summary>
+    [Fact]
+    public void AtypeWithNeitherDescriptionNorBriefing_ShowsTheNeutralLine()
+    {
+        var text = SpawnerWith(("bare", "", null)).Definition.Description;
+
+        Assert.Contains("- bare: runs where you do, no special instructions", text,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EMITTED WHOLE. A description someone wrote long is their config and their tokens; the app does
+    /// not shorten it to fit a number the old summariser happened to need.
+    /// </summary>
+    [Fact]
+    public void ALongDescription_ReachesTheCatalogIntact()
+    {
+        var longText = new string('x', 400);
+        var text = SpawnerWith(("explore", "b", longText)).Definition.Description;
+
+        Assert.Contains(longText, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("…", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE DEFAULT TYPE IS LISTED, with the neutral line rather than a description.
+    ///
+    /// <para>The spec for this change assumed it was absent and was wrong: `general` has always had a
+    /// row, and it should. It is a real name a model may pass, `AgentTypeCatalog` puts it first
+    /// deliberately, and config may give it a briefing — a catalog that hid it would be describing a
+    /// smaller world than the one the tool accepts.</para>
+    ///
+    /// <para>It has no description because none is configured, and the neutral line says exactly
+    /// that. If a user gives `general` a description, it shows like any other.</para>
+    /// </summary>
+    [Fact]
+    public void TheGeneralType_IsListed_WithTheNeutralLine()
+    {
+        var text = SpawnerWith(("explore", "b", "when a search spans files")).Definition.Description;
+
+        Assert.Contains("- general: runs where you do, no special instructions", text,
+            StringComparison.Ordinal);
     }
 }

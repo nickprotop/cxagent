@@ -128,11 +128,24 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
 
         foreach (var type in _types.All)
         {
-            // ONE LINE EACH. A catalog that dwarfs the guidance above it buries the guidance, and
-            // that guidance is already hard enough for a model to act on.
-            var what = string.IsNullOrWhiteSpace(type.Briefing)
-                ? "runs where you do, no special instructions"
-                : Summarise(type.Briefing);
+            // WHAT THE PARENT NEEDS TO CHOOSE BY, WRITTEN FOR IT. This was Summarise(briefing) —
+            // the first sentence of text addressed to the CHILD — which produced lines like "You
+            // search and report.": grammatically about the agent, and useless to anyone deciding
+            // whether to reach for it.
+            //
+            // NO FALLBACK TO THE BRIEFING. A type with nothing configured already had an honest
+            // line, and it is the better answer: it says nothing was said, which is true, rather
+            // than saying something misleading with confidence. Keeping the derivation as a fallback
+            // would have preserved exactly the output this change removes, on a path the shipped
+            // config never takes and nobody would test.
+            //
+            // THE ONE-LINE RULE WAS NEVER "BE TERSE" — it was "do not drown the guidance above".
+            // Measured: the five shipped descriptions total ~1,620 characters against this tool's
+            // ~2,150 of delegation advice (0.75x). Full briefings would be 4,558, or 2.3x, which is
+            // what the rule existed to prevent.
+            var what = type.Description is { Length: > 0 } described
+                ? described
+                : "runs where you do, no special instructions";
 
             // WHERE IT RUNS, ONLY WHEN THAT IS ELSEWHERE. A type bound to another instance is often
             // bound to it FOR A REASON — a bigger window, a stronger model, a cheaper one — and that
@@ -148,15 +161,6 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         return sb.ToString();
     }
 
-    /// <summary>First sentence of a briefing, bounded. A briefing is written for the CHILD and can run
-    /// long; what the parent needs is enough to choose by.</summary>
-    private static string Summarise(string briefing)
-    {
-        var text = briefing.ReplaceLineEndings(" ").Trim();
-        var stop = text.IndexOf(". ", StringComparison.Ordinal);
-        if (stop > 0) text = text[..(stop + 1)];
-        return text.Length <= 140 ? text : text[..140].TrimEnd() + "…";
-    }
 
     public ToolDefinition Definition => new(ToolName, DescriptionWithTypes(),
         JsonDocument.Parse(
