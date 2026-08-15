@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Models;
 using Microsoft.Data.Sqlite;
 
@@ -79,6 +80,10 @@ public sealed class SqliteSessionStore
             // there — but deriving it means deserialising every session's WHOLE conversation to
             // render one line each, which is the wrong cost for a list. Written once, read directly.
             AddColumnIfMissing(conn, "agent_sessions", "title", "TEXT");
+
+            // THE EDIT MODE, so resume does not silently widen it. Nullable: a row written before
+            // this column has no mode, and absent must stay distinguishable from a recorded choice.
+            AddColumnIfMissing(conn, "agent_sessions", "edit_mode", "TEXT");
             BackfillTitles(conn);
 
             using var index = conn.CreateCommand();
@@ -151,6 +156,15 @@ public sealed class SqliteSessionStore
     /// alternative — running the ALTER and swallowing the "duplicate column" error — cannot tell that
     /// failure apart from a real one, and this store swallows everything.</para>
     /// </summary>
+    /// <summary>
+    /// The stored edit mode, or null when the column is empty or holds something unrecognised.
+    ///
+    /// <para>An unparseable value resolves to null and therefore, at the caller, to AlwaysAsk — a
+    /// corrupted or hand-edited row must not be able to widen a session.</para>
+    /// </summary>
+    private static EditMode? ReadEditMode(SqliteDataReader r, int ordinal) =>
+        r.IsDBNull(ordinal) ? null : EditModes.Parse(r.GetString(ordinal), classifierConfigured: true);
+
     private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string type)
     {
         using var check = conn.CreateCommand();
@@ -177,9 +191,31 @@ public sealed class SqliteSessionStore
     /// say where it came from could have come from anywhere, and offering it is the bug this
     /// exists to fix.</para>
     /// </param>
+    /// <summary>
+    /// One turn's worth of resumable state.
+    ///
+    /// <para>A RECORD BECAUSE THE LIST REACHED SIX. It was agentId, context, two token counts and a
+    /// working directory, and the edit mode made a sixth — two of them strings and two ints, which is
+    /// exactly the shape where transposing a pair compiles cleanly and writes the wrong column.</para>
+    /// </summary>
+    /// <param name="Edits">
+    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row written
+    /// before this column existed genuinely has no mode, and that absence must stay distinguishable
+    /// from a recorded choice — see <c>LoadLatestUnfinished</c> for which way it resolves.
+    /// </param>
+    public readonly record struct ResumeTurn(string AgentId, IReadOnlyList<ChatMessage> Context,
+        int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null);
+
+    /// <summary>The five-argument form kept for callers that have no mode to record.</summary>
     public void SaveTurn(string agentId, IReadOnlyList<ChatMessage> context,
-        int inputTokens, int outputTokens, string? workingDir = null)
+        int inputTokens, int outputTokens, string? workingDir = null) =>
+        SaveTurn(new ResumeTurn(agentId, context, inputTokens, outputTokens, workingDir));
+
+    public void SaveTurn(ResumeTurn turn)
     {
+        var (agentId, context, inputTokens, outputTokens, workingDir) =
+            (turn.AgentId, turn.Context, turn.InputTokens, turn.OutputTokens, turn.WorkingDir);
+
         try
         {
             var json = JsonSerializer.Serialize(context, JsonOptions);
@@ -195,11 +231,11 @@ public sealed class SqliteSessionStore
             cmd.CommandText = """
                 INSERT INTO agent_sessions
                     (agent_id, context_json, input_tokens, output_tokens, finished, updated_at,
-                     working_dir, title)
-                VALUES ($id, $json, $in, $out, 0, $at, $dir, $title)
+                     working_dir, title, edit_mode)
+                VALUES ($id, $json, $in, $out, 0, $at, $dir, $title, $edits)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     context_json=$json, input_tokens=$in, output_tokens=$out, updated_at=$at,
-                    working_dir=$dir,
+                    working_dir=$dir, edit_mode=$edits,
                     -- COALESCE, so the first title wins. A session is named by how it opened.
                     title=COALESCE(agent_sessions.title, $title);
                 """;
@@ -210,6 +246,8 @@ public sealed class SqliteSessionStore
             cmd.Parameters.AddWithValue("$at", Ts(DateTimeOffset.UtcNow));
             cmd.Parameters.AddWithValue("$dir", (object?)workingDir ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$edits",
+                turn.Edits is { } edits ? EditModes.Name(edits) : (object)DBNull.Value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception)
@@ -249,7 +287,7 @@ public sealed class SqliteSessionStore
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at
+                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode
                 FROM agent_sessions
                 WHERE finished = 0 AND working_dir IS NOT NULL AND working_dir = $dir
                 ORDER BY updated_at DESC
@@ -264,7 +302,7 @@ public sealed class SqliteSessionStore
             if (context is null) return null;
 
             return new SessionSnapshot(r.GetString(0), context, r.GetInt32(2), r.GetInt32(3),
-                ParseTs(r.GetString(4)));
+                ParseTs(r.GetString(4)), ReadEditMode(r, 5));
         }
         catch (Exception)
         {
@@ -386,7 +424,7 @@ public sealed class SqliteSessionStore
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at
+                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode
                 FROM agent_sessions WHERE agent_id = $id;
                 """;
             cmd.Parameters.AddWithValue("$id", agentId);
@@ -595,4 +633,14 @@ public sealed record SessionSnapshot(
     IReadOnlyList<ChatMessage> Context,
     int InputTokens,
     int OutputTokens,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    /// <summary>
+    /// The edit mode this session was last saved in, or null for a row written before the column
+    /// existed.
+    ///
+    /// <para>APPENDED LAST so the existing positional construction sites keep compiling — the same
+    /// discipline SessionRecord.Cost followed. NULL RESOLVES TO AlwaysAsk on resume, not to the
+    /// session default: absent is not permission, and widening must be an act rather than a side
+    /// effect of continuing.</para>
+    /// </summary>
+    EditMode? Edits = null);

@@ -105,7 +105,9 @@ public sealed class AgentHost : IDisposable
 
     /// <summary>The mode this session starts in — from the command line. Applied to the agent in
     /// BuildAgent, after which <see cref="Mode"/> is the live value.</summary>
-    private readonly AgentMode _mode;
+    // BOTH AXES. It was an AgentMode, which meant the edits axis was dropped between the runtime
+    // and the agent: a session started in always-ask built its agent with the accept-edits default.
+    private readonly WorkingMode _mode;
 
     /// <summary>
     /// The folder this session runs in, recorded with every saved turn so resume can be scoped to it.
@@ -369,7 +371,17 @@ public sealed class AgentHost : IDisposable
 
         public string? Briefing { get; init; }
         public ISubAgentSpawner? Spawner { get; init; }
-        public AgentMode Mode { get; init; } = AgentMode.FanOut;
+
+        /// <summary>
+        /// How this session is set up to work — BOTH axes.
+        ///
+        /// <para>A WORKING MODE, NOT A BARE AgentMode. It was the latter, which silently dropped the
+        /// edits axis on the way in: a session started in always-ask would build its agent with the
+        /// accept-edits default, because only the delegation half survived the trip. The implicit
+        /// widening means every existing caller passing an AgentMode still compiles and still means
+        /// what it meant.</para>
+        /// </summary>
+        public WorkingMode Mode { get; init; } = AgentMode.FanOut;
 
         /// <summary>
         /// How the model asks the user. Null in every headless path — a host with no UI must not
@@ -602,8 +614,12 @@ public sealed class AgentHost : IDisposable
             // not happen. The whole context goes each time, because compression rewrites it wholesale
             // and an append-only log would have to be reconciled against a list that no longer
             // matches. The store swallows its own failures — see its class doc.
-            _stores.Resume?.SaveTurn(agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
-                _runtime.WorkingDir);
+            // THE EDIT MODE GOES WITH IT. A session saved in always-ask that came back in the
+            // accept-edits default would silently undo a decision the user made, at the moment they
+            // are least likely to be watching.
+            _stores.Resume?.SaveTurn(new SqliteSessionStore.ResumeTurn(
+                agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
+                _runtime.WorkingDir, Mode.Edits));
 
             // AND HISTORY, which is a different feature from resume and so a different database. The
             // resume store is a buffer worth nothing once a session ends cleanly; this survives, and

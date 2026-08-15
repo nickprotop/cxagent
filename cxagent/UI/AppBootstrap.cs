@@ -113,7 +113,9 @@ public static class AppBootstrap
         }
 
         bool useMock = options.UseMock;
-        var startupMode = options.Mode;
+        // A WORKING MODE, not a bare AgentMode: the edits axis joins it below when a resumed session
+        // carries one. The implicit widening keeps --mode meaning exactly what it did.
+        WorkingMode startupMode = options.Mode;
         var paths = new AppPaths();
         paths.EnsureCreated();
 
@@ -469,6 +471,14 @@ public static class AppBootstrap
             if (snapshot is not null)
             {
                 session.PendResume(snapshot);
+
+                // THE EDIT MODE COMES BACK WITH THE CONTEXT. Resuming into the accept-edits default a
+                // session that was deliberately left in always-ask would silently undo the user's
+                // decision — and widening must be an act, never a side effect of continuing.
+                //
+                // ABSENT RESOLVES TO ALWAYS-ASK, not to the default: a row written before the column
+                // existed says nothing about what the user chose, and absent is not permission.
+                startupMode = startupMode with { Edits = snapshot.Edits ?? EditMode.AlwaysAsk };
 
                 // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
                 // rows, and leaving the old one open would offer the same context again at the next

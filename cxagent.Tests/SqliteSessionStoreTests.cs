@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using System.Text.Json;
 using CxAgent.Core.Models;
 using CxAgent.Core.Storage;
@@ -585,5 +586,61 @@ public class SqliteSessionStoreTests : IDisposable
         Assert.Equal("old-agent", listed.Uid);
         Assert.Null(listed.Title);          // no column then, so nothing to show now
         Assert.Equal(5, listed.InputTokens);
+    }
+
+    // ---- the edit mode, so resume cannot silently widen it ---------------------------------------
+
+    /// <summary>
+    /// RESUME NEVER WIDENS. A session saved in always-ask must come back in always-ask — resuming it
+    /// into the accept-edits default would silently undo a decision the user made, at the moment they
+    /// are least likely to be watching.
+    /// </summary>
+    [Theory]
+    [InlineData(EditMode.AlwaysAsk)]
+    [InlineData(EditMode.AcceptEdits)]
+    [InlineData(EditMode.Auto)]
+    public void SaveTurn_RoundTripsTheEditMode(EditMode mode)
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn(new SqliteSessionStore.ResumeTurn("agent-1", [Msg("user", "hello")],
+            InputTokens: 10, OutputTokens: 2, WorkingDir: Here, Edits: mode));
+
+        Assert.Equal(mode, store.LoadLatestUnfinished(Here)!.Edits);
+    }
+
+    /// <summary>
+    /// A ROW FROM BEFORE THE COLUMN HAS NO MODE, and that absence must stay distinguishable from a
+    /// recorded choice — the caller resolves null to always-ask, which it could not do if the store
+    /// invented a default here.
+    /// </summary>
+    [Fact]
+    public void ASessionSavedWithoutAMode_ComesBackWithNull()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn("agent-1", [Msg("user", "hello")],
+            inputTokens: 10, outputTokens: 2, workingDir: Here);
+
+        Assert.Null(store.LoadLatestUnfinished(Here)!.Edits);
+    }
+
+    /// <summary>A corrupted or hand-edited value must not be able to widen a session: it reads as
+    /// absent, which the caller resolves to always-ask.</summary>
+    [Fact]
+    public void AnUnrecognisedStoredMode_ReadsAsAbsent()
+    {
+        var store = new SqliteSessionStore(_paths);
+        store.SaveTurn(new SqliteSessionStore.ResumeTurn("agent-1", [Msg("user", "hello")],
+            InputTokens: 10, OutputTokens: 2, WorkingDir: Here, Edits: EditMode.AcceptEdits));
+
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={_paths.DatabasePath}"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE agent_sessions SET edit_mode = 'nonsense';";
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.Null(store.LoadLatestUnfinished(Here)!.Edits);
     }
 }

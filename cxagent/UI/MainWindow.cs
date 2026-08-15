@@ -1396,8 +1396,22 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private static string ModeLineText(WorkingMode mode, string model) =>
         $"[{ColorScheme.AccentMarkup}]{AgentModes.Name(mode.Agent)}[/]"
-      + $"[{ColorScheme.MutedMarkup}] · {EditModes.Name(mode.Edits)} · shift+tab[/]"
+      + $"[{ColorScheme.MutedMarkup}] · [/]"
+      + $"[{EditModeMarkup(mode.Edits)}]{EditModes.Name(mode.Edits)}[/]"
+      + $"[{ColorScheme.MutedMarkup}] (shift+tab to change)[/]"
       + $"[{ColorScheme.MutedMarkup}] · {SharpConsoleUI.Parsing.MarkupParser.Escape(model)}[/]";
+
+    /// <summary>
+    /// AUTO IS THE ONE WORTH NOTICING, so it alone is coloured. In the other two modes a human
+    /// approves every write that is not already covered by trust or a stored rule; in auto a MODEL
+    /// does, and a user glancing at this line should be able to tell those apart without reading.
+    ///
+    /// <para>Yellow rather than red: nothing is wrong, and a red mode line would read as an error
+    /// for a state the user deliberately chose. It is the same yellow the gate uses for "you should
+    /// know this" without "something failed".</para>
+    /// </summary>
+    private static string EditModeMarkup(EditMode edits) =>
+        edits == EditMode.Auto ? "yellow" : ColorScheme.MutedMarkup;
 
     public void SetContextUsed(int inputTokens, bool estimated = false)
     {

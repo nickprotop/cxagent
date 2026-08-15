@@ -26,7 +26,7 @@ public static class SessionFactory
     /// <param name="ports">This session's own connections — see <see cref="SessionPorts"/>.</param>
     /// <param name="mode">Single or fan-out.</param>
     public static void Wire(Session session, ProviderResolution resolution,
-        SharedServices shared, SessionPorts ports, AgentMode mode)
+        SharedServices shared, SessionPorts ports, WorkingMode mode)
     {
         // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
         // The new AgentHost below reads this field, not a startup copy.
