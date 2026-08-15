@@ -166,6 +166,19 @@ public static class StatsDashboard
                                   + "— billed above normal input by most paid providers"));
         }
 
+        // WHAT IT COST, when anyone said. Omitted entirely otherwise — local-only history has no
+        // cost to report, and "$0.00" would claim a measurement never made.
+        if (totals.Cost is { } cost)
+        {
+            sb.AppendLine();
+            // FOUR DECIMALS BELOW A DOLLAR, matching SessionPanel.Money exactly. The panel and /stats
+            // report the same figure, and a threshold that differs between them renders one $0.45
+            // and the other $0.4500 — the reader is left wondering which readout is rounding.
+            sb.AppendLine($"  [bold]{(cost < 1.00m ? $"${cost:0.0000}" : $"${cost:0.00}")}[/] spent  "
+                        + Muted($"across {totals.CostReportingSessions} session"
+                              + $"{(totals.CostReportingSessions == 1 ? "" : "s")} that reported"));
+        }
+
         // --- daily sparkline ---------------------------------------------------------------------
         if (daily.Count > 1 && daily.Any(d => d.Tokens > 0))
         {

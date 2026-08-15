@@ -16,7 +16,10 @@ public sealed record SessionRecord(
     /// <summary>Whether the provider reported cache figures at all. False makes
     /// <see cref="CachedInputTokens"/> mean "unknown" rather than "none", which is the difference
     /// between staying silent and claiming a 0% hit rate.</summary>
-    bool CacheReported = false);
+    bool CacheReported = false,
+    /// <summary>What the provider reported this session cost, or null when it reported nothing.
+    /// Null is not zero — a local session is free but never says so.</summary>
+    decimal? Cost = null);
 
 /// <summary>One sub-agent run, written by the PARENT when the child finishes.</summary>
 public sealed record RunRecord(
@@ -173,6 +176,8 @@ public sealed class UsageHistoryStore
             AddColumnIfMissing(conn, "sessions", "cached_input_tokens", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(conn, "sessions", "cache_reported", "INTEGER NOT NULL DEFAULT 0");
             AddColumnIfMissing(conn, "sessions", "cache_written_tokens", "INTEGER NOT NULL DEFAULT 0");
+            // NULLABLE, because null means "not reported" and 0 would mean "free" — different facts.
+            AddColumnIfMissing(conn, "sessions", "cost", "REAL");
         }
         catch (Exception)
         {
@@ -220,9 +225,9 @@ public sealed class UsageHistoryStore
                 INSERT INTO sessions
                     (agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
                      sub_agent_tokens, turns, started_at, updated_at,
-                     cached_input_tokens, cache_reported, cache_written_tokens)
+                     cached_input_tokens, cache_reported, cache_written_tokens, cost)
                 VALUES ($id, $dir, $model, $mode, $in, $out, $sub, $turns, $started, $updated,
-                        $cached, $creported, $cwritten)
+                        $cached, $creported, $cwritten, $cost)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     working_dir      = excluded.working_dir,
                     model_id         = excluded.model_id,
@@ -234,7 +239,8 @@ public sealed class UsageHistoryStore
                     updated_at       = excluded.updated_at,
                     cached_input_tokens = excluded.cached_input_tokens,
                     cache_reported      = excluded.cache_reported,
-                    cache_written_tokens = excluded.cache_written_tokens;
+                    cache_written_tokens = excluded.cache_written_tokens,
+                    cost = excluded.cost;
                 """;
             cmd.Parameters.AddWithValue("$id", r.AgentId);
             cmd.Parameters.AddWithValue("$dir", (object?)r.WorkingDir ?? DBNull.Value);
@@ -249,6 +255,7 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$cached", r.CachedInputTokens);
             cmd.Parameters.AddWithValue("$creported", r.CacheReported ? 1 : 0);
             cmd.Parameters.AddWithValue("$cwritten", r.CacheWrittenTokens);
+            cmd.Parameters.AddWithValue("$cost", (object?)r.Cost ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception) { }
@@ -415,7 +422,7 @@ public sealed class UsageHistoryStore
         cmd.CommandText = """
             SELECT agent_id, working_dir, model_id, mode, input_tokens, output_tokens,
                    sub_agent_tokens, turns, started_at, updated_at,
-                   cached_input_tokens, cache_reported, cache_written_tokens
+                   cached_input_tokens, cache_reported, cache_written_tokens, cost
             FROM sessions WHERE updated_at >= $since ORDER BY updated_at DESC;
             """;
         cmd.Parameters.AddWithValue("$since", Stamp(since));
@@ -431,7 +438,8 @@ public sealed class UsageHistoryStore
                 reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7),
                 DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture),
-                reader.GetInt32(10), reader.GetInt32(12), reader.GetInt32(11) != 0));
+                reader.GetInt32(10), reader.GetInt32(12), reader.GetInt32(11) != 0,
+                reader.IsDBNull(13) ? null : reader.GetDecimal(13)));
         return list;
     }
 

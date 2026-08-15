@@ -615,7 +615,7 @@ public sealed class AgentHost : IDisposable
                 Ledger.InputTokens, Ledger.OutputTokens, Ledger.SubAgentTokens, _turns,
                 _startedAt, DateTimeOffset.UtcNow,
                 Ledger.CachedInputTokens, Ledger.CacheWrittenTokens,
-                Ledger.CacheHitRate is not null));
+                Ledger.CacheHitRate is not null, Ledger.TotalCost));
         };
 
         // OCCUPANCY, which nothing else in this mode observes. Without it the status bar has only the

@@ -320,4 +320,38 @@ public class StatsTests
     [Fact]
     public void ParseDays_UnderstandsAll() =>
         Assert.Equal(3650, StatsCommand.ParseDays("all"));
+
+    /// <summary>
+    /// WHAT IT ALL COST, across sessions. The per-session figure answers "this run"; /stats answers
+    /// "this week", which is the question that decides whether a workflow is affordable.
+    /// </summary>
+    [Fact]
+    public void Render_ShowsTheTotalCost_WhenSessionsReportedOne()
+    {
+        var totals = new StatsTotals(2, 900_000, 20_000, 0, 40,
+            Cost: 0.0147m, CostReportingSessions: 2);
+
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = totals,
+            Projects = [], Models = [], Types = [], Tools = [], Daily = [],
+        });
+
+        Assert.Contains("$0.0147", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>NOTHING REPORTED, NOTHING SHOWN — local-only history must not read "$0.00".</summary>
+    [Fact]
+    public void Render_WithNoCostReported_ShowsNoCostLine()
+    {
+        var totals = new StatsTotals(2, 900_000, 20_000, 0, 40);
+
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = totals,
+            Projects = [], Models = [], Types = [], Tools = [], Daily = [],
+        });
+
+        Assert.DoesNotContain("$", text, StringComparison.Ordinal);
+    }
 }

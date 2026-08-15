@@ -631,10 +631,13 @@ public sealed class SessionPanel
     ///
     /// <para>A REAL DRIVE COST $0.0147 — rendered as "$0.01" that is a number telling the reader
     /// almost nothing, and as "$0.00" it would be a lie. Four decimals while the figure is
-    /// fractions of a cent, two once it is not.</para>
+    /// fractions of a cent, two once it is not. THE THRESHOLD IS $1, NOT $0.01: $0.0147 is itself
+    /// still under a cent's worth of resolution at two decimals, so cutting over at $0.01 would
+    /// have rendered exactly this example as "$0.01" — the two-decimal branch never actually
+    /// engages until the figure has grown past pocket change.</para>
     /// </summary>
     private static string Money(decimal amount) =>
-        amount < 0.01m ? $"${amount:0.0000}" : $"${amount:0.00}";
+        amount < 1.00m ? $"${amount:0.0000}" : $"${amount:0.00}";
 
     private static void Section(List<string> lines, string title)
     {
