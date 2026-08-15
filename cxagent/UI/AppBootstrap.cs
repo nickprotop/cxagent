@@ -320,8 +320,15 @@ public static class AppBootstrap
 
                 mainWindow.Input.Input = PromptQueue.Restore(queuedPrompts, mainWindow.Input.Input);
                 queuedPrompts.Clear();
+
+                // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the
+                // composer" row behind, which was inconsistent with the send path (where the block
+                // disappears) for what is the same event: the queue emptied, so the placeholder has
+                // nothing left to stand for. The trace earned nothing either — the text is sitting
+                // in the composer in plain view, so the row explained something already on screen
+                // while permanently costing a line of a transcript that scrolls.
                 if (queuedBlock is { } id)
-                    mainWindow.Chat.UpdateMessage(id, "[dim]queued — returned to the composer[/]");
+                    mainWindow.Chat.RemoveMessage(id);
                 queuedBlock = null;
             }
 
@@ -990,7 +997,17 @@ public static class AppBootstrap
 
             var joined = PromptQueue.Join(queuedPrompts);
             queuedPrompts.Clear();
+
+            // REMOVE the placeholder, don't just forget it. Clearing `queuedBlock` alone left the
+            // "queued · N messages" block sitting in the transcript while SubmitComposer added the
+            // real user message right below it — the same text twice, the second one looking like a
+            // duplicate send. The block is a stand-in for a message that hasn't gone yet, so once it
+            // goes the stand-in has no referent. Removal happens BEFORE SubmitComposer so the two
+            // never coexist for a frame.
+            if (queuedBlock is { } sent)
+                mainWindow.Chat.RemoveMessage(sent);
             queuedBlock = null;   // sent, so the next queue starts its own block
+
             mainWindow.Input.Input = joined;
             SubmitComposer();
         }
