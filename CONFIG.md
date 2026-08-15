@@ -106,6 +106,7 @@ block still has `general`.
 ```json
 "agents": {
   "explore": {
+    "description": "when finding something means reading across several files",
     "briefing": "You search and report. Find what was asked for, give exact paths as
                  file_path:line_number, and say what you actually saw rather than what you
                  expect to be true. Do not edit anything.",
@@ -116,9 +117,23 @@ block still has `general`.
 
 | Key | Meaning |
 |---|---|
+| `description` | WHEN to choose this type, for the parent deciding. One line. |
 | `briefing` | The child's highest-authority instruction. Config is the only legitimate author of this — a parent cannot set it. |
 | `provider` | An instance name from `providers`. Omit to inherit the session's. |
 | `maxTurns` | Absent inherits the session ceiling; `0` is unbounded. |
+
+**`description` and `briefing` are for different readers, and neither is derived from the other.**
+The briefing goes to the CHILD in full, as the highest-authority text in its prompt. The description
+goes to the PARENT, as one line in the spawn tool's catalog — the only thing the model sees before
+choosing a type. It is the same split skills use, for the same reason: *the description is the entire
+interface.*
+
+Write the situation, not the job. *"when finding something means reading across several files"* helps
+a chooser; *"searches files and reports what it found"* describes an agent that is already chosen.
+
+Without a description the catalog falls back to the briefing's first sentence — which is written in
+the second person for the child and reads as an instruction. `You search and report.` is accurate and
+tells a chooser nothing. Every type in the shipped sample has a description for that reason.
 
 **A type's provider brings its own context window.** They resolve together, deliberately: a child
 given one provider and another's window never sees pressure, never compacts, and dies on an overflow
