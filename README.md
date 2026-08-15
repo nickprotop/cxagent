@@ -137,9 +137,10 @@ granting anything new, and it cannot widen past your trust decision: on a folder
 `.claude/` and `.idea/` keep asking regardless — a hook that runs on your next git command is not
 what anyone means by "accept edits".
 
-**Named types** let you say how a delegated job should be done — a briefing, optionally its own
-provider and turn cap. The sample ships five, including a **planner** that writes a plan to `./plans/`
-and reports what it decided, and a **builder** that implements one and refuses to start without it.
+**Named types** let you say how a delegated job should be done — a description of when to pick it, a
+briefing for the child, optionally its own provider and turn cap. The sample ships five, including a
+**planner** that writes a plan to `./plans/` and reports what it decided, and a **builder** that
+implements one and refuses to start without it.
 See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md) for `/mode` and
 `/stats`.
 

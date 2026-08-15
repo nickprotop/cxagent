@@ -131,9 +131,16 @@ interface.*
 Write the situation, not the job. *"when finding something means reading across several files"* helps
 a chooser; *"searches files and reports what it found"* describes an agent that is already chosen.
 
-Without a description the catalog falls back to the briefing's first sentence — which is written in
-the second person for the child and reads as an instruction. `You search and report.` is accurate and
-tells a chooser nothing. Every type in the shipped sample has a description for that reason.
+Without a description the catalog says `runs where you do, no special instructions` — the same line a
+type with no briefing gets. It does NOT fall back to the briefing: that was the old behaviour, and it
+produced rows like `You search and report.`, which is written in the second person for the child and
+tells a chooser nothing. The honest answer for a type nobody described is that nothing was said.
+
+Every type in the shipped sample has one, and they run to a few sentences each. Length is not capped —
+say when to reach for it AND what comes back, because a parent is deciding what to plan around as
+well as whether to delegate. The bound worth respecting is the spawn tool's own guidance above the
+catalog: the shipped five total about 1,600 characters against its ~2,150, so they inform without
+burying it.
 
 **A type's provider brings its own context window.** They resolve together, deliberately: a child
 given one provider and another's window never sees pressure, never compacts, and dies on an overflow
