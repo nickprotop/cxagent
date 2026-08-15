@@ -210,6 +210,17 @@ public static class AppBootstrap
         var transcript = new TranscriptWriter(system, mainWindow.Chat);
         var permissionGate = new InteractivePermissionGate(system, mainWindow, session.WorkingDirectory,
             permissionPolicy, permissionRules, transcript);
+
+        // THE CLASSIFIER, WHEN ONE IS CONFIGURED. Resolved from the same registry every other
+        // instance comes from, so a classifier is an ordinary provider entry and its spend is
+        // attributed like any other. Null here is the whole gate on `auto`: unconfigured means the
+        // mode is not listed, not cyclable, and not parseable, so this is never consulted.
+        if (resolution.ClassifierInstance is { } classifierName
+            && resolution.Providers is { } registry
+            && registry.TryGet(classifierName, out var classifierProvider))
+        {
+            permissionGate.Classifier = new ActionClassifier(classifierProvider);
+        }
         // Guards the LoadError echo below so it is reported once, on the FIRST WireRunner call
         // only — F5/F7/F8 re-wires reuse this same permissionRules instance, and its LoadError
         // describes what happened at construction, not live state, so repeating it on every
@@ -544,9 +555,15 @@ public static class AppBootstrap
                     return;
                 }
 
-                var nextEdits = runner.Mode.Edits == EditMode.AcceptEdits
-                    ? EditMode.AlwaysAsk
-                    : EditMode.AcceptEdits;
+                // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
+                // a mode that would do nothing. With one, the order runs strict -> permissive ->
+                // reviewed, which reads as increasing autonomy.
+                var nextEdits = runner.Mode.Edits switch
+                {
+                    EditMode.AlwaysAsk => EditMode.AcceptEdits,
+                    EditMode.AcceptEdits when permissionGate.Classifier is not null => EditMode.Auto,
+                    _ => EditMode.AlwaysAsk,
+                };
 
                 runner.Mode = runner.Mode with { Edits = nextEdits };
                 permissionPolicy.Edits = nextEdits;
@@ -699,7 +716,8 @@ public static class AppBootstrap
                             var decision = ModeCommand.Decide(new ModeQuery(
                                 SessionCommands.Arguments(goalText), runner.Mode, IsTurnRunning(),
                                 permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
-                                session.WorkingDirectory));
+                                session.WorkingDirectory,
+                                permissionGate.Classifier is not null));
 
                             // LIVE, NO RESTART. Both things a mode changes are rebuilt on the next
                             // prompt anyway — the tool list and the system message — so this is one

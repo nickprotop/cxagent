@@ -60,6 +60,15 @@ public sealed record ProviderResolution(
     /// </summary>
     public string? InstanceName { get; init; }
 
+    /// <summary>
+    /// The instance that reviews actions in <c>/mode edits auto</c>, or null when none is configured.
+    ///
+    /// <para>NULL MEANS AUTO IS NOT OFFERED. Resolved through <see cref="Providers"/> at startup, the
+    /// same registry every other instance comes from — a classifier is an ordinary provider entry, so
+    /// spend against it is attributed and shown like any other.</para>
+    /// </summary>
+    public string? ClassifierInstance { get; init; }
+
     /// <summary>Configured MCP servers, empty when none are — carried here because this is the one
     /// place config.json is read, and the servers have to be started from what it said.</summary>
     /// <summary>Configured sub-agent types, empty when none are. Carried for the same reason
@@ -115,6 +124,7 @@ public static class ProviderResolver
                 McpServers = settings.McpServers,
                 AgentTypes = settings.AgentTypes,
                 Warnings = settings.Warnings,
+                ClassifierInstance = settings.Classifier,
             };
         }
         catch (Exception)
@@ -203,6 +213,7 @@ public static class ProviderResolver
                 McpServers = settings.McpServers,
                 AgentTypes = settings.AgentTypes,
                 Warnings = settings.Warnings,
+                ClassifierInstance = settings.Classifier,
             };
         }
         catch (ProviderConfigException ex)

@@ -247,6 +247,35 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(Query("edits auto", WorkingMode.Default));
 
         Assert.Null(result.NewMode);
+
+        // The reply echoes the rejected value ("unknown edit mode 'auto'"), so what matters is that
+        // auto is absent from the VALID list it offers — the user must not be pointed at a mode they
+        // cannot reach.
+        var valid = result.Reply[result.Reply.IndexOf("Valid:", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("auto", valid, StringComparison.Ordinal);
+    }
+
+    /// <summary>...and IS selectable once one is. The config key is the whole gate.</summary>
+    [Fact]
+    public void ModeEdits_Auto_IsAcceptedWhenAClassifierIsConfigured()
+    {
+        var result = ModeCommand.Decide(new ModeQuery("edits auto", WorkingMode.Default, false,
+            true, "/repo", ClassifierConfigured: true));
+
+        Assert.Equal(EditMode.Auto, result.NewMode!.Value.Edits);
+    }
+
+    /// <summary>The listing offers auto only when it is reachable, so a user is never told about a
+    /// mode they cannot select.</summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void BareMode_OffersAuto_OnlyWhenAClassifierIsConfigured(bool configured, bool expected)
+    {
+        var result = ModeCommand.Decide(new ModeQuery("", WorkingMode.Default, false, true, "/repo",
+            ClassifierConfigured: configured));
+
+        Assert.Equal(expected, result.Reply.Contains("auto", StringComparison.Ordinal));
     }
 
     /// <summary>A no-op says so and changes nothing, on this axis as on the other.</summary>

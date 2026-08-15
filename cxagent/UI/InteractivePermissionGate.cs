@@ -1,7 +1,9 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Permissions;
 using SharpConsoleUI;
 
 namespace CxAgent.UI;
+
 
 /// <summary>
 /// The real, interactive <see cref="IPermissionGate"/>: consults <see cref="PermissionPolicy"/>
@@ -32,6 +34,26 @@ public sealed class InteractivePermissionGate : IPermissionGate
     private readonly PermissionRulesStore _store;
     private readonly string _workingDir;
     private readonly ITranscriptWriter? _transcript;
+
+    /// <summary>
+    /// The reviewer for <c>/mode edits auto</c>, or null when none is configured — in which case auto
+    /// is not reachable at all and this is never consulted.
+    ///
+    /// <para>A PROPERTY, NOT A SIXTH CONSTRUCTOR PARAMETER. The constructor already takes five, and
+    /// the classifier is optional session wiring rather than something the gate cannot exist without.
+    /// Set once at startup beside the policy.</para>
+    /// </summary>
+    public ActionClassifier? Classifier { get; set; }
+
+    // REPORTED ONCE PER TURN, not per action. A provider that is down would otherwise put an
+    // identical yellow line beside every gated write in a shell-heavy turn — the same noise that
+    // removing the per-allow echo fixed. Reset by the host at the start of each turn.
+    private bool _reportedClassifierFailure;
+
+    /// <summary>Lets a new turn report a classifier failure again — the fact is stale once the turn
+    /// that observed it is over, and a session that stays quiet forever after one blip would hide a
+    /// provider that never came back.</summary>
+    public void ResetTurnState() => _reportedClassifierFailure = false;
 
     // The UI seam: shows a prompt for `request` (offerTrust decides whether the fourth "Trust
     // this folder" button appears) and completes with the user's choice. The real constructor
@@ -156,6 +178,31 @@ public sealed class InteractivePermissionGate : IPermissionGate
         {
             OnDecision?.Invoke(request.Kind, "silent", request.Requester);
             return true;
+        }
+
+        // AUTO MODE'S SECOND OPINION, consulted only for what would otherwise prompt — never to
+        // OVERRIDE a decision already made. A stored rule and the boundary pass are settled above; a
+        // denial is settled below by the user. This sits in the one gap where nothing has decided yet.
+        if (_policy.Edits == EditMode.Auto && Classifier is not null)
+        {
+            if (await Classifier.AllowsAsync(request, ct))
+            {
+                OnDecision?.Invoke(request.Kind, "silent", request.Requester);
+                return true;
+            }
+
+            // FAILS CLOSED, OUT LOUD. A gate that quietly falls back looks like a classifier that
+            // disagreed, and the user learns nothing — worse, they conclude auto is simply strict.
+            // [yellow] is this file's vocabulary for "did not work, nothing was denied", the same
+            // shape as a rule that could not be saved.
+            //
+            // ONCE PER TURN, not per action: a shell-heavy turn would otherwise bury the transcript
+            // in identical warnings, which is exactly what removing the per-allow echo fixed.
+            if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
+            {
+                _reportedClassifierFailure = true;
+                _transcript?.Write($"[yellow]auto review unavailable ({failure}) — asking instead[/]");
+            }
         }
 
         // WAITING STARTS HERE — before the queue, not after it. A child third in line behind two

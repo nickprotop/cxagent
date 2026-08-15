@@ -26,8 +26,12 @@ public readonly record struct ModeCommandResult(WorkingMode? NewMode, string Rep
 /// listing is where a user meets that rule — at the moment it is affecting them.
 /// </param>
 /// <param name="Root">The working directory, named in the effect line so "inside" is concrete.</param>
+/// <param name="ClassifierConfigured">
+/// Whether a classifier instance is configured. FALSE HIDES AUTO ENTIRELY — unlisted, unparseable —
+/// because a mode that claims background review while nothing reviews is worse than not having it.
+/// </param>
 public readonly record struct ModeQuery(string Argument, WorkingMode Current, bool TurnRunning,
-    bool FolderTrusted, string Root);
+    bool FolderTrusted, string Root, bool ClassifierConfigured = false);
 
 /// <summary>
 /// The decision behind <c>/mode</c>, separated from the wiring that applies it.
@@ -78,32 +82,30 @@ public static class ModeCommand
                 $"    [{muted}]{EditsEffect(current.Edits, query.FolderTrusted, query.Root)}[/]",
                 "",
                 $"  [{muted}]set with /mode agent {AgentModes.Valid.Replace(", ", " | ")}[/]",
-                $"  [{muted}]         /mode edits {EditModes.Valid.Replace(", ", " | ")}[/]",
+                $"  [{muted}]         /mode edits "
+              + $"{EditModes.ValidWith(query.ClassifierConfigured).Replace(", ", " | ")}[/]",
             ]));
         }
 
         var words = argument.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        // `/mode agent fan-out` — the axis named, then its value. The axis is what makes room for
-        // `/mode files read-only` and `/mode work plan` without either colliding with this one or
-        // needing a command of its own.
+        // `/mode <axis> <value>` — the axis named, then its value. The axis is what made room for a
+        // second one without either colliding with the first or needing a command of its own.
         //
-        // `/mode fan-out` STILL WORKS, and that is deliberate rather than legacy tolerance: agent is
-        // the only axis today, so naming it is pure ceremony for the one thing anyone is switching.
-        // The day a value collides across axes, the unqualified form for THAT value stops being
-        // unambiguous — which is a reason to name the axis then, not to demand it now.
-        // THE EDITS AXIS, which must be named. Its values could not be left unqualified the way
-        // agent's are: "ask" and "edits" say nothing about which axis they belong to, and the whole
-        // reason the axis word exists is the day a value stops being unambiguous. That day is this
-        // one.
+        // `/mode fan-out` STILL WORKS unqualified, because agent's values remain unambiguous.
+        //
+        // THE EDITS AXIS MUST BE NAMED, and that is the prediction landing rather than an exception:
+        // "ask" and "edits" say nothing about which axis they belong to. The comment here used to say
+        // the day a value collides across axes is the day to demand the axis word. This is that day,
+        // for this axis only.
         if (words.Length >= 2 && IsEditsAxis(words[0]))
         {
             var editValue = string.Join(' ', words.Skip(1));
-            var requestedEdits = EditModes.Parse(editValue);
+            var requestedEdits = EditModes.Parse(editValue, query.ClassifierConfigured);
 
             if (requestedEdits is null)
                 return new(null, $"[yellow]unknown edit mode '{editValue.Trim()}'. "
-                               + $"Valid: {EditModes.Valid}.[/]");
+                               + $"Valid: {EditModes.ValidWith(query.ClassifierConfigured)}.[/]");
 
             if (requestedEdits == current.Edits)
                 return new(null, $"already in {EditModes.Name(current.Edits)} mode.");

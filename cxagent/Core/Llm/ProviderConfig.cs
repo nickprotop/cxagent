@@ -217,6 +217,14 @@ public record ProviderSettings(
 {
     public OrchestratorSettings Orchestrator { get; init; } = Orchestrator ?? OrchestratorSettings.Unbounded;
 
+    /// <summary>
+    /// Which instance reviews actions in <c>/mode edits auto</c>, or null when none is configured.
+    ///
+    /// <para>NULL MEANS AUTO IS NOT OFFERED — not listed, not cyclable, not parseable. A mode that
+    /// claims background review while nothing reviews is worse than not having the mode.</para>
+    /// </summary>
+    public string? Classifier { get; init; }
+
     /// <summary>Configured MCP servers, empty when the block is absent — which is the common case.</summary>
     public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
         new Dictionary<string, McpServerConfig>();
@@ -331,6 +339,15 @@ public static class ProviderConfigLoader
                 ? dp.GetString() : null;
             if (defaultProvider is not null && !providers.ContainsKey(defaultProvider))
                 errors.Add($"defaultProvider '{defaultProvider}' is not a configured provider instance.");
+
+            // WHICH INSTANCE REVIEWS ACTIONS IN `/mode edits auto`. Absent is the common case and is
+            // not an error: it means auto is not offered at all — unlisted, unreachable by Shift+Tab,
+            // unparseable as a value. A NAMED-BUT-MISSING instance IS an error, because that is a user
+            // who believes they configured review and would otherwise get none, silently.
+            string? classifier = root.TryGetProperty("classifier", out var cl) && cl.ValueKind == JsonValueKind.String
+                ? cl.GetString() : null;
+            if (classifier is not null && !providers.ContainsKey(classifier))
+                errors.Add($"classifier '{classifier}' is not a configured provider instance.");
 
             var allowed = new List<string>();
             var routing = new Dictionary<string, RoutingTarget>();
@@ -538,6 +555,7 @@ public static class ProviderConfigLoader
                 McpServers = mcpServers,
                 AgentTypes = agentTypes,
                 Warnings = warnings,
+                Classifier = classifier,
             };
         }
     }

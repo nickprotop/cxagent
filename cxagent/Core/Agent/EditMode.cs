@@ -80,10 +80,15 @@ public static class EditModes
     /// Every value a user may select, for an error that says what to type instead of only saying they
     /// were wrong.
     ///
-    /// <para><c>auto</c> is absent until a classifier is configured — a mode that claims background
+    /// <para><c>auto</c> appears only when a classifier is configured — a mode that claims background
     /// review while nothing reviews is worse than no mode at all.</para>
     /// </summary>
-    public static string Valid => "always-ask, accept-edits";
+    public static string Valid => ValidWith(classifierConfigured: false);
+
+    /// <summary>The selectable values, given whether a classifier exists. See <see cref="Valid"/>.
+    /// </summary>
+    public static string ValidWith(bool classifierConfigured) =>
+        classifierConfigured ? "always-ask, accept-edits, auto" : "always-ask, accept-edits";
 
     /// <summary>
     /// Parses a mode name, or returns null.
@@ -93,13 +98,15 @@ public static class EditModes
     /// tolerant of anything else: a value that silently defaults is how someone concludes the mode is
     /// broken when they merely misspelled it.</para>
     ///
-    /// <para><c>auto</c> is deliberately unparseable here. It becomes selectable only when a
-    /// classifier is configured, so a CLI flag cannot reach a mode that would do nothing.</para>
+    /// <para><c>auto</c> is unparseable unless a classifier is configured, so neither a CLI flag nor
+    /// <c>/mode</c> can reach a mode that would do nothing.</para>
     /// </summary>
-    public static EditMode? Parse(string? text) => text?.Trim().ToLowerInvariant() switch
-    {
-        "always-ask" or "alwaysask" or "always_ask" or "ask" => EditMode.AlwaysAsk,
-        "accept-edits" or "acceptedits" or "accept_edits" or "edits" => EditMode.AcceptEdits,
-        _ => null,
-    };
+    public static EditMode? Parse(string? text, bool classifierConfigured = false) =>
+        text?.Trim().ToLowerInvariant() switch
+        {
+            "always-ask" or "alwaysask" or "always_ask" or "ask" => EditMode.AlwaysAsk,
+            "accept-edits" or "acceptedits" or "accept_edits" or "edits" => EditMode.AcceptEdits,
+            "auto" when classifierConfigured => EditMode.Auto,
+            _ => null,
+        };
 }
