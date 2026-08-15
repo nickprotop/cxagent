@@ -720,12 +720,17 @@ public sealed class MainWindow : IDisposable
         // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
         _promptGrip = Controls.Markup()
             .AddLine(string.Join('\n',
-                // ┃ (U+2503), THE SAME GLYPH THE USER'S MESSAGES CARRY. This was ▏ (U+258F), a
-                // one-eighth block — thinner than the message rail and from a different family, so
-                // the two marks that both mean "yours" did not look related. Matching them is the
-                // point: the grip says "this is where you type", the message rail says "this is
-                // what you typed", and one shape says they are the same thing at two moments.
-                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]┃[/]",
+                // ▌ (U+258C), A HALF BLOCK — the heaviest of these that still reads as a rule. It
+                // was ▏ (U+258F), a one-eighth sliver thin enough to disappear against the surface
+                // it was marking.
+                //
+                // HEAVIER THAN THE MESSAGE RAIL'S ┃, AND THAT IS THE POINT rather than an
+                // inconsistency. The two marks share a colour and a meaning — Grip's own comment
+                // records it, opencode's idea that the user owns two surfaces — but not a job. A
+                // message rail is transient: it scrolls past, in a column shared with tool rows and
+                // worker reports, so it stays a drawn line. The grip is chrome that never leaves the
+                // screen and has nothing to compete with, so it can afford to be solid.
+                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
                     PromptRows + 1)))
             .WithAlignment(HorizontalAlignment.Left)
             .Build();
