@@ -262,11 +262,10 @@ public class PermissionPolicy
     /// the SAME string against a different base would check a path nobody is going to touch. That is
     /// not a near-miss: it is a check that passes on one file while another is written.
     ///
-    /// Strategy: GetFullPath first (collapses "..", makes it absolute), then walk up to the
-    /// deepest EXISTING ancestor and resolve THAT (ResolveLinkTarget needs a real entry to
-    /// inspect), then re-append whatever doesn't exist yet. If resolution throws for any
-    /// reason (permissions, a dangling link, a race), we return null and the caller treats
-    /// that as outside the boundary — failing toward asking, never toward silent allow.
+    /// Strategy: GetFullPath first (collapses "..", makes it absolute), then resolve EVERY component
+    /// in turn, following a link wherever one sits. If resolution throws for any reason (permissions,
+    /// a dangling link, a race), we return null and the caller treats that as outside the boundary —
+    /// failing toward asking, never toward silent allow.
     /// </summary>
     private static string? TryResolve(string path, string? root)
     {
@@ -274,42 +273,58 @@ public class PermissionPolicy
         {
             var full = root is { Length: > 0 } ? Path.GetFullPath(path, root) : Path.GetFullPath(path);
 
-            // Find the deepest existing ancestor (including the path itself if it exists).
-            var existing = full;
-            var remainder = new List<string>();
-            while (!Directory.Exists(existing) && !File.Exists(existing))
+            // COMPONENT BY COMPONENT, NOT JUST THE DEEPEST EXISTING ENTRY. This used to walk up to the
+            // first entry that exists and resolve THAT, which silently skipped a symlinked DIRECTORY
+            // whenever anything below it existed: the entry we landed on was a plain file, and
+            // ResolveLinkTarget on a plain file is null — the link is the PARENT, and nothing looked
+            // at it.
+            //
+            // MEASURED against a real fixture with `root/link -> outside`, on a trusted folder:
+            //     link/x.txt       (existing)          silently allowed   WRONG
+            //     link/sub/new.txt (nested, new)       silently allowed   WRONG
+            //     link/x.txt       (not existing)      asked              correct
+            // The only shape the old walk caught was the narrow one where the link itself was the
+            // deepest existing entry — which is exactly what the existing symlink test constructs, so
+            // it passed while the escape sat underneath it.
+            //
+            // The check was therefore INVERTED RELATIVE TO RISK: creating a new file outside the
+            // boundary was caught, overwriting an existing one was not. No attacker needed —
+            // node_modules links, vendor/, monorepo package links and a docs -> ../shared-docs
+            // convention are ordinary layouts.
+            //
+            // Components below the deepest existing entry cannot be links (they do not exist), so
+            // walking the whole path costs nothing extra for them and follows a link at any depth.
+            var parts = new List<string>();
+            for (var cursor = full; cursor is not null; cursor = Path.GetDirectoryName(cursor))
             {
-                var parent = Path.GetDirectoryName(existing);
-                if (string.IsNullOrEmpty(parent) || parent == existing)
+                var name = Path.GetFileName(cursor);
+                if (string.IsNullOrEmpty(name))
                 {
-                    // No ancestor exists at all (e.g. root doesn't exist, or a relative path
-                    // collapsed to nothing usable) — nothing to resolve against.
-                    existing = full;
-                    remainder.Clear();
+                    parts.Add(cursor);   // the filesystem root ("/" or "C:\")
                     break;
                 }
-                remainder.Add(Path.GetFileName(existing));
-                existing = parent;
+                parts.Add(name);
             }
+            parts.Reverse();
 
-            var resolvedExisting = existing;
-            if (Directory.Exists(existing) || File.Exists(existing))
+            var resolved = parts[0];
+            for (var i = 1; i < parts.Count; i++)
             {
-                // Resolve the full symlink chain: if `existing` itself is a link, or the final
-                // target is, ResolveLinkTarget(returnFinalTarget: true) walks it all the way.
-                var target = Directory.Exists(existing)
-                    ? Directory.ResolveLinkTarget(existing, returnFinalTarget: true)
-                    : File.ResolveLinkTarget(existing, returnFinalTarget: true);
+                resolved = Path.Combine(resolved, parts[i]);
+
+                // A LINK IS FOLLOWED WHEREVER IT SITS. returnFinalTarget walks a chain of links to
+                // its end; a component that does not exist is not a link, so this is a no-op there.
+                var target = Directory.Exists(resolved)
+                    ? Directory.ResolveLinkTarget(resolved, returnFinalTarget: true)
+                    : File.Exists(resolved)
+                        ? File.ResolveLinkTarget(resolved, returnFinalTarget: true)
+                        : null;
+
                 if (target is not null)
-                    resolvedExisting = target.FullName;
+                    resolved = target.FullName;
             }
 
-            remainder.Reverse();
-            var rebuilt = remainder.Count == 0
-                ? resolvedExisting
-                : Path.Combine(new[] { resolvedExisting }.Concat(remainder).ToArray());
-
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(rebuilt));
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(resolved));
         }
         // ArgumentException is in this list because RequestsFor now RESOLVES (the C1/C2 fix), so a
         // path that Path.GetFullPath rejects outright — an embedded NUL, an empty string — reaches

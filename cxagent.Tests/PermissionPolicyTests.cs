@@ -431,4 +431,80 @@ public class PermissionPolicyTests
         var unresolved = new PermissionRequest(PermissionKind.FileWrite, Path.Combine(root, "a.txt"), null);
         Assert.False(policy.IsSilentlyAllowed(unresolved));
     }
+
+    // ---- symlinked DIRECTORIES in the middle of a path ------------------------------------------
+
+    /// <summary>
+    /// A TRUSTED policy, which is the only shape where the boundary is load-bearing. An untrusted
+    /// folder asks for everything, so a boundary bug is invisible against one — which is exactly how
+    /// the escape below survived: the existing symlink test above uses an untrusted folder AND a file
+    /// that does not exist, and either of those alone is enough to make it pass.
+    /// </summary>
+    private static PermissionPolicy TrustedPolicy(string root)
+    {
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        return new PermissionPolicy(root, rules);
+    }
+
+    /// <summary>
+    /// AN EXISTING FILE THROUGH A SYMLINKED DIRECTORY IS OUTSIDE. TryResolve used to walk up only to
+    /// the deepest EXISTING entry and resolve that; when the file itself exists the walk stops on the
+    /// file, which is not a link — its PARENT is — so the link was never followed.
+    ///
+    /// <para>THE DANGEROUS DIRECTION: this is the OVERWRITE case. A repo with `vendor -> /elsewhere`
+    /// — an ordinary layout — let a trusted session rewrite a file outside the folder with no
+    /// prompt.</para>
+    /// </summary>
+    [Fact]
+    public void AnExistingFileThroughASymlinkedDirectory_IsOutside()
+    {
+        var root = MakeTempDir();
+        var outside = MakeTempDir();
+        Directory.CreateSymbolicLink(Path.Combine(root, "link"), outside);
+        File.WriteAllText(Path.Combine(outside, "x.txt"), "victim");
+
+        var viaLink = Path.Combine(root, "link", "x.txt");
+
+        Assert.False(TrustedPolicy(root).IsSilentlyAllowed(FileWrite(viaLink)));
+    }
+
+    /// <summary>
+    /// NESTING BELOW THE LINK DEFEATS IT EVEN FOR A NEW FILE. With a directory under the link, the
+    /// deepest existing entry is that directory rather than the link, so the link is skipped again.
+    ///
+    /// <para>This row says how big the bug was. A fixture where the link IS the deepest existing
+    /// entry catches the new-file case and reports the escape as half its true size.</para>
+    /// </summary>
+    [Fact]
+    public void ANewFileNestedBelowASymlinkedDirectory_IsOutside()
+    {
+        var root = MakeTempDir();
+        var outside = MakeTempDir();
+        Directory.CreateSymbolicLink(Path.Combine(root, "link"), outside);
+        Directory.CreateDirectory(Path.Combine(outside, "sub"));
+
+        var viaLink = Path.Combine(root, "link", "sub", "new.txt");
+
+        Assert.False(TrustedPolicy(root).IsSilentlyAllowed(FileWrite(viaLink)));
+    }
+
+    /// <summary>
+    /// AN ORDINARY IN-BOUNDARY WRITE IS STILL SILENT, existing file or new one.
+    ///
+    /// <para>The fix must not close the escape by making everything ask — that would "pass" both
+    /// tests above while destroying the behaviour the boundary exists to provide.</para>
+    /// </summary>
+    [Fact]
+    public void AnOrdinaryInBoundaryWrite_StaysSilent_AfterTheSymlinkFix()
+    {
+        var root = MakeTempDir();
+        Directory.CreateDirectory(Path.Combine(root, "src"));
+        File.WriteAllText(Path.Combine(root, "src", "existing.cs"), "// code");
+
+        var policy = TrustedPolicy(root);
+
+        Assert.True(policy.IsSilentlyAllowed(FileWrite(Path.Combine(root, "src", "existing.cs"))));
+        Assert.True(policy.IsSilentlyAllowed(FileWrite(Path.Combine(root, "src", "brand-new.cs"))));
+    }
 }
