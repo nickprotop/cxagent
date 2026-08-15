@@ -133,6 +133,30 @@ the briefing, not the number. A give-up clause would have returned a useful answ
 Unknown type names are refused rather than silently treated as `general`: substituting the default
 would mean the briefing did not apply and nobody was told.
 
+### `planner` and `builder` — a pair
+
+The sample defines two types that work together. **The planner writes a plan to `./plans/` and
+returns the path**; the parent hands that path to a **builder, which reads it and implements it —
+and refuses to start without one.**
+
+The path matters more than it looks. A plan returned as text lands in the parent's context and again
+in the builder's, so it is paid for twice and stays resident for the rest of the session. A path
+costs a line. This is the same reason Claude Code's own multi-agent workflow passes plan files rather
+than plan text.
+
+**The builder stopping is the point.** Nothing prevents an agent from inventing a plan when none
+arrives — a briefing is a request, not a permission — but a type whose first instruction is "stop and
+say you were given no plan" turns the most likely failure into a loud one instead of a silent
+rewrite. A builder that quietly plans its own work looks like progress and is not.
+
+**Neither type is required, and there is no plan mode.** A plan can come from the planner, from you
+in conversation, or from a file you wrote by hand — the builder never has to know which. `/mode work
+plan` therefore answers "not settable yet": what makes an agent plan well is its briefing, and
+briefings already compose.
+
+`plans/` is gitignored. A plan is a working note for a task in flight; one worth keeping belongs in
+`docs/` under a name you chose.
+
 ---
 
 ## `mcp` — servers

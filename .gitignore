@@ -38,3 +38,8 @@ publish/
 # looks for. Ignored rather than committed: the link is a local convenience, and a checked-in
 # symlink breaks on any platform or checkout that does not support one.
 CLAUDE.md
+
+# Plans written by the planner agent type. Working notes for a builder to carry
+# out, not project documentation — a plan that outlives its task is clutter, and
+# one worth keeping belongs in docs/ under a name a human chose.
+plans/
