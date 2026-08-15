@@ -16,29 +16,68 @@ namespace CxAgent.Core.Agent;
 /// <c>small</c> and <c>local</c> are a real choice even when the model behind them is identical, and
 /// the window travels with the instance rather than being guessed at.</para>
 /// </summary>
-/// <param name="Name">What the model asked for, and what the row and errors show.</param>
-/// <param name="Briefing">Empty for <c>general</c>. Becomes the child's briefing — the highest-authority
-/// text in its prompt.</param>
+/// <summary>
+/// WHERE a type runs — the provider it resolved to, that provider's window, and the `providers` entry
+/// it came from.
+///
+/// <para>A RECORD BECAUSE THESE THREE ARE ONE FACT, and they are consumed as one:
+/// <c>SubAgentFactory</c> takes Provider and ContextWindow together (`:240`), because a child given
+/// one provider and another's window never sees pressure, never compacts, and dies on an overflow.
+/// InstanceName is the same resolution seen from the spend side.</para>
+///
+/// <para>AND BECAUSE THE LIST HAD REACHED SEVEN. AgentType was Name, Briefing, Provider,
+/// ContextWindow, MaxTurns, InstanceName, and then a Description — four consecutive nullables at the
+/// end, two of them <c>string?</c>. Transpose InstanceName and Description and it compiles cleanly
+/// while attributing a session's spend to a sentence. The rule this repo keeps is to notice that at
+/// the fourth parameter, not at the seventh; this is the correction.</para>
+/// </summary>
 /// <param name="Provider">The resolved instance, or null for the parent's.</param>
 /// <param name="ContextWindow">
 /// That instance's window. TRAVELS WITH THE PROVIDER and is never taken from the session: a child
 /// given one provider and another's window sees IsUnderPressure as permanently false, never compacts,
 /// and dies on an overflow. Null is legal and means unknown.
 /// </param>
-/// <param name="MaxTurns">Null inherits the session ceiling. Zero is unbounded.</param>
-public sealed record AgentType(
-    string Name,
-    string Briefing,
-    ILlmProvider? Provider,
-    int? ContextWindow,
-    int? MaxTurns,
+public sealed record TypeRouting(
+    ILlmProvider? Provider = null,
+    int? ContextWindow = null,
+
     /// <summary>
     /// Which `providers` entry <see cref="Provider"/> came from, for spend attribution.
     ///
     /// <para>Resolved here because this is where config's instance NAME is still in hand — the
     /// driver itself does not carry one, and two entries can serve the same model.</para>
     /// </summary>
-    string? InstanceName = null);
+    string? InstanceName = null)
+{
+    /// <summary>A type that runs wherever its parent does, which is the common case.</summary>
+    public static readonly TypeRouting Inherited = new();
+}
+
+/// <summary>One named way of doing delegated work: what it is told, when to pick it, and where it
+/// runs.</summary>
+/// <param name="Name">What the model asked for, and what the row and errors show.</param>
+/// <param name="Briefing">Empty for <c>general</c>. Becomes the child's briefing — the
+/// highest-authority text in its prompt.</param>
+/// <param name="Routing">Where it runs — see <see cref="TypeRouting"/>.</param>
+/// <param name="MaxTurns">Null inherits the session ceiling. Zero is unbounded.</param>
+/// <param name="Description">
+/// WHEN to choose this type, and what comes back — the parent's one line in the spawn tool's catalog.
+/// See <see cref="Llm.AgentTypeConfig.Description"/> for why it is written rather than derived from
+/// the briefing. Null when the config did not say.
+/// </param>
+public sealed record AgentType(
+    string Name,
+    string Briefing,
+    TypeRouting Routing,
+    int? MaxTurns = null,
+    string? Description = null)
+{
+    /// <summary>Where this type runs, flattened for readers that want one field. The routing record
+    /// is the truth; these exist so call sites do not all have to say <c>Routing.</c>.</summary>
+    public ILlmProvider? Provider => Routing.Provider;
+    public int? ContextWindow => Routing.ContextWindow;
+    public string? InstanceName => Routing.InstanceName;
+}
 
 /// <summary>
 /// The catalog a spawn resolves a type name against.
@@ -77,7 +116,7 @@ public sealed class AgentTypeCatalog
         // GENERAL FIRST, so config's own `general` overwrites it below rather than being rejected —
         // an override is a legitimate choice and should not need a different mechanism than any
         // other type.
-        _types[DefaultTypeName] = new AgentType(DefaultTypeName, "", null, null, null);
+        _types[DefaultTypeName] = new AgentType(DefaultTypeName, "", TypeRouting.Inherited);
 
         foreach (var (name, cfg) in configured)
         {
@@ -96,8 +135,8 @@ public sealed class AgentTypeCatalog
                 providers.InstanceWindows.TryGetValue(instance, out window);
             }
 
-            _types[name] = new AgentType(name, cfg.Briefing, provider, window, cfg.MaxTurns,
-                instanceName);
+            _types[name] = new AgentType(name, cfg.Briefing,
+                new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description);
         }
 
         All = [_types[DefaultTypeName],

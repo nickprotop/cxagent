@@ -635,6 +635,85 @@ public class ProviderConfigTests : IDisposable
     }
 
     /// <summary>
+    /// A DESCRIPTION IS FOR THE PARENT, and it has to survive the parse to reach the catalog. It is
+    /// the only thing the model sees before choosing a type, so a key that is silently dropped is a
+    /// feature that looks configured and does nothing.
+    /// </summary>
+    [Fact]
+    public void Agents_CarryTheirDescription()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": {
+            "explore": {
+              "description": "when answering means reading across several files",
+              "briefing": "You search and report."
+            }
+          }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal("when answering means reading across several files",
+            s.AgentTypes["explore"].Description);
+    }
+
+    /// <summary>
+    /// ABSENT IS NOT EMPTY. Every config written before this key existed has no description, and the
+    /// catalog decides what to show from exactly this distinction.
+    /// </summary>
+    [Fact]
+    public void Agents_WithoutADescription_HaveNull()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": { "explore": { "briefing": "You search and report." } }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Null(s.AgentTypes["explore"].Description);
+    }
+
+    /// <summary>
+    /// A LONG DESCRIPTION IS KEPT WHOLE. The 140-character bound belonged to Summarise, which existed
+    /// to stop a SCAVENGED sentence running away; this text is written on purpose for this slot, and
+    /// truncating it would be the app rewriting its author.
+    /// </summary>
+    [Fact]
+    public void Agents_LongDescription_IsNotTruncated()
+    {
+        var longText = new string('x', 400);
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": { "explore": { "description": "{{longText}}", "briefing": "b" } }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Equal(400, s.AgentTypes["explore"].Description!.Length);
+    }
+
+    /// <summary>Whitespace-only is absent. A description of spaces would print a blank catalog line,
+    /// which reads as a bug rather than as "nothing was configured".</summary>
+    [Fact]
+    public void Agents_WhitespaceOnlyDescription_IsTreatedAsAbsent()
+    {
+        WriteConfig($$"""
+        {
+          {{TwoProviders}},
+          "agents": { "explore": { "description": "   ", "briefing": "b" } }
+        }
+        """);
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+
+        Assert.Null(s.AgentTypes["explore"].Description);
+    }
+
+    /// <summary>
     /// A PROVIDER THAT IS NOT CONFIGURED IS CAUGHT AT LOAD. Found three turns into a child's run it
     /// reads as a sub-agent bug; found here it reads as what it is. The type survives on the parent's
     /// provider rather than being dropped — the briefing is still useful.

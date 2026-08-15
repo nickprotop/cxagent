@@ -206,7 +206,26 @@ public record McpServerConfig(
 /// work. The envelope marks it (<c>state="capped"</c>), but a number set too low turns every run of
 /// that type into a half-answer. Set it only where the job has a knowable shape.</para>
 /// </param>
-public record AgentTypeConfig(string Briefing, string? Provider = null, int? MaxTurns = null);
+/// <param name="Description">
+/// WHEN to choose this type, and what comes back — for the PARENT deciding. It is the type's one line
+/// in the spawn tool's catalog, and the only thing the model sees before picking.
+///
+/// <para>SEPARATE FROM THE BRIEFING BECAUSE THE READERS ARE. A briefing is written in the second
+/// person for the child and opens with what it must do first. A catalog line needs what a chooser
+/// should notice first, and what it will get back. The catalog used to DERIVE one from the other —
+/// the briefing's first sentence — and produced lines like "You search and report.": accurate,
+/// grammatically about the agent, and useless to anyone deciding whether to reach for it.</para>
+///
+/// <para>NO LENGTH LIMIT. The old derivation capped at 140 characters, which was right for a
+/// SCAVENGED sentence that might run away; this is text a human wrote for this slot, and truncating
+/// it would be the app rewriting its author. The pressure it guarded against is real — this ships in
+/// every request — but that argues for writing short descriptions, not for mangling long ones.</para>
+///
+/// <para>Null means absent, which is every config written before this key existed. The catalog then
+/// says nothing was configured rather than inventing a line.</para>
+/// </param>
+public record AgentTypeConfig(string Briefing, string? Provider = null, int? MaxTurns = null,
+    string? Description = null);
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -544,7 +563,17 @@ public static class ProviderConfigLoader
                         else maxTurns = value;
                     }
 
-                    agentTypes[entry.Name] = new AgentTypeConfig(briefing.Trim(), typeProvider, maxTurns);
+                    // WHITESPACE IS ABSENT, not a description. A line of spaces would render as a
+                    // blank catalog entry, which reads as a bug; no entry reads as "nothing was
+                    // configured", which is the truth. Not trimmed-then-kept for the same reason.
+                    var description = entry.Value.TryGetProperty("description", out var desc)
+                                   && desc.ValueKind == JsonValueKind.String
+                        ? desc.GetString()?.Trim()
+                        : null;
+                    if (string.IsNullOrWhiteSpace(description)) description = null;
+
+                    agentTypes[entry.Name] = new AgentTypeConfig(briefing.Trim(), typeProvider, maxTurns,
+                        description);
                 }
 
             if (errors.Count > 0)

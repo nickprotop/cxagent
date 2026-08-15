@@ -251,7 +251,8 @@ public class SubAgentFactoryTests
             InstanceName = "local",
         });
 
-        var elsewhere = new AgentType("planner", "brief", Answering(), 32_000, null, "small");
+        var elsewhere = new AgentType("planner", "brief",
+            new TypeRouting(Answering(), 32_000, "small"));
 
         Assert.Equal("small:mock-model", factory.Create(type: elsewhere).ModelId);
     }
