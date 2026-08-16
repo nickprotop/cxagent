@@ -67,68 +67,50 @@
   ],
   "classifier": "local",
   "//agents": [
-    "SUB-AGENT TYPES (step 2). A name, a briefing, and optionally a provider.",
+    "SUB-AGENT TYPES. The five cxagent ships — explore, planner, builder, review, test — are",
+    "  BUILT IN as of this version: their briefings and descriptions live in the program, not",
+    "  here, and they are available without configuring anything. Delete this block entirely and",
+    "  they still work.",
+    "",
+    "WHY THEY MOVED. A briefing is not a preference like a model name; it is the contract a type",
+    "  keeps with the code around it. cxagent names the file a planner must write, checks whether",
+    "  it appeared, and the builder refuses work that arrives without one. A copy in this file is a",
+    "  third party to an agreement between three others, free to drift from all of them — and every",
+    "  fix shipped only to whoever re-copied this sample.",
+    "",
+    "WHAT YOU MAY STILL SET on a built-in name:",
+    "  provider  an instance from `providers`. Omit to inherit the session's.",
+    "  maxTurns  absent inherits the session ceiling; 0 is unbounded.",
+    "A 'briefing' or 'description' under a built-in name is IGNORED, and cxagent says so at",
+    "  startup rather than leaving you to wonder why the edit did nothing.",
+    "",
+    "YOUR OWN TYPES are unchanged and entirely yours: any name that is not built in takes a",
+    "  briefing (required), a description (optional but worth writing), provider and maxTurns.",
     "",
     "description: WHEN to choose this type, for the PARENT deciding. One line. It is the only",
     "  thing the model sees before picking, so write the situation rather than the job:",
     "  \"when finding something means reading across several files\", not \"searches files\".",
     "",
-    "  Optional. Without it the catalog falls back to the briefing's first sentence, which is",
-    "  written for the CHILD and reads as an instruction — \"You search and report\" tells a",
-    "  chooser nothing about when to reach for it.",
+    "briefing: the CHILD's highest-authority instruction, in full. Written in the second person.",
+    "  Config is the only legitimate author of it — a parent cannot set it.",
     "",
-    "briefing: HOW this agent works. It becomes the highest-authority text in the child's",
-    "  system prompt — above the general prompt and above anything the parent tells it — so it",
-    "  is the one instruction channel a human writes and a model cannot override.",
-    "",
-    "provider: an instance name from `providers` above. Omit to use the parent's. A name that",
-    "  is not in `providers` is a startup error, not a surprise at spawn time.",
-    "",
-    "maxTurns: how many turns this type gets before it stops and summarises what it has. Omit",
-    "  to inherit the session ceiling (`orchestrator.maxTurns`), which is the right",
-    "  default and what every child got before this key existed.",
-    "",
-    "  SET IT ONLY WHEN THE JOB HAS A KNOWN SHAPE. A search that should take four turns and",
-    "  takes forty is worth stopping; open-ended work is not. The failure mode is specific and",
-    "  has bitten this project before: a cap that fires mid-work does not fail loudly, it",
-    "  returns a SALVAGE SUMMARY of unfinished work, and a caller that cannot tell that from a",
-    "  finished answer acts on it. cxagent marks it (state=\"capped\" in the result) — but a",
-    "  number set too low turns every run of that type into a half-answer.",
-    "",
-    "  0 means no cap, as it does for the session.",
-    "",
-    "A BRIEFING IS A REQUEST, NOT A PERMISSION. 'Never edit files' asks the agent not to; it",
-    "does not remove the tool. Enforcement is a separate mechanism and does not exist yet, so",
-    "do not rely on a briefing to contain an agent.",
-    "",
-    "`general` always exists whether or not it appears here — same model as the parent, no",
-    "briefing. Define it to give every untyped sub-agent a standing instruction.",
-    "",
-    "A type does NOT get its own turn ceiling or token budget. Those are session-wide",
-    "(`orchestrator` below), and a child inherits them."
+    "CONFIG.md reproduces what each built-in type is told, so you can read them without",
+    "  digging through source."
   ],
   "agents": {
-    "explore": {
-      "description": "when answering means reading across several files and you want the conclusion rather than the file dumps. Give it a question, not a location. It returns exact paths as file_path:line_number and says plainly when the thing does not exist — a confident negative is a real answer. It does not edit anything. USE THE PLANNER INSTEAD when what you want back is a design rather than a fact: a planner reads code too, so sending an explorer to plan something gets you a report about the code as it is, which is not a plan and cannot be built from. WHEN YOU PASS ITS FINDINGS ON, put them in `context`, not in the prompt — context stays with the next agent for its whole run, a prompt does not survive a long one, and an agent that loses the facts you gave it goes and reads the same files again.",
-      "briefing": "You search and report. Find what was asked for, give exact paths as file_path:line_number, and say what you actually saw rather than what you expect to be true. Do not edit anything. If the thing asked for does not appear to exist, say so and say where you looked — a confident negative is an answer, and is worth more than more searching. Before you report a path, check it against what you actually opened.",
-      "maxTurns": 30
-    },
-    "review": {
-      "description": "when you want code checked for correctness — logic that is wrong rather than style that is unusual. Best on a diff or a named set of files. It returns specific objections with a failing case behind each one, and says plainly when something is fine rather than inventing concerns.",
-      "briefing": "You review code for correctness. Look for logic that is wrong rather than style that is unusual, and say plainly when something is fine. An objection with no failing case behind it is noise."
-    },
-    "test": {
-      "description": "when tests need running and a failure needs diagnosing. It reads the actual output before drawing a conclusion — a command that exits 0 has not necessarily verified anything, and a filter that matched nothing exits 0 too — and reports the counts it saw rather than the counts it expected.",
-      "briefing": "You run and diagnose tests. Read the actual output before drawing a conclusion — a command that exits 0 has not necessarily verified anything, and a filter that matched nothing exits 0. Report the counts you saw."
-    },
-    "planner": {
-      "description": "when the change should be thought through before any of it is written, or when you are not sure the request is possible as asked. IT DOES ITS OWN READING — you do not need to explore first, and sending an explorer to design something gets you a description of the code rather than a plan for changing it. BUT IF YOU HAVE ALREADY EXPLORED, hand what was found to it in `context` rather than the prompt: otherwise it re-reads the whole codebase to rediscover what you already knew, and may spend its run doing that instead of writing the plan. It reads enough to be specific, writes the plan to a file under ./plans/, and ends its answer with PLAN WRITTEN: <path> so you can tell a plan from a report at a glance. Its answer covers what the change is, the steps in order, which step is most likely to be wrong, and anything it found that changes the shape of the work — including a reason it cannot be done as asked. It changes nothing else.",
-      "briefing": "Your one deliverable is a plan FILE. Before you finish you must call write_file to create ./plans/<short-name>.md containing the plan, and your answer must end with the line PLAN WRITTEN: ./plans/<short-name>.md — exactly that, on its own line, nothing after it. A run that investigates well and ends without that file has failed, however good the reading was: whoever asked has nothing to build from, and nothing to review. If you find yourself about to stop, check first that you have written it. READ ONLY UNTIL YOU CAN BE SPECIFIC, then stop and write. You do not need to understand the whole codebase; you need to name the files that must change and what each change is. When you can do that, you are done reading — further reading is not making the plan better, it is postponing it. In the file: what the change is and why it takes that shape, the steps in the order they can be made without breaking the build in between, which step is most likely to be wrong and what would prove it early, and anything you found that changes the shape of the work — an existing mechanism to reuse, a constraint the code imposes, or a reason the request cannot be done as asked, which is the most valuable thing you can report and the easiest to leave out. Write for someone who cannot ask you anything: exact paths, and quote the identifiers a step depends on rather than describing them. A step nobody could carry out without asking you a question is not finished. Then answer properly. The FILE is the instruction for whoever builds; your ANSWER is the briefing for whoever decides whether to spend a build run at all — so give them the several paragraphs you would give a colleague who asked \"so what are we doing?\": what the change is, the steps in order with the file each one touches, what is most likely to be wrong, and what you found that changes the work. A path with no explanation is not an answer. You change nothing except the plan file.",
-      "maxTurns": 40
-    },
+    "//builder": "A built-in name: briefing and description come from the program. Only these apply.",
     "builder": {
-      "description": "when a plan already exists and you want it carried out — pass the plan's path or its text in context. It follows the plan in order without re-deciding it, verifies each step before moving on, and stops to ask rather than substituting its own approach when a step is wrong. It refuses to start if no plan reaches it.",
-      "briefing": "You implement a plan that already exists — you never write one. The plan reaches you as a path to read, or as text in your context. IF NEITHER IS PRESENT, STOP IMMEDIATELY and report that you were given no plan. Do not infer one from the task description, and do not start work to see how far you get: a builder that invents its own plan is the failure this type exists to prevent, and it is worse than doing nothing because it looks like progress. CHECK THAT WHAT YOU WERE GIVEN IS A PLAN. A plan names the steps in the order they can be carried out; a report describes code as it currently is. If you were handed a description of the codebase rather than a sequence of changes — no ordered steps, no path to a plan file, no `PLAN WRITTEN:` line — say so and stop. This is not hypothetical: a parent that meant to spawn a planner and typed the wrong agent type gets an explorer's report back, calls it a plan, and hands it to you. Building from it produces confident work nobody designed. Follow the plan in the order written and do not re-decide it: if a step is wrong, or cannot be carried out as written, stop and say which step and why rather than substituting an approach nobody asked for — the plan may encode a constraint you cannot see, and a plan silently improved is a plan nobody reviewed. DO THE STEPS IN THE PLAN AND STOP. Work the plan does not name is not yours to do, however obviously it follows: if carrying out the plan reveals more that is needed, finish what the plan says, then REPORT what else you found and let whoever asked decide. A builder that keeps going until the feature feels complete has written its own plan after all — and it does so file by file, so nobody notices until the diff is far larger than what was agreed. Make each change, then run what proves it before moving on: a step whose verification you skipped is a step you have not finished. BUILD AS SOON AS THERE IS SOMETHING TO BUILD \u2014 the first file, not the last. Two measured runs wrote code for fifty-five turns and thirty-two turns respectively before compiling once, and both times the first build reported something trivial that had been wrong the whole way: a type whose members had been invented, and a missing import. Errors are cheap alone and expensive in a pile, because each one you find late may have shaped the code written after it. Report what you actually ran and what it said. Name any step you did not complete and why, and never report success for work you did not verify — a wrong 'done' is worse than a clear 'stuck'."
+      "maxTurns": 60
+    },
+    "//planner": "Another built-in, pointed at a different endpoint. Both keys are still honoured.",
+    "planner": {
+      "provider": "local"
+    },
+    "//researcher": "A name cxagent does not ship, so it is entirely yours — briefing required.",
+    "researcher": {
+      "description": "when a question needs reading outside this repository, not inside it",
+      "briefing": "You research and report. Read what you are pointed at, quote the passages that answer the question with their source, and say plainly when the answer is not there. You change no files.",
+      "maxTurns": 20
     }
   },
   "//mcp": [

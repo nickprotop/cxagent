@@ -137,10 +137,13 @@ granting anything new, and it cannot widen past your trust decision: on a folder
 `.claude/` and `.idea/` keep asking regardless — a hook that runs on your next git command is not
 what anyone means by "accept edits".
 
-**Named types** let you say how a delegated job should be done — a description of when to pick it, a
-briefing for the child, optionally its own provider and turn cap. The sample ships five, including a
-**planner** that writes a plan to `./plans/` and reports what it decided, and a **builder** that
-implements one and refuses to start without it.
+**Named types** say how a delegated job should be done. **Five ship with cxagent** and need no
+configuration — including a **planner** that writes a plan to `./plans/` and reports what it decided,
+and a **builder** that implements one and refuses to start without it. Their briefings live in the
+program rather than in your config file, because a briefing is the contract a type keeps with the code
+around it: cxagent names the file a planner must write, checks afterwards whether it is there, and the
+builder refuses work that arrives without one. Config still chooses where a type runs (`provider`) and what
+it may spend (`maxTurns`), and any name cxagent does not ship is entirely yours, briefing and all.
 See [CONFIG.md](CONFIG.md) for the `agents` block, and [COMMANDS.md](COMMANDS.md) for `/mode` and
 `/stats`.
 

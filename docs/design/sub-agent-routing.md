@@ -36,9 +36,15 @@ Corollary, and the reason the rule is load-bearing rather than pedantic:
 
 ```json
 "agents": {
-  "cheap": { "briefing": "Answers quick questions.", "provider": "small", "maxTurns": 20 }
+  "cheap":   { "briefing": "Answers quick questions.", "provider": "small", "maxTurns": 20 },
+  "builder": { "provider": "big" }
 }
 ```
+
+Two shapes, and the difference matters. `cheap` is a name cxagent does not ship, so config authors all
+of it. `builder` is one of the five **built-in** types (`BuiltinAgentTypes.cs`): its briefing and
+description come from the program, and config may only say where it runs and what it may spend. A
+`briefing` under a built-in name is ignored, with a warning — see *Failure modes* below.
 
 `ProviderConfig` validates `provider` against the configured instance names. A miss is a **warning,
 not an error** (`ProviderConfig.cs`): the type survives and runs on the parent's instance. Rationale
@@ -143,6 +149,35 @@ decision reads as no routing at all. This bit `SubAgent.ModelId` (fixed), the ca
 and 36 rows of the history database (backfilled).
 
 **Silently defaulting an unknown type.** The user's briefing does not apply and nobody is told.
+
+**A briefing that drifts from the code depending on it.** The planner is told to write the file whose
+path the spawner supplies; the spawner reports whether it appeared; the builder is told to refuse work
+that arrives without one. While the text lived in `config.json` those three could disagree silently,
+and every fix reached only whoever re-copied the sample — measured: two briefing corrections made in
+one session shipped to exactly one machine. The five now live in `BuiltinAgentTypes.cs`, versioned and
+tested with the code that relies on them, and a `briefing` under a built-in name is **ignored with a
+warning** rather than honoured or dropped in silence. Config keeps what is genuinely per-user:
+`provider` and `maxTurns`.
+
+**Trusting a child's word for what it wrote.** The planner's `PLAN WRITTEN: <path>` line was a claim,
+and twice on live drives a planner that never called `write_file` ended with it anyway — once after
+announcing it would "proceed by making some assumptions". Both times the parent believed it, could not
+find the file, and wrote its own plan from the chat text for a builder to follow. The spawner now
+**names the path itself**, puts it in the child's context, and appends what is actually on disk to the
+result: `plan file: <path>`, or a refusal telling the parent there is no plan and not to write one from
+the text above. The path is derived per spawn from the call's own label, so two planners in a session
+cannot overwrite each other.
+
+The marker itself is **retired**. It survived one round as a belt-and-braces second signal and earned
+its removal immediately: the planner briefing still told the child to invent `./plans/<short-name>.md`
+while the spawner checked the path it had supplied, so a planner that followed its briefing correctly
+produced a plan the check then declared missing — a false negative on a working run, which is worse
+than the false positive it replaced. One authority, and it is the one the parent can verify.
+
+Which types write a plan is now a **declared property** (`AgentTypeDefinition.WritesAPlanFile`) rather
+than `Briefing.Contains("PLAN WRITTEN:")`. Sniffing the prose coupled the mechanism to a sentence: the
+builder's briefing mentioned the marker in order to say what it refuses, so it sat one careless edit
+away from being handed a plan path it never writes.
 
 ## Where a path resolves
 
