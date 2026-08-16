@@ -198,6 +198,38 @@ public class CompletionValuesTests : IDisposable
         Assert.True(row.Finished);
     }
 
+    // THE SESSION'S HALF ONLY: the messages go, it says so, and it announces that something moved.
+    // What a front end does about its own scrollback is the front end's — clearing it is one answer,
+    // drawing a divider is another, and a session with an opinion about that cannot be driven by a
+    // log writer or a web page.
+    [Fact]
+    public async Task Session_ClearContext_EmptiesSaysAndAnnounces()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var sink = new BufferedChatSink();
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn" });
+
+        var session = manager.Open(_dir, ProviderResolution.ForTesting(provider),
+            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
+
+        var kinds = new List<SessionChangeKind>();
+        session.Changed += kinds.Add;
+
+        await session.Host!.SendAsync("say hi", CancellationToken.None);
+        Assert.NotEmpty(session.Host.Context.Messages);
+
+        Assert.True(session.ClearContext());
+
+        Assert.Empty(session.Host.Context.Messages);
+        Assert.Contains(sink.Notices, n => n.Contains("cleared", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(SessionChangeKind.ContextCleared, kinds);
+    }
+
+    [Fact]
+    public void Session_ClearContext_WithNoHost_IsRefused() =>
+        Assert.False(new Session(_dir).ClearContext());
+
     // NO TOOLSET, NO SERVERS — an ordinary headless arrangement, not a failure.
     [Fact]
     public void Manager_OffersNoMcpServersWhenThereIsNoToolset()

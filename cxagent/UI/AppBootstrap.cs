@@ -1081,18 +1081,18 @@ public static class AppBootstrap
             // Costs nothing: no goal, no provider call, no tokens.
             if (SessionCommands.TryHandle(goalText, out var commandReply))
             {
-                // /clear CLEARS THE AGENT'S CONTEXT, which is the whole operation: that list is what
-                // the model is sent on every turn. It used to clear a second list as well, on the
-                // reasoning that one held the transcript and the other what the model carries — but
-                // nothing ever read the second one, so the extra clear did nothing and the comment
-                // implied a hazard that did not exist.
+                // THE SESSION EMPTIES ITS OWN CONVERSATION, says so, and announces that something
+                // moved; the subscription near the top of this method resets the gauge. What used to
+                // be here — clear the context, repaint, print a sentence — was three layers' work in
+                // three adjacent lines, and only the second of them was this one's.
                 if (SessionCommands.Match(goalText)?.Name == "/clear")
                 {
-                    runner?.Context.Clear();
-                    mainWindow.SetContextUsed(0);
+                    session.ClearContext();
+                    return;
                 }
 
-                mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
+                if (commandReply is { Length: > 0 })
+                    mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
                 return;
             }
 
@@ -1406,6 +1406,25 @@ public static class AppBootstrap
 
                 if (kind is Core.Agent.SessionChangeKind.Model && session.Resolution is { } current)
                     mainWindow.SetResolution(current);
+
+                // THE GAUGE, AND THE SCROLLBACK WITH IT. Clearing the transcript is THIS front end's
+                // answer to "the messages behind it are gone" — a log writer would draw a divider and
+                // keep them, which is why the session announces the fact rather than the remedy.
+                if (kind is Core.Agent.SessionChangeKind.ContextCleared)
+                {
+                    mainWindow.SetContextUsed(0);
+
+                    // THE SCROLLBACK GOES. What the session said a moment ago goes with it — it says
+                    // "Conversation cleared." before it announces, and cannot know that this front
+                    // end answers by wiping the surface that sentence landed on. That is the right
+                    // division even though it costs the message here: a log writer keeps both, and a
+                    // session that suppressed its own words for one watcher's benefit would be
+                    // choosing for all of them.
+                    //
+                    // AN EMPTY TRANSCRIPT IS ITS OWN ANSWER anyway — there is nothing left to say
+                    // "cleared" about, which is why nothing is re-posted.
+                    mainWindow.Chat.Clear();
+                }
             });
 
             // KEEP THE COUNT LIVE. Seeding once left "Always" grants invisible until something else

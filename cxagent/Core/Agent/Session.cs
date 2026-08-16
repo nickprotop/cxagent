@@ -416,6 +416,30 @@ public sealed class Session
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}K";
 
     /// <summary>
+    /// Empties this session's conversation.
+    ///
+    /// <para>THE SESSION'S HALF ONLY. It drops the messages and says so; what a front end does about
+    /// its own scrollback is the front end's decision — clearing it is one reasonable answer and
+    /// drawing a divider is another, and a session with an opinion about that is a session that
+    /// cannot be driven by a log writer or a web page. The <see cref="Changed"/> signal is how a
+    /// surface learns there is something to redraw.</para>
+    ///
+    /// <para>REFUSED MID-TURN like every other mutation: emptying the list a running turn is
+    /// appending to leaves that turn writing into a conversation nobody will read, and its next
+    /// request carries tool results whose calls are gone.</para>
+    /// </summary>
+    public bool ClearContext()
+    {
+        if (Host is null || RefusedWhileBusy()) return false;
+
+        Host.Context.Clear();
+
+        Say("Conversation cleared.");
+        Announce(SessionChangeKind.ContextCleared);
+        return true;
+    }
+
+    /// <summary>
     /// Compacts this session's context now, if a turn is not already running.
     ///
     /// <para>REFUSED MID-TURN RATHER THAN QUEUED, and the difference from an ordinary prompt is

@@ -17,4 +17,8 @@ public enum SessionChangeKind
 
     /// <summary>An earlier conversation was restored into this session.</summary>
     Resumed,
+
+    /// <summary>The conversation was emptied. What a surface does about its own scrollback is its
+    /// own decision — the session only reports that the messages behind it are gone.</summary>
+    ContextCleared,
 }
