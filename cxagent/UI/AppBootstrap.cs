@@ -268,12 +268,6 @@ public static class AppBootstrap
         // instance comes from, so a classifier is an ordinary provider entry and its spend is
         // attributed like any other. Null here is the whole gate on `auto`: unconfigured means the
         // mode is not listed, not cyclable, and not parseable, so this is never consulted.
-        if (resolution.ClassifierInstance is { } classifierName
-            && resolution.Providers is { } registry
-            && registry.TryGet(classifierName, out var classifierProvider))
-        {
-            permissionGate.Classifier = new ActionClassifier(classifierProvider);
-        }
         // Guards the LoadError echo below so it is reported once, on the FIRST WireRunner call
         // only — F5/F7/F8 re-wires reuse this same permissionRules instance, and its LoadError
         // describes what happened at construction, not live state, so repeating it on every
@@ -445,6 +439,17 @@ public static class AppBootstrap
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
+
+            // REBOUND ON EVERY WIRE, from THIS resolution. It used to be bound once at startup, so
+            // changing `classifier` in config and pressing F5 left `auto` mode consulting the old
+            // provider — silently, because the mode still worked. That is the shape of every bug in
+            // this method: a re-wire that moves some consumers of a resolution and not others, with
+            // nothing marking which is which.
+            //
+            // CLEARED WHEN NOTHING IS CONFIGURED, not left behind. Removing the classifier entry and
+            // re-wiring must actually turn `auto` off; leaving the old instance would keep a mode
+            // alive that config no longer describes.
+            permissionGate.BindClassifier(res.ClassifierInstance, res.Providers);
 
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host

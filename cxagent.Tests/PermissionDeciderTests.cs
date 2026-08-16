@@ -276,4 +276,62 @@ public class PermissionDeciderTests
         Assert.True(await gate.RequestAsync(Shell("git status"), CancellationToken.None));
         Assert.Equal(0, script.ShownCount);
     }
+
+    // ---- BindClassifier ---------------------------------------------------------------------------
+
+    // BOUND ONCE AT STARTUP, it never followed config. Changing `classifier` and pressing F5 left
+    // auto mode consulting the OLD provider — silently, because the mode still worked.
+    [Fact]
+    public void BindClassifier_FollowsTheResolutionItIsGiven()
+    {
+        var gate = GateWithScriptedPrompt(out _);
+        var registry = Core.Llm.ProviderRegistry.FromProviders(
+            new Dictionary<string, Core.Llm.ILlmProvider>
+            {
+                ["first"] = new Core.Llm.MockLlmProvider(),
+                ["second"] = new Core.Llm.MockLlmProvider(),
+            },
+            defaultName: "first");
+
+        gate.BindClassifier("first", registry);
+        var one = gate.Classifier;
+
+        gate.BindClassifier("second", registry);
+
+        Assert.NotNull(one);
+        Assert.NotNull(gate.Classifier);
+        Assert.NotSame(one, gate.Classifier);
+    }
+
+    // CLEARING MATTERS AS MUCH. Removing the entry and re-wiring has to turn the mode off, or a mode
+    // stays alive that config no longer describes.
+    [Fact]
+    public void BindClassifier_ClearsItWhenNothingIsConfigured()
+    {
+        var gate = GateWithScriptedPrompt(out _);
+        var registry = Core.Llm.ProviderRegistry.FromProviders(
+            new Dictionary<string, Core.Llm.ILlmProvider> { ["only"] = new Core.Llm.MockLlmProvider() },
+            defaultName: "only");
+
+        gate.BindClassifier("only", registry);
+        Assert.NotNull(gate.Classifier);
+
+        gate.BindClassifier(null, registry);
+        Assert.Null(gate.Classifier);
+    }
+
+    // A NAME THAT IS NOT THERE leaves no classifier rather than throwing: config validation reports
+    // the unknown instance, and auto mode is simply not offered.
+    [Fact]
+    public void BindClassifier_AnUnknownInstanceLeavesNone()
+    {
+        var gate = GateWithScriptedPrompt(out _);
+        var registry = Core.Llm.ProviderRegistry.FromProviders(
+            new Dictionary<string, Core.Llm.ILlmProvider> { ["only"] = new Core.Llm.MockLlmProvider() },
+            defaultName: "only");
+
+        gate.BindClassifier("missing", registry);
+
+        Assert.Null(gate.Classifier);
+    }
 }
