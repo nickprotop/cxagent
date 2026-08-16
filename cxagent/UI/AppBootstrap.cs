@@ -485,6 +485,25 @@ public static class AppBootstrap
             },
             permissionRules);
 
+        // THE TWO ONLY A FRONT END CAN SERVICE. Everything else acts on a session or on the
+        // manager's own stores and is seeded in Core; these need a window and a message loop, which
+        // is why they are contributed here rather than declared as a category. The session parameter
+        // is ignored today and will not be once a process has tabs — a key map describing a session
+        // other than the one on screen is worse than none.
+        foreach (var declared in SessionCommands.All)
+        {
+            if (declared.Name == "/help")
+                manager.Commands.Register(declared, (_, _) => { mainWindow.ShowHelp(); return true; });
+
+            if (declared.Name == "/exit")
+                manager.Commands.Register(declared, (_, _) =>
+                {
+                    cts.Cancel();
+                    system.Shutdown();
+                    return true;
+                });
+        }
+
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -881,11 +900,6 @@ public static class AppBootstrap
             {
                 switch (command.Outcome)
                 {
-                    case CommandOutcome.Quit:
-                        cts.Cancel();
-                        system.Shutdown();
-                        return;
-
                     case CommandOutcome.NeedsWindow:
                         // Two commands share this outcome now, so dispatch on the name. Both need
                         // something SessionCommands deliberately does not hold — the window for
@@ -1080,18 +1094,13 @@ public static class AppBootstrap
             // Everything else that begins with a slash — /clear, and any unrecognised command, which
             // gets the "available commands" reply rather than being sent to the model as a task.
             // Costs nothing: no goal, no provider call, no tokens.
+            // THE REGISTRY FIRST. Core seeded what it can service and this method registered what
+            // needs a window; a command that has finished moving is handled here and never reaches
+            // the dispatch below. One lookup, and no question about which layer owns the handler.
+            if (manager.Commands.TryRun(session, goalText)) return;
+
             if (SessionCommands.TryHandle(goalText, out var commandReply))
             {
-                // THE SESSION EMPTIES ITS OWN CONVERSATION, says so, and announces that something
-                // moved; the subscription near the top of this method resets the gauge. What used to
-                // be here — clear the context, repaint, print a sentence — was three layers' work in
-                // three adjacent lines, and only the second of them was this one's.
-                if (SessionCommands.Match(goalText)?.Name == "/clear")
-                {
-                    session.ClearContext();
-                    return;
-                }
-
                 if (commandReply is { Length: > 0 })
                     mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
                 return;

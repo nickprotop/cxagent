@@ -1,4 +1,5 @@
 using CxAgent.Core.Llm;
+using CommandTable = CxAgent.Core.Commands.SessionCommands;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 
@@ -45,6 +46,42 @@ public sealed class SessionManager : IDisposable
         Shared = shared;
         Rules = rules;
         _ownsServices = ownsServices;
+
+        SeedCommands();
+    }
+
+    /// <summary>
+    /// Registers what Core can service on its own.
+    ///
+    /// <para>EACH ONE IS A SESSION METHOD THAT DOES, SAYS AND ANNOUNCES — see Session.ClearContext
+    /// for the shape. The handler here is the lookup, not the logic: anything longer than a single
+    /// call is a sign the work has not finished moving.</para>
+    ///
+    /// <para>A COMMAND WHOSE HANDLER IS NOT HERE YET STILL APPEARS IN THE TABLE, because the table
+    /// is what a palette reads and a half-migrated command must not vanish from it. TryRun simply
+    /// finds no entry and the caller falls through to its own dispatch.</para>
+    /// </summary>
+    private void SeedCommands()
+    {
+        foreach (var command in CommandTable.All)
+        {
+            switch (command.Name)
+            {
+                case "/clear":
+                    Commands.Register(command, (session, _) => { session.ClearContext(); return true; });
+                    break;
+
+                case "/compress":
+                    Commands.Register(command, (session, arguments) =>
+                    {
+                        // FIRE AND FORGET: compaction is a turn of its own and the caller does not
+                        // wait for it. The session refuses and says so if one is already running.
+                        session.CompressNow(CancellationToken.None);
+                        return true;
+                    });
+                    break;
+            }
+        }
     }
 
     /// <summary>
@@ -160,6 +197,16 @@ public sealed class SessionManager : IDisposable
     }
 
     private static string Short(string uid) => uid.Length <= 8 ? uid : uid[..8];
+
+    /// <summary>
+    /// Every command this process can run — see <see cref="Commands.CommandRegistry"/>.
+    ///
+    /// <para>SEEDED WITH WHAT CORE CAN SERVICE and handed to the composition root, which adds the
+    /// ones needing a window. The manager owns it because it outlives any one session and because
+    /// the commands that are not a session's are its own: the resume store, the usage archive, the
+    /// MCP toolset.</para>
+    /// </summary>
+    public Commands.CommandRegistry Commands { get; } = new();
 
     /// <summary>Every open session, newest last.</summary>
     public IReadOnlyList<Session> Sessions
