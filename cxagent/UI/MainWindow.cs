@@ -766,6 +766,7 @@ public sealed class MainWindow : IDisposable
         _statusRule = Controls.RuleBuilder()
             .WithColor(ColorScheme.Separator)
             .WithAlignment(HorizontalAlignment.Stretch)
+            .WithMargin(1,0,1,0)
             .Build();
 
         _composer = Controls.Grid()
