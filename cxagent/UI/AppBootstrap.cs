@@ -694,6 +694,10 @@ public static class AppBootstrap
                 // AND THE POLICY WITH IT. The policy was seeded from startupMode before this block
                 // ran, so a resume that narrows the mode has to narrow the thing that enforces it —
                 // otherwise the status bar would say always-ask while writes stayed silent.
+                //
+                // DIRECTLY, NOT THROUGH Session.SetMode, and this is the one place that is correct:
+                // this runs before the first wire, so there is no host to move and SetMode would
+                // refuse. The policy exists already because the gate is built before the session.
                 permissionPolicy.Edits = startupMode.Edits;
 
                 // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
@@ -805,8 +809,11 @@ public static class AppBootstrap
                     _ => EditMode.AlwaysAsk,
                 };
 
-                runner.Mode = runner.Mode with { Edits = nextEdits };
-                permissionPolicy.Edits = nextEdits;
+                // SAME ONE CALL AS /mode. Shift+Tab and the command are the same decision reached
+                // two ways, and the pair of lines this replaced is the pair that gets copied with
+                // the policy half missing.
+                session.SetMode(runner.Mode with { Edits = nextEdits });
+
                 mainWindow.SetMode(runner.Mode);
                 RememberEditMode(nextEdits);
 
@@ -982,8 +989,16 @@ public static class AppBootstrap
                             // discarding any prompt already queued behind it.
                             if (decision.NewMode is { } next)
                             {
-                                runner.Mode = next;
-                                permissionPolicy.Edits = next.Edits;
+                                // ONE CALL FOR BOTH AXES. The agent's mode and the policy's edit
+                                // mode were set on adjacent lines here — two places to forget, and
+                                // forgetting the second is a session whose status bar says
+                                // accept-edits while the gate still asks.
+                                session.SetMode(next);
+
+                                // THE UI IS TOLD, NOT ASKED. SetMode moves the session; these two
+                                // lines are what the composition root still owns — repainting the
+                                // status bar, and remembering the preference for next launch, which
+                                // is a folder-level setting rather than a property of this session.
                                 mainWindow.SetMode(next);
                                 RememberEditMode(next.Edits);
                             }
