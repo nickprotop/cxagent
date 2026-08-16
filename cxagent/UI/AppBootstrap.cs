@@ -1307,6 +1307,14 @@ public static class AppBootstrap
                 // SAME REASON AS /model: a Save can change the provider, and the panel has to
                 // describe the session that is now running rather than the one that started.
                 var reresolved = ProviderResolver.Resolve(paths, env, useMock: false);
+
+                // CAPTURED BEFORE THE REBIND, and this is not a stylistic preference. `resolution` is
+                // the variable the whole root reads; the line below repoints it at the new record, so
+                // a comparison written after that point compares `reresolved` with itself, is always
+                // equal, and silently skips the reload it guards. That is exactly what shipped in the
+                // first version of this — the reload looked correct, was gated on a tautology, and
+                // never ran once.
+                var previousServers = resolution.McpServers;
                 resolution = reresolved;
 
                 // MCP FOLLOWS THE SAVE TOO. Servers were loaded once at startup and F5 never
@@ -1335,7 +1343,7 @@ public static class AppBootstrap
                 // DEFERRED, NOT REFUSED. The rest of the save still applies — the user asked for it,
                 // and refusing the whole thing over one server would be worse than applying most of
                 // it. /mcp reload is the same call, for when the turn is done.
-                if (!SameServers(resolution.McpServers, reresolved.McpServers))
+                if (!SameServers(previousServers, reresolved.McpServers))
                 {
                     if (IsTurnRunning())
                     {
