@@ -128,4 +128,161 @@ public class TwoSessionsTests : IDisposable
 
         Assert.NotEqual(pathA, pathB);
     }
+
+    // ---- The file writer must be SHARED, not split ------------------------------------------------
+
+    // THE INVARIANT THAT ISOLATION COULD QUIETLY BREAK. Everything else here is per-session; the
+    // lock table deliberately is not. Two sessions in one process editing one file — the same
+    // checkout open twice, or one session reading a shared config another is rewriting — must take
+    // the SAME lock, and they only do because FileMutation is static.
+    //
+    // A reasonable-looking refactor breaks this: give each session its own container and make the
+    // writer an instance, and every one of these tests still passes while two sessions serialise
+    // against nothing. This test is what fails instead.
+    [Fact]
+    public async Task TwoSessions_EditingOneFile_DoNotLoseEachOthersWork()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "twosess-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var shared = Path.Combine(dir, "shared.cs");
+        await File.WriteAllTextAsync(shared, "alpha\nbravo\n");
+
+        // Two sessions, two roots, one file between them — each with its own plugin instance, as
+        // separate sessions would have.
+        var a = new FileJobPluginRunner(new Session(dir));
+        var b = new FileJobPluginRunner(new Session(Path.GetTempPath()));
+
+        await Task.WhenAll(
+            a.ReplaceAsync(shared, "alpha", "ALPHA"),
+            b.ReplaceAsync(shared, "bravo", "BRAVO"));
+
+        var text = await File.ReadAllTextAsync(shared);
+        Assert.Contains("ALPHA", text);
+        Assert.Contains("BRAVO", text);
+
+        Directory.Delete(dir, recursive: true);
+    }
+
+    /// <summary>A session's own file plugin, as a second session would hold.</summary>
+    private sealed class FileJobPluginRunner(Session session)
+    {
+        private readonly Core.Plugins.Builtin.FileJobPlugin _plugin = new();
+
+        public Task ReplaceAsync(string path, string pattern, string replacement) =>
+            _plugin.ExecuteAsync(
+                new Core.Models.JobParameters(new Dictionary<string, object?>
+                {
+                    ["action"] = "replace",
+                    ["path"] = path,
+                    ["pattern"] = pattern,
+                    ["replacement"] = replacement,
+                }),
+                new CollectingContext { WorkingDirectory = session.WorkingDirectory },
+                CancellationToken.None);
+    }
+
+    // ---- One gate, two policies -------------------------------------------------------------------
+
+    // THE QUESTION IS PER-SESSION; THE ANSWER IS NOT. The gate has to be shared — stored rules and
+    // the prompt queue both must be — but it used to CAPTURE a policy, and a policy holds a working
+    // directory and an edit mode that belong to one conversation. A second session was therefore
+    // judged against the first's root: a write inside its own folder read as outside, and a write
+    // inside the OTHER session's folder read as inside.
+    [Fact]
+    public async Task TwoSessions_AreJudgedAgainstTheirOwnFolder()
+    {
+        var config = MakeTempDir();
+        var a = MakeTempDir();
+        var b = MakeTempDir();
+
+        var store = new PermissionRulesStore(new AppPaths(config));
+        store.SetTrust(a, TrustState.Trusted);
+        store.SetTrust(b, TrustState.Trusted);
+
+        var policyA = new PermissionPolicy(a, store);
+        var policyB = new PermissionPolicy(b, store);
+
+        // One gate for the process, holding A's policy as its own — the single-session default.
+        var asked = new List<string>();
+        var gate = new RecordingGate(asked);
+
+        // A request from session B, stamped with B's policy, must be judged by B's root.
+        var inB = new PermissionRequest(PermissionKind.FileWrite, Path.Combine(b, "f.cs"), null)
+        {
+            Policy = policyB,
+        };
+
+        Assert.True(policyB.IsSilentlyAllowed(inB));   // inside B's trusted folder
+        Assert.False(policyA.IsSilentlyAllowed(inB));  // and NOT inside A's
+
+        await gate.RequestAsync(inB, CancellationToken.None);
+        Assert.Single(asked);
+    }
+
+    // A grant belongs to the project it was made in. The gate serves every session, so filing an
+    // "Always" under its own root would grant a permission in a folder the user was not looking at.
+    [Fact]
+    public void APolicyKnowsTheFolderAGrantBelongsTo()
+    {
+        var a = MakeTempDir();
+        var b = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(MakeTempDir()));
+
+        Assert.Equal(a, new PermissionPolicy(a, store).Root);
+        Assert.Equal(b, new PermissionPolicy(b, store).Root);
+    }
+
+    // END TO END: the wiring actually delivers it. SessionFactory builds the registry per session
+    // and passes the policy; the gated plugin stamps it on every request. Without this the two tests
+    // above would pass on a policy nothing ever sends.
+    [Fact]
+    public async Task TheSessionsPolicy_ReachesTheGate()
+    {
+        var dir = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(dir));
+        var policy = new PermissionPolicy(dir, store);
+        var spy = new PolicySpy();
+
+        var registry = Core.Plugins.PluginRegistry.CreateWithBuiltins(null, spy, policy);
+        registry.TryGet("file", out var plugin);
+
+        await plugin!.ExecuteAsync(
+            new Core.Models.JobParameters(new Dictionary<string, object?>
+            {
+                ["action"] = "write",
+                ["path"] = Path.Combine(dir, "x.txt"),
+                ["content"] = "hi",
+            }),
+            new CollectingContext { WorkingDirectory = dir }, CancellationToken.None);
+
+        Assert.Same(policy, spy.Seen);
+    }
+
+    /// <summary>Captures the policy a request carried.</summary>
+    private sealed class PolicySpy : IPermissionGate
+    {
+        public PermissionPolicy? Seen;
+        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Seen = request.Policy;
+            return Task.FromResult(true);
+        }
+    }
+
+    private static string MakeTempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "twopol-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>A gate that records what it was asked, standing in for the interactive one.</summary>
+    private sealed class RecordingGate(List<string> asked) : IPermissionGate
+    {
+        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            asked.Add(request.Display);
+            return Task.FromResult(true);
+        }
+    }
 }

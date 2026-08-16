@@ -22,6 +22,16 @@ namespace CxAgent.Core.Agent;
 ///
 /// <para>EVERY MEMBER IS OPTIONAL. A headless session has no resume buffer, no history and no
 /// gate, and that is an ordinary configuration rather than a degraded one.</para>
+///
+/// <para>ONE PROCESS-WIDE THING IS DELIBERATELY NOT HERE:
+/// <see cref="Plugins.Builtin.FileMutation"/>, whose per-path lock table serialises two sessions
+/// editing one file. It is reached statically rather than injected, and that is the difference
+/// between this record and an invariant. Every member below is CONFIGURATION — a headless session
+/// passes null, a test passes a fake, and a session receiving a different one is a legitimate
+/// arrangement. A session receiving a different lock table is not: two of them serialise against
+/// nothing, silently, while every test that checks isolation still passes. Injectability is exactly
+/// the property it must not have, so it is static and
+/// <c>TwoSessions_EditingOneFile_DoNotLoseEachOthersWork</c> fails if anyone splits it.</para>
 /// </summary>
 public sealed record SharedServices
 {
