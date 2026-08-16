@@ -94,6 +94,8 @@ public sealed class SettingsSession
     }
 
     /// <summary>Null when nothing changed — the `if (!dirty) return null` idiom both retired editors
-    /// used, so Save writes nothing and WireRunner is never called for a no-op dialog visit.</summary>
+    /// used, so Save writes nothing and a no-op dialog visit says nothing. It also guarded a
+    /// WireRunner call once; the dialog no longer re-wires, so what this now prevents is a
+    /// "restart to take effect" notice for a visit that changed nothing.</summary>
     public ProviderSettings? TryCompose() => Dirty ? Snapshot() : null;
 }

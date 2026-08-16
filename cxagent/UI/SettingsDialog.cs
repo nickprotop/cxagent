@@ -34,8 +34,9 @@ public enum SettingsPage { Providers, Orchestrator, Permissions, MCP }
 /// working copy (built by the caller from whatever is on disk); <see cref="SettingsSession.TryCompose"/>
 /// is the single source of truth for "did anything actually change" — a null compose is treated the
 /// same as an explicit Cancel: nothing is written, and <see cref="RunAsync"/> resolves null, which is
-/// exactly the signal the caller uses to skip a needless WireRunner re-wire (see SettingsSession's own
-/// doc comment for why that matters — a redundant re-wire tears down a running goal's schedulers).
+/// exactly the signal the caller uses to skip announcing a save that did not happen. It once skipped a
+/// needless WireRunner re-wire; the dialog no longer re-wires anything, because a save now writes to
+/// disk and asks for a restart rather than reconfiguring the running process.
 ///
 /// This task builds the SHELL only: the pages are one-line Markup stubs. Tasks 4-5 fill them in
 /// via the same <c>panel =&gt; BuildXPage(panel)</c> seam OptionsModal uses; Task 6 wires the F5/F7/F8

@@ -24,6 +24,23 @@ public static class AppBootstrap
     /// <para>Mirrors <c>MainWindow.ModelLabel</c>. Two spellings of the same fact would drift, and
     /// this one is reached from a static path that has no window.</para>
     /// </summary>
+    /// <summary>
+    /// The catalog this process runs on, resolved once.
+    ///
+    /// <para>--model OVERRIDES defaultProvider FOR THIS RUN ONLY, without touching config. Same rule
+    /// /model follows: naming an instance that is not configured returns null so the caller can stop,
+    /// rather than falling back — silently starting on the model the user was trying to avoid is the
+    /// worst of the available outcomes.</para>
+    ///
+    /// <para>A METHOD RATHER THAN TWO BRANCHES AT THE CALL SITE, so the result can be bound by an
+    /// initialiser and never assigned again. See the caller for why that matters here.</para>
+    /// </summary>
+    private static ProviderResolution? ResolveStartup(AppPaths paths,
+        IReadOnlyDictionary<string, string> env, bool useMock, string? instance) =>
+        instance is { } wanted && !useMock
+            ? ProviderResolver.ResolveInstance(paths, env, wanted)
+            : ProviderResolver.Resolve(paths, env, useMock);
+
     private static string ModelLabelOf(ProviderResolution resolution)
     {
         var model = resolution.Provider?.ModelId;
@@ -137,21 +154,48 @@ public static class AppBootstrap
             .Where(e => e.Key is string k && k.StartsWith("CXAGENT_"))
             .ToDictionary(e => (string)e.Key, e => (string)(e.Value ?? ""));
 
-        var resolution = ProviderResolver.Resolve(paths, env, useMock);
-
+        // RESOLVED ONCE, AND NEVER REBOUND. This was a mutable local that four sites repointed —
+        // startup, --model, F5's save, and /model — with every other consumer in this method closing
+        // over the VARIABLE. Correctness then depended on when each consumer happened to read, which
+        // is not a property anything can check: reading too early kept a stale record (the auto
+        // classifier consulted a provider config no longer described, silently, because the mode
+        // still worked), and reading too late compared a record with itself (the MCP reload was
+        // gated on `resolution.McpServers` after `resolution` had already become the new value —
+        // always equal, so the reload never ran once, and it compiled clean and shipped).
+        //
+        // `readonly` in a local function's closure is not expressible, so this is a local that is
+        // simply never assigned again — every later site now takes it as a PARAMETER or reads it as
+        // the process's fixed catalog. The two startup cases fold into one expression below so that
+        // there is no window where it holds a value somebody could observe and then see change.
+        //
+        // WHAT THIS IS NOT: it is not the active model. That is session state (Session.InstanceName)
+        // and /model changes it freely — see SwitchModel. Conflating "the catalog this process was
+        // started with" and "the model this session is talking to" into one variable is what made
+        // both of the above bugs possible; they are different lifetimes and now different things.
+        //
         // --model OVERRIDES defaultProvider FOR THIS RUN ONLY, without touching config. Same rule
         // /model follows: naming an instance that is not configured stops rather than falling back,
         // because silently starting on the model the user was trying to avoid is the worst outcome.
-        if (options.Instance is { } wanted && !useMock)
+        // ASSIGNED ONCE, BY CONVENTION — and the convention is not compiler-enforced, which is worth
+        // stating plainly rather than implying otherwise. C# has no readonly local, a local captured
+        // by a closure cannot be one, and Run is static so there is no readonly field to hold it
+        // either. `resolution = something` further down would still compile today; it was tried, and
+        // it did.
+        //
+        // What the helper buys is smaller and real: the declaration and the value are one line, so
+        // there is no `ProviderResolution resolution;` sitting empty inviting branches to fill it,
+        // and the two startup cases cannot drift apart. Enforcement here is the comment above and
+        // the fact that no consumer needs a rebind any more — F5 restarts, /model passes its own
+        // record. If a fourth bug of this shape ever appears, the answer is a wrapper type with a
+        // genuinely readonly field, not a stronger comment.
+        var startup = ResolveStartup(paths, env, useMock, options.Instance);
+        if (startup is null)
         {
-            if (ProviderResolver.ResolveInstance(paths, env, wanted) is not { } chosen)
-            {
-                Console.Error.WriteLine($"cxagent: no provider called '{wanted}' in config.");
-                return 2;
-            }
-
-            resolution = chosen;
+            Console.Error.WriteLine($"cxagent: no provider called '{options.Instance}' in config.");
+            return 2;
         }
+
+        var resolution = startup;
 
         var driver = new NetConsoleDriver();
         var system = new ConsoleWindowSystem(driver,
@@ -435,19 +479,6 @@ public static class AppBootstrap
         // banner has to know its edit mode before the window exists. Adopt is what stops the
         // manager's collection being empty while a session is plainly running.
         manager.Adopt(session);
-
-        // Same servers, by name and by what each one launches — see McpServerConfig for why this
-        // cannot be record equality.
-        static bool SameServers(
-            IReadOnlyDictionary<string, Core.Llm.McpServerConfig> before,
-            IReadOnlyDictionary<string, Core.Llm.McpServerConfig> after)
-        {
-            if (before.Count != after.Count) return false;
-            foreach (var (name, cfg) in before)
-                if (!after.TryGetValue(name, out var other) || !cfg.DescribesSameServerAs(other))
-                    return false;
-            return true;
-        }
 
         void WireRunner(ProviderResolution res)
         {
@@ -1301,72 +1332,27 @@ public static class AppBootstrap
                 var result = await dialog.RunAsync(page, cts.Token);
                 if (result is null) return;   // cancelled, or TryCompose found nothing dirty
 
-                // Re-resolve and re-wire so an edit made here takes effect in THIS session rather than
-                // at next launch — exactly one re-wire, gated on a non-null result, matching the
-                // "exactly one re-wire on Save, none on Cancel" rule the retired F7/F8 handlers followed.
-                // SAME REASON AS /model: a Save can change the provider, and the panel has to
-                // describe the session that is now running rather than the one that started.
-                var reresolved = ProviderResolver.Resolve(paths, env, useMock: false);
-
-                // CAPTURED BEFORE THE REBIND, and this is not a stylistic preference. `resolution` is
-                // the variable the whole root reads; the line below repoints it at the new record, so
-                // a comparison written after that point compares `reresolved` with itself, is always
-                // equal, and silently skips the reload it guards. That is exactly what shipped in the
-                // first version of this — the reload looked correct, was gated on a tautology, and
-                // never ran once.
-                var previousServers = resolution.McpServers;
-                resolution = reresolved;
-
-                // MCP FOLLOWS THE SAVE TOO. Servers were loaded once at startup and F5 never
-                // touched them, so adding one in Settings appeared to work and did nothing — the
-                // same fault as the classifier, in the one consumer that is a process rather than a
-                // value.
+                // SAVED TO DISK, NOT APPLIED TO THIS PROCESS. This block used to re-resolve, rebind
+                // the shared resolution, reload the MCP servers and re-wire the runner, so that an
+                // edit took effect in the running session. Every bug this area has produced came
+                // from that: the classifier consulted a provider config that no longer existed, the
+                // MCP servers were loaded once and F5 silently never touched them, and the fix for
+                // THAT was gated on a comparison against a variable already overwritten — so it was
+                // a tautology and never fired. Three bugs, one cause, none catchable by a test
+                // because all of it lives in this method and nothing can call it.
                 //
-                // RELOADED, NOT ANNOUNCED. Telling the user to run /mcp reload was the first attempt
-                // and it is the wrong trade: pressing Save is already the act of asking for the new
-                // configuration, and a save that applies most of itself and leaves a note about the
-                // rest is a worse promise than one that applies all of it. ReloadAsync is the same
-                // call /mcp reload makes — lock-protected, disposing every server and restarting
-                // from the new config, then REPLACING the toolset in place because the agent holds
-                // that exact instance.
+                // The live-apply path is gone rather than fixed. It was a handful of consumers
+                // moved on each save out of an unbounded set, and every feature added since has
+                // been another consumer somebody had to remember to move. A restart moves all of
+                // them, is what the user already does after editing config by hand, and cannot be
+                // half-done.
                 //
-                // ONLY WHEN THEY ACTUALLY CHANGED, because a reload is not free: it tears down every
-                // running server, and a Save that touched only the model would otherwise cost a full
-                // restart of them all.
-                // NOT WHILE A TURN IS RUNNING. A reload disposes every server and restarts it, and
-                // the agent holds the toolset instance whose contents are replaced — so a tool call
-                // already dispatched to a server being torn down fails, mid-turn, for a reason the
-                // model cannot see. Everything else a save does is safe against a live turn: the
-                // running agent holds its own provider and context, and rebinding the resolution
-                // cannot reach into it.
-                //
-                // DEFERRED, NOT REFUSED. The rest of the save still applies — the user asked for it,
-                // and refusing the whole thing over one server would be worse than applying most of
-                // it. /mcp reload is the same call, for when the turn is done.
-                if (!SameServers(previousServers, reresolved.McpServers))
-                {
-                    if (IsTurnRunning())
-                    {
-                        mainWindow.Chat.AddMessage(ChatRole.System,
-                            "[yellow]MCP servers changed, but a turn is running — run /mcp reload "
-                            + "when it finishes.[/]");
-                    }
-                    else
-                    {
-                        await mcp.ReloadAsync(reresolved.McpServers, CancellationToken.None);
-                        foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                            transcript.Write($"[yellow]{message}[/]");
-                    }
-                }
+                // /model IS NOT THIS. It changes which model this SESSION talks to, writes nothing,
+                // and still works — see SwitchModel. What is refused here is reconfiguring the
+                // process from under itself.
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    "Configuration saved — restart cxagent for it to take effect.");
 
-                // AFTER the reload, so this session is wired against the toolset the save asked for
-                // rather than the one it replaced. The toolset object is the same instance either
-                // way — Replace mutates in place, which is why the agent keeps seeing it — but a
-                // wire that runs first is describing state that is about to change.
-                WireRunner(reresolved);
-                mainWindow.SetResolution(reresolved);
-
-                mainWindow.Chat.AddMessage(ChatRole.System, "Configuration saved.");
             }
             finally
             {
@@ -1577,7 +1563,12 @@ public static class AppBootstrap
             session.CarryToNextWire();
 
 
-            resolution = next;
+            // THE CATALOG IS NOT REBOUND. `next` is one instance resolved by name; `resolution` is
+            // the process's fixed catalog of every configured provider, and /model switching one
+            // session's model has no business replacing it. It used to, and that is how a reader of
+            // `resolution.Providers` could see a record describing a single provider — the catalog
+            // narrowed to whatever was last switched to. WireRunner takes the record as a parameter,
+            // so passing `next` is the whole change; nothing else needs to know.
             WireRunner(next);
 
             // THE WINDOW HAS TO FOLLOW THE MODEL. MainWindow held its resolution readonly from
