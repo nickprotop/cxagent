@@ -31,7 +31,8 @@ public class McpHttpClientTests : IDisposable
     /// </summary>
     private sealed class FakeServer : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        // NOT READONLY: TestPorts may have to replace it — see BindLoopback.
+        private HttpListener _listener = new();
         private readonly CancellationTokenSource _cts = new();
 
         public string Url { get; }
@@ -61,22 +62,16 @@ public class McpHttpClientTests : IDisposable
 
         public FakeServer()
         {
-            // Port 0 is not available to HttpListener, so take a free one by probing.
-            var port = FreePort();
-            Url = $"http://127.0.0.1:{port}/mcp";
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-            _listener.Start();
+            // THROUGH THE SHARED BINDER, which is what TestPorts exists for. This used to probe a
+            // free port and bind it with NO RETRY, leaving the classic window between releasing the
+            // probe and starting the listener — and because it bypassed TestPorts entirely, fixing
+            // that helper did nothing for this class. It was still failing "Address already in use"
+            // at roughly one full-suite run in six afterwards.
+            var prefix = TestPorts.BindLoopback(ref _listener);
+            Url = prefix.TrimEnd('/') + "/mcp";
             _ = Task.Run(LoopAsync);
         }
 
-        private static int FreePort()
-        {
-            var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            l.Start();
-            var port = ((IPEndPoint)l.LocalEndpoint).Port;
-            l.Stop();
-            return port;
-        }
 
         private async Task LoopAsync()
         {

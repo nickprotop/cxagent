@@ -414,6 +414,32 @@ public static class AppBootstrap
         var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, mainWindow);
 
 
+        // THE PROCESS'S SESSIONS AND WHAT THEY SHARE, built ONCE. WireRunner runs again on every F5,
+        // F7 and /model, and it used to construct a fresh SharedServices record each time from these
+        // same locals — harmless while the members are identical, and exactly the shape that stops
+        // being harmless when a second session exists and one re-wire hands it a different record.
+        //
+        // Over() rather than Create(): the stores here are built before the window (the resume
+        // prune has to happen at startup) and the gate cannot exist until there IS a window, so the
+        // root assembles them in the order the UI forces and hands the result over. Create() is for
+        // a caller with no such ordering — a headless host.
+        var manager = Core.Agent.SessionManager.Over(
+            new Core.Agent.SharedServices
+            {
+                Logs = logs,
+                Resume = sessions,
+                History = history,
+                Mcp = mcp.Toolset,
+                Gate = permissionGate,
+                GlobalInstructionsDir = paths.ConfigDir,
+            },
+            permissionRules);
+
+        // ADOPTED RATHER THAN OPENED: this session was built at the top of Run, because the startup
+        // banner has to know its edit mode before the window exists. Adopt is what stops the
+        // manager's collection being empty while a session is plainly running.
+        manager.Adopt(session);
+
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -451,15 +477,7 @@ public static class AppBootstrap
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
             Core.Agent.SessionFactory.Wire(session, res,
-                new Core.Agent.SharedServices
-                {
-                    Logs = logs,
-                    Resume = sessions,
-                    History = history,
-                    Mcp = mcp.Toolset,
-                    Gate = permissionGate,
-                    GlobalInstructionsDir = paths.ConfigDir,
-                },
+                manager.Shared,
                 new Core.Agent.SessionPorts
                 {
                     Observer = sink,

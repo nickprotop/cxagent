@@ -100,4 +100,32 @@ public class SessionManagerTests : IDisposable
 
         Assert.Empty(manager.Sessions);
     }
+
+    // A ROOT WHOSE ORDERING IS FIXED BY ITS UI still gets an owned session. cxagent builds its
+    // session before the window (the startup banner needs its edit mode) and its gate after (a gate
+    // needs a window), so Open's ordering is impossible there — and a collection that does not
+    // contain the running session reads as authoritative while being wrong.
+    [Fact]
+    public void Adopt_TakesASessionBuiltBeforeTheManager()
+    {
+        var session = new Session(_dir);
+
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        manager.Adopt(session);
+
+        Assert.Single(manager.Sessions);
+        Assert.Same(session, manager.Sessions[0]);
+    }
+
+    [Fact]
+    public void Adopt_IsIdempotent()
+    {
+        var session = new Session(_dir);
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+
+        manager.Adopt(session);
+        manager.Adopt(session);
+
+        Assert.Single(manager.Sessions);
+    }
 }

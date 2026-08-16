@@ -47,15 +47,40 @@ public class HttpJobPluginTests : IDisposable
     });
 
     /// <summary>Serves one response with a declared content type — conversion keys on it.</summary>
-    private Task ServeOnceAs(string contentType, string body) => Task.Run(() =>
+    /// <summary>
+    /// Serves one request, and does not return until it is READY to serve it.
+    ///
+    /// <para>THE SECOND RACE IN THIS FILE, and the one that survived the port-binding fix. Task.Run
+    /// schedules the handler; it does not run it. The caller then issues its request immediately,
+    /// and on a loaded machine the client can reach the listener before that thread has called
+    /// GetContext at all — the request is accepted by the OS backlog but nothing is waiting to read
+    /// it, so the plugin's timeout fires and the assertion sees an empty body.
+    ///
+    /// <para>Whether it worked was thread scheduling: rare enough to look like a port collision,
+    /// which is why fixing the binder appeared to fix this too and did not. Measured at two failures
+    /// in ten full-suite runs AFTER that fix.</para>
+    ///
+    /// <para>The gate is signalled from inside the handler, immediately before the blocking
+    /// GetContext call, so awaiting it means the thread is scheduled and about to listen.</para>
+    /// </summary>
+    private Task ServeOnceAs(string contentType, string body)
     {
-        var ctxHttp = _listener.GetContext();
-        ctxHttp.Response.StatusCode = 200;
-        ctxHttp.Response.ContentType = contentType;
-        var bytes = System.Text.Encoding.UTF8.GetBytes(body);
-        ctxHttp.Response.OutputStream.Write(bytes);
-        ctxHttp.Response.Close();
-    });
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var serve = Task.Run(() =>
+        {
+            listening.SetResult();
+            var ctxHttp = _listener.GetContext();
+            ctxHttp.Response.StatusCode = 200;
+            ctxHttp.Response.ContentType = contentType;
+            var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+            ctxHttp.Response.OutputStream.Write(bytes);
+            ctxHttp.Response.Close();
+        });
+
+        listening.Task.Wait();
+        return serve;
+    }
 
     private static JobParameters P(params (string k, object? v)[] kv)
         => new(kv.ToDictionary(x => x.k, x => x.v));

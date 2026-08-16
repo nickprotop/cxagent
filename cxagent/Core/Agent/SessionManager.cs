@@ -117,6 +117,26 @@ public sealed class SessionManager : IDisposable
     }
 
     /// <summary>
+    /// Takes ownership of a session somebody else created and wired.
+    ///
+    /// <para>FOR A ROOT WHOSE ORDERING IS FIXED BY ITS UI. cxagent's composition root builds its
+    /// session before the window, because the startup banner naming the edit mode is a chat message
+    /// that cannot be revised — and it builds the permission gate after, because a gate needs a
+    /// window to prompt in. So the session exists before this manager can, and <see cref="Open"/>
+    /// would require an ordering the UI forbids.</para>
+    ///
+    /// <para>The alternative was leaving that session unowned, which is the state this type exists
+    /// to end: a collection that does not contain the one session actually running is worse than no
+    /// collection, because it reads as authoritative.</para>
+    /// </summary>
+    public Session Adopt(Session session)
+    {
+        lock (_gate)
+            if (!_sessions.Contains(session)) _sessions.Add(session);
+        return session;
+    }
+
+    /// <summary>
     /// Closes one session: disposes its agent host and forgets it.
     ///
     /// <para>THE HOST IS THE ONLY DISPOSABLE THING. Session itself is not IDisposable and the two

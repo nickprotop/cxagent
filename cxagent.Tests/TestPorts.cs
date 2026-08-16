@@ -57,10 +57,15 @@ internal static class TestPorts
             if (!IsFree(port)) continue;
 
             string prefix = $"http://localhost:{port}/";
-            listener.Prefixes.Clear();
-            listener.Prefixes.Add(prefix);
             try
             {
+                // INSIDE THE TRY, all of it. Prefixes was touched before the guard, and it throws
+                // ObjectDisposedException just as Start does when another class disposes this
+                // listener mid-bind — so the handler below never saw the commonest form of the very
+                // failure it was written for. Measured: still two full-suite failures in seven with
+                // these two lines outside.
+                listener.Prefixes.Clear();
+                listener.Prefixes.Add(prefix);
                 listener.Start();
                 return prefix;
             }
