@@ -475,11 +475,6 @@ public static class AppBootstrap
             },
             permissionRules);
 
-        // ADOPTED RATHER THAN OPENED: this session was built at the top of Run, because the startup
-        // banner has to know its edit mode before the window exists. Adopt is what stops the
-        // manager's collection being empty while a session is plainly running.
-        manager.Adopt(session);
-
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -527,8 +522,13 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
-            Core.Agent.SessionFactory.Wire(session, res,
-                manager.Shared,
+            // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
+            // collection empty while a session was plainly running, which Adopt() was added to paper
+            // over — the session went in afterwards, and nothing checked that what the root wired
+            // matched what the manager would have. One routine now does both, so the collection
+            // cannot disagree with reality. Idempotent on re-wire: /model and resume call this again
+            // with the same Session, and Open adds it only if it is not already there.
+            manager.Open(session, res,
                 new Core.Agent.SessionPorts
                 {
                     Observer = sink,

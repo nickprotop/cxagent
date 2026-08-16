@@ -122,32 +122,33 @@ public sealed class SessionManager : IDisposable
     /// conversation.</para>
     /// </summary>
     public Session Open(string workingDirectory, ProviderResolution resolution,
-        SessionPorts ports, WorkingMode mode)
-    {
-        var session = new Session(workingDirectory);
-        SessionFactory.Wire(session, resolution, Shared, ports, mode);
-
-        lock (_gate) _sessions.Add(session);
-        return session;
-    }
+        SessionPorts ports, WorkingMode mode) =>
+        Open(new Session(workingDirectory), resolution, ports, mode);
 
     /// <summary>
-    /// Takes ownership of a session somebody else created and wired.
+    /// Wires a session this manager did not construct, and owns it from then on.
     ///
-    /// <para>FOR A ROOT WHOSE ORDERING IS FIXED BY ITS UI. cxagent's composition root builds its
-    /// session before the window, because the startup banner naming the edit mode is a chat message
-    /// that cannot be revised — and it builds the permission gate after, because a gate needs a
-    /// window to prompt in. So the session exists before this manager can, and <see cref="Open"/>
-    /// would require an ordering the UI forbids.</para>
+    /// <para>FOR A ROOT WHOSE ORDERING ITS UI FIXES. cxagent's composition root must construct its
+    /// Session early — the startup banner naming the edit mode is a chat message that cannot be
+    /// revised, so the mode has to be resolved before the window exists — while the permission gate
+    /// this manager holds cannot exist until there IS a window to prompt in. The folder-only
+    /// <see cref="Open(string, ProviderResolution, SessionPorts, WorkingMode)"/> demands an ordering
+    /// that constraint forbids.</para>
     ///
-    /// <para>The alternative was leaving that session unowned, which is the state this type exists
-    /// to end: a collection that does not contain the one session actually running is worse than no
-    /// collection, because it reads as authoritative.</para>
+    /// <para>WHY THIS RATHER THAN THE ROOT CALLING SessionFactory ITSELF, which is what it did: a
+    /// session wired outside the manager is not in its collection, so the collection did not contain
+    /// the one session actually running. Adopt() existed to paper over exactly that — add the
+    /// session afterwards and hope the wiring matched. Two ways to wire is one too many; this is the
+    /// single routine, and the folder overload above is now a thin call into it.</para>
     /// </summary>
-    public Session Adopt(Session session)
+    public Session Open(Session session, ProviderResolution resolution,
+        SessionPorts ports, WorkingMode mode)
     {
+        SessionFactory.Wire(session, resolution, Shared, ports, mode);
+
         lock (_gate)
             if (!_sessions.Contains(session)) _sessions.Add(session);
+
         return session;
     }
 

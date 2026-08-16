@@ -101,32 +101,46 @@ public class SessionManagerTests : IDisposable
         Assert.Empty(manager.Sessions);
     }
 
-    // A ROOT WHOSE ORDERING IS FIXED BY ITS UI still gets an owned session. cxagent builds its
-    // session before the window (the startup banner needs its edit mode) and its gate after (a gate
-    // needs a window), so Open's ordering is impossible there — and a collection that does not
-    // contain the running session reads as authoritative while being wrong.
+    // A ROOT WHOSE ORDERING IS FIXED BY ITS UI still gets an owned session — WIRED, not merely
+    // listed. cxagent builds its session before the window (the startup banner needs its edit mode)
+    // and its gate after (a gate needs a window), so the folder overload's ordering is impossible
+    // there. This used to be Adopt(), which added the session but wired nothing: the root called
+    // SessionFactory itself, and nothing checked the two agreed. Taking the Session here means one
+    // routine wires every session however it was constructed.
     [Fact]
-    public void Adopt_TakesASessionBuiltBeforeTheManager()
+    public void Open_WiresASessionBuiltBeforeTheManager()
     {
         var session = new Session(_dir);
 
         using var manager = SessionManager.Create(new AppPaths(_dir));
-        manager.Adopt(session);
+        manager.Open(session, ProviderResolution.ForTesting(new MockLlmProvider()),
+            Ports(), AgentMode.Single);
 
         Assert.Single(manager.Sessions);
         Assert.Same(session, manager.Sessions[0]);
+        Assert.NotNull(session.Host);
     }
 
+    // RE-WIRING IS THE COMMON CASE, not an edge one: /model and a resumed session both call this
+    // again with the SAME Session, and a manager that appended each time would report three
+    // sessions where one is running.
     [Fact]
-    public void Adopt_IsIdempotent()
+    public void Open_OnTheSameSessionTwiceKeepsOneEntry()
     {
         var session = new Session(_dir);
         using var manager = SessionManager.Create(new AppPaths(_dir));
+        var resolution = ProviderResolution.ForTesting(new MockLlmProvider());
 
-        manager.Adopt(session);
-        manager.Adopt(session);
+        manager.Open(session, resolution, Ports(), AgentMode.Single);
+        var first = session.Host;
+        manager.Open(session, resolution, Ports(), AgentMode.Single);
 
         Assert.Single(manager.Sessions);
+
+        // AND THE HOST WAS REPLACED, which is what a re-wire is for. Session.ReplaceHost disposes
+        // the outgoing one, so a re-wire that returned the same instance would mean /model had
+        // quietly kept the old provider.
+        Assert.NotSame(first, session.Host);
     }
 
     // THE HOOK IS THE WHOLE UI DEPENDENCY. Create owns the rules store, so it can hand it to a
