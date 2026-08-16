@@ -14,6 +14,16 @@ namespace CxAgent.Core.Permissions;
 public class PermissionPolicy
 {
     private readonly string _root;
+
+    /// <summary>
+    /// The folder this policy judges against — and the folder a grant made under it belongs to.
+    ///
+    /// <para>EXPOSED BECAUSE THE GATE STORES RULES. One gate serves the process, so it cannot hold
+    /// the root itself: an "Always allow" answered in one session would be filed under the other's
+    /// folder, granting a permission in a project the user was not even looking at. The policy is
+    /// per session and already knows the answer.</para>
+    /// </summary>
+    public string Root => _root;
     private readonly PermissionRulesStore _rules;
 
     public PermissionPolicy(string workingDirRoot, PermissionRulesStore rules,

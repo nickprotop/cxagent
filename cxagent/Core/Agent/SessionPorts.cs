@@ -22,4 +22,18 @@ public sealed record SessionPorts
 
     /// <summary>How it asks the user something, or null when there is nobody to ask.</summary>
     public AskUser? Ask { get; init; }
+
+    /// <summary>
+    /// How THIS session's permission questions are judged — its working directory and edit mode.
+    ///
+    /// <para>PER SESSION, unlike the gate that asks them. One gate serves the process because stored
+    /// rules and the prompt queue must be shared; the policy behind it must not be, because it holds
+    /// a root and a mode that belong to one conversation. Captured in the gate, a second session
+    /// would be judged against the first's folder and the first's <c>/mode edits</c> — allowing a
+    /// write to a checkout the user never approved, with every layer behaving correctly.</para>
+    ///
+    /// <para>Null on the paths with no gating at all (headless, tests), where there is nothing to
+    /// judge.</para>
+    /// </summary>
+    public Permissions.PermissionPolicy? Policy { get; init; }
 }

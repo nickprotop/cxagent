@@ -465,6 +465,11 @@ public static class AppBootstrap
                     Observer = sink,
                     Tools = jobPanelSink,
                     Ask = mainWindow.AskQuestionAsync,
+
+                    // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the
+                    // session half of the decision, and passing it is what stops a second session
+                    // being judged against this one's folder.
+                    Policy = permissionPolicy,
                 },
                 startupMode);
 

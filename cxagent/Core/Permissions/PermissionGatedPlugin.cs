@@ -26,10 +26,18 @@ public sealed class PermissionGatedPlugin : IJobPlugin
     private readonly IJobPlugin _inner;
     private readonly IPermissionGate _gate;
 
-    public PermissionGatedPlugin(IJobPlugin inner, IPermissionGate gate)
+    /// <summary>
+    /// THIS SESSION'S POLICY, stamped onto every request so one process-wide gate can judge each
+    /// session by its own root and its own edit mode. Null on the paths that have no policy — the
+    /// mock and the fixed test gates — where the gate's own is the only one there is.
+    /// </summary>
+    private readonly PermissionPolicy? _policy;
+
+    public PermissionGatedPlugin(IJobPlugin inner, IPermissionGate gate, PermissionPolicy? policy = null)
     {
         _inner = inner;
         _gate = gate;
+        _policy = policy;
     }
 
     public string TypeName => _inner.TypeName;
@@ -56,7 +64,8 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             bool allowed;
             try
             {
-                allowed = await _gate.RequestAsync(request with { Requester = context.Requester }, ct);
+                allowed = await _gate.RequestAsync(
+                    request with { Requester = context.Requester, Policy = _policy }, ct);
             }
             finally
             {

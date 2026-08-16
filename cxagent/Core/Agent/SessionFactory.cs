@@ -30,9 +30,12 @@ public static class SessionFactory
     {
         // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
         // The new AgentHost below reads this field, not a startup copy.
+        // THE SESSION'S POLICY GOES WITH THE REGISTRY. The gate is shared across the process and
+        // the registry is per session, so this is where "which session is asking" is attached — see
+        // SessionPorts.Policy.
         var plugins = shared.Gate is null
             ? PluginRegistry.CreateWithBuiltins()
-            : PluginRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate);
+            : PluginRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy);
 
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
         // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's

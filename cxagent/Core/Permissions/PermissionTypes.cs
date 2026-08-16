@@ -54,4 +54,26 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// way. A caller that knows who is asking says so; nobody else changes.</para>
     /// </summary>
     public string? Requester { get; init; }
+
+    /// <summary>
+    /// WHICH SESSION IS ASKING — its working directory, and the edit mode it is running under.
+    ///
+    /// <para>THE QUESTION IS PER-SESSION; THE ANSWER IS NOT. The gate is one per process because
+    /// stored rules and the prompt queue must be (a second gate would forget every rule the user
+    /// granted in the other window, and two prompt queues would race for one composer). But the
+    /// POLICY behind it is not process-wide at all: <see cref="PermissionPolicy"/> holds a working
+    /// directory and a settable edit mode, both of which belong to one session.</para>
+    ///
+    /// <para>Captured in the gate, those two became shared by accident. With a second session in the
+    /// process, one session's <c>/mode edits always-ask</c> would silently govern the other, and its
+    /// in-boundary check would run against the wrong root — allowing a write to a checkout the user
+    /// never approved, with every layer behaving correctly on the way. Invisible today only because
+    /// AppBootstrap creates exactly one session.</para>
+    ///
+    /// <para>Carried ON THE REQUEST for the reason <see cref="Requester"/> is: an init-only property
+    /// leaves every existing construction site untouched, and the one layer that sees both the
+    /// request and the session it came from is the layer that sets it. Null means "use the gate's
+    /// own" — the single-session path, unchanged.</para>
+    /// </summary>
+    public PermissionPolicy? Policy { get; init; }
 }

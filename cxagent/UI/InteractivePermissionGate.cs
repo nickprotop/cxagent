@@ -171,10 +171,20 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// </summary>
     public async Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
     {
+        // THE ASKING SESSION'S POLICY, not this gate's. One gate serves the process — stored rules
+        // and the prompt queue have to be shared — but the policy behind it is per session: it holds
+        // a working directory and an edit mode, and those belong to one conversation. Captured here,
+        // they became shared by accident, so a second session would be judged against the first's
+        // root and the first's mode. See PermissionRequest.Policy.
+        //
+        // NULL FALLS BACK to the gate's own, which is the single-session path and every existing
+        // caller.
+        var policy = request.Policy ?? _policy;
+
         // The silent path is reported separately: "allowed without asking" and "the user said yes"
         // are different facts, and collapsing them would make a session of stored rules look like a
         // session of decisions.
-        if (_policy.IsSilentlyAllowed(request))
+        if (policy.IsSilentlyAllowed(request))
         {
             OnDecision?.Invoke(request.Kind, "silent", request.Requester);
             return true;
@@ -188,7 +198,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
         // folder it says for EVERY write. Without AllowsSilentWrites here, a classifier's ALLOW would
         // return true below and hand auto the one power no mode is allowed to have: widening past a
         // trust decision the user made. Modes narrow, trust bounds — a classifier is still a mode.
-        if (_policy.Edits == EditMode.Auto && Classifier is not null && _policy.AllowsSilentWrites(request))
+        if (policy.Edits == EditMode.Auto && Classifier is not null && policy.AllowsSilentWrites(request))
         {
             if (await Classifier.AllowsAsync(request, ct))
             {
@@ -245,8 +255,12 @@ public sealed class InteractivePermissionGate : IPermissionGate
         }
         try
         {
+            // THE ASKING SESSION'S BOUNDARY, for the same reason the decision path uses it: whether
+            // a path is "inside the working directory" depends on WHOSE working directory, and
+            // offering to trust a folder on the strength of another session's root would offer the
+            // wrong promise.
             var offerTrust = (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite)
-                && _policy.IsInBoundary(request.Display);
+                && (request.Policy ?? _policy).IsInBoundary(request.Display);
 
             // `ct` is handed straight to the prompt hook rather than raced against it with a
             // second, gate-local TaskCompletionSource: an earlier version resolved a LOCAL tcs to
@@ -305,7 +319,11 @@ public sealed class InteractivePermissionGate : IPermissionGate
                 // and this run should honour that even if persistence for NEXT time didn't stick.
                 try
                 {
-                    _store.Add(_workingDir, request.Kind, request.AlwaysRule);
+                    // THE ASKING SESSION'S FOLDER. A grant belongs to the project it was made in,
+                    // and this gate serves every session in the process — filing it under the
+                    // gate's own root would grant a permission in a project the user was not
+                    // looking at.
+                    _store.Add((request.Policy ?? _policy).Root, request.Kind, request.AlwaysRule);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -319,7 +337,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
             case PermissionChoice.TrustFolder:
                 try
                 {
-                    _store.SetTrust(_workingDir, TrustState.Trusted);
+                    _store.SetTrust((request.Policy ?? _policy).Root, TrustState.Trusted);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {

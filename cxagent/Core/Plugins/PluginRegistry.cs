@@ -45,14 +45,23 @@ public class PluginRegistry
     /// check of its own. wait registers bare — it touches nothing, so gating it would just be noise.
     /// Required (no default) so every composition root must explicitly choose a gate — see
     /// PermissionGate.DenyAll/AllowAll.</param>
-    public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers, IPermissionGate permissions)
+    /// <param name="policy">
+    /// THIS SESSION'S POLICY, stamped onto every permission request the registry's plugins raise.
+    ///
+    /// <para>The registry is built per session and the gate is one per process, so this is the seam
+    /// where "which session is asking" is known. Without it the gate judges every session against
+    /// whichever root and edit mode it happened to capture — invisible with one session, wrong with
+    /// two. Null keeps the old behaviour for callers that have no policy.</para>
+    /// </param>
+    public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers,
+        IPermissionGate permissions, PermissionPolicy? policy = null)
     {
         _ = providers;   // kept in the signature: callers pass their resolution's registry
         var reg = new PluginRegistry();
-        reg.Register(new PermissionGatedPlugin(new ShellJobPlugin(), permissions));
-        reg.Register(new PermissionGatedPlugin(new FileJobPlugin(), permissions));
+        reg.Register(new PermissionGatedPlugin(new ShellJobPlugin(), permissions, policy));
+        reg.Register(new PermissionGatedPlugin(new FileJobPlugin(), permissions, policy));
         reg.Register(new WaitJobPlugin());
-        reg.Register(new PermissionGatedPlugin(new HttpJobPlugin(), permissions));
+        reg.Register(new PermissionGatedPlugin(new HttpJobPlugin(), permissions, policy));
         return reg;
     }
 }
