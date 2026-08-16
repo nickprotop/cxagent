@@ -1025,6 +1025,33 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>
+    /// Escape while a permission prompt is up: answer "no", and let the run continue.
+    ///
+    /// <para>IT USED TO DO BOTH — deny AND kill the turn. Escape reached no handler on the prompt
+    /// (it is buttons only), fell through to the global shortcut, and took the CancelTurn branch
+    /// because a prompt only appears mid-turn; cancelling then fired the gate's registration, which
+    /// resolves the prompt as Deny. So the conventional "get me out of this" key destroyed the whole
+    /// run, showed only "Stopped.", and the model never saw the refusal it could have adapted to.
+    /// Observed in a live drive: a denied test-file write ended a drive that had cost two million
+    /// tokens, and the frozen token counter read as a hang.</para>
+    ///
+    /// <para>Deny is a real answer, not an escape hatch — the same reasoning as
+    /// <see cref="TrySkipQuestion"/>, whose comment says a user's reluctance to answer must not cost
+    /// them their work. Escape now means "no" wherever something is being asked, and cancels the turn
+    /// only when nothing is.</para>
+    /// </summary>
+    public bool TryDenyPermission()
+    {
+        if (_denyActivePrompt is not { } deny) return false;
+        deny();
+        return true;
+    }
+
+    /// <summary>How to answer the prompt in <see cref="_activePrompt"/> with "no". See
+    /// <see cref="TryDenyPermission"/>.</summary>
+    private Action? _denyActivePrompt;
+
+    /// <summary>
     /// Alt+← while a multi-question run is up: back to the previous one.
     ///
     /// <para>False when there is no question, or it is the first — so the shortcut falls through to
@@ -1032,9 +1059,22 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public bool TryQuestionBack() => _activeQuestion?.Back() ?? false;
 
-    public void ShowPermissionPrompt(IWindowControl prompt)
+    public void ShowPermissionPrompt(IWindowControl prompt) => ShowPermissionPrompt(prompt, null);
+
+    /// <summary>
+    /// Shows a permission prompt, and records how to answer "no" to it from a keystroke.
+    ///
+    /// <para><paramref name="deny"/> is what Escape resolves the prompt with. It is a callback rather
+    /// than the control itself because this window is handed the BUILT content, not the
+    /// PermissionPromptControl behind it — the caller keeps that, so the caller supplies the one
+    /// operation a shortcut needs. Null for a prompt with no keyboard answer, which is why the plain
+    /// overload above still exists.</para>
+    /// </summary>
+    public void ShowPermissionPrompt(IWindowControl prompt, Action? deny)
     {
         if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
+
+        _denyActivePrompt = deny;
 
         // SWAP THE WHOLE PROMPT BOX, not the Input inside it.
         //
@@ -1320,6 +1360,11 @@ public sealed class MainWindow : IDisposable
             _composer.ReplaceControl(prompt, _promptBox);
             _mainGrid.RowDefinitions[1] = GridLength.Cells(ComposerRows);
             _activePrompt = null;
+
+            // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
+            // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
+            // also swallow the keystroke and stop Escape reaching the turn it was meant for.
+            _denyActivePrompt = null;
 
             StatusBar.Visible = true;
             _statusRule.Visible = true;

@@ -1257,6 +1257,13 @@ public static class AppBootstrap
                 // answer, so the question is skipped and the model proceeds on its own judgement.
                 if (mainWindow.TrySkipQuestion()) return;
 
+                // A PERMISSION PROMPT NEXT, for the same reason and with the same shape: Escape
+                // answers it "no" and the run continues. It used to fall through to CancelTurn below
+                // — a prompt only exists mid-turn — and cancelling fired the gate's registration,
+                // which resolves the prompt as Deny anyway. So the key denied AND destroyed the run,
+                // when Deny is a real answer the model can adapt to.
+                if (mainWindow.TryDenyPermission()) return;
+
                 // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
                 // (which need a live dialog or a live turn) stay here.
                 var running = turnCts is { IsCancellationRequested: false };

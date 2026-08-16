@@ -263,6 +263,52 @@ public class MainWindowTests
         return mw;
     }
 
+    // ESCAPE ON A PERMISSION PROMPT ANSWERS IT, and the run survives. It used to do both — deny AND
+    // cancel the turn — because the prompt handles no keys, so Escape fell through to the global
+    // shortcut's CancelTurn branch (a prompt only exists mid-turn), and cancelling fired the gate's
+    // registration, which resolves the prompt as Deny anyway. A live drive lost two million tokens
+    // of work to one keystroke on a denied test-file write.
+    [Fact]
+    public void TryDenyPermission_AnswersThePromptAndReportsItHandledTheKey()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();
+
+        mw.ShowPermissionPrompt(built, prompt.TryCancel);
+
+        Assert.True(mw.TryDenyPermission());
+        Assert.True(prompt.Completion.IsCompleted);
+        Assert.Equal(PermissionChoice.Deny, prompt.Completion.Result);
+    }
+
+    // FALSE WHEN THERE IS NOTHING TO ANSWER, so Escape falls through to whatever else wants it —
+    // cancelling a turn, closing a dialog. A hook that swallowed the key unconditionally would take
+    // away the stop-the-run behaviour it was added to protect.
+    [Fact]
+    public void TryDenyPermission_IsFalseWithNoPromptUp()
+    {
+        var mw = BuiltMainWindow();
+
+        Assert.False(mw.TryDenyPermission());
+    }
+
+    // AND FALSE AGAIN ONCE THE PROMPT IS GONE. A stale deny action would resolve a completion source
+    // nobody awaits — harmless alone, but it would also eat the keystroke and stop Escape reaching
+    // the turn the user meant to cancel.
+    [Fact]
+    public void TryDenyPermission_IsFalseAfterThePromptIsRestored()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();
+
+        mw.ShowPermissionPrompt(built, prompt.TryCancel);
+        mw.RestoreComposer(built);
+
+        Assert.False(mw.TryDenyPermission());
+    }
+
     [Fact]
     public void ShowPermissionPrompt_ReplacesTheComposer_AndRestorePutsItBack()
     {

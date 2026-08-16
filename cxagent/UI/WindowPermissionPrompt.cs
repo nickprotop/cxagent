@@ -23,7 +23,11 @@ public static class WindowPermissionPrompt
             {
                 var prompt = new PermissionPromptControl(request, offerTrust);
                 var content = prompt.BuildContent();   // built ONCE — see PermissionDecider's note
-                system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content));
+                // THE DENY ACTION GOES WITH IT. The window is handed the built content, not this
+                // control, so it cannot answer the prompt on its own — this is the one operation
+                // Escape needs, and TryCancel is already the safe idempotent Deny the cancellation
+                // registration below uses.
+                system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content, prompt.TryCancel));
                 return AwaitAndRestore(prompt, ct,
                     () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content)));
             });
