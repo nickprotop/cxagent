@@ -4,48 +4,23 @@ using CxAgent.Core.Storage;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Where a settings entry point (F5/F7/F8) should go, once the on-disk config has been loaded.
-/// </summary>
-public enum SettingsRoute
-{
-    /// <summary>Open the consolidated Settings dialog on the requested page.</summary>
-    OpenDialog,
-    /// <summary>Run the first-run/repair setup wizard.</summary>
-    RunWizard,
-}
-
-/// <summary>
-/// The single classifier behind every settings entry point. Before this task the same decision was
-/// made three separate times (old F7 roles, old F8 providers, the F5 setup flow) and two of the three
-/// guards were byte-for-byte identical while the third was deliberately different — a state of affairs
-/// that invited them to drift. Now stated once.
+/// Reading config.json for the one caller that still edits it.
+///
+/// <para>WHAT IT USED TO BE. This routed between a settings dialog, a roles editor and a providers
+/// editor, and told them apart from a genuine first run. All three are gone: config stopped being
+/// applied in place, which left the dialog writing a file and asking for a restart — an editor for a
+/// job a text editor does better, over a file the user can open. What could not be replaced that way
+/// is the FIRST run, where there is no file to open and no schema to guess, so the wizard survives
+/// and this survives with it.</para>
 /// </summary>
 public static class SettingsEntry
 {
-    // There is exactly ONE entry point now (F5), so an invalid or absent config always routes to the
-    // repair wizard.
-    //
-    // This USED to take a `viaF5` flag, because F7/F8 opened editors that had to REFUSE on an invalid
-    // load: ProviderCatalogEditor's EmptyCatalog() fallback has an empty Roles list, and its Done
-    // persisted that emptiness over the user's real providers and roles. Those editors are deleted
-    // and those keys are retired, so the refuse branch had no reachable caller — dead code guarding
-    // against a class that no longer exists.
-    //
-    // Deleting it is safe in the direction that matters: refusing on the ONLY surface that can repair
-    // a broken config would strand the user with no in-app fix. The wizard still warns that setup
-    // starts fresh (AppBootstrap's IsInvalid message), so the destructive step is announced, not
-    // silent. SettingsRoute.Refuse was this route's only producer, so it is deleted too rather than
-    // left as an unreachable enum member nobody can explain later.
-    public static SettingsRoute Classify(ConfigLoad load) =>
-        load.IsInvalid || load.IsAbsent ? SettingsRoute.RunWizard
-        : SettingsRoute.OpenDialog;
-
     /// <summary>
     /// The currently persisted configuration, or null when there is nothing safe to build on — the
-    /// file does not exist (genuine first run) or the loader rejects it. Every editor entry point (F5
-    /// wizard, F7 roles, F8 providers) loads through here rather than closing over startup state, so
-    /// each one edits what is on disk NOW: without it, F5 replaced the whole catalog and destroyed
-    /// every other instance and role binding the user had.
+    /// file does not exist (genuine first run) or the loader rejects it. The wizard loads through
+    /// here rather than closing over startup state, so it appends to what is on disk NOW: without
+    /// it, a wizard run replaced the whole catalog and destroyed every other instance and role
+    /// binding the user had.
     /// </summary>
     internal static ConfigLoad LoadSettings(AppPaths paths, IReadOnlyDictionary<string, string> env)
     {
@@ -118,8 +93,6 @@ public readonly record struct ConfigLoad(ProviderSettings? Settings, IReadOnlyLi
 /// </summary>
 public enum EscapeTarget
 {
-    /// <summary>A Settings dialog is open: cancel it, discarding its unsaved working copy.</summary>
-    CancelDialog,
     /// <summary>
     /// A turn is running: cancel it, leaving the session alive.
     ///
@@ -149,8 +122,9 @@ public static class EscapeRouting
     /// had been a no-op since the copilot draft gate was deleted — so Escape did nothing at all
     /// whenever no dialog was open, silently.</para>
     /// </summary>
-    public static EscapeTarget For(bool dialogIsOpen, bool turnIsRunning = false) =>
-        dialogIsOpen ? EscapeTarget.CancelDialog
-        : turnIsRunning ? EscapeTarget.CancelTurn
-        : EscapeTarget.Nothing;
+    // ONE INPUT NOW. It took a dialogIsOpen flag while the Settings dialog existed; that dialog is
+    // gone, so the only thing Escape can find in front of it is a running turn. A prompt or a
+    // question is answered before this is reached — see the handler, which checks those first.
+    public static EscapeTarget For(bool turnIsRunning) =>
+        turnIsRunning ? EscapeTarget.CancelTurn : EscapeTarget.Nothing;
 }

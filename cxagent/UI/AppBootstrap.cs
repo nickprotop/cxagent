@@ -332,7 +332,6 @@ public static class AppBootstrap
         // Escape global shortcut (routes Escape to Cancel while a dialog is open) and by
         // OpenSettingsAsync (reentrancy: a second F5/F7/F8 press selects a page in this instance rather
         // than opening a second dialog). Cleared in OpenSettingsAsync's `finally` — see its comment.
-        SettingsDialog? openDialog = null;
 
 
 
@@ -1199,7 +1198,6 @@ public static class AppBootstrap
         // (0x11) is proven working, so it keeps the quit binding.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5, () => { _ = mainWindow.ShowSettings?.Invoke(); });
         // F4 IS BACK, and the reason it left was half right. It focused the composer, and was
         // removed as "a route back from a focus that can no longer happen" — true of the job panel it
         // was written for, which is gone. But two things still take focus away deliberately:
@@ -1235,9 +1233,6 @@ public static class AppBootstrap
         // "remember which F-key" to "read the four page names in front of you", which is the point
         // of having a nav pane at all.
         //
-        // Deep-linking itself is kept, not deleted: SettingsDialog.RunAsync(SettingsPage, ct) and
-        // SelectPage remain, and a future `/settings roles` command or a restore-last-page can use
-        // them without re-plumbing anything.
         system.RegisterGlobalShortcut(ConsoleModifiers.Control, ConsoleKey.Q, () => { cts.Cancel(); system.Shutdown(); });
         // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. `runner` is read
         // through the closure (same pattern as every other handler here), so these track whichever
@@ -1248,11 +1243,6 @@ public static class AppBootstrap
         // Esc, not another F-key: this codebase has no OTHER Esc binding anywhere (grepped before
         // choosing it), so it's free, and Esc-to-cancel/dismiss is the universal convention — a
         // second F-key would be one more thing to memorize for no reason.
-        // Escape reaches `openDialog.Cancel()` only from here: this global fires at
-        // InputCoordinator.cs:131, well before active-window routing at :150, so a dialog window can
-        // never see Escape itself. `openDialog` is cleared in OpenSettingsAsync's `finally`, so once
-        // the dialog closes Escape does nothing again — it used to fall through to DiscardDraft,
-        // which was a no-op from the moment the copilot draft gate was deleted.
         // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
         // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
         // shortcut would swallow the keys that edit a typed answer.
@@ -1278,12 +1268,8 @@ public static class AppBootstrap
                 // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
                 // (which need a live dialog or a live turn) stay here.
                 var running = turnCts is { IsCancellationRequested: false };
-                switch (EscapeRouting.For(openDialog is not null, running))
+                switch (EscapeRouting.For(running))
                 {
-                    case EscapeTarget.CancelDialog:
-                        openDialog!.Cancel();
-                        break;
-
                     case EscapeTarget.CancelTurn:
                         // Cancelling the token unwinds the whole turn: the provider stream, the tool
                         // loop, and any shell process, whose ProcessRunner kills its ENTIRE process
@@ -1306,79 +1292,21 @@ public static class AppBootstrap
         // via these seams. F5/F7/F8 all route through the ONE consolidated handler below, differing
         // only in which page they land on and (F5 only) whether an absent/invalid config runs the
         // setup wizard instead of opening the dialog — see SettingsEntry.Classify.
-        mainWindow.ShowSettings = () => OpenSettingsAsync(SettingsPage.Providers);
 
         // Holds the currently-open SettingsDialog instance, if any — read by the Escape handler above
         // and by OpenSettingsAsync's reentrancy check just below. Null whenever no dialog is open;
         // OpenSettingsAsync's `finally` is what guarantees that, so Escape is never left pointed at a
         // closed dialog.
-        async Task OpenSettingsAsync(SettingsPage page)
+        // THE WIZARD IS FIRST-RUN ONLY NOW. The settings dialog it used to sit beside is gone: since
+        // config stopped being applied in place, that dialog wrote a file and asked for a restart —
+        // 680 lines of editor for a job a text editor does better, over a file the user can open
+        // directly. What could not be replaced by an editor is the FIRST run, where there is no file
+        // to open and no schema to guess from, so that is what survives.
+        //
+        // Reached from exactly one place: startup with no usable provider.
+        async Task RunFirstRunSetupAsync()
         {
-            if (openDialog is { } existing)
-            {
-                // Reentrant F5/F7/F8: select the requested page in the dialog that's already open
-                // rather than stacking a second one.
-                existing.SelectPage(page);
-                return;
-            }
-
-            var load = SettingsEntry.LoadSettings(paths, env);
-            var route = SettingsEntry.Classify(load);
-
-            if (route == SettingsRoute.RunWizard)
-            {
-                await RunSetupFlowAsync(system, mainWindow, paths, env, WireRunner, cts.Token);
-                return;
-            }
-
-            // OpenDialog: build a fresh working copy from what's on disk (Absent → an empty catalog
-            // with built-ins seeded, same baseline RoleEditor.FromSettings always gave) and show it.
-            // ForLoad, not the plain constructor: it REFUSES an invalid load rather than silently
-            // starting from EmptyCatalog(). Classify above already routes invalid -> repair wizard, so
-            // this is defence in depth — but the two guards protect different things. Classify decides
-            // WHERE to go; ForLoad makes it impossible for a session to exist over a config it would
-            // destroy, no matter which entry point built it.
-            // NAMED settingsSession, not `session`: the agent session is in scope here and the two are
-            // different objects. A shadowing local made `session.WorkingDirectory` silently mean the
-            // settings dialog's own state rather than the folder the agent works in.
-            var settingsSession = SettingsSession.ForLoad(load);
-            var dialog = new SettingsDialog(system, mainWindow.Window, paths, settingsSession,
-                permissionRules, session.WorkingDirectory);
-            openDialog = dialog;
-            try
-            {
-                var result = await dialog.RunAsync(page, cts.Token);
-                if (result is null) return;   // cancelled, or TryCompose found nothing dirty
-
-                // SAVED TO DISK, NOT APPLIED TO THIS PROCESS. This block used to re-resolve, rebind
-                // the shared resolution, reload the MCP servers and re-wire the runner, so that an
-                // edit took effect in the running session. Every bug this area has produced came
-                // from that: the classifier consulted a provider config that no longer existed, the
-                // MCP servers were loaded once and F5 silently never touched them, and the fix for
-                // THAT was gated on a comparison against a variable already overwritten — so it was
-                // a tautology and never fired. Three bugs, one cause, none catchable by a test
-                // because all of it lives in this method and nothing can call it.
-                //
-                // The live-apply path is gone rather than fixed. It was a handful of consumers
-                // moved on each save out of an unbounded set, and every feature added since has
-                // been another consumer somebody had to remember to move. A restart moves all of
-                // them, is what the user already does after editing config by hand, and cannot be
-                // half-done.
-                //
-                // /model IS NOT THIS. It changes which model this SESSION talks to, writes nothing,
-                // and still works — see SwitchModel. What is refused here is reconfiguring the
-                // process from under itself.
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    "Configuration saved — restart cxagent for it to take effect.");
-
-            }
-            finally
-            {
-                // MUST run even on an exception or a cancelled RunAsync — otherwise Escape stays
-                // pointed at a closed dialog forever (the global handler above checks `openDialog`,
-                // not window state).
-                openDialog = null;
-            }
+            await RunSetupFlowAsync(system, mainWindow, paths, env, WireRunner, cts.Token);
         }
 
         // (Task 2.5) The startup trust question: an unclassified folder must be asked about,
@@ -1438,7 +1366,7 @@ public static class AppBootstrap
 
         async Task RunWizardThenAskTrustAsync()
         {
-            await mainWindow.ShowSettings!.Invoke();
+            await RunFirstRunSetupAsync();
             await AskTrustIfUnknownAsync();   // sequenced AFTER the wizard, not concurrently
         }
 
