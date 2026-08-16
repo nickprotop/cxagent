@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
 using CxAgent.UI;
 using Xunit;

@@ -74,7 +74,7 @@ public class PermissionRulesStore
 
     /// <summary>Null after a normal load (file absent, or present and valid). Non-null after a
     /// load that found the file but could not parse it — Core has no UI to surface this itself, so
-    /// a caller with a transcript (<see cref="CxAgent.UI.InteractivePermissionGate"/>) reads this
+    /// a caller with a transcript (<see cref="PermissionDecider"/>) reads this
     /// once at startup and echoes it. Never cleared automatically: it describes what happened at
     /// construction, not live state.</summary>
     public string? LoadError { get; }

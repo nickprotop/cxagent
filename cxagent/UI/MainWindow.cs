@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
@@ -1837,7 +1838,7 @@ public sealed class MainWindow : IDisposable
             + "\n[cyan]Commands[/]\n"
             // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand
             // drifts from the dispatcher the first time one is added.
-            + SessionCommands.HelpLines("cyan"));
+            + SessionCommands.HelpLines("cyan", ColorScheme.MutedMarkup));
         FocusComposer();
     }
 }

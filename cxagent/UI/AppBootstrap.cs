@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using System.Reflection;
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;

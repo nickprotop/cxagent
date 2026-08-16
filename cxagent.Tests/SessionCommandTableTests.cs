@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
 using CxAgent.UI;
 using Xunit;
@@ -79,7 +80,7 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLinesCoverEveryCommand()
     {
-        var help = SessionCommands.HelpLines("cyan");
+        var help = SessionCommands.HelpLines("cyan", "grey50");
 
         foreach (var c in SessionCommands.All)
         {
@@ -516,7 +517,7 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLines_ListEverySubcommand()
     {
-        var help = SessionCommands.HelpLines("cyan");
+        var help = SessionCommands.HelpLines("cyan", "grey50");
 
         Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
         Assert.Contains("/stats clear", help, StringComparison.Ordinal);
@@ -528,7 +529,7 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLines_ExplainEachSubcommand()
     {
-        var help = SessionCommands.HelpLines("cyan");
+        var help = SessionCommands.HelpLines("cyan", "grey50");
 
         Assert.Contains("re-read config.json", help, StringComparison.Ordinal);
         Assert.Contains("delete all usage history", help, StringComparison.Ordinal);

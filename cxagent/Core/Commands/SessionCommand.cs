@@ -1,4 +1,4 @@
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// What the caller must do about a command it just dispatched.

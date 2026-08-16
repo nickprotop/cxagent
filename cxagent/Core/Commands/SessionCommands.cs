@@ -1,12 +1,19 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
-/// Slash commands that manage the shared conversation directly, WITHOUT going through AgentHost —
-/// no goal, no provider call, no tokens spent. Deliberately UI-free (takes the raw conversation list,
-/// returns a reply string) so it's testable without ConsoleWindowSystem; AppBootstrap does the
-/// displaying.
+/// Slash commands that manage a session directly, WITHOUT going through AgentHost — no goal, no
+/// provider call, no tokens spent.
+///
+/// <para>IN CORE, WHERE THE COMMANDS ARE ABOUT. It sat in the UI folder from the start and was
+/// already UI-free in fact — a table, a parser and a help renderer, with one reference to the TUI's
+/// palette as the only thing binding it. That is now a parameter, so a second front end renders the
+/// same help in its own colours rather than carrying a second copy of the table.</para>
+///
+/// <para>MARKUP IS NOT A UI DEPENDENCY. The text here carries [yellow] and [grey50] the same way it
+/// carries words: a format the reader renders, strips or logs. Asking a specific front end for its
+/// palette IS a dependency, and that is the one that went.</para>
 ///
 /// Only an exact leading-slash token counts as a command. "clear the build output" must fall through
 /// to AgentHost as an ordinary goal — a false positive here would silently wipe a user's session
@@ -461,7 +468,14 @@ public static class SessionCommands
     /// <para>WIDTH IS BOUNDED BY THE CONTENT, not by the terminal: the name column is as wide as the
     /// widest name, so the table cannot push the summary off a narrow pane on its own.</para>
     /// </summary>
-    public static string HelpLines(string markupColor)
+    /// <param name="mutedColor">
+    /// The palette's muted tone, for the box rule and the argument rows.
+    ///
+    /// <para>A PARAMETER, not a reference to the UI's ColorScheme, and it was the last thing binding
+    /// this file to a front end. Everything else here is a table and a parser; a second front end
+    /// with a different palette can render the same help without a second copy of the table.</para>
+    /// </param>
+    public static string HelpLines(string markupColor, string mutedColor)
     {
         // ARGUMENTS ARE ROWS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only,
         // so `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
@@ -476,7 +490,7 @@ public static class SessionCommands
         }
 
         var width = rows.Max(r => r.Name.Length + (r.IsArg ? 2 : 0));
-        var muted = ColorScheme.MutedMarkup;
+        var muted = mutedColor;
 
         var lines = new List<string>
         {
