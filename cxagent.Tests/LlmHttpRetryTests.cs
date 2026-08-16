@@ -8,7 +8,10 @@ namespace CxAgent.Tests;
 [Collection("http-listeners")]
 public class LlmHttpRetryTests : IDisposable
 {
-    private readonly HttpListener _listener = new();
+    // NOT READONLY: TestPorts may have to REPLACE this listener. A failed Start elsewhere leaves a
+    // registration in the process-global map, and another class unwinding it disposes this one
+    // mid-bind — a disposed HttpListener cannot be revived. See TestPorts.BindLoopback.
+    private HttpListener _listener = new();
     private readonly string _prefix;
     private int _hits;
 
@@ -20,7 +23,7 @@ public class LlmHttpRetryTests : IDisposable
         // one lost the race (AnthropicProviderTests, ModelCatalogTests, ...), in a different test
         // method each run. That is the "known flaky LlmHttpRetryTests" this project has worked
         // around for weeks; it was never a Dispose problem, it was this constructor.
-        _prefix = TestPorts.BindLoopback(_listener);
+        _prefix = TestPorts.BindLoopback(ref _listener);
     }
     /// <summary>
     /// Stops the listener and waits for the serving task before closing — same use-after-dispose
@@ -42,7 +45,11 @@ public class LlmHttpRetryTests : IDisposable
         // Dispose, and never reproducible in isolation — the tests themselves had already passed.
         // A teardown fault in a test helper must not fail a test that already passed.
         try { _listener.Close(); }
+        // BOTH TYPES, because a listener whose Start failed can be disposed by another class
+        // unwinding the process-global map — Close then throws ObjectDisposedException rather than
+        // HttpListenerException. A teardown fault in a helper must not fail a test that passed.
         catch (HttpListenerException) { /* someone else's cleanup; not this test's failure */ }
+        catch (ObjectDisposedException) { /* already torn down by that unwind */ }
     }
 
     private Task? _serving;

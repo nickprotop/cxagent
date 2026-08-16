@@ -29,8 +29,13 @@ internal static class TestPorts
     /// Adds a free <c>http://localhost:{port}/</c> prefix to <paramref name="listener"/>, starts it, and
     /// returns the prefix. Throws only if every attempt collided, which would indicate a genuinely
     /// exhausted range rather than a race.
+    ///
+    /// <para>BY REFERENCE, because a listener can be DISPOSED mid-bind by another class unwinding a
+    /// failed Start from the process-global map. A disposed HttpListener cannot be revived, so the
+    /// retry replaces it — and the caller's field has to see the replacement or it will tear down
+    /// the dead one.</para>
     /// </summary>
-    public static string BindLoopback(HttpListener listener)
+    public static string BindLoopback(ref HttpListener listener)
     {
         for (int attempt = 1; ; attempt++)
         {
@@ -62,6 +67,21 @@ internal static class TestPorts
             catch (HttpListenerException) when (attempt < MaxAttempts)
             {
                 // Lost the race between the probe and Start — try another port.
+            }
+            catch (ObjectDisposedException) when (attempt < MaxAttempts)
+            {
+                // THE OTHER HALF OF THE SAME DEFECT, and the one that survived the first fix. A
+                // failed Start leaves a registration in the process-global HttpEndPointManager;
+                // another class's Dispose then unwinds it and disposes THIS listener out from under
+                // us, so Prefixes and Start throw ObjectDisposedException rather than
+                // HttpListenerException — inside whichever class happened to be binding at the
+                // time. Observed six times in one day across four different test classes, always
+                // passing in isolation.
+                //
+                // A disposed listener cannot be reused, so unlike the collision case this needs a
+                // fresh one. The caller's field still points at the dead object, which is why the
+                // listener is passed by reference.
+                listener = new HttpListener();
             }
         }
     }

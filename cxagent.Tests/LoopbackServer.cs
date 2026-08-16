@@ -11,7 +11,10 @@ namespace CxAgent.Tests;
 /// </summary>
 public sealed class LoopbackServer : IDisposable
 {
-    private readonly HttpListener _listener = new();
+    // NOT READONLY: TestPorts may have to REPLACE this listener. A failed Start elsewhere leaves a
+    // registration in the process-global map, and another class unwinding it disposes this one
+    // mid-bind — a disposed HttpListener cannot be revived. See TestPorts.BindLoopback.
+    private HttpListener _listener = new();
     private readonly ConcurrentQueue<(int status, string body, bool sse)> _responses = new();
     public string BaseUrl { get; }
     public string? LastRequestBody { get; private set; }
@@ -21,7 +24,7 @@ public sealed class LoopbackServer : IDisposable
 
     public LoopbackServer()
     {
-        BaseUrl = TestPorts.BindLoopback(_listener);
+        BaseUrl = TestPorts.BindLoopback(ref _listener);
         // KEEP the task. It was `_ = Task.Run(Loop)`, so nothing ever waited for the loop to notice
         // the listener had closed — see Dispose for what that cost.
         _loop = Task.Run(Loop);
@@ -93,6 +96,10 @@ public sealed class LoopbackServer : IDisposable
         // Do NOT "fix" this by reaching for port allocation. Two such attempts were measured as
         // failures (see HttpListenerCollection.cs); the ports were never the problem.
         try { _listener.Close(); }
+        // BOTH TYPES, because a listener whose Start failed can be disposed by another class
+        // unwinding the process-global map — Close then throws ObjectDisposedException rather than
+        // HttpListenerException. A teardown fault in a helper must not fail a test that passed.
         catch (HttpListenerException) { /* someone else's cleanup; not this test's failure */ }
+        catch (ObjectDisposedException) { /* already torn down by that unwind */ }
     }
 }

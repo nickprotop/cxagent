@@ -9,7 +9,10 @@ namespace CxAgent.Tests;
 [Collection("http-listeners")]
 public class HttpJobPluginTests : IDisposable
 {
-    private readonly HttpListener _listener = new();
+    // NOT READONLY: TestPorts may have to REPLACE this listener. A failed Start elsewhere leaves a
+    // registration in the process-global map, and another class unwinding it disposes this one
+    // mid-bind — a disposed HttpListener cannot be revived. See TestPorts.BindLoopback.
+    private HttpListener _listener = new();
     private readonly string _prefix;
 
     public HttpJobPluginTests()
@@ -18,7 +21,7 @@ public class HttpJobPluginTests : IDisposable
         // binder — picking a random port with no retry (as this did) collided with the LoopbackServer
         // instances other test classes start in parallel, which is what made this class intermittently
         // fail. See TestPorts.
-        _prefix = TestPorts.BindLoopback(_listener);
+        _prefix = TestPorts.BindLoopback(ref _listener);
     }
     // The catch is defect D9's symptom fix — see the long note in LoopbackServer.Dispose. Close()
     // reaches the process-global HttpEndPointManager and can throw over another listener's failed
@@ -27,7 +30,11 @@ public class HttpJobPluginTests : IDisposable
     {
         _listener.Stop();
         try { _listener.Close(); }
+        // BOTH TYPES, because a listener whose Start failed can be disposed by another class
+        // unwinding the process-global map — Close then throws ObjectDisposedException rather than
+        // HttpListenerException. A teardown fault in a helper must not fail a test that passed.
         catch (HttpListenerException) { /* someone else's cleanup; not this test's failure */ }
+        catch (ObjectDisposedException) { /* already torn down by that unwind */ }
     }
 
     private Task ServeOnce(int status, string body) => Task.Run(() =>
