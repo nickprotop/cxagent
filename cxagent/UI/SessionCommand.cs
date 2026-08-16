@@ -135,8 +135,14 @@ public readonly record struct CommandArgument(
 public static class ValueSources
 {
     /// <summary>Configured provider instances, for <c>/model</c>.</summary>
-    public const string Providers = "providers";
+    public const string Providers = Core.Agent.CompletionSets.Providers;
 
     /// <summary>Sessions in this folder, for <c>/sessions resume</c>.</summary>
-    public const string Sessions = "sessions";
+    public const string Sessions = Core.Agent.CompletionSets.Sessions;
+
+    /// <summary>Edit modes, for <c>/mode edits</c>.</summary>
+    public const string EditModes = Core.Agent.CompletionSets.EditModes;
+
+    /// <summary>Connected MCP servers, for <c>/mcp</c>.</summary>
+    public const string McpServers = Core.Agent.CompletionSets.McpServers;
 }

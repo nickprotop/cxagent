@@ -160,22 +160,6 @@ public static class ModelCommand
         return string.Join('\n', lines);
     }
 
-    /// <summary>The palette's rows for <c>/model </c> — the same list the bare command renders.</summary>
-    public static IReadOnlyList<CommandArgument> Completions(
-        ProviderRegistry? registry, string? current)
-    {
-        if (registry is null) return [];
-
-        var models = registry.InstanceModels;
-        var windows = registry.InstanceWindows;
-
-        return [.. registry.InstanceNames.Select(name =>
-        {
-            var window = windows.TryGetValue(name, out var w) && w is { } size ? $" · {Compact(size)}" : "";
-            var here = string.Equals(name, current, StringComparison.OrdinalIgnoreCase) ? " · in use" : "";
-            return new CommandArgument(name, $"{models.GetValueOrDefault(name, "?")}{window}{here}");
-        })];
-    }
 
     private static string Compact(int tokens) =>
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}k";

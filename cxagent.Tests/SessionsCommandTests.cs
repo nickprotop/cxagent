@@ -163,16 +163,6 @@ public class SessionsCommandTests
         Assert.DoesNotContain("UID0024", reply);
     }
 
-    [Fact]
-    public void CompletionsCompleteToTheNumberAndDescribeByTheTitle()
-    {
-        var rows = SessionsCommand.Completions(Two);
-
-        Assert.Equal("1", rows[0].Name);
-        Assert.Equal("2", rows[1].Name);
-        Assert.Contains("asked about /mode", rows[1].Summary);
-        Assert.All(rows, r => Assert.True(r.Completes));
-    }
 
     // --- the plain-text listing, for --sessions ---
 

@@ -174,6 +174,75 @@ public sealed class Session
         Plugins = plugins;
     }
 
+    /// <summary>Records the catalog this session was wired against, so it can answer
+    /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
+    public void NoteCatalog(ProviderRegistry? catalog, bool classifierConfigured)
+    {
+        _catalog = catalog;
+        _classifierConfigured = classifierConfigured;
+    }
+
+    /// <summary>
+    /// The catalog this session was wired against, and whether a classifier is configured in it.
+    ///
+    /// <para>KEPT SO THE SESSION CAN ANSWER FOR ITSELF. <c>/model</c> offering the configured
+    /// instances and <c>/mode edits</c> offering the valid modes are both questions about THIS
+    /// session, and they used to be answered by the composition root reaching into a resolution and
+    /// a policy it happened to have in scope.</para>
+    /// </summary>
+    private ProviderRegistry? _catalog;
+    private bool _classifierConfigured;
+
+    /// <summary>What this session can offer for a named set — see <see cref="CompletionSets"/>.
+    ///
+    /// <para>Empty for a set it does not own, so a caller can ask both a session and a manager
+    /// without knowing which answers what.</para>
+    /// </summary>
+    public IReadOnlyList<CompletionValue> Values(string set) => set switch
+    {
+        CompletionSets.Providers => ProviderValues(),
+        CompletionSets.EditModes => EditModeValues(),
+        _ => [],
+    };
+
+    private IReadOnlyList<CompletionValue> ProviderValues()
+    {
+        if (_catalog is null) return [];
+
+        var models = _catalog.InstanceModels;
+        var windows = _catalog.InstanceWindows;
+
+        return [.. _catalog.InstanceNames.Select(name =>
+        {
+            var window = windows.TryGetValue(name, out var w) && w is { } size ? $" · {Compact(size)}" : "";
+
+            // "in use" READ FROM THE SESSION, which is the whole reason this answer belongs here: the
+            // instance in use is session state, and a catalog alone cannot say which one it is.
+            var here = string.Equals(name, InstanceName, StringComparison.OrdinalIgnoreCase) ? " · in use" : "";
+            return new CompletionValue(name, $"{models.GetValueOrDefault(name, "?")}{window}{here}");
+        })];
+    }
+
+    // AUTO ONLY WHEN A CLASSIFIER EXISTS. Offering a mode that cannot work is worse than not offering
+    // it — EditModes.ValidWith already encodes that rule for the error message, and this is the same
+    // rule reaching the palette so the two cannot disagree.
+    private IReadOnlyList<CompletionValue> EditModeValues()
+    {
+        List<CompletionValue> values =
+        [
+            new("always-ask", "ask before every file write and command"),
+            new("accept-edits", "write files in this folder without asking; commands still ask"),
+        ];
+
+        if (_classifierConfigured)
+            values.Add(new("auto", "a second model judges each request"));
+
+        return values;
+    }
+
+    private static string Compact(int tokens) =>
+        tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}K";
+
     /// <summary>
     /// Points this session at a different model, keeping the conversation.
     ///

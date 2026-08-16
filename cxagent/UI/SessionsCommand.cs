@@ -143,29 +143,6 @@ public static class SessionsCommand
         return string.Join('\n', lines);
     }
 
-    /// <summary>
-    /// The rows the palette offers after <c>/sessions resume </c> — the same sessions, in the same
-    /// order, named the way the listing names them.
-    ///
-    /// <para>COMPLETES TO THE NUMBER, DESCRIBES BY THE TITLE. The number is what the listing shows
-    /// and the shortest thing to type; the title is the only part a user recognises. A palette of
-    /// bare uids would be six commands' worth of hex and no way to tell which conversation is which.
-    /// </para>
-    /// </summary>
-    public static IReadOnlyList<CommandArgument> Completions(IReadOnlyList<SessionInfo> sessions)
-    {
-        var rows = new List<CommandArgument>();
-
-        for (var i = 0; i < Math.Min(sessions.Count, MaxRows); i++)
-        {
-            var s = sessions[i];
-            rows.Add(new CommandArgument(
-                (i + 1).ToString(),
-                $"{Short(s.Uid)}  {Age(s.UpdatedAt)}  {s.Title ?? "(no messages yet)"}"));
-        }
-
-        return rows;
-    }
 
     /// <summary>
     /// The line shown at startup when this folder has history, or null when it has none.

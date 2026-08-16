@@ -1392,14 +1392,23 @@ public static class AppBootstrap
                 mainWindow.SetPermissionRuleCount(
                     permissionRules.RulesFor(session.WorkingDirectory).Rules.Count));
 
-            // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
-            // the store is the composition root's — SessionCommands stays a description of the
-            // commands rather than a view of the database. Read on each keystroke, never cached.
-            commandMenu.Values = source => source switch
+            // ASK THE OWNER, and know nothing about what it looks up. This used to switch on the
+            // source name and reach into a resume store, a provider catalog and the session's own
+            // instance to build each answer — the internals of three layers in the one place least
+            // equipped to own any of them. It also discouraged the feature: adding a popup meant
+            // editing this method, so /mode edits and /mcp never got one despite the mechanism being
+            // right here.
+            //
+            // SESSION FIRST, THEN MANAGER. Each returns empty for a set it does not own, so neither
+            // has to know what the other answers. Read on every keystroke, never cached: a session
+            // that ended in another window a minute ago has to appear.
+            commandMenu.Values = source =>
             {
-                ValueSources.Sessions => SessionsCommand.Completions(SafeList()),
-                ValueSources.Providers => ModelCommand.Completions(resolution.Providers, session.InstanceName),
-                _ => [],
+                var values = session.Values(source);
+                if (values.Count == 0)
+                    values = manager.Values(source, session.WorkingDirectory);
+
+                return [.. values.Select(v => new CommandArgument(v.Name, v.Summary))];
             };
 
             // NEVER RESUME SILENTLY. A context the user did not ask for is one they cannot account

@@ -191,14 +191,4 @@ public class ModelCommandTests
 
     // --- the palette ---
 
-    [Fact]
-    public void Completions_OfferEveryInstance_DescribedByItsModel()
-    {
-        var rows = ModelCommand.Completions(
-            Registry(("local", "qwen3", 213_000), ("claude", "claude-x", 200_000)), "local");
-
-        Assert.Equal(["local", "claude"], rows.Select(r => r.Name));
-        Assert.Contains("qwen3", rows[0].Summary);
-        Assert.Contains("in use", rows[0].Summary);
-    }
 }

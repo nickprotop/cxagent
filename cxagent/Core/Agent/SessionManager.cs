@@ -106,6 +106,61 @@ public sealed class SessionManager : IDisposable
     public static SessionManager Over(SharedServices shared, PermissionRulesStore? rules = null) =>
         new(shared, rules, ownsServices: false);
 
+    /// <summary>
+    /// What this manager can offer for a named set — see <see cref="CompletionSets"/>.
+    ///
+    /// <para>THE MANAGER ANSWERS FOR WHAT IT OWNS: the resume store behind <c>/sessions resume</c>
+    /// and the live MCP toolset behind <c>/mcp</c>. A session answers for its own — see
+    /// <see cref="Session.Values"/> — and both return empty for a set they do not own, so a caller
+    /// can ask each in turn without knowing which is which.</para>
+    ///
+    /// <para>NEVER THROWS. This runs on a keystroke inside layout, where an exception from a locked
+    /// database would take down the composer rather than produce an empty menu.</para>
+    /// </summary>
+    public IReadOnlyList<CompletionValue> Values(string set, string? workingDirectory = null)
+    {
+        try
+        {
+            return set switch
+            {
+                CompletionSets.Sessions => SessionValues(workingDirectory),
+                CompletionSets.McpServers => McpValues(),
+                _ => [],
+            };
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <summary>How many rows the palette shows — enough to choose from, few enough to read.</summary>
+    private const int MaxSessionRows = 9;
+
+    private IReadOnlyList<CompletionValue> SessionValues(string? workingDirectory)
+    {
+        if (Shared.Resume is not { } store) return [];
+
+        // SCOPED TO THIS FOLDER and re-read every time: a session that ended in another window a
+        // minute ago has to appear, and a cached list is a list that lies about exactly that.
+        var rows = store.List(workingDirectory, all: false);
+
+        return [.. rows.Take(MaxSessionRows).Select((s, i) =>
+            new CompletionValue((i + 1).ToString(), $"{Short(s.Uid)}  {s.Title ?? "(no messages yet)"}"))];
+    }
+
+    // THE LIVE SERVERS, not the names in a config file. A server listed in config that failed to
+    // connect offers no tools, and completing to it would send the user somewhere empty.
+    private IReadOnlyList<CompletionValue> McpValues()
+    {
+        if (Shared.Mcp is not { } toolset) return [];
+
+        return [.. toolset.InstructionsByServer().Keys
+            .Select(name => new CompletionValue(name, "connected MCP server"))];
+    }
+
+    private static string Short(string uid) => uid.Length <= 8 ? uid : uid[..8];
+
     /// <summary>Every open session, newest last.</summary>
     public IReadOnlyList<Session> Sessions
     {

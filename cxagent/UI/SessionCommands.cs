@@ -33,10 +33,15 @@ public static class SessionCommands
         [
             new("reload", "re-read config.json and reconnect"),
             new("login", "authorise a server that needs OAuth"),
-            // NOT COMPLETABLE: the value is a name from the user's config, and the angle brackets are
-            // notation for a reader rather than something to type. Listing live servers here would
-            // couple this static table to session state — `/mcp` bare is what enumerates them.
-            new("<server>", "inspect one server by name", Completes: false),
+            // COMPLETABLE NOW. This said listing servers "would couple this static table to session
+            // state" — true when the composition root resolved every value by hand, and no longer
+            // true: the table names a SET and the manager, which owns the toolset, answers for it.
+            // The table still holds no state.
+            //
+            // THE LIVE SERVERS, not the names in config: one that failed to connect offers no tools,
+            // and completing to it would send the user somewhere empty.
+            new("<server>", "inspect one server by name", Completes: false,
+                Values: ValueSources.McpServers),
         ]),
         // NeedsWindow like /mcp: discovery reads the session's working directory, and this type
         // holds nothing but the conversation. NO SUBCOMMANDS — it lists, it does not load, and it is
@@ -100,6 +105,14 @@ public static class SessionCommands
         [
             new("agent single", "this agent works alone; the spawn tool is withdrawn"),
             new("agent fan-out", "this agent can spawn sub-agents"),
+
+            // THE EDITS AXIS IS COMPLETABLE TOO. It was accepted by the command and simply not
+            // declared here, so `/mode edits ` offered nothing while `/mode agent ` offered two
+            // choices — the axis existed, was documented in /mode's own bare output, and had no way
+            // to be discovered from the palette. The values are live because whether `auto` is among
+            // them depends on this session's classifier.
+            new("edits", "how file writes are approved", Completes: false,
+                Values: ValueSources.EditModes),
         ]),
         // NeedsWindow again: history is a store the composition root owns, and this type holds
         // nothing but the conversation. `/stats 30` widens the window; the default is a week.
