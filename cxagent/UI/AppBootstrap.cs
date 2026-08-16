@@ -1414,15 +1414,10 @@ public static class AppBootstrap
                 {
                     mainWindow.SetContextUsed(0);
 
-                    // THE SCROLLBACK GOES. What the session said a moment ago goes with it — it says
-                    // "Conversation cleared." before it announces, and cannot know that this front
-                    // end answers by wiping the surface that sentence landed on. That is the right
-                    // division even though it costs the message here: a log writer keeps both, and a
-                    // session that suppressed its own words for one watcher's benefit would be
-                    // choosing for all of them.
-                    //
-                    // AN EMPTY TRANSCRIPT IS ITS OWN ANSWER anyway — there is nothing left to say
-                    // "cleared" about, which is why nothing is re-posted.
+                    // THE SCROLLBACK GOES, and the session's own line arrives after it — see
+                    // Session.ClearContext, which announces before it speaks precisely so a watcher
+                    // whose reaction wipes the surface does not wipe the explanation with it. An
+                    // empty screen with nothing said is worse than no clear at all.
                     mainWindow.Chat.Clear();
                 }
             });

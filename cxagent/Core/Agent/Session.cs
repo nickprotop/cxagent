@@ -243,10 +243,9 @@ public sealed class Session
         // compose this themselves, which is two wordings for one action and two chances to report a
         // change the session had just refused. What is ACTUALLY in force depends on folder trust,
         // which the policy knows and a caller would have to look up.
+        Announce(SessionChangeKind.Mode);
         Say(ModeNotice.EditsChanged(mode.Edits, Policy?.FolderTrusted ?? false,
             Policy?.Root ?? WorkingDirectory));
-
-        Announce(SessionChangeKind.Mode);
         return true;
     }
 
@@ -296,13 +295,19 @@ public sealed class Session
 
     private void Announce(SessionChangeKind kind) => Changed?.Invoke(kind);
 
+    // ANNOUNCE BEFORE YOU SAY, everywhere. A watcher reacts to the signal by redrawing, and words
+    // written first land on a surface the redraw is about to replace — which for /clear meant the
+    // explanation vanished with the scrollback and left an empty screen. Harmless for a mode or
+    // model change today, where the reaction only repaints a status bar; kept uniform so the next
+    // change that redraws more does not have to rediscover it.
+
     /// <summary>Announces that an earlier conversation was restored into this session. Called by the
     /// manager, which owns the resume sequence — see SessionManager.Resume.</summary>
     public void SayResumed(int messages)
     {
+        Announce(SessionChangeKind.Resumed);
         Say($"[yellow]Resumed an earlier session: {messages} messages restored. "
           + "They are not shown above, but the agent remembers them.[/]");
-        Announce(SessionChangeKind.Resumed);
     }
 
     /// <summary>Records the policy this session is judged by, so it can move both mode axes
@@ -434,8 +439,15 @@ public sealed class Session
 
         Host.Context.Clear();
 
-        Say("Conversation cleared.");
+        // ANNOUNCED BEFORE IT IS SAID, and this is the general rule rather than a quirk of clearing:
+        // a watcher reacts to the signal by redrawing, and a message written first lands on a
+        // surface the redraw is about to replace. Said last, it survives whatever the reaction did.
+        //
+        // Found here because clearing is the reaction that destroys most — this front end wipes its
+        // scrollback, so the sentence written before the announcement vanished and the user was left
+        // with an empty screen and no word about why.
         Announce(SessionChangeKind.ContextCleared);
+        Say("Conversation cleared.");
         return true;
     }
 
@@ -515,9 +527,9 @@ public sealed class Session
         InstanceName = next.InstanceName;
         Resolution = next;
 
+        Announce(SessionChangeKind.Model);
         Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,
             next.ContextWindow, previousWindow, used));
-        Announce(SessionChangeKind.Model);
 
         return true;
     }
