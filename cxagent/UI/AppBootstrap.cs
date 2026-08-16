@@ -171,6 +171,51 @@ public static class AppBootstrap
         // opened.
         var history = new UsageHistoryStore(paths);
 
+        // CONSTRUCTED BEFORE THE WINDOW, because the remembered edit mode below has to be resolved
+        // before MainWindow's StartupMode banner is written — that banner is a chat message and
+        // cannot be revised, so a mode restored after it would be announced wrong for the rest of
+        // the session.
+        var session = new Core.Agent.Session(Path.GetFullPath(Environment.CurrentDirectory));
+        var permissionRules = new PermissionRulesStore(paths);
+        string? migrationNotice = null;
+
+        // FOLD THE SCOPES TWO OLD BUGS LEFT BEHIND, before anything reads trust or rules. Pre-identity
+        // scopes were bare paths; ctime-era scopes moved every time the agent wrote a file. Both
+        // stranded the grants and trust recorded under them, which is why a folder already trusted
+        // asked again. Idempotent, so it costs one no-op pass on every later launch.
+        //
+        // The file is copied to permissions.json.premigration first — this rewrites decisions the
+        // user made, and "it deleted my grants" must be answerable with a file rather than a claim.
+        try
+        {
+            var migration = PermissionScopeMigration.Run(permissionRules);
+            if (migration.ChangedAnything)
+                migrationNotice = $"[dim]permissions: folded {migration.Scopes} stale folder "
+                    + $"{(migration.Scopes == 1 ? "scope" : "scopes")} from an older identity scheme "
+                    + $"({migration.Trusted} trust {(migration.Trusted == 1 ? "decision" : "decisions")} "
+                    + $"kept, {migration.Rules} {(migration.Rules == 1 ? "rule" : "rules")} moved). "
+                    + "Previous file saved as permissions.json.premigration.[/]";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A store that cannot be rewritten still works, it just keeps asking. Never fatal.
+        }
+
+        // THE FOLDER'S REMEMBERED EDIT MODE, restored exactly — including the permissive ones. This
+        // is the one place cxagent lets a past decision widen a later session without an act in it,
+        // and it is deliberate: re-picking a mode on every launch is friction that buys no safety,
+        // because TRUST still floors what any mode can do. A restored AcceptEdits/Auto on a folder
+        // whose trust is Unknown asks anyway.
+        //
+        // BEFORE the resume override further down, not after: a resumed session's own recorded mode
+        // is the more specific fact — it says what this conversation was left in, not merely what
+        // the folder usually runs as.
+        //
+        // Only the edits axis. --mode carries AgentMode alone, so there is no CLI value to conflict
+        // with here; if the edits axis ever gets a flag, the flag must win over this.
+        if (permissionRules.GetEditMode(session.WorkingDirectory) is { } rememberedEdits)
+            startupMode = startupMode with { Edits = rememberedEdits };
+
         var mainWindow = new MainWindow(system, resolution, logs)
         {
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
@@ -203,9 +248,13 @@ public static class AppBootstrap
         // The directory is GIVEN, not read: that is the whole point of the type. It still comes from
         // the process here, because one process runs one session — but every consumer now takes it
         // FROM the session, so a second root is a change to this line rather than to eighteen sites.
-        var session = new Core.Agent.Session(Path.GetFullPath(Environment.CurrentDirectory));
-        var permissionRules = new PermissionRulesStore(paths);
-        var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules);
+
+        // SEEDED WITH THE RESOLVED MODE, not the constructor default. The policy is what actually
+        // decides whether a write asks, and it was only ever assigned on a LATER /mode or Shift+Tab —
+        // so a restored AlwaysAsk would have shown in the status bar while the policy still ran at
+        // AcceptEdits, which is the dangerous direction of that mismatch.
+        var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules,
+            startupMode.Edits);
         // The UI's own transcript writer. The control it wraps is created with mainWindow above and
         // never replaced, so — unlike the forwarder this used to be — there is no later lifetime to
         // chase: every caller below can hold this one instance for good.
@@ -309,6 +358,24 @@ public static class AppBootstrap
                         OnClick = _ => DrainQueuedToComposer(),
                     },
                 ]);
+            }
+
+            // THE ONE PLACE A MODE CHOICE IS REMEMBERED. Shift+Tab and `/mode` are the same decision
+            // reached two ways, and a second copy of this is the copy that forgets to persist.
+            //
+            // Best-effort: a folder whose mode cannot be written (read-only config dir, disk full)
+            // must still switch mode for THIS session. Losing the memory is a smaller harm than
+            // refusing the change the user just made — the same reasoning as the IOException guards
+            // around the gate's own _store.Add.
+            void RememberEditMode(EditMode edits)
+            {
+                try
+                {
+                    permissionRules.SetEditMode(session.WorkingDirectory, edits);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
             }
 
             // THE ONE PLACE QUEUED TEXT GOES BACK. Escape and the Cancel action are the same act
@@ -540,6 +607,11 @@ public static class AppBootstrap
                 // existed says nothing about what the user chose, and absent is not permission.
                 startupMode = startupMode with { Edits = snapshot.Edits ?? EditMode.AlwaysAsk };
 
+                // AND THE POLICY WITH IT. The policy was seeded from startupMode before this block
+                // ran, so a resume that narrows the mode has to narrow the thing that enforces it —
+                // otherwise the status bar would say always-ask while writes stayed silent.
+                permissionPolicy.Edits = startupMode.Edits;
+
                 // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
                 // rows, and leaving the old one open would offer the same context again at the next
                 // launch. SUPERSEDED, not finished — it is a live conversation someone continued,
@@ -561,6 +633,8 @@ public static class AppBootstrap
         WireRunner(resolution);   // startup path, unchanged in effect
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
+        if (migrationNotice is not null)
+            transcript.Write(migrationNotice);
         if (resumeNotice is not null)
             transcript.Write(resumeNotice);
 
@@ -650,6 +724,7 @@ public static class AppBootstrap
                 runner.Mode = runner.Mode with { Edits = nextEdits };
                 permissionPolicy.Edits = nextEdits;
                 mainWindow.SetMode(runner.Mode);
+                RememberEditMode(nextEdits);
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.
@@ -813,6 +888,7 @@ public static class AppBootstrap
                                 runner.Mode = next;
                                 permissionPolicy.Edits = next.Edits;
                                 mainWindow.SetMode(next);
+                                RememberEditMode(next.Edits);
                             }
 
                             mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
@@ -1265,6 +1341,13 @@ public static class AppBootstrap
             mainWindow.SetPermissionRuleCount(
                 permissionRules.RulesFor(session.WorkingDirectory).Rules.Count);
             mainWindow.RefreshSessionPanel();
+
+            // KEEP THE COUNT LIVE. Seeding once left "Always" grants invisible until something else
+            // happened to redraw the panel. The grant can land on a scheduler thread, so the recount
+            // is marshalled rather than run inline — RefreshSessionPanel touches controls.
+            permissionRules.RulesChanged += () => system.EnqueueOnUIThread(() =>
+                mainWindow.SetPermissionRuleCount(
+                    permissionRules.RulesFor(session.WorkingDirectory).Rules.Count));
 
             // LIVE VALUES FOR `/sessions resume `. Registered here, in the composition root, because
             // the store is the composition root's — SessionCommands stays a description of the

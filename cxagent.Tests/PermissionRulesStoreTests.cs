@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -252,5 +253,82 @@ public class PermissionRulesStoreTests
         Assert.Equal(2, rules.Count);
         Assert.DoesNotContain(rules, r => r.Pattern == "ls");
         Assert.Equal(1, others);
+    }
+
+    // REGRESSION: RulesFor compared the caller's RAW path against stored scopes while Add persists
+    // under FolderIdentity.ScopeFor(...). For any folder that gets an identity suffix, the lookup
+    // matched nothing — the panel and the Settings page reported zero rules however many were
+    // granted. The test above never caught it because "/proj/a" has no identity, so ScopeFor is a
+    // no-op on both sides and the raw and normalised keys are identical. This one uses a real
+    // directory, which does get a suffix.
+    [Fact]
+    public void RulesFor_FindsRulesWhenTheScopeHasAnIdentitySuffix()
+    {
+        var dir = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(MakeTempDir()));
+        store.Add(dir, PermissionKind.Shell, "git status");
+
+        // Precondition: this really is a scope that normalises to something else, otherwise the
+        // test would pass for the same uninteresting reason the one above did.
+        Assert.NotEqual(dir, FolderIdentity.ScopeFor(dir));
+
+        var (rules, _) = store.RulesFor(dir);
+        Assert.Single(rules);
+        Assert.Equal("git status", rules[0].Pattern);
+    }
+
+    [Fact]
+    public void EditMode_IsNullUntilSet_SoAbsentIsNotASilentDefault()
+    {
+        var store = new PermissionRulesStore(new AppPaths(MakeTempDir()));
+        Assert.Null(store.GetEditMode("/proj/a"));
+    }
+
+    [Fact]
+    public void EditMode_RoundTripsAcrossInstances_IncludingThePermissiveOnes()
+    {
+        var config = MakeTempDir();
+        new PermissionRulesStore(new AppPaths(config)).SetEditMode("/proj/a", EditMode.Auto);
+
+        // A NEW INSTANCE, i.e. the next launch — the whole point of the feature.
+        Assert.Equal(EditMode.Auto, new PermissionRulesStore(new AppPaths(config)).GetEditMode("/proj/a"));
+    }
+
+    [Fact]
+    public void EditMode_IsPerFolder_SoOneProjectsChoiceNeverGovernsAnother()
+    {
+        var store = new PermissionRulesStore(new AppPaths(MakeTempDir()));
+        store.SetEditMode("/proj/a", EditMode.AlwaysAsk);
+
+        Assert.Equal(EditMode.AlwaysAsk, store.GetEditMode("/proj/a"));
+        Assert.Null(store.GetEditMode("/proj/b"));
+    }
+
+    // Mirrors the trust merge rule: an instance that never chose a mode for a folder must not
+    // clobber another window's newer choice when it saves for some unrelated reason.
+    [Fact]
+    public void EditMode_FromDiskWins_ForAScopeThisInstanceNeverSet()
+    {
+        var config = MakeTempDir();
+        var first = new PermissionRulesStore(new AppPaths(config));
+        var second = new PermissionRulesStore(new AppPaths(config));
+
+        second.SetEditMode("/proj/a", EditMode.AlwaysAsk);   // the newer, on-disk choice
+        first.Add("/proj/other", PermissionKind.Shell, "ls"); // triggers first's Save + merge
+
+        Assert.Equal(EditMode.AlwaysAsk,
+            new PermissionRulesStore(new AppPaths(config)).GetEditMode("/proj/a"));
+    }
+
+    [Fact]
+    public void Add_RaisesRulesChanged_SoAViewCanRecount()
+    {
+        var store = new PermissionRulesStore(new AppPaths(MakeTempDir()));
+        var raised = 0;
+        store.RulesChanged += () => raised++;
+
+        store.Add("/proj/a", PermissionKind.Shell, "git status");
+
+        Assert.Equal(1, raised);
     }
 }

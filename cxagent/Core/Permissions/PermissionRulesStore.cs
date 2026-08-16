@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Storage;
 using System.Linq;
 
@@ -41,6 +42,17 @@ public class PermissionRulesStore
     // must never clobber that folder's on-disk trust value with its own stale in-memory copy.
     private readonly HashSet<string> _locallySetTrustScopes = new();
 
+    // Per-folder edit mode, and the same local-vs-inherited distinction trust keeps, for the same
+    // reason: an instance that never chose a mode for a folder must not overwrite another window's
+    // newer choice with its own stale copy on the next save.
+    private readonly Dictionary<string, EditMode> _editModes;
+    private readonly HashSet<string> _locallySetEditModeScopes = new();
+
+    // Scopes this instance has deliberately deleted (migration). Save()'s merge re-reads the file
+    // and unions its rules in, so without this a forgotten scope is restored by the very write that
+    // was meant to remove it.
+    private readonly HashSet<string> _forgottenScopes = new();
+
     // Set once, at construction, if the file existed but failed to parse. Drives both LoadError
     // (so a caller can tell the user) and the one-time .bad backup on the next Save.
     private bool _loadFailed;
@@ -53,6 +65,7 @@ public class PermissionRulesStore
         var loaded = Load(_path);
         _rules = loaded.Rules;
         _trust = loaded.Trust;
+        _editModes = loaded.EditModes;
         _loadFailed = loaded.Failed;
         LoadError = loaded.Failed
             ? "permissions.json could not be read and was treated as empty (every rule and all folder trust are gone until the file is fixed). The original file will be preserved as permissions.json.bad on the next change."
@@ -71,21 +84,26 @@ public class PermissionRulesStore
     /// rule by hand knows exactly which file to edit).</summary>
     public string FilePath => _path;
 
-    private static (List<Rule> Rules, Dictionary<string, TrustState> Trust, bool Failed) Load(string path)
+    private static (List<Rule> Rules, Dictionary<string, TrustState> Trust,
+        Dictionary<string, EditMode> EditModes, bool Failed) Load(string path)
     {
         if (!File.Exists(path))
-            return (new List<Rule>(), new Dictionary<string, TrustState>(), false);
+            return (new List<Rule>(), new Dictionary<string, TrustState>(),
+                new Dictionary<string, EditMode>(), false);
 
         try
         {
             var json = File.ReadAllText(path);
             var stored = JsonSerializer.Deserialize<StoredFile>(json, JsonOptions);
-            if (stored is null) return (new List<Rule>(), new Dictionary<string, TrustState>(), false);
+            if (stored is null) return (new List<Rule>(), new Dictionary<string, TrustState>(),
+                new Dictionary<string, EditMode>(), false);
             var rules = (stored.Rules ?? new List<StoredRule>())
                 .Select(r => new Rule(r.Scope, r.Kind, r.Pattern))
                 .ToList();
             var trust = new Dictionary<string, TrustState>(stored.Trust ?? new Dictionary<string, TrustState>());
-            return (rules, trust, false);
+            var editModes = new Dictionary<string, EditMode>(
+                stored.EditModes ?? new Dictionary<string, EditMode>());
+            return (rules, trust, editModes, false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or JsonException or NotSupportedException)
@@ -93,7 +111,8 @@ public class PermissionRulesStore
             // File present but unreadable or not valid JSON (including one typo'd enum value,
             // which JsonException covers): empty rule set, not a crash — but this IS distinct from
             // "no file", so the caller is told via the Failed flag.
-            return (new List<Rule>(), new Dictionary<string, TrustState>(), true);
+            return (new List<Rule>(), new Dictionary<string, TrustState>(),
+                new Dictionary<string, EditMode>(), true);
         }
     }
 
@@ -134,6 +153,17 @@ public class PermissionRulesStore
         return subject == pattern;
     }
 
+    /// <summary>Raised after a grant is persisted, so a view showing the rule count can refresh.
+    /// Without it the count is whatever it was when the panel was first seeded: the panel reads
+    /// RulesFor() once at startup, so pressing "Always" wrote the rule and left the number stale,
+    /// which reads as the grant not having registered at all.
+    ///
+    /// Raised OUTSIDE _lock, deliberately. A handler marshals to the UI thread, and grants arrive
+    /// from scheduler threads (a job finishing while the user is elsewhere) — holding the store's
+    /// lock across a foreign callback is how the lock ends up owned by whatever that handler
+    /// decides to do next.</summary>
+    public event Action? RulesChanged;
+
     public void Add(string scope, PermissionKind kind, string rule)
     {
         scope = FolderIdentity.ScopeFor(scope);
@@ -142,6 +172,7 @@ public class PermissionRulesStore
             _rules.Add(new Rule(scope, kind, rule));
             Save();
         }
+        RulesChanged?.Invoke();
     }
 
     /// <summary>Trust-on-first-use state for a folder. Never asked = Unknown, which the policy
@@ -164,6 +195,11 @@ public class PermissionRulesStore
     /// the render loop; this materialises both results before releasing the lock.</summary>
     public (IReadOnlyList<(PermissionKind Kind, string Pattern)> Rules, int OtherScopeCount) RulesFor(string scope)
     {
+        // NORMALISE, as Add/Matches/GetTrust all do. This method used to compare the caller's raw
+        // path against stored scopes, but Add persists under FolderIdentity.ScopeFor(...) — the
+        // "/tmp/x#20260815T201146" form — so a lookup by plain "/tmp/x" matched nothing and both
+        // the panel count and the Settings page reported zero rules no matter how many were granted.
+        scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {
             var rules = _rules
@@ -176,6 +212,158 @@ public class PermissionRulesStore
                 .Distinct()
                 .Count();
             return (rules, otherScopes);
+        }
+    }
+
+    /// <summary>The edit mode last chosen in this folder, or null if never set. Null is NOT a
+    /// silent AcceptEdits — the caller decides what absent means, the same way the resume path
+    /// does.</summary>
+    public EditMode? GetEditMode(string scope)
+    {
+        scope = FolderIdentity.ScopeFor(scope);
+        lock (_lock)
+        {
+            return _editModes.TryGetValue(scope, out var mode) ? mode : null;
+        }
+    }
+
+    /// <summary>
+    /// Remember the edit mode for this folder, restored EXACTLY on the next launch here.
+    ///
+    /// <para>THIS IS A DELIBERATE EXCEPTION to the rule the resume path states ("widening must be an
+    /// act, never a side effect of continuing"), decided by the user: a mode is a setting they chose
+    /// for a folder they work in, and re-picking it every launch is friction with no safety gained.
+    /// The consequence is real and worth naming — one past decision governs every later session in
+    /// that folder, so a folder left in Auto starts in Auto with nobody saying so this time.</para>
+    ///
+    /// <para>WHAT KEEPS THAT SAFE IS TRUST, NOT THE MODE. Modes narrow and trust bounds: a restored
+    /// AcceptEdits/Auto on a folder whose trust is Unknown still asks, because the policy floors
+    /// every mode against trust. So the worst a remembered permissive mode can do is take effect in
+    /// a folder the user already trusted — which is the case they were describing when they set
+    /// it.</para>
+    /// </summary>
+    public void SetEditMode(string scope, EditMode mode)
+    {
+        scope = FolderIdentity.ScopeFor(scope);
+        lock (_lock)
+        {
+            _editModes[scope] = mode;
+            _locallySetEditModeScopes.Add(scope);
+            Save();
+        }
+    }
+
+    // ---- Raw scope access, for PermissionScopeMigration only. ----
+    //
+    // These take scopes EXACTLY as stored and never call FolderIdentity.ScopeFor. That is the whole
+    // point: the migration's subject is the stored string itself, and normalising it would rewrite
+    // the very value being inspected — every stale scope would silently become the current one and
+    // the migration would find nothing to do.
+
+    /// <summary>Every distinct scope string present in rules or trust, exactly as stored.</summary>
+    public IReadOnlyList<string> AllScopes()
+    {
+        lock (_lock)
+        {
+            return _rules.Select(r => r.Scope)
+                .Concat(_trust.Keys)
+                .Concat(_editModes.Keys)
+                .Distinct()
+                .ToList();
+        }
+    }
+
+    /// <summary>Adds a rule under a scope string EXACTLY as given. For constructing the stale state
+    /// the migration exists to clean up — production grants go through <see cref="Add"/>, which
+    /// normalises.</summary>
+    public void AddRaw(string storedScope, PermissionKind kind, string rule)
+    {
+        lock (_lock)
+        {
+            _rules.Add(new Rule(storedScope, kind, rule));
+            Save();
+        }
+        RulesChanged?.Invoke();
+    }
+
+    /// <summary>Sets trust under a scope string EXACTLY as given. Same purpose as
+    /// <see cref="AddRaw"/>.</summary>
+    public void SetTrustRaw(string storedScope, TrustState state)
+    {
+        lock (_lock)
+        {
+            _trust[storedScope] = state;
+            _locallySetTrustScopes.Add(storedScope);
+            Save();
+        }
+    }
+
+    /// <summary>Trust for a scope string as stored, without normalising it.</summary>
+    public TrustState GetTrustRaw(string storedScope)
+    {
+        lock (_lock)
+        {
+            return _trust.TryGetValue(storedScope, out var state) ? state : TrustState.Unknown;
+        }
+    }
+
+    /// <summary>Moves every rule under <paramref name="from"/> onto <paramref name="to"/>, dropping
+    /// duplicates that the target already holds. Returns how many moved.</summary>
+    public int RepointRules(IReadOnlyCollection<string> from, string to)
+    {
+        lock (_lock)
+        {
+            var moved = 0;
+            for (var i = 0; i < _rules.Count; i++)
+            {
+                var rule = _rules[i];
+                if (!from.Contains(rule.Scope)) continue;
+
+                var target = rule with { Scope = to };
+                if (!_rules.Contains(target))
+                {
+                    _rules[i] = target;
+                    moved++;
+                }
+            }
+
+            // Duplicates left behind by the merge above (a rule whose target already existed keeps
+            // its old scope and is dropped by ForgetScopes next).
+            Save();
+            return moved;
+        }
+    }
+
+    /// <summary>Removes all trace of these scope strings — rules, trust and remembered mode.
+    /// Returns how many scopes actually held something.</summary>
+    public int ForgetScopes(IReadOnlyCollection<string> scopes)
+    {
+        lock (_lock)
+        {
+            var removed = 0;
+            foreach (var scope in scopes)
+            {
+                var had = _rules.RemoveAll(r => r.Scope == scope) > 0;
+                had |= _trust.Remove(scope);
+                had |= _editModes.Remove(scope);
+                if (had) removed++;
+
+                // TOMBSTONE, because Save() MERGES FROM DISK. Deleting locally is not enough: the
+                // merge reads whatever is still in the file and adds back anything this instance is
+                // not marked as owning, so the scope just deleted came straight back and the
+                // migration reported success over a file it had not changed (measured: scopes=1,
+                // and the stale scope still present afterwards).
+                //
+                // Keeping the local-set marks is what suppresses the re-read — they are exactly the
+                // "this instance decided about this scope" flags the merge consults — and _forgotten
+                // covers the rules, which the merge unions unconditionally.
+                _locallySetTrustScopes.Add(scope);
+                _locallySetEditModeScopes.Add(scope);
+                _forgottenScopes.Add(scope);
+            }
+
+            Save();
+            return removed;
         }
     }
 
@@ -233,6 +421,7 @@ public class PermissionRulesStore
 
         foreach (var rule in onDisk.Rules)
         {
+            if (_forgottenScopes.Contains(rule.Scope)) continue;   // deleted here; do not resurrect
             if (!_rules.Contains(rule)) _rules.Add(rule);
         }
 
@@ -241,9 +430,15 @@ public class PermissionRulesStore
             if (!_locallySetTrustScopes.Contains(scope)) _trust[scope] = state;
         }
 
+        foreach (var (scope, mode) in onDisk.EditModes)
+        {
+            if (!_locallySetEditModeScopes.Contains(scope)) _editModes[scope] = mode;
+        }
+
         var stored = new StoredFile(
             _rules.Select(r => new StoredRule(r.Scope, r.Kind, r.Pattern)).ToList(),
-            new Dictionary<string, TrustState>(_trust));
+            new Dictionary<string, TrustState>(_trust),
+            new Dictionary<string, EditMode>(_editModes));
         var json = JsonSerializer.Serialize(stored, JsonOptions);
 
         var tmp = Path.Combine(dir, $".permissions.json.{Guid.NewGuid():N}.tmp");
@@ -253,5 +448,8 @@ public class PermissionRulesStore
 
     private sealed record StoredRule(string Scope, PermissionKind Kind, string Pattern);
 
-    private sealed record StoredFile(List<StoredRule>? Rules, Dictionary<string, TrustState>? Trust);
+    // EditModes is nullable so a permissions.json written before this column existed still loads —
+    // absent means "no folder has a remembered mode", not a parse failure.
+    private sealed record StoredFile(List<StoredRule>? Rules, Dictionary<string, TrustState>? Trust,
+        Dictionary<string, EditMode>? EditModes);
 }
