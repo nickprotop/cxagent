@@ -128,4 +128,30 @@ public class SessionManagerTests : IDisposable
 
         Assert.Single(manager.Sessions);
     }
+
+    // THE HOOK IS THE WHOLE UI DEPENDENCY. Create owns the rules store, so it can hand it to a
+    // caller that knows how to ask a human — which is the only part Core cannot supply. Before the
+    // gate stopped holding a session's policy this was impossible: there was no session yet to give
+    // it one.
+    [Fact]
+    public void Create_BuildsTheGateFromTheStoreItOwns()
+    {
+        Core.Permissions.PermissionRulesStore? handed = null;
+
+        using var manager = SessionManager.Create(
+            new AppPaths(_dir),
+            buildGate: rules => { handed = rules; return Core.Permissions.PermissionGate.DenyAll; });
+
+        Assert.NotNull(manager.Shared.Gate);
+        Assert.Same(manager.Rules, handed);
+    }
+
+    [Fact]
+    public void Create_WithNoHook_LeavesTheSessionsUngated()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+
+        Assert.Null(manager.Shared.Gate);
+        Assert.NotNull(manager.Rules);   // the store exists either way — /permissions reads it
+    }
 }

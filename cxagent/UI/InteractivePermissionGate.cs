@@ -30,9 +30,7 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class InteractivePermissionGate : IPermissionGate
 {
-    private readonly PermissionPolicy _policy;
     private readonly PermissionRulesStore _store;
-    private readonly string _workingDir;
     private readonly ITranscriptWriter? _transcript;
 
     /// <summary>
@@ -81,9 +79,15 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// `workingDir` is the same root string AppBootstrap built `policy` from (captured once,
     /// Path.GetFullPath(Environment.CurrentDirectory)) — PermissionPolicy doesn't expose its
     /// captured root, so the caller passes it again here rather than this class re-deriving it.</summary>
+    /// <remarks>
+    /// TAKES NO SESSION. It used to take a working directory and a policy, and held both — which
+    /// made one gate quietly the property of whichever session built it. Every decision now reads
+    /// the policy carried on the request, so the gate is what it should be: a rules store and a way
+    /// to ask. That is also what lets a process-wide owner build one before any session exists.
+    /// </remarks>
     public InteractivePermissionGate(ConsoleWindowSystem system, MainWindow mw,
-        string workingDir, PermissionPolicy policy, PermissionRulesStore store, ITranscriptWriter? transcript)
-        : this(policy, store, workingDir, transcript,
+        PermissionRulesStore store, ITranscriptWriter? transcript)
+        : this(store, transcript,
             (request, offerTrust, ct) =>
             {
                 var prompt = new PermissionPromptControl(request, offerTrust);
@@ -118,12 +122,10 @@ public sealed class InteractivePermissionGate : IPermissionGate
         }
     }
 
-    private InteractivePermissionGate(PermissionPolicy policy, PermissionRulesStore store, string workingDir,
+    private InteractivePermissionGate(PermissionRulesStore store,
         ITranscriptWriter? transcript, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
     {
-        _policy = policy;
         _store = store;
-        _workingDir = workingDir;
         _transcript = transcript;
         _promptHook = promptHook;
     }
@@ -133,10 +135,20 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// this codebase has no InternalsVisibleTo grant (see OrchestratorLoop.cs:495) — but is not
     /// part of the gate's runtime API surface: production code always uses the UI-wired
     /// constructor above.</summary>
+    /// <param name="policy">
+    /// Stamped onto every request this gate receives, standing in for
+    /// <see cref="PermissionGatedPlugin"/>, which does it in production. The gate itself holds no
+    /// policy — that is the point of the split — so a test that built one and expected the gate to
+    /// remember it would be testing a shape that no longer exists.
+    /// </param>
     public static InteractivePermissionGate ForTesting(PermissionPolicy policy, PermissionRulesStore store,
-        string workingDir, ITranscriptWriter? transcript,
+        ITranscriptWriter? transcript,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
-        new(policy, store, workingDir, transcript, promptHook);
+        new(store, transcript, promptHook) { StampForTesting = policy };
+
+    /// <summary>Test-only: the policy to attach to requests that arrive without one. Null in
+    /// production, where PermissionGatedPlugin has already stamped them.</summary>
+    public PermissionPolicy? StampForTesting { get; init; }
 
     /// <summary>
     /// Called with every decision this gate makes. Set by the composition root to record history;
@@ -179,7 +191,23 @@ public sealed class InteractivePermissionGate : IPermissionGate
         //
         // NULL FALLS BACK to the gate's own, which is the single-session path and every existing
         // caller.
-        var policy = request.Policy ?? _policy;
+        // NO FALLBACK. The gate is one per process and holds no session, so a request that arrives
+        // without a policy is one nobody can judge: there is no root to check a path against and no
+        // edit mode to read. Refusing is the only honest answer — inventing one would decide a
+        // question using another session's rules, which is the failure this whole split exists to
+        // end. Every production path stamps it (PermissionGatedPlugin); this is the guard for a
+        // caller that forgets.
+        // The test seam stands in for PermissionGatedPlugin, which stamps this in production.
+        if (StampForTesting is not null && request.Policy is null)
+            request = request with { Policy = StampForTesting };
+
+        if (request.Policy is not { } policy)
+        {
+            OnDecision?.Invoke(request.Kind, "denied", request.Requester);
+            _transcript?.Write("[yellow]refused: this request carried no session policy, so there "
+                             + "was nothing to judge it against.[/]");
+            return false;
+        }
 
         // The silent path is reported separately: "allowed without asking" and "the user said yes"
         // are different facts, and collapsing them would make a session of stored rules look like a
@@ -260,7 +288,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
             // offering to trust a folder on the strength of another session's root would offer the
             // wrong promise.
             var offerTrust = (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite)
-                && (request.Policy ?? _policy).IsInBoundary(request.Display);
+                && request.Policy!.IsInBoundary(request.Display);
 
             // `ct` is handed straight to the prompt hook rather than raced against it with a
             // second, gate-local TaskCompletionSource: an earlier version resolved a LOCAL tcs to
@@ -323,7 +351,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
                     // and this gate serves every session in the process — filing it under the
                     // gate's own root would grant a permission in a project the user was not
                     // looking at.
-                    _store.Add((request.Policy ?? _policy).Root, request.Kind, request.AlwaysRule);
+                    _store.Add(request.Policy!.Root, request.Kind, request.AlwaysRule);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -337,7 +365,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
             case PermissionChoice.TrustFolder:
                 try
                 {
-                    _store.SetTrust((request.Policy ?? _policy).Root, TrustState.Trusted);
+                    _store.SetTrust(request.Policy!.Root, TrustState.Trusted);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {

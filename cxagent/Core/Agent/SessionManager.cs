@@ -61,11 +61,26 @@ public sealed class SessionManager : IDisposable
     /// usage archive beside it is deliberately NOT pruned — it is the answer to "where did last
     /// month go", and pruning it on startup would delete that every time the app opened.</para>
     /// </summary>
-    public static SessionManager Create(AppPaths paths, IPermissionGate? gate = null,
-        PermissionRulesStore? rules = null, Mcp.McpToolset? mcp = null)
+    /// <param name="buildGate">
+    /// Turns the rules store this manager owns into a gate. NOT a gate instance, because the gate
+    /// needs the store and the store is built here — and not built internally either, because
+    /// asking a human needs a window and Core has none.
+    ///
+    /// <para>A HOOK IS THE WHOLE UI DEPENDENCY. The interactive gate reduces to a store plus a
+    /// prompt function; once it stopped holding a session's policy it stopped needing anything else,
+    /// which is what makes this callable before any session exists. Null gives an ungated manager —
+    /// ordinary for a headless host, and the reason DenyAll is not the default here: a caller that
+    /// wants refusal can say so, and one that genuinely has nobody to ask should not have every
+    /// operation silently fail.</para>
+    /// </param>
+    public static SessionManager Create(AppPaths paths,
+        Func<PermissionRulesStore, IPermissionGate>? buildGate = null,
+        Mcp.McpToolset? mcp = null)
     {
         var resume = new SqliteSessionStore(paths);
         resume.Prune(SqliteSessionStore.DefaultRetention);
+
+        var rules = new PermissionRulesStore(paths);
 
         return new SessionManager(
             new SharedServices
@@ -73,7 +88,7 @@ public sealed class SessionManager : IDisposable
                 Logs = new LogFileManager(paths),
                 Resume = resume,
                 History = new UsageHistoryStore(paths),
-                Gate = gate,
+                Gate = buildGate?.Invoke(rules),
                 Mcp = mcp,
                 GlobalInstructionsDir = paths.ConfigDir,
             },
