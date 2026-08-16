@@ -220,6 +220,25 @@ public static class SystemPrompt
                         + "agent that loses the facts you gave it goes and rediscovers them, and "
                         + "spends its turns doing that instead of the task.");
             sb.AppendLine();
+
+            // AND HOW SPECIFIC THOSE FACTS HAVE TO BE. The rule above fixed WHERE they go and it
+            // worked — measured on a later drive, all three spawns split context from prompt without
+            // correction. This is the failure that survived it: the parent had READ GpuCapabilities.cs
+            // and still wrote only the concept ("capability-gate each metric") into context, with no
+            // property names. The builder invented Utilization, Memory, Temperature and Power — none
+            // of which exist on that type — and wrote against them for fifty-five turns before its
+            // first build said otherwise.
+            //
+            // A NAME IS CHEAP AND A GUESS IS NOT. Quoting four identifiers costs a line; omitting
+            // them cost most of a build run. The planner briefing already states this for plan files
+            // ("quote the identifiers a step depends on rather than describing them") — the parent
+            // had no equivalent, which is why the gap kept reappearing one spawn earlier.
+            sb.AppendLine("When you have read a file the sub-agent will work against, give it the "
+                        + "NAMES, not just the pattern: the actual properties, signatures, enum "
+                        + "members and paths you saw. A convention described without its identifiers "
+                        + "is something they have to guess at, and a plausible guess compiles into a "
+                        + "great deal of work before anything contradicts it.");
+            sb.AppendLine();
             sb.AppendLine("If one of the agent types you are offered fits the task at hand, use it "
                         + "rather than doing the work yourself — a type exists because someone "
                         + "decided that work is better done by an agent briefed for it.");
