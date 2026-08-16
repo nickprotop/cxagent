@@ -431,7 +431,7 @@ public static class AppBootstrap
             {
                 if (session.TakePendingSteer() is not { Length: > 0 } pending) return;
 
-                mainWindow.Input.Input = PromptQueue.Restore([pending], mainWindow.Input.Input);
+                mainWindow.Input.Input = PromptQueue.Restore(pending, mainWindow.Input.Input);
 
                 // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the
                 // composer" row behind, which was inconsistent with the send path (where the block

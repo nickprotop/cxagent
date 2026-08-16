@@ -19,10 +19,13 @@ public class PromptQueueTests
     /// words is the opposite of what they asked for.
     /// </summary>
     [Fact]
-    public void Restore_PutsTheQueueInTheComposer()
+    public void Restore_PutsThePendingTextInTheComposer()
     {
+        // ALREADY JOINED WHEN IT ARRIVES. Session.Steer appends as each line is typed, so what comes
+        // back is one message that happens to contain newlines — this must not re-join anything, and
+        // taking a string rather than a collection is what makes that unexpressible.
         Assert.Equal("queued one\nqueued two",
-            PromptQueue.Restore(["queued one", "queued two"], composer: ""));
+            PromptQueue.Restore("queued one\nqueued two", composer: ""));
     }
 
     /// <summary>
@@ -33,15 +36,18 @@ public class PromptQueueTests
     public void Restore_PutsTheQueueAboveTextAlreadyInTheComposer()
     {
         Assert.Equal("typed while running\nhalf-written when I hit escape",
-            PromptQueue.Restore(["typed while running"], composer: "half-written when I hit escape"));
+            PromptQueue.Restore("typed while running", composer: "half-written when I hit escape"));
     }
 
-    /// <summary>An empty queue leaves whatever was being typed exactly as it is — Escape with nothing
-    /// queued must not disturb the composer.</summary>
+    /// <summary>Nothing pending leaves whatever was being typed exactly as it is — Escape with an
+    /// empty queue must not disturb the composer.</summary>
     [Fact]
-    public void Restore_WithNothingQueued_LeavesTheComposerAlone()
+    public void Restore_WithNothingPending_LeavesTheComposerAlone()
     {
-        Assert.Equal("mid-sentence", PromptQueue.Restore([], composer: "mid-sentence"));
-        Assert.Equal("", PromptQueue.Restore([], composer: ""));
+        // NULL AND EMPTY BOTH, because TakePendingSteer returns null when nothing was typed and the
+        // caller passes it straight through rather than testing it twice.
+        Assert.Equal("mid-sentence", PromptQueue.Restore(null, composer: "mid-sentence"));
+        Assert.Equal("mid-sentence", PromptQueue.Restore("", composer: "mid-sentence"));
+        Assert.Equal("", PromptQueue.Restore(null, composer: ""));
     }
 }
