@@ -11,8 +11,6 @@ namespace CxAgent.UI;
 /// <summary>The user's answer to a <see cref="PermissionPromptControl"/>. <see cref="TrustFolder"/>
 /// (Task 2.5) backs a fourth button offered only when the control is constructed with
 /// <c>offerTrust: true</c> — the anti-nag way back from a persisted "Don't trust".</summary>
-public enum PermissionChoice { Once, Always, Deny, TrustFolder }
-
 /// <summary>
 /// A permission prompt presented as a kind-specific heading, the request's <see cref="PermissionRequest.Display"/>
 /// verbatim (markup-escaped), and a row of self-resolving buttons whose labels disclose their

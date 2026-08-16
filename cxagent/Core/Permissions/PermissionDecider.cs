@@ -1,8 +1,7 @@
 using CxAgent.Core.Agent;
 using CxAgent.Core.Permissions;
-using SharpConsoleUI;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Permissions;
 
 
 /// <summary>
@@ -28,10 +27,10 @@ namespace CxAgent.UI;
 /// asking is that the app waits for a human, and waiting for a human is not progress-blocked on
 /// the app's own work.</para>
 /// </summary>
-public sealed class InteractivePermissionGate : IPermissionGate
+public sealed class PermissionDecider : IPermissionGate
 {
     private readonly PermissionRulesStore _store;
-    private readonly ITranscriptWriter? _transcript;
+    private readonly Action<string>? _notice;
 
     /// <summary>
     /// The reviewer for <c>/mode edits auto</c>, or null when none is configured — in which case auto
@@ -79,54 +78,29 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// `workingDir` is the same root string AppBootstrap built `policy` from (captured once,
     /// Path.GetFullPath(Environment.CurrentDirectory)) — PermissionPolicy doesn't expose its
     /// captured root, so the caller passes it again here rather than this class re-deriving it.</summary>
-    /// <remarks>
-    /// TAKES NO SESSION. It used to take a working directory and a policy, and held both — which
-    /// made one gate quietly the property of whichever session built it. Every decision now reads
-    /// the policy carried on the request, so the gate is what it should be: a rules store and a way
-    /// to ask. That is also what lets a process-wide owner build one before any session exists.
-    /// </remarks>
-    public InteractivePermissionGate(ConsoleWindowSystem system, MainWindow mw,
-        PermissionRulesStore store, ITranscriptWriter? transcript)
-        : this(store, transcript,
-            (request, offerTrust, ct) =>
-            {
-                var prompt = new PermissionPromptControl(request, offerTrust);
-                var content = prompt.BuildContent();   // built ONCE — see the field's doc comment
-                system.EnqueueOnUIThread(() => mw.ShowPermissionPrompt(content));
-                return AwaitAndRestore(prompt, ct, () => system.EnqueueOnUIThread(() => mw.RestoreComposer(content)));
-            })
-    {
-    }
 
-    // Cancellation is registered on the CONTROL's own Completion (via TryCancel), not a gate-local
-    // TCS: a cancelled goal must make prompt.Completion itself resolve, or this method's `finally`
-    // never runs, RestoreComposer is never called, the composer stays swapped out forever, and
-    // MainWindow._activePrompt stays set — silently no-opping every later ShowPermissionPrompt call
-    // (MainWindow's idempotence guard). That is a permanent soft-lock: no goal can ever be submitted
-    // again. The registration is disposed once Completion resolves either way (real click or
-    // cancellation), so it never fires late against a control nobody is looking at. TryCancel is a
-    // safe no-op if a real click already resolved it, or wins the race and a later click finds the
-    // TCS already completed (PermissionPromptControl.Completion's own doc: a second resolution is
-    // silently ignored, same as a double-click).
-    private static async Task<PermissionChoice> AwaitAndRestore(
-        PermissionPromptControl prompt, CancellationToken ct, Action restore)
-    {
-        using var reg = ct.Register(() => prompt.TryCancel());
-        try
-        {
-            return await prompt.Completion;
-        }
-        finally
-        {
-            restore();
-        }
-    }
 
-    private InteractivePermissionGate(PermissionRulesStore store,
-        ITranscriptWriter? transcript, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
+    /// <summary>
+    /// A gate over this rules store, asking through <paramref name="promptHook"/>.
+    ///
+    /// <para>THE HOOK IS THE ONLY THING A FRONT END SUPPLIES. Everything a decision needs — the
+    /// silent path, stored rules, the auto classifier and its fail-closed behaviour, the trust
+    /// floor, persistence — is here. A terminal passes a function that shows a control; a web front
+    /// end passes one that opens a dialog; a test passes a script. None of them reimplement the
+    /// pipeline, which is the point of it living in Core.</para>
+    /// </summary>
+    /// <param name="notice">Where a save failure or an unavailable classifier is reported, or null
+    /// to say nothing. Deliberately not an interface: this is one line of text going somewhere, and
+    /// a Core type should not know what a transcript is.</param>
+    public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<string>? notice,
+        Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
+        new(store, notice, promptHook);
+
+    private PermissionDecider(PermissionRulesStore store,
+        Action<string>? notice, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
     {
         _store = store;
-        _transcript = transcript;
+        _notice = notice;
         _promptHook = promptHook;
     }
 
@@ -141,10 +115,10 @@ public sealed class InteractivePermissionGate : IPermissionGate
     /// policy — that is the point of the split — so a test that built one and expected the gate to
     /// remember it would be testing a shape that no longer exists.
     /// </param>
-    public static InteractivePermissionGate ForTesting(PermissionPolicy policy, PermissionRulesStore store,
-        ITranscriptWriter? transcript,
+    public static PermissionDecider ForTesting(PermissionPolicy policy, PermissionRulesStore store,
+        Action<string>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
-        new(store, transcript, promptHook) { StampForTesting = policy };
+        new(store, notice, promptHook) { StampForTesting = policy };
 
     /// <summary>Test-only: the policy to attach to requests that arrive without one. Null in
     /// production, where PermissionGatedPlugin has already stamped them.</summary>
@@ -204,7 +178,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
         if (request.Policy is not { } policy)
         {
             OnDecision?.Invoke(request.Kind, "denied", request.Requester);
-            _transcript?.Write("[yellow]refused: this request carried no session policy, so there "
+            _notice?.Invoke("[yellow]refused: this request carried no session policy, so there "
                              + "was nothing to judge it against.[/]");
             return false;
         }
@@ -244,7 +218,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
             if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
-                _transcript?.Write($"[yellow]auto review unavailable ({failure}) — asking instead[/]");
+                _notice?.Invoke($"[yellow]auto review unavailable ({failure}) — asking instead[/]");
             }
         }
 
@@ -355,7 +329,7 @@ public sealed class InteractivePermissionGate : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _transcript?.Write($"[yellow]could not save this rule for next time: {ex.Message}[/]");
+                    _notice?.Invoke($"[yellow]could not save this rule for next time: {ex.Message}[/]");
                 }
                 // Silent on success. The rule IS visible — Settings → Permissions lists every stored
                 // rule for this folder — so this is discoverable rather than invisible, without a line
@@ -369,13 +343,13 @@ public sealed class InteractivePermissionGate : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _transcript?.Write($"[yellow]could not save folder trust for next time: {ex.Message}[/]");
+                    _notice?.Invoke($"[yellow]could not save folder trust for next time: {ex.Message}[/]");
                 }
                 return true;   // silent; the trust state is shown on Settings → Permissions
 
             case PermissionChoice.Deny:
             default:
-                _transcript?.Write($"[red]denied: {request.Display}[/]");
+                _notice?.Invoke($"[red]denied: {request.Display}[/]");
                 return false;
         }
     }

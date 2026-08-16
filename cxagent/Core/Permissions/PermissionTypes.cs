@@ -77,3 +77,13 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// </summary>
     public PermissionPolicy? Policy { get; init; }
 }
+
+/// <summary>
+/// What a human answered when asked.
+///
+/// <para>IN CORE BESIDE THE REQUEST, not with the control that renders it. This is the gate's answer
+/// vocabulary — the decision pipeline is written in terms of it — and leaving it in UI meant the
+/// pipeline could not move out of UI. A front end that is not a terminal returns these same four
+/// without ever building a prompt control.</para>
+/// </summary>
+public enum PermissionChoice { Once, Always, Deny, TrustFolder }

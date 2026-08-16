@@ -7,14 +7,14 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Task 4: the interactive gate. Drives <see cref="InteractivePermissionGate"/> through its
+/// Task 4: the interactive gate. Drives <see cref="PermissionDecider"/> through its
 /// internal fake prompt-hook seam (an internal <c>Func&lt;PermissionRequest, bool,
 /// Task&lt;PermissionChoice&gt;&gt;</c>, the same trick <see cref="ISessionObserver"/> plays for
 /// AgentHost) so the marshalling/serialisation/persistence logic is testable without a live
 /// window — the UI path (PermissionPromptControl, MainWindow.ShowPermissionPrompt/RestoreComposer)
 /// is exercised for real only by AppBootstrap at runtime.
 /// </summary>
-public class InteractivePermissionGateTests
+public class PermissionDeciderTests
 {
     private static PermissionRequest Shell(string command) =>
         new(PermissionKind.Shell, command, command);
@@ -57,7 +57,7 @@ public class InteractivePermissionGateTests
                 LastOfferTrust = offerTrust;
                 tcs = _current = new TaskCompletionSource<PermissionChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
-            // Same shape as InteractivePermissionGate's real prompt hook (AwaitAndRestore):
+            // Same shape as PermissionDecider's real prompt hook (AwaitAndRestore):
             // cancellation resolves the CONTROL's own completion, and "restore" only counts once
             // that completion has actually resolved — not merely once RequestAsync has decided
             // what to return.
@@ -80,14 +80,14 @@ public class InteractivePermissionGateTests
         }
     }
 
-    private static InteractivePermissionGate GateWithScriptedPrompt(
+    private static PermissionDecider GateWithScriptedPrompt(
         out PromptScript script, PermissionRulesStore? store = null, string? workingDir = null)
     {
         script = new PromptScript();
         var dir = workingDir ?? MakeTempDir();
         var rules = store ?? new PermissionRulesStore(new AppPaths(MakeTempDir()));
         var policy = new PermissionPolicy(dir, rules);
-        return InteractivePermissionGate.ForTesting(policy, rules, transcript: null, script.Show);
+        return PermissionDecider.ForTesting(policy, rules, notice: null, script.Show);
     }
 
     [Fact]

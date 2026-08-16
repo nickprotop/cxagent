@@ -154,4 +154,35 @@ public class SessionManagerTests : IDisposable
         Assert.Null(manager.Shared.Gate);
         Assert.NotNull(manager.Rules);   // the store exists either way — /permissions reads it
     }
+
+    // THE POINT OF MOVING THE DECIDER INTO CORE. A front end that is not a terminal supplies one
+    // function — how to ask — and gets the whole pipeline: silent policy, stored rules, the auto
+    // classifier's fail-closed behaviour, the trust floor, persistence. Before the move it would
+    // have had to reimplement all of that, and a reimplemented fail-closed classifier is how one
+    // quietly stops failing closed.
+    [Fact]
+    public async Task Create_CanBuildAFullyGatedSessionWithNoWindow()
+    {
+        var asked = 0;
+
+        using var manager = SessionManager.Create(
+            new AppPaths(_dir),
+            buildGate: rules => Core.Permissions.PermissionDecider.WithPrompt(
+                rules,
+                notice: null,
+                promptHook: (_, _, _) =>
+                {
+                    asked++;
+                    return Task.FromResult(Core.Permissions.PermissionChoice.Deny);
+                }));
+
+        var policy = new Core.Permissions.PermissionPolicy(_dir, manager.Rules!);
+        var request = new Core.Permissions.PermissionRequest(
+            Core.Permissions.PermissionKind.Shell, "rm -rf /", null) { Policy = policy };
+
+        var allowed = await manager.Shared.Gate!.RequestAsync(request, CancellationToken.None);
+
+        Assert.False(allowed);
+        Assert.Equal(1, asked);
+    }
 }

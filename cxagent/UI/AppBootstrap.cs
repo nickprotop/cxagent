@@ -262,7 +262,7 @@ public static class AppBootstrap
         // NO SESSION IN IT. The gate is the process's — a rules store and a way to ask — and every
         // decision reads the policy carried on the request instead. That is what lets one gate serve
         // any number of sessions honestly.
-        var permissionGate = new InteractivePermissionGate(system, mainWindow, permissionRules, transcript);
+        var permissionGate = WindowPermissionPrompt.Gate(system, mainWindow, permissionRules, transcript);
 
         // THE CLASSIFIER, WHEN ONE IS CONFIGURED. Resolved from the same registry every other
         // instance comes from, so a classifier is an ordinary provider entry and its spend is
