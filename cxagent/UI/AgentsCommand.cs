@@ -27,9 +27,24 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter transcript)
 {
-    public void Handle(string? typeName = null)
+    public void Handle(string? argument = null)
     {
-        var lines = string.IsNullOrWhiteSpace(typeName) ? List() : Detail(typeName.Trim());
+        var words = (argument ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+        // `show <name>` IS THE SPELLED-OUT FORM, matching /mcp. Without a verb the palette could
+        // offer the type names but never insert the word in front of them, because there was no word
+        // — a row carrying a placeholder completes to the verb, and a bare placeholder has none.
+        if (words is [var verb, ..] && verb.Equals("show", StringComparison.OrdinalIgnoreCase))
+        {
+            transcript.Write(string.Join("\n", words.Length >= 2
+                ? Detail(words[1])
+                : ["Name a type: `/agents show <name>`."]));
+            return;
+        }
+
+        // A BARE NAME STILL WORKS, for the reason /mcp keeps it: refusing the reading someone
+        // naturally reaches for teaches nothing.
+        var lines = words.Length == 0 ? List() : Detail(words[0]);
         transcript.Write(string.Join("\n", lines));
     }
 

@@ -153,7 +153,25 @@ public sealed class SubAgentFactory
             };
     }
 
-    private readonly SubAgentRuntime _runtime;
+    // NOT readonly: /model swaps the session's provider in place, and a child with no provider of
+    // its own inherits from here. Left captured, every sub-agent kept talking to the model the
+    // session started on — confirmed in the usage archive, where every explore run after a switch
+    // still recorded the old instance, and contradicted by the switch notice's own promise that
+    // "sub-agents use this too unless their type names another provider".
+    private SubAgentRuntime _runtime;
+
+    /// <summary>
+    /// Points future children at a different default model — see <see cref="Agent.SwapProvider"/>.
+    ///
+    /// <para>FUTURE ONLY. A child already running keeps the provider it was built with: it holds its
+    /// own conversation with that model, and moving it mid-flight would send half a dialogue to one
+    /// endpoint and half to another.</para>
+    ///
+    /// <para>A TYPE THAT NAMES ITS OWN PROVIDER IS UNAFFECTED, which is the whole point of naming
+    /// one — the override is applied per child at spawn time, on top of whatever this holds.</para>
+    /// </summary>
+    public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName) =>
+        _runtime = _runtime.With(provider, contextWindow, instanceName);
 
     public SubAgentFactory(SubAgentRuntime runtime)
     {

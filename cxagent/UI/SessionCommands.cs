@@ -62,9 +62,12 @@ public static class SessionCommands
         new("/agents", "the sub-agent types this session can spawn, and what each one is told",
             CommandOutcome.NeedsWindow,
         [
-            // NOT COMPLETABLE, for /mcp's reason: the names are session state, and listing them in
-            // this static table would couple the two. `/agents` bare is what enumerates them.
-            new("<name>", "the full briefing that type is given", Completes: false),
+            // COMPLETABLE NOW, for the reason /mcp's row is: this said the names "are session state,
+            // and listing them in this static table would couple the two" — true when the
+            // composition root resolved every value by hand, and no longer true. The table names a
+            // SET; the session, which holds the catalog it was wired against, answers for it.
+            new("show <name>", "the full briefing that type is given", Completes: false,
+                Values: ValueSources.AgentTypes),
         ]),
         // NeedsTurn, alone among these: it costs tokens and takes time, because the agent has to go
         // and look at the project. Every other command here answers from state the app already holds.
@@ -108,15 +111,22 @@ public static class SessionCommands
         // the whole picture. `/mode` bare reports every axis for exactly that reason.
         new("/mode", "show or set how this session works", CommandOutcome.NeedsWindow,
         [
-            new("agent single", "this agent works alone; the spawn tool is withdrawn"),
-            new("agent fan-out", "this agent can spawn sub-agents"),
+            // ONE ROW WITH A VALUE LIST, matching `edits <mode>` below. Two rows spelled the whole
+            // command out — which worked, and meant the two axes of one command read as different
+            // kinds of thing in the palette.
+            new("agent <mode>", "whether this agent may spawn sub-agents", Completes: false,
+                Values: ValueSources.AgentModes),
 
             // THE EDITS AXIS IS COMPLETABLE TOO. It was accepted by the command and simply not
             // declared here, so `/mode edits ` offered nothing while `/mode agent ` offered two
             // choices — the axis existed, was documented in /mode's own bare output, and had no way
             // to be discovered from the palette. The values are live because whether `auto` is among
             // them depends on this session's classifier.
-            new("edits", "how file writes are approved", Completes: false,
+            // THE SAME SHAPE AS `/mcp show <name>`: the placeholder rides in the name, so the row
+            // completes to "edits " and the palette opens the mode list. Without it this was
+            // unselectable AND offered nothing — the only way to reach the modes was to type the
+            // word the palette was showing you.
+            new("edits <mode>", "how file writes are approved", Completes: false,
                 Values: ValueSources.EditModes),
         ]),
         // NeedsWindow again: history is a store the composition root owns, and this type holds

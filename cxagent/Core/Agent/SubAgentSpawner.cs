@@ -16,6 +16,10 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
     private readonly SubAgentFactory _factory;
     private readonly AgentTypeCatalog _types;
 
+    /// <summary>Forwarded to the factory, which holds the default every child inherits.</summary>
+    public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName) =>
+        _factory.SwapDefaultProvider(provider, contextWindow, instanceName);
+
     /// <param name="types">
     /// The catalog a `type` argument resolves against. Never empty — it always holds at least
     /// `general` — so an error can always name something valid.

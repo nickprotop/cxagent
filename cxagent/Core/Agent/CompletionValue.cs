@@ -42,4 +42,12 @@ public static class CompletionSets
     /// <summary>Connected MCP servers, for <c>/mcp</c>. Answered by the manager, which owns the
     /// toolset — the LIVE servers, not the names in a config file that may not have connected.</summary>
     public const string McpServers = "mcp-servers";
+
+    /// <summary>Delegation modes, for <c>/mode agent</c>. Answered by the session.</summary>
+    public const string AgentModes = "agent-modes";
+
+    /// <summary>Sub-agent types this session can spawn, for <c>/agents</c>. Answered by the session,
+    /// because the catalog is the one it was wired against — a config edit since launch has not taken
+    /// effect here and offering those names would point at types this session cannot spawn.</summary>
+    public const string AgentTypes = "agent-types";
 }

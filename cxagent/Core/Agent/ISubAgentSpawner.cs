@@ -22,6 +22,15 @@ public interface ISubAgentSpawner
     /// <summary>The tool name this spawner answers to, so the dispatch site can advertise it.</summary>
     string ToolName { get; }
 
+    /// <summary>
+    /// Points future children at a different default model, after the session switched.
+    ///
+    /// <para>ON THE INTERFACE because the host holds a spawner, not a factory, and a swap that
+    /// stopped at the host left every child on the model the session started with — while the switch
+    /// notice promised the opposite.</para>
+    /// </summary>
+    void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName);
+
     /// <summary>The definition the model sees. Hand-built: a spawn tool has no plugin and no
     /// <c>JobSchema</c>, so <c>WorkerToolset.BuildDefinition</c>'s drift guard has nothing to guard
     /// against — <c>McpToolset.Definitions()</c> constructs its own the same way.</summary>

@@ -48,6 +48,11 @@ public class PermissionPolicy
     /// </summary>
     public EditMode Edits { get; set; }
 
+    /// <summary>Whether the folder this policy judges is trusted — what an edit mode ACTUALLY does
+    /// depends on it, so anything reporting a mode change has to be able to ask.</summary>
+    public bool FolderTrusted => _rules.GetTrust(_root) == TrustState.Trusted;
+
+
     // IN-CWD IS A SCOPE BOUNDARY, NOT A SAFETY ONE. The working directory is a git repo, so "inside
     // the boundary" includes .git/hooks/* — which executes as the user on the next git command — and
     // .git/config, which carries core.pager and core.fsmonitor. A user reading "accept edits" on the

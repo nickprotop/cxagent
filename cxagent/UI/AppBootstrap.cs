@@ -817,8 +817,11 @@ public static class AppBootstrap
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    $"edits: {EditModes.Name(nextEdits)}.");
+                // THE SAME SENTENCE /mode PRODUCES. This carried its own, thinner one — "edits:
+                // accept-edits." — which omitted what is ACTUALLY in force: on an untrusted folder
+                // accept-edits changes nothing observable, and a readout that does not say so is
+                // wrong exactly when it matters.
+
                 return;
             }
 
@@ -973,7 +976,7 @@ public static class AppBootstrap
                             }
 
                             var decision = ModeCommand.Decide(new ModeQuery(
-                                SessionCommands.Arguments(goalText), runner.Mode, IsTurnRunning(),
+                                SessionCommands.Arguments(goalText), runner.Mode,
                                 permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
                                 session.WorkingDirectory,
                                 permissionGate.Classifier is not null));
@@ -999,7 +1002,11 @@ public static class AppBootstrap
                                 RememberEditMode(next.Edits);
                             }
 
-                            mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
+                            // ONLY WHEN THERE IS SOMETHING THIS COMMAND KNOWS AND THE SESSION DOES
+                            // NOT — a listing, an unknown axis, an already-in-that-mode. A CHANGE is
+                            // reported by the session itself, so Reply is empty for one.
+                            if (decision.Reply is { Length: > 0 })
+                                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
                             return;
                         }
                         mainWindow.ShowHelp();
@@ -1500,13 +1507,10 @@ public static class AppBootstrap
             // owns whether its own state can change. Resolving first costs one config read on a
             // refusal, which is cheaper than a second copy of the rule.
 
+            // RESOLVED HERE, REPORTED THERE. Reading config is the process's job — the session has
+            // no paths and no environment — but saying what happened is the session's, so a failed
+            // resolution is handed over rather than announced here.
             var next = ProviderResolver.ResolveInstance(paths, env, decision.SwitchTo);
-            if (next is null || !next.HasProvider)
-            {
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    $"[{ColorScheme.DangerMarkup}]Could not start {decision.SwitchTo}.[/]");
-                return;
-            }
 
             // THE CONVERSATION STAYS PUT. This used to arm a handoff with CarryToNextWire and
             // re-wire the whole session — rebuilding the agent, its plugins, its sub-agent factory
@@ -1516,12 +1520,11 @@ public static class AppBootstrap
             //
             // READ BEFORE THE SWITCH, because the message reports what the context WAS on the model
             // being left. Reading after would quote the new window against the old usage.
-            if (!session.SwitchModel(next))
-            {
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    $"[{ColorScheme.DangerMarkup}]Could not switch to {decision.SwitchTo}.[/]");
-                return;
-            }
+            // SILENT ON REFUSAL, because SwitchModel already said why — "Could not switch to X"
+            // printed on top of "A turn is running" was a second, vaguer sentence for a reason the
+            // user had just been given. The only other false is a session with no host, which cannot
+            // happen from a command the composer accepted.
+            session.SwitchModel(next, decision.SwitchTo);
 
             // NOTHING TO REPORT OR REPAINT HERE. SwitchModel says what happened through the
             // observer and announces that the model moved; the subscription near the top of this

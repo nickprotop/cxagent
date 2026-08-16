@@ -15,7 +15,7 @@ public class ModeCommandTests
     [Fact]
     public void BareMode_Reports_AndChangesNothing()
     {
-        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), true, "/repo"));
 
         Assert.Null(result.NewMode);
         Assert.Contains("fan-out", result.Reply, StringComparison.Ordinal);
@@ -28,7 +28,7 @@ public class ModeCommandTests
     [InlineData(" fan-out ")]
     public void SwitchingToFanOut_IsAccepted(string argument)
     {
-        var result = ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(AgentMode.Single), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Equal(AgentMode.FanOut, result.NewMode);
     }
@@ -36,7 +36,7 @@ public class ModeCommandTests
     [Fact]
     public void SwitchingToSingle_IsAccepted()
     {
-        var result = ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), true, "/repo"));
 
         Assert.Equal(AgentMode.Single, result.NewMode);
     }
@@ -49,11 +49,11 @@ public class ModeCommandTests
     public void TheReply_SaysWhatTheModeActuallyDoes()
     {
         Assert.Contains("spawn sub-agents",
-            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), false, true, "/repo")).Reply,
+            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), true, "/repo")).Reply,
             StringComparison.Ordinal);
 
         Assert.Contains("works alone",
-            ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), false, true, "/repo")).Reply,
+            ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), true, "/repo")).Reply,
             StringComparison.Ordinal);
     }
 
@@ -65,7 +65,7 @@ public class ModeCommandTests
     [Fact]
     public void AnUnknownMode_IsRefused_AndListsTheValidOnes()
     {
-        var result = ModeCommand.Decide(new ModeQuery("sideways", new WorkingMode(AgentMode.Single), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("sideways", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
         Assert.Contains("single", result.Reply, StringComparison.Ordinal);
@@ -76,26 +76,12 @@ public class ModeCommandTests
     [Fact]
     public void SettingTheModeItIsAlreadyIn_ChangesNothing_AndSaysSo()
     {
-        var result = ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.Single), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
         Assert.Contains("already", result.Reply, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// DECLINED MID-TURN, and not out of caution. The tool list is fixed once a request begins —
-    /// deliberately, so a tool cannot appear or vanish between two turns of one request and leave the
-    /// model chasing something that is no longer there. Changing mode under a running turn is exactly
-    /// that, and it uses the same predicate /compress and Escape share.
-    /// </summary>
-    [Fact]
-    public void MidTurn_IsDeclined_WithTheWayToProceed()
-    {
-        var result = ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), true, true, "/repo"));
-
-        Assert.Null(result.NewMode);
-        Assert.Contains("Escape", result.Reply, StringComparison.Ordinal);
-    }
 
     /// <summary>
     /// Reporting still works mid-turn: it reads nothing and changes nothing, and refusing it would
@@ -104,7 +90,7 @@ public class ModeCommandTests
     [Fact]
     public void ReportingMidTurn_IsAllowed()
     {
-        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.Single), true, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
         Assert.Contains("single", result.Reply, StringComparison.Ordinal);
@@ -124,7 +110,7 @@ public class ModeCommandTests
     {
         var from = expected == AgentMode.FanOut ? AgentMode.Single : AgentMode.FanOut;
 
-        Assert.Equal(expected, ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(from), false, true, "/repo")).NewMode);
+        Assert.Equal(expected, ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(from), true, "/repo")).NewMode);
     }
 
     /// <summary>
@@ -136,7 +122,7 @@ public class ModeCommandTests
     [Fact]
     public void TheValueAloneStillWorks() =>
         Assert.Equal(AgentMode.FanOut,
-            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), false, true, "/repo")).NewMode);
+            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), true, "/repo")).NewMode);
 
     /// <summary>
     /// AN AXIS THAT IS NOT SETTABLE YET SAYS SO. Without this, `/mode files read-only` reports
@@ -154,7 +140,7 @@ public class ModeCommandTests
     [InlineData("task something")]
     public void AnAxisThatDoesNotExistYet_SaysWhichAxesDo(string argument)
     {
-        var result = ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(AgentMode.Single), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
         Assert.Contains("not settable yet", result.Reply, StringComparison.Ordinal);
@@ -169,7 +155,7 @@ public class ModeCommandTests
     [Fact]
     public void ABareModeReportsEveryAxis()
     {
-        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), false, true, "/repo"));
+        var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), true, "/repo"));
 
         Assert.Null(result.NewMode);                       // reporting never changes anything
         Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
@@ -180,9 +166,10 @@ public class ModeCommandTests
 
     // ---- the edits axis -------------------------------------------------------------------------
 
-    private static ModeQuery Query(string argument, WorkingMode current,
-        bool trusted = true, bool turnRunning = false) =>
-        new(argument, current, turnRunning, trusted, "/repo");
+    // NO turnRunning. Whether a change can happen now is the session's to decide and announce —
+    // this command only decides WHAT was asked for.
+    private static ModeQuery Query(string argument, WorkingMode current, bool trusted = true) =>
+        new(argument, current, trusted, "/repo");
 
     /// <summary>Bare /mode lists BOTH axes. The command was already axis-shaped and its comment said
     /// the axis is what makes room for the next one — so this is a row, not a rewrite.</summary>
@@ -259,8 +246,7 @@ public class ModeCommandTests
     [Fact]
     public void ModeEdits_Auto_IsAcceptedWhenAClassifierIsConfigured()
     {
-        var result = ModeCommand.Decide(new ModeQuery("edits auto", WorkingMode.Default, false,
-            true, "/repo", ClassifierConfigured: true));
+        var result = ModeCommand.Decide(new ModeQuery("edits auto", WorkingMode.Default, true, "/repo", ClassifierConfigured: true));
 
         Assert.Equal(EditMode.Auto, result.NewMode!.Value.Edits);
     }
@@ -272,7 +258,7 @@ public class ModeCommandTests
     [InlineData(true, true)]
     public void BareMode_OffersAuto_OnlyWhenAClassifierIsConfigured(bool configured, bool expected)
     {
-        var result = ModeCommand.Decide(new ModeQuery("", WorkingMode.Default, false, true, "/repo",
+        var result = ModeCommand.Decide(new ModeQuery("", WorkingMode.Default, true, "/repo",
             ClassifierConfigured: configured));
 
         Assert.Equal(expected, result.Reply.Contains("auto", StringComparison.Ordinal));
@@ -288,16 +274,6 @@ public class ModeCommandTests
         Assert.Contains("already", result.Reply, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>The existing mid-turn guard, kept working for the axis that did not exist when it was
-    /// written: the tool list is fixed once a request begins.</summary>
-    [Fact]
-    public void ModeEdits_MidTurn_IsDeclined()
-    {
-        var result = ModeCommand.Decide(Query("edits always-ask", WorkingMode.Default,
-            turnRunning: true));
-
-        Assert.Null(result.NewMode);
-    }
 
     /// <summary>An axis we do not know is not a value — `/mode work plan` should say that work is not
     /// an axis yet, rather than blaming the spelling of "plan".</summary>

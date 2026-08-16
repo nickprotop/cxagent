@@ -1,5 +1,6 @@
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -127,6 +128,52 @@ public class SwitchModelTests : IDisposable
         // NOT AN ERROR. A mode or model change is not a fault, and a caller watching for failures
         // must not find one here.
         Assert.Empty(sink.Errors);
+    }
+
+    // THE CHILDREN'S DEFAULT MOVES TOO. A sub-agent with no provider of its own inherits from the
+    // spawner, which held the model captured at wire time — so every child kept talking to the model
+    // the session started on. Confirmed in the usage archive before the fix: every explore run after
+    // a /model switch still recorded the old instance, while the switch notice promised "sub-agents
+    // use this too unless their type names another provider".
+    [Fact]
+    public void SwitchModel_MovesTheDefaultFutureChildrenInherit()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider("first")),
+            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        var spawner = new RecordingSpawner();
+        session.NoteSpawner(spawner);
+
+        var next = new MockLlmProvider("second");
+        session.SwitchModel(ProviderResolution.ForTesting(next, "second") with { ContextWindow = 9_000 });
+
+        Assert.Same(next, spawner.Provider);
+        Assert.Equal("second", spawner.InstanceName);
+        Assert.Equal(9_000, spawner.ContextWindow);
+    }
+
+    private sealed class RecordingSpawner : ISubAgentSpawner
+    {
+        public ILlmProvider? Provider;
+        public string? InstanceName;
+        public int? ContextWindow;
+
+        public string ToolName => "spawn";
+
+        public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName)
+        {
+            Provider = provider;
+            ContextWindow = contextWindow;
+            InstanceName = instanceName;
+        }
+
+        // NEVER CALLED — this double exists to observe the swap, not to spawn.
+        public ToolDefinition Definition => throw new NotSupportedException();
+
+        public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
+            CancellationToken ct, string? label = null) => throw new NotSupportedException();
     }
 
     // NO HOST, NO SWITCH. A /model before the first wire has nothing to point anywhere, and the

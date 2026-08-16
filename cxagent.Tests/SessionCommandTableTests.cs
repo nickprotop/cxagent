@@ -328,8 +328,8 @@ public class SessionCommandTableTests
     [InlineData("/mcp", "reload")]
     [InlineData("/mcp", "login")]
     [InlineData("/mcp", "show")]
-    [InlineData("/mode", "agent single")]
-    [InlineData("/mode", "agent fan-out")]
+    [InlineData("/mode", "agent")]
+    [InlineData("/mode", "edits")]
     [InlineData("/stats", "clear")]
     [InlineData("/stats", "all")]
     public void TheTable_CarriesEverySubcommand(string command, string argument)
@@ -520,7 +520,7 @@ public class SessionCommandTableTests
 
         Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
         Assert.Contains("/stats clear", help, StringComparison.Ordinal);
-        Assert.Contains("/mode agent fan-out", help, StringComparison.Ordinal);
+        Assert.Contains("/mode agent <mode>", help, StringComparison.Ordinal);
     }
 
     /// <summary>Each subcommand line carries its own summary, so the list explains rather than

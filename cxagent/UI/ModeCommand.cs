@@ -19,7 +19,6 @@ public readonly record struct ModeCommandResult(WorkingMode? NewMode, string Rep
 /// </summary>
 /// <param name="Argument">Everything after the command word — empty for a bare <c>/mode</c>.</param>
 /// <param name="Current">The mode right now, for reporting and for detecting a no-op.</param>
-/// <param name="TurnRunning">Whether a turn is in flight; a mode change is declined mid-turn.</param>
 /// <param name="FolderTrusted">
 /// Whether this folder is trusted, so the listing can say what is IN FORCE rather than what the mode
 /// name promises. An <c>accept-edits</c> session on an untrusted folder asks for everything, and the
@@ -30,7 +29,7 @@ public readonly record struct ModeCommandResult(WorkingMode? NewMode, string Rep
 /// Whether a classifier instance is configured. FALSE HIDES AUTO ENTIRELY — unlisted, unparseable —
 /// because a mode that claims background review while nothing reviews is worse than not having it.
 /// </param>
-public readonly record struct ModeQuery(string Argument, WorkingMode Current, bool TurnRunning,
+public readonly record struct ModeQuery(string Argument, WorkingMode Current,
     bool FolderTrusted, string Root, bool ClassifierConfigured = false);
 
 /// <summary>
@@ -47,15 +46,16 @@ public static class ModeCommand
     /// do.
     /// </summary>
     /// <remarks>
-    /// DECLINED MID-TURN (<see cref="ModeQuery.TurnRunning"/>), and this is not caution for its own
-    /// sake. The tool list is fixed once a request begins — deliberately, so a tool cannot appear or
-    /// vanish between two turns of one request and leave the model chasing something that is no
-    /// longer there. Changing mode under a running turn is exactly that, and it is the same predicate
-    /// <c>/compress</c> and Escape share.
+    /// DECIDES ONLY. Whether the change can happen NOW is the session's — see Session.SetMode, which
+    /// refuses mid-turn and says so.
     /// </remarks>
     public static ModeCommandResult Decide(ModeQuery query)
     {
-        var (argument, current, turnRunning) = (query.Argument, query.Current, query.TurnRunning);
+        // TURN-RUNNING IS NOT CHECKED HERE ANY MORE. Both axes carried their own copy of the
+        // refusal and its wording, deciding for a session whether its state could change — which the
+        // session now decides and announces itself (Session.SetMode). A pre-check here only meant
+        // this copy won the race to speak, so the two could drift and nobody would notice.
+        var (argument, current) = (query.Argument, query.Current);
 
         // A BARE /mode REPORTS EVERY AXIS. Asking what mode you are in must never change it — and
         // once there is more than one axis, "what mode am I in" has more than one answer, so this is
@@ -79,7 +79,7 @@ public static class ModeCommand
                     : "works alone; the spawn tool is withdrawn")}[/]",
                 "",
                 $"  [{accent}]edits[/]  {EditModes.Name(current.Edits)}",
-                $"    [{muted}]{EditsEffect(current.Edits, query.FolderTrusted, query.Root)}[/]",
+                $"    [{muted}]{ModeNotice.Effect(current.Edits, query.FolderTrusted, query.Root)}[/]",
                 "",
                 $"  [{muted}]set with /mode agent {AgentModes.Valid.Replace(", ", " | ")}[/]",
                 $"  [{muted}]         /mode edits "
@@ -110,16 +110,14 @@ public static class ModeCommand
             if (requestedEdits == current.Edits)
                 return new(null, $"already in {EditModes.Name(current.Edits)} mode.");
 
-            if (turnRunning)
-                return new(null, "[yellow]A turn is running — press Escape to stop it first.[/]");
-
             // WHAT IS ACTUALLY IN FORCE, not what the name promises — the same rule the listing
             // follows. Switching to accept-edits on an untrusted folder changes nothing observable,
             // and saying "writes are now silent" there would be a readout that is wrong exactly when
             // it matters.
-            return new(current with { Edits = requestedEdits.Value },
-                $"edits: {EditModes.Name(requestedEdits.Value)} — "
-                + $"{EditsEffect(requestedEdits.Value, query.FolderTrusted, query.Root)}.");
+            // NO REPLY ON A CHANGE. The session says what happened once it has happened — see
+            // Session.SetMode — so a sentence here would either duplicate it or, when the session
+            // refuses, report a change that did not occur.
+            return new(current with { Edits = requestedEdits.Value }, "");
         }
 
         var value = words.Length >= 2 && IsAgentAxis(words[0])
@@ -145,9 +143,6 @@ public static class ModeCommand
         if (requested == current.Agent)
             return new(null, $"already in {AgentModes.Name(current.Agent)} mode.");
 
-        if (turnRunning)
-            return new(null, "[yellow]A turn is running — press Escape to stop it first.[/]");
-
         // WHAT ACTUALLY CHANGES, said plainly. A mode is invisible otherwise: the user has no way to
         // see a tool list, and "switched to fan-out" alone does not tell them what they now have.
         var effect = requested == AgentMode.FanOut
@@ -167,13 +162,6 @@ public static class ModeCommand
     /// affecting them rather than in documentation they will not read. Reporting the nominal effect
     /// here would be a readout that is wrong exactly when it matters.</para>
     /// </summary>
-    private static string EditsEffect(EditMode mode, bool trusted, string root) => mode switch
-    {
-        _ when !trusted => "asks for everything (this folder is not trusted)",
-        EditMode.AlwaysAsk => "every write asks; stored rules still apply",
-        EditMode.Auto => $"a classifier reviews each write; outside {root} asks",
-        _ => $"writes inside {root} are silent; elsewhere asks",
-    };
 
     /// <summary>The edits axis, spelled the ways people reach for it.</summary>
     private static bool IsEditsAxis(string word) =>

@@ -145,4 +145,10 @@ public static class ValueSources
 
     /// <summary>Connected MCP servers, for <c>/mcp</c>.</summary>
     public const string McpServers = Core.Agent.CompletionSets.McpServers;
+
+    /// <summary>Delegation modes, for <c>/mode agent</c>.</summary>
+    public const string AgentModes = Core.Agent.CompletionSets.AgentModes;
+
+    /// <summary>Sub-agent types, for <c>/agents</c>.</summary>
+    public const string AgentTypes = Core.Agent.CompletionSets.AgentTypes;
 }

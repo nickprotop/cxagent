@@ -869,6 +869,8 @@ public class SubAgentSpawnerTests
     /// child — a provider fault, a bad config, a bug.</summary>
     private sealed class ThrowingSpawner : ISubAgentSpawner
     {
+        public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName) { }
+
         public string ToolName => "task";
         public ToolDefinition Definition => new(ToolName, "spawns", default);
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,

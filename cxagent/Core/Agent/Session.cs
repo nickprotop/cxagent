@@ -211,6 +211,11 @@ public sealed class Session
     {
         if (!IsBusy) return false;
 
+        // NOT CAUTION FOR ITS OWN SAKE. The tool list is fixed once a request begins — deliberately,
+        // so a tool cannot appear or vanish between two turns of one request and leave the model
+        // chasing something that is no longer there. Changing mode or model under a running turn is
+        // exactly that, and re-wiring or restoring goes further: it replaces the agent the turn is
+        // appending to, so its tool results land in a conversation nobody is reading.
         Say("[yellow]A turn is running — press Escape to stop it first.[/]");
         return true;
     }
@@ -233,6 +238,13 @@ public sealed class Session
 
         Host.Mode = mode;
         if (Policy is not null) Policy.Edits = mode.Edits;
+
+        // SAID BY THE SESSION, not by whoever asked. Both callers — /mode and Shift+Tab — used to
+        // compose this themselves, which is two wordings for one action and two chances to report a
+        // change the session had just refused. What is ACTUALLY in force depends on folder trust,
+        // which the policy knows and a caller would have to look up.
+        Say(ModeNotice.EditsChanged(mode.Edits, Policy?.FolderTrusted ?? false,
+            Policy?.Root ?? WorkingDirectory));
 
         Announce(SessionChangeKind.Mode);
         return true;
@@ -323,8 +335,47 @@ public sealed class Session
     {
         CompletionSets.Providers => ProviderValues(),
         CompletionSets.EditModes => EditModeValues(),
+        CompletionSets.AgentModes => AgentModeValues(),
+        CompletionSets.AgentTypes => AgentTypeValues(),
         _ => [],
     };
+
+    private static IReadOnlyList<CompletionValue> AgentModeValues() =>
+    [
+        new("single", "works alone; the spawn tool is withdrawn"),
+        new("fan-out", "can spawn sub-agents"),
+    ];
+
+    // THE CATALOG THIS SESSION WAS WIRED WITH, which is the shipped types MERGED with config —
+    // reading resolution.AgentTypes instead offered only the config-declared ones, so a session with
+    // six spawnable types completed to two. A type added to config since launch is deliberately not
+    // here either: it cannot be spawned by this session, and completing to it names something the
+    // spawn tool rejects.
+    private IReadOnlyList<CompletionValue> AgentTypeValues() =>
+        _agentTypes is not { All.Count: > 0 } catalog
+            ? []
+            : [.. catalog.All.Select(t => new CompletionValue(
+                t.Name, t.Description ?? "a sub-agent type"))];
+
+    private AgentTypeCatalog? _agentTypes;
+
+    /// <summary>Records the agent-type catalog this session was wired with, so it can answer for
+    /// what it can actually spawn. Called by SessionFactory.</summary>
+    public void NoteAgentTypes(AgentTypeCatalog catalog) => _agentTypes = catalog;
+
+    /// <summary>
+    /// What spawns this session's children, so a model switch can move their default with it.
+    ///
+    /// <para>HERE RATHER THAN REACHED THROUGH THE HOST. The host holds one too — it must, because it
+    /// builds the agent and spawning is a tool the agent invokes — but that is plumbing, not
+    /// ownership. Switching model is the session's operation, and routing it through the host to
+    /// reach the spawner was the session asking a component it owns to fetch something from a
+    /// component it also owns.</para>
+    /// </summary>
+    private ISubAgentSpawner? _spawner;
+
+    /// <summary>Records the spawner this session was wired with. Called by SessionFactory.</summary>
+    public void NoteSpawner(ISubAgentSpawner? spawner) => _spawner = spawner;
 
     private IReadOnlyList<CompletionValue> ProviderValues()
     {
@@ -399,9 +450,22 @@ public sealed class Session
     /// <para>FALSE WHEN THERE IS NO HOST — a switch before the first wire has nothing to point
     /// anywhere, and the caller says so rather than this throwing.</para>
     /// </summary>
-    public bool SwitchModel(ProviderResolution next)
+    public bool SwitchModel(ProviderResolution? next, string? requestedName = null)
     {
-        if (Host is null || next.Provider is null || RefusedWhileBusy()) return false;
+        if (RefusedWhileBusy()) return false;
+
+        // THE FAILURE IS SAID HERE TOO, not by whoever resolved. A caller that reported it printed a
+        // second, vaguer sentence on top of whatever this had already said — visible on screen as
+        // "Could not switch to openrouter." directly under "A turn is running". One speaker per
+        // outcome, and this is the speaker.
+        if (next?.Provider is null)
+        {
+            Say($"[red]Could not start {requestedName ?? "that model"} — it did not resolve to a "
+              + "usable provider. Check its entry in config.json.[/]");
+            return false;
+        }
+
+        if (Host is null) return false;
 
         // READ BEFORE THE SWAP, because the announcement below compares what the context WAS on the
         // model being left against the window it is moving to. The composition root used to read
@@ -411,6 +475,15 @@ public sealed class Session
         var used = Host.Context.Used;
 
         Host.SwapProvider(next.Provider, next.InstanceName, next.ContextWindow);
+
+        // AND THE CHILDREN'S DEFAULT. A child with no provider of its own inherits it from the
+        // spawner, which held the model captured at wire time — so every sub-agent kept talking to
+        // the model the session started on. Confirmed in the usage archive: every explore run after
+        // a switch still recorded the old instance, while the switch notice promised the opposite.
+        //
+        // FUTURE CHILDREN ONLY. One already running keeps its provider: it holds its own dialogue
+        // with that model, and moving it mid-flight would split that dialogue across two endpoints.
+        _spawner?.SwapDefaultProvider(next.Provider, next.ContextWindow, next.InstanceName);
 
         // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from
         // here, so leaving these behind would offer the user the model they just left.
