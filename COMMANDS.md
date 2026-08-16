@@ -217,7 +217,8 @@ With no argument, lists configured servers and their state. A server that failed
 with the reason, because a server that silently never appears is indistinguishable from one you never
 configured.
 
-`/mcp reload` re-reads `config.json` from disk and reconnects — adding a server does not need a
+`/mcp reload` re-reads `config.json` from disk and reconnects — for a config file you edited by
+hand. Saving in Settings (F5) reloads them for you when the block changed. Adding a server does not need a
 restart. `/mcp login <server>` runs the OAuth flow for a server that returned 401, opening a browser
 and storing the token at `0600`, never in the config file.
 

@@ -1309,22 +1309,37 @@ public static class AppBootstrap
                 var reresolved = ProviderResolver.Resolve(paths, env, useMock: false);
                 resolution = reresolved;
 
+                // MCP FOLLOWS THE SAVE TOO. Servers were loaded once at startup and F5 never
+                // touched them, so adding one in Settings appeared to work and did nothing — the
+                // same fault as the classifier, in the one consumer that is a process rather than a
+                // value.
+                //
+                // RELOADED, NOT ANNOUNCED. Telling the user to run /mcp reload was the first attempt
+                // and it is the wrong trade: pressing Save is already the act of asking for the new
+                // configuration, and a save that applies most of itself and leaves a note about the
+                // rest is a worse promise than one that applies all of it. ReloadAsync is the same
+                // call /mcp reload makes — lock-protected, disposing every server and restarting
+                // from the new config, then REPLACING the toolset in place because the agent holds
+                // that exact instance.
+                //
+                // ONLY WHEN THEY ACTUALLY CHANGED, because a reload is not free: it tears down every
+                // running server, and a Save that touched only the model would otherwise cost a full
+                // restart of them all.
+                if (!SameServers(resolution.McpServers, reresolved.McpServers))
+                {
+                    await mcp.ReloadAsync(reresolved.McpServers, CancellationToken.None);
+                    foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
+                        transcript.Write($"[yellow]{message}[/]");
+                }
+
+                // AFTER the reload, so this session is wired against the toolset the save asked for
+                // rather than the one it replaced. The toolset object is the same instance either
+                // way — Replace mutates in place, which is why the agent keeps seeing it — but a
+                // wire that runs first is describing state that is about to change.
                 WireRunner(reresolved);
                 mainWindow.SetResolution(reresolved);
 
-                // WHAT A SAVE DOES NOT TOUCH, said out loud. A re-wire rebuilds this session's host,
-                // its provider, its agent types and its classifier — but MCP servers are connected
-                // processes, not values, and reconnecting them here would drop tool calls in flight
-                // for a setting the user may not have touched. So they keep running as configured at
-                // startup, and this line is what stops that being a silent lie: adding a server and
-                // pressing F5 used to appear to work and did nothing.
-                //
-                // /mcp reload re-reads config from disk itself, so the fix a user needs is one
-                // command rather than a restart.
-                var mcpChanged = !SameServers(resolution.McpServers, reresolved.McpServers);
-                mainWindow.Chat.AddMessage(ChatRole.System, mcpChanged
-                    ? "Configuration saved. MCP servers changed — run /mcp reload to apply them."
-                    : "Configuration saved.");
+                mainWindow.Chat.AddMessage(ChatRole.System, "Configuration saved.");
             }
             finally
             {

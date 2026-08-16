@@ -247,7 +247,8 @@ and may carry `headers`. Optional per server: `enabled` (default true), `cwd`, `
 A server's own usage instructions, when it sends any, are appended to the system prompt **attributed
 to it by name**, so the model can tell that advice apart from cxagent's own.
 
-`/mcp reload` re-reads this block and reconnects — adding a server does not need a restart.
+`/mcp reload` re-reads this block and reconnects, for a file you edited by hand. Saving in Settings
+(F5) does it for you when the block changed. Either way, adding a server does not need a restart.
 `/mcp login <server>` runs OAuth for a server that returned 401 and stores the token at `0600`,
 never in the config file.
 
