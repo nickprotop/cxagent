@@ -318,8 +318,21 @@ public class WorkerToolsetTests
     [Fact]
     public void SearchFiles_RequiresSomethingToSearchFor()
     {
+        // PATTERN, and only pattern. `path` was required here too until an agent demonstrated what
+        // that costs on the sibling tool: with `path` the one required param on `glob`, it put its
+        // glob there ({"pattern":"*cli*","path":"**/*"}), found nothing five times, fell back to
+        // `ls -R` and reported the project as a directory of DLLs. The required argument should be
+        // the one the caller actually has in mind; the directory is an optional narrowing that
+        // defaults to the working directory.
         var json = SchemaFor("grep").Replace(" ", "");
-        Assert.Contains("\"required\":[\"path\",\"pattern\"]", json);
+        Assert.Contains("\"required\":[\"pattern\"]", json);
+    }
+
+    [Fact]
+    public void Glob_RequiresThePatternRatherThanTheDirectory()
+    {
+        var json = SchemaFor("glob").Replace(" ", "");
+        Assert.Contains("\"required\":[\"pattern\"]", json);
     }
 
     [Fact]

@@ -19,7 +19,10 @@ internal sealed class CollectingContext : IJobContext
     public void ReportPermissionWait(bool waiting) => PermissionWaits.Add(waiting);
 
     public string? Requester => null;
-    public string? WorkingDirectory => null;
+    /// <summary>Settable so a test can exercise a path-less file call, which resolves against the
+    /// agent's working directory. Null by default — most tests pass absolute paths and care about
+    /// neither.</summary>
+    public string? WorkingDirectory { get; init; }
 
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Lines.Enqueue(line);

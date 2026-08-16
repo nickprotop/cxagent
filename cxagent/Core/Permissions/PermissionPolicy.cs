@@ -125,25 +125,49 @@ public class PermissionPolicy
     private static List<PermissionRequest> FileRequests(JobParameters parameters, string? root)
     {
         var action = parameters.Get<string>("action");
-        var path = parameters.Get<string>("path");
+
+        // TOLERANT OF AN ABSENT PATH, because `list` and `search` no longer require one — the glob
+        // and grep tools take a pattern and default the directory. Neither action appears in the
+        // switch below (they are read-only and raise no request at all), but this line ran BEFORE
+        // the switch, and the one-argument Get is Values[key]: it threw "The given key 'path' was
+        // not present in the dictionary" out of the permission gate, before the plugin that knows
+        // the default was ever reached. Fixing the plugin alone left this in place, and a live
+        // session failed 18 times on `grep {"pattern": ...}` — the exact call the tool advertises.
+        var path = parameters.Get<string?>("path", null);
         var dest = parameters.Get<string?>("dest", null);
 
         var requests = new List<PermissionRequest>();
+        var target = string.Empty;
+
+        // AN ACTION THAT NEEDS A PATH AND HAS NONE STILL ASKS. The plugin's own validation rejects
+        // such a call, so this is unreachable today — but this is the gate, and the failure mode of
+        // silently raising NO request for a write is that the write goes through unasked if that
+        // validation ever moves. Fail toward asking, the same direction TryResolve already fails.
+        if (action is "read" or "write" or "append" or "delete" or "copy" or "move")
+        {
+            if (path is null)
+                return [new PermissionRequest(
+                    action is "read" or "copy" or "move"
+                        ? PermissionKind.FileRead : PermissionKind.FileWrite,
+                    $"{action} (no path given)", null)];
+            target = path;   // non-null from here, and the compiler can see it
+        }
+
         switch (action)
         {
             case "read":
-                requests.Add(FileRequest(PermissionKind.FileRead, path, root));
+                requests.Add(FileRequest(PermissionKind.FileRead, target, root));
                 break;
             case "write":
             case "append":
-                requests.Add(FileRequest(PermissionKind.FileWrite, path, root));
+                requests.Add(FileRequest(PermissionKind.FileWrite, target, root));
                 break;
             case "delete":
-                requests.Add(FileRequest(PermissionKind.FileWrite, path, root));
+                requests.Add(FileRequest(PermissionKind.FileWrite, target, root));
                 break;
             case "copy":
             case "move":
-                requests.Add(FileRequest(PermissionKind.FileRead, path, root));
+                requests.Add(FileRequest(PermissionKind.FileRead, target, root));
                 if (dest is not null)
                     requests.Add(FileRequest(PermissionKind.FileWrite, dest, root));
                 break;

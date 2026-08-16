@@ -15,7 +15,16 @@ public class FileJobPlugin : IJobPlugin
     {
         new JobParamSpec("action", "string", Required: true,
             "read|write|append|delete|copy|move|list|search|replace"),
-        new JobParamSpec("path", "string", Required: true, "Target file path"),
+        // "Target file path" for EVERY action, including list and search, where it is a DIRECTORY.
+        // One schema serves six actions, so the one description has to say where they differ — and
+        // the omission is not theoretical: an agent put a glob here ({"path": "**/*"}) because the
+        // only required param was called a file path while the tool description talked about
+        // patterns. It found nothing, fell back to `ls -R`, and read a bin/ directory as the
+        // project.
+        new JobParamSpec("path", "string", Required: true,
+            "The file to act on. For list and search it is the DIRECTORY to search under, optional "
+            + "and defaulting to the working directory — the glob or search text goes in `pattern`, "
+            + "never here."),
         // Says where content comes from, not just what it is. "Content for write/append" left the
         // model to infer that it must author the text, so with an upstream job to write it reached
         // for the reference syntax that no longer exists — rejected at compile time, costing a whole
@@ -70,7 +79,11 @@ public class FileJobPlugin : IJobPlugin
         var path = parameters.Get("path", "");
         var errors = new List<string>();
         if (!Actions.Contains(action)) errors.Add($"'action' must be one of {string.Join("|", Actions)}.");
-        if (string.IsNullOrWhiteSpace(path)) errors.Add("'path' is required.");
+        // LIST AND SEARCH DEFAULT IT to the working directory, so demanding it here would reject the
+        // call the `glob` and `grep` tools now advertise as valid — pattern required, path an
+        // optional narrowing.
+        if (string.IsNullOrWhiteSpace(path) && action is not ("list" or "search"))
+            errors.Add("'path' is required.");
         if (action is "write" or "append" && parameters.Get<string?>("content", null) is null)
             errors.Add($"'content' is required for action '{action}'.");
         if (action == "replace")
@@ -154,6 +167,87 @@ public class FileJobPlugin : IJobPlugin
     /// nothing the role could not already read. Live drives stalled repeatedly on exactly those
     /// approvals, and a worker blocked on a prompt is a worker doing nothing.
     /// </summary>
+    /// <summary>
+    /// Removes the files the REPOSITORY says are ignored, by asking git rather than guessing.
+    ///
+    /// <para>WHY GIT AND NOT A LIST. A hardcoded set of names — bin, obj, node_modules — is wrong in
+    /// both directions at once. It misses whatever THIS repo generates (build/, out/, .next/,
+    /// vendor/, a generated Generated/), and it overrides repos that commit dist/ on purpose,
+    /// silently, with nothing in the result to say a filter ran. git already knows the answer,
+    /// including nested .gitignore files down the tree, the global excludes file, and negations
+    /// like "!keep.log" that a name list cannot express at all.</para>
+    ///
+    /// <para>ONE PROCESS FOR THE WHOLE BATCH, via <c>git check-ignore --stdin</c>. Measured on this
+    /// machine: 17ms for 73 paths, 15ms for 281 — flat, because the cost is the spawn and not the
+    /// paths. Against a tool call that has already walked the filesystem that is not worth
+    /// avoiding, and it is the reason this is not one invocation per file.</para>
+    ///
+    /// <para>NO REPO, NO FILTERING. Outside a git checkout there is no authority to consult and
+    /// nothing is dropped: a caller who asked to list a directory gets that directory. Same when git
+    /// is missing or fails — the results pass through unfiltered rather than a guess standing in for
+    /// an answer. The failure mode is noise, which is visible; the alternative is hiding a file
+    /// nobody was told about.</para>
+    ///
+    /// <para>.git ITSELF IS ALWAYS DROPPED. It is not "ignored" (git tracks nothing inside it) so
+    /// check-ignore says nothing about it, yet a search that walks it reports hits in every historic
+    /// version of every file — content nobody can edit.</para>
+    /// </summary>
+    private static List<string> WithoutIgnored(List<string> files, string dir)
+    {
+        if (files.Count == 0) return files;
+
+        var kept = files.Where(f => !InsideGitDir(f)).ToList();
+        if (kept.Count == 0) return kept;
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git")
+            {
+                WorkingDirectory = dir,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add("check-ignore");
+            psi.ArgumentList.Add("--stdin");
+
+            using var git = System.Diagnostics.Process.Start(psi);
+            if (git is null) return kept;
+
+            foreach (var f in kept) git.StandardInput.WriteLine(f);
+            git.StandardInput.Close();
+
+            var ignored = new HashSet<string>(StringComparer.Ordinal);
+            while (git.StandardOutput.ReadLine() is { } line)
+                if (line.Length > 0) ignored.Add(line);
+
+            // Bounded, because a hung git must not hang the tool. check-ignore is a local index
+            // lookup; a second is already pathological.
+            if (!git.WaitForExit(1000)) { try { git.Kill(entireProcessTree: true); } catch { } return kept; }
+
+            // Exit 0 = something matched, 1 = nothing matched, anything else = git could not answer
+            // (not a repo, bad invocation) and its opinion is not usable.
+            if (git.ExitCode > 1) return kept;
+
+            return ignored.Count == 0 ? kept : kept.Where(f => !ignored.Contains(f)).ToList();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or IOException or UnauthorizedAccessException)
+        {
+            // No git on PATH, or it could not be run. Unfiltered beats invented.
+            return kept;
+        }
+    }
+
+    /// <summary>Segment-wise, never a substring: a directory named "src/.github" is not ".git".</summary>
+    private static bool InsideGitDir(string file)
+    {
+        foreach (var part in file.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            if (string.Equals(part, ".git", StringComparison.Ordinal)) return true;
+        return false;
+    }
+
     private static void ListInto(string path, JobParameters parameters,
         Dictionary<string, object?> output)
     {
@@ -165,12 +259,14 @@ public class FileJobPlugin : IJobPlugin
         // nothing it can act on.
         var dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
 
-        var matches = Directory.EnumerateFiles(dir, NormalizeGlob(pattern), SearchOption.AllDirectories)
-            .Take(limit + 1)
-            .ToList();
-
+        // FILTERED BEFORE THE CAP, not after. An ignored file that consumed one of the limit slots
+        // would shrink the answer without appearing in it — the cap would report "truncated" while
+        // returning fewer real files than asked for.
+        var matches = WithoutIgnored(
+            Directory.EnumerateFiles(dir, NormalizeGlob(pattern), SearchOption.AllDirectories).ToList(),
+            dir);
         var truncated = matches.Count > limit;
-        if (truncated) matches.RemoveAt(matches.Count - 1);
+        if (truncated) matches = matches.Take(limit).ToList();
 
         output["content"] = string.Join('\n', matches);
         output["count"] = matches.Count;
@@ -265,7 +361,8 @@ public class FileJobPlugin : IJobPlugin
         }
 
         var hits = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(dir, NormalizeGlob(glob), SearchOption.AllDirectories))
+        foreach (var file in WithoutIgnored(
+            Directory.EnumerateFiles(dir, NormalizeGlob(glob), SearchOption.AllDirectories).ToList(), dir))
         {
             ct.ThrowIfCancellationRequested();
             if (hits.Count >= limit) break;
@@ -676,7 +773,28 @@ public class FileJobPlugin : IJobPlugin
             // RESOLVED INSIDE THE TRY, so a bad path becomes a failed RESULT rather than an escaping
             // exception. It sat outside, which meant the one error most worth explaining to a model
             // — a path it can fix — was the one that bypassed the plugin's own error handling.
-            var path = Resolve(parameters.Get<string>("path"), context);
+            // PATH DEFAULTS TO THE WORKING DIRECTORY FOR THE SEARCHING ACTIONS, which is what makes
+            // it optional on the `glob` and `grep` tools. Everything else needs a real target and
+            // still fails without one — a `write` with no path is a mistake, not a search of ".".
+            //
+            // THE TWO-ARGUMENT OVERLOAD, because the one-argument form is Values[key] and THROWS on
+            // an absent key. Making `path` optional on glob/grep without changing this line meant
+            // every call that took the schema at its word — `grep {"pattern":"X"}`, exactly what the
+            // tool now advertises — came back as "The given key 'path' was not present in the
+            // dictionary", 174 times in one session. The schema said optional; the code demanded it.
+            var requested = parameters.Get<string?>("path", null);
+            if (string.IsNullOrWhiteSpace(requested) && action is "list" or "search")
+                requested = ".";
+
+            // Every other action requires one, and Validate has already said so with a message the
+            // model can act on — this only stops a null reaching Resolve if that guard ever moves.
+            if (string.IsNullOrWhiteSpace(requested))
+                return new JobResult
+                {
+                    Success = false,
+                    ErrorMessage = $"'path' is required for action '{action}'.",
+                };
+            var path = Resolve(requested, context);
 
             var output = new Dictionary<string, object?>();
             switch (action)

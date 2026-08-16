@@ -103,13 +103,36 @@ public static class WorkerToolset
         // AND SHELLING OUT COSTS MORE THAN A NAME. Through run_shell these are commands that raise a
         // permission prompt for an operation reading nothing the agent could not already read — live
         // drives stalled repeatedly on exactly those approvals.
+        // PATTERN FIRST AND REQUIRED, path optional — opencode's shape, and the reason it does not
+        // suffer this bug. The required argument should be the one the model is already thinking
+        // about ("find the .cs files"); making `path` the required one meant a model that wanted
+        // exactly that had to fill in a directory it did not care about, and put its pattern in the
+        // only required slot it had been given. Order matters too: Params is documented as "the
+        // order the model should read them".
         (WorkerTool.ListFiles, new ToolSpec("glob", "file", "list",
-            Params: ["path", "pattern", "limit"], Required: ["path"],
-            Description: "Find files by path pattern, e.g. \"**/*.cs\". Use this rather than "
+            Params: ["pattern", "path", "limit"], Required: ["pattern"],
+            // SAY WHICH ARGUMENT IS WHICH. This read "Find files by path pattern, e.g. **/*.cs"
+            // with `path` as the only required param, so the glob looks like it belongs in `path` —
+            // and a live drive made exactly that call five times in one turn:
+            //   glob {"pattern": "*cli*", "path": "**/*"}
+            // Every one returned nothing, the agent fell back to `ls -R`, drowned in bin/ and obj/,
+            // and reported to its planner that the project consists of DLLs. The planner then
+            // correctly said it had no source to plan against. One inverted call cost the run.
+            //
+            // The old wording is not wrong so much as silent on the split: `path` is the DIRECTORY
+            // to search under, `pattern` is the glob, and the example given was a pattern while the
+            // required param was the path.
+            Description: "Find files under a DIRECTORY. `path` is the folder to search "
+                       + "(e.g. \".\" or \"src\"); `pattern` is the glob matched against the file "
+                       + "names beneath it (e.g. \"*.cs\", or \"**/*.cs\" to recurse), defaulting to "
+                       + "\"*\". The glob goes in `pattern`, never in `path`. Use this rather than "
                        + "run_shell with find or ls — it needs no approval.",
             Aliases: ["list_files"])),
+        // Same inversion as glob, and for the same reason: the pattern is the request, the path is
+        // an optional narrowing. grep already required BOTH, so it never produced the inverted call
+        // — but requiring a directory the model has no opinion about is friction on every search.
         (WorkerTool.SearchFiles, new ToolSpec("grep", "file", "search",
-            Params: ["path", "pattern", "regex", "glob", "limit"], Required: ["path", "pattern"],
+            Params: ["pattern", "path", "regex", "glob", "limit"], Required: ["pattern"],
             Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
                        + "matching a glob. Use this rather than run_shell with grep or rg — it "
                        + "needs no approval.",

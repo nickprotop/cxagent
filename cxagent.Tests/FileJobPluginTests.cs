@@ -161,6 +161,169 @@ public class FileJobPluginTests : IDisposable
         Assert.DoesNotContain("b.txt", (string)r.Output["content"]!);
     }
 
+    // BUILD OUTPUT IS NOT THE PROJECT. A live explorer fell back to `ls -R`, met bin/ and obj/
+    // first, and reported to its planner that cxgpu consists of DLLs — which was true of what it
+    // had seen. list/search drop what the REPOSITORY says is ignored, asked of git rather than
+    // guessed from a list of names: the names that matter differ per project (build/, out/,
+    // vendor/, .next/), and a repo that commits dist/ on purpose must not have it hidden.
+    [Fact]
+    public async Task List_SkipsWhatTheRepositoryIgnores()
+    {
+        InitRepo(".gitignore", "obj/\nnode_modules/\n");
+        Directory.CreateDirectory(Path.Combine(_dir, "src"));
+        Directory.CreateDirectory(Path.Combine(_dir, "obj", "Debug"));
+        Directory.CreateDirectory(Path.Combine(_dir, "node_modules", "pkg"));
+        File.WriteAllText(Path.Combine(_dir, "src", "Real.cs"), "x");
+        File.WriteAllText(Path.Combine(_dir, "obj", "Debug", "Generated.cs"), "x");
+        File.WriteAllText(Path.Combine(_dir, "node_modules", "pkg", "Vendored.cs"), "x");
+
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", "**/*.cs"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var content = (string)r.Output["content"]!;
+        Assert.Contains("Real.cs", content);
+        Assert.DoesNotContain("Generated.cs", content);
+        Assert.DoesNotContain("Vendored.cs", content);
+    }
+
+    // THE CASE A HARDCODED LIST GETS WRONG. "dist" is a conventional build directory, so a name
+    // list would hide it — but this repo commits it, and git says so. The repo's opinion wins.
+    [Fact]
+    public async Task List_KeepsConventionallyGeneratedNamesTheRepositoryDoesNotIgnore()
+    {
+        InitRepo(".gitignore", "obj/\n");
+        Directory.CreateDirectory(Path.Combine(_dir, "dist"));
+        File.WriteAllText(Path.Combine(_dir, "dist", "Shipped.cs"), "x");
+
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", "**/*.cs"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("Shipped.cs", (string)r.Output["content"]!);
+    }
+
+    // AND THE CASE IT MISSES: a name nobody would think to hardcode, ignored by this project.
+    [Fact]
+    public async Task List_SkipsAProjectSpecificIgnoredDirectory()
+    {
+        InitRepo(".gitignore", "generated-sources/\n");
+        Directory.CreateDirectory(Path.Combine(_dir, "generated-sources"));
+        File.WriteAllText(Path.Combine(_dir, "generated-sources", "Gen.cs"), "x");
+        File.WriteAllText(Path.Combine(_dir, "Real.cs"), "x");
+
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", "**/*.cs"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("Real.cs", (string)r.Output["content"]!);
+        Assert.DoesNotContain("Gen.cs", (string)r.Output["content"]!);
+    }
+
+    // NO REPO, NO FILTERING. There is no authority to consult outside a checkout, so a caller who
+    // asked to list a directory gets that directory rather than a guess about it.
+    [Fact]
+    public async Task List_OutsideAGitRepository_FiltersNothing()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "obj"));
+        File.WriteAllText(Path.Combine(_dir, "obj", "Generated.cs"), "x");
+
+        var r = await Run(("action", "list"), ("path", _dir), ("pattern", "**/*.cs"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("Generated.cs", (string)r.Output["content"]!);
+    }
+
+    [Fact]
+    public async Task Search_SkipsWhatTheRepositoryIgnores()
+    {
+        InitRepo(".gitignore", "obj/\n");
+        Directory.CreateDirectory(Path.Combine(_dir, "src"));
+        Directory.CreateDirectory(Path.Combine(_dir, "obj"));
+        File.WriteAllText(Path.Combine(_dir, "src", "Real.cs"), "needle here");
+        File.WriteAllText(Path.Combine(_dir, "obj", "Generated.cs"), "needle here");
+
+        var r = await Run(("action", "search"), ("path", _dir), ("pattern", "needle"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var content = (string)r.Output["content"]!;
+        Assert.Contains("Real.cs", content);
+        Assert.DoesNotContain("Generated.cs", content);
+    }
+
+    // THE TEST THAT WAS MISSING, and its absence cost a whole session. Validate accepting a
+    // path-less call is not the same as EXECUTING one: the resolution used Get<string>("path"),
+    // whose one-argument overload is Values[key] and throws on an absent key. So the schema
+    // advertised `path` as optional while every call that believed it came back as "The given key
+    // 'path' was not present in the dictionary" — 174 times in one drive. Validate-only tests
+    // passed throughout.
+    [Fact]
+    public async Task List_WithNoPath_SearchesTheWorkingDirectory()
+    {
+        File.WriteAllText(Path.Combine(_dir, "a.cs"), "x");
+
+        var r = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "list"), ("pattern", "*.cs")), new CollectingContext { WorkingDirectory = _dir },
+            CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("a.cs", (string)r.Output["content"]!);
+    }
+
+    [Fact]
+    public async Task Search_WithNoPath_SearchesTheWorkingDirectory()
+    {
+        File.WriteAllText(Path.Combine(_dir, "a.cs"), "needle here");
+
+        var r = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "search"), ("pattern", "needle")), new CollectingContext { WorkingDirectory = _dir },
+            CancellationToken.None);
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Contains("a.cs", (string)r.Output["content"]!);
+    }
+
+    // An action that genuinely needs a target still fails, and says which action and why rather
+    // than surfacing a dictionary error.
+    [Fact]
+    public async Task Read_WithNoPath_FailsWithAMessageAboutThePath()
+    {
+        var r = await new FileJobPlugin().ExecuteAsync(
+            P(("action", "read")), new CollectingContext { WorkingDirectory = _dir }, CancellationToken.None);
+
+        Assert.False(r.Success);
+        Assert.Contains("'path' is required", r.ErrorMessage!);
+    }
+
+    // `path` is optional for the searching actions now that `pattern` is the required one, so a
+    // call with no path must validate rather than be rejected before it runs.
+    [Fact]
+    public void Validate_AcceptsListAndSearchWithNoPath()
+    {
+        var plugin = new FileJobPlugin();
+        Assert.True(plugin.Validate(P(("action", "list"), ("pattern", "*.cs"))).IsValid);
+        Assert.True(plugin.Validate(P(("action", "search"), ("pattern", "needle"))).IsValid);
+    }
+
+    [Fact]
+    public void Validate_StillRequiresPathForActionsThatTargetAFile()
+    {
+        var plugin = new FileJobPlugin();
+        Assert.False(plugin.Validate(P(("action", "read"))).IsValid);
+        Assert.False(plugin.Validate(P(("action", "write"), ("content", "x"))).IsValid);
+    }
+
+    /// <summary>A real git repo in the test directory, so check-ignore has something to answer
+    /// from. Nothing is committed — .gitignore applies to untracked files, which is the case.</summary>
+    private void InitRepo(string ignoreFile, string contents)
+    {
+        File.WriteAllText(Path.Combine(_dir, ignoreFile), contents);
+        foreach (var args in new[] { "init -q", "config user.email t@t", "config user.name t" })
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git") { WorkingDirectory = _dir };
+            foreach (var a in args.Split(' ')) psi.ArgumentList.Add(a);
+            psi.RedirectStandardOutput = psi.RedirectStandardError = true;
+            System.Diagnostics.Process.Start(psi)!.WaitForExit(5000);
+        }
+    }
+
     [Fact]
     public async Task List_OnAFilePath_ListsItsDirectory()
     {

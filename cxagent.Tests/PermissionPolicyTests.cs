@@ -694,4 +694,50 @@ public class PermissionPolicyTests
         Assert.False(TrustedPolicy(root, mode).IsSilentlyAllowed(
             new PermissionRequest(PermissionKind.Mcp, "server/tool", "server/tool")));
     }
+
+    // THE LAYER THE FIRST FIX MISSED. `path` became optional on glob/grep, the plugin was taught to
+    // default it — and the permission gate still read it with the one-argument Get, which is
+    // Values[key] and throws. The gate runs FIRST, so every `grep {"pattern": ...}` died here with
+    // "The given key 'path' was not present in the dictionary" before the plugin was reached: 18
+    // failures in one live session, on the exact call shape the tool advertises.
+    [Fact]
+    public void SearchWithNoPath_RaisesNoRequestAndDoesNotThrow()
+    {
+        var p = new JobParameters(new Dictionary<string, object?>
+        {
+            ["action"] = "search",
+            ["pattern"] = "needle",
+        });
+
+        var requests = PermissionPolicy.RequestsFor("file", p, "/proj");
+
+        Assert.Empty(requests);   // read-only: approval-free by design
+    }
+
+    [Fact]
+    public void ListWithNoPath_RaisesNoRequestAndDoesNotThrow()
+    {
+        var p = new JobParameters(new Dictionary<string, object?>
+        {
+            ["action"] = "list",
+            ["pattern"] = "*.cs",
+        });
+
+        Assert.Empty(PermissionPolicy.RequestsFor("file", p, "/proj"));
+    }
+
+    // FAIL TOWARD ASKING. A write with no path cannot happen today (validation rejects it), but if
+    // that guard ever moves, the gate must not respond by raising no request at all — that is a
+    // silent write.
+    [Fact]
+    public void WriteWithNoPath_StillAsks()
+    {
+        var p = new JobParameters(new Dictionary<string, object?> { ["action"] = "write" });
+
+        var requests = PermissionPolicy.RequestsFor("file", p, "/proj");
+
+        Assert.Single(requests);
+        Assert.Equal(PermissionKind.FileWrite, requests[0].Kind);
+        Assert.Null(requests[0].AlwaysRule);   // nothing truthful to generalise
+    }
 }
