@@ -174,6 +174,38 @@ public sealed class Session
         Plugins = plugins;
     }
 
+    /// <summary>
+    /// How this session's permission questions are judged — its folder and its edit mode.
+    ///
+    /// <para>KEPT SO THE SESSION CAN CHANGE ITS OWN MODE. Setting a mode means moving the agent's
+    /// working mode AND the policy's edit mode together; splitting them across two owners is how one
+    /// gets set and the other does not, which shows up as a session that says accept-edits and asks
+    /// anyway.</para>
+    /// </summary>
+    public Permissions.PermissionPolicy? Policy { get; private set; }
+
+    /// <summary>
+    /// Puts this session into a working mode: the agent's delegation axis and the edit axis
+    /// together.
+    ///
+    /// <para>ONE CALL FOR BOTH AXES, because they are one decision. The composition root used to set
+    /// <c>Host.Mode</c> and <c>policy.Edits</c> on adjacent lines, which is two places to forget.
+    /// The store write stays with the caller — remembering a preference is not a property of the
+    /// running session, and a folder whose config cannot be written must still switch mode now.</para>
+    ///
+    /// <para>FALSE WITH NO HOST, so a mode set before the first wire is refused rather than silently
+    /// half-applied to a policy whose agent does not exist yet.</para>
+    /// </summary>
+    public bool SetMode(WorkingMode mode)
+    {
+        if (Host is null) return false;
+
+        Host.Mode = mode;
+        if (Policy is not null) Policy.Edits = mode.Edits;
+
+        return true;
+    }
+
     /// <summary>Records the catalog this session was wired against, so it can answer
     /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
     public void NoteCatalog(ProviderRegistry? catalog, bool classifierConfigured)
@@ -181,6 +213,10 @@ public sealed class Session
         _catalog = catalog;
         _classifierConfigured = classifierConfigured;
     }
+
+    /// <summary>Records the policy this session is judged by, so it can move both mode axes
+    /// together. Called by SessionFactory, which is handed it in the ports.</summary>
+    public void NotePolicy(Permissions.PermissionPolicy? policy) => Policy = policy;
 
     /// <summary>
     /// The catalog this session was wired against, and whether a classifier is configured in it.

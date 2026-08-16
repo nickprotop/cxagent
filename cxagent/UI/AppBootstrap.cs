@@ -1542,15 +1542,11 @@ public static class AppBootstrap
         // step quietly missing.
         void RestoreSession(SessionSnapshot snapshot)
         {
-            session.PendResume(snapshot);
-            WireRunner(resolution);   // rebuilds the runner over the restored context
-
-            // RETIRE THE ROW IT CAME FROM. The resumed session is a NEW agent with a new id
-            // writing its own rows, so leaving the old one open would offer the same crashed
-            // context again at every launch — and accepting it twice would fork the conversation
-            // into two sessions claiming the same history. SUPERSEDED rather than finished: see
-            // MarkSuperseded, which is why this one survives pruning.
-            sessions.MarkSuperseded(snapshot.AgentId);
+            // THROUGH THE MANAGER, which owns the resume store. Arming the resume, re-wiring over
+            // it and retiring the row it came from are three steps that only work together, and
+            // doing them by hand here is where a sequence like that gets copied with one quietly
+            // missing. The re-wire stays the caller's because building the ports needs a window.
+            manager.Resume(session, snapshot, () => WireRunner(resolution));
 
             // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
             // model's memory, not this session's scrollback — so without a line here the user

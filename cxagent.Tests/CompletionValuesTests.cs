@@ -1,5 +1,6 @@
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -124,6 +125,77 @@ public class CompletionValuesTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
 
         Assert.Empty(manager.Values(CompletionSets.Sessions, workingDirectory: "\0invalid"));
+    }
+
+    // BOTH AXES MOVE TOGETHER. The composition root used to set the agent's mode and the policy's
+    // edit mode on adjacent lines — two places to forget, and forgetting the second is a session
+    // that reports accept-edits and asks anyway.
+    [Fact]
+    public void Session_SetMode_MovesTheAgentAndThePolicyTogether()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var rules = new PermissionRulesStore(new AppPaths(_dir));
+        var policy = new CxAgent.Core.Permissions.PermissionPolicy(_dir, rules, EditMode.AlwaysAsk);
+
+        var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider()),
+            new SessionPorts
+            {
+                Observer = new BufferedChatSink(),
+                Tools = new BufferedJobPanel(),
+                Policy = policy,
+            },
+            AgentMode.Single);
+
+        var next = new WorkingMode(AgentMode.FanOut, EditMode.AcceptEdits);
+        Assert.True(session.SetMode(next));
+
+        Assert.Equal(next, session.Host!.Mode);
+        Assert.Equal(EditMode.AcceptEdits, policy.Edits);
+    }
+
+    // REFUSED WITH NO HOST, rather than half-applied to a policy whose agent does not exist yet.
+    [Fact]
+    public void Session_SetMode_WithNoHost_IsRefused()
+    {
+        var session = new Session(_dir);
+
+        Assert.False(session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AlwaysAsk)));
+    }
+
+    // THE THREE STEPS RUN IN ORDER, and the row it came from is retired. Doing this by hand in the
+    // composition root is where a sequence like that gets copied with one step quietly missing —
+    // and the missing one is usually the retirement, which leaves the same context offered at every
+    // launch and forks the conversation if it is accepted twice.
+    [Fact]
+    public async Task Manager_Resume_ArmsRewiresAndRetiresTheOldRow()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
+
+        var session = Wired(manager, ProviderResolution.ForTesting(provider));
+        await session.Host!.SendAsync("remember this", CancellationToken.None);
+
+        var agentId = session.Host.SessionId;
+        var store = manager.Shared.Resume!;
+        Assert.False(store.List(_dir).Single().Finished);   // open before the resume
+
+        var snapshot = new SessionSnapshot(agentId, session.Host.Context.Messages.ToList(),
+            0, 0, DateTimeOffset.UtcNow, null);
+
+        var rewired = false;
+        manager.Resume(session, snapshot, () => rewired = true);
+
+        Assert.True(rewired);
+
+        // ARMED: the next wire builds its host over this context rather than an empty one.
+        Assert.NotNull(session.TakePendingResume());
+
+        // AND THE ROW IS RETIRED. Not by disappearing — List returns finished rows too, so the
+        // palette still offers them and always has — but by being marked, which is what stops the
+        // startup offer proposing a context the user has already resumed.
+        var row = store.List(_dir).Single(r => r.Uid.StartsWith(agentId[..8], StringComparison.Ordinal));
+        Assert.True(row.Finished);
     }
 
     // NO TOOLSET, NO SERVERS — an ordinary headless arrangement, not a failure.

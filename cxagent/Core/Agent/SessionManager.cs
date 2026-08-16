@@ -208,6 +208,30 @@ public sealed class SessionManager : IDisposable
     }
 
     /// <summary>
+    /// Restores an earlier conversation into a session, and retires the row it came from.
+    ///
+    /// <para>THREE STEPS THAT ONLY WORK TOGETHER — arm the resume, re-wire over it, retire the old
+    /// row — and the composition root did all three by hand, which is exactly where a sequence like
+    /// that gets copied with one step quietly missing. The re-wire is the caller's because building
+    /// the ports needs a window; everything else is the manager's, because the resume store is.</para>
+    ///
+    /// <para>SUPERSEDED, NOT FINISHED. The resumed session is a NEW agent with a new id writing its
+    /// own rows, so leaving the old one open would offer the same context again at every launch —
+    /// and accepting it twice would fork the conversation into two sessions claiming one history.
+    /// Superseded rows survive pruning; see MarkSuperseded.</para>
+    /// </summary>
+    /// <param name="rewire">
+    /// Rebuilds the session's host over the armed resume. A delegate because the ports it needs — an
+    /// observer, a tool sink, a way to ask the user — can only be built by a presentation layer.
+    /// </param>
+    public void Resume(Session session, Storage.SessionSnapshot snapshot, Action rewire)
+    {
+        session.PendResume(snapshot);
+        rewire();
+        Shared.Resume?.MarkSuperseded(snapshot.AgentId);
+    }
+
+    /// <summary>
     /// Closes one session: disposes its agent host and forgets it.
     ///
     /// <para>THE HOST IS THE ONLY DISPOSABLE THING. Session itself is not IDisposable and the two
