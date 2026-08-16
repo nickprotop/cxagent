@@ -815,6 +815,19 @@ public static class AppBootstrap
                             return;
                         }
 
+                        if (command.Name == "/agents")
+                        {
+                            // BUILT HERE AND NOW, from the CURRENT resolution — not captured once at
+                            // startup. SessionFactory rebuilds the catalog on every re-wire so an F5
+                            // provider change re-resolves each type's instance; a copy held here
+                            // would keep printing the provider the session had stopped using.
+                            new AgentsCommand(
+                                new Core.Agent.AgentTypeCatalog(
+                                    resolution.AgentTypes, resolution.Providers),
+                                transcript).Handle(SessionCommands.Arguments(goalText));
+                            return;
+                        }
+
                         if (command.Name == "/diff")
                         {
                             // THE FOLDER THIS SESSION RUNS IN, not wherever the process happens to

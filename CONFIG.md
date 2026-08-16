@@ -198,8 +198,9 @@ briefings already compose.
 
 ### What each shipped type is told
 
-Reproduced so a bad run can be debugged without reading source. `cxagent/Core/Agent/BuiltinAgentTypes.cs`
-is the source of truth.
+Reproduced so a bad run can be debugged without reading source — or run **`/agents <name>`**, which
+prints the same text from the running session. `cxagent/Core/Agent/BuiltinAgentTypes.cs` is the
+source of truth for both.
 
 #### `explore`
 

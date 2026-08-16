@@ -94,8 +94,8 @@
     "briefing: the CHILD's highest-authority instruction, in full. Written in the second person.",
     "  Config is the only legitimate author of it — a parent cannot set it.",
     "",
-    "CONFIG.md reproduces what each built-in type is told, so you can read them without",
-    "  digging through source."
+    "Run /agents to see every type, or /agents <name> for the briefing one is given. CONFIG.md",
+    "  reproduces the same text."
   ],
   "agents": {
     "//builder": "A built-in name: briefing and description come from the program. Only these apply.",

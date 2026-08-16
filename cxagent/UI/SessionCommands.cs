@@ -43,6 +43,19 @@ public static class SessionCommands
         // not a refresh: skills are re-read every turn, so an edited one is already live.
         new("/skills", "list available skills, and any SKILL.md that was skipped",
             CommandOutcome.NeedsWindow),
+        // NeedsWindow like /mcp and /skills: it answers from the catalog the session already built,
+        // so it costs no turn and no tokens.
+        //
+        // IT EXISTS BECAUSE THE BRIEFINGS LEFT config.json. Reading what a type is told used to mean
+        // opening your own config file; the shipped five are code now, and CONFIG.md is a poor
+        // substitute when a drive has just gone wrong in front of you.
+        new("/agents", "the sub-agent types this session can spawn, and what each one is told",
+            CommandOutcome.NeedsWindow,
+        [
+            // NOT COMPLETABLE, for /mcp's reason: the names are session state, and listing them in
+            // this static table would couple the two. `/agents` bare is what enumerates them.
+            new("<name>", "the full briefing that type is given", Completes: false),
+        ]),
         // NeedsTurn, alone among these: it costs tokens and takes time, because the agent has to go
         // and look at the project. Every other command here answers from state the app already holds.
         new("/init", "write the project instruction file this agent reads each session",

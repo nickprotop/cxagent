@@ -25,6 +25,8 @@ but not completed.
 | `/mcp reload` | Re-read config and reconnect |
 | `/mcp login <server>` | Authorise a server that needs OAuth |
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
+| `/agents` | The sub-agent types this session can spawn |
+| `/agents <name>` | The full briefing that type is given |
 | `/init` | Write the project instruction file this agent reads each session |
 | `/diff` | What has changed in the working tree |
 | `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
@@ -237,6 +239,40 @@ already live on the next one — there is nothing to apply.
 See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` looks like.
 
 ---
+
+## `/agents`
+
+What this session can delegate to, and what each type is told.
+
+```
+/agents            every type: where it runs, its turn cap, one line on when to choose it
+/agents planner    that type's briefing in full
+```
+
+**The listing is what the model reads while choosing.** Each row shows the type's own description —
+the single line the spawn tool puts in front of the model — trimmed to its first sentence so the list
+stays a list. If you are wondering why a parent picked one type over another, that text is the reason.
+
+**The detail view separates the two audiences.** A type has a *description*, read by the PARENT
+deciding whether to delegate, and a *briefing*, read by the CHILD as its highest-authority
+instruction. They are written for different readers and neither is derived from the other, so
+`/agents <name>` prints both and says which is which.
+
+**Reading a briefing is how you debug a strange run.** The builder refuses to start without a plan;
+the planner is told the exact path to write to. When a sub-agent does something surprising, the text
+it was given is the first thing to check — and since the shipped briefings live in the program rather
+than in `config.json`, this is where to read them.
+
+Where a type runs is on its row, because a type bound to another provider is the thing users most
+often forget they configured, and it explains both a surprising answer and a surprising bill. The
+`writes a plan file` marker means cxagent names that type's output path and checks afterwards whether
+the file appeared.
+
+A built-in type says so in its detail view, along with the reminder that a `briefing` or
+`description` under that name in `config.json` is ignored. See [CONFIG.md](CONFIG.md#agents--sub-agent-types).
+
+It lists; it does not spawn. Which type fits a task is the model's decision, made against this same
+catalog.
 
 ## `/init`
 
