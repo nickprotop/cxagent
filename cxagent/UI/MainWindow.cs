@@ -200,12 +200,16 @@ public sealed class MainWindow : IDisposable
     private GridControl _composer = null!;
 
     /// <summary>
-    /// Rows the composer occupies: the prompt's 3-row viewport, the mode line, the status bar.
-    /// Named so the grid row and the controls inside it cannot drift apart.
+    /// Rows the composer occupies: the separator above the card, the prompt's viewport
+    /// (<see cref="PromptRows"/>), the mode line, the separator above the status bar, and the status
+    /// bar itself. Named so the grid row and the controls inside it cannot drift apart — the outer
+    /// grid gives this row a FIXED cell count, so a control added inside without raising this number
+    /// is simply not drawn. That is how the status bar vanished when the second separator landed:
+    /// four rows of content in three rows of space, and the last one fell off the bottom.
     /// </summary>
     /// <summary>Internal, not private: CommandMenu anchors its portal just above the composer, and
     /// that arithmetic needs the composer's height.</summary>
-    internal const int ComposerRows = PromptRows + 3;
+    internal const int ComposerRows = PromptRows + 4;
 
     /// <summary>
     /// What the empty composer says.
@@ -241,6 +245,7 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>The line between the transcript and the composer — see its placement.</summary>
     private RuleControl _composerRule = null!;
+    private RuleControl _statusRule = null!;
 
     /// <summary>Prompt + mode line, painting the composer surface — see its construction.</summary>
     private GridControl _promptBox = null!;
@@ -750,6 +755,19 @@ public sealed class MainWindow : IDisposable
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
 
+        // THE SAME LINE UNDER THE COMPOSER. The status bar is a third kind of surface again — not
+        // transcript, not input — and it sat directly against the composer with nothing marking the
+        // change. One rule above it and one above the composer make the three read as three bands
+        // rather than as a prompt with a caption stuck to it.
+        //
+        // UNPADDED, unlike the composer's rule. That one is inset a column so it stops at the card's
+        // edges; the status bar fills the pane edge to edge, so a rule that stopped short of the
+        // frame would leave a notch at each end.
+        _statusRule = Controls.RuleBuilder()
+            .WithColor(ColorScheme.Separator)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
         _composer = Controls.Grid()
             .Columns(GridLength.Star(1))
             // CELLS, not Auto, for the prompt's row. MultilineEditControl grows to fill its bounds
@@ -765,10 +783,11 @@ public sealed class MainWindow : IDisposable
             // AUTO for the prompt box's row, not a fixed height: a permission prompt takes its
             // place there and is as tall as its question. The prompt box itself pins its own two
             // rows, so Auto still resolves to exactly PromptRows + 1 in the ordinary case.
-            .Rows(GridLength.Cells(1), GridLength.Auto(), GridLength.Auto())
+            .Rows(GridLength.Cells(1), GridLength.Auto(), GridLength.Cells(1), GridLength.Auto())
             .Place(_composerRule, 0, 0)
             .Place(_promptBox, 1, 0)
-            .Place(StatusBar, 2, 0)
+            .Place(_statusRule, 2, 0)
+            .Place(StatusBar, 3, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
             // taller than the composer — and that is exactly the defect: the row measured six rows
@@ -1043,6 +1062,7 @@ public sealed class MainWindow : IDisposable
         // so a dimmed row still shows the user four shortcuts that will not respond. Removing it
         // also gives the question the bottom of the screen to itself.
         StatusBar.Visible = false;
+        _statusRule.Visible = false;   // or the rule would sit above nothing
 
         // MOVE FOCUS INTO THE PROMPT. Without this the buttons were mouse-only: ReplaceControl swaps
         // the composer OUT of the grid but focus stays on that removed control, and ButtonControl's
@@ -1294,6 +1314,7 @@ public sealed class MainWindow : IDisposable
             _activePrompt = null;
 
             StatusBar.Visible = true;
+            _statusRule.Visible = true;
         }
 
         FocusComposer();
