@@ -796,4 +796,68 @@ public class ProviderConfigTests : IDisposable
 
         Assert.True(s.Providers["p"].CacheControl);
     }
+
+    // ---- DescribesSameServerAs -------------------------------------------------------------------
+
+    // RECORD EQUALITY IS THE TRAP. Three members are collections, and a record compares those by
+    // REFERENCE — so two identical configs read from disk on either side of a save never compare
+    // equal, and a caller asking "did the servers change?" is told yes every time. A notice that
+    // always fires is worse than none.
+    [Fact]
+    public void TwoIdenticalConfigs_AreTheSameServer_EvenThoughRecordEqualityDisagrees()
+    {
+        var a = new McpServerConfig(["node", "server.js"],
+            Environment: new Dictionary<string, string> { ["K"] = "v" });
+        var b = new McpServerConfig(["node", "server.js"],
+            Environment: new Dictionary<string, string> { ["K"] = "v" });
+
+        Assert.NotEqual(a, b);                      // the trap, pinned
+        Assert.True(a.DescribesSameServerAs(b));    // and what we actually mean
+    }
+
+    [Fact]
+    public void AnEditedCommand_IsADifferentServer()
+    {
+        var a = new McpServerConfig(["node", "old.js"]);
+        var b = new McpServerConfig(["node", "new.js"]);
+
+        Assert.False(a.DescribesSameServerAs(b));
+    }
+
+    // EVERY MEMBER COUNTS. The first version of this comparison lived at the call site and silently
+    // omitted Headers — which is exactly the class of miss this test exists to catch.
+    [Theory]
+    [InlineData("enabled")]
+    [InlineData("timeout")]
+    [InlineData("cwd")]
+    [InlineData("url")]
+    [InlineData("env")]
+    [InlineData("headers")]
+    public void EveryMemberIsCompared(string member)
+    {
+        var baseline = new McpServerConfig(["run"], Enabled: true, TimeoutMs: 1000,
+            Environment: new Dictionary<string, string> { ["A"] = "1" },
+            WorkingDirectory: "/w", Url: "http://x/", Headers: new Dictionary<string, string> { ["H"] = "1" });
+
+        var changed = member switch
+        {
+            "enabled" => baseline with { Enabled = false },
+            "timeout" => baseline with { TimeoutMs = 2000 },
+            "cwd" => baseline with { WorkingDirectory = "/other" },
+            "url" => baseline with { Url = "http://y/" },
+            "env" => baseline with { Environment = new Dictionary<string, string> { ["A"] = "2" } },
+            _ => baseline with { Headers = new Dictionary<string, string> { ["H"] = "2" } },
+        };
+
+        Assert.False(baseline.DescribesSameServerAs(changed), $"{member} was not compared");
+    }
+
+    [Fact]
+    public void AbsentAndEmptyMapsAreTheSame()
+    {
+        var a = new McpServerConfig(["run"], Environment: null);
+        var b = new McpServerConfig(["run"], Environment: new Dictionary<string, string>());
+
+        Assert.True(a.DescribesSameServerAs(b));
+    }
 }

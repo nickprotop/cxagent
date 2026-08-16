@@ -181,6 +181,41 @@ public record McpServerConfig(
 {
     /// <summary>True when this server is reached over HTTP rather than spawned.</summary>
     public bool IsRemote => !string.IsNullOrWhiteSpace(Url);
+
+    /// <summary>
+    /// Whether two configurations describe the same server.
+    ///
+    /// <para>NOT record equality, which is the trap this exists to close. Three members are
+    /// collections — Command, Environment, Headers — and a record compares those BY REFERENCE, so
+    /// two identical configs read from disk on either side of a save never compare equal. A caller
+    /// asking "did the servers change?" would be told yes every time.</para>
+    ///
+    /// <para>ON THE TYPE, not at the call site, because the failure mode is an unchecked member: the
+    /// first version of this comparison lived in AppBootstrap and silently omitted Headers. Adding
+    /// an eighth member is a change to this file, which is where the reader already is.</para>
+    /// </summary>
+    public bool DescribesSameServerAs(McpServerConfig other) =>
+        Enabled == other.Enabled
+        && TimeoutMs == other.TimeoutMs
+        && WorkingDirectory == other.WorkingDirectory
+        && Url == other.Url
+        && Command.SequenceEqual(other.Command)
+        && SameMap(Environment, other.Environment)
+        && SameMap(Headers, other.Headers);
+
+    private static bool SameMap(IReadOnlyDictionary<string, string>? a,
+        IReadOnlyDictionary<string, string>? b)
+    {
+        var left = a ?? EmptyMap;
+        var right = b ?? EmptyMap;
+        if (left.Count != right.Count) return false;
+        foreach (var (k, v) in left)
+            if (!right.TryGetValue(k, out var other) || other != v) return false;
+        return true;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyMap =
+        new Dictionary<string, string>();
 }
 
 /// <summary>

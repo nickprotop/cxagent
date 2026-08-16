@@ -436,6 +436,19 @@ public static class AppBootstrap
         // manager's collection being empty while a session is plainly running.
         manager.Adopt(session);
 
+        // Same servers, by name and by what each one launches — see McpServerConfig for why this
+        // cannot be record equality.
+        static bool SameServers(
+            IReadOnlyDictionary<string, Core.Llm.McpServerConfig> before,
+            IReadOnlyDictionary<string, Core.Llm.McpServerConfig> after)
+        {
+            if (before.Count != after.Count) return false;
+            foreach (var (name, cfg) in before)
+                if (!after.TryGetValue(name, out var other) || !cfg.DescribesSameServerAs(other))
+                    return false;
+            return true;
+        }
+
         void WireRunner(ProviderResolution res)
         {
             if (!res.HasProvider) return;
@@ -1298,7 +1311,20 @@ public static class AppBootstrap
 
                 WireRunner(reresolved);
                 mainWindow.SetResolution(reresolved);
-                mainWindow.Chat.AddMessage(ChatRole.System, "Configuration saved.");
+
+                // WHAT A SAVE DOES NOT TOUCH, said out loud. A re-wire rebuilds this session's host,
+                // its provider, its agent types and its classifier — but MCP servers are connected
+                // processes, not values, and reconnecting them here would drop tool calls in flight
+                // for a setting the user may not have touched. So they keep running as configured at
+                // startup, and this line is what stops that being a silent lie: adding a server and
+                // pressing F5 used to appear to work and did nothing.
+                //
+                // /mcp reload re-reads config from disk itself, so the fix a user needs is one
+                // command rather than a restart.
+                var mcpChanged = !SameServers(resolution.McpServers, reresolved.McpServers);
+                mainWindow.Chat.AddMessage(ChatRole.System, mcpChanged
+                    ? "Configuration saved. MCP servers changed — run /mcp reload to apply them."
+                    : "Configuration saved.");
             }
             finally
             {
