@@ -39,6 +39,39 @@ public class InlineJobSinkTests
             },
         };
 
+    // --- Terminal escapes must not reach the transcript ------------------------------------------
+
+    // A live session ran a binary it had just built (`cxgpu --gpu-usage --color`) and the 24-bit
+    // colour codes came back in the tool result and smeared the UI. The library's per-rune sanitizer
+    // replaced the ESC and left the rest as literal text, so the transcript filled with
+    // "[38;2;78;205;196m" — the guard held and the output was still unreadable.
+    [Fact]
+    public void BodyFor_Display_StripsTerminalEscapesFromCommandOutput()
+    {
+        const string esc = "\u001b";
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = $"{esc}[38;2;78;205;196m 45.2%{esc}[0m",
+        });
+
+        var body = InlineJobSink.BodyFor(job, forDisplay: true);
+
+        Assert.Equal(" 45.2%", body);
+        Assert.DoesNotContain("38;2;78", body!);
+    }
+
+    // AND THE MEASURING PATH IS NOT THE RENDERER. forDisplay:false feeds row sizing and the
+    // introspection tools; stripping there would make the two disagree about what came back.
+    [Fact]
+    public void BodyFor_NotForDisplay_LeavesTheOutputAlone()
+    {
+        const string esc = "\u001b";
+        var raw = $"{esc}[31mred{esc}[0m";
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?> { ["content"] = raw });
+
+        Assert.Equal(raw, InlineJobSink.BodyFor(job, forDisplay: false));
+    }
+
     // --- The reported bug: the model's text must reach the body ---------------------------------
 
     [Fact]

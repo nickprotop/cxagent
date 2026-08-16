@@ -410,6 +410,21 @@ public sealed class InlineJobSink : IToolObserver
     /// </param>
     public static string? BodyFor(Job job, bool forDisplay)
     {
+        // STRIPPED ONCE, AT THE EXIT. A command's output is arbitrary bytes, and the agent runs
+        // binaries it has just built — a live session ran `cxgpu --gpu-usage --color` and its 24-bit
+        // colour codes smeared the transcript. Doing it here rather than at each `return` is not
+        // tidiness: this method has four exits through two branches, and the one that gets forgotten
+        // is the one that ships.
+        //
+        // forDisplay ONLY. The measuring path feeds row sizing, and the model's own tool result is
+        // untouched elsewhere — an agent verifying colour output by counting escapes needs to see
+        // them, which is exactly what one drive did.
+        var body = BodyText(job, forDisplay);
+        return forDisplay ? TerminalText.Strip(body) is { Length: > 0 } s ? s : null : body;
+    }
+
+    private static string? BodyText(Job job, bool forDisplay)
+    {
         var output = job.Result?.Output;
 
         // A failed job's REASON is the body — the user's next action depends on it, and the status
