@@ -282,6 +282,46 @@ public class MainWindowTests
         Assert.Equal(PermissionChoice.Deny, prompt.Completion.Result);
     }
 
+    // A REPLACEMENT PROMPT IS ANSWERABLE EVEN IF THE OUTGOING ONE HAS NOT BEEN RESTORED YET.
+    // RestoreComposer is enqueued onto the UI thread rather than run inline, so a denied prompt
+    // whose turn asks again immediately can have its replacement shown first; the idempotence guard
+    // then skips the swap. Taking the deny action before that guard is what keeps the visible prompt
+    // answerable. Observed live before the fix: deny once, and the next prompt was dead to Escape.
+    [Fact]
+    public void TryDenyPermission_AnswersTheNewestPromptWhenOneArrivesBeforeTheRestore()
+    {
+        var mw = BuiltMainWindow();
+        var first = new PermissionPromptControl(ShellRequest("first"));
+        var second = new PermissionPromptControl(ShellRequest("second"));
+
+        mw.ShowPermissionPrompt(first.BuildContent(), first.TryCancel);
+        mw.ShowPermissionPrompt(second.BuildContent(), second.TryCancel);   // restore not yet run
+
+        Assert.True(mw.TryDenyPermission());
+        Assert.True(second.Completion.IsCompleted);
+        Assert.Equal(PermissionChoice.Deny, second.Completion.Result);
+    }
+
+    // AND A LATE RESTORE OF THE OUTGOING PROMPT MUST NOT DISARM THE NEW ONE. The clear lives inside
+    // RestoreComposer's ReferenceEquals branch, so a restore for a prompt that is no longer active
+    // does nothing — without that, the queued restore would land after the replacement was shown and
+    // silently take Escape away from it.
+    [Fact]
+    public void TryDenyPermission_SurvivesALateRestoreOfThePromptItReplaced()
+    {
+        var mw = BuiltMainWindow();
+        var first = new PermissionPromptControl(ShellRequest("first"));
+        var second = new PermissionPromptControl(ShellRequest("second"));
+        var firstContent = first.BuildContent();
+
+        mw.ShowPermissionPrompt(firstContent, first.TryCancel);
+        mw.ShowPermissionPrompt(second.BuildContent(), second.TryCancel);
+        mw.RestoreComposer(firstContent);   // the queued restore, arriving late
+
+        Assert.True(mw.TryDenyPermission());
+        Assert.Equal(PermissionChoice.Deny, second.Completion.Result);
+    }
+
     // FALSE WHEN THERE IS NOTHING TO ANSWER, so Escape falls through to whatever else wants it —
     // cancelling a turn, closing a dialog. A hook that swallowed the key unconditionally would take
     // away the stop-the-run behaviour it was added to protect.

@@ -1047,9 +1047,13 @@ public sealed class MainWindow : IDisposable
         return true;
     }
 
-    /// <summary>How to answer the prompt in <see cref="_activePrompt"/> with "no". See
+    /// <summary>How to answer the prompt currently on screen with "no". See
     /// <see cref="TryDenyPermission"/>.</summary>
     private Action? _denyActivePrompt;
+
+    /// <summary>The content <see cref="_denyActivePrompt"/> belongs to — NOT always
+    /// <see cref="_activePrompt"/>, which is why it is tracked separately. See RestoreComposer.</summary>
+    private IWindowControl? _denyOwner;
 
     /// <summary>
     /// Alt+← while a multi-question run is up: back to the previous one.
@@ -1072,9 +1076,22 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void ShowPermissionPrompt(IWindowControl prompt, Action? deny)
     {
-        if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
+        // THE DENY ACTION IS TAKEN EVEN WHEN THE SWAP IS SKIPPED, and that ordering is the whole
+        // point. Restore is ENQUEUED onto the UI thread rather than run inline, so a denied prompt
+        // whose turn immediately asks again can have its replacement shown BEFORE the outgoing one
+        // is restored — the guard below then fires, and assigning after it would leave a visible
+        // prompt that Escape cannot answer. Observed live: deny once, and the second prompt was
+        // dead to the keyboard.
+        //
+        // Answering the newest prompt is right in either order: the callback belongs to whichever
+        // control the user is looking at, and a stale one is cleared by the restore that follows.
+        if (deny is not null)
+        {
+            _denyActivePrompt = deny;
+            _denyOwner = prompt;
+        }
 
-        _denyActivePrompt = deny;
+        if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
 
         // SWAP THE WHOLE PROMPT BOX, not the Input inside it.
         //
@@ -1364,7 +1381,17 @@ public sealed class MainWindow : IDisposable
             // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
             // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
             // also swallow the keystroke and stop Escape reaching the turn it was meant for.
-            _denyActivePrompt = null;
+            //
+            // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. Matching on
+            // _activePrompt is not enough: a replacement shown before this restore ran hit the
+            // idempotence guard above, so _activePrompt is STILL the outgoing content while the deny
+            // action is already the new prompt's — and clearing here would take Escape away from the
+            // prompt on screen. A test pins this; it failed before the _denyOwner check existed.
+            if (ReferenceEquals(_denyOwner, prompt))
+            {
+                _denyActivePrompt = null;
+                _denyOwner = null;
+            }
 
             StatusBar.Visible = true;
             _statusRule.Visible = true;
