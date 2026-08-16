@@ -87,4 +87,19 @@ public sealed class BufferedChatSink : ISessionObserver
             _transcript.Append("error: ").Append(message).AppendLine();
         }
     }
+
+    /// <summary>What the session said about itself. Kept apart from <see cref="Errors"/> — a mode
+    /// change is not a fault, and a caller checking for failures must not find one here.</summary>
+    public IReadOnlyList<string> Notices { get { lock (_gate) return [.. _notices]; } }
+
+    private readonly List<string> _notices = [];
+
+    public void Said(string message)
+    {
+        lock (_gate)
+        {
+            _notices.Add(message);
+            _transcript.AppendLine(message);
+        }
+    }
 }

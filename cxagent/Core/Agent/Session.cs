@@ -203,15 +203,63 @@ public sealed class Session
         Host.Mode = mode;
         if (Policy is not null) Policy.Edits = mode.Edits;
 
+        Announce(SessionChangeKind.Mode);
         return true;
     }
 
     /// <summary>Records the catalog this session was wired against, so it can answer
     /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
-    public void NoteCatalog(ProviderRegistry? catalog, bool classifierConfigured)
+    public void NoteCatalog(ProviderResolution resolution, ProviderRegistry? catalog, bool classifierConfigured)
     {
+        Resolution = resolution;
         _catalog = catalog;
         _classifierConfigured = classifierConfigured;
+    }
+
+    /// <summary>
+    /// Where this session says things — the same observer its turns stream through.
+    ///
+    /// <para>SO IT CAN REPORT ITS OWN CHANGES. Switching model or mode used to be announced by the
+    /// composition root, which composed the sentence by reaching into session state; every front end
+    /// would have had to reimplement that, and the first to miss a line has a session whose state
+    /// changed silently. It says so itself now, once, through the channel already carrying
+    /// everything else the user sees.</para>
+    /// </summary>
+    private ISessionObserver? _sink;
+
+    /// <summary>Records the observer this session speaks through. Called by SessionFactory, which is
+    /// handed it in the ports.</summary>
+    public void NoteObserver(ISessionObserver? sink) => _sink = sink;
+
+    /// <summary>Says something to whoever is watching this session. A no-op when nobody is.</summary>
+    private void Say(string markup) => _sink?.Said(markup);
+
+    /// <summary>
+    /// Raised after this session changes something a front end would show.
+    ///
+    /// <para>THE OTHER HALF OF SAYING IT. The message is prose for a human; this is the signal for a
+    /// surface that has to redraw — a status bar quoting the model, a panel counting a window. They
+    /// are different consumers: nothing reads the sentence to decide what to paint, and nothing
+    /// prints the signal.</para>
+    ///
+    /// <para>NO PAYLOAD BEYOND THE KIND. Everything a watcher needs is readable from this session,
+    /// which it already holds; posting values would be a second copy of state that can disagree with
+    /// the first. The kind exists only so a resume does not force a model-label repaint.</para>
+    ///
+    /// <para>RAISED AFTER the change is applied, so a handler that reads the session sees the new
+    /// state rather than the state being replaced.</para>
+    /// </summary>
+    public event Action<SessionChangeKind>? Changed;
+
+    private void Announce(SessionChangeKind kind) => Changed?.Invoke(kind);
+
+    /// <summary>Announces that an earlier conversation was restored into this session. Called by the
+    /// manager, which owns the resume sequence — see SessionManager.Resume.</summary>
+    public void SayResumed(int messages)
+    {
+        Say($"[yellow]Resumed an earlier session: {messages} messages restored. "
+          + "They are not shown above, but the agent remembers them.[/]");
+        Announce(SessionChangeKind.Resumed);
     }
 
     /// <summary>Records the policy this session is judged by, so it can move both mode axes
@@ -226,6 +274,12 @@ public sealed class Session
     /// session, and they used to be answered by the composition root reaching into a resolution and
     /// a policy it happened to have in scope.</para>
     /// </summary>
+    /// <summary>The resolution this session is running on — its provider, window, agent types.
+    /// Kept so a watcher reacting to <see cref="Changed"/> can read what it needs off the session
+    /// instead of re-resolving from disk inside a UI handler, which is both wasteful and able to
+    /// fail at exactly the moment the screen must be repainted.</summary>
+    public ProviderResolution? Resolution { get; private set; }
+
     private ProviderRegistry? _catalog;
     private bool _classifierConfigured;
 
@@ -299,12 +353,24 @@ public sealed class Session
     {
         if (Host is null || next.Provider is null) return false;
 
+        // READ BEFORE THE SWAP, because the announcement below compares what the context WAS on the
+        // model being left against the window it is moving to. The composition root used to read
+        // these itself, in this order, before calling — an ordering a second front end would have to
+        // know about and could get wrong. It never needed to know.
+        var previousWindow = Host.Context.Window;
+        var used = Host.Context.Used;
+
         Host.SwapProvider(next.Provider, next.InstanceName, next.ContextWindow);
 
         // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from
         // here, so leaving these behind would offer the user the model they just left.
         Provider = next.Provider;
         InstanceName = next.InstanceName;
+        Resolution = next;
+
+        Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,
+            next.ContextWindow, previousWindow, used));
+        Announce(SessionChangeKind.Model);
 
         return true;
     }

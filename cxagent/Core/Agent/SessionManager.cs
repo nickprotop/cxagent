@@ -229,6 +229,12 @@ public sealed class SessionManager : IDisposable
         session.PendResume(snapshot);
         rewire();
         Shared.Resume?.MarkSuperseded(snapshot.AgentId);
+
+        // SAID AFTER THE REWIRE, so it reaches the observer the restored session is now wired to
+        // rather than the one it replaced. The restored turns are not rendered — they are the
+        // model's memory, not this session's scrollback — so without a line here the user faces an
+        // empty screen and an agent that mysteriously already knows things.
+        session.SayResumed(snapshot.Context.Count);
     }
 
     /// <summary>

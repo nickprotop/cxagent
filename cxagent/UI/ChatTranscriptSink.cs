@@ -156,4 +156,10 @@ public sealed class ChatTranscriptSink : ISessionObserver
         _system.EnqueueOnUIThread(() =>
             _chat.AddMessage(ChatRole.System, $"[red]✗ {message}[/]"));
 
+    // THE SAME ROW STYLE AS EVERY OTHER SYSTEM LINE, unstyled beyond that: the session sent markup
+    // and chose its own emphasis, so wrapping it in a colour here would override a decision already
+    // made one layer down.
+    public void Said(string message) =>
+        _system.EnqueueOnUIThread(() => _chat.AddMessage(ChatRole.System, message));
+
 }

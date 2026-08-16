@@ -102,6 +102,7 @@ public class SessionBoundaryTests
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string label) { }
         public void Failed(string message) { }
+        public void Said(string message) { }
     }
 
     /// <summary>Hands every report to two observers — the thing that was impossible while each minted
@@ -121,5 +122,6 @@ public class SessionBoundaryTests
         public void AssistantLabelled(ChatMessageId id, string label)
         { a.AssistantLabelled(id, label); b.AssistantLabelled(id, label); }
         public void Failed(string message) { a.Failed(message); b.Failed(message); }
+        public void Said(string message) { }
     }
 }

@@ -181,8 +181,9 @@ public static class SessionFactory
         // assignments a re-wire had to remember.
         // SO THE SESSION CAN ANSWER FOR ITSELF — /model's instances and /mode's edit modes are both
         // questions about this session, and it needs the catalog it was wired against to answer them.
+        session.NoteObserver(ports.Observer);
         session.NotePolicy(ports.Policy);
-        session.NoteCatalog(resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
+        session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, plugins);
     }

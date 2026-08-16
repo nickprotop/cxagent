@@ -1,3 +1,4 @@
+using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.UI;
 using Xunit;
@@ -141,7 +142,7 @@ public class ModelCommandTests
     [Fact]
     public void Switched_NamesTheModelAndItsWindow()
     {
-        var text = ModelCommand.Switched("claude", "claude-x", 200_000, 213_000, used: 1_000);
+        var text = ModelSwitchNotice.For("claude", "claude-x", 200_000, 213_000, used: 1_000);
 
         Assert.Contains("claude:claude-x", text);
         Assert.Contains("200k", text);
@@ -156,7 +157,7 @@ public class ModelCommandTests
     [Fact]
     public void Switched_WarnsWhenTheConversationAlreadyFillsTheNewWindow()
     {
-        var text = ModelCommand.Switched("small", "tiny", 32_000, 213_000, used: 30_000);
+        var text = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 30_000);
 
         Assert.Contains("summarise", text);
         Assert.Contains("30k", text);
@@ -166,7 +167,7 @@ public class ModelCommandTests
     [Fact]
     public void Switched_DoesNotWarnWhenThereIsRoom()
     {
-        var text = ModelCommand.Switched("big", "large", 200_000, 32_000, used: 1_000);
+        var text = ModelSwitchNotice.For("big", "large", 200_000, 32_000, used: 1_000);
 
         Assert.DoesNotContain("summarise", text);
     }
@@ -175,7 +176,7 @@ public class ModelCommandTests
     [Fact]
     public void Switched_NotesASmallerWindow()
     {
-        var text = ModelCommand.Switched("small", "tiny", 32_000, 213_000, used: 100);
+        var text = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 100);
 
         Assert.Contains("Smaller window", text);
     }
@@ -184,7 +185,7 @@ public class ModelCommandTests
     [Fact]
     public void Switched_SaysWhenTheWindowIsUnknown()
     {
-        var text = ModelCommand.Switched("odd", "mystery", null, 200_000, used: 100);
+        var text = ModelSwitchNotice.For("odd", "mystery", null, 200_000, used: 100);
 
         Assert.Contains("fixed threshold", text);
     }

@@ -812,9 +812,9 @@ public static class AppBootstrap
                 // SAME ONE CALL AS /mode. Shift+Tab and the command are the same decision reached
                 // two ways, and the pair of lines this replaced is the pair that gets copied with
                 // the policy half missing.
+                // NO REPAINT HERE. SetMode announces, and the subscription above follows — the
+                // line that used to sit here is the line a new command forgets.
                 session.SetMode(runner.Mode with { Edits = nextEdits });
-
-                mainWindow.SetMode(runner.Mode);
                 RememberEditMode(nextEdits);
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
@@ -995,11 +995,9 @@ public static class AppBootstrap
                                 // accept-edits while the gate still asks.
                                 session.SetMode(next);
 
-                                // THE UI IS TOLD, NOT ASKED. SetMode moves the session; these two
-                                // lines are what the composition root still owns — repainting the
-                                // status bar, and remembering the preference for next launch, which
-                                // is a folder-level setting rather than a property of this session.
-                                mainWindow.SetMode(next);
+                                // REMEMBERING IS ALL THAT IS LEFT HERE, and it is not the session's:
+                                // the preference is a folder-level setting that outlives this
+                                // session. The repaint follows the Changed event above.
                                 RememberEditMode(next.Edits);
                             }
 
@@ -1400,6 +1398,22 @@ public static class AppBootstrap
                 permissionRules.RulesFor(session.WorkingDirectory).Rules.Count);
             mainWindow.RefreshSessionPanel();
 
+            // THE UI FOLLOWS THE SESSION, rather than each command remembering to repaint. Every
+            // place that changed a mode or a model used to call SetMode/SetResolution on the line
+            // after — which is a line a new command can forget, and a second front end would have
+            // had to know to write at all. The session announces what moved; this reads the new
+            // state off the session, which it already holds.
+            //
+            // MARSHALLED: a change can land from a turn's own thread, and these touch controls.
+            session.Changed += kind => system.EnqueueOnUIThread(() =>
+            {
+                if (kind is Core.Agent.SessionChangeKind.Mode && session.Host is { } host)
+                    mainWindow.SetMode(host.Mode);
+
+                if (kind is Core.Agent.SessionChangeKind.Model && session.Resolution is { } current)
+                    mainWindow.SetResolution(current);
+            });
+
             // KEEP THE COUNT LIVE. Seeding once left "Always" grants invisible until something else
             // happened to redraw the panel. The grant can land on a scheduler thread, so the recount
             // is marshalled rather than run inline — RefreshSessionPanel touches controls.
@@ -1530,9 +1544,6 @@ public static class AppBootstrap
             //
             // READ BEFORE THE SWITCH, because the message reports what the context WAS on the model
             // being left. Reading after would quote the new window against the old usage.
-            var window = session.Host!.Context.Window;
-            var used = session.Host.Context.Used;
-
             if (!session.SwitchModel(next))
             {
                 mainWindow.Chat.AddMessage(ChatRole.System,
@@ -1540,15 +1551,14 @@ public static class AppBootstrap
                 return;
             }
 
-            // THE WINDOW HAS TO FOLLOW THE MODEL, or the status bar goes on quoting the context
-            // window of the model the session just left.
-            mainWindow.SetResolution(next);
-
+            // NOTHING TO REPORT OR REPAINT HERE. SwitchModel says what happened through the
+            // observer and announces that the model moved; the subscription near the top of this
+            // method repaints from the session's own resolution. The root used to compose that
+            // sentence itself — reading the context window and usage before the switch, in that
+            // order — which made both the wording and the ordering a front end's problem.
             // NOT COMPACTED HERE, deliberately — unchanged by the swap. The turn loop measures
             // pressure before every send and compacts if it must, now against the new window; doing
             // it now would summarise a conversation the user might not send another turn on.
-            transcript.Write(ModelCommand.Switched(
-                decision.SwitchTo, next.Provider!.ModelId, next.ContextWindow, window, used));
         }
 
         // THE ONE WAY BACK INTO A SESSION, shared by the startup offer and by /sessions resume.
@@ -1562,13 +1572,6 @@ public static class AppBootstrap
             // doing them by hand here is where a sequence like that gets copied with one quietly
             // missing. The re-wire stays the caller's because building the ports needs a window.
             manager.Resume(session, snapshot, () => WireRunner(resolution));
-
-            // SAY SO IN THE TRANSCRIPT. The restored turns are not rendered — they are the
-            // model's memory, not this session's scrollback — so without a line here the user
-            // faces an empty screen and an agent that mysteriously already knows things.
-            transcript.Write(
-                $"[yellow]Resumed an earlier session: {snapshot.Context.Count} messages restored. "
-                + "They are not shown above, but the agent remembers them.[/]");
         }
 
         // A HINT, NOT A QUESTION.

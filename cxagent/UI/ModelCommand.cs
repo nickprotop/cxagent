@@ -118,47 +118,6 @@ public static class ModelCommand
         return string.Join('\n', lines);
     }
 
-    /// <summary>
-    /// What to say after a switch — including what it costs, when it costs something.
-    ///
-    /// <para>A WARNING ONLY WHEN THERE IS ONE. The common case is a switch that changes nothing the
-    /// user has to think about, and a line that always warns is a line nobody reads. The case worth
-    /// naming is a window smaller than what the conversation already occupies: nothing breaks, but
-    /// the next turn will compact, and being told afterwards reads as a fault rather than a
-    /// consequence of a choice just made.</para>
-    /// </summary>
-    public static string Switched(
-        string name, string model, int? window, int? previousWindow, int? used)
-    {
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
-
-        var lines = new List<string>
-        {
-            // instance:model, the same shape every other readout uses — and the same string a user
-            // would type to switch back.
-            $"[{accent}]{Escape(name)}:{Escape(model)}[/]"
-            + $" [{muted}]{(window is { } w ? $"· {Compact(w)} window" : "· window unknown")}[/]",
-        };
-
-        // THE CONVERSATION SURVIVES, and that is worth stating rather than assuming: every other
-        // way of changing the model in this app (Settings, a restart) starts a new session, so a
-        // user has no reason to expect this one does not.
-        lines.Add($"[{muted}]The conversation is kept. Sub-agents use this too unless their type "
-                + "names another provider.[/]");
-
-        if (window is { } newWindow && used is { } occupied && occupied >= newWindow * 0.8)
-            lines.Add($"[yellow]This conversation is already {Compact(occupied)} — at or near "
-                    + $"{Compact(newWindow)}. The next turn will summarise it to fit.[/]");
-        else if (window is null)
-            lines.Add($"[{muted}]No window is configured for this instance, so compaction falls "
-                    + "back to a fixed threshold. Set contextWindow to track the real one.[/]");
-        else if (previousWindow is { } old && window is { } now && now < old)
-            lines.Add($"[{muted}]Smaller window than before ({Compact(old)} → {Compact(now)}); "
-                    + "long conversations will compact sooner.[/]");
-
-        return string.Join('\n', lines);
-    }
 
 
     private static string Compact(int tokens) =>

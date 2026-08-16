@@ -103,6 +103,32 @@ public class SwitchModelTests : IDisposable
         Assert.Equal(1, next.ChatCallCount);
     }
 
+    // THE SESSION SAYS SO ITSELF, through the observer every front end already watches. The
+    // composition root used to compose this sentence — reading the context window and usage before
+    // the switch, in that order — so a second front end would have reimplemented both the wording
+    // and the ordering, and the first to get the order wrong reports the new window against the old
+    // usage with nothing to catch it.
+    [Fact]
+    public void SwitchModel_AnnouncesItselfThroughTheObserver()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var sink = new BufferedChatSink();
+
+        var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider("model-one")),
+            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
+
+        session.SwitchModel(ProviderResolution.ForTesting(new MockLlmProvider("model-two"), "second")
+            with { ContextWindow = 8_000 });
+
+        var notice = Assert.Single(sink.Notices);
+        Assert.Contains("second:model-two", notice);
+        Assert.Contains("8k window", notice);
+
+        // NOT AN ERROR. A mode or model change is not a fault, and a caller watching for failures
+        // must not find one here.
+        Assert.Empty(sink.Errors);
+    }
+
     // NO HOST, NO SWITCH. A /model before the first wire has nothing to point anywhere, and the
     // caller is told rather than this throwing.
     [Fact]

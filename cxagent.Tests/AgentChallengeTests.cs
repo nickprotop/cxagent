@@ -949,6 +949,7 @@ public class AgentChallengeTests
         public void AssistantReasoningAppended(ChatMessageId id, string text) => Reasoning.Add(text);
         public void AssistantTurnEnded(ChatMessageId id) => Ends++;
         public void Failed(string message) => Errors.Add(message);
+        public void Said(string message) { }
         public void AssistantLabelled(ChatMessageId id, string header) => Headers.Add(header);
     }
 

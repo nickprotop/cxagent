@@ -66,4 +66,19 @@ public interface ISessionObserver
     /// </summary>
     void AssistantLabelled(ChatMessageId id, string header);
     void Failed(string message);
+
+    /// <summary>
+    /// Something the session did, said in words for the user.
+    ///
+    /// <para>THE NON-FAILURE SIBLING OF <see cref="Failed"/>, and it exists because that was the only
+    /// way for a session to reach the transcript — so a session that switched model or changed mode
+    /// had no way to say so, and the composition root composed the sentence instead by reaching into
+    /// session state it should not have needed to read. Every front end would have had to reimplement
+    /// that, and the first one to miss a line has a session whose state changed silently.</para>
+    ///
+    /// <para>MARKUP, like the rest of this contract's text. The session is choosing EMPHASIS, which
+    /// is part of a sentence; a front end that does not render markup strips it, exactly as it would
+    /// for a model's own output.</para>
+    /// </summary>
+    void Said(string message);
 }

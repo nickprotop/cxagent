@@ -47,6 +47,8 @@ public sealed class RecordingSink : ISessionObserver
     public string? Error => ErrorQueue.LastOrDefault();
 
     public void UserTurnAdded(ChatMessageId id, string text) => Users.Add(text);
+    public readonly List<string> Notices = new();
+    public void Said(string message) => Notices.Add(message);
     public void AssistantTurnBegan(ChatMessageId id) { }
 
     /// <summary>Turns closed via AssistantTurnEnded — a turn left open spins its thinking indicator forever.</summary>
