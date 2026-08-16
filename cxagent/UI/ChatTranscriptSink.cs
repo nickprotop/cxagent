@@ -47,10 +47,21 @@ public sealed class ChatTranscriptSink : ISessionObserver
     public void UserTurnAdded(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
         {
+            // THE PLACEHOLDER GOES FIRST. A user turn arriving mid-run is a steer the agent has just
+            // taken, and its "queued" block is a stand-in for exactly this message — leaving it up
+            // would show the same text twice, the second looking like a duplicate send. Removing
+            // before the add means the two never coexist for a frame. Null, and a no-op, for a host
+            // that has no such block.
+            BeforeUserTurn?.Invoke();
+
             var added = _chat.AddMessage(ChatRole.User, text);
             _chat.SetMessageRail(added, true);
             _map[id.Value] = added;
         });
+
+    /// <summary>Run on the UI thread just before a user turn is written — see
+    /// <see cref="UserTurnAdded"/>. The composition root uses it to take down the queued block.</summary>
+    public Action? BeforeUserTurn { get; set; }
 
     public void AssistantTurnBegan(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>

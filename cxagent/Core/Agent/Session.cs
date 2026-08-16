@@ -106,6 +106,58 @@ public sealed class Session
     }
 
     /// <summary>
+    /// What the user typed while a turn was running, not yet given to the model.
+    ///
+    /// <para>ONE MESSAGE, NOT A LIST. Several lines typed in a burst are one thought completed — a
+    /// correction and then its qualifier — so a second line APPENDS rather than starting a second
+    /// entry. It was already effectively one message: the previous list was only ever consumed by
+    /// joining it with newlines, so nothing downstream could tell the difference. Making the data
+    /// model say so removes the case where half of it is delivered and half is still pending, which
+    /// is the whole reason the UI needed to know WHICH lines went in.</para>
+    ///
+    /// <para>ON THE SESSION, not the composition root. It was a local in a 1,600-line UI method,
+    /// which is the shape <see cref="Session"/> exists to end: two sessions in one process shared
+    /// one list, so a line typed into one would have been delivered to whichever turn finished
+    /// first.</para>
+    ///
+    /// <para>LOCKED, because the two sides are on different threads: the UI appends from the render
+    /// loop while the turn takes it from the agent's own flow.</para>
+    /// </summary>
+    private string? _pending;
+    private readonly object _pendingGate = new();
+
+    /// <summary>Adds to what is waiting, starting it if nothing was. Newline-separated: the lines
+    /// were separate thoughts when they were typed, and the break is structure a model reads.</summary>
+    public void Steer(string text)
+    {
+        lock (_pendingGate)
+            _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+    }
+
+    /// <summary>What is waiting, or null. For the UI to render — takes nothing.</summary>
+    public string? PendingSteer
+    {
+        get { lock (_pendingGate) return _pending; }
+    }
+
+    /// <summary>
+    /// Takes what is waiting and clears it, so it is delivered exactly once.
+    ///
+    /// <para>WHOLE OR NOT AT ALL. There is nothing to take partially, which is what makes the
+    /// promoted/pending split a single boolean everywhere else: the transcript block is removed, not
+    /// shrunk, and Escape returns everything still here because everything here is un-delivered.</para>
+    /// </summary>
+    public string? TakePendingSteer()
+    {
+        lock (_pendingGate)
+        {
+            var pending = _pending;
+            _pending = null;
+            return pending;
+        }
+    }
+
+    /// <summary>
     /// Swaps in a newly wired host, disposing the one it replaces.
     ///
     /// <para>DISPOSING IS THE POINT. A re-wire that merely reassigned would leak the outgoing host —

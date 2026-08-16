@@ -122,6 +122,12 @@ public static class SessionFactory
                 // and they must agree on what "this project" means.
                 WorkingDir = session.WorkingDirectory,
 
+                // THE SESSION OWNS WHAT WAS TYPED MID-TURN, and this is the only line that connects
+                // it to the turn loop. A method group rather than a lambda over the text: the agent
+                // must read it at the barrier, not at wiring time, or it would capture whatever was
+                // pending when the session was wired — which is nothing, forever.
+                TakePendingSteer = session.TakePendingSteer,
+
                 // OUR config folder, so a user-level CXAGENT.md applies wherever they work.
                 GlobalInstructionsDir = shared.GlobalInstructionsDir,
 

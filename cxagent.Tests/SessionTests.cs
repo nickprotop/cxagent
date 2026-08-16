@@ -148,4 +148,50 @@ public class SessionTests
         Assert.Null(s.TakePendingResume());
         Assert.Null(s.TakeCarriedLedger());
     }
+
+    // ---- steering ---------------------------------------------------------------------------------
+
+    // ONE MESSAGE, APPENDED TO. A burst of corrections is one thought completed, and the previous
+    // list was only ever consumed by joining it — so nothing downstream could tell a list from a
+    // string, and a string cannot be half-delivered.
+    [Fact]
+    public void Steer_AppendsToWhatIsAlreadyWaiting()
+    {
+        var s = New();
+
+        s.Steer("fix the header");
+        s.Steer("and the indentation");
+
+        Assert.Equal("fix the header\nand the indentation", s.PendingSteer);
+    }
+
+    // TAKEN ONCE. The turn takes it at a tool barrier and the model gets it exactly once; a second
+    // barrier in the same turn must not deliver it again.
+    [Fact]
+    public void TakePendingSteer_ClearsIt()
+    {
+        var s = New();
+        s.Steer("look at the tests");
+
+        Assert.Equal("look at the tests", s.TakePendingSteer());
+        Assert.Null(s.TakePendingSteer());
+        Assert.Null(s.PendingSteer);
+    }
+
+    // A STEER TYPED AFTER ONE WAS DELIVERED STARTS FRESH, rather than appending to text the model
+    // has already seen. "One pending message" is the rule, not "one per turn".
+    [Fact]
+    public void Steer_AfterATakeStartsANewMessage()
+    {
+        var s = New();
+        s.Steer("first");
+        s.TakePendingSteer();
+
+        s.Steer("second");
+
+        Assert.Equal("second", s.PendingSteer);
+    }
+
+    [Fact]
+    public void PendingSteer_IsNullWhenNothingWasTyped() => Assert.Null(New().PendingSteer);
 }

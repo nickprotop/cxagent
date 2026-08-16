@@ -192,6 +192,23 @@ public sealed class Agent
     /// </remarks>
     public WorkingMode Mode { get; set; } = WorkingMode.Default;
 
+    /// <summary>
+    /// Where a mid-turn correction comes from, or null for an agent nobody can steer.
+    ///
+    /// <para>A FUNCTION, NOT THE SESSION. The agent has no business knowing what a Session is — this
+    /// asks "is there anything for me?" and takes it, which a test satisfies with a lambda over a
+    /// local. It returns the text and CLEARS it, so the same correction cannot be delivered twice.</para>
+    ///
+    /// <para>NULL FOR CHILDREN, and that is the design rather than an omission. A sub-agent was
+    /// spawned with a brief; redirecting it mid-flight would mean the parent's account of what it
+    /// asked for no longer matches what happened. Steering is a conversation the user is having with
+    /// the session, and a child is not in it.</para>
+    ///
+    /// <para>A PROPERTY rather than a 17th constructor parameter, following <see cref="Mode"/>: the
+    /// list is already long enough that one more would be read positionally by nobody.</para>
+    /// </summary>
+    public Func<string?>? TakePendingSteer { get; set; }
+
     /// <summary>True when this agent can actually spawn: fan-out mode AND a spawner to do it with.
     /// A child has no spawner whatever its mode says, which is what makes no-nesting structural.</summary>
     private bool CanSpawn => Mode.CanDelegate && _spawner is not null;
@@ -1116,6 +1133,38 @@ public sealed class Agent
                     Record(call, await task);
 
                 spawned.Clear();
+
+                // AFTER THE BARRIER, BEFORE THE NEXT REQUEST — the only point in a turn where a user
+                // message can legally be appended. The assistant message above declared N tool calls
+                // and every one of them must be answered before anything else joins the conversation;
+                // a user turn spliced among them is the orphan shape that 400s a session. By here
+                // every result is recorded, including every child's, so the list is complete.
+                //
+                // WHICH MEANS A CHILD DELAYS IT, by design and not by accident. A four-minute
+                // sub-agent holds the barrier for four minutes and the correction waits — correct,
+                // because the parent has nothing to reconsider until it sees what the child found.
+                //
+                // BEFORE the loop's compression check rather than at the top of the next iteration:
+                // the correction is then part of what pressure is measured against, so it cannot be
+                // summarised away in the same turn it arrived, and PlaceTaskList runs after it.
+                if (TakePendingSteer?.Invoke() is { Length: > 0 } steer)
+                {
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "user",
+                        Content = steer,
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+
+                    // ANNOUNCED, so the transcript can replace its "queued" placeholder with a real
+                    // user turn. Without this the model changes direction for no visible reason.
+                    _sink.UserTurnAdded(NextTurnId(), steer);
+
+                    // THE BUDGET GOES BACK. A correction arriving at turn 90 of a 100-turn cap would
+                    // otherwise get ten turns to act on instructions it had never seen. The turn is
+                    // doing different work now, which is what opencode's currentStep = 1 encodes.
+                    turn = 0;
+                }
             }
             catch (OperationCanceledException)
             {

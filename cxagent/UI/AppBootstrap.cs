@@ -360,7 +360,6 @@ public static class AppBootstrap
         // Messages typed while a turn was running, in the order they were typed. Joined into ONE
         // prompt when the turn ends (D18) — appended, never replaced: two messages are usually one
         // thought completed, and dropping either half is silent data loss the user cannot see.
-        var queuedPrompts = new List<string>();
 
         // THE ONE BLOCK QUEUED MESSAGES SHARE, or null when nothing is queued. One row that updates
         // beats a row per message: three quick corrections are one thought, and three transcript
@@ -371,18 +370,17 @@ public static class AppBootstrap
             // one, so a burst of corrections stays one line and the running turn keeps the screen.
             void ShowQueued()
             {
-                var body = PromptQueue.Join(queuedPrompts);
-                var heading = queuedPrompts.Count == 1
-                    ? "[dim]queued[/]"
-                    : $"[dim]queued · {queuedPrompts.Count} messages[/]";
-                var text = $"{heading} {ChatTranscriptSink.Escape(body)}";
+                if (session.PendingSteer is not { Length: > 0 } body) { RemoveQueuedBlock(); return; }
 
-                if (queuedBlock is { } existing)
-                {
-                    mainWindow.Chat.UpdateMessage(existing, text);
-                    return;
-                }
+                var text = $"[dim]queued[/] {ChatTranscriptSink.Escape(body)}";
 
+                // REMOVED AND RE-ADDED, not rewritten in place. UpdateMessage left the block wherever
+                // it first appeared, so a turn producing output pushed it up the screen and the user
+                // was appending to something they could no longer see. It is the most recent thing
+                // they said; it belongs at the bottom, in the position the real message will occupy
+                // when it goes in. Still ONE row either way — the cost this avoids was a row per
+                // message, not a row that moves.
+                RemoveQueuedBlock();
                 queuedBlock = mainWindow.Chat.AddMessage(ChatRole.System, text);
 
                 // CANCEL PUTS THEM BACK IN THE COMPOSER, not in the bin. What was typed was meant,
@@ -421,12 +419,19 @@ public static class AppBootstrap
             // THE ONE PLACE QUEUED TEXT GOES BACK. Escape and the Cancel action are the same act
             // reached two ways, and a second copy of this would be the copy that forgets to clear
             // the block or the list.
+            // THE ONE PLACE THE BLOCK IS TAKEN DOWN. Both the send path and the cancel path remove
+            // it, and a second copy of this is the copy that clears the id without removing the row.
+            void RemoveQueuedBlock()
+            {
+                if (queuedBlock is { } block) mainWindow.Chat.RemoveMessage(block);
+                queuedBlock = null;
+            }
+
             void DrainQueuedToComposer()
             {
-                if (queuedPrompts.Count == 0) return;
+                if (session.TakePendingSteer() is not { Length: > 0 } pending) return;
 
-                mainWindow.Input.Input = PromptQueue.Restore(queuedPrompts, mainWindow.Input.Input);
-                queuedPrompts.Clear();
+                mainWindow.Input.Input = PromptQueue.Restore([pending], mainWindow.Input.Input);
 
                 // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the
                 // composer" row behind, which was inconsistent with the send path (where the block
@@ -493,7 +498,13 @@ public static class AppBootstrap
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host
             // is a bare local.
-            var sink = new ChatTranscriptSink(system, mainWindow.Chat);
+            var sink = new ChatTranscriptSink(system, mainWindow.Chat)
+            {
+                // A STEER TAKEN MID-TURN ARRIVES AS A USER TURN, and its placeholder must go with it.
+                // The agent announces through this sink from its own flow; the removal is marshalled
+                // onto the UI thread by the sink itself, so this runs where the controls live.
+                BeforeUserTurn = RemoveQueuedBlock,
+            };
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             mainWindow.SetMode(startupMode);
@@ -1094,7 +1105,7 @@ public static class AppBootstrap
             // the model dispatch is blocked.
             if (IsTurnRunning())
             {
-                queuedPrompts.Add(goalText);
+                session.Steer(goalText);
                 ShowQueued();
                 return;
             }
@@ -1153,23 +1164,23 @@ public static class AppBootstrap
             // said with no way to tell which half survived. The newline (rather than a space) is
             // structure a model reads: they were separate thoughts.
             //
-            // NOT drained on cancellation: Escape moves the queue back to the composer instead (see
-            // the Escape handler), because the user stopping the run is the user changing their
-            // mind, not confirming what they typed.
-            if (queuedPrompts.Count == 0 || token.IsCancellationRequested) return;
-
-            var joined = PromptQueue.Join(queuedPrompts);
-            queuedPrompts.Clear();
+            // NOT drained on cancellation: Escape moves it back to the composer instead (see the
+            // Escape handler), because the user stopping the run is the user changing their mind,
+            // not confirming what they typed.
+            //
+            // A FALLBACK NOW, NOT THE MAIN PATH. A correction typed mid-turn is normally taken by the
+            // turn itself at its next tool barrier, so by the time this runs there is usually nothing
+            // left. What still arrives here is text typed after the LAST barrier — during the final
+            // provider call, or during a turn that never called a tool — which no barrier will reach.
+            if (token.IsCancellationRequested) return;
+            if (session.TakePendingSteer() is not { Length: > 0 } joined) return;
 
             // REMOVE the placeholder, don't just forget it. Clearing `queuedBlock` alone left the
-            // "queued · N messages" block sitting in the transcript while SubmitComposer added the
-            // real user message right below it — the same text twice, the second one looking like a
-            // duplicate send. The block is a stand-in for a message that hasn't gone yet, so once it
-            // goes the stand-in has no referent. Removal happens BEFORE SubmitComposer so the two
-            // never coexist for a frame.
-            if (queuedBlock is { } sent)
-                mainWindow.Chat.RemoveMessage(sent);
-            queuedBlock = null;   // sent, so the next queue starts its own block
+            // block sitting in the transcript while SubmitComposer added the real user message right
+            // below it — the same text twice, the second looking like a duplicate send. The block is
+            // a stand-in for a message that hasn't gone yet, so once it goes the stand-in has no
+            // referent. Removal happens BEFORE SubmitComposer so the two never coexist for a frame.
+            RemoveQueuedBlock();
 
             mainWindow.Input.Input = joined;
             SubmitComposer();

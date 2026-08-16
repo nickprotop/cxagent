@@ -14,35 +14,6 @@ namespace CxAgent.Tests;
 public class PromptQueueTests
 {
     /// <summary>
-    /// TWO MESSAGES ARE APPENDED, NOT REPLACED — the whole point of queueing rather than dropping.
-    ///
-    /// <para>Two messages typed in quick succession are usually one thought completed: a correction
-    /// and then its qualifier. Keeping only the last silently discards half of what someone said,
-    /// with nothing on screen to say which half survived.</para>
-    /// </summary>
-    [Fact]
-    public void Join_AppendsEveryMessage_InTheOrderTyped()
-    {
-        Assert.Equal("check the tests\nespecially the async ones",
-            PromptQueue.Join(["check the tests", "especially the async ones"]));
-    }
-
-    /// <summary>Separate thoughts, so a line break rather than a space — structure a model reads as
-    /// such.</summary>
-    [Fact]
-    public void Join_SeparatesWithNewline_NotASpace()
-    {
-        Assert.DoesNotContain("one two", PromptQueue.Join(["one", "two"]), StringComparison.Ordinal);
-        Assert.Equal("one\ntwo", PromptQueue.Join(["one", "two"]));
-    }
-
-    [Fact]
-    public void Join_OfOneMessage_IsThatMessage()
-    {
-        Assert.Equal("only this", PromptQueue.Join(["only this"]));
-    }
-
-    /// <summary>
     /// ESCAPE GIVES THE TEXT BACK. It was never sent, so cancelling the run must not eat it — the
     /// user gets it back editable and decides. Escape is how someone changes their mind; losing their
     /// words is the opposite of what they asked for.

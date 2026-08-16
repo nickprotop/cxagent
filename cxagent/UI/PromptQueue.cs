@@ -17,19 +17,6 @@ namespace CxAgent.UI;
 public static class PromptQueue
 {
     /// <summary>
-    /// Several queued messages become ONE prompt, in the order they were typed.
-    ///
-    /// <para>APPENDED, NEVER REPLACED. Two messages typed in quick succession are usually one thought
-    /// completed — a correction and then its qualifier — so keeping only the last silently discards
-    /// half of what someone said, with nothing on screen to say which half survived. Claude Code
-    /// behaves this way, and it is why a mid-turn correction there does not get lost.</para>
-    ///
-    /// <para>NEWLINE-SEPARATED rather than space-joined: they were separate thoughts when they were
-    /// typed, and the line break is structure a model reads as such.</para>
-    /// </summary>
-    public static string Join(IEnumerable<string> queued) => string.Join("\n", queued);
-
-    /// <summary>
     /// What the composer should hold after Escape stops a turn with messages still queued.
     ///
     /// <para>THE QUEUE IS RETURNED, NOT DISCARDED. That text was never sent, so cancelling the run
@@ -43,7 +30,7 @@ public static class PromptQueue
     /// </summary>
     public static string Restore(IEnumerable<string> queued, string composer)
     {
-        var pending = Join(queued);
+        var pending = string.Join("\n", queued);
         if (string.IsNullOrEmpty(pending)) return composer;
         return string.IsNullOrEmpty(composer) ? pending : pending + "\n" + composer;
     }

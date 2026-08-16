@@ -369,6 +369,14 @@ public sealed class AgentHost : IDisposable
         /// <summary>The servers themselves, held only so the session can dispose them.</summary>
         public IReadOnlyList<IAsyncDisposable>? McpServers { get; init; }
 
+        /// <summary>
+        /// Where a mid-turn correction comes from — see <see cref="Agent.TakePendingSteer"/>.
+        ///
+        /// <para>Null for a headless host and for every child. Steering is a conversation the user
+        /// is having with THIS session, and a sub-agent spawned with a brief is not in it.</para>
+        /// </summary>
+        public Func<string?>? TakePendingSteer { get; init; }
+
         public string? Briefing { get; init; }
         public ISubAgentSpawner? Spawner { get; init; }
 
@@ -664,6 +672,11 @@ public sealed class AgentHost : IDisposable
         // running on a second model left the per-model breakdown showing pre-spawn figures for the
         // whole run. The ledger is shared and was always right; only the repaint was missing.
         agent.ChildSpend += () => TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+
+        // SET, NOT PASSED — Agent takes this as a property rather than a 17th constructor argument,
+        // and this line is the whole wiring. Null leaves the agent unsteerable, which is what every
+        // headless host and every child gets.
+        agent.TakePendingSteer = _runtime.TakePendingSteer;
 
         return agent;
     }
