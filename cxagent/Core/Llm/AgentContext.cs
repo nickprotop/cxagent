@@ -44,8 +44,14 @@ public sealed class AgentContext
     /// <summary>
     /// The provider's context window in tokens, when known. Null means nobody has told us — a
     /// percentage needs a denominator, and a guessed one is worse than none.
+    ///
+    /// <para>SETTABLE, because /model changes it without changing the conversation. A session moving
+    /// from a 1M-token model to a 163K one keeps every message it had and must start measuring
+    /// against the smaller window immediately — <see cref="IsUnderPressure"/> reads this, and the
+    /// turn loop tests pressure before composing each request, so the next turn compacts if it has
+    /// to. Nothing needs to be forced at the moment of the switch.</para>
     /// </summary>
-    public int? Window { get; }
+    public int? Window { get; set; }
 
     /// <summary>
     /// How full the window is, from the last turn the provider reported usage for.

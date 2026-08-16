@@ -1,0 +1,115 @@
+using CxAgent.Core.Agent;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Storage;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// /model points a session at a different model WITHOUT rebuilding it.
+///
+/// <para>WHAT IT REPLACED. The command used to arm a handoff, re-wire the whole session and dispose
+/// the outgoing host — rebuilding the agent, its plugin registry, its sub-agent factory and its MCP
+/// binding in order to change which endpoint gets called, then carrying the context and the ledger
+/// back across the gap by hand. Everything but the provider was rebuilt identically, because /model
+/// reads the same config file it always did.</para>
+/// </summary>
+public class SwitchModelTests : IDisposable
+{
+    private readonly string _dir =
+        Path.Combine(Path.GetTempPath(), "switch-" + Guid.NewGuid().ToString("N"));
+
+    public SwitchModelTests() => Directory.CreateDirectory(_dir);
+    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    private static SessionPorts Ports() =>
+        new() { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() };
+
+    private Session WiredSession(SessionManager manager, ILlmProvider provider) =>
+        manager.Open(_dir, ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
+
+    // THE CONVERSATION SURVIVES, which is the whole point. A rebuild had to carry it; there is
+    // nothing to carry when nothing is rebuilt.
+    [Fact]
+    public async Task SwitchModel_KeepsTheConversation()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var first = new MockLlmProvider("model-one");
+        first.EnqueueResponse(new LlmResponse { Text = "hello", StopReason = "end_turn" });
+
+        var session = WiredSession(manager, first);
+        await session.Host!.SendAsync("say hello", CancellationToken.None);
+
+        var hostBefore = session.Host;
+        var contextBefore = session.Host.Context;
+        var messagesBefore = session.Host.Context.Messages.Count;
+
+        Assert.True(session.SwitchModel(ProviderResolution.ForTesting(new MockLlmProvider("model-two"), "second")));
+
+        // THE SAME OBJECTS, not merely equal ones. A rebuild would produce a new host over a new
+        // context and copy the messages across — which is what the old path did, and what made
+        // CarryToNextWire necessary. Identity is the assertion that tells the two apart.
+        Assert.Same(hostBefore, session.Host);
+        Assert.Same(contextBefore, session.Host.Context);
+        Assert.Equal(messagesBefore, session.Host.Context.Messages.Count);
+    }
+
+    // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from the
+    // session, so leaving it behind would offer the user the model they just switched away from.
+    [Fact]
+    public void SwitchModel_MovesTheSessionsProviderAndInstance()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = WiredSession(manager, new MockLlmProvider("model-one"));
+
+        var next = new MockLlmProvider("model-two");
+        session.SwitchModel(ProviderResolution.ForTesting(next, "second"));
+
+        Assert.Same(next, session.Provider);
+        Assert.Equal("second", session.InstanceName);
+    }
+
+    // THE WINDOW COMES TOO, and it is the only part with behaviour attached: a session moving to a
+    // smaller-context model keeps every message it had and must measure against the new denominator.
+    // The turn loop tests pressure before composing each request, so the next turn compacts if it
+    // must — nothing is forced here.
+    [Fact]
+    public void SwitchModel_MovesTheContextWindow()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = WiredSession(manager, new MockLlmProvider("big"));
+
+        var narrow = ProviderResolution.ForTesting(new MockLlmProvider("small"), "small")
+            with { ContextWindow = 8_000 };
+        session.SwitchModel(narrow);
+
+        Assert.Equal(8_000, session.Host!.Context.Window);
+    }
+
+    // THE NEW MODEL IS THE ONE CALLED. The point of the whole exercise, and the one thing a swap
+    // that moved only labels would still get wrong.
+    [Fact]
+    public async Task SwitchModel_SendsTheNextTurnToTheNewProvider()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = WiredSession(manager, new MockLlmProvider("model-one"));
+
+        var next = new MockLlmProvider("model-two");
+        next.EnqueueResponse(new LlmResponse { Text = "from two", StopReason = "end_turn" });
+        session.SwitchModel(ProviderResolution.ForTesting(next, "second"));
+
+        await session.Host!.SendAsync("who are you", CancellationToken.None);
+
+        Assert.Equal(1, next.ChatCallCount);
+    }
+
+    // NO HOST, NO SWITCH. A /model before the first wire has nothing to point anywhere, and the
+    // caller is told rather than this throwing.
+    [Fact]
+    public void SwitchModel_WithNoHost_IsRefused()
+    {
+        var session = new Session(_dir);
+
+        Assert.False(session.SwitchModel(ProviderResolution.ForTesting(new MockLlmProvider())));
+    }
+}

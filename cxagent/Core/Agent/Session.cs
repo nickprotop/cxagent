@@ -175,6 +175,36 @@ public sealed class Session
     }
 
     /// <summary>
+    /// Points this session at a different model, keeping the conversation.
+    ///
+    /// <para>WHAT THIS REPLACES. /model used to resolve an instance, arm a handoff with
+    /// <see cref="CarryToNextWire"/>, re-wire the whole session and dispose the outgoing host —
+    /// rebuilding an agent, its plugin registry, its sub-agent factory and its MCP binding in order
+    /// to change which endpoint gets called. Everything but the provider was rebuilt identically,
+    /// because /model reads the same config file it always did.</para>
+    ///
+    /// <para>SESSION WORK, and it belongs here rather than in the composition root: it reads this
+    /// session's state and mutates this session's state. What the UI keeps is reporting the change,
+    /// which is the only part that needs a window.</para>
+    ///
+    /// <para>FALSE WHEN THERE IS NO HOST — a switch before the first wire has nothing to point
+    /// anywhere, and the caller says so rather than this throwing.</para>
+    /// </summary>
+    public bool SwitchModel(ProviderResolution next)
+    {
+        if (Host is null || next.Provider is null) return false;
+
+        Host.SwapProvider(next.Provider, next.InstanceName, next.ContextWindow);
+
+        // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from
+        // here, so leaving these behind would offer the user the model they just left.
+        Provider = next.Provider;
+        InstanceName = next.InstanceName;
+
+        return true;
+    }
+
+    /// <summary>
     /// Arms the next wire to continue THIS conversation on another instance — the <c>/model</c>
     /// handoff.
     ///

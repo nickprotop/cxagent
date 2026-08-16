@@ -26,7 +26,10 @@ namespace CxAgent.Core.Agent;
 /// </summary>
 public sealed class AgentHost : IDisposable
 {
-    private readonly AgentRuntime _runtime;
+    // NOT readonly: SwapProvider rebinds it with `with` so SpendLabel and anything else reading the
+    // runtime describes the model actually in use. Rebuilding the host to change one field was what
+    // /model used to do.
+    private AgentRuntime _runtime;
     private readonly SessionStores _stores;
     private readonly ISessionObserver _sink;
 
@@ -564,6 +567,26 @@ public sealed class AgentHost : IDisposable
         _runtime.InstanceName is { Length: > 0 } instance
             ? $"{instance}:{_runtime.Provider.ModelId}"
             : _runtime.Provider.ModelId;
+
+    /// <summary>
+    /// Points this session at a different model — see <see cref="Agent.SwapProvider"/>.
+    ///
+    /// <para>THE RUNTIME FOLLOWS TOO, not just the agent. <see cref="SpendLabel"/> reads it, so a
+    /// swap that moved only the agent would keep attributing this session's spend to the model it
+    /// used to run on — the figure in /stats and the name in the panel would disagree, which is
+    /// exactly what SpendLabel's own doc says must never happen.</para>
+    /// </summary>
+    public void SwapProvider(ILlmProvider provider, string? instanceName, int? contextWindow)
+    {
+        _runtime = _runtime with
+        {
+            Provider = provider,
+            InstanceName = instanceName,
+            ContextWindow = contextWindow ?? _runtime.ContextWindow,
+        };
+
+        _agent.SwapProvider(provider, instanceName, contextWindow);
+    }
 
     private Agent BuildAgent()
     {

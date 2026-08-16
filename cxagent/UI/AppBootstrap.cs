@@ -1570,33 +1570,31 @@ public static class AppBootstrap
                 return;
             }
 
-            // THE CONVERSATION AND THE SPEND BOTH CARRY — one call, because arming one without the
-            // other is silently wrong in both directions. Through the same seam a resume uses:
-            // WireRunner takes the session's pending resume to build a host over an existing
-            // conversation. See Session.CarryToNextWire.
-            // FROM THE SESSION'S HOST, not the `runner` local — they are the same object, and one
-            // of the two names is the one a second session would have.
+            // THE CONVERSATION STAYS PUT. This used to arm a handoff with CarryToNextWire and
+            // re-wire the whole session — rebuilding the agent, its plugins, its sub-agent factory
+            // and its MCP binding to change which endpoint gets called, then carrying the context
+            // and the ledger across the gap by hand. The provider is swapped in place now, so there
+            // is no gap and nothing to carry.
+            //
+            // READ BEFORE THE SWITCH, because the message reports what the context WAS on the model
+            // being left. Reading after would quote the new window against the old usage.
             var window = session.Host!.Context.Window;
             var used = session.Host.Context.Used;
-            session.CarryToNextWire();
 
+            if (!session.SwitchModel(next))
+            {
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    $"[{ColorScheme.DangerMarkup}]Could not switch to {decision.SwitchTo}.[/]");
+                return;
+            }
 
-            // THE CATALOG IS NOT REBOUND. `next` is one instance resolved by name; `resolution` is
-            // the process's fixed catalog of every configured provider, and /model switching one
-            // session's model has no business replacing it. It used to, and that is how a reader of
-            // `resolution.Providers` could see a record describing a single provider — the catalog
-            // narrowed to whatever was last switched to. WireRunner takes the record as a parameter,
-            // so passing `next` is the whole change; nothing else needs to know.
-            WireRunner(next);
-
-            // THE WINDOW HAS TO FOLLOW THE MODEL. MainWindow held its resolution readonly from
-            // startup, so the status bar went on quoting the old context window after any re-wire —
-            // F5 had the same defect, unnoticed because a reconfiguration usually keeps the model.
+            // THE WINDOW HAS TO FOLLOW THE MODEL, or the status bar goes on quoting the context
+            // window of the model the session just left.
             mainWindow.SetResolution(next);
 
-            // NOT COMPACTED HERE, deliberately. The turn loop measures pressure before every send
-            // and compacts if it must — doing it now would be the same work in a worse place, and
-            // would summarise a conversation the user might not send another turn on.
+            // NOT COMPACTED HERE, deliberately — unchanged by the swap. The turn loop measures
+            // pressure before every send and compacts if it must, now against the new window; doing
+            // it now would summarise a conversation the user might not send another turn on.
             transcript.Write(ModelCommand.Switched(
                 decision.SwitchTo, next.Provider!.ModelId, next.ContextWindow, window, used));
         }

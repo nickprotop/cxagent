@@ -37,7 +37,11 @@ namespace CxAgent.Core.Agent;
 /// </summary>
 public sealed class Agent
 {
-    private readonly ILlmProvider _provider;
+    // NOT readonly: /model swaps these in place rather than rebuilding the agent. Every read is at
+    // call time — SpendLabel is computed, the system prompt re-reads ModelId each turn and is
+    // replaced only when its text differs, and CompressionRun takes the provider as an argument — so
+    // there is no derived state a swap could leave stale. See SwapProvider.
+    private ILlmProvider _provider;
     private readonly PluginRegistry _plugins;
     private readonly TokenLedger _ledger;
     private readonly ISessionObserver _sink;
@@ -51,7 +55,7 @@ public sealed class Agent
     private readonly LogFileManager? _logs;
     private readonly int _maxTurns;
     private readonly string? _workingDir;
-    private readonly string? _instanceName;
+    private string? _instanceName;
 
     /// <summary>
     /// How this agent's spend is attributed: <c>instance:model</c> when the instance is known.
@@ -208,6 +212,34 @@ public sealed class Agent
     /// list is already long enough that one more would be read positionally by nobody.</para>
     /// </summary>
     public Func<string?>? TakePendingSteer { get; set; }
+
+    /// <summary>
+    /// Points this agent at a different model, keeping everything else.
+    ///
+    /// <para>THE CONVERSATION NEVER MOVES, which is the whole reason this exists. /model used to
+    /// rebuild the agent and the host, then carry the context and the ledger across the gap by hand —
+    /// apparatus for changing one field. Nothing is carried here because nothing is left behind.</para>
+    ///
+    /// <para>THE WINDOW COMES TOO, and it is the only part with behaviour attached. A session moving
+    /// to a smaller-context model keeps every message it had, so it must start measuring against the
+    /// new denominator at once; the turn loop tests pressure before composing each request, so the
+    /// next turn compacts if it needs to. Nothing is forced here — compacting at the moment of the
+    /// switch would summarise a conversation the user might not send another turn on, which is the
+    /// same reason /model has never compacted.</para>
+    ///
+    /// <para>A CONFIGURED compressAbove IS NOT TOUCHED. That is a user's token budget, not a fact
+    /// about the model, and a switch has no business rewriting it.</para>
+    ///
+    /// <para>NOT MID-TURN. The caller refuses while a turn runs, and must keep doing so: swapping
+    /// between two calls of one turn would send half a conversation to one model and half to
+    /// another.</para>
+    /// </summary>
+    public void SwapProvider(ILlmProvider provider, string? instanceName, int? contextWindow)
+    {
+        _provider = provider;
+        _instanceName = instanceName;
+        if (contextWindow is not null) _context.Window = contextWindow;
+    }
 
     /// <summary>True when this agent can actually spawn: fan-out mode AND a spawner to do it with.
     /// A child has no spawner whatever its mode says, which is what makes no-nesting structural.</summary>
