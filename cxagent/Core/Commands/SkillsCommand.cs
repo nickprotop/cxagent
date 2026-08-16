@@ -1,6 +1,6 @@
 using CxAgent.Core.Skills;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// <c>/skills</c> — what was found, where it came from, and what was REFUSED.
@@ -18,15 +18,22 @@ namespace CxAgent.UI;
 /// next one. A command that looked like the way to apply changes would teach a ritual nobody
 /// needs.</para>
 /// </summary>
-public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, ITranscriptWriter transcript)
+public sealed class SkillsCommand(Func<SkillCatalogResult> catalog)
 {
-    public void Handle()
+    /// <summary>
+    /// The listing, as text.
+    ///
+    /// <para>RENDERS RATHER THAN PRINTS. It took a transcript writer and wrote to it, which made a
+    /// listing that is pure text depend on a front end having one. The caller says the result — the
+    /// session does, through the observer everything else already speaks through.</para>
+    /// </summary>
+    public string Render()
     {
         var found = catalog();
         var lines = new List<string>();
 
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
+        var accent = Markup.Accent;
+        var muted = Markup.Muted;
 
         if (found.Skills.Count == 0)
         {
@@ -75,6 +82,6 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, ITranscriptW
             }
         }
 
-        transcript.Write(string.Join("\n", lines));
+        return string.Join("\n", lines);
     }
 }

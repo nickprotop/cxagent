@@ -1,6 +1,6 @@
 using CxAgent.Core.Storage;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// <c>/stats</c> — reads the window, queries history, renders the dashboard.
@@ -49,12 +49,12 @@ public static class StatsCommand
     /// </summary>
     public static string ConfirmText(int rows, int sessions) =>
         rows == 0
-            ? $"[{ColorScheme.MutedMarkup}]There is no usage history to clear.[/]"
-            : $"[bold {ColorScheme.AccentMarkup}]Clear usage history?[/]\n\n"
+            ? $"[{Markup.Muted}]There is no usage history to clear.[/]"
+            : $"[bold {Markup.Accent}]Clear usage history?[/]\n\n"
             + $"  This deletes [bold]{rows:N0}[/] records"
             + (sessions > 0 ? $" covering [bold]{sessions}[/] session{(sessions == 1 ? "" : "s")}" : "")
             + ".\n"
-            + $"  [{ColorScheme.MutedMarkup}]Sessions, sub-agent runs, tool calls, compactions and "
+            + $"  [{Markup.Muted}]Sessions, sub-agent runs, tool calls, compactions and "
             + "permission decisions. This cannot be undone.[/]";
 
     public static string Render(UsageHistoryStore history, string? argument)

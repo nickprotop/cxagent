@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// <c>/diff</c> — what has changed in the working tree, in the transcript.
@@ -60,8 +60,8 @@ public static class DiffCommand
         if (inside.ExitCode != 0)
         {
             return inside.ExitCode < 0
-                ? $"[{ColorScheme.DangerMarkup}]Could not run git: {Escape(inside.Error.Trim())}[/]"
-                : $"[{ColorScheme.MutedMarkup}]Not a git repository — nothing to diff.[/]";
+                ? $"[{Markup.Danger}]Could not run git: {Escape(inside.Error.Trim())}[/]"
+                : $"[{Markup.Muted}]Not a git repository — nothing to diff.[/]";
         }
 
         var words = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -82,12 +82,12 @@ public static class DiffCommand
         var result = run(workingDir, args);
 
         if (result.ExitCode < 0)
-            return $"[{ColorScheme.DangerMarkup}]Could not run git: {Escape(result.Error.Trim())}[/]";
+            return $"[{Markup.Danger}]Could not run git: {Escape(result.Error.Trim())}[/]";
 
         // A BAD PATH IS GIT'S MESSAGE, NOT OURS. It already says which path it could not find, and
         // rewording it would only make it less precise than the tool the user will check it against.
         if (result.ExitCode != 0)
-            return $"[{ColorScheme.DangerMarkup}]{Escape(result.Error.Trim())}[/]";
+            return $"[{Markup.Danger}]{Escape(result.Error.Trim())}[/]";
 
         var scope = staged ? "staged" : "uncommitted";
         var what = paths.Count > 0 ? $" · {Escape(string.Join(" ", paths))}" : "";
@@ -102,8 +102,8 @@ public static class DiffCommand
             var untracked = staged ? [] : Untracked(run, workingDir, paths);
 
             if (untracked.Count > 0)
-                return $"[{ColorScheme.AccentMarkup}]Diff[/] "
-                     + $"[{ColorScheme.MutedMarkup}]· no tracked changes{what} · "
+                return $"[{Markup.Accent}]Diff[/] "
+                     + $"[{Markup.Muted}]· no tracked changes{what} · "
                      + $"{untracked.Count} untracked file{(untracked.Count == 1 ? "" : "s")}: "
                      + $"{Escape(string.Join(", ", untracked.Take(5)))}"
                      + $"{(untracked.Count > 5 ? ", …" : "")} — `git add` to see them here[/]";
@@ -113,15 +113,15 @@ public static class DiffCommand
                 return $"[yellow]No such path: "
                      + $"{Escape(string.Join(", ", paths))}[/]";
 
-            return $"[{ColorScheme.AccentMarkup}]Diff[/] "
-                 + $"[{ColorScheme.MutedMarkup}]· no {scope} changes{what}[/]";
+            return $"[{Markup.Accent}]Diff[/] "
+                 + $"[{Markup.Muted}]· no {scope} changes{what}[/]";
         }
 
         var lines = result.Output.TrimEnd('\n').Split('\n');
         var shown = lines.Length > MaxLines ? lines[..MaxLines] : lines;
 
-        var head = $"[{ColorScheme.AccentMarkup}]Diff[/] "
-                 + $"[{ColorScheme.MutedMarkup}]· {scope} · {Summarise(lines)}{what}[/]";
+        var head = $"[{Markup.Accent}]Diff[/] "
+                 + $"[{Markup.Muted}]· {scope} · {Summarise(lines)}{what}[/]";
 
         // COLOURED HERE, A LINE AT A TIME, rather than by a ```diff fence.
         //
@@ -137,7 +137,7 @@ public static class DiffCommand
         var body = string.Join('\n', shown.Select(Colour));
 
         var elided = lines.Length > MaxLines
-            ? $"\n[{ColorScheme.MutedMarkup}]… {lines.Length - MaxLines} more lines — "
+            ? $"\n[{Markup.Muted}]… {lines.Length - MaxLines} more lines — "
               + $"`git diff{(staged ? " --staged" : "")}` for the rest[/]"
             : "";
 
@@ -204,10 +204,10 @@ public static class DiffCommand
          || line.StartsWith("---", StringComparison.Ordinal)
          || line.StartsWith("new file", StringComparison.Ordinal)
          || line.StartsWith("deleted file", StringComparison.Ordinal))
-            return $"[{ColorScheme.MutedMarkup}]{text}[/]";
+            return $"[{Markup.Muted}]{text}[/]";
 
         if (line.StartsWith("@@", StringComparison.Ordinal))
-            return $"[{ColorScheme.AccentMarkup}]{text}[/]";
+            return $"[{Markup.Accent}]{text}[/]";
 
         if (line.StartsWith('+')) return $"[green]{text}[/]";
         if (line.StartsWith('-')) return $"[red]{text}[/]";

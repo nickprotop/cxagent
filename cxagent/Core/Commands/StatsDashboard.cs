@@ -1,7 +1,7 @@
 using System.Text;
 using CxAgent.Core.Storage;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// Renders usage history as a dashboard, in markup, for the chat transcript.
@@ -48,7 +48,7 @@ public static class StatsDashboard
         var restWidth = width - full - (half ? 1 : 0);
         var rest = restWidth > 0 ? new string('─', restWidth) : "";
 
-        return $"[{colour}]{bar}[/][{ColorScheme.MutedMarkup}]{rest}[/]";
+        return $"[{colour}]{bar}[/][{Markup.Muted}]{rest}[/]";
     }
 
     /// <summary>Compact magnitudes — a dashboard is read for scale, never for digits.</summary>
@@ -59,10 +59,10 @@ public static class StatsDashboard
         : n.ToString();
 
     private static string Head(string text) =>
-        $"[bold {ColorScheme.AccentMarkup}]{text}[/]";
+        $"[bold {Markup.Accent}]{text}[/]";
 
     private static string Muted(string text) =>
-        $"[{ColorScheme.MutedMarkup}]{text}[/]";
+        $"[{Markup.Muted}]{text}[/]";
 
     /// <summary>Right-pads to a column width, for the label gutter every section shares.</summary>
     private static string Pad(string s, int w) =>
@@ -234,7 +234,7 @@ public static class StatsDashboard
                 // CAPPED IS NAMED, not folded into failures. A capped run did not fail — it ran out
                 // of room, which is a fact about the briefing rather than about the work.
                 var flags = new List<string>();
-                if (t.Failed > 0) flags.Add($"[{ColorScheme.DangerMarkup}]{t.Failed} failed[/]");
+                if (t.Failed > 0) flags.Add($"[{Markup.Danger}]{t.Failed} failed[/]");
                 if (t.Capped > 0) flags.Add($"[yellow1]{t.Capped} capped[/]");
                 var outcome = flags.Count > 0 ? string.Join(" ", flags) : Muted("all clean");
 
@@ -257,7 +257,7 @@ public static class StatsDashboard
             var max = (double)tools.Max(t => t.ResultChars);
             foreach (var t in tools.Take(8))
             {
-                var failed = t.Failed > 0 ? $"[{ColorScheme.DangerMarkup}]{t.Failed} failed[/]" : "";
+                var failed = t.Failed > 0 ? $"[{Markup.Danger}]{t.Failed} failed[/]" : "";
                 sb.AppendLine($"  {Pad(t.Tool, 16)} {Bar(t.ResultChars / max, 18)} "
                             + $"{Pad(Compact(t.ResultChars) + "ch", 9)}"
                             + Muted($"{t.Calls} call{(t.Calls == 1 ? "" : "s")}")
@@ -305,7 +305,7 @@ public static class StatsDashboard
         {
             // A day with NO activity is a muted rule rather than a blank: an empty column and a
             // missing column look identical, and one of them is a fact.
-            if (tokens == 0) { sb.Append($"[{ColorScheme.MutedMarkup}]─[/]"); continue; }
+            if (tokens == 0) { sb.Append($"[{Markup.Muted}]─[/]"); continue; }
 
             var f = (double)tokens / max;
 

@@ -495,6 +495,19 @@ public static class AppBootstrap
             if (declared.Name == "/help")
                 manager.Commands.Register(declared, (_, _) => { mainWindow.ShowHelp(); return true; });
 
+            // OVER THE MANAGER'S. It registered /stats for REPORTING, which is all Core can do;
+            // clearing rewrites history and must be confirmed, which needs somebody to ask. Last
+            // registration wins, so this one takes the whole command and delegates the reporting
+            // half straight back.
+            if (declared.Name == "/stats")
+                manager.Commands.Register(declared, (session, arguments) =>
+                {
+                    if (!StatsCommand.IsClear(arguments)) return session.SayUsage(history, arguments);
+
+                    ConfirmClearHistory(mainWindow, history);
+                    return true;
+                });
+
             if (declared.Name == "/exit")
                 manager.Commands.Register(declared, (_, _) =>
                 {
@@ -896,6 +909,13 @@ public static class AppBootstrap
             // TryHandle — and the order between them was load-bearing without saying so. Adding a
             // command meant finding the right rung. Now the command's own outcome says who services
             // it, which is also what lets a menu dispatch a chosen row through this same path.
+            // THE REGISTRY FIRST, BEFORE THE OUTCOME SWITCH. Core seeded what it can service and
+            // this method registered what needs a window; a command that has finished moving is
+            // handled here and never reaches the dispatch below — which matters because that
+            // dispatch ends in a ShowHelp() catch-all, so a migrated command reaching it prints the
+            // key map instead of doing anything.
+            if (manager.Commands.TryRun(session, goalText)) return;
+
             if (SessionCommands.Match(goalText) is { } command)
             {
                 switch (command.Outcome)
@@ -910,17 +930,6 @@ public static class AppBootstrap
                             return;
                         }
 
-                        if (command.Name == "/skills")
-                        {
-                            // DISCOVERED HERE AND NOW, from the working directory — the same read the
-                            // agent does each turn, so what this prints is what the model is seeing
-                            // rather than a copy that could disagree with it.
-                            new SkillsCommand(
-                                () => Core.Skills.SkillCatalog.Find(
-                                    session.WorkingDirectory, paths.ConfigDir),
-                                transcript).Handle();
-                            return;
-                        }
 
                         if (command.Name == "/agents")
                         {
@@ -935,15 +944,6 @@ public static class AppBootstrap
                             return;
                         }
 
-                        if (command.Name == "/diff")
-                        {
-                            // THE FOLDER THIS SESSION RUNS IN, not wherever the process happens to
-                            // be: it is the same directory permissions are scoped to, and the one
-                            // whose files the agent has been editing.
-                            mainWindow.Chat.AddMessage(ChatRole.System,
-                                DiffCommand.Render(SessionCommands.Arguments(goalText), session.WorkingDirectory));
-                            return;
-                        }
 
                         if (command.Name == "/model")
                         {
@@ -957,29 +957,6 @@ public static class AppBootstrap
                             return;
                         }
 
-                        if (command.Name == "/stats")
-                        {
-                            var statsArg = SessionCommands.Arguments(goalText);
-
-                            // READ FAILURES ARE REPORTED, unlike the writes. An empty dashboard from
-                            // a locked database would say "you have done nothing", which is a lie a
-                            // user cannot detect; an error tells them the number is missing rather
-                            // than zero.
-                            try
-                            {
-                                if (StatsCommand.IsClear(statsArg))
-                                    ConfirmClearHistory(mainWindow, history);
-                                else
-                                    mainWindow.Chat.AddMessage(ChatRole.System,
-                                        StatsCommand.Render(history, statsArg));
-                            }
-                            catch (Exception ex)
-                            {
-                                mainWindow.Chat.AddMessage(ChatRole.System,
-                                    $"[{ColorScheme.DangerMarkup}]Could not read usage history: {ex.Message}[/]");
-                            }
-                            return;
-                        }
 
                         if (command.Name == "/mode")
                         {
@@ -1035,21 +1012,18 @@ public static class AppBootstrap
                         // second submission route that has to relearn all of it.
                         if (command.Name == "/init")
                         {
-                            // DECLINED WHILE A TURN RUNS, like /compress and unlike an ordinary
-                            // prompt. Queued prompts are JOINED into one message, so an /init waiting
-                            // behind two other instructions would reach the model as a paragraph of
-                            // its briefing glued to unrelated work — which is not the operation
-                            // anybody asked for, and would be attributed to the user besides.
-                            var target = InitCommand.Resolve(session.WorkingDirectory);
-                            if (target.Note is { } note)
-                                mainWindow.Chat.AddMessage(ChatRole.System,
-                                    $"[{ColorScheme.MutedMarkup}]{note}[/]");
+                            // DECLINED WHILE A TURN RUNS — the session refuses and says so. Queued
+                            // prompts are JOINED into one message, so an /init waiting behind two
+                            // other instructions would reach the model as a paragraph of its briefing
+                            // glued to unrelated work, attributed to the user besides.
+                            //
+                            // THE SESSION DECIDES WHAT TO SEND; the turn runs here, on this method's
+                            // cancellation scope and queue, so Escape stops it and a mid-turn
+                            // correction steers it like any other. A session that sent it itself
+                            // would start a turn nothing could reach.
+                            if (session.InitialisePrompt() is not { } briefing) return;
 
-                            goalText = InitCommand.Prompt(target);
-
-                            // WHAT THE USER TYPED, on the transcript. The model gets the briefing
-                            // above; echoing that would attribute a message to the user that they
-                            // never wrote, and leave them scrolling past it forever after.
+                            goalText = briefing;
                             turnEcho = "/init";
                         }
                         break;
@@ -1094,11 +1068,6 @@ public static class AppBootstrap
             // Everything else that begins with a slash — /clear, and any unrecognised command, which
             // gets the "available commands" reply rather than being sent to the model as a task.
             // Costs nothing: no goal, no provider call, no tokens.
-            // THE REGISTRY FIRST. Core seeded what it can service and this method registered what
-            // needs a window; a command that has finished moving is handled here and never reaches
-            // the dispatch below. One lookup, and no question about which layer owns the handler.
-            if (manager.Commands.TryRun(session, goalText)) return;
-
             if (SessionCommands.TryHandle(goalText, out var commandReply))
             {
                 if (commandReply is { Length: > 0 })

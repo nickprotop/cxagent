@@ -71,6 +71,22 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => { session.ClearContext(); return true; });
                     break;
 
+                // REPORTING ONLY. Clearing needs a confirmation and a confirmation needs somebody to
+                // ask, so a front end registers over this one — last registration wins.
+                case "/stats" when Shared.History is { } history:
+                    Commands.Register(command, (session, arguments) =>
+                        session.SayUsage(history, arguments));
+                    break;
+
+                case "/skills":
+                    Commands.Register(command, (session, _) =>
+                        session.ListSkills(Shared.GlobalInstructionsDir ?? ""));
+                    break;
+
+                case "/diff":
+                    Commands.Register(command, (session, arguments) => session.ShowDiff(arguments));
+                    break;
+
                 case "/compress":
                     Commands.Register(command, (session, arguments) =>
                     {

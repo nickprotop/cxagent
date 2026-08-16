@@ -88,7 +88,7 @@ public class CommandRegistryTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = Wired(manager);
 
-        Assert.False(manager.Commands.TryRun(session, "/diff"));
+        Assert.False(manager.Commands.TryRun(session, "/init"));
     }
 
     // SEEDED BY CORE. /clear acts on a session, so the manager can service it without a front end.

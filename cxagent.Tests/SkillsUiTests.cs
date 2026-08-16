@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
@@ -19,21 +20,10 @@ public class SkillsUiTests
     private static SkillInfo Skill(string name, string description = "Use when testing.") =>
         new(name, description, $"/tmp/skills/{name}", "body");
 
-    /// <summary>Minimal <see cref="ITranscriptWriter"/> fake — SkillsCommand only ever calls
-    /// <see cref="Write"/>, so that is the only thing this records.</summary>
-    private sealed class RecordingTranscriptWriter : ITranscriptWriter
-    {
-        public readonly List<string> Messages = [];
-        public void Write(string markup) => Messages.Add(markup);
-        public void WriteError(string message) => Messages.Add(message);
-    }
-
-    private static string Render(SkillCatalogResult result)
-    {
-        var transcript = new RecordingTranscriptWriter();
-        new SkillsCommand(() => result, transcript).Handle();
-        return transcript.Messages.LastOrDefault() ?? "";
-    }
+    // RENDERS, RATHER THAN PRINTING THROUGH A DOUBLE. The command took a transcript writer and this
+    // supplied a fake one to read back what it wrote; a listing that is pure text needs neither.
+    private static string Render(SkillCatalogResult result) =>
+        new SkillsCommand(() => result).Render();
 
     [Fact]
     public void Skills_ListsEachSkillWithItsDescription_AndTheDirectoryTheyCameFrom()

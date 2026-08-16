@@ -421,6 +421,86 @@ public sealed class Session
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}K";
 
     /// <summary>
+    /// Says what skills this session can reach, and which SKILL.md files were skipped.
+    ///
+    /// <para>DISCOVERED NOW, from the working directory — the same read the agent does each turn, so
+    /// what this reports is what the model is seeing rather than a copy that could disagree.</para>
+    /// </summary>
+    public bool ListSkills(string globalInstructionsDir)
+    {
+        Say(new Commands.SkillsCommand(
+            () => Skills.SkillCatalog.Find(WorkingDirectory, globalInstructionsDir)).Render());
+
+        return true;
+    }
+
+    /// <summary>
+    /// Says what this process has spent, over the window <paramref name="arguments"/> asks for.
+    ///
+    /// <para>THE STORE IS THE MANAGER'S, so it is passed rather than held: usage outlives any one
+    /// session and a session that owned it would be claiming a total it did not earn alone.</para>
+    ///
+    /// <para>REPORTED, NEVER CLEARED HERE. Clearing needs a confirmation, and a confirmation needs
+    /// somebody to ask — see the registry, where a front end overrides this command with one that
+    /// can.</para>
+    /// </summary>
+    public bool SayUsage(Storage.UsageHistoryStore history, string arguments)
+    {
+        try
+        {
+            Say(Commands.StatsCommand.Render(history, arguments));
+        }
+        catch (Exception ex)
+        {
+            // REPORTED, like every other read of this store: an empty dashboard would say "you have
+            // spent nothing", which is a lie a user cannot detect.
+            Say($"[{Commands.Markup.Danger}]Could not read usage history: {ex.Message}[/]");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The briefing for a turn that explores this folder and writes down what it found.
+    ///
+    /// <para>SESSION WORK, and the only command here that spends tokens. It reads which instruction
+    /// file to write, says so when the answer is not the obvious one — an existing CLAUDE.md is read
+    /// but never written — and sends a briefing the user did not type.</para>
+    ///
+    /// <para>ECHOED AS "/init", NOT AS THE BRIEFING. The user typed three words; the model receives
+    /// several paragraphs about what to explore. Putting those on the transcript as the user's own
+    /// message attributes words to them they never wrote, on every later read of the log.</para>
+    ///
+    /// <para>REFUSED MID-TURN like every other operation that needs the agent — a second SendAsync
+    /// on one agent appends to a live conversation from two loops.</para>
+    /// </summary>
+    /// <returns>
+    /// The briefing to send, or null when there is no host to send it to.
+    ///
+    /// <para>RETURNED RATHER THAN SENT, and this is the one command that cannot own its own turn.
+    /// A turn needs the caller's cancellation scope — the one Escape holds — and its queue, so a
+    /// session that called SendAsync itself would start a turn nothing could stop or steer. The
+    /// session decides WHAT to send and says what it noticed; the caller runs it the same way it
+    /// runs a typed goal.</para>
+    /// </returns>
+    public string? InitialisePrompt()
+    {
+        if (Host is null || RefusedWhileBusy()) return null;
+
+        var target = Commands.InitCommand.Resolve(WorkingDirectory);
+        if (target.Note is { } note) Say($"[{Commands.Markup.Muted}]{note}[/]");
+
+        return Commands.InitCommand.Prompt(target);
+    }
+
+    /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
+    public bool ShowDiff(string arguments)
+    {
+        Say(Commands.DiffCommand.Render(arguments, WorkingDirectory));
+        return true;
+    }
+
+    /// <summary>
     /// Empties this session's conversation.
     ///
     /// <para>THE SESSION'S HALF ONLY. It drops the messages and says so; what a front end does about

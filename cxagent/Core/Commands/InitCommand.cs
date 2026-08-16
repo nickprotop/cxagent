@@ -1,4 +1,4 @@
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// <c>/init</c> — write the project instruction file the agent reads on every turn.
