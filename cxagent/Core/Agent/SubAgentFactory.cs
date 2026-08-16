@@ -220,6 +220,11 @@ public sealed class SubAgentFactory
     /// </summary>
     public SemaphoreSlim? ConcurrencySlot { get; }
 
+    /// <summary>Where children resolve relative paths — the session's directory. Exposed so the
+    /// spawner can check whether a planner wrote the file it was told to write, without the parent
+    /// having to trust a line of the child's own text.</summary>
+    public string? WorkingDir => _runtime.WorkingDir;
+
     /// <param name="parentAgentId">
     /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
     /// only the tests that predate nesting pass nothing.

@@ -1193,14 +1193,21 @@ public sealed class MainWindow : IDisposable
 
             McpServers = _mcpServers,
 
-            // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys. `general` always exists
-            // whether or not config mentions it — it is what a bare spawn uses — so a panel built
-            // from config alone showed nothing to anyone who had not written a type, and made
-            // delegation look unavailable when it was not.
+            // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys — and that distinction
+            // grew teeth when the shipped types moved into code. `general` always exists whether or
+            // not config mentions it, and so do the five built-ins; a panel built from config alone
+            // reported three types on a session that had six, because the user's config had been
+            // trimmed to the two entries that still said anything (a maxTurns each). It made
+            // delegation look narrower than it was, which is the same failure the `general` note
+            // below describes, one source further along.
+            //
+            // Union, deduplicated: built-ins, then whatever config adds on top.
             AgentTypes =
             [
                 AgentTypeCatalog.DefaultTypeName,
-                .. _resolution.AgentTypes.Keys.Where(n => n != AgentTypeCatalog.DefaultTypeName),
+                .. BuiltinAgentTypes.All.Select(t => t.Name),
+                .. _resolution.AgentTypes.Keys
+                    .Where(n => n != AgentTypeCatalog.DefaultTypeName && !BuiltinAgentTypes.IsBuiltin(n)),
             ],
 
             // WHAT EXISTS, AND WHAT IS IN FORCE. The count comes from discovery; the loaded names

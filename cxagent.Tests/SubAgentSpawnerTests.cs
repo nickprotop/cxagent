@@ -943,12 +943,15 @@ public class SubAgentSpawnerTests
     /// second type look like an addition rather than a section materialising from nothing.
     /// </summary>
     [Fact]
-    public void Definition_WithNoConfiguredTypes_ListsGeneralOnly()
+    public void Definition_WithNoConfiguredTypes_StillListsTheShippedTypes()
     {
         var d = new SubAgentSpawner(FactoryOver(Answering("x"))).Definition.Description;
 
+        // THE SHIPPED TYPES ARE THERE WITHOUT CONFIG — that is the point of moving them into code.
+        // What must NOT appear is a type nobody defined anywhere.
         Assert.Contains("- general: runs where you do", d, StringComparison.Ordinal);
-        Assert.DoesNotContain("- explore:", d, StringComparison.Ordinal);
+        Assert.Contains("- builder:", d, StringComparison.Ordinal);
+        Assert.DoesNotContain("- scout:", d, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1031,17 +1034,17 @@ public class SubAgentSpawnerTests
     /// <para>THIS TEST USED TO ASSERT THE OPPOSITE OF WHAT IT NOW DOES, and the change is the point.
     /// It read "a type's briefing IS its description — nothing extra needs writing in config", and
     /// checked that the catalog showed the briefing's first sentence with the rest dropped. That
-    /// produced "- explore: You search and report." — text written in the second person for the
+    /// produced "- scout: You search and report." — text written in the second person for the
     /// CHILD, which tells a parent nothing about when to reach for it. The briefing is no longer
     /// consulted here at all.</para>
     /// </summary>
     [Fact]
     public void Definition_ListsConfiguredTypes_WithTheirDescriptions()
     {
-        var d = SpawnerWith(("explore", "You search and report. Never edit files.",
+        var d = SpawnerWith(("scout", "You search and report. Never edit files.",
             "when answering means reading across several files")).Definition.Description;
 
-        Assert.Contains("- explore: when answering means reading across several files", d,
+        Assert.Contains("- scout: when answering means reading across several files", d,
             StringComparison.Ordinal);
 
         // NEITHER HALF of the briefing reaches the catalog now — not the first sentence it used to
@@ -1069,14 +1072,14 @@ public class SubAgentSpawnerTests
     [Fact]
     public void Definition_KeepsTheTunedGuidance_AboveTheCatalog()
     {
-        var d = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("explore", "Search."))).Definition.Description;
+        var d = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("scout", "Search."))).Definition.Description;
 
         Assert.Contains("the conclusion, not the file dumps", d, StringComparison.Ordinal);
         Assert.Contains("single-fact lookup", d, StringComparison.Ordinal);
         Assert.Contains("do not also do it yourself", d, StringComparison.Ordinal);
         // And the catalog is BELOW it, so the guidance is read first.
         Assert.True(d.IndexOf("single-fact lookup", StringComparison.Ordinal)
-                  < d.IndexOf("- explore:", StringComparison.Ordinal));
+                  < d.IndexOf("- scout:", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -1601,10 +1604,10 @@ public class SubAgentSpawnerTests
     public async Task AType_PutsItsBriefingInTheChildsSystemMessage()
     {
         var spawner = new SubAgentSpawner(FactoryOver(Answering("done")),
-            Catalog(("explore", "You search and report. Never edit files.")));
+            Catalog(("scout", "You search and report. Never edit files.")));
 
         SubAgent? child = null;
-        await spawner.TryInvokeAsync(TypedSpawn("explore"), c => child = c, CancellationToken.None);
+        await spawner.TryInvokeAsync(TypedSpawn("scout"), c => child = c, CancellationToken.None);
 
         var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system"));
         Assert.Contains("You search and report", system.Content, StringComparison.Ordinal);
@@ -1620,13 +1623,15 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task TwoTypes_ProduceDifferentChildPrompts()
     {
-        var catalog = Catalog(("explore", "You search and report."), ("review", "You judge correctness."));
+        // NEITHER NAME IS A BUILT-IN. A shipped type keeps its shipped briefing however config
+        // spells it, so using `review` here would assert against text this test did not write.
+        var catalog = Catalog(("scout", "You search and report."), ("judge", "You judge correctness."));
 
         SubAgent? a = null, b = null;
         await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
-            .TryInvokeAsync(TypedSpawn("explore"), c => a = c, CancellationToken.None);
+            .TryInvokeAsync(TypedSpawn("scout"), c => a = c, CancellationToken.None);
         await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
-            .TryInvokeAsync(TypedSpawn("review"), c => b = c, CancellationToken.None);
+            .TryInvokeAsync(TypedSpawn("judge"), c => b = c, CancellationToken.None);
 
         var pa = a!.Agent.Context.Messages.First(m => m.Role == "system").Content;
         var pb = b!.Agent.Context.Messages.First(m => m.Role == "system").Content;
@@ -1645,7 +1650,7 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task ABareSpawn_AndExplicitGeneral_ProduceIdenticalPrompts()
     {
-        var catalog = Catalog(("explore", "Search."));
+        var catalog = Catalog(("scout", "Search."));
 
         SubAgent? bare = null, general = null;
         await new SubAgentSpawner(FactoryOver(Answering("x")), catalog)
@@ -1666,14 +1671,14 @@ public class SubAgentSpawnerTests
     [Fact]
     public async Task AnUnknownType_IsRefused_WithTheValidNames()
     {
-        var spawner = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("explore", "Search.")));
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("x")), Catalog(("scout", "Search.")));
 
         var result = await spawner.TryInvokeAsync(TypedSpawn("researcher"), null, CancellationToken.None);
 
         Assert.Contains("unknown agent type", result!, StringComparison.Ordinal);
         Assert.Contains("researcher", result!, StringComparison.Ordinal);
         Assert.Contains("general", result!, StringComparison.Ordinal);
-        Assert.Contains("explore", result!, StringComparison.Ordinal);
+        Assert.Contains("scout", result!, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1729,10 +1734,10 @@ public class SubAgentSpawnerTests
     [Fact]
     public void TheCatalog_ShowsTheDescription()
     {
-        var text = SpawnerWith(("explore", "You search and report.", "when a search spans files"))
+        var text = SpawnerWith(("scout", "You search and report.", "when a search spans files"))
             .Definition.Description;
 
-        Assert.Contains("- explore: when a search spans files", text, StringComparison.Ordinal);
+        Assert.Contains("- scout: when a search spans files", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1743,10 +1748,10 @@ public class SubAgentSpawnerTests
     [Fact]
     public void AtypeWithNoDescription_ShowsTheNeutralLine_NotTheBriefing()
     {
-        var text = SpawnerWith(("explore", "You search and report. Then stop.", null))
+        var text = SpawnerWith(("scout", "You search and report. Then stop.", null))
             .Definition.Description;
 
-        Assert.Contains("- explore: runs where you do, no special instructions", text,
+        Assert.Contains("- scout: runs where you do, no special instructions", text,
             StringComparison.Ordinal);
         Assert.DoesNotContain("You search and report", text, StringComparison.Ordinal);
     }
@@ -1769,7 +1774,7 @@ public class SubAgentSpawnerTests
     public void ALongDescription_ReachesTheCatalogIntact()
     {
         var longText = new string('x', 400);
-        var text = SpawnerWith(("explore", "b", longText)).Definition.Description;
+        var text = SpawnerWith(("scout", "b", longText)).Definition.Description;
 
         Assert.Contains(longText, text, StringComparison.Ordinal);
         Assert.DoesNotContain("…", text, StringComparison.Ordinal);
@@ -1789,7 +1794,7 @@ public class SubAgentSpawnerTests
     [Fact]
     public void TheGeneralType_IsListed_WithTheNeutralLine()
     {
-        var text = SpawnerWith(("explore", "b", "when a search spans files")).Definition.Description;
+        var text = SpawnerWith(("scout", "b", "when a search spans files")).Definition.Description;
 
         Assert.Contains("- general: runs where you do, no special instructions", text,
             StringComparison.Ordinal);

@@ -581,7 +581,7 @@ public class ProviderConfigTests : IDisposable
         {
           {{TwoProviders}},
           "agents": {
-            "explore": { "briefing": "Search and report.", "provider": "fast", "maxTurns": 30 },
+            "scout": { "briefing": "Search and report.", "provider": "fast", "maxTurns": 30 },
             "review":  { "briefing": "Review for correctness." }
           }
         }
@@ -589,9 +589,9 @@ public class ProviderConfigTests : IDisposable
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
         Assert.Equal(2, s.AgentTypes.Count);
-        Assert.Equal("Search and report.", s.AgentTypes["explore"].Briefing);
-        Assert.Equal("fast", s.AgentTypes["explore"].Provider);
-        Assert.Equal(30, s.AgentTypes["explore"].MaxTurns);
+        Assert.Equal("Search and report.", s.AgentTypes["scout"].Briefing);
+        Assert.Equal("fast", s.AgentTypes["scout"].Provider);
+        Assert.Equal(30, s.AgentTypes["scout"].MaxTurns);
 
         // Omitted provider and maxTurns are null — INHERIT, not a default invented here.
         Assert.Null(s.AgentTypes["review"].Provider);
@@ -646,7 +646,7 @@ public class ProviderConfigTests : IDisposable
         {
           {{TwoProviders}},
           "agents": {
-            "explore": {
+            "scout": {
               "description": "when answering means reading across several files",
               "briefing": "You search and report."
             }
@@ -656,7 +656,7 @@ public class ProviderConfigTests : IDisposable
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
         Assert.Equal("when answering means reading across several files",
-            s.AgentTypes["explore"].Description);
+            s.AgentTypes["scout"].Description);
     }
 
     /// <summary>
@@ -669,12 +669,12 @@ public class ProviderConfigTests : IDisposable
         WriteConfig($$"""
         {
           {{TwoProviders}},
-          "agents": { "explore": { "briefing": "You search and report." } }
+          "agents": { "scout": { "briefing": "You search and report." } }
         }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
-        Assert.Null(s.AgentTypes["explore"].Description);
+        Assert.Null(s.AgentTypes["scout"].Description);
     }
 
     /// <summary>
@@ -689,12 +689,12 @@ public class ProviderConfigTests : IDisposable
         WriteConfig($$"""
         {
           {{TwoProviders}},
-          "agents": { "explore": { "description": "{{longText}}", "briefing": "b" } }
+          "agents": { "scout": { "description": "{{longText}}", "briefing": "b" } }
         }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
-        Assert.Equal(400, s.AgentTypes["explore"].Description!.Length);
+        Assert.Equal(400, s.AgentTypes["scout"].Description!.Length);
     }
 
     /// <summary>Whitespace-only is absent. A description of spaces would print a blank catalog line,
@@ -705,12 +705,12 @@ public class ProviderConfigTests : IDisposable
         WriteConfig($$"""
         {
           {{TwoProviders}},
-          "agents": { "explore": { "description": "   ", "briefing": "b" } }
+          "agents": { "scout": { "description": "   ", "briefing": "b" } }
         }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
-        Assert.Null(s.AgentTypes["explore"].Description);
+        Assert.Null(s.AgentTypes["scout"].Description);
     }
 
     /// <summary>
@@ -724,12 +724,12 @@ public class ProviderConfigTests : IDisposable
         WriteConfig($$"""
         {
           {{TwoProviders}},
-          "agents": { "explore": { "briefing": "Search.", "provider": "typo" } }
+          "agents": { "scout": { "briefing": "Search.", "provider": "typo" } }
         }
         """);
         var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
 
-        Assert.Null(s.AgentTypes["explore"].Provider);
+        Assert.Null(s.AgentTypes["scout"].Provider);
         Assert.Contains(s.Warnings, w => w.Contains("typo", StringComparison.Ordinal));
         // The message names what IS valid, not only what was wrong.
         Assert.Contains(s.Warnings, w => w.Contains("fast", StringComparison.Ordinal));

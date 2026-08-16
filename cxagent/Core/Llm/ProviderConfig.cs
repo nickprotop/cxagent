@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Llm;
@@ -526,11 +527,39 @@ public static class ProviderConfigLoader
                         continue;
                     }
 
-                    // REQUIRED. A type with nothing to say is the default child under another name,
-                    // and naming it invites the model to believe it picked something.
                     var briefing = entry.Value.TryGetProperty("briefing", out var b)
                                 && b.ValueKind == JsonValueKind.String ? b.GetString() : null;
-                    if (string.IsNullOrWhiteSpace(briefing))
+                    var description = entry.Value.TryGetProperty("description", out var dsc)
+                                   && dsc.ValueKind == JsonValueKind.String ? dsc.GetString() : null;
+
+                    // A BUILT-IN NAME KEEPS ITS SHIPPED TEXT, and says so rather than quietly winning
+                    // or quietly losing. The briefing is the contract a type keeps with the code
+                    // around it — the planner is told to write the file whose path the spawner
+                    // supplies, the spawner reports whether it appeared, and the builder refuses work
+                    // that arrives without one — so a copy in a user's config file is a third party to
+                    // an agreement between three others, free to drift from all of them. Honouring it
+                    // would restore exactly the drift moving them into code was meant to end.
+                    //
+                    // IGNORED LOUDLY, not silently: an edit that does nothing and says nothing is the
+                    // worst of the three options. `provider` and `maxTurns` still apply, because
+                    // where a type runs and what it may spend are genuinely the user's.
+                    if (BuiltinAgentTypes.IsBuiltin(entry.Name))
+                    {
+                        if (briefing is not null)
+                            warnings.Add($"agents.{entry.Name}.briefing is ignored: built-in agent "
+                                       + "briefings ship with cxagent so they stay in step with the "
+                                       + "code that depends on them. Remove it, or rename the type to "
+                                       + "define your own.");
+                        if (description is not null)
+                            warnings.Add($"agents.{entry.Name}.description is ignored, for the same "
+                                       + $"reason as its briefing. 'provider' and 'maxTurns' still apply.");
+                        briefing = null;      // the catalog takes the shipped text
+                        description = null;
+                    }
+                    // REQUIRED FOR A TYPE THAT IS NOT BUILT IN. A type with nothing to say is the
+                    // default child under another name, and naming it invites the model to believe it
+                    // picked something.
+                    else if (string.IsNullOrWhiteSpace(briefing))
                     {
                         warnings.Add($"agents.{entry.Name} has no 'briefing'; skipped.");
                         continue;
@@ -566,14 +595,14 @@ public static class ProviderConfigLoader
                     // WHITESPACE IS ABSENT, not a description. A line of spaces would render as a
                     // blank catalog entry, which reads as a bug; no entry reads as "nothing was
                     // configured", which is the truth. Not trimmed-then-kept for the same reason.
-                    var description = entry.Value.TryGetProperty("description", out var desc)
-                                   && desc.ValueKind == JsonValueKind.String
-                        ? desc.GetString()?.Trim()
-                        : null;
+                    description = description?.Trim();
                     if (string.IsNullOrWhiteSpace(description)) description = null;
 
-                    agentTypes[entry.Name] = new AgentTypeConfig(briefing.Trim(), typeProvider, maxTurns,
-                        description);
+                    // BRIEFING IS EMPTY FOR A BUILT-IN NAME, and the catalog substitutes the shipped
+                    // text. Storing the shipped briefing here instead would put it back in the shape
+                    // that drifts — a copy, made at load, of something that lives elsewhere.
+                    agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim() ?? "", typeProvider,
+                        maxTurns, description);
                 }
 
             if (errors.Count > 0)

@@ -222,11 +222,13 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         if (type is null)
             return $"error: unknown agent type '{requested?.Trim()}'. Valid: {_types.Names}.";
 
+        string? planPath = null;
         var child = _factory.Create(
             // THE BRIEFING COMES FROM THE TYPE, never from the parent (D9). Config is the only
             // legitimate author of the highest-authority text in a child's prompt.
             briefing: null,
-            callerContext: Read(call, "context"),
+            callerContext: WithPlanPath(Read(call, "context"), type, Read(call, "description"),
+                out planPath),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
             label: Read(call, "description"),
             type: type,
@@ -244,12 +246,95 @@ public sealed class SubAgentSpawner : ISubAgentSpawner
         try
         {
             var result = await child.Agent.SendAsync(prompt, ct);
-            return SubAgentEnvelope.Render(child.Agent.Id, result.Outcome, result.Text);
+            return SubAgentEnvelope.Render(child.Agent.Id, result.Outcome,
+                WithPlanOutcome(result.Text, planPath));
         }
         finally
         {
             slot?.Release();
         }
+    }
+
+    /// <summary>
+    /// Names the file a plan-writing type must write, and tells the child where it is.
+    ///
+    /// <para>THE PARENT NO LONGER HAS TO TRUST A CLAIM. The planner briefing asks for a
+    /// <c>PLAN WRITTEN: &lt;path&gt;</c> line, and a claim is all that was — measured twice on live
+    /// drives, a planner that never called write_file ended with the marker anyway, once after
+    /// announcing it would "proceed by making some assumptions". The parent believed it both times.
+    /// Naming the path HERE means the result can report what is actually on disk instead.</para>
+    ///
+    /// <para>DERIVED FROM THE SPAWN'S OWN LABEL so the file says what it is, and stable within a
+    /// call so the check below looks where the child was told to write. Only for types whose
+    /// briefing asks for a plan — every other type's context is untouched.</para>
+    /// </summary>
+    /// <summary>
+    /// Which types write a plan file — declared by the type, not inferred from its prose.
+    ///
+    /// <para>This read <c>Briefing.Contains("PLAN WRITTEN:")</c>, which coupled a mechanism to a
+    /// sentence: the builder's briefing MENTIONED that marker (to say what it refuses), so it was
+    /// one edit away from being handed a plan path it never writes, and retiring the marker from the
+    /// planner's text would have silently switched the whole thing off.</para>
+    /// </summary>
+    public static bool WritesAPlan(AgentType type) => type.WritesAPlanFile;
+
+    /// <summary>
+    /// A path per spawn, derived from the label the parent already wrote.
+    ///
+    /// <para>NOT A FIXED NAME: two planners in one session would overwrite each other, and the
+    /// second one's parent would read the first one's plan without either noticing. The label is
+    /// slugged rather than hashed so the file is still recognisable in ./plans/ afterwards.</para>
+    /// </summary>
+    private static string PlanPathFor(string? label)
+    {
+        var slug = new string((label ?? "plan")
+            .Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-')
+            .ToArray())
+            .Trim('-');
+        while (slug.Contains("--", StringComparison.Ordinal))
+            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+        if (slug.Length == 0) slug = "plan";
+        if (slug.Length > 48) slug = slug[..48].TrimEnd('-');
+        return $"plans/{slug}.md";
+    }
+
+    private static string? WithPlanPath(string? context, AgentType type, string? label,
+        out string? planPath)
+    {
+        planPath = null;
+        if (!WritesAPlan(type)) return context;
+        planPath = PlanPathFor(label);
+
+        var line = $"Write your plan file to `{planPath}` — that exact path, relative to the working "
+                 + "directory. The parent reads that file; it does not read this answer for the plan.";
+        return string.IsNullOrWhiteSpace(context) ? line : context + "\n\n" + line;
+    }
+
+    /// <summary>
+    /// Appends what is actually on disk at the path the child was given.
+    ///
+    /// <para>REPLACES A MARKER THE CHILD CONTROLS with a fact the spawner checked. Says so either
+    /// way: a parent told nothing about a missing plan writes one itself from the chat text — which
+    /// is exactly what happened, and the builder it fed then went looking for Rust sources in a C#
+    /// repository.</para>
+    /// </summary>
+    private string WithPlanOutcome(string text, string? planPath)
+    {
+        if (planPath is null) return text;
+
+        var full = _factory.WorkingDir is { Length: > 0 } root
+            ? Path.Combine(root, planPath) : planPath;
+
+        bool written;
+        try { written = File.Exists(full) && new FileInfo(full).Length > 0; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException) { written = false; }
+
+        return written
+            ? text + $"\n\n[cxagent] plan file: {planPath}"
+            : text + $"\n\n[cxagent] NO PLAN FILE was written at {planPath}. There is no plan. Do "
+                   + "not build from the text above, and do not write a plan yourself from it — send "
+                   + "the planner again, telling it the previous run wrote nothing.";
     }
 
     private static string? Read(ToolCall call, string name) =>

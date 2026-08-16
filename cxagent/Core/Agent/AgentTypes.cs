@@ -70,7 +70,13 @@ public sealed record AgentType(
     string Briefing,
     TypeRouting Routing,
     int? MaxTurns = null,
-    string? Description = null)
+    string? Description = null,
+    /// <summary>This type's deliverable is a file whose path the spawner names. See
+    /// <see cref="AgentTypeDefinition.WritesAPlanFile"/> for why it is declared rather than
+    /// detected. A type defined in config never sets it: the mechanism hands out a path and then
+    /// contradicts the child's answer when nothing is there, which is only honest for a briefing
+    /// that told the child to write one.</summary>
+    bool WritesAPlanFile = false)
 {
     /// <summary>Where this type runs, flattened for readers that want one field. The routing record
     /// is the truth; these exist so call sites do not all have to say <c>Routing.</c>.</summary>
@@ -118,6 +124,15 @@ public sealed class AgentTypeCatalog
         // other type.
         _types[DefaultTypeName] = new AgentType(DefaultTypeName, "", TypeRouting.Inherited);
 
+        // THE SHIPPED TYPES, PRESENT WITHOUT CONFIG. They used to exist only if the user had copied
+        // them out of config.sample.json, so a fresh install had `general` and nothing else while
+        // the docs described five types — and every briefing fix reached only whoever re-copied the
+        // sample. Seeded before config's loop so a configured entry of the same name refines this
+        // one (provider, maxTurns) rather than replacing it.
+        foreach (var t in BuiltinAgentTypes.All)
+            _types[t.Name] = new AgentType(t.Name, t.Briefing, TypeRouting.Inherited,
+                t.DefaultMaxTurns, t.Description, t.WritesAPlanFile);
+
         foreach (var (name, cfg) in configured)
         {
             ILlmProvider? provider = null;
@@ -135,8 +150,17 @@ public sealed class AgentTypeCatalog
                 providers.InstanceWindows.TryGetValue(instance, out window);
             }
 
-            _types[name] = new AgentType(name, cfg.Briefing,
-                new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description);
+            // A BUILT-IN NAME KEEPS ITS SHIPPED TEXT and takes only what config may decide: where it
+            // runs, and what it may spend. Config parsing already blanked the briefing and warned;
+            // reading it here as authoritative would put the drift back.
+            var builtin = BuiltinAgentTypes.Find(name);
+            _types[name] = builtin is null
+                ? new AgentType(name, cfg.Briefing,
+                    new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description)
+                : new AgentType(name, builtin.Briefing,
+                    new TypeRouting(provider, window, instanceName),
+                    cfg.MaxTurns ?? builtin.DefaultMaxTurns, builtin.Description,
+                    builtin.WritesAPlanFile);
         }
 
         All = [_types[DefaultTypeName],
