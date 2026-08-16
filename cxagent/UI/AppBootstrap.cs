@@ -354,7 +354,12 @@ public static class AppBootstrap
         // turn and would block every submission for the rest of the session. Escape got away with
         // reading it because cancelling an already-finished turn is harmless. A guard cannot.
         var turnRunning = false;
+        // TWO CALLERS LEFT, both about this front end's own dispatch rather than about the
+        // session's state: whether a typed line becomes a steer or a prompt, and what /mode reports
+        // about what it can do right now. Everything that REFUSES an action mid-turn moved to the
+        // session, which knows whether its own state can change — see Session.IsBusy.
         bool IsTurnRunning() => turnRunning && turnCts is { IsCancellationRequested: false };
+
 
         // Messages typed while a turn was running, in the order they were typed. Joined into ONE
         // prompt when the turn ends (D18) — appended, never replaced: two messages are usually one
@@ -792,14 +797,7 @@ public static class AppBootstrap
 
                 // A TURN IN FLIGHT IS DECLINED, the same predicate /mode uses: the tool list is fixed
                 // once a request begins, and a silent flip mid-turn is exactly what that guards.
-                if (IsTurnRunning())
-                {
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        "[yellow]A turn is running — press Escape to stop it first.[/]");
-                    return;
-                }
-
-                // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
+                    // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
                 // a mode that would do nothing. With one, the order runs strict -> permissive ->
                 // reviewed, which reads as increasing autonomy.
                 var nextEdits = runner.Mode.Edits switch
@@ -1020,13 +1018,6 @@ public static class AppBootstrap
                             // behind two other instructions would reach the model as a paragraph of
                             // its briefing glued to unrelated work — which is not the operation
                             // anybody asked for, and would be attributed to the user besides.
-                            if (IsTurnRunning())
-                            {
-                                mainWindow.Chat.AddMessage(ChatRole.System,
-                                    "[yellow]A turn is running — press Escape to stop it first.[/]");
-                                return;
-                            }
-
                             var target = InitCommand.Resolve(session.WorkingDirectory);
                             if (target.Note is { } note)
                                 mainWindow.Chat.AddMessage(ChatRole.System,
@@ -1069,15 +1060,11 @@ public static class AppBootstrap
                         // DIFFERENT operation from the one that was asked for. Nothing is lost by
                         // refusing: the automatic route already compresses on measured pressure, so
                         // this costs a keystroke, not a compaction.
-                        if (IsTurnRunning())
-                        {
-                            mainWindow.Chat.AddMessage(ChatRole.System,
-                                "[yellow]A turn is running — press Escape to stop it first.[/]");
-                            return;
-                        }
-
-                        if (runner is not null)
-                            _ = runner.CompressNowAsync(cts.Token);
+                        // THE SESSION DECIDES AND SAYS SO. It refuses while a turn runs — see
+                        // Session.CompressNow for why compaction is refused rather than queued —
+                        // and announces the refusal through the observer, so there is nothing to
+                        // report here.
+                        _ = session.CompressNow(cts.Token);
                         return;
                 }
             }
@@ -1483,15 +1470,6 @@ public static class AppBootstrap
                     return;
                 }
 
-                // RESTORING MID-TURN IS REFUSED. WireRunner replaces the agent the running turn is
-                // appending to — the tool results of a call already in flight would land in a
-                // conversation nobody is reading, which is the orphan shape that 400s a session.
-                if (IsTurnRunning())
-                {
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        "[yellow]A turn is running — press Escape to stop it first.[/]");
-                    return;
-                }
 
                 if (sessions.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
                     RestoreSession(snapshot);
@@ -1518,15 +1496,9 @@ public static class AppBootstrap
                 return;
             }
 
-            // REFUSED MID-TURN, like /mode and /compress. Re-wiring replaces the agent the running
-            // turn is appending to — its tool results would land in a conversation nobody is
-            // reading, which is the orphan shape that 400s a session permanently.
-            if (IsTurnRunning())
-            {
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    "[yellow]A turn is running — press Escape to stop it first.[/]");
-                return;
-            }
+            // NOT GUARDED HERE. SwitchModel refuses while a turn runs and says so — the session
+            // owns whether its own state can change. Resolving first costs one config read on a
+            // refusal, which is cheaper than a second copy of the rule.
 
             var next = ProviderResolver.ResolveInstance(paths, env, decision.SwitchTo);
             if (next is null || !next.HasProvider)

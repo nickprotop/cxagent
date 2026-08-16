@@ -226,6 +226,8 @@ public sealed class SessionManager : IDisposable
     /// </param>
     public void Resume(Session session, Storage.SessionSnapshot snapshot, Action rewire)
     {
+        if (session.RefuseIfBusy()) return;
+
         session.PendResume(snapshot);
         rewire();
         Shared.Resume?.MarkSuperseded(snapshot.AgentId);

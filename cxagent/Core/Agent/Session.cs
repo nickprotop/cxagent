@@ -185,6 +185,37 @@ public sealed class Session
     public Permissions.PermissionPolicy? Policy { get; private set; }
 
     /// <summary>
+    /// True while a turn is running — the session's own answer, not a flag a front end keeps.
+    ///
+    /// <para>Whether an action can happen NOW is a fact about this session, so the session is what
+    /// knows it. A caller that wants to grey out a menu can read this; a caller that wants to try
+    /// anyway gets refused with a reason, which is what the mutating methods below do.</para>
+    /// </summary>
+    public bool IsBusy => Host?.IsBusy ?? false;
+
+    /// <summary>
+    /// Refuses an action that cannot run mid-turn, and says why.
+    ///
+    /// <para>ONE COPY OF THE SENTENCE, and it belongs here rather than in a front end: five call
+    /// sites in the composition root each carried their own, which is five chances for the wording
+    /// to drift — and a second front end would have written a sixth. The reason is the same every
+    /// time: re-wiring or restoring replaces the agent the running turn is appending to, and its
+    /// tool results would land in a conversation nobody is reading, which is the orphan shape that
+    /// 400s a session permanently.</para>
+    /// </summary>
+    /// <summary>Public form of <see cref="RefusedWhileBusy"/>, for the manager's resume — which is a
+    /// session operation performed from outside because the store belongs to the manager.</summary>
+    public bool RefuseIfBusy() => RefusedWhileBusy();
+
+    private bool RefusedWhileBusy()
+    {
+        if (!IsBusy) return false;
+
+        Say("[yellow]A turn is running — press Escape to stop it first.[/]");
+        return true;
+    }
+
+    /// <summary>
     /// Puts this session into a working mode: the agent's delegation axis and the edit axis
     /// together.
     ///
@@ -198,7 +229,7 @@ public sealed class Session
     /// </summary>
     public bool SetMode(WorkingMode mode)
     {
-        if (Host is null) return false;
+        if (Host is null || RefusedWhileBusy()) return false;
 
         Host.Mode = mode;
         if (Policy is not null) Policy.Edits = mode.Edits;
@@ -334,6 +365,25 @@ public sealed class Session
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}K";
 
     /// <summary>
+    /// Compacts this session's context now, if a turn is not already running.
+    ///
+    /// <para>REFUSED MID-TURN RATHER THAN QUEUED, and the difference from an ordinary prompt is
+    /// real: a prompt is still valid when the turn ends, but this is a measurement-and-rewrite of a
+    /// context that is actively changing — running it later is a DIFFERENT operation from the one
+    /// that was asked for. Nothing is lost by refusing: the turn loop already compacts on measured
+    /// pressure, so this costs a keystroke rather than a compaction.</para>
+    ///
+    /// <para>FIRE AND FORGET, returning the task for a caller that wants to await it. The refusal
+    /// path returns null, having already said why.</para>
+    /// </summary>
+    public Task<SessionCompressor.CompressResult>? CompressNow(CancellationToken ct)
+    {
+        if (Host is null || RefusedWhileBusy()) return null;
+
+        return Host.CompressNowAsync(ct);
+    }
+
+    /// <summary>
     /// Points this session at a different model, keeping the conversation.
     ///
     /// <para>WHAT THIS REPLACES. /model used to resolve an instance, arm a handoff with
@@ -351,7 +401,7 @@ public sealed class Session
     /// </summary>
     public bool SwitchModel(ProviderResolution next)
     {
-        if (Host is null || next.Provider is null) return false;
+        if (Host is null || next.Provider is null || RefusedWhileBusy()) return false;
 
         // READ BEFORE THE SWAP, because the announcement below compares what the context WAS on the
         // model being left against the window it is moving to. The composition root used to read

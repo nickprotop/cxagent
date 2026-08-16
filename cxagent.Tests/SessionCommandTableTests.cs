@@ -327,6 +327,7 @@ public class SessionCommandTableTests
     [Theory]
     [InlineData("/mcp", "reload")]
     [InlineData("/mcp", "login")]
+    [InlineData("/mcp", "show")]
     [InlineData("/mode", "agent single")]
     [InlineData("/mode", "agent fan-out")]
     [InlineData("/stats", "clear")]
@@ -335,7 +336,10 @@ public class SessionCommandTableTests
     {
         var c = SessionCommands.All.Single(x => x.Name == command);
 
-        Assert.Contains(c.Args, a => a.Name == argument);
+        // MATCHED ON THE LEADING VERB, because a row's name may carry its placeholder —
+        // `show <name>`, `resume <number|id>`, `agent single`. What this pins is that the dispatcher
+        // and the table agree on which subcommands EXIST, not on how a row is worded.
+        Assert.Contains(c.Args, a => a.Name == argument || a.Name.StartsWith(argument + " ", StringComparison.Ordinal));
     }
 
     /// <summary>A command that takes nothing says so, so the hint is meaningful when it appears.</summary>
@@ -368,8 +372,30 @@ public class SessionCommandTableTests
     {
         var mcp = SessionCommands.All.Single(c => c.Name == "/mcp");
 
-        Assert.False(mcp.Args.Single(a => a.Name == "<server>").Completes);
+        // `show <name>` CARRIES ITS PLACEHOLDER IN THE NAME, the same shape as
+        // `/sessions resume <number|id>` — the row reads as the whole phrase and the live server
+        // list fills the blank, so completing it would put "<name>" in the composer literally.
+        Assert.False(mcp.Args.Single(a => a.Name == "show <name>").Completes);
         Assert.True(mcp.Args.Single(a => a.Name == "reload").Completes);
+    }
+
+    // A ROW CARRYING A PLACEHOLDER IS SELECTABLE, and completes to the verb in front of it. These
+    // were display-only: the server list behind `show <name>` worked, but the only way to reach it
+    // was to type "show" by hand — the palette showed the word and refused to insert it. Completing
+    // the whole name would put "<name>" in the composer literally, which is the failure the
+    // non-completing flag existed to prevent; completing the prefix ends in a space, which is what
+    // makes the palette open its next level.
+    [Theory]
+    [InlineData("/mcp ", "show <name>", "/mcp show ")]
+    [InlineData("/mcp ", "login <name>", "/mcp login ")]
+    [InlineData("/sessions ", "resume <number|id>", "/sessions resume ")]
+    public void PlaceholderRows_CompleteToTheVerbBeforeThePlaceholder(
+        string typed, string rowName, string expected)
+    {
+        var command = SessionCommands.All.Single(c => c.Name == typed.TrimEnd());
+        var argument = command.Args.Single(a => a.Name == rowName);
+
+        Assert.Equal(expected, CommandMenu.CompletionFor(argument, typed.TrimEnd()));
     }
 
     // ---- the palette's second level ------------------------------------------------------------
@@ -382,7 +408,7 @@ public class SessionCommandTableTests
         var args = SessionCommands.ArgumentsFor("/mcp ");
 
         Assert.Contains(args, a => a.Name == "reload");
-        Assert.Contains(args, a => a.Name == "login");
+        Assert.Contains(args, a => a.Name == "login <name>");
     }
 
     [Fact]

@@ -44,6 +44,30 @@ public sealed class CommandMenu
     /// is a PLACEHOLDER row (<c>&lt;server&gt;</c>): shown so the argument is discoverable, but the
     /// value is the user's to type and filling the composer with angle brackets would be nonsense.
     /// </param>
+    /// <summary>
+    /// What choosing an argument row should put in the composer, or null when it should not.
+    ///
+    /// <para>A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. `show &lt;name&gt;`
+    /// and `login &lt;name&gt;` were unselectable: marked non-completing, so the one way to reach the
+    /// server list behind them was to type the verb by hand — the list worked, but only for someone
+    /// who already knew the word the palette was showing them.</para>
+    ///
+    /// <para>Completing the WHOLE name would put "&lt;name&gt;" in the composer literally, which is the
+    /// failure the non-completing flag exists to prevent. Completing the part before the placeholder
+    /// leaves a trailing space, which is exactly what makes the palette open its next level and offer
+    /// the live values.</para>
+    ///
+    /// <remarks>Public so it is testable without a live ConsoleWindowSystem — the same seam
+    /// <c>ChatTranscriptSink.Escape</c> uses.</remarks>
+    /// </summary>
+    public static string? CompletionFor(CommandArgument argument, string prefix)
+    {
+        var bracket = argument.Name.IndexOf('<');
+        if (bracket > 0) return $"{prefix} {argument.Name[..bracket]}";
+
+        return argument.Completes ? $"{prefix} {argument.Name}" : null;
+    }
+
     private readonly record struct Row(string Label, string Summary, string? Completion);
 
     private IReadOnlyList<Row> _shown = [];
@@ -118,6 +142,15 @@ public sealed class CommandMenu
         {
             var args = SessionCommands.ArgumentsFor(text, Values);
 
+        // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. `show <name>` and
+        // `login <name>` were unselectable: Completes:false made them display-only, so the one way to
+        // reach the server list behind them was to type the verb by hand — the list worked, but only
+        // for someone who already knew the word the palette was showing them.
+        //
+        // Completing the WHOLE name would put "<name>" in the composer literally, which is the
+        // failure Completes:false existed to prevent. Completing the part before the placeholder
+        // gives "…/mcp show " — a prefix with a trailing space, which is exactly what makes the
+        // palette open its next level and offer the servers.
             // THE PREFIX IS EVERYTHING ALREADY COMMITTED TO, not just the command name. At one level
             // down those are the same string; at two — "/sessions resume 3" — they are not, and
             // completing to "/sessions 3" would produce a command the dispatcher rejects.
@@ -125,7 +158,7 @@ public sealed class CommandMenu
             var prefix = text[..lastSpace];
 
             matches = [.. args.Select(a => new Row(
-                a.Name, a.Summary, a.Completes ? $"{prefix} {a.Name}" : null))];
+                a.Name, a.Summary, CompletionFor(a, prefix)))];
         }
         else
         {
@@ -222,7 +255,13 @@ public sealed class CommandMenu
                 //
                 // A completed choice is the one moment the menu must stay shut: the user has said
                 // which command they want, so the next Enter belongs to the submit path.
-                _suppressUntilEdit = true;
+                // NOT SUPPRESSED WHEN THE COMPLETION ENDS IN A SPACE. A row like `show <name>`
+                // completes to "/mcp show " precisely so the palette opens its next level and offers
+                // the servers; suppressing there left the user looking at a committed verb and no
+                // list, having to type a character and delete it to summon one. Suppression exists
+                // for a COMPLETE command — "/help" — where the next Enter belongs to the submit path
+                // and reopening would capture it.
+                _suppressUntilEdit = !picked.Completion.EndsWith(' ');
                 _chosenText = picked.Completion;
                 Chosen?.Invoke(this, picked.Completion);
                 return true;

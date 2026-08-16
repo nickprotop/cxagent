@@ -32,7 +32,12 @@ public static class SessionCommands
         new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow,
         [
             new("reload", "re-read config.json and reconnect"),
-            new("login", "authorise a server that needs OAuth"),
+            // VERB AND PLACEHOLDER IN ONE NAME, the same shape as `/sessions resume <number|id>`:
+            // the row reads as the whole phrase, and the live server list fills the blank. Not
+            // completable, because filling the composer with the literal "<name>" puts text there
+            // that is not a command.
+            new("login <name>", "authorise a server that needs OAuth", Completes: false,
+                Values: ValueSources.McpServers),
             // COMPLETABLE NOW. This said listing servers "would couple this static table to session
             // state" — true when the composition root resolved every value by hand, and no longer
             // true: the table names a SET and the manager, which owns the toolset, answers for it.
@@ -40,7 +45,7 @@ public static class SessionCommands
             //
             // THE LIVE SERVERS, not the names in config: one that failed to connect offers no tools,
             // and completing to it would send the user somewhere empty.
-            new("<server>", "inspect one server by name", Completes: false,
+            new("show <name>", "inspect one server", Completes: false,
                 Values: ValueSources.McpServers),
         ]),
         // NeedsWindow like /mcp: discovery reads the session's working directory, and this type
@@ -327,8 +332,25 @@ public static class SessionCommands
         if (words.Length == 0 || words[0].Equals("list", StringComparison.OrdinalIgnoreCase))
             return List(servers);
 
-        // A SERVER NAME IS THE OTHER NATURAL GUESS. "/mcp context7" reads as "tell me about
-        // context7", so it means that rather than being an unknown subcommand.
+        // `show <name>` IS THE SPELLED-OUT FORM, and it exists because the others are verbs. With
+        // only a bare name, `/mcp reload` and `/mcp context7` were parsed at different levels — one
+        // a subcommand, the other a fallthrough — which is why the palette could offer the verbs and
+        // the names but never both as one list.
+        if (words[0].Equals("show", StringComparison.OrdinalIgnoreCase))
+        {
+            if (words.Length < 2) return "Name a server: `/mcp show <name>`.";
+
+            var shown = servers.FirstOrDefault(s =>
+                s.Name.Equals(words[1], StringComparison.OrdinalIgnoreCase));
+
+            return shown is not null
+                ? Detail(shown, toolNames)
+                : $"No MCP server called '{words[1]}'.\n\n" + List(servers);
+        }
+
+        // A BARE NAME STILL WORKS. "/mcp context7" reads as "tell me about context7", and refusing
+        // the reading someone naturally reaches for teaches nothing — `show` is what the palette
+        // offers and what the help lists; this is the shortcut for people who skip both.
         var named = servers.FirstOrDefault(s =>
             s.Name.Equals(words[0], StringComparison.OrdinalIgnoreCase));
         if (named is not null) return Detail(named, toolNames);

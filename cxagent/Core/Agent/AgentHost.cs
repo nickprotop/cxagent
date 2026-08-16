@@ -479,8 +479,24 @@ public sealed class AgentHost : IDisposable
     ///
     /// <para>Null means they are the same, which is every other caller.</para>
     /// </param>
+    /// <summary>
+    /// True from the moment a turn is accepted until it ends, however it ends.
+    ///
+    /// <para>HERE BECAUSE THIS IS WHAT KNOWS. It was a bool local in the composition root, set on
+    /// either side of the call below — so anything asking "can this run now?" had to be inside that
+    /// method, and every guard was a UI guard over a fact about the agent. A second front end would
+    /// have had to reinvent the same flag around the same call.</para>
+    ///
+    /// <para>Volatile: written by whichever thread ran the turn, read by a UI thread deciding
+    /// whether to accept a command.</para>
+    /// </summary>
+    public bool IsBusy => Volatile.Read(ref _busy);
+
+    private bool _busy;
+
     public async Task SendAsync(string prompt, CancellationToken ct, string? echo = null)
     {
+        Volatile.Write(ref _busy, true);
         try
         {
             _sink.UserTurnAdded(NextTurnId(), echo ?? prompt);
@@ -496,6 +512,13 @@ public sealed class AgentHost : IDisposable
         catch (Exception ex)
         {
             _sink.Failed(ex.Message);   // residual fault → visible, not an unobserved faulted task
+        }
+        finally
+        {
+            // RELEASED HOWEVER IT ENDS, including the cancellation that rethrows above: a turn that
+            // died leaving this set would refuse every later command and look hung — the failure the
+            // guard exists to prevent, caused by the guard.
+            Volatile.Write(ref _busy, false);
         }
     }
 
