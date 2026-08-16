@@ -74,7 +74,10 @@ public static class PatternMatcher
                 start = lineStart;
             }
 
-            found.Add(new PatternMatch(start, length, whole));
+            // A ZERO-LENGTH SPAN IS NOT A MATCH, wherever it comes from. The exact pass produces one
+            // for a pattern that is a single newline at the end of the file: nothing to replace, and
+            // counting it makes an otherwise unambiguous edit "appear 2 times".
+            if (length > 0) found.Add(new PatternMatch(start, length, whole));
         }
 
         // The exact pass does NOT short-circuit. Tempting, and wrong: a file holding both
@@ -110,7 +113,18 @@ public static class PatternMatcher
             var length = 0;
             for (var k = 0; k < patternLines.Length; k++) length += textLines[i + k].Length + 1;
 
-            var span = new PatternMatch(start, Math.Min(length - 1, text.Length - start), WholeLines: true);
+            // CLAMPED AT ZERO, not just at the remaining text. `text.Length - start` goes NEGATIVE
+            // when a pattern's trailing newline puts the span's start past the end of the file, and
+            // PatternMatch then reached Substring with length -1: `replace` with pattern "\n" came
+            // back to the model as "length ('-1') must be a non-negative value. (Parameter
+            // 'length')" — an internal argument name, describing nothing it could act on.
+            var available = Math.Max(0, text.Length - start);
+            var span = new PatternMatch(start, Math.Min(length - 1, available), WholeLines: true);
+
+            // A ZERO-LENGTH SPAN IS NOT A MATCH. It arises from a pattern that squashes to nothing
+            // against a blank line, and counting it makes an otherwise unambiguous edit "appear 2
+            // times" — a refusal caused entirely by an empty span nobody could have meant.
+            if (span.Length == 0) continue;
 
             // An exact whole-line hit was already normalised to this same span, so it would appear
             // twice and turn a single unambiguous edit into a refusal.
@@ -126,7 +140,13 @@ public static class PatternMatcher
     /// </summary>
     private static bool CoversWholeLines(string text, int start, int length)
     {
-        var lineStart = text.LastIndexOf('\n', Math.Max(0, Math.Min(start, text.Length - 1))) + 1;
+        // NEVER PAST `start`. LastIndexOf searches AT the index too, so a match that begins on a
+        // newline finds that same newline and yields lineStart = start + 1 — and the slice below
+        // became text[start+1..start], which throws "length ('-1') must be a non-negative value".
+        // A model that sent pattern "\n" got that sentence back as its tool result.
+        var lineStart = Math.Min(
+            text.LastIndexOf('\n', Math.Max(0, Math.Min(start, text.Length - 1))) + 1,
+            start);
 
         // Only whitespace before it on its line: the span starts the line's content.
         if (text[lineStart..start].Trim().Length > 0) return false;

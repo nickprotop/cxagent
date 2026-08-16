@@ -6,7 +6,8 @@ namespace CxAgent.Core.Plugins.Builtin;
 public class FileJobPlugin : IJobPlugin
 {
     private static readonly HashSet<string> Actions =
-        new() { "read", "write", "append", "delete", "copy", "move", "list", "search", "replace" };
+        new() { "read", "write", "append", "delete", "copy", "move", "list", "search", "replace",
+                "create" };
 
     public string TypeName => "file";
     public string DisplayName => "File Operation";
@@ -14,7 +15,7 @@ public class FileJobPlugin : IJobPlugin
     public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
     {
         new JobParamSpec("action", "string", Required: true,
-            "read|write|append|delete|copy|move|list|search|replace"),
+            "read|write|append|delete|copy|move|list|search|replace|create"),
         // "Target file path" for EVERY action, including list and search, where it is a DIRECTORY.
         // One schema serves six actions, so the one description has to say where they differ — and
         // the omission is not theoretical: an agent put a glob here ({"path": "**/*"}) because the
@@ -84,7 +85,7 @@ public class FileJobPlugin : IJobPlugin
         // optional narrowing.
         if (string.IsNullOrWhiteSpace(path) && action is not ("list" or "search"))
             errors.Add("'path' is required.");
-        if (action is "write" or "append" && parameters.Get<string?>("content", null) is null)
+        if (action is "write" or "append" or "create" && parameters.Get<string?>("content", null) is null)
             errors.Add($"'content' is required for action '{action}'.");
         if (action == "replace")
         {
@@ -129,9 +130,22 @@ public class FileJobPlugin : IJobPlugin
         // Whole-file read stays a single ReadAllTextAsync: it is the common case, and streaming
         // lines would change the exact bytes returned (a file with no trailing newline would gain
         // one) for callers that never asked for a window.
+        // READ THROUGH THE SERVICE, so a BOM'd file's text reads the same here as it does to the
+        // matcher — the BOM is stripped either way and never reaches the model as a stray U+FEFF at
+        // the start of the first line.
+        var snapshot = await FileMutation.ReadAsync(path, ct);
+
+        // MISSING IS NOT EMPTY. The service reports absence rather than throwing, which is right for
+        // a writer — a write to a new path is ordinary. For a READ it is not: returning "" would tell
+        // the model the file exists and is empty, and it would reason from that. The framework's own
+        // message names the path, which is what a model needs to fix a typo.
+        if (!snapshot.Existed)
+            throw new FileNotFoundException($"Could not find file '{path}'.", path);
+
+        var text = snapshot.Text;
+
         if (offset is null && limit is null)
         {
-            var text = await File.ReadAllTextAsync(path, ct);
             output["content"] = text;
             output["total_lines"] = CountLines(text);
             return;
@@ -499,7 +513,24 @@ public class FileJobPlugin : IJobPlugin
     {
         var pattern = parameters.Get<string>("pattern");
         var replacement = parameters.Get<string>("replacement");
-        var text = await File.ReadAllTextAsync(path, ct);
+
+        // IDENTICAL IS NOT AN EDIT. This wrote the file and reported "replaced 1 occurrence
+        // (indentation adjusted to match the file)" — success, with a note implying something
+        // changed, for an operation that changed nothing. A model reading that has been told its
+        // edit landed and will move on; the reason it sent the same text twice (a mis-copied
+        // replacement, a rewrite it thought it had made) goes unexamined. opencode refuses the same
+        // case for the same reason.
+        if (string.Equals(pattern, replacement, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "'pattern' and 'replacement' are identical, so this would change nothing. If you "
+                + "meant to edit the file, send the text you want it to say instead. Nothing was "
+                + "written.");
+
+        // READ THROUGH THE SERVICE, so the conventions this edit must restore come from the SAME
+        // read its content is computed against — and so the write below can tell whether the file
+        // moved underneath it.
+        var snapshot = await FileMutation.ReadAsync(path, ct);
+        var text = snapshot.Text;
 
         var match = FindSingleMatch(text, pattern, path);
         var (first, matchLength) = (match.Start, match.Length);
@@ -531,11 +562,15 @@ public class FileJobPlugin : IJobPlugin
         // caught live: HexEncoder.cs went from EF BB BF to 2F 2F on a two-line insertion. In a C#
         // repo that is a spurious diff on every file an implementer touches, and the kind of change
         // nobody attributes to the agent that made it.
-        var hadBom = await StartsWithBomAsync(path, ct);
-        var encoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: hadBom);
-
-        await File.WriteAllTextAsync(path,
-            text[..first] + replacement + text[(first + matchLength)..], encoding, ct);
+        // CONDITIONALLY, because this is a read-modify-write and the file may have moved underneath
+        // it. The per-path lock covers agents inside this process; it says nothing about the user's
+        // editor, a formatter or a git checkout. Applying an edit computed from content that no
+        // longer exists succeeds, reports success, and silently reverts whatever happened in
+        // between. The service restores the BOM and line endings from the snapshot this edit was
+        // computed against — see FileMutation for why both have to come from the file rather than
+        // from the replacement.
+        var result = text[..first] + replacement + text[(first + matchLength)..];
+        await FileMutation.WriteIfUnchangedAsync(path, result, snapshot, ct);
 
         // SHOW WHAT LANDED. The old result said only "replaced 1 occurrence", so a model with any
         // doubt about its edit had exactly one way to check: shell out. Measured live — an agent
@@ -614,6 +649,66 @@ public class FileJobPlugin : IJobPlugin
         return s[from..i];
     }
 
+    /// <summary>
+    /// Writes a file, keeping the UTF-8 BOM it already had.
+    ///
+    /// <para>THE SAME BUG REPLACE ALREADY FIXED, arriving through the other door. That path preserves
+    /// the BOM because a live drive turned HexEncoder.cs from EF BB BF into 2F 2F on a two-line
+    /// insertion — a spurious diff on every touched file in a C# repo, and one nobody attributes to
+    /// the agent that made it. The fix went into ReplaceAsync only, so overwriting the SAME file with
+    /// write_file stripped it again: identical symptom, different tool, and which one the model
+    /// happened to pick decided whether the repo stayed clean.</para>
+    ///
+    /// <para>WHAT THE FILE HAD, not what the content carries. A model reproducing a file it read
+    /// cannot see the BOM (ReadAllTextAsync strips it), so the content it sends never has one and
+    /// asking the content would always answer "no". The bytes on disk are the only witness.</para>
+    ///
+    /// <para>Returns whether the file already existed, which the caller reports: "created" and
+    /// "overwrote" are different events and a model that clobbered a file it meant to create has no
+    /// other way to find out.</para>
+    /// </summary>
+    private static async Task<bool> WritePreservingBomAsync(string path, string content,
+        bool append, CancellationToken ct)
+    {
+        var existed = File.Exists(path);
+
+        // A NEW FILE GETS NO BOM, and an appended one keeps whatever it had — appending must never
+        // insert a BOM into the middle of a file, which is what encoding a fresh UTF8Encoding(true)
+        // onto an append stream would do.
+        var hadBom = existed && await StartsWithBomAsync(path, ct);
+        var encoding = new System.Text.UTF8Encoding(
+            encoderShouldEmitUTF8Identifier: hadBom && !append);
+
+        // THE FILE'S LINE ENDINGS TOO, the same reasoning as the BOM and as ReplaceAsync's. A model
+        // reproducing a file it read sends bare \n, because a tool result cannot show it otherwise;
+        // writing that over a CRLF file rewrites every line in the diff. A file that does not exist
+        // yet has no convention to keep, so its content goes through untouched.
+        if (existed && await UsesCrlfAsync(path, ct))
+            content = content.Replace("\r\n", "\n", StringComparison.Ordinal)
+                             .Replace("\n", "\r\n", StringComparison.Ordinal);
+
+        EnsureParentDirectory(path);
+        if (append)
+            await File.AppendAllTextAsync(path, content, encoding, ct);
+        else
+            await File.WriteAllTextAsync(path, content, encoding, ct);
+
+        return existed;
+    }
+
+
+    /// <summary>Whether the file already uses CRLF, read from disk because the content a model sends
+    /// never does — see the callers for why that matters.</summary>
+    private static async Task<bool> UsesCrlfAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            var text = await File.ReadAllTextAsync(path, ct);
+            return text.Contains("\r\n", StringComparison.Ordinal);
+        }
+        catch (Exception) { return false; }
+    }
+
     /// <summary>Whether the file begins with a UTF-8 BOM. Read from the BYTES, not from
     /// ReadAllTextAsync — that strips the BOM silently, so the text alone cannot tell you whether
     /// there was one.</summary>
@@ -659,6 +754,16 @@ public class FileJobPlugin : IJobPlugin
     /// </summary>
     private static PatternMatch FindSingleMatch(string text, string pattern, string path)
     {
+        // WHITESPACE IS NOT A TARGET. The matcher squashes whitespace deliberately, so a pattern
+        // made only of it describes every blank line at once and nothing in particular — and a model
+        // that sent one meant something it did not manage to express. Refused with a sentence it can
+        // act on, rather than a count of matches it never intended.
+        if (pattern.Trim().Length == 0)
+            throw new InvalidOperationException(
+                "'pattern' is only whitespace, which matches nothing in particular — indentation and "
+                + "blank lines are deliberately ignored when matching. Send the text of the lines to "
+                + "change. Nothing was written.");
+
         var matches = PatternMatcher.FindAll(text, pattern);
 
         if (matches.Count == 0)
@@ -672,9 +777,46 @@ public class FileJobPlugin : IJobPlugin
             throw new InvalidOperationException(
                 $"'pattern' appears {matches.Count} times in {path}, so which one to change is "
                 + "ambiguous. Include enough surrounding lines to make it unique. Nothing was "
-                + "written.");
+                + "written."
+                // WHERE THEY ARE, not just how many. The not-found case already shows candidate
+                // lines (NearestLines); this one said "appears 7 times" and stopped, leaving the
+                // model to invent seven disambiguating patterns against a file it must now re-read.
+                //
+                // This is also the answer to replaceAll, which was declined deliberately: a flag
+                // that rewrites every match at once is the same edit with the review removed, and
+                // the tolerant matcher makes its blast radius genuinely hard to predict — `count`
+                // matches inside string literals and comments too. Showing the sites keeps each edit
+                // individually aimed and reviewable, which is the property worth keeping, while
+                // removing most of what made refusing expensive.
+                + MatchSites(text, matches));
 
         return matches[0];
+    }
+
+    /// <summary>
+    /// Where an ambiguous pattern matched — line numbers and the line itself, capped.
+    ///
+    /// <para>Capped at five because the point is to let the model AIM, not to reproduce the file: a
+    /// pattern matching forty times is one the model should reconsider rather than disambiguate, and
+    /// forty lines of tool result spends context to say so.</para>
+    /// </summary>
+    private static string MatchSites(string text, IReadOnlyList<PatternMatch> matches)
+    {
+        var normalised = text.Replace("\r\n", "\n");
+        var shown = new List<string>();
+
+        foreach (var m in matches.Take(5))
+        {
+            // The line a match starts on: count the newlines before it.
+            var upto = Math.Min(m.Start, normalised.Length);
+            var line = normalised.AsSpan(0, upto).Count('\n') + 1;
+            var lineText = normalised.Split('\n').ElementAtOrDefault(line - 1)?.Trim() ?? "";
+            shown.Add($"  line {line}: {(lineText.Length > 100 ? lineText[..100] + "…" : lineText)}");
+        }
+
+        if (matches.Count > shown.Count) shown.Add($"  … and {matches.Count - shown.Count} more");
+
+        return "\n\nIt matches at:\n" + string.Join('\n', shown);
     }
 
     /// <summary>
@@ -797,37 +939,94 @@ public class FileJobPlugin : IJobPlugin
             var path = Resolve(requested, context);
 
             var output = new Dictionary<string, object?>();
-            switch (action)
+
+            // SERIALISED PER FILE for anything that MUTATES one. Reads and searches are left free:
+            // they cannot corrupt anything, and locking them would serialise the common case to
+            // guard against nothing.
+            //
+            // AROUND THE WHOLE ACTION, not just the write. `replace` is read-modify-write, so a lock
+            // held only across the write leaves exactly the race worth closing — both agents read
+            // the same text, both match, and the second computes its edit from a version that no
+            // longer exists by the time it writes.
+            //
+            // The lock is on the RESOLVED path. copy and move touch a second file, and taking two
+            // locks is how deadlock arrives (A→B in one agent, B→A in another); the source is the
+            // one being read and is the one that matters here.
+            // SERIALISED PER FILE for anything that MUTATES one, through FileMutation — the lock
+            // table is a process-wide fact about paths, so it belongs with the writer rather than
+            // here. Reads and searches are left free: they cannot corrupt anything, and locking them
+            // would serialise the common case to guard against nothing.
+            var mutates = action is not ("read" or "list" or "search");
+            var gate = mutates ? FileMutation.LockHandleFor(path) : null;
+            if (gate is not null) await gate.WaitAsync(ct);
+            try
             {
-                case "read":
-                    await ReadAsync(path, parameters, output, ct);
-                    break;
-                case "list":
-                    ListInto(path, parameters, output);
-                    break;
-                case "search":
-                    await SearchIntoAsync(path, parameters, output, ct);
-                    break;
-                case "replace":
-                    await ReplaceAsync(path, parameters, output, ct);
-                    break;
-                case "write":
-                    EnsureParentDirectory(path);
-                    await File.WriteAllTextAsync(path, parameters.Get<string>("content"), ct);
-                    break;
-                case "append":
-                    EnsureParentDirectory(path);
-                    await File.AppendAllTextAsync(path, parameters.Get<string>("content"), ct);
-                    break;
-                case "delete":
-                    File.Delete(path);
-                    break;
-                case "copy":
-                    File.Copy(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
-                    break;
-                case "move":
-                    File.Move(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
-                    break;
+                switch (action)
+                {
+                    case "read":
+                        await ReadAsync(path, parameters, output, ct);
+                        break;
+                    case "list":
+                        ListInto(path, parameters, output);
+                        break;
+                    case "search":
+                        await SearchIntoAsync(path, parameters, output, ct);
+                        break;
+                    case "replace":
+                        await ReplaceAsync(path, parameters, output, ct);
+                        break;
+                    case "create":
+                    {
+                        // CREATE MEANS NEW. Refused rather than falling back to a write: the caller
+                        // said "this file should not exist yet", and quietly overwriting turns a
+                        // stated expectation into a silent replacement.
+                        var made = await FileMutation.CreateNewAsync(
+                            path, parameters.Get<string>("content"), ct);
+                        if (!made)
+                            return new JobResult
+                            {
+                                Success = false,
+                                ErrorMessage = $"{path} already exists, and 'create' will not replace "
+                                             + "a file. Read it first, then use write_file if "
+                                             + "replacing it is what you meant. Nothing was written.",
+                            };
+                        output["created"] = true;
+                        output["content"] = $"created {path}";
+                        break;
+                    }
+                    case "write":
+                    {
+                        var existed = await WritePreservingBomAsync(
+                            path, parameters.Get<string>("content"), append: false, ct);
+                        // CREATED OR OVERWROTE, said out loud. The result used to carry neither, so an
+                        // agent that meant to create a file and silently replaced one had nothing in the
+                        // tool result to notice it by.
+                        output["created"] = !existed;
+                        output["content"] = existed ? $"overwrote {path}" : $"created {path}";
+                        break;
+                    }
+                    case "append":
+                    {
+                        var existed = await WritePreservingBomAsync(
+                            path, parameters.Get<string>("content"), append: true, ct);
+                        output["created"] = !existed;
+                        output["content"] = existed ? $"appended to {path}" : $"created {path}";
+                        break;
+                    }
+                    case "delete":
+                        File.Delete(path);
+                        break;
+                    case "copy":
+                        File.Copy(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
+                        break;
+                    case "move":
+                        File.Move(path, Resolve(parameters.Get<string>("dest"), context), overwrite: true);
+                        break;
+                }
+            }
+            finally
+            {
+                gate?.Release();
             }
             context.Log($"file {action}: {path}");
             return new JobResult { Success = true, ExitCode = 0, Output = output, Duration = DateTimeOffset.UtcNow - start };

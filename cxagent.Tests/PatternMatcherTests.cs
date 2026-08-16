@@ -195,4 +195,36 @@ public class PatternMatcherTests
         Assert.Equal(0, m[0].Start);                       // the line start
         Assert.Equal("\t\tvar a = 1;", text.Substring(m[0].Start, m[0].Length));
     }
+
+    // A NEWLINE-ONLY PATTERN CRASHED THE MATCHER. The span's start could land past the end of the
+    // file, so `text.Length - start` went negative and PatternMatch reached Substring with -1 — the
+    // model got back "length ('-1') must be a non-negative value. (Parameter 'length')", an internal
+    // argument name describing nothing it could act on.
+    [Fact]
+    public void ANewlineOnlyPatternDoesNotThrow()
+    {
+        var matches = PatternMatcher.FindAll("class A\n{\n}\n", "\n");
+        Assert.All(matches, m => Assert.True(m.Length > 0));
+    }
+
+    // A ZERO-LENGTH SPAN IS NOT A MATCH. It came from a pattern squashing to nothing against a blank
+    // line, and counting it turned an otherwise unambiguous edit into "appears 2 times".
+    [Fact]
+    public void AWhitespacePatternProducesNoEmptySpans()
+    {
+        foreach (var pattern in new[] { "   ", " ", "\t" })
+            Assert.All(PatternMatcher.FindAll("a\n   \nb\n", pattern), m => Assert.True(m.Length > 0));
+    }
+
+    [Fact]
+    public void EverySpanIsSliceableFromTheText()
+    {
+        const string text = "one\n\ntwo\n   \nthree\n";
+        foreach (var pattern in new[] { "\n", "  ", "two", "one\n\ntwo" })
+            foreach (var m in PatternMatcher.FindAll(text, pattern))
+            {
+                Assert.InRange(m.Start, 0, text.Length);
+                Assert.InRange(m.Start + m.Length, 0, text.Length);
+            }
+    }
 }

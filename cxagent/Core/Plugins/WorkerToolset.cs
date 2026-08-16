@@ -137,8 +137,23 @@ public static class WorkerToolset
                        + "matching a glob. Use this rather than run_shell with grep or rg — it "
                        + "needs no approval.",
             Aliases: ["search_files"])),
+        // NO DESCRIPTION AT ALL until now, so the model was told this tool is a "File Operation" —
+        // the plugin's DisplayName, which serves six actions. The one tool that can destroy work
+        // silently was the one with nothing said about it.
+        //
+        // MOST OF IT IS WHEN NOT TO, the same shape as the spawn tool's. Overwriting is the failure
+        // that costs the most and announces itself the least: the write succeeds, the tool reports
+        // success, and the content that was there is simply gone.
         (WorkerTool.WriteFile, new ToolSpec("write_file", "file", "write",
-            Params: ["path", "content"], Required: ["path", "content"])),
+            Params: ["path", "content"], Required: ["path", "content"],
+            Description: "Write a whole file, creating it or REPLACING everything in it. Parent "
+                       + "directories are created for you. To change part of a file that already "
+                       + "exists, use replace_in_file instead — a whole-file write means "
+                       + "reproducing every line you are not changing, and any one of them you "
+                       + "misremember is a silent edit nobody asked for. If you do overwrite an "
+                       + "existing file, read it first: what it currently holds is the only thing "
+                       + "that tells you whether replacing it is what you meant. The result says "
+                       + "whether it created or overwrote.")),
         // Producers only: replace EDITS an existing file. write_file is whole-file, so changing one
         // function meant reproducing every other line from memory.
         (WorkerTool.ReplaceInFile, new ToolSpec("replace_in_file", "file", "replace",

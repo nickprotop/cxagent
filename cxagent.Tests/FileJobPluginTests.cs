@@ -30,6 +30,339 @@ public class FileJobPluginTests : IDisposable
         Assert.Equal("hello file", (string)read.Output["content"]!);
     }
 
+    // THE BUG REPLACE ALREADY FIXED, through the other door. ReplaceAsync preserves a UTF-8 BOM
+    // because a live drive turned HexEncoder.cs from EF BB BF into 2F 2F on a two-line insertion;
+    // write_file stripped it again, so which tool the model happened to pick decided whether the
+    // repo picked up a spurious diff.
+    [Fact]
+    public async Task Write_KeepsTheBomAFileAlreadyHad()
+    {
+        var path = Path.Combine(_dir, "bom.cs");
+        await File.WriteAllBytesAsync(path, [0xEF, 0xBB, 0xBF, .. "old"u8.ToArray()]);
+
+        var r = await Run(("action", "write"), ("path", path), ("content", "new content"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var bytes = await File.ReadAllBytesAsync(path);
+        Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
+        Assert.Equal("new content", await File.ReadAllTextAsync(path));
+    }
+
+    // AND DOES NOT ADD ONE. A file without a BOM must not acquire one, or the same spurious diff
+    // appears from the opposite direction.
+    [Fact]
+    public async Task Write_DoesNotAddABomToAFileThatHadNone()
+    {
+        var path = Path.Combine(_dir, "plain.cs");
+        await File.WriteAllTextAsync(path, "old");
+
+        await Run(("action", "write"), ("path", path), ("content", "new"));
+
+        var bytes = await File.ReadAllBytesAsync(path);
+        Assert.NotEqual(0xEF, bytes[0]);
+    }
+
+    [Fact]
+    public async Task Write_ANewFileGetsNoBom()
+    {
+        var path = Path.Combine(_dir, "fresh.cs");
+
+        await Run(("action", "write"), ("path", path), ("content", "hello"));
+
+        var bytes = await File.ReadAllBytesAsync(path);
+        Assert.NotEqual(0xEF, bytes[0]);
+    }
+
+    // APPEND MUST NEVER INSERT A BOM MID-FILE, which is what encoding one onto an append stream
+    // would do — the marker only means anything as the first three bytes.
+    [Fact]
+    public async Task Append_NeverWritesABomIntoTheMiddle()
+    {
+        var path = Path.Combine(_dir, "bom-append.cs");
+        await File.WriteAllBytesAsync(path, [0xEF, 0xBB, 0xBF, .. "first\n"u8.ToArray()]);
+
+        await Run(("action", "append"), ("path", path), ("content", "second\n"));
+
+        var bytes = await File.ReadAllBytesAsync(path);
+        Assert.Equal([0xEF, 0xBB, 0xBF], bytes[..3]);
+
+        // EXACTLY ONE, at the front. The marker means nothing anywhere else, so a second copy
+        // between the two writes would be corruption that still starts with the right three bytes.
+        var occurrences = bytes.Where((_, i) => i + 2 < bytes.Length
+            && bytes[i] == 0xEF && bytes[i + 1] == 0xBB && bytes[i + 2] == 0xBF).Count();
+        Assert.Equal(1, occurrences);
+        Assert.EndsWith("first\nsecond\n", System.Text.Encoding.UTF8.GetString(bytes));
+    }
+
+    // CREATED AND OVERWROTE ARE DIFFERENT EVENTS. An agent that meant to create a file and silently
+    // replaced one had nothing in the result to notice it by.
+    [Fact]
+    public async Task Write_SaysWhetherItCreatedOrOverwrote()
+    {
+        var path = Path.Combine(_dir, "twice.txt");
+
+        var first = await Run(("action", "write"), ("path", path), ("content", "one"));
+        Assert.True((bool)first.Output["created"]!);
+        Assert.Contains("created", (string)first.Output["content"]!);
+
+        var second = await Run(("action", "write"), ("path", path), ("content", "two"));
+        Assert.False((bool)second.Output["created"]!);
+        Assert.Contains("overwrote", (string)second.Output["content"]!);
+    }
+
+    // A CRLF FILE MUST STAY CRLF. The model sends \n (it cannot see line endings in a tool result,
+    // and reproduces what it read), so a multi-line replacement splices LF into a CRLF file and
+    // leaves it mixed — the same class of invisible, unattributable diff as the BOM.
+    [Fact]
+    public async Task Replace_KeepsTheFilesOwnLineEndings()
+    {
+        var path = Path.Combine(_dir, "crlf.cs");
+        await File.WriteAllTextAsync(path, "class A\r\n{\r\n    void Old()\r\n    {\r\n    }\r\n}\r\n");
+
+        var r = await Run(("action", "replace"), ("path", path),
+            ("pattern", "    void Old()\n    {\n    }"),
+            ("replacement", "    void New()\n    {\n        Go();\n    }"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        var text = await File.ReadAllTextAsync(path);
+        Assert.Contains("void New()", text);
+        // No bare LF anywhere: every \n must be preceded by \r.
+        Assert.DoesNotContain("\n", text.Replace("\r\n", ""));
+    }
+
+    [Fact]
+    public async Task Write_KeepsTheFilesOwnLineEndings()
+    {
+        var path = Path.Combine(_dir, "crlf-write.cs");
+        await File.WriteAllTextAsync(path, "old\r\nlines\r\n");
+
+        await Run(("action", "write"), ("path", path), ("content", "new\nlines\nhere\n"));
+
+        var text = await File.ReadAllTextAsync(path);
+        Assert.DoesNotContain("\n", text.Replace("\r\n", ""));
+    }
+
+    // A FILE THAT DOES NOT EXIST HAS NO CONVENTION TO KEEP, so its content goes through untouched —
+    // inventing CRLF for a new file on a Unix checkout would be its own spurious diff.
+    [Fact]
+    public async Task Write_ANewFileKeepsTheContentsOwnEndings()
+    {
+        var path = Path.Combine(_dir, "fresh-lf.cs");
+
+        await Run(("action", "write"), ("path", path), ("content", "a\nb\n"));
+
+        Assert.Equal("a\nb\n", await File.ReadAllTextAsync(path));
+    }
+
+    // TWO AGENTS, ONE FILE. cxagent runs sub-agents concurrently and they share one plugin instance
+    // through the parent's registry, so a read-modify-write from each can interleave: both read the
+    // same text, both match, and the second writes an edit computed from a version that no longer
+    // exists — silently, with both reporting success.
+    [Fact]
+    public async Task Replace_ConcurrentEditsToOneFile_DoNotLoseEachOther()
+    {
+        var path = Path.Combine(_dir, "shared.cs");
+        await File.WriteAllTextAsync(path, "alpha\nbravo\n");
+
+        var plugin = new FileJobPlugin();
+        var one = plugin.ExecuteAsync(
+            P(("action", "replace"), ("path", path), ("pattern", "alpha"), ("replacement", "ALPHA")),
+            Ctx, CancellationToken.None);
+        var two = plugin.ExecuteAsync(
+            P(("action", "replace"), ("path", path), ("pattern", "bravo"), ("replacement", "BRAVO")),
+            Ctx, CancellationToken.None);
+
+        var results = await Task.WhenAll(one, two);
+        Assert.All(results, r => Assert.True(r.Success, r.ErrorMessage));
+
+        // BOTH EDITS SURVIVE. Without the lock one overwrites the other and this file holds exactly
+        // one of the two changes.
+        var text = await File.ReadAllTextAsync(path);
+        Assert.Contains("ALPHA", text);
+        Assert.Contains("BRAVO", text);
+    }
+
+    // Unrelated files must still proceed in parallel: the lock is per path, not one global mutex.
+    [Fact]
+    public async Task Writes_ToDifferentFiles_AreNotSerialisedAgainstEachOther()
+    {
+        var plugin = new FileJobPlugin();
+        var tasks = Enumerable.Range(0, 8).Select(i => plugin.ExecuteAsync(
+            P(("action", "write"), ("path", Path.Combine(_dir, $"p{i}.txt")), ("content", $"{i}")),
+            Ctx, CancellationToken.None));
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.All(results, r => Assert.True(r.Success, r.ErrorMessage));
+        for (var i = 0; i < 8; i++)
+            Assert.Equal($"{i}", await File.ReadAllTextAsync(Path.Combine(_dir, $"p{i}.txt")));
+    }
+
+    // WHITESPACE IS NOT A TARGET, and saying so beats reporting a match count the model never meant.
+    // Before this, `replace` with pattern "\n" returned "length ('-1') must be a non-negative value.
+    // (Parameter 'length')" — an internal argument name, useless to the caller.
+    [Fact]
+    public async Task Replace_AWhitespaceOnlyPattern_IsRefusedWithSomethingActionable()
+    {
+        var path = Path.Combine(_dir, "ws.cs");
+        await File.WriteAllTextAsync(path, "class A\n{\n}\n");
+
+        var r = await Run(("action", "replace"), ("path", path),
+            ("pattern", "\n"), ("replacement", "\n\n"));
+
+        Assert.False(r.Success);
+        Assert.Contains("only whitespace", r.ErrorMessage!);
+        Assert.Contains("Nothing was written", r.ErrorMessage!);
+        Assert.Equal("class A\n{\n}\n", await File.ReadAllTextAsync(path));
+    }
+
+    // IDENTICAL IS NOT AN EDIT. This used to report "replaced 1 occurrence (indentation adjusted to
+    // match the file)" — success, with a note implying a change, for an operation that made none.
+    [Fact]
+    public async Task Replace_WithAnIdenticalReplacement_IsRefused()
+    {
+        var path = Path.Combine(_dir, "same.cs");
+        await File.WriteAllTextAsync(path, "class A\n{\n    void Go() { }\n}\n");
+
+        var r = await Run(("action", "replace"), ("path", path),
+            ("pattern", "void Go() { }"), ("replacement", "void Go() { }"));
+
+        Assert.False(r.Success);
+        Assert.Contains("identical", r.ErrorMessage!);
+        Assert.Contains("Nothing was written", r.ErrorMessage!);
+    }
+
+    // THE LOCK IS NOT ENOUGH ON ITS OWN. It serialises agents inside this process; the file can still
+    // move underneath an edit for reasons the process cannot see — the user's editor, a formatter, a
+    // git checkout. Applying an edit computed from content that no longer exists succeeds silently
+    // and reverts whatever happened in between.
+    [Fact]
+    public async Task WriteIfUnchanged_RefusesAnEditComputedFromContentThatMoved()
+    {
+        var path = Path.Combine(_dir, "moved.cs");
+        await File.WriteAllTextAsync(path, "original\n");
+
+        var read = await FileMutation.ReadAsync(path, CancellationToken.None);
+
+        // Something else edits it between the read and the write.
+        await File.WriteAllTextAsync(path, "someone else's work\n");
+
+        await Assert.ThrowsAsync<StaleContentException>(() =>
+            FileMutation.WriteIfUnchangedAsync(path, "my edit\n", read, CancellationToken.None));
+
+        // AND NOTHING WAS WRITTEN: the other change survives intact.
+        Assert.Equal("someone else's work\n", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task WriteIfUnchanged_WritesWhenTheFileIsStillWhatWasRead()
+    {
+        var path = Path.Combine(_dir, "stable.cs");
+        await File.WriteAllTextAsync(path, "original\n");
+
+        var read = await FileMutation.ReadAsync(path, CancellationToken.None);
+        await FileMutation.WriteIfUnchangedAsync(path, "edited\n", read, CancellationToken.None);
+
+        Assert.Equal("edited\n", await File.ReadAllTextAsync(path));
+    }
+
+    // The message has to tell the model what to DO. "Read it again and redo the edit" is actionable;
+    // a bare "stale content" is not.
+    [Fact]
+    public async Task StaleContent_SaysWhatToDoAboutIt()
+    {
+        var path = Path.Combine(_dir, "msg.cs");
+        await File.WriteAllTextAsync(path, "one\n");
+        var read = await FileMutation.ReadAsync(path, CancellationToken.None);
+        await File.WriteAllTextAsync(path, "two\n");
+
+        var ex = await Assert.ThrowsAsync<StaleContentException>(() =>
+            FileMutation.WriteIfUnchangedAsync(path, "three\n", read, CancellationToken.None));
+
+        Assert.Contains("changed on disk", ex.Message);
+        Assert.Contains("Nothing was written", ex.Message);
+        Assert.Contains("Read the file again", ex.Message);
+    }
+
+    // AMBIGUITY NOW SAYS WHERE. It said "appears 3 times" and stopped, leaving the model to invent
+    // three disambiguating patterns against a file it had to re-read. This is also the answer to
+    // replaceAll, declined deliberately: showing the sites keeps each edit individually aimed and
+    // reviewable while removing most of what made refusing expensive.
+    [Fact]
+    public async Task Replace_AnAmbiguousPattern_SaysWhereItMatched()
+    {
+        var path = Path.Combine(_dir, "many.cs");
+        await File.WriteAllTextAsync(path,
+            "class A\n{\n    int count;\n    void Go() { count++; }\n    void Stop() { count--; }\n}\n");
+
+        var r = await Run(("action", "replace"), ("path", path),
+            ("pattern", "count"), ("replacement", "total"));
+
+        Assert.False(r.Success);
+        Assert.Contains("appears 3 times", r.ErrorMessage!);
+        Assert.Contains("It matches at:", r.ErrorMessage!);
+        Assert.Contains("line 3:", r.ErrorMessage!);
+        Assert.Contains("line 5:", r.ErrorMessage!);
+        Assert.Contains("Nothing was written", r.ErrorMessage!);
+    }
+
+    // CAPPED, because the point is to let the model AIM rather than to reproduce the file: a pattern
+    // matching forty times is one to reconsider, not to disambiguate.
+    [Fact]
+    public async Task Replace_ManyMatches_ShowsAFewAndCountsTheRest()
+    {
+        var path = Path.Combine(_dir, "lots.cs");
+        await File.WriteAllTextAsync(path,
+            string.Concat(Enumerable.Range(0, 9).Select(i => $"var x{i} = same;\n")));
+
+        var r = await Run(("action", "replace"), ("path", path),
+            ("pattern", "same"), ("replacement", "other"));
+
+        Assert.False(r.Success);
+        Assert.Contains("and 4 more", r.ErrorMessage!);
+    }
+
+    // CREATE MEANS NEW, and says so rather than replacing. write_file cannot tell "make me a new
+    // file" from "make the file say this" — it reports which it did, afterwards, which is useful and
+    // too late for a caller who stated an expectation.
+    [Fact]
+    public async Task Create_MakesAFileThatDoesNotExist()
+    {
+        var path = Path.Combine(_dir, "new.md");
+
+        var r = await Run(("action", "create"), ("path", path), ("content", "# plan"));
+
+        Assert.True(r.Success, r.ErrorMessage);
+        Assert.Equal("# plan", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Create_RefusesToReplaceAnExistingFile()
+    {
+        var path = Path.Combine(_dir, "taken.md");
+        await File.WriteAllTextAsync(path, "somebody's work");
+
+        var r = await Run(("action", "create"), ("path", path), ("content", "mine"));
+
+        Assert.False(r.Success);
+        Assert.Contains("already exists", r.ErrorMessage!);
+        Assert.Contains("Nothing was written", r.ErrorMessage!);
+        Assert.Equal("somebody's work", await File.ReadAllTextAsync(path));
+    }
+
+    // ATOMIC: the check and the create are one syscall, so of N concurrent creates exactly one wins.
+    // An Exists() test followed by a write lets several through — the shape a second process breaks.
+    [Fact]
+    public async Task Create_ConcurrentAttempts_ExactlyOneWins()
+    {
+        var path = Path.Combine(_dir, "race.md");
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(i =>
+            FileMutation.CreateNewAsync(path, $"writer {i}", CancellationToken.None)));
+
+        Assert.Equal(1, results.Count(won => won));
+    }
+
     [Fact]
     public async Task Delete_RemovesFile()
     {
