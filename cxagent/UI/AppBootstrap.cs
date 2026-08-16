@@ -1325,11 +1325,30 @@ public static class AppBootstrap
                 // ONLY WHEN THEY ACTUALLY CHANGED, because a reload is not free: it tears down every
                 // running server, and a Save that touched only the model would otherwise cost a full
                 // restart of them all.
+                // NOT WHILE A TURN IS RUNNING. A reload disposes every server and restarts it, and
+                // the agent holds the toolset instance whose contents are replaced — so a tool call
+                // already dispatched to a server being torn down fails, mid-turn, for a reason the
+                // model cannot see. Everything else a save does is safe against a live turn: the
+                // running agent holds its own provider and context, and rebinding the resolution
+                // cannot reach into it.
+                //
+                // DEFERRED, NOT REFUSED. The rest of the save still applies — the user asked for it,
+                // and refusing the whole thing over one server would be worse than applying most of
+                // it. /mcp reload is the same call, for when the turn is done.
                 if (!SameServers(resolution.McpServers, reresolved.McpServers))
                 {
-                    await mcp.ReloadAsync(reresolved.McpServers, CancellationToken.None);
-                    foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                        transcript.Write($"[yellow]{message}[/]");
+                    if (IsTurnRunning())
+                    {
+                        mainWindow.Chat.AddMessage(ChatRole.System,
+                            "[yellow]MCP servers changed, but a turn is running — run /mcp reload "
+                            + "when it finishes.[/]");
+                    }
+                    else
+                    {
+                        await mcp.ReloadAsync(reresolved.McpServers, CancellationToken.None);
+                        foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
+                            transcript.Write($"[yellow]{message}[/]");
+                    }
                 }
 
                 // AFTER the reload, so this session is wired against the toolset the save asked for
