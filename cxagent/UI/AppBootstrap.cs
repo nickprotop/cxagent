@@ -508,6 +508,28 @@ public static class AppBootstrap
                     return true;
                 });
 
+            // THE LAST FOUR. Each needs something this process owns rather than any session — the
+            // config paths /model resolves against, the rules store and classifier /mode reads, the
+            // toolset /mcp reloads, the resume store /sessions lists. They are registered here for
+            // that reason, not because they are UI: the work they do is already a session's or the
+            // manager's, and what stays is the lookup of collaborators only a composition root has.
+            if (declared.Name == "/model")
+                manager.Commands.Register(declared, (_, arguments) => { SwitchModel(arguments); return true; });
+
+            if (declared.Name == "/mode")
+                manager.Commands.Register(declared, (_, arguments) => { HandleMode(arguments); return true; });
+
+            if (declared.Name == "/mcp")
+                manager.Commands.Register(declared, (_, arguments) =>
+                {
+                    // FIRE AND FORGET: a reload connects servers and the caller does not wait.
+                    mcpCommand.HandleAsync(arguments);
+                    return true;
+                });
+
+            if (declared.Name == "/sessions")
+                manager.Commands.Register(declared, (_, arguments) => { HandleSessions(arguments); return true; });
+
             if (declared.Name == "/exit")
                 manager.Commands.Register(declared, (_, _) =>
                 {
@@ -920,90 +942,6 @@ public static class AppBootstrap
             {
                 switch (command.Outcome)
                 {
-                    case CommandOutcome.NeedsWindow:
-                        // Two commands share this outcome now, so dispatch on the name. Both need
-                        // something SessionCommands deliberately does not hold — the window for
-                        // /help, the live servers for /mcp.
-                        if (command.Name == "/mcp")
-                        {
-                            _ = mcpCommand.HandleAsync(SessionCommands.Arguments(goalText));
-                            return;
-                        }
-
-
-                        if (command.Name == "/agents")
-                        {
-                            // BUILT HERE AND NOW, from the CURRENT resolution — not captured once at
-                            // startup. SessionFactory rebuilds the catalog on every re-wire so an F5
-                            // provider change re-resolves each type's instance; a copy held here
-                            // would keep printing the provider the session had stopped using.
-                            new AgentsCommand(
-                                new Core.Agent.AgentTypeCatalog(
-                                    resolution.AgentTypes, resolution.Providers),
-                                transcript).Handle(SessionCommands.Arguments(goalText));
-                            return;
-                        }
-
-
-                        if (command.Name == "/model")
-                        {
-                            SwitchModel(SessionCommands.Arguments(goalText));
-                            return;
-                        }
-
-                        if (command.Name == "/sessions")
-                        {
-                            HandleSessions(SessionCommands.Arguments(goalText));
-                            return;
-                        }
-
-
-                        if (command.Name == "/mode")
-                        {
-                            if (runner is null)
-                            {
-                                mainWindow.Chat.AddMessage(ChatRole.System,
-                                    "[yellow]No provider configured — there is no agent to set a mode on.[/]");
-                                return;
-                            }
-
-                            var decision = ModeCommand.Decide(new ModeQuery(
-                                SessionCommands.Arguments(goalText), runner.Mode,
-                                permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
-                                session.WorkingDirectory,
-                                permissionGate.Classifier is not null));
-
-                            // LIVE, NO RESTART. Both things a mode changes are rebuilt on the next
-                            // prompt anyway — the tool list and the system message — so this is one
-                            // assignment rather than a re-wire, and the conversation is untouched.
-                            //
-                            // THE POLICY IS ASSIGNED, NOT REBUILT. The gate holds it in a readonly
-                            // field, so replacing it would mean reconstructing the gate and
-                            // discarding any prompt already queued behind it.
-                            if (decision.NewMode is { } next)
-                            {
-                                // ONE CALL FOR BOTH AXES. The agent's mode and the policy's edit
-                                // mode were set on adjacent lines here — two places to forget, and
-                                // forgetting the second is a session whose status bar says
-                                // accept-edits while the gate still asks.
-                                session.SetMode(next);
-
-                                // REMEMBERING IS ALL THAT IS LEFT HERE, and it is not the session's:
-                                // the preference is a folder-level setting that outlives this
-                                // session. The repaint follows the Changed event above.
-                                RememberEditMode(next.Edits);
-                            }
-
-                            // ONLY WHEN THERE IS SOMETHING THIS COMMAND KNOWS AND THE SESSION DOES
-                            // NOT — a listing, an unknown axis, an already-in-that-mode. A CHANGE is
-                            // reported by the session itself, so Reply is empty for one.
-                            if (decision.Reply is { Length: > 0 })
-                                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
-                            return;
-                        }
-                        mainWindow.ShowHelp();
-                        return;
-
                     case CommandOutcome.NeedsTurn:
                         // REWRITTEN INTO A PROMPT AND FALLING THROUGH to the ordinary goal path
                         // below — not handled here. Everything that path already does is exactly
@@ -1484,6 +1422,39 @@ public static class AppBootstrap
                 mainWindow.Chat.AddMessage(ChatRole.System,
                     $"[{ColorScheme.DangerMarkup}]Could not read sessions: {ex.Message}[/]");
             }
+        }
+
+        // THE MODE COMMAND, beside SwitchModel and for the same reason: it needs the rules store and
+        // the gate's classifier, which are this process's rather than any session's. What it decides
+        // is applied BY the session, which says and announces it.
+        void HandleMode(string argument)
+        {
+            if (runner is null)
+            {
+                mainWindow.Chat.AddMessage(ChatRole.System,
+                    "[yellow]No provider configured — there is no agent to set a mode on.[/]");
+                return;
+            }
+
+            var decision = ModeCommand.Decide(new ModeQuery(
+                argument, runner.Mode,
+                permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
+                session.WorkingDirectory,
+                permissionGate.Classifier is not null));
+
+            if (decision.NewMode is { } next)
+            {
+                if (!session.SetMode(next)) return;
+
+                // REMEMBERING IS ALL THAT IS LEFT HERE, and it is not the session's: the preference
+                // is a folder-level setting that outlives this session.
+                RememberEditMode(next.Edits);
+            }
+
+            // ONLY WHEN THERE IS SOMETHING THIS COMMAND KNOWS AND THE SESSION DOES NOT — a listing,
+            // an unknown axis, an already-in-that-mode. A CHANGE is reported by the session itself.
+            if (decision.Reply is { Length: > 0 })
+                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
         }
 
         void SwitchModel(string argument)

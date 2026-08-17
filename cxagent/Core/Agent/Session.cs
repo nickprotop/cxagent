@@ -493,6 +493,21 @@ public sealed class Session
         return Commands.InitCommand.Prompt(target);
     }
 
+    /// <summary>
+    /// Says what sub-agent types this session can spawn, or one type's full briefing.
+    ///
+    /// <para>FROM THE CATALOG THIS SESSION WAS WIRED WITH — the shipped types merged with config,
+    /// which is what it can actually spawn. Building one from the resolution instead, as the caller
+    /// did, listed only the config-declared names.</para>
+    /// </summary>
+    public bool ListAgentTypes(string arguments)
+    {
+        if (_agentTypes is not { } catalog) return false;
+
+        Say(new Commands.AgentsCommand(catalog).Render(arguments));
+        return true;
+    }
+
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
     public bool ShowDiff(string arguments)
     {

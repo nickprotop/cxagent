@@ -78,6 +78,10 @@ public sealed class SessionManager : IDisposable
                         session.SayUsage(history, arguments));
                     break;
 
+                case "/agents":
+                    Commands.Register(command, (session, arguments) => session.ListAgentTypes(arguments));
+                    break;
+
                 case "/skills":
                     Commands.Register(command, (session, _) =>
                         session.ListSkills(Shared.GlobalInstructionsDir ?? ""));

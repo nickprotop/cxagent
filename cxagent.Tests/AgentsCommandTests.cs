@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Agent;
 using CxAgent.Core.Llm;
 using CxAgent.UI;
@@ -7,14 +8,6 @@ namespace CxAgent.Tests;
 
 public class AgentsCommandTests
 {
-    /// <summary>Captures what the command wrote, so the output can be asserted without a window.</summary>
-    private sealed class Capture : ITranscriptWriter
-    {
-        public string Text { get; private set; } = "";
-        public void Write(string markup) => Text += markup;
-        public void WriteError(string markup) => Text += markup;
-    }
-
     private static AgentTypeCatalog Catalog(params (string Name, string Briefing)[] types)
     {
         var configured = types.ToDictionary(
@@ -24,12 +17,10 @@ public class AgentsCommandTests
         return new AgentTypeCatalog(configured, null);
     }
 
-    private static string Run(AgentTypeCatalog catalog, string? arg = null)
-    {
-        var capture = new Capture();
-        new AgentsCommand(catalog, capture).Handle(arg);
-        return capture.Text;
-    }
+    // RENDERS, RATHER THAN PRINTING THROUGH A DOUBLE. The command took a transcript writer and this
+    // supplied a fake to read back what it wrote; a listing that is pure text needs neither.
+    private static string Run(AgentTypeCatalog catalog, string? arg = null) =>
+        new AgentsCommand(catalog).Render(arg);
 
     [Fact]
     public void Bare_ListsEveryShippedTypeWithoutConfiguringAnything()

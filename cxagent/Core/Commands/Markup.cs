@@ -28,4 +28,13 @@ public static class Markup
     /// <summary>Something did not work as asked but was not a failure — a fallback taken, a request
     /// declined, a mode that changes nothing here.</summary>
     public const string Caution = "yellow";
+
+    /// <summary>
+    /// Text that must appear literally, with any markup opener neutralised.
+    ///
+    /// <para>The same escape SharpConsoleUI's MarkupParser applies, inlined so Core keeps no
+    /// dependency on the UI toolkit. A path or a model id containing '[' is unlikely; a crash in the
+    /// line reporting one is not worth finding out.</para>
+    /// </summary>
+    public static string Escape(string text) => text.Replace("[", "[[");
 }

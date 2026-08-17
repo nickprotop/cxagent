@@ -1,6 +1,6 @@
 using CxAgent.Core.Agent;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>
 /// <c>/agents</c> — the sub-agent types this session can spawn, and what each one is told.
@@ -25,9 +25,12 @@ namespace CxAgent.UI;
 /// in their file gets a warning at startup, once, and then never again — this is where they look when
 /// they wonder why their edit did nothing.</para>
 /// </summary>
-public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter transcript)
+public sealed class AgentsCommand(AgentTypeCatalog catalog)
 {
-    public void Handle(string? argument = null)
+    /// <summary>The listing, or one type's briefing, as text. Renders rather than printing: it took
+    /// a transcript writer, which made a listing that is pure text depend on a front end having
+    /// one. The session says the result.</summary>
+    public string Render(string? argument = null)
     {
         var words = (argument ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
@@ -36,22 +39,21 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
         // — a row carrying a placeholder completes to the verb, and a bare placeholder has none.
         if (words is [var verb, ..] && verb.Equals("show", StringComparison.OrdinalIgnoreCase))
         {
-            transcript.Write(string.Join("\n", words.Length >= 2
+            return string.Join("\n", words.Length >= 2
                 ? Detail(words[1])
-                : ["Name a type: `/agents show <name>`."]));
-            return;
+                : ["Name a type: `/agents show <name>`."]);
         }
 
         // A BARE NAME STILL WORKS, for the reason /mcp keeps it: refusing the reading someone
         // naturally reaches for teaches nothing.
         var lines = words.Length == 0 ? List() : Detail(words[0]);
-        transcript.Write(string.Join("\n", lines));
+        return string.Join("\n", lines);
     }
 
     private List<string> List()
     {
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
+        var accent = Markup.Accent;
+        var muted = Markup.Muted;
         var lines = new List<string>
         {
             $"[{accent}]Agent types[/] [{muted}]· {catalog.All.Count} available[/]",
@@ -90,7 +92,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
             var described = string.IsNullOrWhiteSpace(type.Description)
                 ? "no description — the catalog says \"runs where you do, no special instructions\""
                 : FirstSentence(type.Description);
-            lines.Add($"    [{muted}]{ChatTranscriptSink.Escape(described)}[/]");
+            lines.Add($"    [{muted}]{Markup.Escape(described)}[/]");
             lines.Add("");
         }
 
@@ -114,8 +116,8 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
 
     private List<string> Detail(string name)
     {
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
+        var accent = Markup.Accent;
+        var muted = Markup.Muted;
 
         if (catalog.Resolve(name) is not { } type || !string.Equals(type.Name, name, StringComparison.Ordinal))
         {
@@ -123,7 +125,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
             // type's briefing and look like an answer. Names are compared exactly for that reason.
             return
             [
-                $"[yellow]No agent type '{ChatTranscriptSink.Escape(name)}'[/]",
+                $"[yellow]No agent type '{Markup.Escape(name)}'[/]",
                 $"  [{muted}]available: {catalog.Names}[/]",
             ];
         }
@@ -133,7 +135,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
         if (!string.IsNullOrWhiteSpace(type.Description))
         {
             lines.Add($"  [{muted}]When to choose it — what the parent reads:[/]");
-            lines.Add($"  {ChatTranscriptSink.Escape(type.Description)}");
+            lines.Add($"  {Markup.Escape(type.Description)}");
             lines.Add("");
         }
 
@@ -148,7 +150,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, ITranscriptWriter tr
         {
             lines.Add($"  [{muted}]Its briefing — what the child reads, in full:[/]");
             lines.Add("");
-            lines.Add(ChatTranscriptSink.Escape(type.Briefing));
+            lines.Add(Markup.Escape(type.Briefing));
         }
 
         lines.Add("");
