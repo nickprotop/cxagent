@@ -155,7 +155,10 @@ public sealed class AgentTypeCatalog
             // reading it here as authoritative would put the drift back.
             var builtin = BuiltinAgentTypes.Find(name);
             _types[name] = builtin is null
-                ? new AgentType(name, cfg.Briefing,
+                // A NAME THAT IS NOT SHIPPED MUST BRING ITS OWN TEXT, and an empty one is what a
+                // config that omitted it produces. The catalog says nothing was configured rather
+                // than inventing a line — see AgentTypeConfig.Briefing.
+                ? new AgentType(name, cfg.Briefing ?? "",
                     new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description)
                 : new AgentType(name, builtin.Briefing,
                     new TypeRouting(provider, window, instanceName),

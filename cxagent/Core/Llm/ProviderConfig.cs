@@ -260,7 +260,20 @@ public record McpServerConfig(
 /// <para>Null means absent, which is every config written before this key existed. The catalog then
 /// says nothing was configured rather than inventing a line.</para>
 /// </param>
-public record AgentTypeConfig(string Briefing, string? Provider = null, int? MaxTurns = null,
+/// <param name="Briefing">
+/// What this type's children are told, or null to keep the shipped text.
+///
+/// <para>NULLABLE AND FIRST-DEFAULTED SO AN OVERRIDE NEED NOT RESTATE IT. Config's
+/// <c>"planner": { "maxTurns": 40 }</c> changes one field and keeps everything else, and this type
+/// could not express that: Briefing was required, so a caller configuring in code had to supply a
+/// briefing it did not want to change, and the JSON loader coerced a missing one to "". The merge in
+/// AgentTypeCatalog already ignores it for a built-in name — a shipped type keeps its own text and
+/// takes only routing and turns — so the required parameter was asking for a value nothing read.</para>
+///
+/// <para>Required for a name that is NOT shipped, because a new type with no briefing has nothing to
+/// tell its children. The catalog reports that rather than inventing one.</para>
+/// </param>
+public record AgentTypeConfig(string? Briefing = null, string? Provider = null, int? MaxTurns = null,
     string? Description = null);
 
 public record ProviderSettings(
@@ -636,7 +649,7 @@ public static class ProviderConfigLoader
                     // BRIEFING IS EMPTY FOR A BUILT-IN NAME, and the catalog substitutes the shipped
                     // text. Storing the shipped briefing here instead would put it back in the shape
                     // that drifts — a copy, made at load, of something that lives elsewhere.
-                    agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim() ?? "", typeProvider,
+                    agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim(), typeProvider,
                         maxTurns, description);
                 }
 

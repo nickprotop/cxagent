@@ -88,6 +88,40 @@ public class AgentsCommandTests
         Assert.Contains("No briefing", text, StringComparison.Ordinal);
     }
 
+    // AN OVERRIDE NEED NOT RESTATE THE BRIEFING, which is the whole asymmetry this fixes. Config's
+    // `"planner": { "maxTurns": 40 }` changes one field and keeps the rest; the C# record required a
+    // Briefing, so a host configuring in code had to supply text it did not want to change — and the
+    // JSON loader worked around it by coercing a missing one to "".
+    [Fact]
+    public void OverridingOneFieldKeepsTheShippedBriefing()
+    {
+        var catalog = new AgentTypeCatalog(
+            new Dictionary<string, AgentTypeConfig> { ["planner"] = new() { MaxTurns = 40 } },
+            null);
+
+        var planner = catalog.All.Single(t => t.Name == "planner");
+        var shipped = BuiltinAgentTypes.Find("planner")!;
+
+        Assert.Equal(shipped.Briefing, planner.Briefing);   // kept
+        Assert.Equal(40, planner.MaxTurns);                 // overridden
+    }
+
+    // AND A NAME THAT IS NOT SHIPPED STILL BRINGS ITS OWN, so the optional briefing cannot silently
+    // produce a type with nothing to tell its children.
+    [Fact]
+    public void ANewTypeCarriesTheBriefingItWasGiven()
+    {
+        var catalog = new AgentTypeCatalog(
+            new Dictionary<string, AgentTypeConfig>
+            {
+                ["surveyor"] = new("Read the tree and report what is there."),
+            },
+            null);
+
+        Assert.Equal("Read the tree and report what is there.",
+            catalog.All.Single(t => t.Name == "surveyor").Briefing);
+    }
+
     // WHICH TYPE WRITES A PLAN FILE is otherwise invisible: it decides that the spawner names a path
     // and contradicts an answer claiming a file nobody wrote.
     [Fact]
