@@ -22,7 +22,7 @@ public class MinimalAppTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     /// <summary>
-    /// Five calls, and every one of them is load-bearing:
+    /// Four calls, and every one of them is load-bearing:
     /// <list type="number">
     ///   <item>the process's shared services — logs, resume store, usage history</item>
     ///   <item>which model to talk to</item>
@@ -31,13 +31,18 @@ public class MinimalAppTests : IDisposable
     ///   <item>a goal</item>
     /// </list>
     ///
+    /// <para>THE WORKING MODE IS NOT AMONG THEM ANY MORE. Open required one, and every caller with
+    /// no opinion passed AgentMode.Single — which is exactly WorkingMode.Default, and exactly what
+    /// an agent picks when nobody sets one. A required parameter whose only sane value is the
+    /// default is a caller repeating something back to a library that already knew it.</para>
+    ///
     /// <para>NOT TWO. The two that cannot collapse into a Create+Open pair are the provider and the
     /// ports: a manager that invented a provider would be choosing the user's model, and one that
     /// invented an observer would be choosing where a front end it cannot see puts its text. Both are
     /// arguments precisely because they are the caller's to answer.</para>
     /// </summary>
     [Fact]
-    public async Task AnAppIsFiveCalls()
+    public async Task AnAppIsFourCalls()
     {
         var manager = SessionManager.Create(new AppPaths(_dir));
         var provider = new MockLlmProvider();
@@ -45,7 +50,7 @@ public class MinimalAppTests : IDisposable
         var sink = new BufferedChatSink();
 
         var session = manager.Open(_dir, ProviderResolution.ForTesting(provider),
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
+            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
 
         await session.Host!.SendAsync("hello", CancellationToken.None);
 
@@ -72,8 +77,7 @@ public class MinimalAppTests : IDisposable
         Assert.Null(manager.Shared.Gate);
 
         var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider()),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
-            AgentMode.Single);
+            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() });
 
         Assert.NotNull(session.Host);
     }

@@ -244,7 +244,7 @@ public sealed class SessionManager : IDisposable
     /// conversation.</para>
     /// </summary>
     public Session Open(string workingDirectory, ProviderResolution resolution,
-        SessionPorts ports, WorkingMode mode) =>
+        SessionPorts ports, WorkingMode? mode = null) =>
         Open(new Session(workingDirectory), resolution, ports, mode);
 
     /// <summary>
@@ -263,10 +263,15 @@ public sealed class SessionManager : IDisposable
     /// session afterwards and hope the wiring matched. Two ways to wire is one too many; this is the
     /// single routine, and the folder overload above is now a thin call into it.</para>
     /// </summary>
+    /// <param name="mode">
+    /// How the session starts. Null takes <see cref="WorkingMode.Default"/>, which is what an agent
+    /// picks anyway when nobody sets one — so a caller with no opinion says nothing rather than
+    /// repeating the default back.
+    /// </param>
     public Session Open(Session session, ProviderResolution resolution,
-        SessionPorts ports, WorkingMode mode)
+        SessionPorts ports, WorkingMode? mode = null)
     {
-        SessionFactory.Wire(session, resolution, Shared, ports, mode);
+        SessionFactory.Wire(session, resolution, Shared, ports, mode ?? WorkingMode.Default);
 
         lock (_gate)
             if (!_sessions.Contains(session)) _sessions.Add(session);
