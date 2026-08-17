@@ -107,6 +107,7 @@ public static class SubAgentEnvelope
             SendOutcome.Capped => "capped",
             SendOutcome.Stuck => "stuck",
             SendOutcome.Cancelled => "cancelled",
+            SendOutcome.Silent => "no-answer",
             _ => "error",
         };
 
@@ -125,6 +126,10 @@ public static class SubAgentEnvelope
                 "\nThis agent failed. What follows is the error, not an answer.",
             SendOutcome.Cancelled =>
                 "\nThis agent was cancelled before finishing.",
+            SendOutcome.Silent =>
+                "\nThis agent produced no answer — its request to the model did not come back. It may "
+                + "have completed some of its work before that happened, so check the tree before "
+                + "assuming nothing changed, and re-run it if the work is still needed.",
             _ => "",
         };
 

@@ -28,6 +28,22 @@ public enum SendOutcome
     /// <summary>Cancelled. Reserved for the same reason as <see cref="Failed"/>: cancellation
     /// propagates as an exception today.</summary>
     Cancelled,
+
+    /// <summary>
+    /// The loop ended without the model ever producing text.
+    ///
+    /// <para>DISTINCT FROM <see cref="Completed"/> WITH AN EMPTY ANSWER, because to a caller those
+    /// were the same thing and they are not. A provider call that never returns — a request dropped,
+    /// a local server saturated by concurrent children — leaves the loop with nothing to say and no
+    /// exception to report, so the run looked finished and returned "".</para>
+    ///
+    /// <para>MEASURED, NOT THEORISED. A builder sub-agent was mid-implementation when its provider
+    /// call vanished: its context for the next turn was written, no response arrived, and it
+    /// returned empty. Its parent read that as "the child returned nothing", guessed at a cause
+    /// (wrongly — it blamed a plan file the child had read successfully) and re-spawned. The tree
+    /// was left half-edited in between. Nothing anywhere said the child had died.</para>
+    /// </summary>
+    Silent,
 }
 
 /// <summary>

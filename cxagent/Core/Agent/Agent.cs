@@ -1013,6 +1013,20 @@ public sealed class Agent
                 // The answer, either way. It is already ON SCREEN — it streamed into the turn opened
                 // above — so this is for the caller's transcript, and it is returned rather than
                 // pushed onto a list the agent was handed.
+                // NOTHING TO SAY IS NOT THE SAME AS FINISHING. An empty answer here means the loop
+                // ended without the model ever producing text — a provider call that never returned,
+                // which on a saturated local server is what a dropped request looks like from the
+                // inside. Reported as Completed it was indistinguishable from a finished run with a
+                // terse answer, so a parent read "" and had to guess; see SendOutcome.Silent.
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    _sink.Failed(
+                        "the model returned no answer — the request may have been dropped or timed "
+                        + "out. Nothing was lost, but this run produced no result.");
+
+                    return new SendResult(text, SendOutcome.Silent);
+                }
+
                 return new SendResult(text, SendOutcome.Completed);
             }
 
