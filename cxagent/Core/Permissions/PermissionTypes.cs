@@ -76,6 +76,18 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// own" — the single-session path, unchanged.</para>
     /// </summary>
     public PermissionPolicy? Policy { get; init; }
+
+    /// <summary>
+    /// True when auto mode's classifier reviewed this and said no.
+    ///
+    /// <para>SO THE PROMPT CAN GIVE THE RIGHT REASON. Its heading was inferred from whether the path
+    /// is inside the working folder, which has exactly one cause in the other modes — an untrusted
+    /// folder — and so it said "(untrusted)" for every in-tree write that reached it. In auto mode
+    /// there is a second cause, and the folder is usually trusted: the classifier refused. A user
+    /// reading "in this (untrusted) folder" about a folder they trusted learns the wrong thing from
+    /// the one line meant to explain why they are being asked.</para>
+    /// </summary>
+    public bool RefusedByClassifier { get; init; }
 }
 
 /// <summary>

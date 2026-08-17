@@ -224,9 +224,26 @@ public sealed class PermissionDecider : IPermissionGate
         {
             if (await Classifier.AllowsAsync(request, ct))
             {
-                OnDecision?.Invoke(request.Kind, "silent", request.Requester);
+                // "auto-allowed", NOT "silent". Both let the action through without asking, and
+                // recording them the same made the classifier invisible: in one drive's 317 silent
+                // decisions there was no way to tell which had cost a model call and which had
+                // passed on the boundary alone. It is a real request to a real endpoint on every
+                // trusted write, and a reader deciding whether auto is worth its latency needs the
+                // count.
+                OnDecision?.Invoke(request.Kind, "auto-allowed", request.Requester);
                 return true;
             }
+
+            // AND THE REFUSAL, which is the one a user actually sees. Reaching here on a trusted
+            // folder means the classifier said no and a prompt is about to appear — the single most
+            // useful thing to be able to count, because it is the answer to "why did auto ask me
+            // that?" and nothing recorded it.
+            OnDecision?.Invoke(request.Kind, "auto-refused", request.Requester);
+
+            // AND THE PROMPT IS TOLD WHY, so its heading names the classifier rather than blaming a
+            // folder the user very likely trusts.
+            request = request with { RefusedByClassifier = true };
+
 
             // FAILS CLOSED, OUT LOUD. A gate that quietly falls back looks like a classifier that
             // disagreed, and the user learns nothing — worse, they conclude auto is simply strict.

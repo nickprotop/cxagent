@@ -66,9 +66,17 @@ public sealed class PermissionPromptControl
     /// Found by the live drive: an in-tree `notes.txt` in an untrusted folder was announced as
     /// "Write a file outside the working folder?", which is simply false.
     /// </summary>
-    private static string HeadingFor(PermissionKind kind, bool inBoundary) => kind switch
+    private static string HeadingFor(PermissionKind kind, bool inBoundary, bool refusedByClassifier) => kind switch
     {
         PermissionKind.Shell => "Run shell command?",
+
+        // THE CLASSIFIER'S REFUSAL IS ITS OWN REASON, and naming it matters most here: in auto mode
+        // the folder is usually TRUSTED — that is a precondition for the classifier running at all —
+        // so the "(untrusted)" wording below was telling a user the opposite of what happened. The
+        // heading is the one line meant to explain why they are being asked.
+        PermissionKind.FileRead when refusedByClassifier => "Read a file — auto review said ask?",
+        PermissionKind.FileWrite when refusedByClassifier => "Write a file — auto review said ask?",
+
         PermissionKind.FileRead => inBoundary
             ? "Read a file in this (untrusted) folder?"
             : "Read a file outside the working folder?",
@@ -108,7 +116,7 @@ public sealed class PermissionPromptControl
             : _request.Display;
 
         var markup = Ctl.Markup();
-        markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request.Kind, _offerTrust))}[/]");
+        markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request.Kind, _offerTrust, _request.RefusedByClassifier))}[/]");
 
         // WHO IS ASKING, when it is not the session's own agent.
         //
