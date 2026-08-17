@@ -1488,7 +1488,9 @@ public static class AppBootstrap
             // printed on top of "A turn is running" was a second, vaguer sentence for a reason the
             // user had just been given. The only other false is a session with no host, which cannot
             // happen from a command the composer accepted.
-            session.SwitchModel(next, decision.SwitchTo);
+            // .Model, not the whole resolution: /model changes which model this session talks to
+            // and nothing else. The signature is what makes that true rather than a convention.
+            session.SwitchModel(next?.Model, decision.SwitchTo);
 
             // NOTHING TO REPORT OR REPAINT HERE. SwitchModel says what happened through the
             // observer and announces that the model moved; the subscription near the top of this

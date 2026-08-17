@@ -1,0 +1,56 @@
+namespace CxAgent.Core.Llm;
+
+/// <summary>
+/// What this process was configured with, and never changes.
+///
+/// <para>ONE OF THREE LIFETIMES <see cref="ResolvedConfig"/> HELD TOGETHER. That record carried the
+/// catalog, the model a session is currently using, and the errors from reading a file — twelve
+/// members answering "when is this true?" three different ways. A method updating one had no way to
+/// say which, and that is not a stylistic complaint: SwapProvider moved the agent's provider and the
+/// host's runtime and not the sub-agent factory's captured default, so every child kept talking to
+/// the model the session started on while the switch notice promised otherwise. A missed line,
+/// because nothing named the set.</para>
+///
+/// <para>FIXED FOR THE PROCESS. Config is resolved once and never rebound — see AppBootstrap on why
+/// F5 restarts rather than reconfiguring in place — so everything here is read-only for a session's
+/// whole life. What a session CHANGES is <see cref="ActiveModel"/>, and the two being separate types
+/// is what makes "changed the model" and "changed the configuration" different statements.</para>
+/// </summary>
+/// <param name="Instances">
+/// Every configured model, by the name a user types at <c>/model</c>. Null on the paths where nothing
+/// resolved, where there is nothing to dispatch to anyway.
+/// </param>
+/// <param name="AgentTypes">Sub-agent types from config, merged with the shipped ones by
+/// <c>AgentTypeCatalog</c> rather than replacing them.</param>
+/// <param name="McpServers">MCP server definitions, loaded once at startup.</param>
+/// <param name="Orchestrator">Turn and compaction budgets bounding every loop in this process.</param>
+/// <param name="MaxConcurrentAgents">
+/// How many sub-agents may call the default endpoint at once. Null is unlimited — cxagent cannot
+/// discover what an endpoint tolerates, so it does not guess.
+/// </param>
+/// <param name="ClassifierInstance">
+/// Which instance reviews writes in <c>/mode edits auto</c>.
+///
+/// <para>NULL MEANS AUTO IS NOT OFFERED — not listed, not cyclable, not parseable. A mode that
+/// promises review while nothing reviews is worse than no mode at all.</para>
+/// </param>
+public sealed record ProviderCatalog(
+    ProviderRegistry? Instances = null,
+    IReadOnlyDictionary<string, AgentTypeConfig>? AgentTypes = null,
+    IReadOnlyDictionary<string, McpServerConfig>? McpServers = null,
+    OrchestratorSettings? Orchestrator = null,
+    int? MaxConcurrentAgents = null,
+    string? ClassifierInstance = null)
+{
+    /// <summary>Never null, so a caller enumerating types need not check first.</summary>
+    public IReadOnlyDictionary<string, AgentTypeConfig> Types =>
+        AgentTypes ?? new Dictionary<string, AgentTypeConfig>();
+
+    /// <summary>Never null, for the same reason as <see cref="Types"/>.</summary>
+    public IReadOnlyDictionary<string, McpServerConfig> Servers =>
+        McpServers ?? new Dictionary<string, McpServerConfig>();
+
+    /// <summary>A catalog with nothing in it — the no-provider paths, and a starting point for a
+    /// caller filling one in.</summary>
+    public static ProviderCatalog Empty { get; } = new();
+}

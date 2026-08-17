@@ -44,8 +44,7 @@ public class CompletionValuesTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var catalog = Registry(("local", "qwen3", 213_000), ("remote", "claude-x", 200_000));
-        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider("qwen3"), "local")
-            with { Providers = catalog };
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider("qwen3"), "local").WithCatalog(new ProviderCatalog(Instances: catalog));
 
         var session = Wired(manager, resolution);
         var values = session.Values(CompletionSets.Providers);
@@ -67,8 +66,7 @@ public class CompletionValuesTests : IDisposable
         var without = Wired(manager, ResolvedConfig.ForTesting(new MockLlmProvider()));
         Assert.DoesNotContain("auto", without.Values(CompletionSets.EditModes).Select(v => v.Name));
 
-        var withClassifier = ResolvedConfig.ForTesting(new MockLlmProvider())
-            with { ClassifierInstance = "local" };
+        var withClassifier = ResolvedConfig.ForTesting(new MockLlmProvider()).WithCatalog(new ProviderCatalog(ClassifierInstance: "local"));
         var with = manager.Open(Path.Combine(_dir, "b"), withClassifier, Ports(), AgentMode.Single);
         Assert.Contains("auto", with.Values(CompletionSets.EditModes).Select(v => v.Name));
     }

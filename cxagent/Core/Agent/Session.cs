@@ -581,7 +581,7 @@ public sealed class Session
     /// <para>FALSE WHEN THERE IS NO HOST — a switch before the first wire has nothing to point
     /// anywhere, and the caller says so rather than this throwing.</para>
     /// </summary>
-    public bool SwitchModel(ResolvedConfig? next, string? requestedName = null)
+    public bool SwitchModel(ActiveModel? next, string? requestedName = null)
     {
         if (RefusedWhileBusy()) return false;
 
@@ -589,7 +589,7 @@ public sealed class Session
         // second, vaguer sentence on top of whatever this had already said — visible on screen as
         // "Could not switch to openrouter." directly under "A turn is running". One speaker per
         // outcome, and this is the speaker.
-        if (next?.Provider is null)
+        if (next is null)
         {
             Say($"[red]Could not start {requestedName ?? "that model"} — it did not resolve to a "
               + "usable provider. Check its entry in config.json.[/]");
@@ -605,7 +605,7 @@ public sealed class Session
         var previousWindow = Host.Context.Window;
         var used = Host.Context.Used;
 
-        Host.SwapProvider(next.Provider, next.InstanceName, next.ContextWindow);
+        Host.SwapProvider(next);
 
         // AND THE CHILDREN'S DEFAULT. A child with no provider of its own inherits it from the
         // spawner, which held the model captured at wire time — so every sub-agent kept talking to
@@ -620,7 +620,12 @@ public sealed class Session
         // here, so leaving these behind would offer the user the model they just left.
         Provider = next.Provider;
         InstanceName = next.InstanceName;
-        Resolution = next;
+
+        // THE CATALOG IS UNTOUCHED, and now unreachable from here: this method takes an ActiveModel,
+        // so there is no configuration in scope to replace by accident. That is the whole reason for
+        // the split — SwapProvider once moved the agent and the host and not the spawner, and nothing
+        // named the set that had to move together.
+        Resolution = Resolution?.WithModel(next) ?? new ResolvedConfig(next, Llm.ProviderCatalog.Empty, []);
 
         Announce(SessionChangeKind.Model);
         Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,

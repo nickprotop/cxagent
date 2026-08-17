@@ -599,16 +599,16 @@ public sealed class AgentHost : IDisposable
     /// used to run on — the figure in /stats and the name in the panel would disagree, which is
     /// exactly what SpendLabel's own doc says must never happen.</para>
     /// </summary>
-    public void SwapProvider(ILlmProvider provider, string? instanceName, int? contextWindow)
+    public void SwapProvider(ActiveModel model)
     {
         _runtime = _runtime with
         {
-            Provider = provider,
-            InstanceName = instanceName,
-            ContextWindow = contextWindow ?? _runtime.ContextWindow,
+            Provider = model.Provider,
+            InstanceName = model.InstanceName,
+            ContextWindow = model.ContextWindow ?? _runtime.ContextWindow,
         };
 
-        _agent.SwapProvider(provider, instanceName, contextWindow);
+        _agent.SwapProvider(model.Provider, model.InstanceName, model.ContextWindow);
     }
 
     private Agent BuildAgent()

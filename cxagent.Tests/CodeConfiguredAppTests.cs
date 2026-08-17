@@ -54,17 +54,18 @@ public class CodeConfiguredAppTests : IDisposable
             defaultName: "fast",
             windows: new Dictionary<string, int?> { ["fast"] = 32_000, ["deep"] = 200_000 });
 
-        var config = new ResolvedConfig(fast, "Fast", [])
-        {
-            InstanceName = "fast",
-            ContextWindow = 32_000,
-            Providers = catalog,
-            AgentTypes = new Dictionary<string, AgentTypeConfig>
-            {
-                ["surveyor"] = new("Read the tree and report what is there.",
-                    Description: "reads, never writes"),
-            },
-        };
+        // THE TWO HALVES, NAMED. What the session starts on, and what the process was configured
+        // with — separate types, so a later /model can replace the first without touching the second.
+        var config = new ResolvedConfig(
+            new ActiveModel(fast, "fast", "Fast", ContextWindow: 32_000),
+            new ProviderCatalog(
+                Instances: catalog,
+                AgentTypes: new Dictionary<string, AgentTypeConfig>
+                {
+                    ["surveyor"] = new("Read the tree and report what is there.",
+                        Description: "reads, never writes"),
+                }),
+            []);
 
         using var manager = SessionManager.Create(new ProcessSetup
         {

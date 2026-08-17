@@ -63,18 +63,19 @@ public class HeadlessSessionTests : IDisposable
 
         // 2. THE REST OF THE CONFIGURATION. Agent types this host offers, and the turn budget its
         //    sessions run under — the two things config.json carries that are not about models.
-        var config = new ResolvedConfig(fast, "Fast", [])
-        {
-            InstanceName = "fast",
-            ContextWindow = 32_000,
-            Providers = catalog,
-            AgentTypes = new Dictionary<string, AgentTypeConfig>
-            {
-                ["surveyor"] = new("Read the tree and report what is there. Never write.",
-                    Description: "reads, never writes"),
-            },
-            Orchestrator = new OrchestratorSettings(MaxTurns: 25),
-        };
+        // THE TWO HALVES, NAMED. What the session starts on, and what the process was configured
+        // with — separate types, so a later /model replaces the first and cannot disturb the second.
+        var config = new ResolvedConfig(
+            new ActiveModel(fast, "fast", "Fast", ContextWindow: 32_000),
+            new ProviderCatalog(
+                Instances: catalog,
+                AgentTypes: new Dictionary<string, AgentTypeConfig>
+                {
+                    ["surveyor"] = new("Read the tree and report what is there. Never write.",
+                        Description: "reads, never writes"),
+                },
+                Orchestrator: new OrchestratorSettings(MaxTurns: 25)),
+            []);
 
         // 3. THE ANSWER TO EVERY PERMISSION QUESTION, from a policy rather than a person. A headless
         //    host must never block on a prompt, so it decides — here: reads yes, everything else no.
@@ -184,34 +185,29 @@ public class HeadlessSessionTests : IDisposable
 
     private static async Task RunAgainstLocalLlamaCpp(string stateDir, string workDir)
     {
-        // 1. THE MODEL. What ProviderRegistry.Construct builds for a "openai-compatible" entry,
-        //    written out directly — no config file, no loader.
-        var local = new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        // 1 AND 2. THE WHOLE CONFIGURATION, in the shape config.json has — each fact stated once.
+        //    AgentConfig is the front door; Resolve() produces what the runtime consumes.
+        var config = new AgentConfig
         {
-            ProviderId = "local",
-            DisplayName = "llama.cpp qwen3.6",
-            Model = "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
-            BaseUrl = "http://localhost:8771/v1",
+            Models =
+            {
+                ["local"] = new(ProviderKind.OpenAiCompatible, "qwen3.6-35b-a3b-ud-iq4_xs.gguf")
+                {
+                    BaseUrl = "http://localhost:8771/v1",
 
-            // No key: llama.cpp's OpenAI-compatible server does not check one. A hosted endpoint
-            // would take it here, from wherever the host keeps its secrets.
-            ApiKey = null,
-        });
+                    // NOT DECORATION: the compression threshold derives from it, so a wrong number
+                    // compacts far too early or not until the provider refuses the request.
+                    ContextWindow = 212_992,
 
-        var catalog = ProviderRegistry.FromProviders(
-            new Dictionary<string, ILlmProvider> { ["local"] = local },
-            defaultName: "local",
-            windows: new Dictionary<string, int?> { ["local"] = 212_992 });
+                    // No key — llama.cpp's OpenAI-compatible server checks none. A hosted endpoint
+                    // takes it here, from wherever the host keeps its secrets.
+                    ApiKey = null,
+                },
+            },
 
-        // 2. THE CONFIGURATION. contextWindow is what the compression threshold derives from, so a
-        //    wrong number here compacts too early or too late — it is not decoration.
-        var config = new ResolvedConfig(local, "llama.cpp qwen3.6", [])
-        {
-            InstanceName = "local",
-            ContextWindow = 212_992,
-            Providers = catalog,
-            Orchestrator = new OrchestratorSettings(MaxTurns: 300),
-        };
+            DefaultModel = "local",
+            MaxTurns = 300,
+        }.Resolve();
 
         // 3. THE PROCESS, and its answer to every permission question.
         using var manager = SessionManager.Create(new ProcessSetup

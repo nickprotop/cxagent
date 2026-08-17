@@ -45,7 +45,7 @@ public class SwitchModelTests : IDisposable
         var contextBefore = session.Host.Context;
         var messagesBefore = session.Host.Context.Messages.Count;
 
-        Assert.True(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second")));
+        Assert.True(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").Model));
 
         // THE SAME OBJECTS, not merely equal ones. A rebuild would produce a new host over a new
         // context and copy the messages across — which is what the old path did, and what made
@@ -64,7 +64,7 @@ public class SwitchModelTests : IDisposable
         var session = WiredSession(manager, new MockLlmProvider("model-one"));
 
         var next = new MockLlmProvider("model-two");
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second"));
+        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").Model);
 
         Assert.Same(next, session.Provider);
         Assert.Equal("second", session.InstanceName);
@@ -80,9 +80,8 @@ public class SwitchModelTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = WiredSession(manager, new MockLlmProvider("big"));
 
-        var narrow = ResolvedConfig.ForTesting(new MockLlmProvider("small"), "small")
-            with { ContextWindow = 8_000 };
-        session.SwitchModel(narrow);
+        var narrow = ResolvedConfig.ForTesting(new MockLlmProvider("small"), "small").WithContextWindow(8_000);
+        session.SwitchModel(narrow.Model);
 
         Assert.Equal(8_000, session.Host!.Context.Window);
     }
@@ -97,7 +96,7 @@ public class SwitchModelTests : IDisposable
 
         var next = new MockLlmProvider("model-two");
         next.EnqueueResponse(new LlmResponse { Text = "from two", StopReason = "end_turn" });
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second"));
+        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").Model);
 
         await session.Host!.SendAsync("who are you", CancellationToken.None);
 
@@ -118,8 +117,7 @@ public class SwitchModelTests : IDisposable
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("model-one")),
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
 
-        session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second")
-            with { ContextWindow = 8_000 });
+        session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").WithContextWindow(8_000).Model);
 
         var notice = Assert.Single(sink.Notices);
         Assert.Contains("second:model-two", notice);
@@ -147,7 +145,7 @@ public class SwitchModelTests : IDisposable
         session.NoteSpawner(spawner);
 
         var next = new MockLlmProvider("second");
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second") with { ContextWindow = 9_000 });
+        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").WithContextWindow(9_000).Model);
 
         Assert.Same(next, spawner.Provider);
         Assert.Equal("second", spawner.InstanceName);
@@ -176,6 +174,34 @@ public class SwitchModelTests : IDisposable
             CancellationToken ct, string? label = null) => throw new NotSupportedException();
     }
 
+    // THE CATALOG SURVIVES A SWITCH, which is what the split makes structural rather than
+    // conventional: SwitchModel takes an ActiveModel, so there is no configuration in scope to
+    // replace by accident. Passing a whole ResolvedConfig no longer compiles — verified by hand, and
+    // this pins the behaviour that guarantee protects.
+    [Fact]
+    public void SwitchModel_KeepsTheCatalog()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+
+        var catalog = new ProviderCatalog(
+            AgentTypes: new Dictionary<string, AgentTypeConfig> { ["surveyor"] = new("read only") },
+            ClassifierInstance: "first");
+
+        var session = manager.Open(_dir,
+            ResolvedConfig.ForTesting(new MockLlmProvider("first")).WithCatalog(catalog),
+            Ports());
+
+        session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("second"), "second").Model);
+
+        // The model moved…
+        Assert.Equal("second", session.InstanceName);
+
+        // …and everything the process was configured with did not.
+        Assert.Same(catalog, session.Resolution!.Catalog);
+        Assert.Equal("first", session.Resolution.ClassifierInstance);
+        Assert.Contains("surveyor", session.Resolution.AgentTypes.Keys);
+    }
+
     // NO HOST, NO SWITCH. A /model before the first wire has nothing to point anywhere, and the
     // caller is told rather than this throwing.
     [Fact]
@@ -183,6 +209,6 @@ public class SwitchModelTests : IDisposable
     {
         var session = new Session(_dir);
 
-        Assert.False(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider())));
+        Assert.False(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider()).Model));
     }
 }

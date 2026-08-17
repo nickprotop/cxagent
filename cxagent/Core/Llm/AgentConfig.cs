@@ -151,7 +151,7 @@ public sealed record AgentConfig
         if (Classifier is { } classifier && !Models.ContainsKey(classifier))
             errors.Add($"classifier '{classifier}' is not among the configured models.");
 
-        if (errors.Count > 0) return new ResolvedConfig(null, null, errors);
+        if (errors.Count > 0) return ResolvedConfig.Failed(errors);
 
         var instances = Models.ToDictionary(
             m => m.Key,
@@ -159,28 +159,27 @@ public sealed record AgentConfig
             StringComparer.Ordinal);
 
         var windows = Models.ToDictionary(m => m.Key, m => m.Value.ContextWindow, StringComparer.Ordinal);
-        var registry = ProviderRegistry.FromProviders(instances, defaultName, windows);
         var chosen = Models[defaultName!];
 
         return new ResolvedConfig(
-            instances[defaultName!],
-            $"{KindName(chosen.Kind)} {chosen.Model}",
-            [],
-            Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
-            Providers: registry,
-            ContextWindow: chosen.ContextWindow,
-            MaxConcurrentAgents: chosen.MaxConcurrentAgents)
-        {
-            InstanceName = defaultName,
-            ClassifierInstance = Classifier,
-            AgentTypes = new Dictionary<string, AgentTypeConfig>(Agents, StringComparer.Ordinal),
-            McpServers = Mcp.ToDictionary(
-                s => s.Key,
-                s => new McpServerConfig(s.Value.Command, s.Value.Enabled, s.Value.TimeoutMs,
-                    s.Value.Environment.Count > 0 ? s.Value.Environment : null,
-                    s.Value.WorkingDirectory),
-                StringComparer.Ordinal),
-        };
+            new ActiveModel(
+                instances[defaultName!],
+                defaultName,
+                $"{KindName(chosen.Kind)} {chosen.Model}",
+                chosen.ContextWindow),
+            new ProviderCatalog(
+                Instances: ProviderRegistry.FromProviders(instances, defaultName, windows),
+                AgentTypes: new Dictionary<string, AgentTypeConfig>(Agents, StringComparer.Ordinal),
+                McpServers: Mcp.ToDictionary(
+                    s => s.Key,
+                    s => new McpServerConfig(s.Value.Command, s.Value.Enabled, s.Value.TimeoutMs,
+                        s.Value.Environment.Count > 0 ? s.Value.Environment : null,
+                        s.Value.WorkingDirectory),
+                    StringComparer.Ordinal),
+                Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
+                MaxConcurrentAgents: chosen.MaxConcurrentAgents,
+                ClassifierInstance: Classifier),
+            []);
     }
 
     // THE SAME CONSTRUCTION ProviderRegistry.Construct performs for a config.json entry, reached from

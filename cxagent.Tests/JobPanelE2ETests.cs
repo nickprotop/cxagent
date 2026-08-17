@@ -36,7 +36,7 @@ public class JobPanelE2ETests : IDisposable
     public async Task Goal_RunsThroughRealShell_JobPanelGetsSetJobsAndUpdates()
     {
         var provider = new AnswersWithoutPlanningProvider();   // shared helper (P5a TestProviders.cs)
-        var res = new ResolvedConfig(provider, "Fake", System.Array.Empty<string>());
+        var res = ResolvedConfig.ForTesting(provider, "Fake");
         var mw = new MainWindow(_sys, res, _logs);
         mw.Build();
 

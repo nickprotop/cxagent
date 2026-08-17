@@ -55,66 +55,87 @@ namespace CxAgent.Core.Llm;
 /// Provider, rather than re-read from config at every compression check. Null on the --mock and
 /// no-provider paths, and whenever the user hasn't set contextWindow for the resolved instance.
 /// </param>
+/// <summary>
+/// What config.json resolved to: the catalog, the model to start on, and what went wrong reading it.
+///
+/// <para>THREE LIFETIMES, NOW NAMED. This was twelve members in one record — the catalog that never
+/// changes, the model <c>/model</c> replaces, and the errors from the read — so a method updating one
+/// had no way to say which. That is not a stylistic complaint: SwapProvider moved the agent's
+/// provider and the host's runtime and not the sub-agent factory's captured default, and every child
+/// kept talking to the model the session started on while the switch notice promised otherwise. A
+/// missed line, because nothing named the set.</para>
+///
+/// <para>THIS TYPE SURVIVES AS THE PAIRING, because resolving produces all three at once and a
+/// caller reading a config file wants them together. What changed is that a caller CHANGING one now
+/// says which: <see cref="ActiveModel"/> travels alone through <c>SwitchModel</c>, and
+/// <see cref="ProviderCatalog"/> cannot travel with it.</para>
+/// </summary>
+/// <param name="Model">The model to start on, or null when nothing usable resolved.</param>
+/// <param name="Catalog">Everything else config said — fixed for this process.</param>
+/// <param name="Errors">Why resolution failed. Empty on the happy path.</param>
+/// <param name="Warnings">Non-fatal complaints, said once so a skipped server is not mistaken for a
+/// slow one.</param>
 public sealed record ResolvedConfig(
-    ILlmProvider? Provider,
-    string? DisplayName,
+    ActiveModel? Model,
+    ProviderCatalog Catalog,
     IReadOnlyList<string> Errors,
-    OrchestratorSettings? Orchestrator = null,
-    ProviderRegistry? Providers = null,
-    int? ContextWindow = null,
-    int? MaxConcurrentAgents = null)
+    IReadOnlyList<string>? Warnings = null)
 {
-    public bool HasProvider => Provider is not null;
+    /// <summary>Whether anything usable resolved. Errors says why not.</summary>
+    public bool HasProvider => Model is not null;
+
+    /// <summary>Never null, so a caller need not check before enumerating.</summary>
+    public IReadOnlyList<string> Notices => Warnings ?? [];
+
+    // ---- the members callers read, forwarded ----------------------------------------------------
+    //
+    // NOT A FACADE HIDING THE OLD SHAPE. Reading a value through the pairing is fine and always was;
+    // what caused the bug was WRITING one — a method that took the whole record and updated some of
+    // it. Those callers now take an ActiveModel or a ProviderCatalog and physically cannot carry the
+    // other along, which is the change that matters. These stay because `config.Provider` reads
+    // better than `config.Model?.Provider` at two dozen call sites that only ever read.
+
+    public ILlmProvider? Provider => Model?.Provider;
+    public string? DisplayName => Model?.DisplayName;
+    public string? InstanceName => Model?.InstanceName;
+    public int? ContextWindow => Model?.ContextWindow;
+
+    public ProviderRegistry? Providers => Catalog.Instances;
+    public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes => Catalog.Types;
+    public IReadOnlyDictionary<string, McpServerConfig> McpServers => Catalog.Servers;
+    public OrchestratorSettings? Orchestrator => Catalog.Orchestrator;
+    public int? MaxConcurrentAgents => Catalog.MaxConcurrentAgents;
+    public string? ClassifierInstance => Catalog.ClassifierInstance;
 
     /// <summary>
-    /// A resolution over one provider and nothing else — for tests and headless callers that hold a
-    /// provider and have no config file behind it.
+    /// The same configuration over a different model — what <c>/model</c> produces.
     ///
-    /// <para>InstanceName defaults to "test" so spend attribution has a label: the ledger keys by
-    /// instance:model, and an unnamed instance would record a bare model id.</para>
+    /// <para>NAMED RATHER THAN LEFT TO <c>with</c>, because <c>with { ContextWindow = … }</c> was how
+    /// a caller used to change the model: reach into the flat record and set one field. That reads as
+    /// a small edit and is the shape that let SwapProvider update some of the model and not the rest.
+    /// Saying "the catalog is the same, the model is this" makes the boundary the type's rather than
+    /// the caller's.</para>
     /// </summary>
+    public ResolvedConfig WithModel(ActiveModel model) => this with { Model = model };
+
+    /// <summary>The same model over a different catalog — for a caller assembling one in pieces.</summary>
+    public ResolvedConfig WithCatalog(ProviderCatalog catalog) => this with { Catalog = catalog };
+
+    /// <summary>The same configuration, with the model's window corrected. The one field a caller
+    /// legitimately adjusts alone: it is config-only, so a probe or a test may know it late.</summary>
+    public ResolvedConfig WithContextWindow(int? window) =>
+        Model is null ? this : this with { Model = Model with { ContextWindow = window } };
+
+    /// <summary>Nothing resolved, and here is why.</summary>
+    public static ResolvedConfig Failed(IReadOnlyList<string> errors) =>
+        new(null, ProviderCatalog.Empty, errors);
+
+    /// <summary>A session over one provider and nothing else configured.</summary>
     public static ResolvedConfig ForTesting(ILlmProvider provider, string instanceName = "test") =>
-        new(provider, provider.DisplayName, []) { InstanceName = instanceName };
-
-    /// <summary>
-    /// Which <c>providers</c> entry is in use, or null when it cannot be named (the mock).
-    ///
-    /// <para>DISTINCT FROM <see cref="DisplayName"/>, which is the driver's own label — "Anthropic",
-    /// "Mock". This is the key a user typed in config and the one <c>/model</c> switches by, and
-    /// nothing carried it before: the resolution knew the window it had resolved but not which
-    /// instance produced it.</para>
-    /// </summary>
-    public string? InstanceName { get; init; }
-
-    /// <summary>
-    /// The instance that reviews actions in <c>/mode edits auto</c>, or null when none is configured.
-    ///
-    /// <para>NULL MEANS AUTO IS NOT OFFERED. Resolved through <see cref="Providers"/> at startup, the
-    /// same registry every other instance comes from — a classifier is an ordinary provider entry, so
-    /// spend against it is attributed and shown like any other.</para>
-    /// </summary>
-    public string? ClassifierInstance { get; init; }
-
-    /// <summary>Configured MCP servers, empty when none are — carried here because this is the one
-    /// place config.json is read, and the servers have to be started from what it said.</summary>
-    /// <summary>Configured sub-agent types, empty when none are. Carried for the same reason
-    /// McpServers is: AppBootstrap composes from this record, and a setting that stops here is a
-    /// setting the session never gets.</summary>
-    public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes { get; init; } =
-        new Dictionary<string, AgentTypeConfig>();
-
-    public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
-        new Dictionary<string, McpServerConfig>();
-
-    /// <summary>Non-fatal config complaints, for the transcript to show. A skipped server the user
-    /// never hears about is indistinguishable from one that is merely slow.</summary>
-    public IReadOnlyList<string> Warnings { get; init; } = [];
+        new(new ActiveModel(provider, instanceName, provider.DisplayName),
+            ProviderCatalog.Empty, []);
 }
 
-/// <summary>
-/// Resolves the startup provider from config (or --mock). Never throws: a missing/invalid config
-/// yields a no-provider ResolvedConfig carrying actionable error lines for the UI to render.
-/// </summary>
 public static class ConfigResolver
 {
     /// <summary>
@@ -143,15 +164,17 @@ public static class ConfigResolver
                 ?? ContextWindowProbe.TryGetAsync(cfg.BaseUrl, cfg.Model, cfg.ApiKey)
                     .GetAwaiter().GetResult();
 
-            return new ResolvedConfig(provider, provider.DisplayName, Array.Empty<string>(),
-                settings.Orchestrator, registry, contextWindow, cfg.MaxConcurrentAgents)
-            {
-                InstanceName = instanceName,
-                McpServers = settings.McpServers,
-                AgentTypes = settings.AgentTypes,
-                Warnings = settings.Warnings,
-                ClassifierInstance = settings.Classifier,
-            };
+            return new ResolvedConfig(
+                new ActiveModel(provider, instanceName, provider.DisplayName, contextWindow),
+                new ProviderCatalog(
+                    Instances: registry,
+                    AgentTypes: settings.AgentTypes,
+                    McpServers: settings.McpServers,
+                    Orchestrator: settings.Orchestrator,
+                    MaxConcurrentAgents: cfg.MaxConcurrentAgents,
+                    ClassifierInstance: settings.Classifier),
+                [],
+                settings.Warnings);
         }
         catch (Exception)
         {
@@ -204,8 +227,10 @@ public static class ConfigResolver
             // session dispatches rather than failing to resolve a plugin type that is registered.
             var mockRegistry = ProviderRegistry.FromProviders(
                 new Dictionary<string, ILlmProvider> { ["mock"] = mock }, "mock");
-            return new ResolvedConfig(mock, mock.DisplayName, Array.Empty<string>(),
-                Providers: mockRegistry);
+            return new ResolvedConfig(
+                new ActiveModel(mock, "mock", mock.DisplayName),
+                new ProviderCatalog(Instances: mockRegistry),
+                []);
         }
 
         try
@@ -232,15 +257,17 @@ public static class ConfigResolver
             int? contextWindow = cfg?.ContextWindow
                 ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
                     .GetAwaiter().GetResult();
-            return new ResolvedConfig(provider, provider.DisplayName, Array.Empty<string>(),
-                settings.Orchestrator, registry, contextWindow, cfg?.MaxConcurrentAgents)
-            {
-                InstanceName = settings.DefaultProvider,
-                McpServers = settings.McpServers,
-                AgentTypes = settings.AgentTypes,
-                Warnings = settings.Warnings,
-                ClassifierInstance = settings.Classifier,
-            };
+            return new ResolvedConfig(
+                new ActiveModel(provider, settings.DefaultProvider, provider.DisplayName, contextWindow),
+                new ProviderCatalog(
+                    Instances: registry,
+                    AgentTypes: settings.AgentTypes,
+                    McpServers: settings.McpServers,
+                    Orchestrator: settings.Orchestrator,
+                    MaxConcurrentAgents: cfg?.MaxConcurrentAgents,
+                    ClassifierInstance: settings.Classifier),
+                [],
+                settings.Warnings);
         }
         catch (ProviderConfigException ex)
         {
