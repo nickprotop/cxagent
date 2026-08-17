@@ -35,18 +35,31 @@ public class ChainGrantTests : IDisposable
     public void AChainedCommandGetsNoRule(string command) =>
         Assert.Null(CommandArity.RuleFor(command));
 
-    // THE `cd X && one-command` IDIOM IS THE EXCEPTION, and it earns one: it is what the model
-    // writes constantly, refusing it outright is what made a user reach for `cd*`, and the rule it
-    // produces names the command actually run rather than the `cd` in front of it. ReadOnlyCommands
-    // already strips and boundary-checks this exact form for the allow decision, so no new parsing
-    // is involved.
+    // THE `cd X && one-SAFE-command` IDIOM EARNS A RULE, and only that. It is what the model writes
+    // constantly, and refusing it outright is what made a user reach for `cd*`.
     [Theory]
-    [InlineData("cd /repo && dotnet test", "dotnet test*")]
     [InlineData("cd /repo && ls", "ls*")]
-    public void TheCdIdiomGetsARuleForTheCommandItRuns(string command, string expected) =>
+    [InlineData("cd /repo && cat notes.txt", "cat*")]
+    public void ASafeCdPairGetsARuleForTheCommandItRuns(string command, string expected) =>
         Assert.Equal(expected, CommandArity.RuleFor(command));
 
-    // BUT ONLY ONE COMMAND AFTER IT. `cd /x && a && b` is still a chain and still gets nothing.
+    // A DESTRUCTIVE OR CODE-EXECUTING PAIR GETS NOTHING, which is the correction to the first
+    // version of this: stripping the `cd` unconditionally meant `cd /repo && rm -rf build` wrote the
+    // rule `rm*`, and one click then made every later `rm -rf` in that folder silent — the source
+    // tree included. The boundary keeps such a rule inside the project, which is no comfort when the
+    // project IS what gets deleted.
+    //
+    // `dotnet test` is here too, and that is the honest cost: it runs a repo's own build targets, so
+    // a fresh clone running it is running that repo's code. It keeps asking.
+    [Theory]
+    [InlineData("cd /repo && rm -rf build")]
+    [InlineData("cd /repo && mv src dst")]
+    [InlineData("cd /repo && chmod 777 x")]
+    [InlineData("cd /repo && dotnet test")]
+    public void AnUnsafeCdPairGetsNoRule(string command) =>
+        Assert.Null(CommandArity.RuleFor(command));
+
+    // AND ONLY ONE COMMAND AFTER IT. `cd /x && a && b` is still a chain and still gets nothing.
     [Fact]
     public void ACdFollowedByAChainStillGetsNoRule() =>
         Assert.Null(CommandArity.RuleFor("cd /repo && dotnet build && rm -rf /tmp/x"));

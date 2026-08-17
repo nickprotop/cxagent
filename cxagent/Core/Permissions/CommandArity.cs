@@ -181,7 +181,24 @@ public static class CommandArity
         // SAFE BECAUSE IT IS NOT NEW PARSING. ReadOnlyCommands already strips this form and confines
         // the cd target for the ALLOW decision; CommandAfterCd returns null unless the remainder is a
         // single command with no operators of its own.
-        if (ReadOnlyCommands.CommandAfterCd(command) is { } inner) command = inner;
+        // ONLY WHEN WHAT FOLLOWS CANNOT DESTROY ANYTHING. Stripping the `cd` unconditionally was
+        // worse than the problem it solved: `cd /repo && rm -rf build` wrote the rule `rm*`, and one
+        // click then made every later `rm -rf` in that folder silent — the source tree included.
+        // The path guard in PermissionPolicy keeps such a rule inside the boundary, which is exactly
+        // no comfort when the boundary is the project you are working in.
+        //
+        // SO THE PAIR IS A CONVENIENCE FOR SAFE COMMANDS, NOT A GENERAL UNWRAPPING. `cd X && ls`
+        // and `cd X && cat f` earn a rule because a rule for `ls` is a rule to read; `rm`, `mv`,
+        // `chmod` and anything else absent from the safe list keep asking, which is what a
+        // destructive verb should do however it is spelled.
+        //
+        // `dotnet test` IS NOT SAFE BY THIS TEST EITHER, and that is the honest cost: it executes a
+        // project's own build targets, so a fresh clone running it is running that repo's code. It
+        // keeps asking. The friction that led someone to grant `cd*` is real, and the answer to it
+        // is not to widen what a click can buy.
+        if (ReadOnlyCommands.CommandAfterCd(command) is { } inner
+            && ReadOnlyCommands.IsReadOnly(inner, out _))
+            command = inner;
 
         if (IsChain(command)) return null;
 
