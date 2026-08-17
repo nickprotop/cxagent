@@ -41,11 +41,27 @@ public sealed class SessionManager : IDisposable
     /// page listing grants, the startup migration. Null when no store was built.</summary>
     public PermissionRulesStore? Rules { get; }
 
-    private SessionManager(SharedServices shared, PermissionRulesStore? rules, bool ownsServices)
+    /// <summary>An empty environment, for the default config read — see Create's `config` param.</summary>
+    private static readonly IReadOnlyDictionary<string, string> EmptyEnvironment =
+        new Dictionary<string, string>();
+
+    /// <summary>
+    /// What this process runs unless a session says otherwise.
+    ///
+    /// <para>A VALUE, INCLUDING WHEN IT FAILED. ConfigResolver never throws — an unreadable or
+    /// absent config.json comes back with HasProvider false and Errors filled in — so a caller that
+    /// cares reads those and one that does not carries on. Hiding this inside Open would have taken
+    /// the errors with it, and "no provider" without "why" is worse than no answer.</para>
+    /// </summary>
+    public ResolvedConfig Config { get; }
+
+    private SessionManager(SharedServices shared, PermissionRulesStore? rules, bool ownsServices,
+        ResolvedConfig? config = null)
     {
         Shared = shared;
         Rules = rules;
         _ownsServices = ownsServices;
+        Config = config ?? new ResolvedConfig(null, null, ["no configuration was resolved"]);
 
         SeedCommands();
     }
@@ -130,10 +146,47 @@ public sealed class SessionManager : IDisposable
     /// wants refusal can say so, and one that genuinely has nobody to ask should not have every
     /// operation silently fail.</para>
     /// </param>
+    /// <param name="config">
+    /// What this process runs unless a session says otherwise. Null reads config.json from
+    /// <paramref name="paths"/>, which is the answer a caller would assume: the manager holds the
+    /// config directory, so it can say what that directory contains without being told twice.
+    ///
+    /// <para>ENVIRONMENT VARIABLES ARE THE CALLER'S. The default read expands none — a config using
+    /// <c>${VAR}</c> needs somebody to say which environment, and a manager reaching for the ambient
+    /// one would make a test's result depend on the machine it ran on. A caller that wants expansion
+    /// resolves explicitly and passes the result, which is also how --mock and --model arrive.</para>
+    ///
+    /// <para>RESOLVED EAGERLY, not on first read. A property that does file IO is a property that
+    /// throws somewhere nobody expects, and the cost here is one File.Exists against a directory the
+    /// caller just named.</para>
+    /// </param>
     public static SessionManager Create(AppPaths paths,
         Func<PermissionRulesStore, IPermissionGate>? buildGate = null,
-        Mcp.McpToolset? mcp = null)
+        Mcp.McpToolset? mcp = null,
+        ResolvedConfig? config = null) =>
+        Create(new ProcessSetup
+        {
+            Paths = paths,
+            BuildGate = buildGate,
+            Mcp = mcp,
+            Config = config,
+        });
+
+    /// <summary>
+    /// Builds the process's shared services from its <see cref="ProcessSetup"/>.
+    ///
+    /// <para>THE NAMED FORM, and the one to prefer. The overload above takes the same four things
+    /// positionally, which is how they arrived — one per feature — and is kept because thirty-odd
+    /// callers pass only the first. Two of the four are nullable and two are delegates, so a caller
+    /// passing them in the wrong order gets agreement from the compiler rather than an error.</para>
+    /// </summary>
+    public static SessionManager Create(ProcessSetup setup)
     {
+        var paths = setup.Paths;
+        var buildGate = setup.BuildGate;
+        var mcp = setup.Mcp;
+        var config = setup.Config;
+
         var resume = new SqliteSessionStore(paths);
         resume.Prune(SqliteSessionStore.DefaultRetention);
 
@@ -150,7 +203,8 @@ public sealed class SessionManager : IDisposable
                 GlobalInstructionsDir = paths.ConfigDir,
             },
             rules,
-            ownsServices: true);
+            ownsServices: true,
+            config ?? ConfigResolver.Resolve(paths, EmptyEnvironment, useMock: false));
     }
 
     /// <summary>
@@ -160,8 +214,9 @@ public sealed class SessionManager : IDisposable
     /// type, and tests that want a manager over fakes. Disposing this one leaves them alone, because
     /// disposing what you did not create is how a store closes underneath its second user.</para>
     /// </summary>
-    public static SessionManager Over(SharedServices shared, PermissionRulesStore? rules = null) =>
-        new(shared, rules, ownsServices: false);
+    public static SessionManager Over(SharedServices shared, PermissionRulesStore? rules = null,
+        ResolvedConfig? config = null) =>
+        new(shared, rules, ownsServices: false, config);
 
     /// <summary>
     /// What this manager can offer for a named set — see <see cref="CompletionSets"/>.
@@ -243,9 +298,13 @@ public sealed class SessionManager : IDisposable
     /// one is a rendering decision, the other is a folder and an edit mode belonging to this
     /// conversation.</para>
     /// </summary>
-    public Session Open(string workingDirectory, ResolvedConfig resolution,
+    public Session Open(string workingDirectory, ResolvedConfig? config,
         SessionPorts ports, WorkingMode? mode = null) =>
-        Open(new Session(workingDirectory), resolution, ports, mode);
+        Open(new Session(workingDirectory), config, ports, mode);
+
+    /// <summary>Opens a session on this process's configuration — see <see cref="Config"/>.</summary>
+    public Session Open(string workingDirectory, SessionPorts ports, WorkingMode? mode = null) =>
+        Open(new Session(workingDirectory), null, ports, mode);
 
     /// <summary>
     /// Wires a session this manager did not construct, and owns it from then on.
@@ -268,10 +327,18 @@ public sealed class SessionManager : IDisposable
     /// picks anyway when nobody sets one — so a caller with no opinion says nothing rather than
     /// repeating the default back.
     /// </param>
-    public Session Open(Session session, ResolvedConfig resolution,
+    /// <param name="config">
+    /// What THIS session runs. Null takes the process's — see <see cref="Config"/>.
+    ///
+    /// <para>PER SESSION BECAUSE SESSIONS DIFFER. ConfigResolver.ResolveInstance exists precisely so
+    /// one session can run a model the process default is not; with tabs, two sessions on two models
+    /// is the ordinary case rather than the exception. A caller that wants that resolves the instance
+    /// and passes it here; one that does not says nothing.</para>
+    /// </param>
+    public Session Open(Session session, ResolvedConfig? config,
         SessionPorts ports, WorkingMode? mode = null)
     {
-        SessionFactory.Wire(session, resolution, Shared, ports, mode ?? WorkingMode.Default);
+        SessionFactory.Wire(session, config ?? Config, Shared, ports, mode ?? WorkingMode.Default);
 
         lock (_gate)
             if (!_sessions.Contains(session)) _sessions.Add(session);

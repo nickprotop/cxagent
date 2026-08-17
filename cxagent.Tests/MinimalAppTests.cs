@@ -44,7 +44,7 @@ public class MinimalAppTests : IDisposable
     [Fact]
     public async Task AnAppIsFourCalls()
     {
-        var manager = SessionManager.Create(new AppPaths(_dir));
+        var manager = SessionManager.Create(ProcessSetup.For(_dir));
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse { Text = "hi back", StopReason = "end_turn" });
         var sink = new BufferedChatSink();
@@ -59,6 +59,21 @@ public class MinimalAppTests : IDisposable
         // through the observer this app supplied — the round trip, end to end.
         Assert.NotEmpty(sink.Body);
         manager.Dispose();
+    }
+
+    // THREE, WHEN THE PROCESS'S OWN CONFIGURATION WILL DO. The manager holds the config directory,
+    // so it reads config.json from there and every session runs on that unless one says otherwise —
+    // which is what a caller assumes. The four-call form above exists for the caller with an opinion
+    // about which model, which is every real front end and every test that wants a fake.
+    [Fact]
+    public void AnAppOverItsOwnConfigIsThree()
+    {
+        using var manager = SessionManager.Create(ProcessSetup.For(_dir));
+
+        // NO config.json HERE, so this resolved to "no provider, and here is why" rather than
+        // throwing — which is what lets a caller check and report instead of catching.
+        Assert.False(manager.Config.HasProvider);
+        Assert.NotEmpty(manager.Config.Errors);
     }
 
     /// <summary>
