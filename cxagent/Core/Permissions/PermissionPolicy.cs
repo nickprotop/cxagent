@@ -268,6 +268,14 @@ public class PermissionPolicy
         var subject = RuleSubject(request);
         if (subject is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
+        // A CHAIN IS NEVER MATCHED BY A STORED RULE, however that rule was written. Refusing to
+        // CREATE one (CommandArity.RuleFor) protects the future; this protects the past, because a
+        // store already holding `cd*` would otherwise keep permitting `cd /tmp && rm -rf ~` on every
+        // machine that granted it before the fix. A rule is a statement about one command, and the
+        // text after `&&` is a command nothing here has examined.
+        if (request.Kind == PermissionKind.Shell && CommandArity.IsChain(subject))
+            return false;
+
         return _rules.Matches(_root, request.Kind, subject);
     }
 

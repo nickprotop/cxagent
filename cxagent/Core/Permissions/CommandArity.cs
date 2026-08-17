@@ -138,6 +138,18 @@ public static class CommandArity
     }
 
     /// <summary>
+    /// Whether this is several commands rather than one.
+    ///
+    /// <para>THE SAME CHARACTERS <c>ReadOnlyCommands</c> CALLS DANGEROUS, and for the same reason:
+    /// what follows one of them is a command this check never looked at. There it decides whether to
+    /// ask; here it decides whether an answer can be remembered.</para>
+    /// </summary>
+    public static bool IsChain(string? command) =>
+        command is not null && command.AsSpan().IndexOfAny(ChainOperators) >= 0;
+
+    private static readonly char[] ChainOperators = ['&', ';', '|', '\n', '\r'];
+
+    /// <summary>
     /// The rule a grant should store — the prefix plus a wildcard, or null when none can be written.
     /// </summary>
     /// <remarks>
@@ -146,6 +158,23 @@ public static class CommandArity
     /// </remarks>
     public static string? RuleFor(string? command)
     {
+        // A CHAIN CANNOT BE GRANTED, because there is no honest rule to write for it. Prefix() reads
+        // the first word or two and knows nothing about `&&`, `;` or `|`, so `cd /repo && dotnet
+        // test` produced the rule `cd*` — and the store matches a pattern by RAW PREFIX, so that
+        // rule then permits `cd /tmp && rm -rf ~`. Since almost any command can be written
+        // `cd . && <anything>`, one grant became arbitrary shell.
+        //
+        // MEASURED, NOT THEORISED: a live drive asked seven times, six of them for shell shapes, and
+        // pressing Always on one of those chains is exactly what a user under that much friction
+        // does. The prompt said "Always allow covers: cd*", which reads as "cd commands" and means
+        // "anything whose text starts with cd".
+        //
+        // NULL, LIKE THE ENV CASE ABOVE IT. The action can still be allowed once; what it cannot do
+        // is become a standing rule. Narrowing the pattern instead — quoting, escaping, matching
+        // only up to the operator — would be inventing a shell parser inside a permission check, and
+        // a parser that is wrong once is a hole that looks like a guard.
+        if (IsChain(command)) return null;
+
         var prefix = Prefix(command);
 
         // NO SPACE BEFORE THE STAR, and the reason is a real bug this cost. The store's prefix match
