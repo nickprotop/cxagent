@@ -1,6 +1,7 @@
 using CxAgent.Core.Agent;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Llm.Providers;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
@@ -153,6 +154,82 @@ public class HeadlessSessionTests : IDisposable
 
         // AND A REAL TURN STILL COMPLETES. If anything waited on a person this would hang.
         await session.Host!.SendAsync("hello", CancellationToken.None);
+    }
+
+    /// <summary>
+    /// THE SAME SESSION AGAINST A REAL ENDPOINT, spelled out with the values a config.json would
+    /// hold — here the local llama.cpp server from this machine's own config:
+    ///
+    /// <code>
+    /// "local": {
+    ///   "kind": "openai-compatible",
+    ///   "model": "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
+    ///   "baseUrl": "http://localhost:8771/v1",
+    ///   "contextWindow": 212992
+    /// }
+    /// </code>
+    ///
+    /// <para>NOT RUN AS A TEST — it needs a server listening on 8771, so it is a compiled example
+    /// rather than an assertion. Compiled, because an example that drifts out of date is worse than
+    /// none: this stops building the moment a signature it uses changes.</para>
+    ///
+    /// <para>WHAT IT SHOWS is that the mock in the test above is the only difference. Swap
+    /// MockLlmProvider for the real one and everything else — the catalog, the agent types, the
+    /// gate, the ports — is identical.</para>
+    /// </summary>
+    [Fact(Skip = "Needs a llama.cpp server on :8771. Verified by hand: passed in 2m12s against " +
+                 "qwen3.6-35b-a3b-ud-iq4_xs on 2026-08-17.")]
+    public async Task AgainstLocalLlamaCpp() =>
+        await RunAgainstLocalLlamaCpp(_state, _work);
+
+    private static async Task RunAgainstLocalLlamaCpp(string stateDir, string workDir)
+    {
+        // 1. THE MODEL. What ProviderRegistry.Construct builds for a "openai-compatible" entry,
+        //    written out directly — no config file, no loader.
+        var local = new OpenAiCompatibleProvider(new OpenAiProviderOptions
+        {
+            ProviderId = "local",
+            DisplayName = "llama.cpp qwen3.6",
+            Model = "qwen3.6-35b-a3b-ud-iq4_xs.gguf",
+            BaseUrl = "http://localhost:8771/v1",
+
+            // No key: llama.cpp's OpenAI-compatible server does not check one. A hosted endpoint
+            // would take it here, from wherever the host keeps its secrets.
+            ApiKey = null,
+        });
+
+        var catalog = ProviderRegistry.FromProviders(
+            new Dictionary<string, ILlmProvider> { ["local"] = local },
+            defaultName: "local",
+            windows: new Dictionary<string, int?> { ["local"] = 212_992 });
+
+        // 2. THE CONFIGURATION. contextWindow is what the compression threshold derives from, so a
+        //    wrong number here compacts too early or too late — it is not decoration.
+        var config = new ResolvedConfig(local, "llama.cpp qwen3.6", [])
+        {
+            InstanceName = "local",
+            ContextWindow = 212_992,
+            Providers = catalog,
+            Orchestrator = new OrchestratorSettings(MaxTurns: 300),
+        };
+
+        // 3. THE PROCESS, and its answer to every permission question.
+        using var manager = SessionManager.Create(new ProcessSetup
+        {
+            Paths = new AppPaths(stateDir),
+            Config = config,
+            BuildGate = _ => new PolicyGate([]),
+        });
+
+        // 4. THE SESSION. Output to a buffer the host reads afterwards.
+        var sink = new BufferedChatSink();
+        var session = manager.Open(workDir,
+            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
+
+        await session.Host!.SendAsync("List the files here and say what this project is.",
+            CancellationToken.None);
+
+        Console.WriteLine(sink.Body);
     }
 
     /// <summary>
