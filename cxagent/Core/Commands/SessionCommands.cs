@@ -175,6 +175,21 @@ public static class SessionCommands
             if (c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 hits.Add(c);
 
+        // AN EXACT MATCH SORTS FIRST, because a command that is a strict PREFIX of another can never
+        // be reached otherwise: typing /mode offered /model above it — table order decided, and
+        // /model is declared first — so Enter completed to the longer name and the shorter command
+        // was unreachable from the palette. Observed, and it had nothing to do with either command.
+        //
+        // STABLE OTHERWISE: everything else keeps the table's order, which is the order /help prints
+        // and the one a reader has already learned.
+        var exact = hits.FindIndex(c => c.Name.Equals(prefix, StringComparison.OrdinalIgnoreCase));
+        if (exact > 0)
+        {
+            var winner = hits[exact];
+            hits.RemoveAt(exact);
+            hits.Insert(0, winner);
+        }
+
         return hits;
     }
 

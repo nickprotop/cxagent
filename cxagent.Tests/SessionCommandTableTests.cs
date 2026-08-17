@@ -399,6 +399,32 @@ public class SessionCommandTableTests
         Assert.Equal(expected, CommandMenu.CompletionFor(argument, typed.TrimEnd()));
     }
 
+    // A COMMAND THAT IS A PREFIX OF ANOTHER IS STILL REACHABLE. /mode is a strict prefix of /model,
+    // and table order put the longer one first — so typing the whole of /mode offered /model above
+    // it and Enter completed to the wrong command. The shorter one could not be selected at all
+    // without arrowing past a name that already matched exactly.
+    [Fact]
+    public void Matching_PutsAnExactMatchFirst()
+    {
+        var hits = SessionCommands.Matching("/mode");
+
+        Assert.Equal("/mode", hits[0].Name);
+        Assert.Contains(hits, c => c.Name == "/model");
+    }
+
+    // AND EVERYTHING ELSE KEEPS THE TABLE'S ORDER, which is the order /help prints and the one a
+    // reader has already learned.
+    [Fact]
+    public void Matching_WithNoExactMatch_KeepsTheTableOrder()
+    {
+        var hits = SessionCommands.Matching("/mod");
+
+        Assert.Equal(
+            SessionCommands.All.Where(c => c.Name.StartsWith("/mod", StringComparison.Ordinal))
+                               .Select(c => c.Name),
+            hits.Select(c => c.Name));
+    }
+
     // ---- the palette's second level ------------------------------------------------------------
 
     /// <summary>After a command and a space, the palette offers that command's arguments — the
