@@ -49,7 +49,7 @@ public class MinimalAppTests : IDisposable
         provider.EnqueueResponse(new LlmResponse { Text = "hi back", StopReason = "end_turn" });
         var sink = new BufferedChatSink();
 
-        var session = manager.Open(_dir, ProviderResolution.ForTesting(provider),
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
 
         await session.Host!.SendAsync("hello", CancellationToken.None);
@@ -76,7 +76,7 @@ public class MinimalAppTests : IDisposable
 
         Assert.Null(manager.Shared.Gate);
 
-        var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider()),
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() });
 
         Assert.NotNull(session.Host);

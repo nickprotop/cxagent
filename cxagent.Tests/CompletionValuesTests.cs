@@ -34,7 +34,7 @@ public class CompletionValuesTests : IDisposable
         return ProviderRegistry.FromProviders(providers, instances[0].Name, windows);
     }
 
-    private Session Wired(SessionManager manager, ProviderResolution resolution) =>
+    private Session Wired(SessionManager manager, ResolvedConfig resolution) =>
         manager.Open(_dir, resolution, Ports(), AgentMode.Single);
 
     // EVERY CONFIGURED INSTANCE, described by its model — and the one in use marked. That marker is
@@ -44,7 +44,7 @@ public class CompletionValuesTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var catalog = Registry(("local", "qwen3", 213_000), ("remote", "claude-x", 200_000));
-        var resolution = ProviderResolution.ForTesting(new MockLlmProvider("qwen3"), "local")
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider("qwen3"), "local")
             with { Providers = catalog };
 
         var session = Wired(manager, resolution);
@@ -64,10 +64,10 @@ public class CompletionValuesTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
 
-        var without = Wired(manager, ProviderResolution.ForTesting(new MockLlmProvider()));
+        var without = Wired(manager, ResolvedConfig.ForTesting(new MockLlmProvider()));
         Assert.DoesNotContain("auto", without.Values(CompletionSets.EditModes).Select(v => v.Name));
 
-        var withClassifier = ProviderResolution.ForTesting(new MockLlmProvider())
+        var withClassifier = ResolvedConfig.ForTesting(new MockLlmProvider())
             with { ClassifierInstance = "local" };
         var with = manager.Open(Path.Combine(_dir, "b"), withClassifier, Ports(), AgentMode.Single);
         Assert.Contains("auto", with.Values(CompletionSets.EditModes).Select(v => v.Name));
@@ -83,7 +83,7 @@ public class CompletionValuesTests : IDisposable
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
 
-        var session = Wired(manager, ProviderResolution.ForTesting(provider));
+        var session = Wired(manager, ResolvedConfig.ForTesting(provider));
 
         // A ROW EXISTS ONLY ONCE SOMETHING WAS SAID. Without this the list is empty and Assert.All
         // passes over nothing — a test that cannot fail, which is worse than no test.
@@ -102,7 +102,7 @@ public class CompletionValuesTests : IDisposable
     public void Session_IsEmptyForASetItDoesNotOwn()
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
-        var session = Wired(manager, ProviderResolution.ForTesting(new MockLlmProvider()));
+        var session = Wired(manager, ResolvedConfig.ForTesting(new MockLlmProvider()));
 
         Assert.Empty(session.Values(CompletionSets.Sessions));
         Assert.Empty(session.Values("nonsense"));
@@ -137,7 +137,7 @@ public class CompletionValuesTests : IDisposable
         var rules = new PermissionRulesStore(new AppPaths(_dir));
         var policy = new CxAgent.Core.Permissions.PermissionPolicy(_dir, rules, EditMode.AlwaysAsk);
 
-        var session = manager.Open(_dir, ProviderResolution.ForTesting(new MockLlmProvider()),
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts
             {
                 Observer = new BufferedChatSink(),
@@ -173,7 +173,7 @@ public class CompletionValuesTests : IDisposable
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
 
-        var session = Wired(manager, ProviderResolution.ForTesting(provider));
+        var session = Wired(manager, ResolvedConfig.ForTesting(provider));
         await session.Host!.SendAsync("remember this", CancellationToken.None);
 
         var agentId = session.Host.SessionId;
@@ -210,7 +210,7 @@ public class CompletionValuesTests : IDisposable
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn" });
 
-        var session = manager.Open(_dir, ProviderResolution.ForTesting(provider),
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
 
         var kinds = new List<SessionChangeKind>();

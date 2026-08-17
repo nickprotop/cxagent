@@ -251,7 +251,7 @@ public sealed class Session
 
     /// <summary>Records the catalog this session was wired against, so it can answer
     /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
-    public void NoteCatalog(ProviderResolution resolution, ProviderRegistry? catalog, bool classifierConfigured)
+    public void NoteCatalog(ResolvedConfig resolution, ProviderRegistry? catalog, bool classifierConfigured)
     {
         Resolution = resolution;
         _catalog = catalog;
@@ -326,7 +326,7 @@ public sealed class Session
     /// Kept so a watcher reacting to <see cref="Changed"/> can read what it needs off the session
     /// instead of re-resolving from disk inside a UI handler, which is both wasteful and able to
     /// fail at exactly the moment the screen must be repainted.</summary>
-    public ProviderResolution? Resolution { get; private set; }
+    public ResolvedConfig? Resolution { get; private set; }
 
     private ProviderRegistry? _catalog;
     private bool _classifierConfigured;
@@ -581,7 +581,7 @@ public sealed class Session
     /// <para>FALSE WHEN THERE IS NO HOST — a switch before the first wire has nothing to point
     /// anywhere, and the caller says so rather than this throwing.</para>
     /// </summary>
-    public bool SwitchModel(ProviderResolution? next, string? requestedName = null)
+    public bool SwitchModel(ResolvedConfig? next, string? requestedName = null)
     {
         if (RefusedWhileBusy()) return false;
 

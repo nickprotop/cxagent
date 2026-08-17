@@ -5,10 +5,10 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
-public class ProviderResolutionTests : IDisposable
+public class ResolvedConfigTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "cxagent-pr-" + Guid.NewGuid().ToString("N"));
-    public ProviderResolutionTests() => Directory.CreateDirectory(_dir);
+    public ResolvedConfigTests() => Directory.CreateDirectory(_dir);
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, true); }
     private void Write(string json) => File.WriteAllText(Path.Combine(_dir, "config.json"), json);
     private AppPaths Paths() => new(_dir);
@@ -17,7 +17,7 @@ public class ProviderResolutionTests : IDisposable
     [Fact]
     public void Mock_ReturnsMockProvider_IgnoringConfig()
     {
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: true);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: true);
         Assert.True(r.HasProvider);
         Assert.Equal("mock", r.Provider!.ProviderId);
     }
@@ -34,7 +34,7 @@ public class ProviderResolutionTests : IDisposable
     [Fact]
     public async Task Mock_IsSeeded_WithARunnablePlan()
     {
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: true);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: true);
         var resp = await r.Provider!.ChatAsync(new List<CxAgent.Core.Models.ChatMessage>(), null, default);
 
         var call = Assert.Single(resp.ToolCalls);
@@ -53,7 +53,7 @@ public class ProviderResolutionTests : IDisposable
     /// <summary>
     /// Regression: orchestrator token budgets parsed and round-tripped correctly but were DEAD IN
     /// PRODUCTION — `AgentHost` accepts an `OrchestratorSettings?` and AppBootstrap never passed one,
-    /// because `ProviderResolution` dropped the `ProviderSettings` that `ProviderResolver.Resolve`
+    /// because `ResolvedConfig` dropped the `ProviderSettings` that `ConfigResolver.Resolve`
     /// already had in hand. The cap was unit-tested and unenforced: exactly the shape of bug that a
     /// green suite hides. The resolution must carry the settings so the live runner can be bounded.
     /// </summary>
@@ -66,7 +66,7 @@ public class ProviderResolutionTests : IDisposable
           "orchestrator": { "maxTurns": 42 } }
         """);
 
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: false);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: false);
 
         Assert.True(r.HasProvider);
         Assert.NotNull(r.Orchestrator);
@@ -77,7 +77,7 @@ public class ProviderResolutionTests : IDisposable
     [Fact]
     public void Mock_HasNoOrchestratorBudgets()
     {
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: true);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: true);
         Assert.True(r.HasProvider);
         Assert.Null(r.Orchestrator?.MaxTurns);
     }
@@ -89,7 +89,7 @@ public class ProviderResolutionTests : IDisposable
         { "providers": { "claude": { "kind":"anthropic", "apiKey":"sk", "model":"claude-x" } },
           "defaultProvider":"claude" }
         """);
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: false);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: false);
         Assert.True(r.HasProvider);
         Assert.Equal("claude", r.Provider!.ProviderId);   // ProviderId = instance name (P4 T8)
     }
@@ -97,7 +97,7 @@ public class ProviderResolutionTests : IDisposable
     [Fact]
     public void MissingConfig_NoProvider_WithActionableError_NoThrow()
     {
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: false);   // no config.json written
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: false);   // no config.json written
         Assert.False(r.HasProvider);
         Assert.NotEmpty(r.Errors);
         Assert.Contains(r.Errors, e => e.Contains("config.json"));
@@ -107,7 +107,7 @@ public class ProviderResolutionTests : IDisposable
     public void InvalidConfig_NoProvider_SurfacesBatchedErrors_NoThrow()
     {
         Write("""{ "providers": { "bad": { "kind":"made-up", "model":"x" } }, "defaultProvider":"ghost" }""");
-        var r = ProviderResolver.Resolve(Paths(), NoEnv, useMock: false);
+        var r = ConfigResolver.Resolve(Paths(), NoEnv, useMock: false);
         Assert.False(r.HasProvider);
         Assert.True(r.Errors.Count >= 2);   // batched: unknown kind + dangling default
     }

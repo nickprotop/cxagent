@@ -35,7 +35,7 @@ public class MainWindowTests
     [Fact]
     public void Build_WithProvider_EnablesSubmission_AndExposesControls()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         var win = mw.Build();
 
@@ -59,7 +59,7 @@ public class MainWindowTests
     [Fact]
     public void Build_GoalComposer_StartsFocused_SoTypingWorks()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -81,7 +81,7 @@ public class MainWindowTests
         // move focus to it: the old implementation set Input.IsEditing = false first, which would
         // leave the composer silently unable to accept typed input with nothing visible to show for
         // it — exactly D10's failure mode, and unrecoverable without knowing to press F4.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -104,7 +104,7 @@ public class MainWindowTests
     [Fact]
     public void StatusBar_AdvertisesOnlyBindableKeys()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -130,7 +130,7 @@ public class MainWindowTests
     [Fact]
     public void Build_NoProvider_DisablesSubmission_ShowsErrors()
     {
-        var res = new ProviderResolution(null, null, new[] { "config.json not found at '/x'." });
+        var res = new ResolvedConfig(null, null, new[] { "config.json not found at '/x'." });
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -142,7 +142,7 @@ public class MainWindowTests
     [Fact]
     public void Build_SetsInitialFocusToInputControl()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -161,7 +161,7 @@ public class MainWindowTests
     [Fact]
     public void SetSubmissionEnabled_FlipsFlag_AndRefreshesPlaceholder()
     {
-        var noProvider = new ProviderResolution(null, null, new[] { "config.json not found." });
+        var noProvider = new ResolvedConfig(null, null, new[] { "config.json not found." });
         var mw = new MainWindow(Sys(), noProvider, Logs());
         mw.Build();
 
@@ -177,7 +177,7 @@ public class MainWindowTests
     [Fact]
     public void ShowHelp_PostsAMessage_AndKeepsComposerTypable()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -205,7 +205,7 @@ public class MainWindowTests
     [Fact]
     public void StatusBar_AdvertisesSettingsOnce_AndNoLongerAdvertisesF7OrF8()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -221,7 +221,7 @@ public class MainWindowTests
     [Fact]
     public void SetTokenTotal_ShowsSpend_AndZeroShowsNothing()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -237,7 +237,7 @@ public class MainWindowTests
     [Fact]
     public void ShowHelp_MentionsF6()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -258,7 +258,7 @@ public class MainWindowTests
 
     private static MainWindow BuiltMainWindow()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
         return mw;
@@ -473,7 +473,7 @@ public class MainWindowTests
         // transcript to draw attention to six rows, and its edge had to be computed from the
         // prompt's laid-out bounds — so it moved with the height of whatever command was being
         // asked about. Raising the prompt says the same thing locally, with nothing else moving.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -510,7 +510,7 @@ public class MainWindowTests
         //
         // The RESTORE is the half that regresses silently: a bar left hidden takes every shortcut
         // with it for the rest of the session, and nothing errors when it happens.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -531,7 +531,7 @@ public class MainWindowTests
         // blue-grey family... without competing hues" — which is right for a log viewer and wrong
         // for a transcript that is mostly model-authored Markdown. H1-H3 were three shades of the
         // same blue and H4-H6 had no colour at all, so a document read as one flat wash.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         new MainWindow(Sys(), res, Logs()).Build();
 
         var style = SharpConsoleUI.Configuration.MarkdownStyle.Default;
@@ -555,7 +555,7 @@ public class MainWindowTests
     {
         // The panel is a luxury of WIDTH. Below the threshold a 24-column panel is a third of the
         // screen spent on six numbers, beside code the user is trying to read.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
 
         var narrow = new MainWindow(SysOfWidth(80), res, Logs());
         narrow.Build();
@@ -573,7 +573,7 @@ public class MainWindowTests
     {
         // The override must win BOTH ways, and there is a third state: "decide for me". Without it
         // the first resize after an explicit F3 would silently undo the user's choice.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(SysOfWidth(80), res, Logs());   // narrow: hidden by default
         mw.Build();
         mw.RefreshSessionPanel();
@@ -649,7 +649,7 @@ public class MainWindowTests
     public void SessionPanel_ShowsTheDefaultCeiling_WhenNothingIsConfigured()
     {
         var window = new MainWindow(SysOfWidth(140),
-            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
+            new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
                 new OrchestratorSettings()),
             Logs());
         window.Build();
@@ -665,7 +665,7 @@ public class MainWindowTests
     public void SessionPanel_SaysNoCap_OnlyForAnExplicitZero()
     {
         var window = new MainWindow(SysOfWidth(140),
-            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
+            new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>(),
                 new OrchestratorSettings(MaxTurns: 0)),
             Logs());
         window.Build();
@@ -734,7 +734,7 @@ public class MainWindowTests
     [Fact]
     public void OnlyTheStatusBar_ReportsOccupancy()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
         {
             ContextWindow = 200_000,
         };
@@ -769,7 +769,7 @@ public class MainWindowTests
     [Fact]
     public void AfterCompression_TheOccupancyReadoutMoves()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
         {
             ContextWindow = 200_000,
         };
@@ -821,7 +821,7 @@ public class MainWindowTests
     [InlineData(AgentMode.Single, "single")]
     public void TheBanner_NamesTheStartupMode(AgentMode agent, string expected)
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(SysOfWidth(200), res, Logs())
         {
             StartupMode = new WorkingMode(agent, EditMode.AcceptEdits),
@@ -842,7 +842,7 @@ public class MainWindowTests
     [Fact]
     public void TheModeLine_ShowsBothAxes_AndTheShortcutHint()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(SysOfWidth(200), res, Logs())
         {
             StartupMode = new WorkingMode(AgentMode.FanOut, EditMode.AlwaysAsk),
@@ -870,7 +870,7 @@ public class MainWindowTests
     [Fact]
     public void FocusComposer_IsReachable_ForTheF4Binding()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(SysOfWidth(200), res, Logs());
         mw.Build();
 
@@ -951,7 +951,7 @@ public class MainWindowTests
     [Fact]
     public void SetTokenSplit_RepaintsTheStatusBar()
     {
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
         {
             ContextWindow = 200_000,
         };
@@ -1038,7 +1038,7 @@ public class MainWindowTests
         // The grid's own re-widening on resize is not asserted here: it needs a driver-level screen
         // resize the test harness has no accessor for, and a test that fakes it would be testing the
         // fake. The WIDTH RULE is the part that can silently go wrong, and it is pure.
-        var res = new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
+        var res = new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>());
         var mw = new MainWindow(SysOfWidth(200), res, Logs());
         mw.Build();
         mw.RefreshSessionPanel();
@@ -1059,7 +1059,7 @@ public class MainWindowTests
     public void SessionPanel_ShowsGeneral_EvenWithNoConfiguredTypes()
     {
         var window = new MainWindow(SysOfWidth(140),
-            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>()),
+            new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>()),
             Logs());
         window.Build();
         window.RefreshSessionPanel();
@@ -1079,7 +1079,7 @@ public class MainWindowTests
         };
 
         var window = new MainWindow(SysOfWidth(140),
-            new ProviderResolution(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
+            new ResolvedConfig(new MockLlmProvider(), "Mock", System.Array.Empty<string>())
             {
                 AgentTypes = configured,
             },

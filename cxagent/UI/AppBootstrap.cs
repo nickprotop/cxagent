@@ -36,13 +36,13 @@ public static class AppBootstrap
     /// <para>A METHOD RATHER THAN TWO BRANCHES AT THE CALL SITE, so the result can be bound by an
     /// initialiser and never assigned again. See the caller for why that matters here.</para>
     /// </summary>
-    private static ProviderResolution? ResolveStartup(AppPaths paths,
+    private static ResolvedConfig? ResolveStartup(AppPaths paths,
         IReadOnlyDictionary<string, string> env, bool useMock, string? instance) =>
         instance is { } wanted && !useMock
-            ? ProviderResolver.ResolveInstance(paths, env, wanted)
-            : ProviderResolver.Resolve(paths, env, useMock);
+            ? ConfigResolver.ResolveInstance(paths, env, wanted)
+            : ConfigResolver.Resolve(paths, env, useMock);
 
-    private static string ModelLabelOf(ProviderResolution resolution)
+    private static string ModelLabelOf(ResolvedConfig resolution)
     {
         var model = resolution.Provider?.ModelId;
         if (model is null) return resolution.DisplayName ?? "no provider";
@@ -184,7 +184,7 @@ public static class AppBootstrap
         // it did.
         //
         // What the helper buys is smaller and real: the declaration and the value are one line, so
-        // there is no `ProviderResolution resolution;` sitting empty inviting branches to fill it,
+        // there is no `ResolvedConfig resolution;` sitting empty inviting branches to fill it,
         // and the two startup cases cannot drift apart. Enforcement here is the comment above and
         // the fact that no consumer needs a rebind any more — F5 restarts, /model passes its own
         // record. If a fourth bug of this shape ever appears, the answer is a wrapper type with a
@@ -539,7 +539,7 @@ public static class AppBootstrap
                 });
         }
 
-        void WireRunner(ProviderResolution res)
+        void WireRunner(ResolvedConfig res)
         {
             if (!res.HasProvider) return;
 
@@ -1474,7 +1474,7 @@ public static class AppBootstrap
             // RESOLVED HERE, REPORTED THERE. Reading config is the process's job — the session has
             // no paths and no environment — but saying what happened is the session's, so a failed
             // resolution is handed over rather than announced here.
-            var next = ProviderResolver.ResolveInstance(paths, env, decision.SwitchTo);
+            var next = ConfigResolver.ResolveInstance(paths, env, decision.SwitchTo);
 
             // THE CONVERSATION STAYS PUT. This used to arm a handoff with CarryToNextWire and
             // re-wire the whole session — rebuilding the agent, its plugins, its sub-agent factory
@@ -1590,7 +1590,7 @@ public static class AppBootstrap
         MainWindow mainWindow,
         AppPaths paths,
         Dictionary<string, string> env,
-        Action<ProviderResolution> wireRunner,
+        Action<ResolvedConfig> wireRunner,
         CancellationToken ct)
     {
         // Load what is already configured so the wizard APPENDS. Without this, F5 replaced the whole
@@ -1615,7 +1615,7 @@ public static class AppBootstrap
         ProviderConfigWriter.Write(paths, settings);
         // useMock: false — a --mock session already has a provider and never reaches first-run setup;
         // F5 re-running setup mid-session should re-resolve against the real config either way.
-        var reResolved = ProviderResolver.Resolve(paths, env, useMock: false);
+        var reResolved = ConfigResolver.Resolve(paths, env, useMock: false);
         wireRunner(reResolved);
         mainWindow.Chat.AddMessage(ChatRole.System, reResolved.HasProvider
             ? $"Configuration saved. Model: {ModelLabelOf(reResolved)}. Type a goal and press Enter."

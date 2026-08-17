@@ -28,7 +28,7 @@ public sealed class MainWindow : IDisposable
     /// whatever startup resolved. The status bar went on quoting the old model's context window, so
     /// occupancy was measured against a denominator the agent had stopped using.</para>
     /// </summary>
-    private ProviderResolution _resolution;
+    private ResolvedConfig _resolution;
 
     public ChatTranscriptControl Chat { get; } = new()
     {
@@ -453,7 +453,7 @@ public sealed class MainWindow : IDisposable
     /// the render loop on GridControl.ReplaceControl's "not currently placed" ArgumentException.</summary>
     private IWindowControl? _activePrompt;
 
-    public MainWindow(ConsoleWindowSystem system, ProviderResolution resolution, LogFileManager logs)
+    public MainWindow(ConsoleWindowSystem system, ResolvedConfig resolution, LogFileManager logs)
     {
         _system = system;
         _resolution = resolution;
@@ -1497,7 +1497,7 @@ public sealed class MainWindow : IDisposable
     /// <para>The window, the model name and the agent types all come off the resolution, so this is
     /// the one assignment that keeps the panel describing the session that is actually running.</para>
     /// </summary>
-    public void SetResolution(ProviderResolution resolution)
+    public void SetResolution(ResolvedConfig resolution)
     {
         _resolution = resolution;
 

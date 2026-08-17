@@ -21,7 +21,7 @@ public class AppShellE2ETests
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
 
         var provider = new AnswersWithoutPlanningProvider();   // shared helper (TestProviders.cs — one copy)
-        var res = new ProviderResolution(provider, "Fake", System.Array.Empty<string>());
+        var res = new ResolvedConfig(provider, "Fake", System.Array.Empty<string>());
         var dir = Path.Combine(Path.GetTempPath(), "cxagent-e2e-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var paths = new AppPaths(dir);

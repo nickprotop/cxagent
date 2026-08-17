@@ -24,7 +24,7 @@ public class CommandRegistryTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private Session Wired(SessionManager manager, MockLlmProvider? provider = null) =>
-        manager.Open(_dir, ProviderResolution.ForTesting(provider ?? new MockLlmProvider()),
+        manager.Open(_dir, ResolvedConfig.ForTesting(provider ?? new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
             AgentMode.Single);
 
@@ -40,7 +40,7 @@ public class CommandRegistryTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var first = Wired(manager);
         var second = manager.Open(Path.Combine(_dir, "b"),
-            ProviderResolution.ForTesting(new MockLlmProvider()),
+            ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
             AgentMode.Single);
 

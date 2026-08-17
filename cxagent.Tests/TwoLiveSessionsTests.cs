@@ -54,7 +54,7 @@ public class TwoLiveSessionsTests : IDisposable
         var session = new Session(workingDir);
 
         SessionFactory.Wire(session,
-            ProviderResolution.ForTesting(provider, instance),
+            ResolvedConfig.ForTesting(provider, instance),
             new SharedServices
             {
                 // SHARED ON PURPOSE — see TwoSessionsTests for why splitting these would break the

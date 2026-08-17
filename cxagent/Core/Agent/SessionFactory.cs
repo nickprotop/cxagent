@@ -25,7 +25,7 @@ public static class SessionFactory
     /// <param name="shared">Process-wide services — see <see cref="SharedServices"/>.</param>
     /// <param name="ports">This session's own connections — see <see cref="SessionPorts"/>.</param>
     /// <param name="mode">Single or fan-out.</param>
-    public static void Wire(Session session, ProviderResolution resolution,
+    public static void Wire(Session session, ResolvedConfig resolution,
         SharedServices shared, SessionPorts ports, WorkingMode mode)
     {
         // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.

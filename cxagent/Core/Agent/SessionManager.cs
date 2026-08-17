@@ -243,7 +243,7 @@ public sealed class SessionManager : IDisposable
     /// one is a rendering decision, the other is a folder and an edit mode belonging to this
     /// conversation.</para>
     /// </summary>
-    public Session Open(string workingDirectory, ProviderResolution resolution,
+    public Session Open(string workingDirectory, ResolvedConfig resolution,
         SessionPorts ports, WorkingMode? mode = null) =>
         Open(new Session(workingDirectory), resolution, ports, mode);
 
@@ -254,7 +254,7 @@ public sealed class SessionManager : IDisposable
     /// Session early — the startup banner naming the edit mode is a chat message that cannot be
     /// revised, so the mode has to be resolved before the window exists — while the permission gate
     /// this manager holds cannot exist until there IS a window to prompt in. The folder-only
-    /// <see cref="Open(string, ProviderResolution, SessionPorts, WorkingMode)"/> demands an ordering
+    /// <see cref="Open(string, ResolvedConfig, SessionPorts, WorkingMode)"/> demands an ordering
     /// that constraint forbids.</para>
     ///
     /// <para>WHY THIS RATHER THAN THE ROOT CALLING SessionFactory ITSELF, which is what it did: a
@@ -268,7 +268,7 @@ public sealed class SessionManager : IDisposable
     /// picks anyway when nobody sets one — so a caller with no opinion says nothing rather than
     /// repeating the default back.
     /// </param>
-    public Session Open(Session session, ProviderResolution resolution,
+    public Session Open(Session session, ResolvedConfig resolution,
         SessionPorts ports, WorkingMode? mode = null)
     {
         SessionFactory.Wire(session, resolution, Shared, ports, mode ?? WorkingMode.Default);

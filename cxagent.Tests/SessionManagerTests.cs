@@ -52,8 +52,8 @@ public class SessionManagerTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var provider = new MockLlmProvider();
 
-        var one = manager.Open(a, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
-        var two = manager.Open(b, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
+        var one = manager.Open(a, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
+        var two = manager.Open(b, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
 
         Assert.Equal(2, manager.Sessions.Count);
         Assert.Equal(a, one.WorkingDirectory);
@@ -67,8 +67,8 @@ public class SessionManagerTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var provider = new MockLlmProvider();
 
-        var one = manager.Open(_dir, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
-        var two = manager.Open(_dir, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
+        var one = manager.Open(_dir, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
+        var two = manager.Open(_dir, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
 
         manager.Close(one);
 
@@ -93,8 +93,8 @@ public class SessionManagerTests : IDisposable
     {
         var manager = SessionManager.Create(new AppPaths(_dir));
         var provider = new MockLlmProvider();
-        manager.Open(_dir, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
-        manager.Open(_dir, Core.Llm.ProviderResolution.ForTesting(provider), Ports(), AgentMode.Single);
+        manager.Open(_dir, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
+        manager.Open(_dir, Core.Llm.ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
 
         manager.Dispose();
 
@@ -113,7 +113,7 @@ public class SessionManagerTests : IDisposable
         var session = new Session(_dir);
 
         using var manager = SessionManager.Create(new AppPaths(_dir));
-        manager.Open(session, ProviderResolution.ForTesting(new MockLlmProvider()),
+        manager.Open(session, ResolvedConfig.ForTesting(new MockLlmProvider()),
             Ports(), AgentMode.Single);
 
         Assert.Single(manager.Sessions);
@@ -129,7 +129,7 @@ public class SessionManagerTests : IDisposable
     {
         var session = new Session(_dir);
         using var manager = SessionManager.Create(new AppPaths(_dir));
-        var resolution = ProviderResolution.ForTesting(new MockLlmProvider());
+        var resolution = ResolvedConfig.ForTesting(new MockLlmProvider());
 
         manager.Open(session, resolution, Ports(), AgentMode.Single);
         var first = session.Host;

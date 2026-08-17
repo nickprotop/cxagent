@@ -2,7 +2,33 @@ using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Llm;
 
-/// <summary>Outcome of resolving a provider at startup: either a live provider, or the errors to show.</summary>
+/// <summary>
+/// Everything config.json resolved to at startup — or the errors to show instead.
+///
+/// <para>NAMED FOR WHAT IT HOLDS. It was ProviderResolution, which described a third of it: the
+/// provider, its instance name and window. The rest is the whole configuration — every configured
+/// instance, the agent types, the MCP servers, the orchestrator's budgets, the classifier — carried
+/// under a name that said "provider" and read as one.</para>
+///
+/// <para>THREE LIFETIMES ARE STILL TANGLED HERE, and the name only stops the misreading rather than
+/// fixing it:</para>
+/// <list type="bullet">
+///   <item><b>The catalog</b> — Providers, AgentTypes, McpServers, Orchestrator,
+///   MaxConcurrentAgents. Read once and never rebound; see AppBootstrap on why config is not applied
+///   in place.</item>
+///   <item><b>This session's model</b> — Provider, InstanceName, ContextWindow, DisplayName. Changes
+///   on every <c>/model</c>, which is why Session.SwitchModel takes a whole one of these and uses
+///   four fields.</item>
+///   <item><b>The read itself</b> — Errors and Warnings, true of the load and of nothing after.</item>
+/// </list>
+///
+/// <para>WHY THAT MATTERS, and it is not tidiness: when one record means both "the catalog" and "the
+/// current model", a method that updates one has no way to say which. SwapProvider moved the agent
+/// and the host and not the sub-agent spawner, and every child kept talking to the model the session
+/// started on — a missed line rather than a compile error, because nothing named the set. Splitting
+/// this into a catalog and an active model would make that unexpressible; it is ~40 call sites and
+/// wants its own change.</para>
+/// </summary>
 /// <param name="Orchestrator">
 /// The orchestrator token budgets from config, threaded through so AppBootstrap can bound the live
 /// AgentHost. Defaulted to null (= unbounded) so --mock and the no-provider paths need not supply it.
@@ -29,7 +55,7 @@ namespace CxAgent.Core.Llm;
 /// Provider, rather than re-read from config at every compression check. Null on the --mock and
 /// no-provider paths, and whenever the user hasn't set contextWindow for the resolved instance.
 /// </param>
-public sealed record ProviderResolution(
+public sealed record ResolvedConfig(
     ILlmProvider? Provider,
     string? DisplayName,
     IReadOnlyList<string> Errors,
@@ -47,7 +73,7 @@ public sealed record ProviderResolution(
     /// <para>InstanceName defaults to "test" so spend attribution has a label: the ledger keys by
     /// instance:model, and an unnamed instance would record a bare model id.</para>
     /// </summary>
-    public static ProviderResolution ForTesting(ILlmProvider provider, string instanceName = "test") =>
+    public static ResolvedConfig ForTesting(ILlmProvider provider, string instanceName = "test") =>
         new(provider, provider.DisplayName, []) { InstanceName = instanceName };
 
     /// <summary>
@@ -87,9 +113,9 @@ public sealed record ProviderResolution(
 
 /// <summary>
 /// Resolves the startup provider from config (or --mock). Never throws: a missing/invalid config
-/// yields a no-provider ProviderResolution carrying actionable error lines for the UI to render.
+/// yields a no-provider ResolvedConfig carrying actionable error lines for the UI to render.
 /// </summary>
-public static class ProviderResolver
+public static class ConfigResolver
 {
     /// <summary>
     /// The same resolution, against a NAMED instance rather than <c>defaultProvider</c>.
@@ -102,7 +128,7 @@ public static class ProviderResolver
     /// this returns nothing rather than falling back to the default, because silently continuing on
     /// the model the user was trying to leave is the worst available outcome.</para>
     /// </summary>
-    public static ProviderResolution? ResolveInstance(
+    public static ResolvedConfig? ResolveInstance(
         AppPaths paths, IReadOnlyDictionary<string, string> env, string instanceName)
     {
         try
@@ -117,7 +143,7 @@ public static class ProviderResolver
                 ?? ContextWindowProbe.TryGetAsync(cfg.BaseUrl, cfg.Model, cfg.ApiKey)
                     .GetAwaiter().GetResult();
 
-            return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
+            return new ResolvedConfig(provider, provider.DisplayName, Array.Empty<string>(),
                 settings.Orchestrator, registry, contextWindow, cfg.MaxConcurrentAgents)
             {
                 InstanceName = instanceName,
@@ -168,7 +194,7 @@ public static class ProviderResolver
         }
     }
 
-    public static ProviderResolution Resolve(AppPaths paths, IReadOnlyDictionary<string, string> env, bool useMock)
+    public static ResolvedConfig Resolve(AppPaths paths, IReadOnlyDictionary<string, string> env, bool useMock)
     {
         if (useMock)
         {
@@ -178,7 +204,7 @@ public static class ProviderResolver
             // session dispatches rather than failing to resolve a plugin type that is registered.
             var mockRegistry = ProviderRegistry.FromProviders(
                 new Dictionary<string, ILlmProvider> { ["mock"] = mock }, "mock");
-            return new ProviderResolution(mock, mock.DisplayName, Array.Empty<string>(),
+            return new ResolvedConfig(mock, mock.DisplayName, Array.Empty<string>(),
                 Providers: mockRegistry);
         }
 
@@ -206,7 +232,7 @@ public static class ProviderResolver
             int? contextWindow = cfg?.ContextWindow
                 ?? ContextWindowProbe.TryGetAsync(cfg?.BaseUrl, cfg?.Model, cfg?.ApiKey)
                     .GetAwaiter().GetResult();
-            return new ProviderResolution(provider, provider.DisplayName, Array.Empty<string>(),
+            return new ResolvedConfig(provider, provider.DisplayName, Array.Empty<string>(),
                 settings.Orchestrator, registry, contextWindow, cfg?.MaxConcurrentAgents)
             {
                 InstanceName = settings.DefaultProvider,
@@ -218,11 +244,11 @@ public static class ProviderResolver
         }
         catch (ProviderConfigException ex)
         {
-            return new ProviderResolution(null, null, ex.Errors);
+            return new ResolvedConfig(null, null, ex.Errors);
         }
         catch (InvalidOperationException ex)
         {
-            return new ProviderResolution(null, null, new[] { ex.Message });
+            return new ResolvedConfig(null, null, new[] { ex.Message });
         }
     }
 }

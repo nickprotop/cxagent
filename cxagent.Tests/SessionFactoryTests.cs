@@ -73,7 +73,7 @@ public class SessionFactoryTests
             var observer = new BufferedChatSink();
 
             SessionFactory.Wire(session,
-                Core.Llm.ProviderResolution.ForTesting(provider),
+                Core.Llm.ResolvedConfig.ForTesting(provider),
                 new SharedServices(),
                 new SessionPorts { Observer = observer, Tools = new BufferedJobPanel() },
                 AgentMode.Single);
@@ -103,13 +103,13 @@ public class SessionFactoryTests
         {
             var session = new Session(dir);
 
-            SessionFactory.Wire(session, Core.Llm.ProviderResolution.ForTesting(new MockLlmProvider("first")),
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider("first")),
                 new SharedServices(),
                 new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
                 AgentMode.Single);
             var first = session.Host;
 
-            SessionFactory.Wire(session, Core.Llm.ProviderResolution.ForTesting(new MockLlmProvider("second")),
+            SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider("second")),
                 new SharedServices(),
                 new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
                 AgentMode.Single);

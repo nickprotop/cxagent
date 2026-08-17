@@ -122,10 +122,10 @@ public sealed class AgentHost : IDisposable
 
     /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
-    /// P11 Task 1), threaded through from ProviderResolution at construction time rather than read off
+    /// P11 Task 1), threaded through from ResolvedConfig at construction time rather than read off
     /// <see cref="_runtime.Provider"/> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
     /// config-only number, and adding it to the interface would ripple into every vendor driver and
-    /// test double for a value only ProviderResolver's config lookup actually has. Null when the user
+    /// test double for a value only ConfigResolver's config lookup actually has. Null when the user
     /// hasn't set contextWindow for this instance — EffectiveCompressThreshold treats that as "unknown"
     /// and falls back to the fixed constant, per its own precedence.
     /// </summary>
