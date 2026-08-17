@@ -1,6 +1,6 @@
 using CxAgent.Core.Llm;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>What <c>/model</c> decided, and the line to show for it.</summary>
 /// <param name="SwitchTo">The instance to switch to, or null when nothing is switching.</param>
@@ -35,7 +35,7 @@ public static class ModelCommand
         string argument, ProviderRegistry? registry, string? current)
     {
         if (registry is null || registry.InstanceNames.Count == 0)
-            return new(null, $"[{ColorScheme.MutedMarkup}]No providers configured — press F5 to set "
+            return new(null, $"[{Markup.Muted}]No providers configured — edit config.json and restart to set "
                            + "one up.[/]");
 
         var wanted = argument.Trim();
@@ -70,7 +70,7 @@ public static class ModelCommand
         // ALREADY THERE IS NOT A SWITCH. Re-wiring would rebuild the agent and reset what a re-wire
         // resets, for no change at all — and the user would have no way to tell that happened.
         if (string.Equals(target, current, StringComparison.OrdinalIgnoreCase))
-            return new(null, $"[{ColorScheme.MutedMarkup}]Already using {Escape(target)}.[/]");
+            return new(null, $"[{Markup.Muted}]Already using {Escape(target)}.[/]");
 
         return new(target, "");
     }
@@ -85,8 +85,8 @@ public static class ModelCommand
     /// </summary>
     private static string Render(ProviderRegistry registry, string? current)
     {
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
+        var accent = Markup.Accent;
+        var muted = Markup.Muted;
         var models = registry.InstanceModels;
         var windows = registry.InstanceWindows;
 
@@ -123,5 +123,5 @@ public static class ModelCommand
     private static string Compact(int tokens) =>
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}k";
 
-    private static string Escape(string text) => SharpConsoleUI.Parsing.MarkupParser.Escape(text);
+    private static string Escape(string text) => Markup.Escape(text);
 }

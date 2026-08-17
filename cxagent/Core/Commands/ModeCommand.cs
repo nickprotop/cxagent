@@ -1,6 +1,6 @@
 using CxAgent.Core.Agent;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>What <c>/mode</c> decided to do, and the line to show for it.</summary>
 /// <param name="NewMode">The mode to switch to, or null when nothing changes.</param>
@@ -66,8 +66,8 @@ public static class ModeCommand
         // rather than a rewrite of a sentence that assumed there was only ever one. It was.
         if (string.IsNullOrWhiteSpace(argument))
         {
-            var accent = ColorScheme.AccentMarkup;
-            var muted = ColorScheme.MutedMarkup;
+            var accent = Markup.Accent;
+            var muted = Markup.Muted;
 
             return new(null, string.Join('\n',
             [

@@ -1,6 +1,6 @@
 using CxAgent.Core.Storage;
 
-namespace CxAgent.UI;
+namespace CxAgent.Core.Commands;
 
 /// <summary>What <c>/sessions</c> decided to do, and the line to show for it.</summary>
 /// <param name="ResumeUid">The session to restore, or null when nothing is being restored.</param>
@@ -92,8 +92,8 @@ public static class SessionsCommand
 
     private static string Render(IReadOnlyList<SessionInfo> sessions, TimeSpan retention, bool all)
     {
-        var accent = ColorScheme.AccentMarkup;
-        var muted = ColorScheme.MutedMarkup;
+        var accent = Markup.Accent;
+        var muted = Markup.Muted;
         var lines = new List<string>();
 
         if (sessions.Count == 0)
@@ -164,7 +164,7 @@ public static class SessionsCommand
     {
         if (here == 0) return null;
 
-        var muted = ColorScheme.MutedMarkup;
+        var muted = Markup.Muted;
 
         return unfinishedMessages is { } messages
             ? $"[{muted}]An earlier session here ended without closing ({messages} messages). "
@@ -257,5 +257,5 @@ public static class SessionsCommand
              : $"{(int)age.TotalDays}d ago";
     }
 
-    private static string Escape(string text) => SharpConsoleUI.Parsing.MarkupParser.Escape(text);
+    private static string Escape(string text) => Markup.Escape(text);
 }
