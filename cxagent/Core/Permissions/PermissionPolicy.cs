@@ -257,10 +257,25 @@ public class PermissionPolicy
         // ON Display, NOT AlwaysRule. AlwaysRule is now a PATTERN — `find*` — since rules started
         // generalising over arguments, so asking whether it is read-only would be asking about a
         // glob rather than about the command the model actually sent.
+        // AND ITS ARGUMENTS, not just its verb and its cd target. IsReadOnly answers "does this
+        // program write" and says nothing about WHAT it reads, so `cat /etc/shadow` passed this
+        // guard — while `file read /etc/shadow` prompts, because that path resolves outside the
+        // boundary. Two spellings of one read, opposite answers, and the permissive one was the
+        // less inspectable: no prompt, no rule, nothing but a "silent" row in the archive.
+        //
+        // THE JUSTIFICATION FOR THE FREE PASS IS WHAT BREAKS. It reads (ReadOnlyCommands' own
+        // summary) that `cat`, `grep` and `ls` are "a file read spelled as a command" — true only
+        // while the file is inside the folder. Outside it, the shell spelling was strictly more
+        // powerful than the tool it claimed parity with, which is a credential-disclosure primitive
+        // in any trusted checkout: ~/.ssh/id_rsa, ~/.aws/credentials, .env.
+        //
+        // THE cd TARGET WAS ALREADY CHECKED, which is the tell that the boundary was meant to bind
+        // here: `cd /etc && cat shadow` was caught and `cat /etc/shadow` was not.
         if (request.Kind == PermissionKind.Shell
             && _rules.GetTrust(_root) == TrustState.Trusted
             && ReadOnlyCommands.IsReadOnly(request.What, out var changesTo)
-            && (changesTo is null || IsInsideBoundary(changesTo)))
+            && (changesTo is null || IsInsideBoundary(changesTo))
+            && ReadOnlyCommands.PathArguments(request.What).All(IsInsideBoundary))
             return true;
 
         if (request.AlwaysRule is null) return false;
@@ -274,6 +289,20 @@ public class PermissionPolicy
         // machine that granted it before the fix. A rule is a statement about one command, and the
         // text after `&&` is a command nothing here has examined.
         if (request.Kind == PermissionKind.Shell && CommandArity.IsChain(subject))
+            return false;
+
+        // AND A RULE CANNOT REACH OUTSIDE THE FOLDER EITHER. `cat*` is an honest grant for reading
+        // this project; it was also permitting `cat /etc/passwd`, because a stored rule matched the
+        // command TEXT and never looked at the paths in it. The free pass above was fixed to confine
+        // its arguments and this path walked straight around that fix — verified live: with `cat*`
+        // granted, `cat /etc/passwd` ran silently.
+        //
+        // THE THIRD TIME THIS SHAPE HAS APPEARED. `cd*` matched a prefix and ignored what followed
+        // `&&`; the read-only pass matched a verb and ignored its arguments; a rule matches a
+        // pattern and ignores them too. A grant is permission to run a COMMAND, never permission to
+        // leave the folder — the boundary is not a thing any rule may buy its way past.
+        if (request.Kind == PermissionKind.Shell
+            && !ReadOnlyCommands.PathArguments(request.What).All(IsInsideBoundary))
             return false;
 
         return _rules.Matches(_root, request.Kind, subject);

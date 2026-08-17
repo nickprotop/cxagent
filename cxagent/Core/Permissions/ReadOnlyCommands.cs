@@ -125,6 +125,49 @@ public static class ReadOnlyCommands
     }
 
     /// <summary>
+    /// The paths a read-only command names, for a caller that must confine them.
+    ///
+    /// <para>THE VERB IS NOT THE WHOLE REQUEST. <see cref="IsReadOnly"/> answers "does this program
+    /// write" and nothing about WHAT it reads, so <c>cat /etc/shadow</c> passed it — the same file
+    /// the file-read tool refuses, because that path resolves outside the boundary. Two spellings of
+    /// one read, opposite answers, and the permissive one is the less inspectable.</para>
+    ///
+    /// <para>THE CALLER ALREADY DOES THIS FOR <c>cd</c>. IsReadOnly hands back the cd target
+    /// precisely so the boundary can bind to it — the comment there says <c>cd /etc &amp;&amp; cat
+    /// shadow</c> "reads a file the boundary exists to protect". This is that same reasoning applied
+    /// to the arguments, which is where the gap was.</para>
+    ///
+    /// <para>EXISTING PATHS ONLY. A flag is not a path, and neither is a grep pattern. Returning
+    /// every token would make the caller refuse <c>grep TODO</c> for want of a file called TODO;
+    /// returning only what exists on disk asks the question that matters — is the agent reading
+    /// something real, and is it inside the folder. A path that does not exist reads nothing, so
+    /// there is nothing to confine.</para>
+    /// </summary>
+    public static IReadOnlyList<string> PathArguments(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return [];
+
+        var text = command.Trim();
+        if (TryStripLeadingCd(text, out _, out var rest)) text = rest;
+
+        var paths = new List<string>();
+
+        // FROM THE SECOND TOKEN: the first is the verb, which SafeVerbs has already vouched for and
+        // which names a program rather than a file to read.
+        foreach (var token in text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1))
+        {
+            // A FLAG IS NOT A PATH. Treating one as a path would confine flags to the folder.
+            if (token.StartsWith('-')) continue;
+
+            var trimmed = token.Trim('"', '\'');
+            if (trimmed.Length > 0 && (File.Exists(trimmed) || Directory.Exists(trimmed)))
+                paths.Add(trimmed);
+        }
+
+        return paths;
+    }
+
+    /// <summary>
     /// Splits <c>cd &lt;dir&gt; &amp;&amp; rest</c> into its target and the rest, or reports no match.
     /// </summary>
     /// <remarks>
@@ -133,6 +176,37 @@ public static class ReadOnlyCommands
     /// a shape this does not recognise costs one prompt, while a shape it mis-parses hands the caller
     /// a target that is not the one that will actually be entered.
     /// </remarks>
+    /// <summary>
+    /// The command a <c>cd X &amp;&amp; …</c> line actually runs, or null when it is not that shape.
+    ///
+    /// <para>SO A GRANT CAN BE WRITTEN FOR IT. `cd /repo &amp;&amp; dotnet test` is the idiom the
+    /// model writes constantly — it cannot rely on the working directory — and CommandArity refuses
+    /// to build a rule from a chain, correctly, since `cd*` was permitting `cd /tmp &amp;&amp; rm -rf
+    /// ~`. But that left the idiom asking every single time, and a drive that asks five times for
+    /// `dotnet test` is a drive where somebody grants something broader to make it stop. That is not
+    /// hypothetical: it is how `cd*` came to be granted here.</para>
+    ///
+    /// <para>NOT A SHELL PARSER, which is what CommandArity's refusal is guarding against. This is
+    /// the one form already stripped and boundary-checked for the ALLOW decision — the cd target is
+    /// confined, the remainder is a single command with no operators of its own. Reusing it for the
+    /// RULE decision adds no parsing that was not already trusted; a rule written from it says
+    /// `dotnet test*`, which is the honest grant for the command being run.</para>
+    /// </summary>
+    public static string? CommandAfterCd(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return null;
+        if (!TryStripLeadingCd(command.Trim(), out _, out var rest)) return null;
+
+        // A REMAINDER THAT IS ITSELF A CHAIN IS STILL A CHAIN. `cd /x && a && b` strips to `a && b`,
+        // which no more deserves a rule than the original did.
+        return rest.Length > 0 && !rest.AsSpan().ContainsAny(ChainOperators) ? rest : null;
+    }
+
+    /// <summary>The operators that make a line several commands — see <c>CommandArity.IsChain</c>,
+    /// which uses the same set for the same reason.</summary>
+    private static readonly System.Buffers.SearchValues<char> ChainOperators =
+        System.Buffers.SearchValues.Create("&;|\n\r");
+
     private static bool TryStripLeadingCd(string text, out string? target, out string rest)
     {
         target = null;

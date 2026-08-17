@@ -173,6 +173,16 @@ public static class CommandArity
         // is become a standing rule. Narrowing the pattern instead — quoting, escaping, matching
         // only up to the operator — would be inventing a shell parser inside a permission check, and
         // a parser that is wrong once is a hole that looks like a guard.
+        // THE `cd X && one-command` IDIOM GETS A RULE FOR THE COMMAND IT RUNS, and only that idiom.
+        // It is the shape the model writes constantly, and refusing it outright is what made a user
+        // reach for `cd*` — a grant that then permitted `cd /tmp && rm -rf ~`. The honest rule here
+        // is `dotnet test*`: scoped to the folder, no operators, exactly the command being run.
+        //
+        // SAFE BECAUSE IT IS NOT NEW PARSING. ReadOnlyCommands already strips this form and confines
+        // the cd target for the ALLOW decision; CommandAfterCd returns null unless the remainder is a
+        // single command with no operators of its own.
+        if (ReadOnlyCommands.CommandAfterCd(command) is { } inner) command = inner;
+
         if (IsChain(command)) return null;
 
         var prefix = Prefix(command);

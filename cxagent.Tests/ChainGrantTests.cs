@@ -29,12 +29,27 @@ public class ChainGrantTests : IDisposable
     // NO RULE IS OFFERED FOR A CHAIN. The action can still be allowed once; what it cannot do is
     // become a standing grant, because there is no honest rule to write for several commands.
     [Theory]
-    [InlineData("cd /repo && dotnet test")]
     [InlineData("cat notes.txt | head -20")]
     [InlineData("dotnet build; dotnet test")]
     [InlineData("dotnet test 2>&1 > /tmp/out.txt")]
     public void AChainedCommandGetsNoRule(string command) =>
         Assert.Null(CommandArity.RuleFor(command));
+
+    // THE `cd X && one-command` IDIOM IS THE EXCEPTION, and it earns one: it is what the model
+    // writes constantly, refusing it outright is what made a user reach for `cd*`, and the rule it
+    // produces names the command actually run rather than the `cd` in front of it. ReadOnlyCommands
+    // already strips and boundary-checks this exact form for the allow decision, so no new parsing
+    // is involved.
+    [Theory]
+    [InlineData("cd /repo && dotnet test", "dotnet test*")]
+    [InlineData("cd /repo && ls", "ls*")]
+    public void TheCdIdiomGetsARuleForTheCommandItRuns(string command, string expected) =>
+        Assert.Equal(expected, CommandArity.RuleFor(command));
+
+    // BUT ONLY ONE COMMAND AFTER IT. `cd /x && a && b` is still a chain and still gets nothing.
+    [Fact]
+    public void ACdFollowedByAChainStillGetsNoRule() =>
+        Assert.Null(CommandArity.RuleFor("cd /repo && dotnet build && rm -rf /tmp/x"));
 
     // AN ORDINARY COMMAND STILL DOES, so the guard cannot swallow the feature it protects.
     [Theory]
