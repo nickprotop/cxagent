@@ -265,11 +265,13 @@ public class ModeCommandTests
         Assert.Equal(expected, result.Reply.Contains("auto", StringComparison.Ordinal));
     }
 
-    /// <summary>A no-op says so and changes nothing, on this axis as on the other.</summary>
+    /// <summary>A no-op says so and changes nothing, on this axis as on the other. The value has to
+    /// be whatever the default actually is, so this reads it rather than naming a mode.</summary>
     [Fact]
     public void ModeEdits_ToTheCurrentValue_IsANoOp()
     {
-        var result = ModeCommand.Decide(Query("edits accept-edits", WorkingMode.Default));
+        var current = EditModes.Name(WorkingMode.Default.Edits);
+        var result = ModeCommand.Decide(Query($"edits {current}", WorkingMode.Default));
 
         Assert.Null(result.NewMode);
         Assert.Contains("already", result.Reply, StringComparison.OrdinalIgnoreCase);

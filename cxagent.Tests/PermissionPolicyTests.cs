@@ -44,13 +44,14 @@ public class PermissionPolicyTests
         return new JobParameters(dict);
     }
 
+    /// <summary>The boundary, which is what accept-edits is scoped BY. Named explicitly because the
+    /// default mode asks before the boundary is reached — see <see cref="TrustedPolicy(string)"/>.
+    /// </summary>
     [Fact]
     public void FileWrite_UnderTheWorkingFolder_IsSilent_ButOutsideNeedsAPrompt()
     {
         var root = MakeTempDir();
-        var rules = EmptyRules();
-        rules.SetTrust(root, TrustState.Trusted);
-        var policy = new PermissionPolicy(root, rules);
+        var policy = TrustedPolicy(root);
         Assert.True(policy.IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
         Assert.False(policy.IsSilentlyAllowed(FileWrite("/tmp/elsewhere.txt")));
     }
@@ -165,8 +166,11 @@ public class PermissionPolicyTests
         var rules = EmptyRules();
         rules.SetTrust(rootA, TrustState.Trusted);
 
-        Assert.True(new PermissionPolicy(rootA, rules).IsSilentlyAllowed(FileWrite(Path.Combine(rootA, "x"))));
-        Assert.False(new PermissionPolicy(rootB, rules).IsSilentlyAllowed(FileWrite(Path.Combine(rootB, "x"))));
+        // Accept-edits on both, so the ONLY difference between them is trust — which is the claim.
+        Assert.True(new PermissionPolicy(rootA, rules, EditMode.AcceptEdits)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(rootA, "x"))));
+        Assert.False(new PermissionPolicy(rootB, rules, EditMode.AcceptEdits)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(rootB, "x"))));
     }
 
     [Fact]
@@ -440,13 +444,14 @@ public class PermissionPolicyTests
     /// folder asks for everything, so a boundary bug is invisible against one — which is exactly how
     /// the escape below survived: the existing symlink test above uses an untrusted folder AND a file
     /// that does not exist, and either of those alone is enough to make it pass.
+    ///
+    /// <para>ACCEPT-EDITS IS NAMED, NOT INHERITED, for the same reason. The session default is
+    /// AlwaysAsk, which refuses before the boundary is ever consulted — so a boundary test running
+    /// on the default would pass no matter what the boundary did. That is the failure this helper's
+    /// first paragraph is about, one layer up.</para>
     /// </summary>
-    private static PermissionPolicy TrustedPolicy(string root)
-    {
-        var rules = EmptyRules();
-        rules.SetTrust(root, TrustState.Trusted);
-        return new PermissionPolicy(root, rules);
-    }
+    private static PermissionPolicy TrustedPolicy(string root) =>
+        TrustedPolicy(root, EditMode.AcceptEdits);
 
     /// <summary>
     /// AN EXISTING FILE THROUGH A SYMLINKED DIRECTORY IS OUTSIDE. TryResolve used to walk up only to
@@ -576,21 +581,46 @@ public class PermissionPolicyTests
             .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
     }
 
-    /// <summary>The default NAMES WHAT CXAGENT ALREADY DID. This is the test that says the axis
-    /// shipped as a pure addition rather than a behaviour change.</summary>
+    /// <summary>
+    /// THE DEFAULT ASKS, even in a trusted folder, and that is the whole point of the change.
+    ///
+    /// <para>This test used to assert the opposite, under the name
+    /// <c>AcceptEdits_IsTheDefault_AndMatchesTheOldBehaviour</c> — the axis shipped as a pure
+    /// addition, so its default named the pre-axis behaviour. That was right while nothing could
+    /// set the axis. Once it had a CLI flag, Shift+Tab and per-folder memory, a permissive default
+    /// was the one place cxagent widened without an act in it.</para>
+    ///
+    /// <para>TRUST IS DELIBERATELY GRANTED HERE. Without it the write would prompt for a reason
+    /// that has nothing to do with the mode, and the test would pass while proving nothing.</para>
+    /// </summary>
     [Fact]
-    public void AcceptEdits_IsTheDefault_AndMatchesTheOldBehaviour()
+    public void TheDefaultMode_AsksBeforeWriting_EvenInATrustedFolder()
     {
         var root = MakeTempDir();
         var rules = EmptyRules();
         rules.SetTrust(root, TrustState.Trusted);
 
         // WorkingMode.Default, not new WorkingMode(): a record struct's parameterless constructor
-        // zero-initialises and ignores the parameter defaults, so `new WorkingMode()` is AlwaysAsk.
-        // That ordering is deliberate — see EditMode.AlwaysAsk — and Default is the only thing that
-        // states the session default.
-        Assert.Equal(EditMode.AcceptEdits, WorkingMode.Default.Edits);
-        Assert.True(new PermissionPolicy(root, rules)
+        // zero-initialises and ignores the parameter defaults. Both land on AlwaysAsk now, but they
+        // are still different mechanisms and Default is the one that states the session default.
+        Assert.Equal(EditMode.AlwaysAsk, WorkingMode.Default.Edits);
+        Assert.False(new PermissionPolicy(root, rules)
+            .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
+    }
+
+    /// <summary>
+    /// AND ACCEPT-EDITS STILL MEANS WHAT IT MEANT when the user asks for it. The default moved; the
+    /// mode did not. This is the half of the old test that is still a live contract — without it,
+    /// changing the default would be indistinguishable from breaking the permissive mode.
+    /// </summary>
+    [Fact]
+    public void AcceptEdits_WhenChosen_StillWritesSilentlyInATrustedFolder()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+
+        Assert.True(new PermissionPolicy(root, rules, EditMode.AcceptEdits)
             .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
     }
 

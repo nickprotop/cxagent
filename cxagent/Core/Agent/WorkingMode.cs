@@ -31,15 +31,30 @@ namespace CxAgent.Core.Agent;
 /// <param name="Edits">When a file write happens without asking.</param>
 public readonly record struct WorkingMode(
     AgentMode Agent = AgentMode.Single,
-    EditMode Edits = EditMode.AcceptEdits)
+    EditMode Edits = EditMode.AlwaysAsk)
 {
     /// <summary>
     /// How a session starts when nobody has said otherwise.
     ///
-    /// <para><see cref="EditMode.AcceptEdits"/> because it NAMES WHAT CXAGENT ALREADY DID — in-cwd
-    /// writes silent on a trusted folder — so adding the axis changed no session's behaviour.</para>
+    /// <para><see cref="EditMode.AlwaysAsk"/> BECAUSE A DEFAULT IS NOT A CHOICE. Every other
+    /// permissive state in cxagent is reached by an act — trust is answered, a rule is granted, a
+    /// mode is picked with Shift+Tab and then remembered per folder. AcceptEdits as the default was
+    /// the one silent widening left: a user who had never expressed an opinion got silent in-cwd
+    /// writes because that happened to be the pre-<see cref="EditMode"/> behaviour. Preserving old
+    /// behaviour was the right call while the axis was new and nothing could set it; it stopped
+    /// being right once the axis had a CLI flag, a key binding and per-folder memory.</para>
+    ///
+    /// <para>WHAT THIS DOES NOT CHANGE, which is most of it. A folder with a remembered mode is
+    /// restored exactly, so anyone who has ever picked a mode where they work sees no difference —
+    /// this governs only a folder nobody has chosen for. And it never widens: AlwaysAsk is the
+    /// narrowest edit mode, so no session that was asking starts writing silently because of
+    /// this.</para>
+    ///
+    /// <para>THE COST IS REAL AND ACCEPTED: a first run in a new folder now prompts on its first
+    /// write, one Shift+Tab from never prompting again there. That is the trade the rest of the
+    /// system already makes — trust asks once too.</para>
     /// </summary>
-    public static WorkingMode Default => new(AgentMode.Single, EditMode.AcceptEdits);
+    public static WorkingMode Default => new(AgentMode.Single, EditMode.AlwaysAsk);
 
     /// <summary>
     /// An agent mode IS a working mode with nothing else set.

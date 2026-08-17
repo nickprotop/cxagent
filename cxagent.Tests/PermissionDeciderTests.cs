@@ -1,4 +1,5 @@
 using CxAgent.Core.Models;
+using CxAgent.Core.Agent;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using CxAgent.UI;
@@ -80,13 +81,25 @@ public class PermissionDeciderTests
         }
     }
 
+    /// <summary>
+    /// ACCEPT-EDITS, NAMED RATHER THAN INHERITED. These tests are about the DECIDER — what it asks,
+    /// what it remembers, how it behaves when two requests race — so the mode has to be the one
+    /// where trust and the boundary still decide something. AlwaysAsk (the session default) refuses
+    /// first, which would make every silent-path assertion here vacuous.
+    ///
+    /// <para>THIS IS NOT COSMETIC: when the default moved to AlwaysAsk, the one test that asserts a
+    /// trusted in-boundary write NEVER prompts stopped being silent and awaited a prompt nothing was
+    /// scripted to answer — a hang, not a failure, and it took the whole suite's shutdown with it.
+    /// A test that expects silence must state the mode that can be silent.</para>
+    /// </summary>
     private static PermissionDecider GateWithScriptedPrompt(
-        out PromptScript script, PermissionRulesStore? store = null, string? workingDir = null)
+        out PromptScript script, PermissionRulesStore? store = null, string? workingDir = null,
+        EditMode edits = EditMode.AcceptEdits)
     {
         script = new PromptScript();
         var dir = workingDir ?? MakeTempDir();
         var rules = store ?? new PermissionRulesStore(new AppPaths(MakeTempDir()));
-        var policy = new PermissionPolicy(dir, rules);
+        var policy = new PermissionPolicy(dir, rules, edits);
         return PermissionDecider.ForTesting(policy, rules, notice: null, script.Show);
     }
 
@@ -190,13 +203,16 @@ public class PermissionDeciderTests
         Assert.Equal(0, script2.ShownCount);       // silent — the rule survived the "restart"
     }
 
+    /// <summary>Trust plus the boundary plus accept-edits is the ONLY combination that writes without
+    /// asking, so all three are arranged explicitly. On the default mode this test would hang rather
+    /// than fail: it scripts no answer, because its whole claim is that nothing asks.</summary>
     [Fact]
     public async Task AnInBoundaryFileWrite_NeverShowsAPrompt_WhenTheFolderIsTrusted()
     {
         var root = MakeTempDir();
         var rules = new PermissionRulesStore(new AppPaths(MakeTempDir()));
         rules.SetTrust(root, TrustState.Trusted);
-        var gate = GateWithScriptedPrompt(out var script, rules, root);
+        var gate = GateWithScriptedPrompt(out var script, rules, root, EditMode.AcceptEdits);
 
         Assert.True(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.txt")), CancellationToken.None));
         Assert.Equal(0, script.ShownCount);

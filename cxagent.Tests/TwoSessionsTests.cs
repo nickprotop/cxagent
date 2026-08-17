@@ -199,8 +199,10 @@ public class TwoSessionsTests : IDisposable
         store.SetTrust(a, TrustState.Trusted);
         store.SetTrust(b, TrustState.Trusted);
 
-        var policyA = new PermissionPolicy(a, store);
-        var policyB = new PermissionPolicy(b, store);
+        // Accept-edits on both. The claim is about ROOTS, and the default mode asks before the root
+        // is ever consulted — so on the default this would pass with the boundary bug still in it.
+        var policyA = new PermissionPolicy(a, store, EditMode.AcceptEdits);
+        var policyB = new PermissionPolicy(b, store, EditMode.AcceptEdits);
 
         // One gate for the process, holding A's policy as its own — the single-session default.
         var asked = new List<string>();

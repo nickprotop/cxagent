@@ -30,7 +30,11 @@ public class WorkingModeTests
         WorkingMode mode = AgentMode.FanOut;
 
         Assert.True(mode.CanDelegate);
-        Assert.Equal(EditMode.AcceptEdits, mode.Edits);
+
+        // The widening carries the STRICT edit mode, which is the point: a call site that says only
+        // "fan out" is not also asking for silent writes. It never was asking for them — it just
+        // used to get them.
+        Assert.Equal(EditMode.AlwaysAsk, mode.Edits);
     }
 
     /// <summary>Agent first, because it is the coarser fact: whether there is one agent or several
@@ -54,6 +58,12 @@ public class WorkingModeTests
     /// AlwaysAsk is therefore first in the enum on purpose: the worst a forgotten initialiser can do
     /// is ask too often, never write silently. Reordering EditMode would silently invert that, which
     /// is why it is pinned here rather than left to the comment.</para>
+    ///
+    /// <para>THE ZERO VALUE AND THE EXPLICIT DEFAULT NOW AGREE, and that is worth pinning too. They
+    /// used to differ — the struct zeroed to AlwaysAsk while WorkingMode.Default said AcceptEdits —
+    /// so which one a session got depended on whether the code path went through the property or
+    /// the constructor. That is exactly the kind of difference nobody notices until it decides
+    /// whether a write asked.</para>
     /// </summary>
     [Fact]
     public void ADefaultConstructedMode_FallsToTheStrictEditMode()
@@ -62,8 +72,8 @@ public class WorkingModeTests
         Assert.Equal(EditMode.AlwaysAsk, default(WorkingMode).Edits);
         Assert.Equal(0, (int)EditMode.AlwaysAsk);
 
-        // The session default is the explicit one, and it is the permissive mode.
-        Assert.Equal(EditMode.AcceptEdits, WorkingMode.Default.Edits);
+        // And the explicit session default agrees with the zero value.
+        Assert.Equal(EditMode.AlwaysAsk, WorkingMode.Default.Edits);
     }
 
     [Theory]

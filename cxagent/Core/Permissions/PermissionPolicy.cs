@@ -26,8 +26,12 @@ public class PermissionPolicy
     public string Root => _root;
     private readonly PermissionRulesStore _rules;
 
+    // THE SAME DEFAULT AS WorkingMode.Default, and it must stay that way: AppBootstrap seeds this
+    // from the resolved startup mode, so the two only ever disagree for a caller that omits the
+    // argument — a test, or a construction path added later. A permissive default here would make
+    // that omission silently widen, which is the direction that costs something.
     public PermissionPolicy(string workingDirRoot, PermissionRulesStore rules,
-        EditMode edits = EditMode.AcceptEdits)
+        EditMode edits = EditMode.AlwaysAsk)
     {
         _root = workingDirRoot;
         _rules = rules;
