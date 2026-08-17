@@ -181,6 +181,19 @@ public class PermissionRulesStore
     public TrustState GetTrust(string scope)
     {
         scope = FolderIdentity.ScopeFor(scope);
+
+        // AN UNIDENTIFIABLE FOLDER IS NEVER REMEMBERED AS TRUSTED. Without a birth time the scope is
+        // a bare path, so a grant made before `rm -rf dir && mkdir dir` would apply to whatever is
+        // there now — and trust is not one permission among many: it is the precondition for silent
+        // writes and for the read-only free pass that reads files by name. A stranger inheriting it
+        // inherits the whole folder.
+        //
+        // ASKED, NOT REFUSED. Unknown means the trust question is put to the user again, which on
+        // such a filesystem is the honest state: nothing here can tell them whether this is the
+        // folder they answered about before. Rules are left alone — a stale rule permits one command
+        // shape, which is a smaller inheritance than the folder itself.
+        if (!FolderIdentity.IsDistinguishable(scope)) return TrustState.Unknown;
+
         lock (_lock)
         {
             return _trust.TryGetValue(scope, out var state) ? state : TrustState.Unknown;

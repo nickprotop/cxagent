@@ -73,6 +73,39 @@ public static class FolderIdentity
     }
 
     /// <summary>
+    /// Whether this scope names a folder the filesystem can actually distinguish.
+    ///
+    /// <para>FALSE MEANS THE SCOPE IS A BARE PATH — no birth time was available, so
+    /// <see cref="ScopeFor"/> could not disambiguate this folder from any other folder that has ever
+    /// occupied the same path. A grant made before an `rm -rf dir &amp;&amp; mkdir dir` then applies
+    /// to whatever is there now, which is the precise failure this type exists to prevent.</para>
+    ///
+    /// <para>THE CONSEQUENCE IS NOT SYMMETRIC, which is why this is a question a caller asks rather
+    /// than a refusal made here. A stale RULE permits one command shape inside a folder; stale TRUST
+    /// unlocks every silent read and write in it, and is the precondition for the free pass that
+    /// reads files by name. Trust is the one that must not be inherited by a stranger.</para>
+    /// </summary>
+    public static bool IsDistinguishable(string scope)
+    {
+        // A SUFFIX MEANS A BIRTH TIME WAS READ, which is the whole question.
+        if (scope.Contains('#', StringComparison.Ordinal)) return true;
+
+        // NO SUFFIX HAS TWO CAUSES AND THEY ARE NOT THE SAME RISK. A folder that does not exist has
+        // no identity to confuse with anything — nothing is running there, and refusing trust for it
+        // would break every caller reasoning about a path in the abstract. A folder that EXISTS and
+        // still has no birth time is the dangerous case: it is indistinguishable from every folder
+        // that has ever occupied that path, including the one a grant was made for.
+        try
+        {
+            return !Directory.Exists(scope);
+        }
+        catch (Exception)
+        {
+            return false;   // cannot tell: treat as indistinguishable, which is the cautious answer
+        }
+    }
+
+    /// <summary>
     /// The path part of a scope, for display. A user reading a prompt or a listing wants the folder,
     /// not the timestamp that disambiguates it.
     /// </summary>
