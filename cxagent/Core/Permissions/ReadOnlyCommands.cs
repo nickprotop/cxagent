@@ -124,48 +124,17 @@ public static class ReadOnlyCommands
         return SafeVerbs.Contains(first);
     }
 
-    /// <summary>
-    /// The paths a read-only command names, for a caller that must confine them.
-    ///
-    /// <para>THE VERB IS NOT THE WHOLE REQUEST. <see cref="IsReadOnly"/> answers "does this program
-    /// write" and nothing about WHAT it reads, so <c>cat /etc/shadow</c> passed it — the same file
-    /// the file-read tool refuses, because that path resolves outside the boundary. Two spellings of
-    /// one read, opposite answers, and the permissive one is the less inspectable.</para>
-    ///
-    /// <para>THE CALLER ALREADY DOES THIS FOR <c>cd</c>. IsReadOnly hands back the cd target
-    /// precisely so the boundary can bind to it — the comment there says <c>cd /etc &amp;&amp; cat
-    /// shadow</c> "reads a file the boundary exists to protect". This is that same reasoning applied
-    /// to the arguments, which is where the gap was.</para>
-    ///
-    /// <para>EXISTING PATHS ONLY. A flag is not a path, and neither is a grep pattern. Returning
-    /// every token would make the caller refuse <c>grep TODO</c> for want of a file called TODO;
-    /// returning only what exists on disk asks the question that matters — is the agent reading
-    /// something real, and is it inside the folder. A path that does not exist reads nothing, so
-    /// there is nothing to confine.</para>
-    /// </summary>
-    public static IReadOnlyList<string> PathArguments(string? command)
-    {
-        if (string.IsNullOrWhiteSpace(command)) return [];
-
-        var text = command.Trim();
-        if (TryStripLeadingCd(text, out _, out var rest)) text = rest;
-
-        var paths = new List<string>();
-
-        // FROM THE SECOND TOKEN: the first is the verb, which SafeVerbs has already vouched for and
-        // which names a program rather than a file to read.
-        foreach (var token in text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1))
-        {
-            // A FLAG IS NOT A PATH. Treating one as a path would confine flags to the folder.
-            if (token.StartsWith('-')) continue;
-
-            var trimmed = token.Trim('"', '\'');
-            if (trimmed.Length > 0 && (File.Exists(trimmed) || Directory.Exists(trimmed)))
-                paths.Add(trimmed);
-        }
-
-        return paths;
-    }
+    // PathArguments LIVED HERE AND IS NOW CommandSubjects.Of(...).Paths. It answered "which tokens
+    // name a real file", which is most of the question but not all of it: it split on spaces, so a
+    // quoted path containing one was dropped, and it skipped every token starting with a dash, so
+    // `--file=/etc/shadow` was invisible while `-f /etc/shadow` was caught. Two spellings of one
+    // read, opposite answers.
+    //
+    // THE REPLACEMENT IS A TYPE BECAUSE THE ANSWER NEEDED A SECOND HALF: not just the paths found,
+    // but whether anything was left unaccounted for. A list cannot say "and there was something here
+    // I could not classify", so every caller had to remember to ask separately — which is how four
+    // holes of the same shape reached this file. Deleted rather than kept as a wrapper: a second way
+    // to ask the question is how the two doors came to be fixed separately last time.
 
     /// <summary>
     /// Splits <c>cd &lt;dir&gt; &amp;&amp; rest</c> into its target and the rest, or reports no match.

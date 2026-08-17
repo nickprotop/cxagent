@@ -275,12 +275,24 @@ public class PermissionPolicy
         //
         // THE cd TARGET WAS ALREADY CHECKED, which is the tell that the boundary was meant to bind
         // here: `cd /etc && cat shadow` was caught and `cat /etc/shadow` was not.
+        //
+        // EVERY SUBJECT, OR NO PASS. The three clauses this replaced were each a fix for a hole of
+        // the same shape — verb vouched for, arguments ignored; cd target checked, remainder
+        // ignored — and none of them made the next one unnecessary, because "did we look at all of
+        // it" was nowhere written down. CommandSubjects writes it down: FullyExamined is false for
+        // anything it cannot classify, so a shape nobody anticipated costs a prompt instead of
+        // passing. It found a fifth hole on the way in — `grep --file=/etc/shadow .` was silent
+        // while `grep -f /etc/shadow .` correctly asked, the same read spelled two ways.
         if (request.Kind == PermissionKind.Shell
             && _rules.GetTrust(_root) == TrustState.Trusted
-            && ReadOnlyCommands.IsReadOnly(request.What, out var changesTo)
-            && (changesTo is null || IsInsideBoundary(changesTo))
-            && ReadOnlyCommands.PathArguments(request.What).All(IsInsideBoundary))
-            return true;
+            && ReadOnlyCommands.IsReadOnly(request.What, out _))
+        {
+            var subjects = CommandSubjects.Of(request.What);
+            if (subjects.FullyExamined
+                && (subjects.ChangesTo is null || IsInsideBoundary(subjects.ChangesTo))
+                && subjects.Paths.All(IsInsideBoundary))
+                return true;
+        }
 
         if (request.AlwaysRule is null) return false;
 
@@ -305,9 +317,16 @@ public class PermissionPolicy
         // `&&`; the read-only pass matched a verb and ignored its arguments; a rule matches a
         // pattern and ignores them too. A grant is permission to run a COMMAND, never permission to
         // leave the folder — the boundary is not a thing any rule may buy its way past.
-        if (request.Kind == PermissionKind.Shell
-            && !ReadOnlyCommands.PathArguments(request.What).All(IsInsideBoundary))
-            return false;
+        // AND A STORED RULE IS HELD TO THE SAME STANDARD. `cat*` is an honest grant for reading this
+        // project and was also permitting `cat /etc/passwd`, because a rule matched the command TEXT
+        // and never looked at the paths in it. Asking CommandSubjects here rather than re-deriving
+        // the paths is what keeps the two doors from drifting apart again — they were fixed
+        // separately last time, and that is why one of them still had the flag-value hole.
+        if (request.Kind == PermissionKind.Shell)
+        {
+            var subjects = CommandSubjects.Of(request.What);
+            if (!subjects.FullyExamined || !subjects.Paths.All(IsInsideBoundary)) return false;
+        }
 
         return _rules.Matches(_root, request.Kind, subject);
     }
