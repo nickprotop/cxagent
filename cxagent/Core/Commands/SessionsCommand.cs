@@ -144,45 +144,11 @@ public static class SessionsCommand
     }
 
 
-    /// <summary>
-    /// The line shown at startup when this folder has history, or null when it has none.
-    ///
-    /// <para>A HINT, NOT A QUESTION. This replaced a dialog that asked "an earlier session ended
-    /// without closing — resume it?" on the first render, before the user had typed anything. It
-    /// asked at the worst possible moment, could only ever offer ONE session (everything older was
-    /// unreachable), and made resume something that happened TO you rather than something you asked
-    /// for.</para>
-    ///
-    /// <para>THE UNFINISHED ONE IS NAMED, because "ended without closing" is the case where someone
-    /// lost work and is looking for it. Everything else is a count and a pointer.</para>
-    /// </summary>
-    /// <param name="here">How many sessions this folder has.</param>
-    /// <param name="unfinishedMessages">
-    /// The size of the newest session that ended without closing, or null when there is none.
-    /// </param>
-    public static string? StartupHint(int here, int? unfinishedMessages)
-    {
-        if (here == 0) return null;
-
-        var muted = Markup.Muted;
-
-        return unfinishedMessages is { } messages
-            ? $"[{muted}]An earlier session here ended without closing ({messages} messages). "
-              + $"/sessions to see it — {here} in this folder.[/]"
-            : $"[{muted}]{here} earlier session{(here == 1 ? "" : "s")} in this folder — "
-              + $"/sessions to see {(here == 1 ? "it" : "them")}.[/]";
-    }
-
-    /// <summary>
-    /// How to reopen the session that just ended, printed on the way out.
-    ///
-    /// <para>THE ONE MOMENT THE ID IS WORTH SOMETHING. Everywhere else it is an implementation
-    /// detail; here it turns "I closed that by accident" into a command that can be pasted. Costless
-    /// to ignore — a line on a terminal the user is already leaving — and the alternative is learning
-    /// that resume exists from the documentation of an app you have stopped using.</para>
-    /// </summary>
-    public static string ExitHint(string uid) =>
-        $"Resume this session:  cxagent --resume {Short(uid)}";
+    // THE TWO HINTS MOVED OUT — see AppBootstrap.SessionHints. They read as belonging here, beside
+    // the rest of what /sessions says, and they do not: one names this app's binary
+    // ("cxagent --resume …") and both decide what a FRONT END volunteers unprompted. A second front
+    // end may want different words, a different pointer, or no line at all — and Decide/RenderPlain
+    // below answer a question the user asked, which is the difference.
 
     /// <summary>
     /// The same listing as plain text, for <c>--sessions</c> — no markup, no colour, no frame.

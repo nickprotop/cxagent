@@ -1,7 +1,8 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Commands;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -123,7 +124,7 @@ public class ModePersistenceTests : IDisposable
         // which is itself worth knowing if this ever returns false.
         session.NotePolicy(new PermissionPolicy(_work, manager.Rules!, EditMode.AlwaysAsk));
 
-        Assert.True(session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AcceptEdits)));
+        Assert.Equal(CommandStatus.Changed, session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AcceptEdits)));
         Assert.Equal(EditMode.AcceptEdits, manager.Rules!.GetEditMode(_work));
     }
 }

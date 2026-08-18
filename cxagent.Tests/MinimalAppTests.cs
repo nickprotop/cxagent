@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -52,7 +52,10 @@ public class MinimalAppTests : IDisposable
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
 
-        await session.Host!.SendAsync("hello", CancellationToken.None);
+        // THE REAL SUBMIT, not the test helper: this is the call a consuming app writes, and its
+        // shape is part of what this test claims. Started carries the turn; the caller awaits it.
+        var submitted = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("hello"));
+        await submitted.Turn;
 
         // THE REPLY REACHED THE CALLER, which is the whole claim. Asserting the host is non-null
         // would only prove the wiring returned an object; Body is what the provider said, arriving

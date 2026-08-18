@@ -1,7 +1,8 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Commands;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -85,7 +86,7 @@ public class CompletionValuesTests : IDisposable
 
         // A ROW EXISTS ONLY ONCE SOMETHING WAS SAID. Without this the list is empty and Assert.All
         // passes over nothing — a test that cannot fail, which is worse than no test.
-        await session.Host!.SendAsync("what is 2+2", CancellationToken.None);
+        await session.SendAndWait("what is 2+2");
 
         var values = manager.Values(CompletionSets.Sessions, _dir);
 
@@ -145,7 +146,7 @@ public class CompletionValuesTests : IDisposable
             AgentMode.Single);
 
         var next = new WorkingMode(AgentMode.FanOut, EditMode.AcceptEdits);
-        Assert.True(session.SetMode(next));
+        Assert.Equal(CommandStatus.Changed, session.SetMode(next));
 
         Assert.Equal(next, session.Host!.Mode);
         Assert.Equal(EditMode.AcceptEdits, policy.Edits);
@@ -157,7 +158,7 @@ public class CompletionValuesTests : IDisposable
     {
         var session = new Session(_dir);
 
-        Assert.False(session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AlwaysAsk)));
+        Assert.Equal(CommandStatus.Refused, session.SetMode(new WorkingMode(AgentMode.Single, EditMode.AlwaysAsk)));
     }
 
     // THE THREE STEPS RUN IN ORDER, and the row it came from is retired. Doing this by hand in the
@@ -172,7 +173,7 @@ public class CompletionValuesTests : IDisposable
         provider.EnqueueResponse(new LlmResponse { Text = "ok", StopReason = "end_turn" });
 
         var session = Wired(manager, ResolvedConfig.ForTesting(provider));
-        await session.Host!.SendAsync("remember this", CancellationToken.None);
+        await session.SendAndWait("remember this");
 
         var agentId = session.Host.SessionId;
         var store = manager.Shared.Resume!;
@@ -214,10 +215,10 @@ public class CompletionValuesTests : IDisposable
         var kinds = new List<SessionChangeKind>();
         session.Changed += kinds.Add;
 
-        await session.Host!.SendAsync("say hi", CancellationToken.None);
+        await session.SendAndWait("say hi");
         Assert.NotEmpty(session.Host.Context.Messages);
 
-        Assert.True(session.ClearContext());
+        Assert.Equal(CommandStatus.Changed, session.ClearContext());
 
         Assert.Empty(session.Host.Context.Messages);
         Assert.Contains(sink.Notices, n => n.Contains("cleared", StringComparison.OrdinalIgnoreCase));
@@ -226,7 +227,7 @@ public class CompletionValuesTests : IDisposable
 
     [Fact]
     public void Session_ClearContext_WithNoHost_IsRefused() =>
-        Assert.False(new Session(_dir).ClearContext());
+        Assert.Equal(CommandStatus.Refused, new Session(_dir).ClearContext());
 
     // NO TOOLSET, NO SERVERS — an ordinary headless arrangement, not a failure.
     [Fact]

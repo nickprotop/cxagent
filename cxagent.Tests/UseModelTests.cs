@@ -1,6 +1,7 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Commands;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -130,7 +131,7 @@ public class UseModelTests : IDisposable
             new ResolvedConfig(registry.Use("one"), new ProviderCatalog(registry), []),
             Ports(), AgentMode.Single);
 
-        Assert.True(session.Use("two"));
+        Assert.Equal(CommandStatus.Changed, session.Use("two"));
 
         Assert.Same(second, session.Provider);
         Assert.Equal("two", session.InstanceName);
@@ -149,7 +150,7 @@ public class UseModelTests : IDisposable
             new ResolvedConfig(registry.Use("one"), new ProviderCatalog(registry), []),
             Ports(), AgentMode.Single);
 
-        Assert.False(session.Use("no-such-instance"));
+        Assert.Equal(CommandStatus.Refused, session.Use("no-such-instance"));
         Assert.Same(first, session.Provider);   // and it stays where it was
     }
 
@@ -171,7 +172,7 @@ public class UseModelTests : IDisposable
         var stranger = new MockLlmProvider("not-in-any-catalog");
         Assert.Null(registry.Use("stranger"));        // the catalog cannot reach it
 
-        Assert.True(session.Use(new ActiveModel(stranger, "stranger", "Stranger", 64_000)));
+        Assert.Equal(CommandStatus.Changed, session.Use(new ActiveModel(stranger, "stranger", "Stranger", 64_000)));
         Assert.Same(stranger, session.Provider);
         Assert.Equal("stranger", session.InstanceName);
     }
@@ -197,9 +198,20 @@ public class LazyWindowProbeTests
         private readonly System.Net.HttpListener _listener = new();
         public int Hits;
 
-        public FakeEndpoint(int port)
+        public int Port { get; }
+
+        public FakeEndpoint()
         {
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            // A FREE PORT, ASKED OF THE OS — the same idiom OAuthFlowTests uses, and for the reason
+            // this test learned the hard way: a hardcoded port collides with whatever else in the
+            // suite happens to bind, and the failure lands in the OTHER test as "Address already in
+            // use". Bind 0, read what was granted, release it, then claim it for real.
+            var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            probe.Start();
+            Port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+
+            _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
             _listener.Start();
             _ = Task.Run(async () =>
             {
@@ -227,8 +239,8 @@ public class LazyWindowProbeTests
     [Fact]
     public void AnUndeclaredWindow_IsAskedOfTheEndpoint_AndRememberedAfterwards()
     {
-        const int port = 18899;
-        using var endpoint = new FakeEndpoint(port);
+        using var endpoint = new FakeEndpoint();
+        var port = endpoint.Port;
 
         var settings = new ProviderSettings(
             new Dictionary<string, ProviderInstanceConfig>

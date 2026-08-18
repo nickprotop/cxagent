@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -32,7 +32,7 @@ public class AgentHostTests
             with { Usage = new LlmUsage { InputTokens = 30, OutputTokens = 12 } });
 
         var runner = NewRunner(mock);
-        await runner.SendAsync("goal", CancellationToken.None);
+        await runner.RunAsync("goal", CancellationToken.None);
 
         Assert.Equal(42, runner.Ledger.TotalTokens);
     }
@@ -54,26 +54,34 @@ public class AgentHostTests
         var seen = new List<int>();
         runner.TokensUpdated += (_, total) => seen.Add(total);
 
-        await runner.SendAsync("goal", CancellationToken.None);
+        await runner.RunAsync("goal", CancellationToken.None);
 
         Assert.Contains(42, seen);
     }
 
+    /// <summary>
+    /// A BARE HOST LETS THE FAILURE THROUGH, because reporting is the session's now.
+    ///
+    /// <para>This used to assert that the host caught a provider failure and called
+    /// <c>_sink.Failed</c>. That moved with the rest of turn ownership: RunAsync is a delegation to
+    /// the agent, and a caller without a session — every test in this file — gets the exception.
+    /// The behaviour it protected is still pinned, one layer up, by
+    /// <c>ErrorOnceTests.AFailingTurn_ReportsExactlyOnce</c> and the vendor-body assertion below.</para>
+    /// </summary>
     [Fact]
-    public async Task SendAsync_ProviderThrows_ShowsError_DoesNotLeakVendorBody()
+    public async Task RunAsync_ProviderThrows_SurfacesTheFailure_WithoutTheVendorBody()
     {
         var sink = new RecordingSink();
         var runner = NewRunner(new ThrowingProvider(), sink);
 
-        var conversation = new List<ChatMessage>();
-        await runner.SendAsync("x", CancellationToken.None);
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => runner.RunAsync("x", CancellationToken.None));
 
-        // NO ANSWER on the transcript — the request produced an error, not a reply. That absence is
-        // what a failed exchange looks like now the status enum nothing consumed is gone.
-        Assert.DoesNotContain(conversation, m => m.Role == "assistant");
-        Assert.NotNull(sink.Error);
-        Assert.Contains("auth failed", sink.Error!);
-        Assert.DoesNotContain("secret-vendor-body", sink.Error!);  // VendorBody never surfaced
+        Assert.Contains("auth failed", thrown.Message, StringComparison.Ordinal);
+
+        // VENDOR BODY NEVER SURFACES, which is the half of this test that is about secrecy rather
+        // than about which layer catches.
+        Assert.DoesNotContain("secret-vendor-body", thrown.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -91,9 +99,9 @@ public class AgentHostTests
         var runner = NewRunner(mock);
         var conversation = new List<ChatMessage>();
 
-        await runner.SendAsync("one", CancellationToken.None);
+        await runner.RunAsync("one", CancellationToken.None);
         var afterFirst = runner.Context.Messages.Count;
-        await runner.SendAsync("two", CancellationToken.None);
+        await runner.RunAsync("two", CancellationToken.None);
 
         Assert.True(afterFirst > 0);
         Assert.True(runner.Context.Messages.Count > afterFirst);
@@ -140,7 +148,7 @@ public class AgentHostTests
             new NullJobPanel(),
             new AgentHost.SessionStores { Resume = store });
 
-            await runner.SendAsync("remember this", CancellationToken.None);
+            await runner.RunAsync("remember this", CancellationToken.None);
 
             var snap = store.LoadLatestUnfinished("/projects/here");
             Assert.NotNull(snap);
@@ -176,7 +184,7 @@ public class AgentHostTests
 
             Assert.False(runner.HasSavedTurn);
 
-            await runner.SendAsync("say something", CancellationToken.None);
+            await runner.RunAsync("say something", CancellationToken.None);
 
             Assert.True(runner.HasSavedTurn);
         }
@@ -225,7 +233,7 @@ public class AgentHostTests
             new RecordingSink(),
             new NullJobPanel(),
             new AgentHost.SessionStores { Resume = store });
-            await runner.SendAsync("hello", CancellationToken.None);
+            await runner.RunAsync("hello", CancellationToken.None);
 
             // IT WAS OFFERABLE FIRST — otherwise this test passes vacuously, since an unscoped save
             // returns null whether or not MarkSessionFinished does anything at all.
@@ -299,7 +307,7 @@ public class AgentHostTests
 
         Assert.Same(mine, runner.Ledger);
 
-        await runner.SendAsync("goal", CancellationToken.None);
+        await runner.RunAsync("goal", CancellationToken.None);
 
         Assert.Equal(42, mine.TotalTokens);
     }
@@ -344,7 +352,7 @@ public class AgentHostTests
             new RecordingSink(),
             new NullJobPanel(),
             ledger: before);
-        await first.SendAsync("spend something", CancellationToken.None);
+        await first.RunAsync("spend something", CancellationToken.None);
         Assert.Equal(1_000, before.TotalTokens);
 
         // What WireRunner does on F5: dispose the outgoing host, build a fresh ledger, build a fresh

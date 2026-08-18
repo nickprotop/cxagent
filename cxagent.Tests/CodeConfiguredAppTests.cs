@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
@@ -76,7 +76,7 @@ public class CodeConfiguredAppTests : IDisposable
         var sink = new BufferedChatSink();
         var session = manager.Open(_dir, Ports(sink));
 
-        await session.Host!.SendAsync("hello", CancellationToken.None);
+        await session.SendAndWait("hello");
 
         Assert.Contains("from fast", sink.Body);
 
@@ -114,8 +114,8 @@ public class CodeConfiguredAppTests : IDisposable
         var first = manager.Open(a, Ports(firstSink));                                    // the default
         var second = manager.Open(b, ResolvedConfig.ForTesting(two, "two"), Ports(secondSink));
 
-        await first.Host!.SendAsync("hello", CancellationToken.None);
-        await second.Host!.SendAsync("hello", CancellationToken.None);
+        await first.SendAndWait("hello");
+        await second.SendAndWait("hello");
 
         Assert.Contains("from one", firstSink.Body);
         Assert.Contains("from two", secondSink.Body);

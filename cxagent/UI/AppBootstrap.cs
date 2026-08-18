@@ -1,6 +1,6 @@
 using CxAgent.Core.Commands;
 using System.Reflection;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
@@ -74,7 +74,8 @@ public static class AppBootstrap
     /// different actions — nothing to resume means "just start", while an ambiguous id means "type
     /// more characters", and a single "could not resume" would hide which one happened.</para>
     ///
-    /// <para>Public rather than internal: this codebase has no InternalsVisibleTo grant.</para>
+    /// <para>Public because a front end is a consumer, not an internal: the InternalsVisibleTo grant
+    /// in AssemblyWiring covers Core's assemble members, not the app's own entry point.</para>
     /// </summary>
     public static (SessionSnapshot? Snapshot, string Problem) FindResumeTarget(
         SqliteSessionStore store, string workingDir, string? uid)
@@ -204,7 +205,7 @@ public static class AppBootstrap
 
         var logs = new LogFileManager(paths);
 
-        // THE RESUME BUFFER. Built before the runner so it can be handed in at construction, and
+        // THE RESUME BUFFER. Built before the host so it can be handed in at construction, and
         // pruned once here rather than on a timer: startup is the only moment nothing is mid-turn,
         // and finished sessions are the only rows old enough to be worth dropping.
         var sessions = new SqliteSessionStore(paths);
@@ -220,7 +221,7 @@ public static class AppBootstrap
         // before MainWindow's StartupMode banner is written — that banner is a chat message and
         // cannot be revised, so a mode restored after it would be announced wrong for the rest of
         // the session.
-        var session = new Core.Agent.Session(Path.GetFullPath(Environment.CurrentDirectory));
+        var session = new Core.Sessions.Session(Path.GetFullPath(Environment.CurrentDirectory));
         var permissionRules = new PermissionRulesStore(paths);
         string? migrationNotice = null;
 
@@ -301,7 +302,7 @@ public static class AppBootstrap
         var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules,
             startupMode.Edits);
         // The UI's own transcript writer. The control it wraps is created with mainWindow above and
-        // never replaced, so — unlike the forwarder this used to be — there is no later lifetime to
+        // never replaced, so there is no later lifetime to
         // chase: every caller below can hold this one instance for good.
         var transcript = new TranscriptWriter(system, mainWindow.Chat);
         // NO SESSION IN IT. The gate is the process's — a rules store and a way to ask — and every
@@ -321,13 +322,6 @@ public static class AppBootstrap
 
         using var cts = new CancellationTokenSource();
 
-        // Mutable so first-run setup (and F5 settings) can install a runner that didn't exist at
-        // startup. The PreviewKeyPressed handler below closes over THIS FIELD, not over a runner
-        // local, so a later assignment takes effect without re-registering the handler. session.Provider
-        // tracks alongside it — F6's diagnose closure must call the CURRENT provider, not whichever
-        // one was resolved at startup, or a provider change via F5 mid-session would silently keep
-        // diagnosing against the old (possibly now-invalid) one.
-        AgentHost? runner = null;
 
         // The currently-open consolidated Settings dialog, or null when none is open. Captured by the
         // Escape global shortcut (routes Escape to Cancel while a dialog is open) and by
@@ -350,7 +344,7 @@ public static class AppBootstrap
         // Both are true mid-turn; only this one is guaranteed false by the time the continuation's
         // next line runs, which is what the post-turn drain below depends on.
         //
-        // WHAT LEFT. Deciding whether a typed line becomes a steer or a prompt moved to Session.Send,
+        // WHAT LEFT. Deciding whether a typed line becomes a steer or a prompt moved to Session.Submit,
         // which reads IsBusy — that decision was the only thing enforcing "two SendAsync calls on one
         // agent append to ONE live Context.Messages", from a bool a second front end could not see.
         // The cancellation scope moved to AgentHost, beside the busy flag and the turn it belongs to.
@@ -428,21 +422,17 @@ public static class AppBootstrap
             }
 
             // ASKS THE SESSION TO EMPTY THE QUEUE; the restoring is done by the Cancelled handler
-            // below. This used to take the text AND place it AND remove the row — three steps at
-            // every call site, which is why the send path once left the block sitting above a
-            // duplicate of itself. Now there is one step here and one subscriber.
+            // below. One step here and one subscriber, rather than take-place-remove at every call
+            // site — which is how a send path leaves the block sitting above a duplicate of itself.
             void DrainQueuedToComposer() => session.CancelPending();
 
             // WHAT THIS FRONT END DOES WITH TEXT HANDED BACK. The session does not know a composer
             // exists — it raises Cancelled and this decides. Placed ABOVE anything typed since,
             // preserving the order things were written in: the queued lines were typed first.
             //
-            // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the composer"
-            // row behind, which was inconsistent with the send path (where the block disappears) for
-            // what is the same event: the queue emptied, so the placeholder has nothing left to stand
-            // for. The trace earned nothing either — the text is sitting in the composer in plain
-            // view, so the row explained something already on screen while permanently costing a line
-            // of a transcript that scrolls.
+            // REMOVED, not rewritten to a tombstone. The queue emptied, so the placeholder has nothing
+            // left to stand for — and the text is sitting in the composer in plain view, so a row
+            // saying so would explain something already on screen at the cost of a transcript line.
             session.Cancelled += text => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.Input.Input = PromptQueue.Restore(text, mainWindow.Input.Input);
@@ -474,7 +464,7 @@ public static class AppBootstrap
 
 
         // THE PROCESS'S SESSIONS AND WHAT THEY SHARE, built ONCE. WireRunner runs again on every F5,
-        // F7 and /model, and it used to construct a fresh SharedServices record each time from these
+        // F7 and /model. Constructing a fresh SharedServices record each time from these
         // same locals — harmless while the members are identical, and exactly the shape that stops
         // being harmless when a second session exists and one re-wire hands it a different record.
         //
@@ -482,8 +472,8 @@ public static class AppBootstrap
         // prune has to happen at startup) and the gate cannot exist until there IS a window, so the
         // root assembles them in the order the UI forces and hands the result over. Create() is for
         // a caller with no such ordering — a headless host.
-        var manager = Core.Agent.SessionManager.Over(
-            new Core.Agent.SharedServices
+        var manager = Core.Sessions.SessionManager.Over(
+            new Core.Sessions.SharedServices
             {
                 Logs = logs,
                 Resume = sessions,
@@ -511,7 +501,7 @@ public static class AppBootstrap
             if (declared.Name == "/stats")
                 manager.Commands.Register(declared, (session, arguments) =>
                 {
-                    if (!StatsCommand.IsClear(arguments)) return session.SayUsage(history, arguments);
+                    if (!StatsCommand.IsClear(arguments)) return session.SayUsage(arguments).Handled();
 
                     ConfirmClearHistory(mainWindow, history);
                     return true;
@@ -522,9 +512,6 @@ public static class AppBootstrap
             // toolset /mcp reloads, the resume store /sessions lists. They are registered here for
             // that reason, not because they are UI: the work they do is already a session's or the
             // manager's, and what stays is the lookup of collaborators only a composition root has.
-            if (declared.Name == "/model")
-                manager.Commands.Register(declared, (_, arguments) => { SwitchModel(arguments); return true; });
-
             if (declared.Name == "/mcp")
                 manager.Commands.Register(declared, (_, arguments) =>
                 {
@@ -546,7 +533,7 @@ public static class AppBootstrap
         {
             if (!res.HasProvider) return;
 
-            // REBOUND ON EVERY WIRE, from THIS resolution. It used to be bound once at startup, so
+            // REBOUND ON EVERY WIRE, from THIS resolution. Binding once at startup would mean
             // changing `classifier` in config and pressing F5 left `auto` mode consulting the old
             // provider — silently, because the mode still worked. That is the shape of every bug in
             // this method: a re-wire that moves some consumers of a resolution and not others, with
@@ -583,10 +570,11 @@ public static class AppBootstrap
             // interleaved with the turns that caused them. JobPanelSink (and JobPanelControl) still
             // exist and still work; they are simply not wired. Both speak IToolObserver, so this line is
             // the entire switch: AgentHost never touches a control.
-            // The failed-job buttons. Delegates rather than a AgentHost reference because `runner`
-            // is assigned BELOW this line and REPLACED on every re-wire — capturing the instance
-            // would pin whichever runner existed when this sink was built. Reading through the
-            // closure is the same pattern every other handler here uses.
+            // The failed-job buttons. Delegates rather than an AgentHost reference, because the host
+            // is built BELOW this line and REPLACED on every re-wire — capturing the instance would
+            // pin whichever one existed when this sink was built. Reading through the closure is the
+            // same pattern every other handler here uses, and it is why the session rather than the
+            // host is what everything holds now.
             //
             // No inline failure actions. Retry/Skip/Diagnose let the user drive the scheduler by
             // hand while the orchestrator was mid-drive -- "a drive operation is already in
@@ -602,7 +590,7 @@ public static class AppBootstrap
             // cannot disagree with reality. Idempotent on re-wire: /model and resume call this again
             // with the same Session, and Open adds it only if it is not already there.
             manager.Open(session, res,
-                new Core.Agent.SessionPorts
+                new Core.Sessions.SessionPorts
                 {
                     Observer = sink,
                     Tools = jobPanelSink,
@@ -615,8 +603,6 @@ public static class AppBootstrap
                 },
                 startupMode);
 
-            runner = session.Host;
-
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
             // that is merely slow to connect.
@@ -625,20 +611,20 @@ public static class AppBootstrap
 
             // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
             // because the session id does not exist until the host does — and reassigned on every
-            // re-wire (F5 changes provider), so the hook reads `runner` lazily rather than closing
+            // re-wire (F5 changes provider), so the hook reads the session lazily rather than closing
             // over the id of a host that has since been replaced.
             permissionGate.OnDecision = (kind, decision, requester) =>
                 history.SavePermission(new PermissionRecord(
-                    runner?.SessionId ?? "unknown", DateTimeOffset.UtcNow,
+                    session.SessionId ?? "unknown", DateTimeOffset.UtcNow,
                     kind.ToString(), decision, requester, session.WorkingDirectory));
 
-            runner.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
+            session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
                 // THE PARENT'S OWN SPEND, not `total`. The event carries Ledger.TotalTokens, which is
                 // the whole session — children share the ledger — and the status bar is this agent's
                 // readout: it sits beside an occupancy percentage that is the parent's, so a
                 // session-wide figure there read as the parent's and was four times too large.
-                var (ownIn, ownOut) = runner!.OwnSpend;
+                var (ownIn, ownOut) = session.OwnSpend;
                 mainWindow.SetTokenTotal(ownIn + ownOut);
                 mainWindow.SetTokenSplit(ownIn, ownOut);
 
@@ -650,31 +636,31 @@ public static class AppBootstrap
                 // panel is everything, and "Tokens by agent" is where the two are reconciled.
                 mainWindow.SetSpend(new MainWindow.SpendReading
                 {
-                    ByInstance = runner.Ledger.ByModel,
-                    SubAgentTokens = runner.Ledger.SubAgentTokens,
-                    SplitByInstance = runner.Ledger.SplitByModel,
-                    CacheHitRate = runner.Ledger.CacheHitRate,
-                    CacheByAgent = runner.Ledger.CacheHitRateByAgent,
-                    CacheWrittenTokens = runner.Ledger.CacheWrittenTokens,
-                    CostByInstance = runner.Ledger.CostByInstance,
-                    TotalCost = runner.Ledger.TotalCost,
+                    ByInstance = session.Ledger.ByModel,
+                    SubAgentTokens = session.Ledger.SubAgentTokens,
+                    SplitByInstance = session.Ledger.SplitByModel,
+                    CacheHitRate = session.Ledger.CacheHitRate,
+                    CacheByAgent = session.Ledger.CacheHitRateByAgent,
+                    CacheWrittenTokens = session.Ledger.CacheWrittenTokens,
+                    CostByInstance = session.Ledger.CostByInstance,
+                    TotalCost = session.Ledger.TotalCost,
                 });
             });
-            runner.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
-            runner.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
-            runner.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
+            session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
+            session.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
+            session.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
             // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
-            // and nothing to re-raise — this used to be a GoalStarted subscription that fired on every
+            // and nothing to re-raise — a per-prompt subscription would fire on every
             // prompt because every prompt minted a new id.
-            mainWindow.SessionId = runner.SessionId;
+            mainWindow.SessionId = session.SessionId;
             mainWindow.RefreshSessionPanel();
-            runner.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
+            session.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
             {
                 mainWindow.SessionPanel.RecordTurn(calls);
                 // THE PARENT'S SPLIT, matching the total beside it. The ledger's InputTokens and
                 // OutputTokens include every child, and a bar showing a session-wide ↑/↓ under a
                 // parent-only total would be two figures that cannot be added together.
-                var (turnIn, turnOut) = runner.OwnSpend;
+                var (turnIn, turnOut) = session.OwnSpend;
                 mainWindow.SetTokenSplit(turnIn, turnOut);
 
                 // SKILLS, RE-READ EVERY TURN like the agent's own discovery — a skill added or
@@ -685,7 +671,7 @@ public static class AppBootstrap
                 // compaction removes a body. That silent stop is the thing worth showing.
                 mainWindow.SkillCount = Core.Skills.SkillCatalog
                     .Find(session.WorkingDirectory, paths.ConfigDir).Skills.Count;
-                mainWindow.LoadedSkills = runner.LoadedSkills;
+                mainWindow.LoadedSkills = session.LoadedSkills;
 
                 mainWindow.RefreshSessionPanel();
             });
@@ -803,7 +789,7 @@ public static class AppBootstrap
         // Shift+Enter was the first answer and it does not work here. The reasoning was that it is
         // "the chat-UI convention, portable across terminals", but that is a GUI assumption: most
         // Unix terminals send a bare '\r' for Enter with no modifier bits at all, so Shift+Enter and
-        // Enter are the same byte and the app cannot tell them apart. It was documented in three
+        // Enter are the same byte and the app cannot tell them apart. Documented in three
         // places and reachable in none. (Ctrl+Enter fails for exactly the same reason, which the
         // original comment already noted without following the observation through.)
         //
@@ -813,7 +799,7 @@ public static class AppBootstrap
         // e.Handled so the MultilineEditControl never inserts its own newline; we insert the newline
         // ourselves when the text ends in a backslash. Gated to when the composer has focus, so Enter in the job panel (expand
         // block) still works. Registered UNCONDITIONALLY (not just when a provider is configured at
-        // startup) because it closes over the `runner` field above, so a provider wired in later via
+        // startup) because it reads through the session, so a provider wired in later via
         // first-run setup or F5 settings becomes usable without re-registering anything.
         // THE SLASH MENU. Its keys are handled by the portal's own content, NOT here: an open
         // desktop portal captures keyboard input before PreviewKeyPressed is reached, so a hook in
@@ -859,14 +845,14 @@ public static class AppBootstrap
             {
                 e.Handled = true;
 
-                if (runner is null) return;   // no agent to set a mode on
+                if (!session.HasAgent) return;   // no agent to set a mode on
 
                 // A TURN IN FLIGHT IS DECLINED, the same predicate /mode uses: the tool list is fixed
                 // once a request begins, and a silent flip mid-turn is exactly what that guards.
                     // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
                 // a mode that would do nothing. With one, the order runs strict -> permissive ->
                 // reviewed, which reads as increasing autonomy.
-                var nextEdits = runner.Mode.Edits switch
+                var nextEdits = session.Mode.Edits switch
                 {
                     EditMode.AlwaysAsk => EditMode.AcceptEdits,
                     EditMode.AcceptEdits when permissionGate.Classifier is not null => EditMode.Auto,
@@ -877,11 +863,10 @@ public static class AppBootstrap
                 // two ways, and the pair of lines this replaced is the pair that gets copied with
                 // the policy half missing.
                 // NO REPAINT HERE. SetMode announces, and the subscription above follows — the
-                // line that used to sit here is the line a new command forgets.
-                // ONE CALL, NOT TWO. SetMode remembers the preference itself now — the pair of
-                // lines that used to sit here is exactly the pair this comment warned gets copied
-                // with one half missing.
-                session.SetMode(runner.Mode with { Edits = nextEdits });
+                // no repaint here: a repaint line beside it is the line a new command forgets.
+                // ONE CALL, NOT TWO. SetMode remembers the preference itself, so there is no second
+                // line here to be copied without its partner.
+                session.SetMode(session.Mode with { Edits = nextEdits });
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.
@@ -925,7 +910,7 @@ public static class AppBootstrap
         // to do with a keystroke.
         void SubmitComposer()
         {
-            if (runner is null || !mainWindow.SubmissionEnabled) return;
+            if (!session.HasAgent || !mainWindow.SubmissionEnabled) return;
             var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
             // RECORD IT FOR ↑/↓ OURSELVES. PromptControl records history inside its own Submit(),
@@ -934,7 +919,6 @@ public static class AppBootstrap
             mainWindow.Input.RecordHistory(goalText);
 
             // WHAT TO SHOW, when it differs from what is sent — see the NeedsTurn case below.
-            string? turnEcho = null;
 
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
@@ -968,14 +952,17 @@ public static class AppBootstrap
                             // other instructions would reach the model as a paragraph of its briefing
                             // glued to unrelated work, attributed to the user besides.
                             //
-                            // THE SESSION DECIDES WHAT TO SEND; the turn runs here, on this method's
-                            // cancellation scope and queue, so Escape stops it and a mid-turn
-                            // correction steers it like any other. A session that sent it itself
-                            // would start a turn nothing could reach.
-                            if (session.InitialisePrompt() is not { } briefing) return;
+                            // THE SESSION SENDS IT AND SAYS WHAT TO SHOW. The prompt and its echo used
+                            // to be two locals threaded down separately — the briefing in goalText, the
+                            // word "/init" in a turnEcho set here and read a hundred lines below — and
+                            // splitting them is how a briefing ends up on the transcript as the user's
+                            // own words. Session.Initialise carries the pair.
+                            if (session.Initialise() is not Session.SubmitOutcome.Started init) return;
 
-                            goalText = briefing;
-                            turnEcho = "/init";
+                            turnRunning = true;
+                            WhenTurnEnds(init.Turn);
+                            mainWindow.RetireComposerHint();
+                            return;
                         }
                         break;
 
@@ -986,7 +973,7 @@ public static class AppBootstrap
                         // than in SessionCommands because that type is synchronous and provider-free
                         // by design — which is what keeps it testable without a window.
                         // THROUGH THE RUNNER, which owns the provider, the ledger and the job panel.
-                        // This used to call the compressor directly and, having no job panel, could
+                        // Calling the compressor directly, with no job panel, could
                         // only print one line of prose once the work was over — so a /compress looked
                         // like nothing happening for several seconds, then a sentence. It now draws
                         // the same spinner row, with the same expandable summary, as the two automatic
@@ -1026,28 +1013,8 @@ public static class AppBootstrap
                 return;
             }
 
-            // A TURN IS ALREADY RUNNING: QUEUE, do not start a second one.
-            //
-            // Two SendAsync calls on the same Agent append to ONE live Context.Messages from two
-            // loops — and worse, the Exchange below would dispose the RUNNING turn's token, so the
-            // first loop throws ObjectDisposedException at its next cancellation check instead of
-            // cancelling. Invisible today only because turns last seconds; a sub-agent turn lasts
-            // minutes.
-            //
-            // GUARDING HERE, NOT AT SubmissionEnabled: that flag is tested on SubmitComposer's FIRST
-            // line, before command dispatch, so using it would also disable /exit, /clear, /mcp,
-            // /help and /compress — the user could not quit while a turn ran, and the composer would
-            // claim "no provider", which is a lie. Commands reach this point already handled; only
-            // the model dispatch is blocked.
-            // THE SESSION DECIDES, and queues when it must. This was `if (IsTurnRunning())` against
-            // a bool maintained here — the only thing enforcing "two SendAsync calls on one agent
-            // append to ONE live Context.Messages from two loops", while AgentHost's own comment
-            // leaned on the rule as though Core held it. Session.Send reads IsBusy, which the host
-            // writes as a turn begins and clears however it ends.
-            // ALREADY QUEUED BY Send, and nothing to draw here: Steer raised Pending and the
-            // subscription above drew the block. The two lines that used to sit here — queue it,
-            // then render it — are the pair a second submission path forgets.
-            if (session.Send(goalText) is Session.SendOutcome.Queued) return;
+            var disposition = session.Submit(goalText);
+            if (disposition is not Session.SubmitOutcome.Started started) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
             // Retire the hint HERE, at submission — not when tokens first arrive. Tied to the token
@@ -1057,66 +1024,25 @@ public static class AppBootstrap
 
             // THE PROCESS TOKEN, not a per-turn one. AgentHost links its own scope off whatever it
             // is handed, so Escape can cancel one turn while this still ends everything on Ctrl+Q or
-            // /exit — the property the local scope here used to provide, kept, without this layer
-            // owning a lifecycle that belongs to the turn.
-            var turnToken = cts.Token;
-
+            // /exit, without this layer owning a lifecycle that belongs to the turn.
             turnRunning = true;
-            RunTurnAsync(goalText, turnToken, turnEcho);
+            WhenTurnEnds(started.Turn);
         }
 
-        // Runs one turn and, when it ends, drains anything typed while it was running.
-        //
-        // FIRE-AND-FORGET WITH A CONTINUATION, not `_ = runner.SendAsync(...)`. Nothing previously
-        // knew when a turn ENDED, which is why the running flag could only ever latch. The await
-        // here is what gives it a falling edge.
-        async void RunTurnAsync(string prompt, CancellationToken token, string? echo = null)
+        // WHAT THIS FRONT END DOES WHEN A TURN ENDS — not how it runs, which is the session's now.
+        // The await gives turnRunning its falling edge, and the drain below is the fallback for text
+        // typed after the LAST tool barrier, which no barrier will reach.
+        async void WhenTurnEnds(Task turn)
         {
             try
             {
-                await runner!.SendAsync(prompt, token, echo);
-            }
-            catch (OperationCanceledException)
-            {
-                // Escape. Already reported by the Escape handler; nothing to add.
-            }
-            catch (Exception ex)
-            {
-                // A turn that dies must still release the flag, or the session accepts no further
-                // prompts and looks hung — the failure mode this whole guard exists to avoid.
-                transcript.WriteError(ex.Message);
+                await turn;
             }
             finally
             {
                 turnRunning = false;
             }
 
-            // THE QUEUE GOES IN AS ONE PROMPT (D18). Several messages are APPENDED
-            // newline-separated, never replaced: two messages are usually one thought completed — a
-            // correction and its qualifier — and replacing silently discards half of what someone
-            // said with no way to tell which half survived. The newline (rather than a space) is
-            // structure a model reads: they were separate thoughts.
-            //
-            // NOT drained on cancellation: Escape moves it back to the composer instead (see the
-            // Escape handler), because the user stopping the run is the user changing their mind,
-            // not confirming what they typed.
-            //
-            // A FALLBACK NOW, NOT THE MAIN PATH. A correction typed mid-turn is normally taken by the
-            // turn itself at its next tool barrier, so by the time this runs there is usually nothing
-            // left. What still arrives here is text typed after the LAST barrier — during the final
-            // provider call, or during a turn that never called a tool — which no barrier will reach.
-            if (token.IsCancellationRequested) return;
-            if (session.TakePendingSteer() is not { Length: > 0 } joined) return;
-
-            // REMOVE the placeholder, don't just forget it. Clearing `queuedBlock` alone left the
-            // block sitting in the transcript while SubmitComposer added the real user message right
-            // below it — the same text twice, the second looking like a duplicate send. The block is
-            // a stand-in for a message that hasn't gone yet, so once it goes the stand-in has no
-            // referent. Removal happens BEFORE SubmitComposer so the two never coexist for a frame.
-            RemoveQueuedBlock();
-
-            mainWindow.Input.Input = joined;
-            SubmitComposer();
         }
 
         // Global shortcuts. FUNCTION KEYS for the pane/goal actions, deliberately — a terminal sends
@@ -1168,11 +1094,11 @@ public static class AppBootstrap
         // of having a nav pane at all.
         //
         system.RegisterGlobalShortcut(ConsoleModifiers.Control, ConsoleKey.Q, () => { cts.Cancel(); system.Shutdown(); });
-        // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. `runner` is read
+        // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. The session is read
         // through the closure (same pattern as every other handler here), so these track whichever
         // AgentHost WireRunner last installed. Both ApproveDraft/DiscardDraft are synchronous and
         // self-guard to a no-op when nothing is currently drafting (AgentHost.cs:162/174) — no
-        // `runner.HasPendingApproval` pre-check needed here, and none of the other handlers in this
+        // pending-approval pre-check needed here, and none of the other handlers in this
         // block pre-check their own preconditions either (F6 DiagnoseFocusedJob is the same shape).
         // Esc, not another F-key: this codebase has no OTHER Esc binding anywhere (grepped before
         // choosing it), so it's free, and Esc-to-cancel/dismiss is the universal convention — a
@@ -1199,18 +1125,6 @@ public static class AppBootstrap
                 // when Deny is a real answer the model can adapt to.
                 if (mainWindow.TryDenyPermission()) return;
 
-                // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
-                // (which need a live dialog or a live turn) stay here.
-                // ONE CALL, AND THE SESSION OWNS ALL THREE STEPS. This was cancel-the-token, write
-                // "Stopped." to this front end's transcript, and drain the queue — three statements
-                // a second front end would have had to reproduce, and two of them were not this
-                // layer's: the turn's cancellation scope was a local here, so a session could report
-                // that it was busy and had no way to stop, and "Stopped." bypassed the session's own
-                // observer while every other state change went through it.
-                //
-                // WHAT STAYS IS THE ROUTING. A question and a permission prompt are answered above,
-                // because Escape there means "not answering that" rather than "throw the run away" —
-                // both need a live dialog, which is genuinely this layer's.
                 if (EscapeRouting.For(session.IsBusy) is EscapeTarget.CancelTurn)
                     session.CancelTurn();
             });
@@ -1321,16 +1235,16 @@ public static class AppBootstrap
             // MARSHALLED: a change can land from a turn's own thread, and these touch controls.
             session.Changed += kind => system.EnqueueOnUIThread(() =>
             {
-                if (kind is Core.Agent.SessionChangeKind.Mode && session.Host is { } host)
-                    mainWindow.SetMode(host.Mode);
+                if (kind is Core.Sessions.SessionChangeKind.Mode)
+                    mainWindow.SetMode(session.Mode);
 
-                if (kind is Core.Agent.SessionChangeKind.Model && session.Resolution is { } current)
+                if (kind is Core.Sessions.SessionChangeKind.Model && session.Resolution is { } current)
                     mainWindow.SetResolution(current);
 
                 // THE GAUGE, AND THE SCROLLBACK WITH IT. Clearing the transcript is THIS front end's
                 // answer to "the messages behind it are gone" — a log writer would draw a divider and
                 // keep them, which is why the session announces the fact rather than the remedy.
-                if (kind is Core.Agent.SessionChangeKind.ContextCleared)
+                if (kind is Core.Sessions.SessionChangeKind.ContextCleared)
                 {
                     mainWindow.SetContextUsed(0);
 
@@ -1375,54 +1289,10 @@ public static class AppBootstrap
             // and pointing at the list afterwards would be the app answering a question nobody asked
             // twice over.
             if (!options.Resume.Wanted)
-                HintAtResume();
+                StartupHint();
         });
 
 
-        void SwitchModel(string argument)
-        {
-            var decision = ModelCommand.Decide(argument, resolution.Providers, session.InstanceName);
-
-            if (decision.SwitchTo is null)
-            {
-                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
-                return;
-            }
-
-            // NOT GUARDED HERE. Use refuses while a turn runs and says so — the session owns whether
-            // its own state can change, and a second copy of that rule here would be the copy that
-            // drifts.
-
-            // THE SESSION RESOLVES IT NOW, from the catalog it was wired with. This read config.json
-            // through ConfigResolver.ResolveInstance — a file read, a re-validation, a full registry
-            // rebuild and a window probe — to produce something this process already held, and then
-            // used only its .Model and discarded the rest. It was also a second answer source: the
-            // catalog is fixed for the process (F5 restarts rather than reconfiguring in place), so a
-            // config edited since startup gave /model a different answer than the rest of the session.
-            //
-            // WHICH ALSO MAKES OFFER AND ANSWER AGREE. The completion list /model shows is built from
-            // the session's catalog, so every name it suggests is now a name this resolves.
-            //
-            // THE CONVERSATION STAYS PUT. This used to arm a handoff with CarryToNextWire and
-            // re-wire the whole session — rebuilding the agent, its plugins, its sub-agent factory
-            // and its MCP binding to change which endpoint gets called, then carrying the context
-            // and the ledger across the gap by hand. The provider is swapped in place now, so there
-            // is no gap and nothing to carry.
-            //
-            // SILENT ON REFUSAL, because Use already said why — "Could not switch to X" printed on
-            // top of "A turn is running" was a second, vaguer sentence for a reason the user had just
-            // been given.
-            session.Use(decision.SwitchTo);
-
-            // NOTHING TO REPORT OR REPAINT HERE. SwitchModel says what happened through the
-            // observer and announces that the model moved; the subscription near the top of this
-            // method repaints from the session's own resolution. The root used to compose that
-            // sentence itself — reading the context window and usage before the switch, in that
-            // order — which made both the wording and the ordering a front end's problem.
-            // NOT COMPACTED HERE, deliberately — unchanged by the swap. The turn loop measures
-            // pressure before every send and compacts if it must, now against the new window; doing
-            // it now would summarise a conversation the user might not send another turn on.
-        }
 
         // THE ONE WAY BACK INTO A SESSION, shared by the startup offer and by /sessions resume.
         // Restoring is four steps that only work together — seed, re-wire, retire the old row, and
@@ -1445,7 +1315,14 @@ public static class AppBootstrap
         //
         // And it made "resume" a thing that happens TO you rather than something you ask for. Now
         // /sessions lists them and --resume opens one; this line only says the door exists.
-        void HintAtResume()
+        //
+        // NAMED FOR WHEN IT FIRES, and deliberately the same name as the Core half it calls. It read
+        // "HintAtResume" — a hint TOWARD resuming, as though the subject were this session — when
+        // what it reports is the OTHER sessions in this folder: how many there are, and whether one
+        // died mid-conversation. That is also why the line goes to this front end's own surface
+        // rather than being said by the session: a session announcing facts about its predecessors
+        // would claim authorship of state that is not its own.
+        void StartupHint()
         {
             var here = sessions.List(session.WorkingDirectory).Count;
             if (here == 0) return;
@@ -1454,7 +1331,7 @@ public static class AppBootstrap
             // someone lost work and is looking for it. Everything else is just a count.
             var unfinished = sessions.LoadLatestUnfinished(session.WorkingDirectory);
 
-            if (SessionsCommand.StartupHint(here, unfinished?.Context.Count) is { } line)
+            if (SessionHints.Startup(here, unfinished?.Context.Count) is { } line)
                 transcript.Write(line);
         }
 
@@ -1466,14 +1343,30 @@ public static class AppBootstrap
         // ONLY IF THERE IS SOMETHING TO COME BACK TO. A session is written per turn, so one where
         // nothing was said was never stored — pointing at it would hand the user a command that
         // reports "no session matches" and makes resume look broken on its first use.
-        var endedSessionId = runner?.HasSavedTurn == true ? runner.SessionId : null;
-        runner?.MarkSessionFinished();
-        // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's runner ever created (each
+        var endedSessionId = session.HasSavedTurn ? session.SessionId : null;
+        session.MarkFinished();
+        // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's host ever created (each
         // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
         // the process's lifetime, since (as of review round 2's N2 fix) AgentHost no longer disposes
         // schedulers one-at-a-time as goals swap; this is now the only release point.
+        // READ BEFORE THE CLOSE, because the ledger goes with the host. Everything the panel was
+        // showing — spend, cache, what the children used — is available right up to this line and
+        // gone immediately after it, which is why the terminal used to be blank on the way out.
+        var spend = session is { Ledger: { } ledger } && ledger.TotalTokens > 0
+            ? new SessionSpend(ledger.TotalTokens, ledger.InputTokens, ledger.OutputTokens,
+                ledger.SubAgentTokens)
+            {
+                CacheHitRate = ledger.CacheHitRate,
+                Cost = ledger.TotalCost,
+            }
+            : null;
+
         mainWindow.Dispose();   // stops the panel clock
-        runner?.Dispose();
+
+        // THROUGH THE MANAGER, which disposes the host AND releases the turn's cancellation scope —
+        // two steps that must happen together, and a bare host Dispose() here did only one of
+        // them. It is also the last thing holding a host reference in this method.
+        manager.Close(session);
 
         // THE SESSION OWNS THE SERVERS, so this is where they end. An orphaned child outlives the
         // app and holds whatever it had open — the only failure in this feature that survives the
@@ -1489,8 +1382,8 @@ public static class AppBootstrap
         // Costless to ignore — a line of grey text on a terminal the user is already leaving — and
         // the alternative is finding out that resume exists by reading the documentation of an app
         // you have already stopped using.
-        if (endedSessionId is { Length: > 0 } id)
-            Console.WriteLine(SessionsCommand.ExitHint(id));
+        if (SessionHints.Farewell(endedSessionId, spend) is { } farewell)
+            Console.WriteLine(farewell);
 
         return code;
     }

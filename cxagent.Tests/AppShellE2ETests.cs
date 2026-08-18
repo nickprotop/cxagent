@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -42,13 +42,14 @@ public class AppShellE2ETests
         mw.Input.Input = "do two steps";
         Assert.Equal("do two steps", mw.Input.Input);   // real MLE content round-trips
 
-        // Run the goal through the real AgentHost (the exact call the Ctrl+Enter handler makes with
-        // mw.Input.Input). NOTE: cxagent.Tests CANNOT inject a real key — the framework's
+        // Run the goal through the real AgentHost. The Ctrl+Enter handler goes through Session.Send
+        // now — this asserts what lands in the AGENT'S CONTEXT, which is below that split and
+        // unchanged by it. NOTE: cxagent.Tests CANNOT inject a real key — the framework's
         // InputStateService is `internal` (InternalsVisibleTo → SharpConsoleUI.Tests only) and
         // PreviewKeyPressed is an event that can't be raised externally. So the headless test drives
-        // SendAsync directly (the handler's body); the real Ctrl+Enter → submit key path is verified by
+        // the host directly; the real Ctrl+Enter → submit key path is verified by
         // the tmux smoke-drive (Step 3) on the real Run() loop.
-        await runner.SendAsync(mw.Input.Input, CancellationToken.None);
+        await runner.RunAsync(mw.Input.Input, CancellationToken.None);
 
         // THE PROMPT REACHED THE AGENT'S CONTEXT — the observable outcome now that there is no status
         // enum to assert on. This used to assert an "assistant" entry on a session-side list that

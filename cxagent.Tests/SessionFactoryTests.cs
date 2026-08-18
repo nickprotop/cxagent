@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -79,7 +79,7 @@ public class SessionFactoryTests
                 AgentMode.Single);
 
             Assert.NotNull(session.Host);
-            await session.Host!.SendAsync("go", CancellationToken.None);
+            await session.SendAndWait("go");
 
             Assert.Contains("wired", observer.Transcript, StringComparison.Ordinal);
         }

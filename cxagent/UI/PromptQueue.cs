@@ -3,11 +3,11 @@ namespace CxAgent.UI;
 /// <summary>
 /// What someone typed while a turn was running.
 ///
-/// <para>A turn cannot accept a second prompt: two <c>SendAsync</c> calls on one <see cref="Core.Agent.Agent"/>
+/// <para>A turn cannot accept a second prompt: two <c>SendAsync</c> calls on one <see cref="Core.Sessions.Agent"/>
 /// append to a single live <c>Context.Messages</c> from two loops, and the second submission disposes
 /// the running turn's cancellation token, so the first throws <c>ObjectDisposedException</c> at its
 /// next cancellation check instead of cancelling. Rejecting the keystroke would be safe and
-/// unhelpful — the user typed something they meant. It is held on the <see cref="Core.Agent.Session"/>
+/// unhelpful — the user typed something they meant. It is held on the <see cref="Core.Sessions.Session"/>
 /// instead, and the turn takes it at its next tool barrier.</para>
 ///
 /// <para>WHAT IS LEFT HERE IS THE ESCAPE PATH. Joining several messages moved to

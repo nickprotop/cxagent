@@ -1,5 +1,5 @@
 using System.Text;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Permissions;

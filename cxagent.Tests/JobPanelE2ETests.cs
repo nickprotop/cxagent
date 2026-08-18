@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -47,7 +47,7 @@ public class JobPanelE2ETests : IDisposable
             chat,
             jobPanel);
 
-        await runner.SendAsync("do two steps", CancellationToken.None);
+        await runner.RunAsync("do two steps", CancellationToken.None);
 
         // The prompt reached the agent's context. This used to assert an "assistant" entry on a
         // session-side list nothing read — which passed whether or not the run happened at all.

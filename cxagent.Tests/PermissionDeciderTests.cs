@@ -1,5 +1,5 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using CxAgent.UI;

@@ -1,5 +1,5 @@
 using System.Reflection;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using Xunit;
 

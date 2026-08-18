@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
@@ -100,7 +100,7 @@ public class CommandRegistryTests : IDisposable
         provider.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn" });
         var session = Wired(manager, provider);
 
-        await session.Host!.SendAsync("say hi", CancellationToken.None);
+        await session.SendAndWait("say hi");
         Assert.NotEmpty(session.Host.Context.Messages);
 
         Assert.True(manager.Commands.TryRun(session, "/clear"));

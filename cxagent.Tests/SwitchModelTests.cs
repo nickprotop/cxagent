@@ -1,7 +1,8 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Commands;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -39,13 +40,13 @@ public class SwitchModelTests : IDisposable
         first.EnqueueResponse(new LlmResponse { Text = "hello", StopReason = "end_turn" });
 
         var session = WiredSession(manager, first);
-        await session.Host!.SendAsync("say hello", CancellationToken.None);
+        await session.SendAndWait("say hello");
 
         var hostBefore = session.Host;
         var contextBefore = session.Host.Context;
         var messagesBefore = session.Host.Context.Messages.Count;
 
-        Assert.True(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").Model));
+        Assert.Equal(CommandStatus.Changed, session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").Model));
 
         // THE SAME OBJECTS, not merely equal ones. A rebuild would produce a new host over a new
         // context and copy the messages across — which is what the old path did, and what made
@@ -64,7 +65,7 @@ public class SwitchModelTests : IDisposable
         var session = WiredSession(manager, new MockLlmProvider("model-one"));
 
         var next = new MockLlmProvider("model-two");
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").Model);
+        session.Use(ResolvedConfig.ForTesting(next, "second").Model);
 
         Assert.Same(next, session.Provider);
         Assert.Equal("second", session.InstanceName);
@@ -81,7 +82,7 @@ public class SwitchModelTests : IDisposable
         var session = WiredSession(manager, new MockLlmProvider("big"));
 
         var narrow = ResolvedConfig.ForTesting(new MockLlmProvider("small"), "small").WithContextWindow(8_000);
-        session.SwitchModel(narrow.Model);
+        session.Use(narrow.Model);
 
         Assert.Equal(8_000, session.Host!.Context.Window);
     }
@@ -96,9 +97,9 @@ public class SwitchModelTests : IDisposable
 
         var next = new MockLlmProvider("model-two");
         next.EnqueueResponse(new LlmResponse { Text = "from two", StopReason = "end_turn" });
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").Model);
+        session.Use(ResolvedConfig.ForTesting(next, "second").Model);
 
-        await session.Host!.SendAsync("who are you", CancellationToken.None);
+        await session.SendAndWait("who are you");
 
         Assert.Equal(1, next.ChatCallCount);
     }
@@ -117,7 +118,7 @@ public class SwitchModelTests : IDisposable
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("model-one")),
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
 
-        session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").WithContextWindow(8_000).Model);
+        session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").WithContextWindow(8_000).Model);
 
         var notice = Assert.Single(sink.Notices);
         Assert.Contains("second:model-two", notice);
@@ -145,7 +146,7 @@ public class SwitchModelTests : IDisposable
         session.NoteSpawner(spawner);
 
         var next = new MockLlmProvider("second");
-        session.SwitchModel(ResolvedConfig.ForTesting(next, "second").WithContextWindow(9_000).Model);
+        session.Use(ResolvedConfig.ForTesting(next, "second").WithContextWindow(9_000).Model);
 
         Assert.Same(next, spawner.Provider);
         Assert.Equal("second", spawner.InstanceName);
@@ -191,7 +192,7 @@ public class SwitchModelTests : IDisposable
             ResolvedConfig.ForTesting(new MockLlmProvider("first")).WithCatalog(catalog),
             Ports());
 
-        session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider("second"), "second").Model);
+        session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("second"), "second").Model);
 
         // The model moved…
         Assert.Equal("second", session.InstanceName);
@@ -209,6 +210,6 @@ public class SwitchModelTests : IDisposable
     {
         var session = new Session(_dir);
 
-        Assert.False(session.SwitchModel(ResolvedConfig.ForTesting(new MockLlmProvider()).Model));
+        Assert.Equal(CommandStatus.Refused, session.Use(ResolvedConfig.ForTesting(new MockLlmProvider()).Model));
     }
 }

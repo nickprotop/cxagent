@@ -6,7 +6,7 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
 using Xunit;
 
-using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
+using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
 
 namespace CxAgent.Tests;
 

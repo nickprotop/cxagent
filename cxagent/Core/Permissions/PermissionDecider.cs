@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Permissions;
 
 namespace CxAgent.Core.Permissions;
@@ -126,7 +126,7 @@ public sealed class PermissionDecider : IPermissionGate
 
     /// <summary>Test seam: drives the gate with a scripted prompt function instead of a live
     /// window (the fake-prompt-hook trick the brief specifies). Public rather than internal —
-    /// this codebase has no InternalsVisibleTo grant (see OrchestratorLoop.cs:495) — but is not
+    /// the InternalsVisibleTo grant covers Session's assemble members only — but is not
     /// part of the gate's runtime API surface: production code always uses the UI-wired
     /// constructor above.</summary>
     /// <param name="policy">

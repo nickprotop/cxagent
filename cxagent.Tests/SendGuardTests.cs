@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -42,7 +42,9 @@ public class SendGuardTests : IDisposable
         var session = Wired(out var manager);
         using var _ = manager;
 
-        Assert.Equal(Session.SendOutcome.Started, session.Send("go"));
+        // STARTED CARRIES THE TURN, so a caller awaits rather than starting one itself.
+        var disposition = session.Submit("go");
+        Assert.IsType<Session.SubmitOutcome.Started>(disposition);
         Assert.Null(session.PendingSteer);
     }
 
@@ -52,7 +54,7 @@ public class SendGuardTests : IDisposable
     {
         var session = new Session(_dir);
 
-        Assert.Equal(Session.SendOutcome.NoAgent, session.Send("go"));
+        Assert.IsType<Session.SubmitOutcome.NoAgent>(session.Submit("go"));
         Assert.Null(session.PendingSteer);
     }
 

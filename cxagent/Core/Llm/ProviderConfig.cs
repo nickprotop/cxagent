@@ -1,5 +1,5 @@
 using System.Text.Json;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Llm;

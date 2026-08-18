@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Llm.Providers;
@@ -94,7 +94,7 @@ public class HeadlessSessionTests : IDisposable
         var session = manager.Open(_work,
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
 
-        await session.Host!.SendAsync("summarise this folder", CancellationToken.None);
+        await session.SendAndWait("summarise this folder");
 
         // THE ROUND TRIP CLOSED: the model's answer reached the host's own buffer.
         Assert.Contains("done", sink.Body);
@@ -154,7 +154,7 @@ public class HeadlessSessionTests : IDisposable
         Assert.True(await manager.Shared.Gate!.RequestAsync(read, CancellationToken.None));
 
         // AND A REAL TURN STILL COMPLETES. If anything waited on a person this would hang.
-        await session.Host!.SendAsync("hello", CancellationToken.None);
+        await session.SendAndWait("hello");
     }
 
     /// <summary>
@@ -222,8 +222,7 @@ public class HeadlessSessionTests : IDisposable
         var session = manager.Open(workDir,
             new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
 
-        await session.Host!.SendAsync("List the files here and say what this project is.",
-            CancellationToken.None);
+        await session.SendAndWait("List the files here and say what this project is.");
 
         Console.WriteLine(sink.Body);
     }

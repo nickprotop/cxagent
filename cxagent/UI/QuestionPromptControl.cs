@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;

@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -348,5 +348,53 @@ public class CancelRestoresQueuedTests : IDisposable
         session.CancelPending();
 
         Assert.Equal(0, handedBack);
+    }
+}
+
+
+/// <summary>
+/// <c>/init</c> shows what the user typed, not the briefing it sends.
+///
+/// <para>The prompt and the echo were two locals in the composition root — the briefing in goalText,
+/// the word "/init" in a turnEcho set in one switch branch and read a hundred lines later. Splitting
+/// them is how a briefing ends up on the transcript as the user's own words, "on every later read of
+/// the log".</para>
+/// </summary>
+public class InitEchoTests : IDisposable
+{
+    private readonly string _dir =
+        Path.Combine(Path.GetTempPath(), "init-" + Guid.NewGuid().ToString("N"));
+
+    public InitEchoTests() => Directory.CreateDirectory(_dir);
+    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    private sealed class UserTurnRecorder : ISessionObserver
+    {
+        public List<string> Shown { get; } = [];
+        public void UserTurnAdded(ChatMessageId id, string text) { lock (Shown) Shown.Add(text); }
+        public void Said(string markup) { }
+        public void Failed(string message) { }
+        public void AssistantTurnBegan(ChatMessageId id) { }
+        public void AssistantTextAppended(ChatMessageId id, string text) { }
+        public void AssistantReasoningAppended(ChatMessageId id, string text) { }
+        public void AssistantTurnEnded(ChatMessageId id) { }
+        public void AssistantLabelled(ChatMessageId id, string label) { }
+    }
+
+    [Fact]
+    public async Task Initialise_ShowsTheCommand_AndSendsTheBriefing()
+    {
+        var shown = new UserTurnRecorder();
+        var provider = new MockLlmProvider("m");
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
+            new SessionPorts { Observer = shown, Tools = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Initialise());
+        await started.Turn;
+
+        // WHAT THE USER SEES is the command they typed.
+        Assert.Equal(["/init"], shown.Shown);
     }
 }

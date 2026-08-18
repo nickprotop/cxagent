@@ -1,5 +1,5 @@
 using System.Linq;
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using Xunit;

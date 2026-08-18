@@ -8,9 +8,9 @@ using SharpConsoleUI.Controls;
 // values keyed by our long id so we can forward Append calls to the right transcript slot.
 using FwChatId = SharpConsoleUI.Controls.ChatMessageId;
 
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 // Ours, not SharpConsoleUI's — both exist and this file sees both namespaces.
-using ChatMessageId = CxAgent.Core.Agent.ChatMessageId;
+using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
 
 namespace CxAgent.UI;
 
@@ -148,7 +148,8 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// sink's domain — the agent emits semantics and has no reason to know a tag syntax exists.</para>
     /// </summary>
     /// <remarks>Public so it is testable without a live ConsoleWindowSystem — the same seam
-    /// <c>SettingsDialog.ProviderRowLabels</c> uses. This codebase has no InternalsVisibleTo grant,
+    /// <c>SettingsDialog.ProviderRowLabels</c> uses. The grant in AssemblyWiring covers Core's own
+    /// assemble members rather than the UI,
     /// and an escape nobody can test is how the missing one survived.</remarks>
     public static string Escape(string text) => text.Replace("[", "[[");
 

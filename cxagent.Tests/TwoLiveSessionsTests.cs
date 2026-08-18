@@ -1,4 +1,4 @@
-using CxAgent.Core.Agent;
+using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -101,8 +101,8 @@ public class TwoLiveSessionsTests : IDisposable
         {
             // CONCURRENTLY, not one after the other — the interesting failures are the shared ones.
             await Task.WhenAll(
-                hostA.SendAsync("what am I?", CancellationToken.None),
-                hostB.SendAsync("what am I?", CancellationToken.None));
+                hostA.RunAsync("what am I?", CancellationToken.None),
+                hostB.RunAsync("what am I?", CancellationToken.None));
 
             // THE TOOL RESULT, not the transcript: the transcript carries the model's reply, and
             // what this test is about is which FILE the read reached.
@@ -143,9 +143,9 @@ public class TwoLiveSessionsTests : IDisposable
         using (hostA)
         using (hostB)
         {
-            await hostA.SendAsync("one", CancellationToken.None);
-            await hostB.SendAsync("one", CancellationToken.None);
-            await hostB.SendAsync("two", CancellationToken.None);
+            await hostA.RunAsync("one", CancellationToken.None);
+            await hostB.RunAsync("one", CancellationToken.None);
+            await hostB.RunAsync("two", CancellationToken.None);
 
             Assert.NotSame(hostA.Ledger, hostB.Ledger);
             Assert.NotSame(hostA.Context, hostB.Context);
@@ -176,8 +176,8 @@ public class TwoLiveSessionsTests : IDisposable
 
         using (hostA) using (hostB)
         {
-            await hostA.SendAsync("one", CancellationToken.None);
-            await hostB.SendAsync("one", CancellationToken.None);
+            await hostA.RunAsync("one", CancellationToken.None);
+            await hostB.RunAsync("one", CancellationToken.None);
         }
 
         var rows = new UsageHistoryStore(paths).SessionsSince(DateTimeOffset.UtcNow.AddMinutes(-5));

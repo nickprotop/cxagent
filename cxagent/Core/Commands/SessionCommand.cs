@@ -135,20 +135,20 @@ public readonly record struct CommandArgument(
 public static class ValueSources
 {
     /// <summary>Configured provider instances, for <c>/model</c>.</summary>
-    public const string Providers = Core.Agent.CompletionSets.Providers;
+    public const string Providers = Core.Sessions.CompletionSets.Providers;
 
     /// <summary>Sessions in this folder, for <c>/sessions resume</c>.</summary>
-    public const string Sessions = Core.Agent.CompletionSets.Sessions;
+    public const string Sessions = Core.Sessions.CompletionSets.Sessions;
 
     /// <summary>Edit modes, for <c>/mode edits</c>.</summary>
-    public const string EditModes = Core.Agent.CompletionSets.EditModes;
+    public const string EditModes = Core.Sessions.CompletionSets.EditModes;
 
     /// <summary>Connected MCP servers, for <c>/mcp</c>.</summary>
-    public const string McpServers = Core.Agent.CompletionSets.McpServers;
+    public const string McpServers = Core.Sessions.CompletionSets.McpServers;
 
     /// <summary>Delegation modes, for <c>/mode agent</c>.</summary>
-    public const string AgentModes = Core.Agent.CompletionSets.AgentModes;
+    public const string AgentModes = Core.Sessions.CompletionSets.AgentModes;
 
     /// <summary>Sub-agent types, for <c>/agents</c>.</summary>
-    public const string AgentTypes = Core.Agent.CompletionSets.AgentTypes;
+    public const string AgentTypes = Core.Sessions.CompletionSets.AgentTypes;
 }
