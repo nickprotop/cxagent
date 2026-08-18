@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CxAgent.Core</RootNamespace>
+    <AssemblyName>CxAgent.Core</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>CxAgent.Core</PackageId>
+    <Description>Sessions, agents and the turn loop behind cxagent — usable without a terminal.</Description>
+    <Authors>Nikolaos Protopapas</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/nickprotop/cxagent</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The resume buffer and the usage archive. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+
+    <!-- web_fetch parses HTML with AngleSharp rather than regex over a document.
+         REFERENCED HERE NOW, and the old reasoning for not doing so has inverted. It used to arrive
+         transitively through SharpConsoleUI, so pinning it from this side only created a downgrade
+         to resolve whenever the UI package moved ahead. This project never sees SharpConsoleUI, so
+         there is no transitive path to inherit and no conflict to resolve — the app gets AngleSharp
+         from both and NuGet unifies upward, which is the ordinary case.
+         The cost is real and worth naming: this pin no longer follows SharpConsoleUI automatically,
+         so a bump there needs one here. That is what a library pinning what it tested against
+         means. -->
+    <PackageReference Include="AngleSharp" Version="1.7.1" />
+  </ItemGroup>
+
+</Project>

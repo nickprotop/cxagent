@@ -19,12 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
-
-    <!-- web_fetch parses HTML with AngleSharp rather than regex over a document. NOT REFERENCED
-         HERE: SharpConsoleUI already brings it, and pinning a version from this side only creates a
-         downgrade to resolve every time the UI package moves ahead. -->
-
+    <!-- SESSIONS, AGENTS AND THE TURN LOOP. Everything this app does to a conversation happens
+         through CxAgent.Core; what stays here is the terminal — a window, a message loop, and the
+         four commands that need one. Sqlite and AngleSharp come with it rather than being named
+         here, because they are the library's dependencies and not the app's. -->
+    <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace CxAgent.Helpers;
+namespace CxAgent.Core.Helpers;
 
 /// <summary>
 /// Generates 26-character Crockford base32 ids: 80 bits of randomness followed by a 48-bit

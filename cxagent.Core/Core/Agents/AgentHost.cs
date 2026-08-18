@@ -7,7 +7,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
-using CxAgent.Helpers;
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Sessions;
 
 namespace CxAgent.Core.Agents;

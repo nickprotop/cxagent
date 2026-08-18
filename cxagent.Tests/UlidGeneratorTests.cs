@@ -1,4 +1,4 @@
-using CxAgent.Helpers;
+using CxAgent.Core.Helpers;
 using Xunit;
 
 namespace CxAgent.Tests;
