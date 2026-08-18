@@ -37,6 +37,15 @@ Bring your own model: Ollama, any OpenAI-compatible endpoint, or Anthropic.
 
 **Say it. Watch it work.**
 
+> **Building your own?** Everything under the terminal ships as
+> [**`CxAgent.Core`**](cxagent.Core/README.md) — sessions, agents, tools, sub-agent delegation,
+> permissions and MCP, with no UI dependency. cxagent is one consumer of it;
+> [a Spectre.Console front end](cxagent.Core/examples/SpectreAgent) is another, in a hundred lines.
+>
+> ```
+> dotnet add package CxAgent.Core
+> ```
+
 ## Quick Start
 
 **Option 1: One-line install** (Linux/macOS, no .NET required)
@@ -289,27 +298,6 @@ curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall
 ```powershell
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex
 ```
-
-## Embed it — `CxAgent.Core`
-
-Everything under the terminal ships as a package. A session, the agent running it, tools, sub-agent
-delegation, permissions, MCP and resumable stores — no UI dependency, you supply where text goes.
-
-```
-dotnet add package CxAgent.Core
-```
-
-```csharp
-var manager = SessionManager.Create(new AppPaths(configDir));
-var session = manager.Open(workingDir, config, new SessionPorts { Observer = sink, Tools = jobs });
-
-if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
-    await started.Turn;
-```
-
-**[Full API documentation and examples →](cxagent.Core/README.md)** — the four calls an app is, why
-`Submit` returns a receipt rather than a task, steering a running turn, permissions, and a worked
-[Spectre.Console example](cxagent.Core/examples/SpectreAgent).
 
 ## The cx family
 

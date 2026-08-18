@@ -183,6 +183,12 @@ one (`/help`, `/exit`, `/mcp`, and the confirmation half of `/stats`). Everythin
 `/mode`, `/sessions`, `/skills`, `/diff`, `/compress`, `/clear`, `/agents`, `/stats` — is in this
 package and works headlessly.
 
+## Reference
+
+**[Full API reference →](docs/api.md)** — every public member, grouped by the question it answers:
+running a turn, the steer queue, watching progress, commands, what you supply, permissions and
+configuration.
+
 ## License
 
 MIT. See [LICENSE](https://github.com/nickprotop/cxagent/blob/master/LICENSE).

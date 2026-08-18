@@ -21,7 +21,11 @@ tool call away from its result. MCP over stdio and HTTP, OAuth included. Sub-age
 skills, a plan the model keeps across turns, and a way for it to ask you a question. The UI:
 transcript, job rows, session panel, command palette, settings.
 
-**1318 tests**, and every one of those subsystems has also been driven live against a real local
+**It is also a package.** `CxAgent.Core` ships everything above without a terminal — a session, the
+agent running it, tools, sub-agents, permissions, MCP and resumable stores. cxagent is one consumer
+of it; `cxagent.Core/examples/SpectreAgent` is another, in about a hundred lines.
+
+**1881 tests**, and every one of those subsystems has also been driven live against a real local
 model. The drives keep finding things the tests do not.
 
 ---
@@ -35,9 +39,19 @@ one message run at once, and none outlives the turn that started it.
 
 **Skills.** `SKILL.md` files whose description sits in the prompt while the body loads on demand.
 
-**Kernel isolation.** Designed, not built: `isolated-kernel.md` works out how a provider-agnostic
-`cxagent.kernel` would talk to a presentation layer, so a web front end is a sibling rather than a
-rewrite.
+**`CxAgent.Core` extracted.** What `isolated-kernel.md` designed, shipped as an assembly and a
+package: `Session` and `SessionManager` are the API, `AgentHost` is internal, and the composition
+root owns no turn lifecycle. Verified as a consumer would — packed to a local feed, referenced from
+a clean project with no source access, and run.
+
+**One send point.** Four layers that each took a prompt became two. `Session.Submit` decides,
+starts, drains the steer queue and reports; `Agent.SendAsync` is the turn loop children use
+directly. It returns a receipt rather than a task, because "a turn began" and "text was queued" are
+different things for a caller to do.
+
+**A second front end.** `examples/SpectreAgent` — a prompt, streamed text, one line per tool. Writing
+it found two things the TUI never would: tool starts must be announced from `ToolsChanged` rather
+than `ToolUpdated`, and the default working mode offered no spawn tool at all.
 
 ---
 
@@ -45,8 +59,18 @@ rewrite.
 
 Ideas, not promises.
 
-**Extract `cxagent.kernel`.** The design is written. It buys a web front end and reuse across the
-other cx apps, and it costs making every seam honest about what it actually needs.
+**Publish `CxAgent.Core`.** It packs clean and a consumer runs against it; nothing has been pushed to
+nuget.org. The version is a default `1.0.0`, which is a claim about stability worth making
+deliberately.
+
+**Narrow `SessionManager.Shared`.** It hands out the whole services record — the SQLite stores, the
+log manager, the gate. A consumer holding `Shared.Resume` can bypass every command that reads it.
+Deliberately deferred: the fix is read-facing accessors rather than live store objects, and that is
+its own design.
+
+**A web front end.** The reason the extraction was worth doing. Nothing in the package assumes a
+terminal, and the observer contract is the whole seam — a socket implements the same eight methods a
+console does.
 
 **Skill scripts.** Reference documents already work — a skill's files come back by absolute path and
 the model reads them through the normal gate. Something meant to be *run* is a different question:
@@ -92,7 +116,15 @@ there is nowhere for a background agent to put its result.
 
 ## Conventions
 
-- **.NET 10** (`net10.0`), nullable + implicit usings. Solution is `cxagent.slnx`.
+- **.NET 10** (`net10.0`), nullable + implicit usings. Solution is `cxagent.slnx` — `cxagent.Core`
+  (library), `cxagent` (the TUI), `cxagent.Tests`. Examples build standalone and are deliberately
+  out of the solution.
+- **Core sees no UI.** `CxAgent.Core` references `Microsoft.Data.Sqlite` and `AngleSharp` and
+  nothing else. Anything a front end needs — a window, a dispatcher, a console — is a delegate or an
+  interface it supplies.
+- **Internals are internal**, behind `InternalsVisibleTo("cxagent.Tests")`. Assembling a session is
+  a sequence, and half of it leaves one that looks built and answers wrongly — `SessionManager.Open`
+  is the way in.
 - **SharpConsoleUI reference is conditional** — a local `ProjectReference` to `../../ConsoleEx/…`
   when the sibling repo exists, else a `PackageReference`.
 - **Tests first, and make them fail first.** A test that passes before the fix has proven nothing.
