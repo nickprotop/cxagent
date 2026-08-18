@@ -26,6 +26,26 @@ public interface IAgentTool
     ToolDefinition Definition { get; }
 
     /// <summary>
+    /// Whether a SUB-AGENT is offered this tool. True by default: most tools work anywhere.
+    ///
+    /// <para>FALSE FOR A TOOL THAT NEEDS THE USER'S SCREEN. A child writes to a
+    /// <c>BufferedJobPanel</c> that nothing ever displays — the buffer exists to keep a child's rows
+    /// OUT of the parent's transcript — so a tool that renders for a person does the work, reports
+    /// success, and the output is discarded. That is worse than a wasted call: the model is told its
+    /// showing succeeded when nobody saw anything.</para>
+    ///
+    /// <para>NOT A PERMISSION, AND NOT A PREFERENCE. It is the same structural fact that withholds
+    /// <c>ask_user</c> from a child — "a child has no user", and here "a child has no transcript".
+    /// A withheld tool is one the child was NEVER GIVEN, so a call to it gets the ordinary "no such
+    /// tool" and the model picks a real one. That is the mechanism that makes "no sub-agents of
+    /// sub-agents" structural rather than a rule an agent is asked to follow.</para>
+    ///
+    /// <para>DEFAULT TRUE so that adding this changed nothing for tools that already existed, and so
+    /// an embedder writing a calculator never has to think about it.</para>
+    /// </summary>
+    bool OfferToSubAgents => true;
+
+    /// <summary>
     /// Whether THIS CALL needs a human. Null when it does not.
     ///
     /// <para>The returned request's <see cref="PermissionRequest.AlwaysRule"/> decides granularity:

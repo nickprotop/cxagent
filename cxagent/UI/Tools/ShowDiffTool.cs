@@ -28,6 +28,19 @@ public sealed class ShowDiffTool : IAgentTool
 
     public ShowDiffTool(string workingDirectory) => _workingDirectory = workingDirectory;
 
+    /// <summary>
+    /// NOT OFFERED TO A SUB-AGENT, because there is nowhere for it to draw.
+    ///
+    /// <para>A child's tool rows go to a <c>BufferedJobPanel</c> that nothing displays — the buffer
+    /// exists precisely to keep a child's rows out of the parent's transcript, and only each row's
+    /// DisplayName is ever read back, for the parent's progress line. So a child calling this would
+    /// render the whole diff, be told it succeeded, and have every byte discarded.</para>
+    ///
+    /// <para>THE CHILD SHOULD SAY WHAT IT CHANGED IN ITS ANSWER, which is the thing its parent
+    /// actually reads. Showing is the parent's job, because the parent is the one with a screen.</para>
+    /// </summary>
+    public bool OfferToSubAgents => false;
+
     public ToolDefinition Definition { get; } = new(
         "show_diff",
         // "RETURNS NOTHING USEFUL TO YOU" IS DELIBERATE. A tool result the model tries to summarise

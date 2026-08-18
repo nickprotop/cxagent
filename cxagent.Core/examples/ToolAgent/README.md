@@ -55,5 +55,22 @@ remember to. A bare `IAgentTool` reaching an agent is not a compile error and wo
 at all — which is why the wrapping happens in the one place that has both the gate and the session's
 policy, rather than being left to each embedder.
 
-Sub-agents inherit these tools. Unlike `spawn` and `ask_user`, which are withheld because a child
-has no spawner and no user, a child edits files exactly as its parent does.
+## Sub-agents
+
+Children inherit injected tools by default — a child edits files exactly as its parent does, so it
+needs the same tools. That is unlike `spawn` and `ask_user`, which are withheld because a child has
+no spawner and no user.
+
+A tool that draws for a PERSON is the exception, and says so itself:
+
+```csharp
+public bool OfferToSubAgents => false;
+```
+
+A child's tool rows go to a buffer that is never displayed — it exists to keep a child's rows out of
+the parent's transcript — so a rendering tool would do the work, report success, and have its output
+discarded. The model would be told its showing worked when nobody saw anything.
+
+A withheld tool is one the child was **never given**: calling it gets the ordinary "no such tool",
+the same mechanism that makes "no sub-agents of sub-agents" structural rather than a rule an agent is
+asked to follow.

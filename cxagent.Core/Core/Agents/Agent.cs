@@ -190,6 +190,10 @@ public sealed class Agent
     /// showing, which is the one thing the tool exists for.</summary>
     private readonly Plugins.AgentToolset? _agentTools;
 
+    /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
+    /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
+    internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
+
     /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
     public IReadOnlyList<TodoItem> Todos => _todos.Items;
 
@@ -541,11 +545,19 @@ public sealed class Agent
         // the guarantee holds for any construction path.
         _askUser = askUser is not null && !isSubAgent ? new AskUserTool(askUser) : null;
 
-        // UNLIKE _askUser, A CHILD KEEPS THESE. The no-nesting rule withholds spawn and ask from a
-        // sub-agent because a child has no user to answer and no spawner to nest with; neither is
-        // true of an injected tool, and the spec is explicit that "sub agents are getting what its
-        // parents have".
-        _agentTools = agentTools is { Count: > 0 } ? new Plugins.AgentToolset(agentTools) : null;
+        // A CHILD KEEPS THESE, EXCEPT THE ONES THAT NEED A SCREEN. Injected tools are inherited by
+        // default — a child edits files exactly as its parent does — but a tool whose output is for
+        // a PERSON cannot work here: a child's rows go to a BufferedJobPanel that nothing displays,
+        // so the tool would render, report success, and have its output discarded. The model would
+        // be told its showing worked when nobody saw anything.
+        //
+        // FILTERED HERE, NOT IN THE FACTORY, for the reason _askUser is: enforced at construction,
+        // the guarantee holds for any path that builds a child. A withheld tool is one the child was
+        // never given, so calling it gets the ordinary "no such tool".
+        var offered = isSubAgent
+            ? agentTools?.Where(t => t.OfferToSubAgents).ToList()
+            : agentTools;
+        _agentTools = offered is { Count: > 0 } ? new Plugins.AgentToolset(offered) : null;
 
         _skills = new Skills.SkillLoader(() =>
         {

@@ -28,6 +28,11 @@ public class AgentToolDispatchTests : IDisposable
     /// <summary>Records that it ran, and says something recognisable when it does.</summary>
     private sealed class EchoTool : IAgentTool
     {
+        private readonly bool _offerToChildren;
+        public EchoTool(bool offerToChildren = true) => _offerToChildren = offerToChildren;
+
+        public bool OfferToSubAgents => _offerToChildren;
+
         public int Calls { get; private set; }
 
         public ToolDefinition Definition { get; } = new(
@@ -153,5 +158,50 @@ public class AgentToolDispatchTests : IDisposable
 
         Assert.NotNull(runtime.AgentTools);
         Assert.Single(runtime.AgentTools!);
+    }
+
+    [Fact]
+    public void AToolThatNeedsAScreenIsNotOfferedToAChild()
+    {
+        // A child's rows go to a BufferedJobPanel nothing displays, so a rendering tool would do the
+        // work, report success, and have its output discarded — the model told its showing worked
+        // when nobody saw anything.
+        //
+        // WITHHELD AT CONSTRUCTION, like ask_user, so the guarantee holds for any path that builds a
+        // child rather than only the factory's.
+        var child = new Agent(
+            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
+            isSubAgent: true,
+            agentTools: [new EchoTool(offerToChildren: false)]);
+
+        Assert.False(child.KnowsInjectedToolForTest("echo_tool"));
+    }
+
+    [Fact]
+    public void AnOrdinaryInjectedToolIsStillOfferedToAChild()
+    {
+        // The default is true, so adding the opt-out changed nothing for tools that already existed.
+        var child = new Agent(
+            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
+            isSubAgent: true,
+            agentTools: [new EchoTool(offerToChildren: true)]);
+
+        Assert.True(child.KnowsInjectedToolForTest("echo_tool"));
+    }
+
+    [Fact]
+    public void TheParentIsOfferedItEitherWay()
+    {
+        // The opt-out is about children specifically. A parent withheld from its own tool would be
+        // the feature deleting itself.
+        var parent = new Agent(
+            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
+            isSubAgent: false,
+            agentTools: [new EchoTool(offerToChildren: false)]);
+
+        Assert.True(parent.KnowsInjectedToolForTest("echo_tool"));
     }
 }
