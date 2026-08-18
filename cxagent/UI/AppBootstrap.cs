@@ -1467,30 +1467,30 @@ public static class AppBootstrap
                 return;
             }
 
-            // NOT GUARDED HERE. SwitchModel refuses while a turn runs and says so — the session
-            // owns whether its own state can change. Resolving first costs one config read on a
-            // refusal, which is cheaper than a second copy of the rule.
+            // NOT GUARDED HERE. Use refuses while a turn runs and says so — the session owns whether
+            // its own state can change, and a second copy of that rule here would be the copy that
+            // drifts.
 
-            // RESOLVED HERE, REPORTED THERE. Reading config is the process's job — the session has
-            // no paths and no environment — but saying what happened is the session's, so a failed
-            // resolution is handed over rather than announced here.
-            var next = ConfigResolver.ResolveInstance(paths, env, decision.SwitchTo);
-
+            // THE SESSION RESOLVES IT NOW, from the catalog it was wired with. This read config.json
+            // through ConfigResolver.ResolveInstance — a file read, a re-validation, a full registry
+            // rebuild and a window probe — to produce something this process already held, and then
+            // used only its .Model and discarded the rest. It was also a second answer source: the
+            // catalog is fixed for the process (F5 restarts rather than reconfiguring in place), so a
+            // config edited since startup gave /model a different answer than the rest of the session.
+            //
+            // WHICH ALSO MAKES OFFER AND ANSWER AGREE. The completion list /model shows is built from
+            // the session's catalog, so every name it suggests is now a name this resolves.
+            //
             // THE CONVERSATION STAYS PUT. This used to arm a handoff with CarryToNextWire and
             // re-wire the whole session — rebuilding the agent, its plugins, its sub-agent factory
             // and its MCP binding to change which endpoint gets called, then carrying the context
             // and the ledger across the gap by hand. The provider is swapped in place now, so there
             // is no gap and nothing to carry.
             //
-            // READ BEFORE THE SWITCH, because the message reports what the context WAS on the model
-            // being left. Reading after would quote the new window against the old usage.
-            // SILENT ON REFUSAL, because SwitchModel already said why — "Could not switch to X"
-            // printed on top of "A turn is running" was a second, vaguer sentence for a reason the
-            // user had just been given. The only other false is a session with no host, which cannot
-            // happen from a command the composer accepted.
-            // .Model, not the whole resolution: /model changes which model this session talks to
-            // and nothing else. The signature is what makes that true rather than a convention.
-            session.SwitchModel(next?.Model, decision.SwitchTo);
+            // SILENT ON REFUSAL, because Use already said why — "Could not switch to X" printed on
+            // top of "A turn is running" was a second, vaguer sentence for a reason the user had just
+            // been given.
+            session.Use(decision.SwitchTo);
 
             // NOTHING TO REPORT OR REPAINT HERE. SwitchModel says what happened through the
             // observer and announces that the model moved; the subscription near the top of this

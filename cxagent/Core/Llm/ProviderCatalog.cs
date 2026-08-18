@@ -50,6 +50,32 @@ public sealed record ProviderCatalog(
     public IReadOnlyDictionary<string, McpServerConfig> Servers =>
         McpServers ?? new Dictionary<string, McpServerConfig>();
 
+    /// <summary>
+    /// The model this catalog knows by that name, or null when it knows no such instance.
+    ///
+    /// <para>DERIVATION IS THE NORMAL PATH, and this is the method that makes it one. An
+    /// <see cref="ActiveModel"/> is four facts about a catalog entry — provider, name, label,
+    /// window — and every one of them is already here; building it by hand meant a caller
+    /// re-deriving what the catalog could state. Four sites did, each with its own copy of the
+    /// window logic, which is the accretion this codebase has a rule about.</para>
+    ///
+    /// <para>FROM MEMORY, NEVER FROM DISK. <c>/model</c> reached this answer through
+    /// <c>ConfigResolver.ResolveInstance</c>, which re-read config.json, re-validated it, rebuilt
+    /// the whole registry and re-probed the window — to obtain something this process already held,
+    /// and then discarded every part of it but the model. Worse than wasteful: the catalog is
+    /// documented as fixed for the process (F5 restarts rather than reconfiguring in place), so a
+    /// config edited since startup gave <c>/model</c> a different answer than the rest of the
+    /// session, silently and with no restart.</para>
+    ///
+    /// <para>A MISS IS A MISS. This does not fall back to reading config — two answer sources behind
+    /// one method is precisely the ambiguity that separating this type from
+    /// <see cref="ActiveModel"/> was meant to end. An unknown name returns null and the caller says
+    /// "no such instance"; re-reading config stays an explicit act.</para>
+    /// </summary>
+    /// <remarks>Delegates to <see cref="ProviderRegistry.Use"/>, which is where the data lives —
+    /// one definition of what a named model resolves to, not two that can drift.</remarks>
+    public ActiveModel? Use(string? instanceName) => Instances?.Use(instanceName);
+
     /// <summary>A catalog with nothing in it — the no-provider paths, and a starting point for a
     /// caller filling one in.</summary>
     public static ProviderCatalog Empty { get; } = new();

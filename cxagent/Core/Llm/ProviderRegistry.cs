@@ -12,8 +12,32 @@ public sealed class ProviderRegistry
     private readonly Dictionary<string, ILlmProvider> _providers;
 
     /// <summary>Per-instance context windows, empty for a registry built without config (tests, the
-    /// mock path) — where "unknown" is the honest answer anyway.</summary>
+    /// mock path) — where "unknown" is the honest answer anyway.
+    ///
+    /// <para>CONFIGURED FIRST, THEN WHAT THE ENDPOINT SAID. An entry that declares
+    /// <c>contextWindow</c> lands here at Build and never moves; one that does not is filled in by
+    /// <see cref="WindowFor"/> the first time somebody needs it, from the probe. Mutable for that
+    /// reason and no other — see <see cref="_endpoints"/> for why the answer is cached rather than
+    /// asked again.</para></summary>
     private Dictionary<string, int?> _windows = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What the probe needs to ask an instance its window, for the instances that did not declare
+    /// one. Absent means there is nothing to ask — a mock, or an entry with no base URL.
+    ///
+    /// <para>KEPT RATHER THAN THE WHOLE CONFIG, because this is the only thing the registry has any
+    /// business asking later, and holding the full <c>ProviderInstanceConfig</c> would put an API key
+    /// on a long-lived object for no reason the registry can name.</para>
+    /// </summary>
+    private Dictionary<string, ProbeTarget> _endpoints = new(StringComparer.Ordinal);
+
+    /// <summary>Where to ask, what to ask about, and what to authenticate with.</summary>
+    private readonly record struct ProbeTarget(string? BaseUrl, string? Model, string? ApiKey);
+
+    /// <summary>Guards the lazy fill. Two sessions switching at once would otherwise probe the same
+    /// endpoint twice and race on the dictionary.</summary>
+    private readonly object _windowLock = new();
+
     private readonly string? _defaultName;
 
     private ProviderRegistry(Dictionary<string, ILlmProvider> providers, string? defaultName)
@@ -101,12 +125,80 @@ public sealed class ProviderRegistry
         // keep only the provider it constructed from it — so the one place that HAS the windows was
         // the one place that dropped them.
         var windows = new Dictionary<string, int?>(StringComparer.Ordinal);
+
+        // AND WHERE TO ASK, for the ones that declared nothing. Probing all of them HERE would cost
+        // three seconds per unconfigured endpoint at startup, for models the user may never select —
+        // so the coordinates are kept and the question is asked on first use instead.
+        var endpoints = new Dictionary<string, ProbeTarget>(StringComparer.Ordinal);
+
         foreach (var (name, cfg) in settings.Providers)
         {
             built[name] = Construct(name, cfg, client);
             windows[name] = cfg.ContextWindow;
+            if (cfg.ContextWindow is null && !string.IsNullOrWhiteSpace(cfg.BaseUrl))
+                endpoints[name] = new ProbeTarget(cfg.BaseUrl, cfg.Model, cfg.ApiKey);
         }
-        return new ProviderRegistry(built, settings.DefaultProvider) { _windows = windows };
+
+        return new ProviderRegistry(built, settings.DefaultProvider)
+        {
+            _windows = windows,
+            _endpoints = endpoints,
+        };
+    }
+
+    /// <summary>
+    /// The model this registry knows by that name, or null when it knows no such instance.
+    ///
+    /// <para>HERE RATHER THAN ON <see cref="ProviderCatalog"/> BECAUSE THIS IS WHERE THE DATA IS.
+    /// An <see cref="ActiveModel"/> is four facts — provider, instance name, display name, window —
+    /// and this type holds all four. The catalog delegates, so there is exactly one definition of
+    /// what a named model resolves to rather than two that can drift.</para>
+    /// </summary>
+    public ActiveModel? Use(string? instanceName)
+    {
+        if (string.IsNullOrWhiteSpace(instanceName)) return null;
+        if (!TryGet(instanceName, out var provider)) return null;
+
+        // WindowFor, not InstanceWindows. An instance that declared no contextWindow has its window
+        // ASKED OF THE ENDPOINT here, because a null one does not travel harmlessly:
+        // AgentHost.SwapProvider reads `model.ContextWindow ?? _runtime.ContextWindow`, so a switch
+        // carrying null silently keeps the window of the model being LEFT — compaction sized against
+        // the wrong ceiling, which is the bug ContextWindowProbe exists to prevent.
+        return new ActiveModel(provider, instanceName, provider.DisplayName, WindowFor(instanceName));
+    }
+
+    /// <summary>
+    /// This instance's context window: what config declared, or what the endpoint says it serves.
+    ///
+    /// <para>THE REASON THIS IS NOT JUST A DICTIONARY LOOKUP. A window that is null travels badly:
+    /// <c>AgentHost.SwapProvider</c> reads <c>model.ContextWindow ?? _runtime.ContextWindow</c>, so a
+    /// switch to an instance with no window silently KEEPS THE MODEL BEING LEFT — the new model
+    /// sized against the old one's ceiling, which is the compaction bug ContextWindowProbe was
+    /// written to prevent, reintroduced at the switch instead of at startup.</para>
+    ///
+    /// <para>ASKED ONCE. The answer is written back, so a second switch to the same instance is a
+    /// dictionary read. A probe that failed caches nothing and is retried — the endpoint may simply
+    /// have been down, and null already means "unknown" everywhere downstream.</para>
+    ///
+    /// <para>SYNCHRONOUS, matching the two call sites in ConfigResolver that already block on this
+    /// probe during startup. It is bounded at three seconds and every failure returns null.</para>
+    /// </summary>
+    public int? WindowFor(string instanceName)
+    {
+        lock (_windowLock)
+        {
+            if (_windows.TryGetValue(instanceName, out var known) && known is not null) return known;
+            if (!_endpoints.TryGetValue(instanceName, out var target)) return null;
+
+            var probed = ContextWindowProbe
+                .TryGetAsync(target.BaseUrl, target.Model, target.ApiKey)
+                .GetAwaiter().GetResult();
+
+            // ONLY A REAL ANSWER IS REMEMBERED. Caching a null would turn one unreachable endpoint
+            // into a permanently unknown window for the life of the process.
+            if (probed is not null) _windows[instanceName] = probed;
+            return probed;
+        }
     }
 
     private static ILlmProvider Construct(string name, ProviderInstanceConfig cfg, HttpClient? client)

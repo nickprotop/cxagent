@@ -581,6 +581,37 @@ public sealed class Session
     /// <para>FALSE WHEN THERE IS NO HOST — a switch before the first wire has nothing to point
     /// anywhere, and the caller says so rather than this throwing.</para>
     /// </summary>
+    /// <summary>
+    /// Switch to the instance the user named — resolved from this session's own catalog.
+    ///
+    /// <para>THE BY-NAME HALF, and the one that was missing. <c>/model openrouter</c> went through
+    /// <c>ConfigResolver.ResolveInstance</c> in the composition root: a config.json read, a
+    /// re-validation, a registry rebuild and a window probe, to answer a question the catalog in this
+    /// session's hand could already answer. The result was then stripped to its <c>.Model</c> and the
+    /// rest thrown away.</para>
+    ///
+    /// <para>NO PATHS, NO ENVIRONMENT, SO NO RULE BROKEN. Reading configuration is the process's job
+    /// and a session has neither — which is exactly why this could not live here before. Deriving
+    /// from the catalog needs neither, so the answer comes from what this session was handed at wire
+    /// time. That also makes it consistent with what <c>/model</c> OFFERS: the completion list is
+    /// already built from this same catalog, so a name it suggests is now a name this resolves.</para>
+    ///
+    /// <para>THE OTHER OVERLOAD IS NOT REACHABLE THROUGH THIS ONE. A caller holding a provider the
+    /// catalog never knew about — a test double, a headless embedder — has no name to pass, which is
+    /// why both exist rather than one wrapping the other.</para>
+    /// </summary>
+    public bool Use(string? instanceName)
+    {
+        // THE NULL IS THE MESSAGE. Use returns null for a name the catalog does not know, and the
+        // overload below already owns saying so — one speaker per outcome, as its own comment says.
+        return SwitchModel(_catalog?.Use(instanceName), instanceName);
+    }
+
+    /// <summary>This exact model, for a caller that already holds one. See
+    /// <see cref="Use(string?)"/> for why the by-name form is separate rather than a wrapper.</summary>
+    public bool Use(ActiveModel? model, string? requestedName = null) =>
+        SwitchModel(model, requestedName);
+
     public bool SwitchModel(ActiveModel? next, string? requestedName = null)
     {
         if (RefusedWhileBusy()) return false;
