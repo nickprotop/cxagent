@@ -290,6 +290,27 @@ curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex
 ```
 
+## Embed it — `CxAgent.Core`
+
+Everything under the terminal ships as a package. A session, the agent running it, tools, sub-agent
+delegation, permissions, MCP and resumable stores — no UI dependency, you supply where text goes.
+
+```
+dotnet add package CxAgent.Core
+```
+
+```csharp
+var manager = SessionManager.Create(new AppPaths(configDir));
+var session = manager.Open(workingDir, config, new SessionPorts { Observer = sink, Tools = jobs });
+
+if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
+    await started.Turn;
+```
+
+**[Full API documentation and examples →](cxagent.Core/README.md)** — the four calls an app is, why
+`Submit` returns a receipt rather than a task, steering a running turn, permissions, and a worked
+[Spectre.Console example](examples/SpectreAgent).
+
 ## The cx family
 
 [cxfiles](https://github.com/nickprotop/cxfiles) · [cxpost](https://github.com/nickprotop/cxpost) ·

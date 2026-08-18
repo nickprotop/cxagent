@@ -3,4 +3,5 @@
   <Project Path="cxagent.Core/cxagent.Core.csproj" />
   <Project Path="cxagent.Tests/cxagent.Tests.csproj" />
   <Project Path="cxagent/cxagent.csproj" />
+  <Project Path="examples/SpectreAgent/SpectreAgent.csproj" />
 </Solution>

@@ -76,6 +76,56 @@ mode, stored rules, and a working-directory boundary.
 A session in fan-out mode can delegate. Children are agents without a session — their own context,
 their own log directory, their own token budget — and they report back as a tool result.
 
+## Reading what a session is doing
+
+Everything a front end draws comes from the observer plus a few properties:
+
+```csharp
+session.TokensUpdated           += (_, total) => …;   // after each provider call
+session.ContextUsedUpdated      += (_, used)  => …;   // how full the window is
+session.ContextCompressed       += (_, e)     => …;   // (Before, After)
+session.TurnCompleted           += (_, turns) => …;
+session.Changed                 += kind       => …;   // Mode, Model, Resumed, TurnCancelled…
+
+session.Ledger        // spend, by model and by agent, with cache rates
+session.OwnSpend      // this agent alone, excluding children
+session.IsBusy        // a turn is running
+session.Mode          // delegation and edit mode
+```
+
+Events attach to the host that exists when you subscribe, so subscribe after opening the session.
+
+## Commands
+
+A session services the commands cxagent exposes, and they work headlessly:
+
+```csharp
+session.SetMode("edits auto");      // or SetMode(WorkingMode)
+session.UseFromInput("openrouter"); // /model — parses what a user typed
+session.ListSessions("all");
+session.SayUsage("30");             // /stats
+session.ClearContext();
+session.CompressNow(ct);
+```
+
+Each returns a `CommandStatus` — `Reported` (it said something), `Changed` (the session moved),
+`Refused` (it could not run now, and said why), or `Unknown` (nothing services it). `.Handled()`
+collapses that to a bool if you are routing input.
+
+`SessionManager.Commands` is the registry those are seeded into; a front end registers its own on top
+and the last registration wins.
+
+## A worked example
+
+[`examples/SpectreAgent`](https://github.com/nickprotop/cxagent/tree/master/examples/SpectreAgent) is
+a second front end in about a hundred lines — a prompt, streamed output, and a line per tool — built
+on [Spectre.Console](https://spectreconsole.net/) rather than the TUI cxagent itself uses. It reads
+the same `config.json`, so it runs against whatever provider is already configured:
+
+```
+dotnet run --project examples/SpectreAgent -- /path/to/repo
+```
+
 ## What is not here
 
 The terminal. `cxagent` itself supplies the window, the message loop, and the four commands that need
