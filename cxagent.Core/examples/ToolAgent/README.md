@@ -79,3 +79,8 @@ discarded. The model would be told its showing worked when nobody saw anything.
 A withheld tool is one the child was **never given**: calling it gets the ordinary "no such tool",
 the same mechanism that makes "no sub-agents of sub-agents" structural rather than a rule an agent is
 asked to follow.
+
+---
+
+**[Injecting your own tools →](../../docs/tools.md)** — the full guide: what `Gate` should return,
+how `AlwaysRule` decides granularity, and the checklist for a tool of your own.

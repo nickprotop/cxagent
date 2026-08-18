@@ -48,3 +48,43 @@ public class AgentToolTests
         Assert.True(result.Success);
     }
 }
+
+/// <summary>Duplicate tool names — a consumer mistake that must not take down a session.</summary>
+public class AgentToolsetDuplicateTests
+{
+    private sealed class Named : IAgentTool
+    {
+        private readonly string _marker;
+        public Named(string name, string marker)
+        {
+            _marker = marker;
+            Definition = new(name, marker, JsonSerializer.SerializeToElement(new { type = "object" }));
+        }
+
+        public ToolDefinition Definition { get; }
+        public PermissionRequest? Gate(JobParameters call) => null;
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult { Success = true, Output = { ["content"] = _marker } });
+    }
+
+    [Fact]
+    public void ADuplicateNameDoesNotThrowAtConstruction()
+    {
+        // The comment on this constructor promised "last one wins rather than throwing" while the
+        // code used ToDictionary, which throws. A consumer registering two tools with one name has
+        // made a mistake; taking down their session at wiring time is a worse answer than running
+        // the one they most recently asked for.
+        var set = new AgentToolset([new Named("dup", "first"), new Named("dup", "second")]);
+
+        Assert.True(set.Knows("dup"));
+        Assert.Single(set.Definitions());
+    }
+
+    [Fact]
+    public void TheLastRegistrationIsTheOneThatRuns()
+    {
+        var set = new AgentToolset([new Named("dup", "first"), new Named("dup", "second")]);
+
+        Assert.Equal("second", Assert.Single(set.Definitions()).Description);
+    }
+}

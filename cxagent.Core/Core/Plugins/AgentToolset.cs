@@ -19,11 +19,20 @@ public sealed class AgentToolset
 {
     private readonly IReadOnlyDictionary<string, IAgentTool> _byName;
 
-    public AgentToolset(IReadOnlyList<IAgentTool> tools) =>
+    public AgentToolset(IReadOnlyList<IAgentTool> tools)
+    {
         // LAST ONE WINS on a duplicate name rather than throwing. A consumer that registers two
         // tools with one name has made a mistake, but taking down a session at construction is a
         // worse answer than running the one they most recently asked for.
-        _byName = tools.ToDictionary(t => t.Definition.Name, t => t, StringComparer.Ordinal);
+        //
+        // AN INDEXER, NOT ToDictionary. This said exactly the above while calling ToDictionary,
+        // which throws ArgumentException on a duplicate key — a comment asserting the opposite of
+        // its own code, found by writing the documentation for this interface rather than by any
+        // test. The failure was a wiring-time crash on a plausible consumer mistake.
+        var byName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
+        foreach (var tool in tools) byName[tool.Definition.Name] = tool;
+        _byName = byName;
+    }
 
     /// <summary>Whether an injected tool owns this name. Used to label the transcript row, which
     /// must happen BEFORE the call runs — so it cannot be answered by dispatching.</summary>
