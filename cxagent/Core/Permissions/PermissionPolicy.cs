@@ -56,6 +56,29 @@ public class PermissionPolicy
     /// depends on it, so anything reporting a mode change has to be able to ask.</summary>
     public bool FolderTrusted => _rules.GetTrust(_root) == TrustState.Trusted;
 
+    /// <summary>
+    /// Remembers this edit mode for this folder, so the next session here starts in it.
+    ///
+    /// <para>HERE BECAUSE THE FOLDER AND THE STORE ARE BOTH HERE, and neither is the session's: the
+    /// preference outlives the session, and the store is deliberately private so a caller cannot
+    /// reach past the policy to write a rule against the wrong root. Exposing the store to let a
+    /// caller do this would trade one narrow method for a general capability.</para>
+    ///
+    /// <para>NEVER THROWS. A read-only config directory means the preference is not remembered,
+    /// which costs one Shift+Tab next launch — a mode change that fails because of it would be a
+    /// worse trade.</para>
+    /// </summary>
+    public void RememberEdits(EditMode edits)
+    {
+        try
+        {
+            _rules.SetEditMode(_root, edits);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
 
     // IN-CWD IS A SCOPE BOUNDARY, NOT A SAFETY ONE. The working directory is a git repo, so "inside
     // the boundary" includes .git/hooks/* — which executes as the user on the next git command — and

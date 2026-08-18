@@ -41,6 +41,24 @@ public sealed class SessionManager : IDisposable
     /// page listing grants, the startup migration. Null when no store was built.</summary>
     public PermissionRulesStore? Rules { get; }
 
+    /// <summary>
+    /// Rebuilds a session's host over an armed resume. Null until a front end supplies one.
+    ///
+    /// <para>THE SAME LAYERING AS <c>buildGate</c>, and for the same reason: the ports a rewire needs
+    /// — an observer, a tool sink, a way to ask the user — can only be built by a presentation layer,
+    /// so Core takes the delegate rather than the ability. What Core owns is the SEQUENCE around it,
+    /// which is the part that breaks when it is copied: arming the resume, re-wiring, retiring the
+    /// row it came from and saying so are four steps that only work together.</para>
+    ///
+    /// <para>SET ONCE RATHER THAN PASSED PER CALL. It was a parameter on <see cref="Resume"/>, which
+    /// meant every caller carried a closure over the same invariant value — the composition root
+    /// passes <c>() =&gt; WireRunner(resolution)</c>, and <c>resolution</c> is single-assignment for
+    /// the life of the process. A per-call parameter implied a variation that does not exist, and it
+    /// is what kept <c>/sessions resume</c> in the UI: a command cannot supply a callback only the
+    /// root can build.</para>
+    /// </summary>
+    public Action? Rewire { get; set; }
+
     /// <summary>An empty environment, for the default config read — see Create's `config` param.</summary>
     private static readonly IReadOnlyDictionary<string, string> EmptyEnvironment =
         new Dictionary<string, string>();
@@ -105,6 +123,25 @@ public sealed class SessionManager : IDisposable
 
                 case "/diff":
                     Commands.Register(command, (session, arguments) => session.ShowDiff(arguments));
+                    break;
+
+                // THE RESUME STORE IS THIS MANAGER'S, which is the whole argument for registering
+                // here. The UI reached into Shared.Resume through a captured local to list rows and
+                // restore one — doing the manager's job from outside it, with SessionsCommand
+                // already sitting in Core/Commands and DefaultRetention already referenced above.
+                //
+                // GATED ON THE STORE, exactly as /stats is on History: a command that cannot work is
+                // worse than one that is absent, because the user reads its silence as an answer.
+                case "/sessions" when Shared.Resume is { } resume:
+                    Commands.Register(command, (session, arguments) =>
+                        session.ListSessions(resume, arguments, this));
+                    break;
+
+                // EVERY INPUT IS THE SESSION'S OWN — see Session.SetMode(string). This was in the
+                // composition root for the rules store and the classifier flag, and the session now
+                // reaches both: the policy for trust, NoteCatalog for the flag.
+                case "/mode":
+                    Commands.Register(command, (session, arguments) => session.SetMode(arguments));
                     break;
 
                 case "/compress":
@@ -363,12 +400,24 @@ public sealed class SessionManager : IDisposable
     /// Rebuilds the session's host over the armed resume. A delegate because the ports it needs — an
     /// observer, a tool sink, a way to ask the user — can only be built by a presentation layer.
     /// </param>
-    public void Resume(Session session, Storage.SessionSnapshot snapshot, Action rewire)
+    public void Resume(Session session, Storage.SessionSnapshot snapshot, Action? rewire = null)
     {
         if (session.RefuseIfBusy()) return;
 
+        // THE STORED HOOK WHEN NOTHING IS PASSED. A caller that has one uses it; /sessions resume has
+        // no way to build one, which is what Rewire exists for.
+        var apply = rewire ?? Rewire;
+
+        // NO REWIRE, NO RESUME. Arming a resume nothing applies would leave the session claiming a
+        // context its host does not have — worse than refusing, because the user is told it worked.
+        if (apply is null)
+        {
+            session.SayCannotResume();
+            return;
+        }
+
         session.PendResume(snapshot);
-        rewire();
+        apply();
         Shared.Resume?.MarkSuperseded(snapshot.AgentId);
 
         // SAID AFTER THE REWIRE, so it reaches the observer the restored session is now wired to

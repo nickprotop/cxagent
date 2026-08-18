@@ -410,17 +410,6 @@ public static class AppBootstrap
             // must still switch mode for THIS session. Losing the memory is a smaller harm than
             // refusing the change the user just made — the same reasoning as the IOException guards
             // around the gate's own _store.Add.
-            void RememberEditMode(EditMode edits)
-            {
-                try
-                {
-                    permissionRules.SetEditMode(session.WorkingDirectory, edits);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                }
-            }
-
             // THE ONE PLACE QUEUED TEXT GOES BACK. Escape and the Cancel action are the same act
             // reached two ways, and a second copy of this would be the copy that forgets to clear
             // the block or the list.
@@ -516,9 +505,6 @@ public static class AppBootstrap
             if (declared.Name == "/model")
                 manager.Commands.Register(declared, (_, arguments) => { SwitchModel(arguments); return true; });
 
-            if (declared.Name == "/mode")
-                manager.Commands.Register(declared, (_, arguments) => { HandleMode(arguments); return true; });
-
             if (declared.Name == "/mcp")
                 manager.Commands.Register(declared, (_, arguments) =>
                 {
@@ -526,9 +512,6 @@ public static class AppBootstrap
                     mcpCommand.HandleAsync(arguments);
                     return true;
                 });
-
-            if (declared.Name == "/sessions")
-                manager.Commands.Register(declared, (_, arguments) => { HandleSessions(arguments); return true; });
 
             if (declared.Name == "/exit")
                 manager.Commands.Register(declared, (_, _) =>
@@ -778,6 +761,14 @@ public static class AppBootstrap
             }
         }
 
+        // THE ONE PART OF A RESUME ONLY THIS LAYER CAN BUILD, handed over once. The manager owns the
+        // sequence — arm, rewire, retire the row, say so — and /sessions resume now runs entirely in
+        // Core; without this hook it would have nothing to rebuild the host with, and the manager
+        // refuses rather than arming a resume nothing applies.
+        //
+        // SET BEFORE THE FIRST WIRE, so a resume arriving on the first render pump finds it.
+        manager.Rewire = () => WireRunner(resolution);
+
         WireRunner(resolution);   // startup path, unchanged in effect
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
@@ -867,8 +858,10 @@ public static class AppBootstrap
                 // the policy half missing.
                 // NO REPAINT HERE. SetMode announces, and the subscription above follows — the
                 // line that used to sit here is the line a new command forgets.
+                // ONE CALL, NOT TWO. SetMode remembers the preference itself now — the pair of
+                // lines that used to sit here is exactly the pair this comment warned gets copied
+                // with one half missing.
                 session.SetMode(runner.Mode with { Edits = nextEdits });
-                RememberEditMode(nextEdits);
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.
@@ -1375,87 +1368,6 @@ public static class AppBootstrap
                 HintAtResume();
         });
 
-        // THE LIST THE COMMAND AND THE PALETTE BOTH READ. Scoped to this folder unless asked
-        // otherwise, and re-read on every use: a session that ended in another window a minute ago
-        // has to appear, and a cached list is a list that lies about exactly that.
-        // COMPLETION MUST NEVER THROW. It runs on a keystroke inside layout, where an exception from
-        // a locked database would take down the composer rather than produce an empty menu.
-        IReadOnlyList<SessionInfo> SafeList()
-        {
-            try { return ListSessions(false); }
-            catch { return []; }
-        }
-
-        IReadOnlyList<SessionInfo> ListSessions(bool all) =>
-            sessions.List(all ? null : session.WorkingDirectory, all);
-
-        void HandleSessions(string argument)
-        {
-            try
-            {
-                // "all" IS READ BEFORE THE DECISION, because it changes which rows exist rather than
-                // what is done with them — and `resume 3` has to mean the row the user is looking at.
-                var all = SessionCommands.ArgumentWords($"/sessions {argument}")
-                    .Any(w => w.Equals("all", StringComparison.OrdinalIgnoreCase));
-
-                var rows = ListSessions(all);
-                var result = SessionsCommand.Decide(
-                    argument, rows, SqliteSessionStore.DefaultRetention, all);
-
-                if (result.ResumeUid is null)
-                {
-                    mainWindow.Chat.AddMessage(ChatRole.System, result.Reply);
-                    return;
-                }
-
-
-                if (sessions.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
-                    RestoreSession(snapshot);
-                else
-                    mainWindow.Chat.AddMessage(ChatRole.System,
-                        "[yellow]That session could not be read back.[/]");
-            }
-            catch (Exception ex)
-            {
-                // REPORTED, like /stats reads and unlike the writes: an empty list from a locked
-                // database says "you have no earlier sessions", which is a lie a user cannot detect.
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    $"[{ColorScheme.DangerMarkup}]Could not read sessions: {ex.Message}[/]");
-            }
-        }
-
-        // THE MODE COMMAND, beside SwitchModel and for the same reason: it needs the rules store and
-        // the gate's classifier, which are this process's rather than any session's. What it decides
-        // is applied BY the session, which says and announces it.
-        void HandleMode(string argument)
-        {
-            if (runner is null)
-            {
-                mainWindow.Chat.AddMessage(ChatRole.System,
-                    "[yellow]No provider configured — there is no agent to set a mode on.[/]");
-                return;
-            }
-
-            var decision = ModeCommand.Decide(new ModeQuery(
-                argument, runner.Mode,
-                permissionRules.GetTrust(session.WorkingDirectory) == TrustState.Trusted,
-                session.WorkingDirectory,
-                permissionGate.Classifier is not null));
-
-            if (decision.NewMode is { } next)
-            {
-                if (!session.SetMode(next)) return;
-
-                // REMEMBERING IS ALL THAT IS LEFT HERE, and it is not the session's: the preference
-                // is a folder-level setting that outlives this session.
-                RememberEditMode(next.Edits);
-            }
-
-            // ONLY WHEN THERE IS SOMETHING THIS COMMAND KNOWS AND THE SESSION DOES NOT — a listing,
-            // an unknown axis, an already-in-that-mode. A CHANGE is reported by the session itself.
-            if (decision.Reply is { Length: > 0 })
-                mainWindow.Chat.AddMessage(ChatRole.System, decision.Reply);
-        }
 
         void SwitchModel(string argument)
         {
@@ -1506,14 +1418,6 @@ public static class AppBootstrap
         // Restoring is four steps that only work together — seed, re-wire, retire the old row, and
         // say so — and the second caller is exactly when a sequence like that gets copied with one
         // step quietly missing.
-        void RestoreSession(SessionSnapshot snapshot)
-        {
-            // THROUGH THE MANAGER, which owns the resume store. Arming the resume, re-wiring over
-            // it and retiring the row it came from are three steps that only work together, and
-            // doing them by hand here is where a sequence like that gets copied with one quietly
-            // missing. The re-wire stays the caller's because building the ports needs a window.
-            manager.Resume(session, snapshot, () => WireRunner(resolution));
-        }
 
         // A HINT, NOT A QUESTION.
         //

@@ -232,12 +232,54 @@ public sealed class Session
     /// <para>FALSE WITH NO HOST, so a mode set before the first wire is refused rather than silently
     /// half-applied to a policy whose agent does not exist yet.</para>
     /// </summary>
+    /// <summary>
+    /// Sets the mode from what the user typed at <c>/mode</c> — decided here, not by the caller.
+    ///
+    /// <para>EVERY INPUT THE DECISION NEEDS IS ALREADY HERE. The composition root assembled a
+    /// <c>ModeQuery</c> from four captured locals — the runner's mode, folder trust, the working
+    /// directory, whether a classifier exists — and all four are the session's own: <c>Host.Mode</c>,
+    /// <c>Policy.FolderTrusted</c>, <c>WorkingDirectory</c>, and the flag <c>NoteCatalog</c> stores.
+    /// Reaching across for them is what kept this command in the UI.</para>
+    ///
+    /// <para>THE REPLY IS SAID ONLY WHEN IT ADDS SOMETHING. A CHANGE is announced by
+    /// <see cref="SetMode(WorkingMode)"/>, which knows what is actually in force once trust is taken
+    /// into account; this says the other outcomes — a listing, an unknown axis, an
+    /// already-in-that-mode — which the command knows and the session does not.</para>
+    /// </summary>
+    public bool SetMode(string argument)
+    {
+        if (Host is null)
+        {
+            Say("[yellow]No provider configured — there is no agent to set a mode on.[/]");
+            return true;
+        }
+
+        var decision = Commands.ModeCommand.Decide(new Commands.ModeQuery(
+            argument, Host.Mode, Policy?.FolderTrusted ?? false, WorkingDirectory,
+            _classifierConfigured));
+
+        if (decision.NewMode is { } next && !SetMode(next)) return true;
+
+        if (decision.Reply is { Length: > 0 }) Say(decision.Reply);
+        return true;
+    }
+
     public bool SetMode(WorkingMode mode)
     {
         if (Host is null || RefusedWhileBusy()) return false;
 
         Host.Mode = mode;
-        if (Policy is not null) Policy.Edits = mode.Edits;
+        if (Policy is not null)
+        {
+            Policy.Edits = mode.Edits;
+
+            // AND REMEMBERED, because the pair was the thing that got copied wrong. Both callers —
+            // /mode and Shift+Tab — set the mode and then remembered it as two separate statements,
+            // and the comment at the Shift+Tab site says exactly what that costs: "the pair of lines
+            // this replaced is the pair that gets copied with the policy half missing". One call
+            // cannot half-happen.
+            Policy.RememberEdits(mode.Edits);
+        }
 
         // SAID BY THE SESSION, not by whoever asked. Both callers — /mode and Shift+Tab — used to
         // compose this themselves, which is two wordings for one action and two chances to report a
@@ -444,6 +486,59 @@ public sealed class Session
     /// somebody to ask — see the registry, where a front end overrides this command with one that
     /// can.</para>
     /// </summary>
+    /// <summary>
+    /// Lists the sessions in this folder, and restores one when asked.
+    ///
+    /// <para>THE SESSION SCOPES IT. Every row is filtered by <see cref="WorkingDirectory"/> unless
+    /// the user says <c>all</c> — which is why this is a session's answer rather than the manager's,
+    /// even though the manager owns the store. The composition root did this by capturing both and
+    /// reaching across.</para>
+    ///
+    /// <para>"all" IS READ BEFORE THE DECISION, because it changes which rows EXIST rather than what
+    /// is done with them — and <c>resume 3</c> has to mean the row the user is looking at. Reading it
+    /// afterwards would renumber the list under the number they just typed.</para>
+    ///
+    /// <para>REPORTED, NEVER SWALLOWED. An empty list from a locked database says "you have no
+    /// earlier sessions", which is a lie a user cannot detect — the same reason
+    /// <see cref="SayUsage"/> reports its own read failures.</para>
+    /// </summary>
+    public bool ListSessions(Storage.SqliteSessionStore store, string arguments, SessionManager manager)
+    {
+        try
+        {
+            var all = Commands.SessionCommands.ArgumentWords($"/sessions {arguments}")
+                .Any(w => w.Equals("all", StringComparison.OrdinalIgnoreCase));
+
+            var rows = store.List(all ? null : WorkingDirectory, all);
+            var result = Commands.SessionsCommand.Decide(
+                arguments, rows, Storage.SqliteSessionStore.DefaultRetention, all);
+
+            if (result.ResumeUid is null)
+            {
+                Say(result.Reply);
+                return true;
+            }
+
+            if (store.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
+                manager.Resume(this, snapshot);
+            else
+                Say("[yellow]That session could not be read back.[/]");
+        }
+        catch (Exception ex)
+        {
+            Say($"[{Commands.Markup.Danger}]Could not read sessions: {ex.Message}[/]");
+        }
+
+        return true;
+    }
+
+    /// <summary>Says that a resume cannot be applied because nothing can rebuild this session's host.
+    /// A headless arrangement with no rewire hook, which is a real configuration rather than an
+    /// error — but it must be SAID, because a silent no-op reads as success.</summary>
+    public void SayCannotResume() =>
+        Say("[yellow]This session cannot restore an earlier conversation — nothing here can rebuild "
+          + "it. Use --resume at startup instead.[/]");
+
     public bool SayUsage(Storage.UsageHistoryStore history, string arguments)
     {
         try
