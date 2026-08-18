@@ -11,8 +11,13 @@ dotnet run --project cxagent.Core/examples/ToolAgent
 
 They are different questions, and conflating them is the mistake the design exists to prevent.
 
-**Gate 1 — may this tool run in this folder at all?** Asked once per folder by the permission
-engine, and persisted as a `Tool` rule in `permissions.json`.
+**Gate 1 — may this tool run in this folder at all?** Asked by the permission engine, and persisted
+as a `Tool` rule in `permissions.json` **only if you answer "Always"**.
+
+Answer "once" and it asks again on the next call — which is what "once" means. Nothing caches the
+answer between calls: `IPermissionGate.RequestAsync` returns a bare bool, so once and always look
+identical to the tool, and only the rules store can tell them apart. Remembering happens there or
+not at all.
 
 **Gate 2 — does THIS call need a human?** Your tool's own `Gate` method, on every call, for the life
 of the session.

@@ -44,15 +44,6 @@ public sealed class GatedAgentTool : IAgentTool
     /// depending on whether it happened to be handed the wrapper.</summary>
     public PermissionRequest? Gate(JobParameters call) => _inner.Gate(call);
 
-    /// <summary>
-    /// Whether GATE 1 has been answered for this session — may this tool run in this folder at all.
-    ///
-    /// <para>ASKED ONCE, ON FIRST USE. Not once per call: that is gate 2's job. A denial does NOT
-    /// latch, per the spec — "if deny one, second time, asking again" — because a refusal is about
-    /// this moment, not a permanent verdict on the tool.</para>
-    /// </summary>
-    private bool _allowedHere;
-
     public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
     {
         // GATE 1: MAY THIS TOOL RUN HERE AT ALL. A PermissionKind.Tool question, distinct from
@@ -62,7 +53,18 @@ public sealed class GatedAgentTool : IAgentTool
         // WITHOUT THIS the tool was silently ungated on first use: show_diff's own gate returns a
         // FileRead request, and a trusted folder answers that one silently, so a live drive ran an
         // injected tool with no prompt at any point. Reported from that drive.
-        if (!_allowedHere)
+        //
+        // ASKED ON EVERY CALL, AND NO LOCAL "ALREADY ALLOWED" FLAG. The first version cached a bool
+        // after the first yes, which turned "Allow once" into "always, for this session" — reported
+        // from a drive where one `once` covered four files silently. IPermissionGate.RequestAsync
+        // returns a BARE BOOL, so once and always are indistinguishable here, and remembering on
+        // that signal can only ever remember too much.
+        //
+        // REMEMBERING IS THE STORE'S JOB, and it already does it: `Always` writes a rule and
+        // PermissionPolicy.IsSilentlyAllowed matches it on the next call, per folder and per kind,
+        // so a granted tool never reaches the prompt again. Asking every time is therefore not a
+        // second prompt for the user — it is the one question, routed through the one layer that
+        // can tell what they actually answered.
         {
             var admission = new PermissionRequest(
                 PermissionKind.Tool,
@@ -93,9 +95,6 @@ public sealed class GatedAgentTool : IAgentTool
                     ErrorMessage = $"permission denied by the user: {admission.Display}. "
                         + "Do not retry this operation or plan it again unless the user explicitly asks.",
                 };
-
-            // ONLY ON A YES. A denial leaves this false so the next call asks again.
-            _allowedHere = true;
         }
 
         // GATE 2, ON EVERY CALL. Gate 1 — may this tool run in this folder — is answered by the

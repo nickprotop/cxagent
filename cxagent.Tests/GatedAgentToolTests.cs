@@ -89,19 +89,32 @@ public class GatedAgentToolTests
 
         var admission = Assert.Single(gate.Seen);
         Assert.Equal(PermissionKind.Tool, admission.Kind);
+
+        // Generalisable BY TOOL NAME, so "Always" stores one rule per folder per tool — which is
+        // what makes asking every call cost the user nothing after they have said always once.
         Assert.Equal("tool recorder", admission.AlwaysRule);
     }
 
     [Fact]
-    public async Task AdmissionIsAskedOnceNotOncePerCall()
+    public async Task AllowOnceDoesNotBecomeAllowAlways()
     {
+        // REPORTED FROM A DRIVE: the user pressed "Allow once" and the tool then ran on three more
+        // files without asking again. The first version cached a bool after the first yes, which is
+        // "remember" implemented on a signal that cannot tell once from always —
+        // IPermissionGate.RequestAsync returns a BARE BOOL, and both answers return true.
+        //
+        // So the gate is asked every call. That is not a second prompt for the user: "Always" writes
+        // a rule and PermissionPolicy.IsSilentlyAllowed matches it before the prompt is ever built,
+        // which is remembering done in the layer that knows what was actually answered.
         var gate = new RecordingGate(allow: true);
         var tool = new GatedAgentTool(new RecordingTool(gatesEveryCall: false), gate);
 
         await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
         await tool.ExecuteAsync(Call("b"), new TestJobContext(), CancellationToken.None);
+        await tool.ExecuteAsync(Call("c"), new TestJobContext(), CancellationToken.None);
 
-        Assert.Single(gate.Seen);   // gate 1 once; gate 2 is the per-call one
+        Assert.Equal(3, gate.Seen.Count);
+        Assert.All(gate.Seen, r => Assert.Equal(PermissionKind.Tool, r.Kind));
     }
 
     [Fact]
@@ -141,8 +154,9 @@ public class GatedAgentToolTests
     {
         // Gate returning null means "no human needed", NOT "do not run".
         //
-        // The gate is still asked ONCE — that is gate 1, admitting the tool to this folder, and it
-        // is a different question from the one this tool declines to ask about its arguments.
+        // The gate is still asked — that is gate 1, admitting the tool to this folder, and it is a
+        // different question from the one this tool declines to ask about its arguments. It is asked
+        // per call because only the store may decide that an answer persists.
         var inner = new RecordingTool(gatesEveryCall: false);
         var gate = new CountingGate(allow: true);
         var tool = new GatedAgentTool(inner, gate);
@@ -152,7 +166,7 @@ public class GatedAgentToolTests
 
         Assert.True(result.Success);
         Assert.Equal(2, inner.ExecuteCalls);
-        Assert.Equal(1, gate.Asked);   // admission only, and only once
+        Assert.Equal(2, gate.Asked);   // admission only — never the tool's own gate, which is null
     }
 
     [Fact]

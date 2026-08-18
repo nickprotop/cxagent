@@ -400,9 +400,27 @@ public class PermissionPolicy
         // inventing a guarantee — so a rule covers "this tool on this server" and nothing narrower.
         PermissionKind.Mcp => request.AlwaysRule,
 
+        // AN INJECTED TOOL'S SUBJECT IS ITS NAME ("tool show_diff"), for the same reason as Mcp: the
+        // rule is about admitting the TOOL to this folder, never about its arguments. Whatever the
+        // tool asks about those is its own gate's question, asked on every call, which a stored
+        // admission does not and must not answer.
+        //
+        // MISSING THIS SILENTLY BROKE "ALWAYS". The `_ => null` below was added for cast integers,
+        // so a real kind omitted here falls through it with no CS8509 — the warning this switch's
+        // own comment promises would fire. Subject null means IsSilentlyAllowed returns false, so
+        // the stored rule could never match: the user pressed "Always allow", a rule was written to
+        // permissions.json, and they were asked again anyway, forever.
+        PermissionKind.Tool => request.AlwaysRule,
+
         // A CAST INTEGER, not a case anyone forgot: every declared PermissionKind is handled above,
         // and null means "cannot be generalised into a rule", which is the safe answer for a value
         // this code has never seen.
+        //
+        // BUT IT ALSO SWALLOWS A REAL KIND SOMEONE FORGOT, which is exactly what happened when Tool
+        // was added: no CS8509, no failing test, and "Always allow" silently stopped persisting.
+        // The comment above promises the compiler will name a new kind here; this arm is why it
+        // does not. Anyone adding a PermissionKind must add an arm ABOVE this one — the switch is
+        // not self-enforcing, whatever its doc says.
         _ => null,
     };
 
