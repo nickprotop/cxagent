@@ -293,3 +293,60 @@ public class CancelWhileWaitingTests
         Assert.False(await pending);       // and resolved as a refusal, never a silent allow
     }
 }
+
+/// <summary>
+/// Cancelling a turn hands back what was queued — the half a live tmux drive cannot pin reliably,
+/// because whether text is still queued at the moment Escape lands depends on how fast the model
+/// reaches its next tool barrier.
+/// </summary>
+public class CancelRestoresQueuedTests : IDisposable
+{
+    private readonly string _dir =
+        Path.Combine(Path.GetTempPath(), "restore-" + Guid.NewGuid().ToString("N"));
+
+    public CancelRestoresQueuedTests() => Directory.CreateDirectory(_dir);
+    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    // WHAT WAS QUEUED COMES BACK, joined, in the order it was typed — and the session does not know
+    // where it goes. A composer here; a log elsewhere.
+    [Fact]
+    public void CancelPending_ReturnsEverythingQueued_InOrder()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
+            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        string? handedBack = null;
+        session.Cancelled += text => handedBack = text;
+
+        session.Steer("alpha");
+        session.Steer("beta");
+        session.CancelPending();
+
+        Assert.Equal("alpha\nbeta", handedBack);
+        Assert.Null(session.PendingSteer);
+    }
+
+    // AND WHEN THE BARRIER TOOK IT FIRST, there is nothing to hand back — which is what a live drive
+    // keeps showing: the model reaches a tool call, the steer is delivered as a real user turn, and a
+    // later Escape correctly restores nothing.
+    [Fact]
+    public void WhenTheTurnAlreadyTookIt_CancelHandsBackNothing()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
+            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        var handedBack = 0;
+        session.Cancelled += _ => handedBack++;
+
+        session.Steer("taken at the barrier");
+        Assert.Equal("taken at the barrier", session.TakePendingSteer());
+
+        session.CancelPending();
+
+        Assert.Equal(0, handedBack);
+    }
+}

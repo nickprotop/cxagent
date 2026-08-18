@@ -413,28 +413,20 @@ public static class AppBootstrap
             // the block or the list.
             // THE ONE PLACE THE BLOCK IS TAKEN DOWN. Both the send path and the cancel path remove
             // it, and a second copy of this is the copy that clears the id without removing the row.
-            // ACTIONS FIRST, THEN THE MESSAGE. RemoveMessage takes down the message PANEL, and the
-            // actions toolbar is a SIBLING of that panel rather than a child of it — SetActions' own
-            // documentation says so ("rendered as a sibling of the message panel"). So removing the
-            // message left the buttons behind, floating with nothing above them and still clickable.
+            // THE ONE PLACE THE BLOCK IS TAKEN DOWN, and it takes its actions with it: RemoveMessage
+            // tears down the message's siblings — actions toolbar, status bar, peek row — as well as
+            // the panel.
             //
-            // WHY IT LOOKED INTERMITTENT, which is what made it hard to see: ShowQueued removes and
-            // re-adds the block on EVERY queued line, so a second line orphaned the first line's
-            // toolbar — and queuedBlock only ever points at the newest block, so nothing could reach
-            // the older ones. Queue one line and it looked fine; queue two and the buttons stayed.
-            //
-            // THE LIBRARY BUG IS REAL AND SEPARATE. ChatTranscriptControl.RemoveMessage removes only
-            // entry.Panel and leaves ActionsToolbar, StatusBar and PeekRow — every caller with a
-            // footer hits it, not just this one. Fixed here because this is where the symptom is;
-            // ClearActions is the library's own teardown and does the whole footer properly.
+            // IT DID NOT ALWAYS. The toolbar is a SIBLING of the panel rather than a child, so
+            // removing the message once left the cancel button on screen and still clickable. It
+            // looked intermittent because ShowQueued removes and re-adds the block on every queued
+            // line while queuedBlock only ever points at the newest one — so a second line orphaned
+            // the first line's toolbar with nothing able to reach it. One line looked fine; two and
+            // the buttons stayed. Fixed in SharpConsoleUI (RemoveMessage now removes every sibling),
+            // which is where it belonged: any caller removing a message with a footer hit it.
             void RemoveQueuedBlock()
             {
-                if (queuedBlock is { } block)
-                {
-                    mainWindow.Chat.ClearActions(block);
-                    mainWindow.Chat.RemoveMessage(block);
-                }
-
+                if (queuedBlock is { } block) mainWindow.Chat.RemoveMessage(block);
                 queuedBlock = null;
             }
 
