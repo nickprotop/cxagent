@@ -596,6 +596,12 @@ public static class AppBootstrap
                 {
                     Observer = sink,
                     ToolObserver = jobPanelSink,
+
+                    // OUR OWN TOOL, and the reason this extension point exists. Core cannot render a
+                    // diff — it has no transcript and no markup dialect — but this layer does, so
+                    // the tool is supplied from here and Core stays ignorant of what a diff is.
+                    // SessionFactory wraps it in GatedAgentTool on the way through.
+                    Tools = [new Tools.ShowDiffTool(session.WorkingDirectory)],
                     Ask = mainWindow.AskQuestionAsync,
 
                     // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the

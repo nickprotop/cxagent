@@ -2330,6 +2330,13 @@ public sealed class Agent
         // honest label; the server's own name is already in DisplayName.
         _ when _mcp is not null && _mcp.Names().Contains(toolName) => "mcp",
 
+        // AN INJECTED TOOL IS ITS OWN TYPE, named after itself. Falling through to "file" would be
+        // the spawn bug above, one layer out: a front end that special-cases its own tool's rows —
+        // as cxagent does for show_diff, to keep the rendered diff expanded — matches on PluginType,
+        // and every injected tool arriving as "file" makes that impossible to write. Naming it after
+        // the tool means the front end that supplied the tool already knows the string.
+        _ when _agentTools is not null && _agentTools.Knows(toolName) => toolName,
+
         _ => "file",
     };
 

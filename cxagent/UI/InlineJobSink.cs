@@ -364,7 +364,16 @@ public sealed class InlineJobSink : IToolObserver
                 // Claude Code pins its list to the bottom of the screen instead. This transcript has
                 // no pinned region, so an expanded row in place is the nearest thing: the plan is
                 // visible where it changed, and every revision stays in the scrollback in order.
-                if (!IsTheAnswer(job)) _chat.SetExpanded(id, false);
+                // OPENED, NOT MERELY LEFT ALONE — and this is the half the first attempt missed.
+                // A row is created COLLAPSED, so "do not collapse it" is not the same instruction as
+                // "open it": the diff rendered correctly and still showed only its header, because
+                // nothing on this path ever called SetExpanded(true). The compact branch above does
+                // the opening for ordinary rows, and show_diff no longer takes that branch.
+                //
+                // llm_agent is excluded for the reason stated at the auto-expand site: a worker's
+                // body grows under the reader, so it must stay one keypress away even though it is
+                // also "the answer".
+                _chat.SetExpanded(id, ExpandOnFinish(job));
             }
 
             // NO INLINE BUTTONS. Retry/Skip/Diagnose were removed: they invited the user to drive
@@ -925,6 +934,26 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam for <see cref="IsCompactRow"/> — a pure decision worth pinning, whose
     /// rendering is only observable through a UI queue the tests cannot drain.</summary>
     public static bool IsCompactRowForTest(Job job) => IsCompactRow(job);
+
+    /// <summary>Test seam for <see cref="ExpandOnFinish"/> — the decision is pure, its effect is
+    /// only observable through a UI queue the tests cannot drain.</summary>
+    public static bool ExpandOnFinishForTest(Job job) => ExpandOnFinish(job);
+
+    /// <summary>
+    /// Whether a finished row is OPENED, and the distinction that made this a method.
+    ///
+    /// <para>"DO NOT COLLAPSE IT" IS NOT "OPEN IT". A row is created collapsed, so the first version
+    /// of the show_diff exemption only skipped the SetExpanded(id, false) — and the diff rendered
+    /// perfectly while showing nothing but its header, because nothing on this path ever opened it.
+    /// The compact branch above does the opening for ordinary rows, and a diff no longer takes that
+    /// branch. Reported from a live session, not caught by a test, which is why the decision now has
+    /// a name and a seam.</para>
+    ///
+    /// <para>A WORKER IS THE EXCEPTION AMONG THE ANSWERS. llm_agent output is buffered and lands all
+    /// at once at the finish line: opening it puts a wall of text on screen the user did not ask
+    /// for, and pushes the parent's own answer down behind it.</para>
+    /// </summary>
+    private static bool ExpandOnFinish(Job job) => IsTheAnswer(job) && job.PluginType != "llm_agent";
 
     /// <summary>
     /// Rows whose body is the ANSWER rather than the working. They open when they finish, they are

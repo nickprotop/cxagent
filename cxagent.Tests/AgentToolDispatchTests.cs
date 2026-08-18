@@ -98,7 +98,7 @@ public class AgentToolDispatchTests : IDisposable
         var session = Build(provider, [new EchoTool()], new BufferedChatSink());
         await session.Host!.RunAsync("go", CancellationToken.None);
 
-        var toolResults = provider.LastMessages
+        var toolResults = (provider.LastMessages ?? [])
             .Where(m => m.Role == "tool")
             .Select(m => m.Content)
             .ToList();
@@ -118,7 +118,7 @@ public class AgentToolDispatchTests : IDisposable
         var session = Build(provider, [new EchoTool()], new BufferedChatSink());
         await session.Host!.RunAsync("go", CancellationToken.None);
 
-        var toolResults = provider.LastMessages.Where(m => m.Role == "tool").Select(m => m.Content).ToList();
+        var toolResults = (provider.LastMessages ?? []).Where(m => m.Role == "tool").Select(m => m.Content).ToList();
         Assert.Contains(toolResults, c => c is not null && c.Contains("no such tool 'no_such_thing'"));
     }
 

@@ -81,11 +81,67 @@ public class InlineJobSinkDiffTests
     }
 
     [Fact]
+    public void ADiffRowIsOPENEDWhenItFinishes()
+    {
+        // THE ONE THAT WAS MISSING, and its absence shipped: the first version of this exemption
+        // only skipped the collapse. A row is CREATED collapsed, so "do not collapse it" left the
+        // diff rendered and invisible behind its own header — reported from a live session.
+        //
+        // Not-compact and expanded are two different facts. Asserting only the first is what let
+        // the bug through with four green tests.
+        Assert.True(InlineJobSink.ExpandOnFinishForTest(DiffJob(body: "  41 + added\n  42 - gone")));
+    }
+
+    [Fact]
+    public void OrdinaryToolRowsAreNotOpened()
+    {
+        // The collapse rule still holds for everything else: a fan-out of tools each returning
+        // hundreds of lines would bury the conversation.
+        Assert.False(InlineJobSink.ExpandOnFinishForTest(ToolJob()));
+    }
+
+    [Fact]
+    public void AWorkerIsNotOpenedEvenThoughItIsAlsoTheAnswer()
+    {
+        // llm_agent output is buffered and lands all at once: opening it puts a wall of text on
+        // screen the user did not ask for and pushes the parent's own answer down behind it.
+        var worker = new Job
+        {
+            Id = "w1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "explore",
+            State = JobState.Succeeded,
+            Result = new JobResult { Success = true, Output = new() { ["content"] = "a long report" }, Duration = TimeSpan.Zero },
+        };
+
+        Assert.False(InlineJobSink.ExpandOnFinishForTest(worker));
+    }
+
+    [Fact]
     public void AFailedDiffIsStillNotCompacted()
     {
         // A failure's body is its reason, and the reason for a failed show_diff is what the user
         // needs in order to know the diff they were shown is not the diff that exists.
         Assert.False(InlineJobSink.IsCompactRowForTest(
             DiffJob(JobState.Failed, body: "not a git repository")));
+    }
+}
+
+/// <summary>Probe: what actually reaches the transcript for a rendered diff.</summary>
+public class InlineJobSinkDiffBodyTests
+{
+    [Fact]
+    public void TheWholeRenderedDiffReachesTheBodyNotJustItsFirstLine()
+    {
+        var markup = "[cyan1]f.cs[/]\n\n  41 [#7ee787 on #0d3a1a]+ [/]added\n  42 [#f85149 on #3a0d0d]- [/]gone";
+        var job = new Job
+        {
+            Id = "d9", AgentId = "g1", PluginType = "show_diff", DisplayName = "show_diff",
+            State = JobState.Succeeded,
+            Result = new JobResult { Success = true, Output = new() { ["content"] = markup }, Duration = TimeSpan.Zero },
+        };
+
+        var body = InlineJobSink.BodyFor(job);
+
+        Assert.NotNull(body);
+        Assert.Contains("gone", body);
     }
 }

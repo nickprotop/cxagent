@@ -25,6 +25,10 @@ public sealed class AgentToolset
         // worse answer than running the one they most recently asked for.
         _byName = tools.ToDictionary(t => t.Definition.Name, t => t, StringComparer.Ordinal);
 
+    /// <summary>Whether an injected tool owns this name. Used to label the transcript row, which
+    /// must happen BEFORE the call runs — so it cannot be answered by dispatching.</summary>
+    public bool Knows(string toolName) => _byName.ContainsKey(toolName);
+
     public IReadOnlyList<ToolDefinition> Definitions() =>
         _byName.Values.Select(t => t.Definition).ToList();
 
@@ -42,6 +46,14 @@ public sealed class AgentToolset
         // that no recovery path matches. WorkerToolset.InvokeAsync holds the same contract.
         if (!result.Success)
             return result.ErrorMessage ?? "error: the tool failed without saying why";
+
+        // TWO AUDIENCES, TWO KEYS. Output["content"] is what the TRANSCRIPT renders; "summary" is
+        // what the MODEL is told. They are usually the same text and "summary" is absent, so this
+        // falls back — but show_diff is the case that forced the split: its content is native markup
+        // for a human to look at, and handing the model a blob of colour tags would cost a turn of
+        // it trying to describe them.
+        if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
+            return s;
 
         return result.Output.TryGetValue("content", out var content)
             ? content?.ToString() ?? string.Empty
