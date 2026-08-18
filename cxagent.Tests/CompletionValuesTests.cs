@@ -25,7 +25,7 @@ public class CompletionValuesTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static SessionPorts Ports() =>
-        new() { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() };
+        new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
 
     private static ProviderRegistry Registry(params (string Name, string Model, int? Window)[] instances)
     {
@@ -140,7 +140,7 @@ public class CompletionValuesTests : IDisposable
             new SessionPorts
             {
                 Observer = new BufferedChatSink(),
-                Tools = new BufferedJobPanel(),
+                ToolObserver = new BufferedJobPanel(),
                 Policy = policy,
             },
             AgentMode.Single);
@@ -210,7 +210,7 @@ public class CompletionValuesTests : IDisposable
         provider.EnqueueResponse(new LlmResponse { Text = "hi", StopReason = "end_turn" });
 
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
 
         var kinds = new List<SessionChangeKind>();
         session.Changed += kinds.Add;

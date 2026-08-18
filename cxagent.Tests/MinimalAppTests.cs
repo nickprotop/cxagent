@@ -50,7 +50,7 @@ public class MinimalAppTests : IDisposable
         var sink = new BufferedChatSink();
 
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() });
 
         // THE REAL SUBMIT, not the test helper: this is the call a consuming app writes, and its
         // shape is part of what this test claims. Started carries the turn; the caller awaits it.
@@ -95,7 +95,7 @@ public class MinimalAppTests : IDisposable
         Assert.Null(manager.Shared.Gate);
 
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() });
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() });
 
         Assert.NotNull(session.Host);
     }

@@ -50,7 +50,7 @@ public class TurnIdCollisionTests : IDisposable
         var recorder = new IdRecorder();
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = recorder, Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = recorder, ToolObserver = new BufferedJobPanel() },
             AgentMode.FanOut);
 
         await session.SendAndWait("hello");
@@ -66,7 +66,7 @@ public class TurnIdCollisionTests : IDisposable
         var recorder = new IdRecorder();
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = recorder, Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = recorder, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         await session.SendAndWait("hello");

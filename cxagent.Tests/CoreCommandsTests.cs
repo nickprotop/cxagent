@@ -31,7 +31,7 @@ public class CoreCommandsTests : IDisposable
         // and mode commands both read the session's own state, so it has to be a real session.
         var session = manager.Open(_dir,
             ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
         return (manager, session, sink);
     }
@@ -117,7 +117,7 @@ public class ModePersistenceTests : IDisposable
         using var manager = SessionManager.Create(new AppPaths(_cfg));
         var session = manager.Open(_work,
             ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         // The policy is what carries the folder; without one there is nothing to remember against,

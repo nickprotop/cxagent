@@ -25,7 +25,7 @@ public class CodeConfiguredAppTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static SessionPorts Ports(ISessionObserver sink) =>
-        new() { Observer = sink, Tools = new BufferedJobPanel() };
+        new() { Observer = sink, ToolObserver = new BufferedJobPanel() };
 
     private static MockLlmProvider Replying(string text)
     {

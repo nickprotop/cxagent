@@ -185,6 +185,15 @@ public sealed class Agent
     /// </summary>
     private readonly AskUserTool? _askUser;
 
+    /// <summary>The embedder's own tools, or null when nothing was injected. Offered to a child as
+    /// well as a parent: a sub-agent that cannot call show_diff would do the work and skip the
+    /// showing, which is the one thing the tool exists for.</summary>
+    private readonly Plugins.AgentToolset? _agentTools;
+
+    /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
+    /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
+    internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
+
     /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
     public IReadOnlyList<TodoItem> Todos => _todos.Items;
 
@@ -484,7 +493,8 @@ public sealed class Agent
         string? label = null,
         Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
         string? workingDir = null,
-        string? instanceName = null)
+        string? instanceName = null,
+        IReadOnlyList<Plugins.IAgentTool>? agentTools = null)
     {
         // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
         //
@@ -534,6 +544,20 @@ public sealed class Agent
         // when the parent's turn is cancelled. Enforced here rather than trusted to the factory, so
         // the guarantee holds for any construction path.
         _askUser = askUser is not null && !isSubAgent ? new AskUserTool(askUser) : null;
+
+        // A CHILD KEEPS THESE, EXCEPT THE ONES THAT NEED A SCREEN. Injected tools are inherited by
+        // default — a child edits files exactly as its parent does — but a tool whose output is for
+        // a PERSON cannot work here: a child's rows go to a BufferedJobPanel that nothing displays,
+        // so the tool would render, report success, and have its output discarded. The model would
+        // be told its showing worked when nobody saw anything.
+        //
+        // FILTERED HERE, NOT IN THE FACTORY, for the reason _askUser is: enforced at construction,
+        // the guarantee holds for any path that builds a child. A withheld tool is one the child was
+        // never given, so calling it gets the ordinary "no such tool".
+        var offered = isSubAgent
+            ? agentTools?.Where(t => t.OfferToSubAgents).ToList()
+            : agentTools;
+        _agentTools = offered is { Count: > 0 } ? new Plugins.AgentToolset(offered) : null;
 
         _skills = new Skills.SkillLoader(() =>
         {
@@ -759,6 +783,11 @@ public sealed class Agent
             // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
             // the agent is asked to follow, a tool it was never given.
             .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
+            // THE EMBEDDER'S OWN. Last in the list, and dispatched last among the named tools, so a
+            // consumer can never shadow a built-in name the model already trusts. A tool the model
+            // is never TOLD about can never be called, so dispatch alone would have been half a
+            // feature.
+            .Concat(_agentTools?.Definitions() ?? [])
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1717,6 +1746,10 @@ public sealed class Agent
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
+                // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. WorkerToolset.InvokeAsync
+                // answers "no such tool" rather than null, so it ENDS this chain — a link placed
+                // after it never runs at all, and looks perfectly correct while never running.
+                ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1882,7 +1915,17 @@ public sealed class Agent
             ExitCode = failed ? -1 : 0,
             Duration = DateTimeOffset.UtcNow - started,
             ErrorMessage = failed ? result : null,
-            Output = new Dictionary<string, object?> { ["content"] = result },
+
+            // THE ROW SHOWS WHAT THE TOOL DREW, when that differs from what the model was told.
+            // This method rebuilds the result from the returned STRING, which discards a tool's own
+            // output dictionary — fine for every built-in, where the two are the same text, and
+            // wrong for an injected tool whose whole purpose is to render something. Seen live: a
+            // show_diff row displaying "README.md, +5 -1, shown above" — the model's confirmation —
+            // where the diff itself should have been.
+            Output = new Dictionary<string, object?>
+            {
+                ["content"] = _agentTools?.LastDisplay ?? result,
+            },
         };
         _jobs.ToolUpdated(job);
 
@@ -2308,6 +2351,13 @@ public sealed class Agent
         // operation — a row claiming a third-party server call was a local file read. "mcp" is the
         // honest label; the server's own name is already in DisplayName.
         _ when _mcp is not null && _mcp.Names().Contains(toolName) => "mcp",
+
+        // AN INJECTED TOOL IS ITS OWN TYPE, named after itself. Falling through to "file" would be
+        // the spawn bug above, one layer out: a front end that special-cases its own tool's rows —
+        // as cxagent does for show_diff, to keep the rendered diff expanded — matches on PluginType,
+        // and every injected tool arriving as "file" makes that impossible to write. Naming it after
+        // the tool means the front end that supplied the tool already knows the string.
+        _ when _agentTools is not null && _agentTools.Knows(toolName) => toolName,
 
         _ => "file",
     };

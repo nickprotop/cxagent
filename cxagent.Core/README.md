@@ -90,7 +90,7 @@ using var manager = SessionManager.Create(new AppPaths(configDir));
 var session = manager.Open(
     workingDirectory,                                        // the permission boundary
     resolution,                                              // which model — see below
-    new SessionPorts { Observer = sink, Tools = jobs });     // where words and tool activity go
+    new SessionPorts { Observer = sink, ToolObserver = jobs });   // where words and tool activity go
 
 if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
     await started.Turn;
@@ -192,6 +192,25 @@ that runs a tool ungated.
 
 Whether the model *uses* a tool is the model's business, not the library's.
 
+### Tools of your own
+
+An embedder can add tools this library could not have anticipated — a `deploy(env)`, a
+`queryOurWarehouse(sql)`, something that draws into your own UI. One interface, one line of wiring:
+
+```csharp
+Tools = [new DeployTool(), new QueryWarehouseTool()],
+```
+
+They are offered to the model beside the built-ins, dispatched behind them (so a consumer cannot
+shadow `read_file`), and gated on the way through — a tool you inject cannot run ungated, because the
+wrapping happens where the gate and the session's policy both are rather than being left to you to
+remember.
+
+Your tool answers one question the engine cannot: does **this call** need a human. Everything else —
+asking, persisting the answer, scoping it to the folder — is already here.
+
+**[Injecting your own tools →](docs/tools.md)**
+
 ---
 
 ## Permissions
@@ -217,7 +236,7 @@ buildGate: store => PermissionDecider.WithPrompt(store, notice, promptHook)
 var policy = new PermissionPolicy(workingDirectory, manager.Rules!, EditMode.AlwaysAsk);
 
 var session = manager.Open(workingDirectory, resolution,
-    new SessionPorts { Observer = sink, Tools = jobs, Policy = policy });
+    new SessionPorts { Observer = sink, ToolObserver = jobs, Policy = policy });
 ```
 
 Omit the policy and **every request is refused** — the decider has no directory to judge a path
@@ -388,8 +407,12 @@ session.Mode        // delegation and edit mode
 ## Reference and examples
 
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
+- **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
+  what `Gate` should return
 - **[SpectreAgent →](examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool
+- **[ToolAgent →](examples/ToolAgent)** — injecting your own tools, and the two gates each one
+  passes through
 
 ## License
 

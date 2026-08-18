@@ -383,6 +383,16 @@ public sealed class AgentHost : IDisposable
         /// offer a tool whose whole behaviour is to wait for a person.
         /// </summary>
         public Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? AskUser { get; init; }
+
+        /// <summary>
+        /// The embedder's own tools, already wrapped in <see cref="Plugins.GatedAgentTool"/> by
+        /// SessionFactory. Empty in every path that injects nothing.
+        ///
+        /// <para>ALREADY GATED WHEN IT ARRIVES. This type does no wrapping of its own, because the
+        /// session's policy is not visible here — doing it in two places is how one of them ends up
+        /// being the copy that forgets.</para>
+        /// </summary>
+        public IReadOnlyList<Plugins.IAgentTool> AgentTools { get; init; } = [];
     }
 
     public AgentHost(AgentRuntime runtime, ISessionObserver sink, IToolObserver jobPanel,
@@ -557,7 +567,11 @@ public sealed class AgentHost : IDisposable
 
             // AND THE WAY TO ASK. Null in every headless path, and refused outright for a child —
             // Agent enforces that itself rather than trusting whoever constructs it.
-            askUser: _runtime.AskUser)
+            askUser: _runtime.AskUser,
+
+            // THE EMBEDDER'S OWN, gated before they got here. Offered to this agent and, through
+            // SubAgentRuntime, to every child it spawns.
+            agentTools: _runtime.AgentTools)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more

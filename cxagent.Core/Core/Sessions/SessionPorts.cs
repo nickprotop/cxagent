@@ -19,11 +19,32 @@ public sealed record SessionPorts
     /// <summary>What the session reports — text, reasoning, turn boundaries, failures.</summary>
     public required ISessionObserver Observer { get; init; }
 
-    /// <summary>What it reports about the tools it runs.</summary>
-    public required IToolObserver Tools { get; init; }
+    /// <summary>
+    /// What it reports about the tools it runs.
+    ///
+    /// <para>NAMED FOR THE ROLE, NOT THE SUBJECT. This was <c>Tools</c> until consumer-injected
+    /// tools needed that name, and they have the better claim on it: they ARE the tools, while this
+    /// only watches them. Renaming the observer was the cheaper half — two call sites against a
+    /// port that every embedder would otherwise have to think about twice.</para>
+    /// </summary>
+    public required IToolObserver ToolObserver { get; init; }
 
     /// <summary>How it asks the user something, or null when there is nobody to ask.</summary>
     public AskUser? Ask { get; init; }
+
+    /// <summary>
+    /// Tools this embedder supplies, offered to the model alongside the built-ins. Empty by default.
+    ///
+    /// <para>PER SESSION, like everything else here, and for the sharpest version of the reason:
+    /// a tool that renders into ONE session's transcript must never be handed to another. That is
+    /// not a hypothetical — it is exactly what <c>show_diff</c> does, holding a chat control in its
+    /// closure.</para>
+    ///
+    /// <para>Wrap each in <see cref="Plugins.GatedAgentTool"/> before it reaches an agent. Passing a
+    /// bare tool here is not a compile error and produces a tool that runs UNGATED, which is why
+    /// SessionFactory does the wrapping rather than trusting every embedder to remember.</para>
+    /// </summary>
+    public IReadOnlyList<Plugins.IAgentTool> Tools { get; init; } = [];
 
     /// <summary>
     /// How THIS session's permission questions are judged — its working directory and edit mode.

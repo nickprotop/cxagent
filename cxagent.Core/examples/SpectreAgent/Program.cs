@@ -86,7 +86,7 @@ var console = new ConsoleSink();
 var policy = new PermissionPolicy(workingDir, manager.Rules!, EditMode.AlwaysAsk);
 
 var session = manager.Open(workingDir, resolution,
-    new SessionPorts { Observer = console, Tools = new ToolSink(), Policy = policy });
+    new SessionPorts { Observer = console, ToolObserver = new ToolSink(), Policy = policy });
 
 AnsiConsole.MarkupLine($"[grey]model:[/] {session.InstanceName.EscapeMarkup()} · [grey]blank line to quit[/]");
 AnsiConsole.WriteLine();

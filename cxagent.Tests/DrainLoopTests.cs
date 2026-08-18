@@ -60,7 +60,7 @@ public class DrainLoopTests : IDisposable
     {
         manager = SessionManager.Create(new AppPaths(_dir));
         return manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
     }
 

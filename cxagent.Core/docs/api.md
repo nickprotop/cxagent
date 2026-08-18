@@ -239,14 +239,23 @@ mid-session — that is what makes an unfinished row mean something.
 ## SessionPorts
 
 ```csharp
-new SessionPorts { Observer = …, Tools = … }
+new SessionPorts { Observer = …, ToolObserver = … }
 ```
 
 | | Required | |
 |---|---|---|
 | `Observer` | **yes** | `ISessionObserver` — where words go |
-| `Tools` | yes | `IToolObserver` — tool activity; pass a no-op to ignore it |
+| `ToolObserver` | **yes** | `IToolObserver` — tool activity; pass a no-op to ignore it |
+| `Ask` | no | `AskUser` — how the model asks the user something. Null when there is nobody to ask |
 | `Policy` | with a gate | `PermissionPolicy` — the folder and edit mode requests are judged against. **A gate without one refuses everything** |
+| `Tools` | no | `IReadOnlyList<IAgentTool>` — your own tools, offered beside the built-ins. Empty by default. See [tools.md](tools.md) |
+
+**`ToolObserver` was called `Tools` before injected tools existed.** The observer yielded the name
+because injected tools have the better claim on it: they ARE the tools, the observer only watches
+them.
+
+Every port is **per session**, which matters most for `Tools`: a tool that renders into one session's
+transcript must never be handed to another.
 
 ## ISessionObserver
 

@@ -79,6 +79,21 @@ public sealed class SubAgentFactory
         public required PluginRegistry Plugins { get; init; }
 
         /// <summary>
+        /// The embedder's injected tools, inherited whole.
+        ///
+        /// <para>A CHILD KEEPS THESE BY DEFAULT, unlike spawn and ask. Those are withheld because a
+        /// child has no user to answer and no spawner to nest with; an injected tool usually answers
+        /// to neither, since a child edits files exactly as its parent does.</para>
+        ///
+        /// <para>THE FILTERING IS <see cref="Agent"/>'S, NOT THIS RECORD'S. A tool that draws for a
+        /// person declares <c>OfferToSubAgents => false</c> and the Agent constructor withholds it —
+        /// beside <c>_askUser</c>, and for the same reason it is enforced there: the guarantee then
+        /// holds for any path that builds a child, not only this one. So this list is what a child
+        /// COULD have; what it is offered is decided one layer down.</para>
+        /// </summary>
+        public IReadOnlyList<Plugins.IAgentTool>? AgentTools { get; init; }
+
+        /// <summary>
         /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
         /// a user reads covers the work, not the agent that happened to do it, and a child with its
         /// own ledger spends against nothing.
@@ -274,7 +289,13 @@ public sealed class SubAgentFactory
             // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
             // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
             // not have, and never told that its final message is the entire answer.
-            isSubAgent: true);
+            isSubAgent: true,
+
+            // PASSED IN FULL; the Agent constructor decides what a child is actually offered. Most
+            // injected tools are inherited — a child edits files exactly as its parent does — but one
+            // that draws for a PERSON declares OfferToSubAgents => false and is withheld there, where
+            // _askUser is withheld too, so the guarantee holds for every path that builds a child.
+            agentTools: _runtime.AgentTools);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //
@@ -284,6 +305,12 @@ public sealed class SubAgentFactory
         //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what
         //     makes "no sub-agents of sub-agents" true rather than aspirational: it is not a rule the
         //     child is asked to follow, it is a tool it was never given.
+        //
+        //   * INJECTED TOOLS *ARE* PASSED, though not all of them survive: the Agent constructor
+        //     drops any whose OfferToSubAgents is false. The two absences above are facts about
+        //     being a child — no user, no spawner — and most injected tools answer to neither. A
+        //     tool that renders for a person is the one that does: a child's rows go to a buffer
+        //     nothing displays, so it would draw, succeed, and be discarded.
         // instance:model, THE SAME LABEL THE LEDGER KEYS BY. A bare model name is ambiguous — two
         // instances can serve one model with different endpoints and windows — and this row is
         // written to the same history database the session rows are, so the two must agree or a

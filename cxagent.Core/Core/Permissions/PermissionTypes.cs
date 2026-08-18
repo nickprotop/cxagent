@@ -5,12 +5,19 @@ namespace CxAgent.Core.Permissions;
 /// write, running locally with the user's credentials, whose arguments follow a schema we cannot
 /// interpret.
 ///
+/// <para><c>Tool</c> is a consumer-injected <see cref="Plugins.IAgentTool"/>: may this embedder's
+/// own tool run in this folder at all. It is deliberately NOT reused from the kinds above — "may
+/// show_diff run here" is not a shell, file or http question, and a rule stored under one of those
+/// names would misdescribe itself to anyone reading permissions.json. Note that answering it yes
+/// never exempts the tool from its own <see cref="Plugins.IAgentTool.Gate"/>, which runs on every
+/// call; the two are different questions and this kind only answers the first.</para>
+///
 /// <para>PERSISTED BY NAME (<c>JsonStringEnumConverter</c>), so adding a value is a one-way change to
-/// permissions.json: an older binary reading a file containing an <c>"Mcp"</c> rule throws, treats
-/// the whole file as empty — losing every rule and all folder trust — and clobbers it on the next
-/// save. Acceptable, but a downgrade hazard worth knowing about.</para>
+/// permissions.json: an older binary reading a file containing an <c>"Mcp"</c> or <c>"Tool"</c> rule
+/// throws, treats the whole file as empty — losing every rule and all folder trust — and clobbers it
+/// on the next save. Acceptable, but a downgrade hazard worth knowing about.</para>
 /// </summary>
-public enum PermissionKind { Shell, FileRead, FileWrite, Http, Mcp }
+public enum PermissionKind { Shell, FileRead, FileWrite, Http, Mcp, Tool }
 
 /// <summary>Per-folder trust-on-first-use state. Unknown (never asked) behaves as Untrusted for
 /// the silent class — an unanswered question must never behave like a yes.</summary>

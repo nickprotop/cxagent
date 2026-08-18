@@ -66,7 +66,7 @@ public class ErrorOnceTests : IDisposable
         var counter = new LineCounter();
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new ThrowingProvider()),
-            new SessionPorts { Observer = counter, Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = counter, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("go"));
