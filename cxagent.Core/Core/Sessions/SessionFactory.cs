@@ -19,14 +19,19 @@ namespace CxAgent.Core.Sessions;
 /// needs its root string. A Wire() method on Session would need the gate, and the ordering cycle
 /// would be back.</para>
 /// </summary>
-public static class SessionFactory
+/// <remarks>
+/// INTERNAL, like the Note* members it calls. Assembling a session is a sequence — ports, policy,
+/// catalog, agent types, spawner, services, then the host — and half of it leaves a session that
+/// looks built and answers wrongly. <see cref="SessionManager.Open"/> is the way in.
+/// </remarks>
+internal static class SessionFactory
 {
     /// <param name="session">The session to wire. Its host is replaced, and the outgoing one disposed.</param>
     /// <param name="resolution">Which provider, instance, window, agent types and limits to use.</param>
     /// <param name="shared">Process-wide services — see <see cref="SharedServices"/>.</param>
     /// <param name="ports">This session's own connections — see <see cref="SessionPorts"/>.</param>
     /// <param name="mode">Single or fan-out.</param>
-    public static void Wire(Session session, ResolvedConfig resolution,
+    internal static void Wire(Session session, ResolvedConfig resolution,
         SharedServices shared, SessionPorts ports, WorkingMode mode)
     {
         // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.

@@ -11,7 +11,7 @@ namespace CxAgent.Core.Agents;
 /// <c>run_shell</c>. Background is a different tool — it needs a registry, a notification route and a
 /// lifetime rule — and pretending this one is asynchronous would mean building all three now.</para>
 /// </summary>
-public sealed class SubAgentSpawner : ISubAgentSpawner
+internal sealed class SubAgentSpawner : ISubAgentSpawner
 {
     private readonly SubAgentFactory _factory;
     private readonly AgentTypeCatalog _types;

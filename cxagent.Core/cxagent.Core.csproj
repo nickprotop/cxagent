@@ -10,11 +10,39 @@
 
   <PropertyGroup>
     <PackageId>CxAgent.Core</PackageId>
-    <Description>Sessions, agents and the turn loop behind cxagent — usable without a terminal.</Description>
+    <Version>1.0.0</Version>
     <Authors>Nikolaos Protopapas</Authors>
+    <Company>Nikolaos Protopapas</Company>
+    <Product>CxAgent</Product>
+    <Copyright>Copyright (c) 2026 Nikolaos Protopapas</Copyright>
+
+    <Title>CxAgent.Core — embeddable coding-agent sessions</Title>
+    <Description>The sessions, agents and turn loop behind cxagent, usable without a terminal. A conversation, the agent running it, tool execution, sub-agent delegation, permissions, MCP and resumable stores — you supply where text goes. No UI dependency.</Description>
+    <PackageTags>ai;agent;llm;coding-agent;mcp;anthropic;openai;ollama;tools;sub-agents</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/nickprotop/cxagent</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/nickprotop/cxagent</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nickprotop/cxagent.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- SOURCE LINK, so a consumer stepping into this package lands on the real line rather than
+         decompiled approximations. Embedded rather than a separate .snupkg: one artifact to publish,
+         and the symbols cannot go missing from a mirror that only carried the .nupkg. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+    <IncludeSymbols>false</IncludeSymbols>
+
+    <!-- THE XML DOCS SHIP. Every public member here carries the reasoning behind it, and stripping
+         that at the package boundary would leave a consumer with signatures and no WHY — which is
+         most of what this codebase's comments are for. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- The resume buffer and the usage archive. -->
