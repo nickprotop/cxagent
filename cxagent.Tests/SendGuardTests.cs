@@ -30,7 +30,7 @@ public class SendGuardTests : IDisposable
     {
         manager = SessionManager.Create(new AppPaths(_dir));
         return manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
     }
 

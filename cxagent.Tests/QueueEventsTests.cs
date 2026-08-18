@@ -190,7 +190,7 @@ public class CancelTurnTests : IDisposable
         manager = SessionManager.Create(new AppPaths(_dir));
         said = new BufferedChatSink();
         return manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = said, Tools = new BufferedJobPanel() }, AgentMode.Single);
+            new SessionPorts { Observer = said, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
     }
 
     // FALSE WHEN IDLE, and nothing said: a stop arriving just after a turn ended is an ordinary race,
@@ -314,7 +314,7 @@ public class CancelRestoresQueuedTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         string? handedBack = null;
@@ -336,7 +336,7 @@ public class CancelRestoresQueuedTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("m")),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         var handedBack = 0;
@@ -388,7 +388,7 @@ public class InitEchoTests : IDisposable
         var provider = new MockLlmProvider("m");
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(provider),
-            new SessionPorts { Observer = shown, Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = shown, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         var started = Assert.IsType<Session.SubmitOutcome.Started>(session.Initialise());

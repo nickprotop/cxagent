@@ -18,7 +18,7 @@ public class SessionManagerTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static SessionPorts Ports() =>
-        new() { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() };
+        new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
 
     [Fact]
     public void Create_BuildsTheSharedHalfOnce()

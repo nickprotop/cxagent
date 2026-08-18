@@ -92,7 +92,7 @@ public class HeadlessSessionTests : IDisposable
         var sink = new BufferedChatSink();
 
         var session = manager.Open(_work,
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() });
 
         await session.SendAndWait("summarise this folder");
 
@@ -129,7 +129,7 @@ public class HeadlessSessionTests : IDisposable
             new SessionPorts
             {
                 Observer = new BufferedChatSink(),
-                Tools = new BufferedJobPanel(),
+                ToolObserver = new BufferedJobPanel(),
 
                 // ALWAYS-ASK, so nothing is silently allowed and every write reaches the gate —
                 // where this host's policy answers instead of a person.
@@ -220,7 +220,7 @@ public class HeadlessSessionTests : IDisposable
         // 4. THE SESSION. Output to a buffer the host reads afterwards.
         var sink = new BufferedChatSink();
         var session = manager.Open(workDir,
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() });
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() });
 
         await session.SendAndWait("List the files here and say what this project is.");
 

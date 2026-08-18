@@ -63,7 +63,7 @@ public class TwoLiveSessionsTests : IDisposable
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
             },
-            new SessionPorts { Observer = sink, Tools = jobs },
+            new SessionPorts { Observer = sink, ToolObserver = jobs },
             AgentMode.Single);
 
         return (session.Host!, sink, jobs);

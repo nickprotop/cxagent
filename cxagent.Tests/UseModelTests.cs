@@ -25,7 +25,7 @@ public class UseModelTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static SessionPorts Ports() =>
-        new() { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() };
+        new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
 
     /// <summary>Two named instances with declared windows — the shape of a real config.</summary>
     private static ProviderRegistry TwoInstances(out ILlmProvider first, out ILlmProvider second)

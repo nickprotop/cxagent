@@ -25,7 +25,7 @@ public class SwitchModelTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static SessionPorts Ports() =>
-        new() { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() };
+        new() { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() };
 
     private Session WiredSession(SessionManager manager, ILlmProvider provider) =>
         manager.Open(_dir, ResolvedConfig.ForTesting(provider), Ports(), AgentMode.Single);
@@ -116,7 +116,7 @@ public class SwitchModelTests : IDisposable
         var sink = new BufferedChatSink();
 
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("model-one")),
-            new SessionPorts { Observer = sink, Tools = new BufferedJobPanel() }, AgentMode.Single);
+            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() }, AgentMode.Single);
 
         session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").WithContextWindow(8_000).Model);
 
@@ -139,7 +139,7 @@ public class SwitchModelTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider("first")),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         var spawner = new RecordingSpawner();

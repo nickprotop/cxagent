@@ -595,7 +595,7 @@ public static class AppBootstrap
                 new Core.Sessions.SessionPorts
                 {
                     Observer = sink,
-                    Tools = jobPanelSink,
+                    ToolObserver = jobPanelSink,
                     Ask = mainWindow.AskQuestionAsync,
 
                     // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the

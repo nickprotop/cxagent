@@ -19,8 +19,15 @@ public sealed record SessionPorts
     /// <summary>What the session reports — text, reasoning, turn boundaries, failures.</summary>
     public required ISessionObserver Observer { get; init; }
 
-    /// <summary>What it reports about the tools it runs.</summary>
-    public required IToolObserver Tools { get; init; }
+    /// <summary>
+    /// What it reports about the tools it runs.
+    ///
+    /// <para>NAMED FOR THE ROLE, NOT THE SUBJECT. This was <c>Tools</c> until consumer-injected
+    /// tools needed that name, and they have the better claim on it: they ARE the tools, while this
+    /// only watches them. Renaming the observer was the cheaper half — two call sites against a
+    /// port that every embedder would otherwise have to think about twice.</para>
+    /// </summary>
+    public required IToolObserver ToolObserver { get; init; }
 
     /// <summary>How it asks the user something, or null when there is nobody to ask.</summary>
     public AskUser? Ask { get; init; }

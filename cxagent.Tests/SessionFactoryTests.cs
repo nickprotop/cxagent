@@ -46,11 +46,11 @@ public class SessionFactoryTests
         var ports = new SessionPorts
         {
             Observer = new BufferedChatSink(),
-            Tools = new BufferedJobPanel(),
+            ToolObserver = new BufferedJobPanel(),
         };
 
         Assert.NotNull(ports.Observer);
-        Assert.NotNull(ports.Tools);
+        Assert.NotNull(ports.ToolObserver);
         Assert.Null(ports.Ask);
     }
 
@@ -75,7 +75,7 @@ public class SessionFactoryTests
             SessionFactory.Wire(session,
                 Core.Llm.ResolvedConfig.ForTesting(provider),
                 new SharedServices(),
-                new SessionPorts { Observer = observer, Tools = new BufferedJobPanel() },
+                new SessionPorts { Observer = observer, ToolObserver = new BufferedJobPanel() },
                 AgentMode.Single);
 
             Assert.NotNull(session.Host);
@@ -105,13 +105,13 @@ public class SessionFactoryTests
 
             SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider("first")),
                 new SharedServices(),
-                new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+                new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
                 AgentMode.Single);
             var first = session.Host;
 
             SessionFactory.Wire(session, Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider("second")),
                 new SharedServices(),
-                new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+                new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
                 AgentMode.Single);
 
             Assert.NotSame(first, session.Host);

@@ -166,7 +166,7 @@ internal static class SessionFactory
                 AskUser = ports.Ask is null ? null : (questions, ct) => ports.Ask(questions, ct),
             },
             ports.Observer,
-            ports.Tools,
+            ports.ToolObserver,
             new AgentHost.SessionStores
             {
                 // Every completed turn lands here, so a crash leaves something to resume from.

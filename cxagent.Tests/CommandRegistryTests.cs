@@ -25,7 +25,7 @@ public class CommandRegistryTests : IDisposable
 
     private Session Wired(SessionManager manager, MockLlmProvider? provider = null) =>
         manager.Open(_dir, ResolvedConfig.ForTesting(provider ?? new MockLlmProvider()),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
     private static SessionCommand Declared(string name) =>
@@ -41,7 +41,7 @@ public class CommandRegistryTests : IDisposable
         var first = Wired(manager);
         var second = manager.Open(Path.Combine(_dir, "b"),
             ResolvedConfig.ForTesting(new MockLlmProvider()),
-            new SessionPorts { Observer = new BufferedChatSink(), Tools = new BufferedJobPanel() },
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
         Session? seen = null;
