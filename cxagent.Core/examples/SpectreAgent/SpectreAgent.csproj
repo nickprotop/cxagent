@@ -15,7 +15,7 @@
          <PackageReference Include="CxAgent.Core" Version="…" /> instead; referencing the project
          here means a breaking change to the surface breaks this build rather than being discovered
          after a release. -->
-    <ProjectReference Include="../../cxagent.Core/cxagent.Core.csproj" />
+    <ProjectReference Include="../../cxagent.Core.csproj" />
   </ItemGroup>
 
 </Project>

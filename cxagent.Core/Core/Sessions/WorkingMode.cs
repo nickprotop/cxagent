@@ -32,7 +32,7 @@ namespace CxAgent.Core.Sessions;
 /// <param name="Agent">Whether this agent works alone or may delegate to sub-agents.</param>
 /// <param name="Edits">When a file write happens without asking.</param>
 public readonly record struct WorkingMode(
-    AgentMode Agent = AgentMode.Single,
+    AgentMode Agent = AgentMode.FanOut,
     EditMode Edits = EditMode.AlwaysAsk)
 {
     /// <summary>
@@ -55,8 +55,18 @@ public readonly record struct WorkingMode(
     /// <para>THE COST IS REAL AND ACCEPTED: a first run in a new folder now prompts on its first
     /// write, one Shift+Tab from never prompting again there. That is the trade the rest of the
     /// system already makes — trust asks once too.</para>
+    ///
+    /// <para><see cref="AgentMode.FanOut"/> ON THE OTHER AXIS, and the asymmetry is deliberate. The
+    /// edits axis defaults to the NARROW value because a permissive default is a silent widening
+    /// nobody chose; delegation is not a widening at all — a child runs under the same permissions,
+    /// in the same folder, against the same gate. What it changes is capability, and an agent that
+    /// cannot delegate is not safer, only less able.</para>
+    ///
+    /// <para>SO SINGLE IS THE OPT-OUT. A front end with nowhere to show a child's progress asks for
+    /// it explicitly, which is the right way round: the capable default, narrowed by a caller who
+    /// knows their surface cannot render it.</para>
     /// </summary>
-    public static WorkingMode Default => new(AgentMode.Single, EditMode.AlwaysAsk);
+    public static WorkingMode Default => new(AgentMode.FanOut, EditMode.AlwaysAsk);
 
     /// <summary>
     /// An agent mode IS a working mode with nothing else set.

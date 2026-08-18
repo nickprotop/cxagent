@@ -309,7 +309,7 @@ if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started sta
 
 **[Full API documentation and examples →](cxagent.Core/README.md)** — the four calls an app is, why
 `Submit` returns a receipt rather than a task, steering a running turn, permissions, and a worked
-[Spectre.Console example](examples/SpectreAgent).
+[Spectre.Console example](cxagent.Core/examples/SpectreAgent).
 
 ## The cx family
 

@@ -44,6 +44,18 @@
     <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <!-- THE EXAMPLES ARE CONSUMERS, NOT SOURCES. They live under this directory so the package's own
+       README can point at them without leaving the library's tree, and the SDK's default glob would
+       otherwise compile them INTO the library — which fails immediately (they reference Spectre.Console,
+       which Core must never see) and would ship them if it did not.
+       Excluded rather than moved out because discoverability from the package won the trade; this
+       one line is what it costs. -->
+  <ItemGroup>
+    <Compile Remove="examples/**" />
+    <None Remove="examples/**" />
+    <EmbeddedResource Remove="examples/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- The resume buffer and the usage archive. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />

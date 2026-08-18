@@ -38,6 +38,9 @@ if (!resolution.HasProvider)
 using var manager = SessionManager.Create(new AppPaths(configDir));
 
 var console = new ConsoleSink();
+// NO MODE PASSED, so this gets WorkingMode.Default — fan-out with always-ask edits. Delegation is
+// on because it is capability rather than permission: a child runs under the same gate, in the same
+// folder. A front end with nowhere to show a child would pass AgentMode.Single instead.
 var session = manager.Open(workingDir, resolution,
     new SessionPorts { Observer = console, Tools = new ToolSink() });
 

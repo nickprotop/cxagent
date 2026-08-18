@@ -42,11 +42,61 @@ different things for a caller to do:
 
 ## You supply the observer
 
-`SessionPorts.Observer` is an `ISessionObserver`: where assistant text, tool activity and the
-session's own notices arrive. `BufferedChatSink` is a real non-UI implementation if you only need to
-collect output.
+`SessionPorts.Observer` is an `ISessionObserver` — where assistant text, tool activity and the
+session's own notices arrive. Nothing in this package writes to a console, opens a window, or ends a
+process, and this is why.
 
-Nothing in this package writes to a console, opens a window, or ends a process.
+A complete one, in the shape a console front end wants:
+
+```csharp
+internal sealed class ConsoleSink : ISessionObserver
+{
+    public void UserTurnAdded(ChatMessageId id, string text) { }   // already on screen
+    public void AssistantTurnBegan(ChatMessageId id) { }
+
+    // Written raw: this is model output, and a stray bracket in it is not a colour tag.
+    public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
+
+    public void AssistantReasoningAppended(ChatMessageId id, string text) { }   // hide it, or don't
+    public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
+    public void AssistantLabelled(ChatMessageId id, string header) { }
+
+    // The session's OWN notices — a mode change, a model switch, "Stopped." — in Core's markup
+    // dialect. Render the tags, or strip them; do not print them raw beside model output.
+    public void Said(string message) => Console.WriteLine(Strip(message));
+    public void Failed(string message) => Console.Error.WriteLine(message);
+
+    private static string Strip(string s) =>
+        System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[^\]]*\]", "");
+}
+```
+
+And the tool half, which is optional — pass a no-op if you do not want job rows:
+
+```csharp
+internal sealed class ToolSink : IToolObserver
+{
+    private readonly HashSet<string> _announced = [];
+
+    // ANNOUNCE FROM HERE, not from ToolUpdated. This fires while jobs RUN; ToolUpdated fires when
+    // one FINISHES, so announcing starts from there prints nothing at all — a finished job is never
+    // Running. The Spectre example got this wrong first.
+    public void ToolsChanged(IReadOnlyList<Job> jobs)
+    {
+        foreach (var job in jobs)
+            if (job.State is JobState.Running && _announced.Add(job.Id))
+                Console.WriteLine($"  · {job.PluginType}");
+    }
+
+    public void ToolUpdated(Job job) { }
+    public void ToolProgressed(Job job) { }
+    public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
+    public void ToolOutputAppended(string jobId, string delta) { }
+}
+```
+
+`BufferedChatSink` and `BufferedJobPanel` ship with the package if you only need to collect output —
+they are what the tests use.
 
 ## Steering a running turn
 
@@ -117,13 +167,13 @@ and the last registration wins.
 
 ## A worked example
 
-[`examples/SpectreAgent`](https://github.com/nickprotop/cxagent/tree/master/examples/SpectreAgent) is
+[`examples/SpectreAgent`](examples/SpectreAgent) is
 a second front end in about a hundred lines — a prompt, streamed output, and a line per tool — built
 on [Spectre.Console](https://spectreconsole.net/) rather than the TUI cxagent itself uses. It reads
 the same `config.json`, so it runs against whatever provider is already configured:
 
 ```
-dotnet run --project examples/SpectreAgent -- /path/to/repo
+dotnet run --project cxagent.Core/examples/SpectreAgent -- /path/to/repo
 ```
 
 ## What is not here

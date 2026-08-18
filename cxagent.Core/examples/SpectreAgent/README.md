@@ -1,13 +1,13 @@
 # SpectreAgent
 
-A second front end for [`CxAgent.Core`](../../cxagent.Core/README.md), in about a hundred lines.
+A second front end for [`CxAgent.Core`](../../README.md), in about a hundred lines.
 
 cxagent's own UI is a full TUI — panels, live token gauges, inline permission prompts. This is the
 other end of the range: a prompt, streamed text, and one line per tool. The point is that the same
 package drives both, because nothing in it assumes a terminal.
 
 ```
-dotnet run --project examples/SpectreAgent -- /path/to/repo
+dotnet run --project cxagent.Core/examples/SpectreAgent -- /path/to/repo
 ```
 
 It reads the same `config.json` cxagent does, so it runs against whatever provider you already have
@@ -33,6 +33,22 @@ only reason Core never writes to a console itself. `ToolSink` does the same for 
 **`Submit` returns a receipt, not a task.** `Started` carries the turn, `Queued` means one was
 already running and this went to the queue, `NoAgent` means nothing is wired. Three outcomes because
 they are three different things for a caller to do.
+
+## It delegates
+
+`WorkingMode.Default` is fan-out, so this example gets the spawn tool without asking for it:
+
+```
+> use a sub-agent to explore the Export folder and tell me what it does
+  · llm_agent
+  · file
+…
+76,608 tokens
+```
+
+Delegation is capability rather than permission — a child runs under the same gate, in the same
+folder, with the same rules. A front end with nowhere to show a child's progress passes
+`AgentMode.Single` instead.
 
 ## Two things worth copying
 
