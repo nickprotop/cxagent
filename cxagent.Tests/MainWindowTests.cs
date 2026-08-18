@@ -130,7 +130,7 @@ public class MainWindowTests
     [Fact]
     public void Build_NoProvider_DisablesSubmission_ShowsErrors()
     {
-        var res = new ResolvedConfig(null, null, new[] { "config.json not found at '/x'." });
+        var res = new ResolvedConfig(null, ProviderCatalog.Empty, new[] { "config.json not found at '/x'." });
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
@@ -161,7 +161,7 @@ public class MainWindowTests
     [Fact]
     public void SetSubmissionEnabled_FlipsFlag_AndRefreshesPlaceholder()
     {
-        var noProvider = new ResolvedConfig(null, null, new[] { "config.json not found." });
+        var noProvider = new ResolvedConfig(null, ProviderCatalog.Empty, new[] { "config.json not found." });
         var mw = new MainWindow(Sys(), noProvider, Logs());
         mw.Build();
 

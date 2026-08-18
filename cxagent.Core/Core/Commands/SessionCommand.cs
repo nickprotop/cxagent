@@ -72,7 +72,7 @@ public enum CommandOutcome
 /// <c>/mcp reload</c>, <c>/stats clear</c> and <c>/mode fan-out</c> existed in the dispatcher and
 /// nowhere a user could find them. A command that takes arguments and one that does not also looked
 /// identical in the list, which is the discovery half of the same gap.</para>
-/// </summary>
+/// </param>
 public readonly record struct SessionCommand(
     string Name,
     string Summary,

@@ -36,7 +36,7 @@ public readonly record struct ModeQuery(string Argument, WorkingMode Current,
 /// <summary>
 /// The decision behind <c>/mode</c>, separated from the wiring that applies it.
 ///
-/// <para>SEPARATED FOR THE SAME REASON AS <see cref="EscapeRouting"/> AND <see cref="PromptQueue"/>:
+/// <para>SEPARATED FOR THE SAME REASON AS <c>EscapeRouting</c> AND <c>PromptQueue</c>:
 /// the decision is worth testing and needs no window, no provider and no running agent. Everything
 /// here is a pure function of (argument, current mode, is a turn running).</para>
 /// </summary>

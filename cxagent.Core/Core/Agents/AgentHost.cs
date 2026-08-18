@@ -66,7 +66,7 @@ public sealed class AgentHost : IDisposable
     /// an F5 re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
 
     /// <summary>
-    /// The subprocesses behind <see cref="_runtime.Mcp"/>, held only so <see cref="Dispose"/> can end them.
+    /// The subprocesses behind <c>_runtime.Mcp</c>, held only so <see cref="Dispose"/> can end them.
     ///
     /// <para>Separate from the toolset because ownership and use are different concerns: the toolset
     /// is asked what tools exist and never asked to shut anything down, and the host is the thing
@@ -83,7 +83,7 @@ public sealed class AgentHost : IDisposable
     /// </summary>
 
     /// <summary>
-    /// Usage history — a DIFFERENT database from <see cref="_stores.Resume"/>, and optional for the same
+    /// Usage history — a DIFFERENT database from <c>_stores.Resume</c>, and optional for the same
     /// reason: a session that cannot record statistics is unaffected in every way that matters.
     /// </summary>
 
@@ -128,7 +128,7 @@ public sealed class AgentHost : IDisposable
     /// <summary>
     /// The active provider instance's context window in tokens (ProviderInstanceConfig.ContextWindow —
     /// P11 Task 1), threaded through from ResolvedConfig at construction time rather than read off
-    /// <see cref="_runtime.Provider"/> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
+    /// <c>_runtime.Provider</c> itself: ILlmProvider exposes identity (ProviderId/ModelId) but not this
     /// config-only number, and adding it to the interface would ripple into every vendor driver and
     /// test double for a value only ConfigResolver's config lookup actually has. Null when the user
     /// hasn't set contextWindow for this instance — EffectiveCompressThreshold treats that as "unknown"
@@ -292,14 +292,7 @@ public sealed class AgentHost : IDisposable
 
     /// <summary>Raises <see cref="TurnCompleted"/>. Called by the loop, which is the only thing that
     /// knows a turn boundary.</summary>
-    internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);
-
-    /// <param name="store">
-    /// Where completed turns are recorded so a crash is recoverable, or null for a session that is
-    /// not worth persisting (every test that does not care, and any run whose store failed to open).
-    /// Optional because an agent without one is degraded, not broken.
-    /// </param>
-    /// <summary>
+    internal void OnTurnCompleted(int toolCalls) => TurnCompleted?.Invoke(this, toolCalls);    /// <summary>
     /// Where a session's record goes. Both optional, and both are the composition root's to own.
     ///
     /// <para>SHARED ACROSS SESSIONS, DELIBERATELY. These are keyed by agent id, not by session, so
@@ -433,44 +426,6 @@ public sealed class AgentHost : IDisposable
         _agent = BuildAgent();
     }
 
-    /// <summary>
-    /// One user message: put it on the transcript, hand it to the agent, put the answer back.
-    ///
-    /// <para>NO STATUS RETURN. This was <c>RunAsync</c> returning a <c>GoalState</c> that nobody read
-    /// — the composition root calls it as <c>_ = host.SendAsync(...)</c> — while the thing a user
-    /// actually sees, an error, goes to the sink. Returning a status nothing consumes only invites a
-    /// caller to start branching on it.</para>
-    ///
-    /// <para>NO COMPRESSION AROUND THIS CALL either. One used to sit in a <c>finally</c> here, on the
-    /// reasoning that a request has "nine early returns" and only one reached the end. An agent
-    /// compresses its OWN context from inside its own turn loop, where the measurement that triggers
-    /// it is taken. Both routes read the same last-reported input-token figure, and occupancy only
-    /// refreshes when a provider reports it — so after the loop compressed, nothing had re-measured,
-    /// this guard saw the same over-threshold figure and compressed again: two identical rows on a
-    /// live drive, 24.5s and 26.1s, the second summarising a context whose older half was already a
-    /// summary.</para>
-    /// </summary>
-    /// <remarks>
-    /// NO CONVERSATION PARAMETER. There was one — a List&lt;ChatMessage&gt; owned by AppBootstrap that
-    /// this method appended the prompt and the answer to, and that NOTHING ever read. What the model
-    /// sees is the agent's own context; what the user sees is the transcript control. This third list
-    /// was a leftover from before the agent owned its context, and it is this codebase's recurring rot
-    /// pattern: a value written and never read.
-    ///
-    /// <para>It also made /clear's comment wrong — "MUST CLEAR BOTH LISTS" — implying the model would
-    /// otherwise remember. Clearing the agent's context is the whole operation.</para>
-    /// </remarks>
-    /// <param name="echo">
-    /// What to show on the transcript, when that differs from what is sent.
-    ///
-    /// <para>FOR <c>/init</c>, WHERE THE TWO GENUINELY DIFFER. The user typed three words; the model
-    /// receives a long briefing about what to explore and what is worth writing down. Echoing the
-    /// briefing would put words in the user's mouth — a message they never wrote, attributed to them,
-    /// which they then have to scroll past on every later read of the transcript.</para>
-    ///
-    /// <para>Null means they are the same, which is every other caller.</para>
-    /// </param>
-    /// <summary>
     /// <summary>
     /// Runs one turn on this host's agent. A DELEGATION — everything around it is the session's.
     ///
@@ -692,7 +647,7 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>
-    /// Compresses <paramref name="conversation"/> now, unconditionally — what <c>/compress</c> calls.
+    /// Compresses <c>conversation</c> now, unconditionally — what <c>/compress</c> calls.
     ///
     /// <para>NO THRESHOLD TEST, deliberately: the user asked. The pressure checks that guard the two
     /// automatic routes exist to decide WHETHER to run, and re-applying one here would let the app

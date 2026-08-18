@@ -1,16 +1,20 @@
 namespace CxAgent.Core.Storage;
 
 /// <summary>Totals for one window of time.</summary>
+/// <param name="Cost">
+/// Summed only over sessions that reported a cost. Null when none did — see
+/// <see cref="SessionRecord.Cost"/>.
+/// </param>
+/// <param name="CostReportingSessions">
+/// How many sessions the <see cref="Cost"/> total is drawn from, for the "of N" line
+/// — a total silent about its own coverage would look complete when it may be a fraction of the
+/// window.
+/// </param>
 public sealed record StatsTotals(
     int Sessions, int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
     int CachedInputTokens = 0, int CacheReportingInputTokens = 0,
     int CacheWrittenTokens = 0,
-    /// <summary>Summed only over sessions that reported a cost. Null when none did — see
-    /// <see cref="SessionRecord.Cost"/>.</summary>
     decimal? Cost = null,
-    /// <summary>How many sessions the <see cref="Cost"/> total is drawn from, for the "of N" line
-    /// — a total silent about its own coverage would look complete when it may be a fraction of the
-    /// window.</summary>
     int CostReportingSessions = 0)
 {
     public int TotalTokens => InputTokens + OutputTokens;

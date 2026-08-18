@@ -35,7 +35,7 @@ public sealed class BufferedChatSink : ISessionObserver
     /// <para>SEPARATE FROM THE TRANSCRIPT because the spawn branch reads it. A cap or a stuck run
     /// announces itself only through <see cref="Failed"/>, and for a child that is a buffer nobody
     /// is watching — so the caller needs it addressable rather than buried in prose. <see
-    /// cref="SendOutcome"/> now carries the same information structurally; this stays because an
+    /// cref="Agents.SendResult"/> now carries the same information structurally; this stays because an
     /// error raised mid-run (a provider fault the loop recovered from) never reaches the outcome.</para>
     /// </summary>
     public IReadOnlyList<string> Errors { get { lock (_gate) return [.. _errors]; } }

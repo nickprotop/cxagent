@@ -175,11 +175,11 @@ public class CompletionValuesTests : IDisposable
         var session = Wired(manager, ResolvedConfig.ForTesting(provider));
         await session.SendAndWait("remember this");
 
-        var agentId = session.Host.SessionId;
+        var agentId = session.Host!.SessionId;
         var store = manager.Shared.Resume!;
         Assert.False(store.List(_dir).Single().Finished);   // open before the resume
 
-        var snapshot = new SessionSnapshot(agentId, session.Host.Context.Messages.ToList(),
+        var snapshot = new SessionSnapshot(agentId, session.Host!.Context.Messages.ToList(),
             0, 0, DateTimeOffset.UtcNow, null);
 
         var rewired = false;
@@ -216,11 +216,11 @@ public class CompletionValuesTests : IDisposable
         session.Changed += kinds.Add;
 
         await session.SendAndWait("say hi");
-        Assert.NotEmpty(session.Host.Context.Messages);
+        Assert.NotEmpty(session.Host!.Context.Messages);
 
         Assert.Equal(CommandStatus.Changed, session.ClearContext());
 
-        Assert.Empty(session.Host.Context.Messages);
+        Assert.Empty(session.Host!.Context.Messages);
         Assert.Contains(sink.Notices, n => n.Contains("cleared", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(SessionChangeKind.ContextCleared, kinds);
     }

@@ -188,7 +188,7 @@ public class SubAgentSpawnerTests
         await spawner.TryInvokeAsync(SpawnCall(description: "audit the parser"), c => child = c,
             CancellationToken.None);
 
-        var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system"));
+        var system = Assert.Single(child!.Agent.Context.Messages, m => m.Role == "system");
         Assert.DoesNotContain("audit the parser", system.Content, StringComparison.Ordinal);
     }
 
@@ -221,7 +221,7 @@ public class SubAgentSpawnerTests
         SubAgent? child = null;
         await spawner.TryInvokeAsync(call, c => child = c, CancellationToken.None);
 
-        var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system"));
+        var system = Assert.Single(child!.Agent.Context.Messages, m => m.Role == "system");
         Assert.Contains("IndentShift.cs", system.Content, StringComparison.Ordinal);
     }
 
@@ -252,7 +252,7 @@ public class SubAgentSpawnerTests
         SubAgent? child = null;
         await spawner.TryInvokeAsync(call, c => child = c, CancellationToken.None);
 
-        var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system")).Content;
+        var system = Assert.Single(child!.Agent.Context.Messages, m => m.Role == "system").Content;
         Assert.Contains("not permission", system, StringComparison.Ordinal);
         // The briefing's override language must NOT appear: nothing was briefed.
         Assert.DoesNotContain("follow this", system, StringComparison.Ordinal);
@@ -1611,7 +1611,7 @@ public class SubAgentSpawnerTests
         SubAgent? child = null;
         await spawner.TryInvokeAsync(TypedSpawn("scout"), c => child = c, CancellationToken.None);
 
-        var system = Assert.Single(child!.Agent.Context.Messages.Where(m => m.Role == "system"));
+        var system = Assert.Single(child!.Agent.Context.Messages, m => m.Role == "system");
         Assert.Contains("You search and report", system.Content, StringComparison.Ordinal);
         // Under the briefing heading, which is what makes it outrank everything above it.
         Assert.Contains("# Your task", system.Content, StringComparison.Ordinal);

@@ -81,7 +81,7 @@ public sealed class SessionManager : IDisposable
         Shared = shared;
         Rules = rules;
         _ownsServices = ownsServices;
-        Config = config ?? new ResolvedConfig(null, null, ["no configuration was resolved"]);
+        Config = config ?? new ResolvedConfig(null, ProviderCatalog.Empty, ["no configuration was resolved"]);
 
         SeedCommands();
     }
@@ -356,7 +356,7 @@ public sealed class SessionManager : IDisposable
     /// Session early — the startup banner naming the edit mode is a chat message that cannot be
     /// revised, so the mode has to be resolved before the window exists — while the permission gate
     /// this manager holds cannot exist until there IS a window to prompt in. The folder-only
-    /// <see cref="Open(string, ResolvedConfig, SessionPorts, WorkingMode)"/> demands an ordering
+    /// <c>Open</c> demands an ordering
     /// that constraint forbids.</para>
     ///
     /// <para>WHY THIS RATHER THAN THE ROOT CALLING SessionFactory ITSELF, which is what it did: a

@@ -326,7 +326,7 @@ public sealed class Agent
     /// <summary>
     /// This agent's conversation, for its whole life — the thing that makes it self-contained.
     ///
-    /// <para>A field rather than a local inside <see cref="RunCoreAsync"/> because a context that
+    /// <para>A field rather than a local inside <see cref="SendAsync"/> because a context that
     /// exists only for the duration of one method cannot be owned by anything: not by a readout that
     /// wants to report real occupancy, not by a <c>/compress</c> that wants a single meaningful
     /// target, and not by an agent that is supposed to carry what it learned into its next task. A
@@ -2014,7 +2014,7 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Summarises the older half of <paramref name="messages"/> when the last turn's input crossed
+    /// Summarises the older half of <c>messages</c> when the last turn's input crossed
     /// <see cref="_compressAbove"/>.
     ///
     /// <para>THROUGH THE MODEL, not by eviction. Dropping tool results and leaving receipts was the

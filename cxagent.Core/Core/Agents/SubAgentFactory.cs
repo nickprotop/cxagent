@@ -189,36 +189,7 @@ public sealed class SubAgentFactory
     /// Builds one child. Its context is fresh and its own — <see cref="Agent"/> creates one when none
     /// is passed, which is the self-containment guarantee, so a child can never append to its
     /// caller's conversation.
-    /// </summary>
-    /// <param name="briefing">
-    /// HOW to work — the config type's standing instructions, and the highest-authority text in the
-    /// child's prompt (see <c>Agent.RenderBriefing</c>: "where it disagrees with anything above,
-    /// follow this").
-    ///
-    /// <para>EMPTY UNTIL STEP 2, deliberately. There are no configured types yet, so there is nothing
-    /// human-written to put here — and letting the parent fill it instead would rank a
-    /// model-generated instruction above the config that does not exist yet, which is exactly the
-    /// escalation D9's precedence rule exists to prevent. A parent with something to say uses
-    /// <paramref name="callerContext"/>.</para>
-    /// </param>
-    /// <param name="callerContext">
-    /// WHAT TO KNOW — situational facts the parent has and the child cannot discover: "the build is
-    /// broken in IndentShift.cs, ignore it", "the regex approach was already tried". Renders below the
-    /// briefing and claims no authority.
-    /// </param>
-    /// <param name="label">
-    /// A few words naming this child FOR THE USER — the status row, and the "asked for by:" line on
-    /// its permission prompts. Never sent to the model.
-    /// </param>
-    /// <param name="type">
-    /// The resolved type, or null for a plain child on the parent's wiring.
-    ///
-    /// <para>EVERYTHING A TYPE DECIDES IS RESOLVED TOGETHER HERE — provider, window, threshold and
-    /// turn cap. They cannot be split: a child given one provider and another's window sees
-    /// IsUnderPressure as permanently false (AgentContext returns false for a MISSING window, never
-    /// for a wrong one), never compacts, and dies on a provider overflow instead.</para>
-    /// </param>
-    /// <summary>
+    /// </summary>    /// <summary>
     /// The session's ledger, for a caller that must decide whether a child should start at all.
     ///
     /// <para>Exposed rather than duplicated: it is the SAME instance every child records into, so a

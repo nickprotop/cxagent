@@ -86,7 +86,7 @@ public class AgentTests
             File.WriteAllText(Path.Combine(dir, "CXAGENT.md"), "BRAND NEW RULE: prefer tabs.");
             await agent.SendAsync("second", CancellationToken.None);
 
-            var system = Assert.Single(agent.Context.Messages.Where(m => m.Role == "system"));
+            var system = Assert.Single(agent.Context.Messages, m => m.Role == "system");
             Assert.Contains("BRAND NEW RULE", system.Content, StringComparison.Ordinal);
         }
         finally

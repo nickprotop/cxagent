@@ -7,7 +7,7 @@ namespace CxAgent.Core.Permissions;
 /// <summary>
 /// The real, interactive <see cref="IPermissionGate"/>: consults <see cref="PermissionPolicy"/>
 /// for the silent classes (in-boundary-and-trusted file ops, stored "Always" rules), and for
-/// everything else marshals onto the UI thread to show a <see cref="PermissionPromptControl"/> in
+/// everything else marshals onto the UI thread to show a <c>PermissionPromptControl</c> in
 /// the composer cell, awaits the user's answer, persists it if asked, and echoes the outcome into
 /// the transcript.
 ///

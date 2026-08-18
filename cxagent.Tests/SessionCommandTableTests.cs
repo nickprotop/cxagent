@@ -65,7 +65,7 @@ public class SessionCommandTableTests
     public void ExitIsTheOnlyQuitCommand()
     {
         Assert.Equal("/exit", Assert.Single(
-            SessionCommands.All.Where(c => c.Outcome == CommandOutcome.Quit)).Name);
+            SessionCommands.All, c => c.Outcome == CommandOutcome.Quit).Name);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class SessionCommandTableTests
     [Fact]
     public void McpIsInTheCommandTable()
     {
-        var mcp = Assert.Single(SessionCommands.All.Where(c => c.Name == "/mcp"));
+        var mcp = Assert.Single(SessionCommands.All, c => c.Name == "/mcp");
         Assert.False(string.IsNullOrWhiteSpace(mcp.Summary));
     }
 

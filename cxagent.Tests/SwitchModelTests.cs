@@ -43,8 +43,8 @@ public class SwitchModelTests : IDisposable
         await session.SendAndWait("say hello");
 
         var hostBefore = session.Host;
-        var contextBefore = session.Host.Context;
-        var messagesBefore = session.Host.Context.Messages.Count;
+        var contextBefore = session.Host!.Context;
+        var messagesBefore = session.Host!.Context.Messages.Count;
 
         Assert.Equal(CommandStatus.Changed, session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").Model));
 
@@ -52,8 +52,8 @@ public class SwitchModelTests : IDisposable
         // context and copy the messages across — which is what the old path did, and what made
         // CarryToNextWire necessary. Identity is the assertion that tells the two apart.
         Assert.Same(hostBefore, session.Host);
-        Assert.Same(contextBefore, session.Host.Context);
-        Assert.Equal(messagesBefore, session.Host.Context.Messages.Count);
+        Assert.Same(contextBefore, session.Host!.Context);
+        Assert.Equal(messagesBefore, session.Host!.Context.Messages.Count);
     }
 
     // THE SESSION'S OWN COPIES FOLLOW. /model's completions and the panel read InstanceName from the

@@ -407,7 +407,9 @@ internal sealed class CommandMenuContent : MarkupControl, IInteractiveControl
 
     public CommandMenuContent(CommandMenu menu) : base([]) => _menu = menu;
 
-    public bool IsEnabled { get; set; } = true;
+    // NEW, NOT AN OVERRIDE. MarkupControl.IsEnabled is about the control; this is about whether the
+    // MENU accepts keys, and the two are independent — a disabled menu inside an enabled control.
+    public new bool IsEnabled { get; set; } = true;
 
-    public bool ProcessKey(ConsoleKeyInfo key) => _menu.HandleKey(key);
+    public new bool ProcessKey(ConsoleKeyInfo key) => _menu.HandleKey(key);
 }

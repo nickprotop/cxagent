@@ -105,8 +105,6 @@ public class SteeringTests
 
         var result = await agent.SendAsync("go", CancellationToken.None);
 
-        Assert.NotNull(result);
-
         // EMPTY, and that is the correct baseline rather than a quirk: Agent does not announce the
         // ORIGINAL prompt — AgentHost does, before handing it over — so every entry here is a steer.
         // Which is what makes the assertions above mean what they say.

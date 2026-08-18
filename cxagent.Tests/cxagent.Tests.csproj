@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+
+    <!-- xUnit1031 flags .Result/.Wait() as deadlock-prone. Here it is the CLAIM: these tests assert
+         Completion.IsCompleted first, and reading .Result synchronously is what proves the prompt
+         resolved WITHOUT a further await. Rewriting them as awaits would pin something weaker. -->
+    <NoWarn>$(NoWarn);xUnit1031</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

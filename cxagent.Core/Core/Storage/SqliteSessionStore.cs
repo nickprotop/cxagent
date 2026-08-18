@@ -182,28 +182,14 @@ public sealed class SqliteSessionStore
 
     /// <summary>
     /// Records the agent's whole context and ledger totals, replacing whatever it had before.
-    /// </summary>
-    /// <param name="workingDir">
-    /// The folder this session is running in — what scopes it for resume.
-    ///
-    /// <para>Optional so the ~10 existing call sites and tests keep compiling, but a session saved
-    /// without one can never be OFFERED (see <see cref="LoadLatestUnfinished"/>): a row that does not
-    /// say where it came from could have come from anywhere, and offering it is the bug this
-    /// exists to fix.</para>
-    /// </param>
-    /// <summary>
+    /// </summary>    /// <summary>
     /// One turn's worth of resumable state.
     ///
     /// <para>A RECORD BECAUSE THE LIST REACHED SIX. It was agentId, context, two token counts and a
     /// working directory, and the edit mode made a sixth — two of them strings and two ints, which is
     /// exactly the shape where transposing a pair compiles cleanly and writes the wrong column.</para>
     /// </summary>
-    /// <param name="Edits">
-    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row written
-    /// before this column existed genuinely has no mode, and that absence must stay distinguishable
-    /// from a recorded choice — see <c>LoadLatestUnfinished</c> for which way it resolves.
-    /// </param>
-    public readonly record struct ResumeTurn(string AgentId, IReadOnlyList<ChatMessage> Context,
+        public readonly record struct ResumeTurn(string AgentId, IReadOnlyList<ChatMessage> Context,
         int InputTokens, int OutputTokens, string? WorkingDir = null, EditMode? Edits = null);
 
     /// <summary>The five-argument form kept for callers that have no mode to record.</summary>
@@ -628,19 +614,15 @@ public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> A
     public bool IsAmbiguous => Ambiguous.Count > 1;
 }
 
+/// <param name="Edits">
+    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row written
+    /// before this column existed genuinely has no mode, and that absence must stay distinguishable
+    /// from a recorded choice — see <c>LoadLatestUnfinished</c> for which way it resolves.
+    /// </param>
 public sealed record SessionSnapshot(
     string AgentId,
     IReadOnlyList<ChatMessage> Context,
     int InputTokens,
     int OutputTokens,
     DateTimeOffset UpdatedAt,
-    /// <summary>
-    /// The edit mode this session was last saved in, or null for a row written before the column
-    /// existed.
-    ///
-    /// <para>APPENDED LAST so the existing positional construction sites keep compiling — the same
-    /// discipline SessionRecord.Cost followed. NULL RESOLVES TO AlwaysAsk on resume, not to the
-    /// session default: absent is not permission, and widening must be an act rather than a side
-    /// effect of continuing.</para>
-    /// </summary>
     EditMode? Edits = null);

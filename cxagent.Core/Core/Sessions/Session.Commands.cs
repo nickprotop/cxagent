@@ -280,7 +280,7 @@ public sealed partial class Session
     /// values it had already been handed.</para>
     ///
     /// <para>THE REPLY IS SAID ONLY WHEN NOTHING MOVED — a listing, an unknown name, an
-    /// already-on-that-model. A real switch is announced by <see cref="SwitchModel"/>, which knows
+    /// already-on-that-model. A real switch is announced by <c>SwitchModel</c>, which knows
     /// what the window and the spend became; saying anything here would report it twice.</para>
     /// </summary>
     /// <remarks>

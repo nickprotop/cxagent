@@ -27,21 +27,21 @@ namespace CxAgent.Core.Llm;
 /// hold open connections while executing serially. Both are real deployments and neither is the
 /// default case — so the default is not to interfere.</para>
 /// </param>
+/// <param name="CacheControl">
+/// Ask this endpoint to cache the system prompt, by sending a cache_control breakpoint.
+///
+/// <para>OPT-IN BECAUSE WRITES ARE BILLED. Anthropic charges 1.25x normal input to write a
+/// five-minute cache entry and 2x for an hour; Gemini charges input plus storage. It repays only
+/// when the prefix is reused before expiry, so it must be a decision rather than a default.</para>
+///
+/// <para>Needed at all because those providers cache NOTHING without it — measured through
+/// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
+/// with one.</para>
+/// </param>
 public record ProviderInstanceConfig(
     string Kind, string Model, string? ApiKey, string? BaseUrl,
     IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null,
     int? MaxConcurrentAgents = null,
-    /// <summary>
-    /// Ask this endpoint to cache the system prompt, by sending a cache_control breakpoint.
-    ///
-    /// <para>OPT-IN BECAUSE WRITES ARE BILLED. Anthropic charges 1.25x normal input to write a
-    /// five-minute cache entry and 2x for an hour; Gemini charges input plus storage. It repays only
-    /// when the prefix is reused before expiry, so it must be a decision rather than a default.</para>
-    ///
-    /// <para>Needed at all because those providers cache NOTHING without it — measured through
-    /// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
-    /// with one.</para>
-    /// </summary>
     bool CacheControl = false);
 
 public record RoutingTarget(string Provider, string Model);
@@ -260,19 +260,6 @@ public record McpServerConfig(
 ///
 /// <para>Null means absent, which is every config written before this key existed. The catalog then
 /// says nothing was configured rather than inventing a line.</para>
-/// </param>
-/// <param name="Briefing">
-/// What this type's children are told, or null to keep the shipped text.
-///
-/// <para>NULLABLE AND FIRST-DEFAULTED SO AN OVERRIDE NEED NOT RESTATE IT. Config's
-/// <c>"planner": { "maxTurns": 40 }</c> changes one field and keeps everything else, and this type
-/// could not express that: Briefing was required, so a caller configuring in code had to supply a
-/// briefing it did not want to change, and the JSON loader coerced a missing one to "". The merge in
-/// AgentTypeCatalog already ignores it for a built-in name — a shipped type keeps its own text and
-/// takes only routing and turns — so the required parameter was asking for a value nothing read.</para>
-///
-/// <para>Required for a name that is NOT shipped, because a new type with no briefing has nothing to
-/// tell its children. The catalog reports that rather than inventing one.</para>
 /// </param>
 public record AgentTypeConfig(string? Briefing = null, string? Provider = null, int? MaxTurns = null,
     string? Description = null);

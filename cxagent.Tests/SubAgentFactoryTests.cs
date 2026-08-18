@@ -175,7 +175,7 @@ public class SubAgentFactoryTests
         var child = NewFactory().Create(briefing: "Find every caller of ParseHeader.");
         await child.Agent.SendAsync("go", CancellationToken.None);
 
-        var system = Assert.Single(child.Agent.Context.Messages.Where(m => m.Role == "system"));
+        var system = Assert.Single(child.Agent.Context.Messages, m => m.Role == "system");
         Assert.Contains("ParseHeader", system.Content, StringComparison.Ordinal);
     }
 

@@ -8,7 +8,7 @@ namespace CxAgent.Core.Sessions;
 /// compresses a conversation.
 ///
 /// <para>THREE ROUTES HAD DRIFTED. Compression was reachable from the per-turn pressure check inside
-/// <see cref="Agent"/>, from <c>AgentHost</c>'s between-goals check, and from the
+/// <see cref="Agents.Agent"/>, from <c>AgentHost</c>'s between-goals check, and from the
 /// <c>/compress</c> command in <c>AppBootstrap</c> — and only the first had ever been given the job
 /// row. The other two each printed a single line of prose AFTER the work finished, so a user who
 /// typed <c>/compress</c> watched nothing happen for several seconds and then saw one sentence. The

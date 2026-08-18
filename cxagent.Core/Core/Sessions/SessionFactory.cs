@@ -22,7 +22,7 @@ namespace CxAgent.Core.Sessions;
 /// <remarks>
 /// INTERNAL, like the Note* members it calls. Assembling a session is a sequence — ports, policy,
 /// catalog, agent types, spawner, services, then the host — and half of it leaves a session that
-/// looks built and answers wrongly. <see cref="SessionManager.Open"/> is the way in.
+/// looks built and answers wrongly. <see cref="SessionManager.Open(string, Llm.ResolvedConfig, SessionPorts, WorkingMode?)"/> is the way in.
 /// </remarks>
 internal static class SessionFactory
 {

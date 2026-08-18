@@ -18,7 +18,7 @@ public class ProviderProbeTests
             => throw new HttpRequestException("connection refused");
         public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        { yield break; await Task.CompletedTask; }
+        { await Task.CompletedTask; yield break; }
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class ProviderProbeTests
             => throw new OperationCanceledException(ct);
         public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> m, List<ToolDefinition>? t,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-        { yield break; await Task.CompletedTask; }
+        { await Task.CompletedTask; yield break; }
     }
 
     // Cancellation must propagate, not be swallowed into ProbeResult.Error: otherwise cancelling the

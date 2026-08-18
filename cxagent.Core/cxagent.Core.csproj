@@ -37,7 +37,10 @@
          that at the package boundary would leave a consumer with signatures and no WHY — which is
          most of what this codebase's comments are for. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- CS1591 undocumented public member, CS1573 some-params-documented. Both are noise here: the
+         XML docs carry REASONING where there is any, and a <param> tag on every positional record
+         member merely to silence a warning would be ceremony rather than documentation. -->
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

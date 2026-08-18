@@ -37,16 +37,16 @@ namespace CxAgent.Core.Agents;
 /// given one provider and another's window sees IsUnderPressure as permanently false, never compacts,
 /// and dies on an overflow. Null is legal and means unknown.
 /// </param>
+/// <param name="InstanceName">
+/// Which `providers` entry <see cref="Provider"/> came from, for spend attribution.
+///
+/// <para>Resolved here because this is where config's instance NAME is still in hand — the
+/// driver itself does not carry one, and two entries can serve the same model.</para>
+/// </param>
 public sealed record TypeRouting(
     ILlmProvider? Provider = null,
     int? ContextWindow = null,
 
-    /// <summary>
-    /// Which `providers` entry <see cref="Provider"/> came from, for spend attribution.
-    ///
-    /// <para>Resolved here because this is where config's instance NAME is still in hand — the
-    /// driver itself does not carry one, and two entries can serve the same model.</para>
-    /// </summary>
     string? InstanceName = null)
 {
     /// <summary>A type that runs wherever its parent does, which is the common case.</summary>
@@ -65,17 +65,19 @@ public sealed record TypeRouting(
 /// See <see cref="Llm.AgentTypeConfig.Description"/> for why it is written rather than derived from
 /// the briefing. Null when the config did not say.
 /// </param>
+/// <param name="WritesAPlanFile">
+/// This type's deliverable is a file whose path the spawner names. See
+/// <see cref="AgentTypeDefinition.WritesAPlanFile"/> for why it is declared rather than
+/// detected. A type defined in config never sets it: the mechanism hands out a path and then
+/// contradicts the child's answer when nothing is there, which is only honest for a briefing
+/// that told the child to write one.
+/// </param>
 public sealed record AgentType(
     string Name,
     string Briefing,
     TypeRouting Routing,
     int? MaxTurns = null,
     string? Description = null,
-    /// <summary>This type's deliverable is a file whose path the spawner names. See
-    /// <see cref="AgentTypeDefinition.WritesAPlanFile"/> for why it is declared rather than
-    /// detected. A type defined in config never sets it: the mechanism hands out a path and then
-    /// contradicts the child's answer when nothing is there, which is only honest for a briefing
-    /// that told the child to write one.</summary>
     bool WritesAPlanFile = false)
 {
     /// <summary>Where this type runs, flattened for readers that want one field. The routing record

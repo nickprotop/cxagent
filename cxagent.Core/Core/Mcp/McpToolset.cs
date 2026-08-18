@@ -30,7 +30,7 @@ public sealed class McpToolset
     /// takes for a server added or removed mid-session to reach the model on the next turn — no
     /// restart, and no plumbing to push an update through.</para>
     /// </summary>
-    private IReadOnlyList<IMcpServer> _servers;
+    private IReadOnlyList<IMcpServer> _servers = [];
 
     /// <summary>
     /// The permission gate every call goes through.

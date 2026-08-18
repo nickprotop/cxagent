@@ -17,7 +17,7 @@ namespace CxAgent.Core.Permissions;
 /// SHORT-CIRCUIT on the first denial: a `copy` whose destination is denied must not have prompted
 /// for, or performed, anything — including the read of its source, if the source request happens
 /// to be ordered first but the dest is what a rule or the user refuses. Because
-/// <paramref name="parameters"/> here are the SUBSTITUTED, post-`{{job.key}}` values (both callers
+/// <c>parameters</c> here are the SUBSTITUTED, post-`{{job.key}}` values (both callers
 /// resolve/pin their parameters before invoking the plugin), every request this builds already
 /// reflects what will actually run.</para>
 /// </summary>

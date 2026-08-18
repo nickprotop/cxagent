@@ -38,7 +38,7 @@ namespace CxAgent.Core.Permissions;
 /// all traffic. The four are <c>ls ~/</c>, which reads the user's home directory and is silent today
 /// only because nothing expands the tilde. The strict rule costs approximately nothing here because
 /// 95.6% of real commands never reach this code at all: they carry a metacharacter (usually
-/// <c>2&gt;&amp;1</c>) and <see cref="ReadOnlyCommands.IsReadOnly"/> refuses them outright.</para>
+/// <c>2&gt;&amp;1</c>) and <see cref="ReadOnlyCommands.IsReadOnly(string)"/> refuses them outright.</para>
 /// </summary>
 public sealed record CommandSubjects
 {

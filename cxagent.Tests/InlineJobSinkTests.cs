@@ -33,7 +33,7 @@ public class InlineJobSinkTests
             Result = new JobResult
             {
                 Success = state == JobState.Succeeded,
-                Output = output,
+                Output = output ?? new(),
                 ErrorMessage = error,
                 Duration = TimeSpan.FromSeconds(seconds),
             },
@@ -159,7 +159,7 @@ public class InlineJobSinkTests
             Id = "j1", AgentId = "g1", PluginType = pluginType, DisplayName = "step", State = state,
             Result = new JobResult
             {
-                Success = state == JobState.Succeeded, Output = output, Duration = TimeSpan.Zero,
+                Success = state == JobState.Succeeded, Output = output ?? new(), Duration = TimeSpan.Zero,
             },
         };
 

@@ -348,7 +348,6 @@ public static class AppBootstrap
         // which reads IsBusy — that decision was the only thing enforcing "two SendAsync calls on one
         // agent append to ONE live Context.Messages", from a bool a second front end could not see.
         // The cancellation scope moved to AgentHost, beside the busy flag and the turn it belongs to.
-        var turnRunning = false;
 
 
         // Messages typed while a turn was running, in the order they were typed. Joined into ONE
@@ -513,10 +512,13 @@ public static class AppBootstrap
             // that reason, not because they are UI: the work they do is already a session's or the
             // manager's, and what stays is the lookup of collaborators only a composition root has.
             if (declared.Name == "/mcp")
-                manager.Commands.Register(declared, (_, arguments) =>
+                manager.Commands.Register(declared, (session, arguments) =>
                 {
                     // FIRE AND FORGET: a reload connects servers and the caller does not wait.
-                    mcpCommand.HandleAsync(arguments);
+                    // The session parameter is NAMED rather than discarded, because `_ = …` on the
+                    // next line would then assign to it instead of discarding the Task.
+                    _ = session;
+                    _ = mcpCommand.HandleAsync(arguments);
                     return true;
                 });
 
@@ -606,7 +608,7 @@ public static class AppBootstrap
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
             // that is merely slow to connect.
-            foreach (var warning in res.Warnings)
+            foreach (var warning in res.Warnings ?? [])
                 transcript.Write($"[yellow]{warning}[/]");
 
             // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
@@ -634,16 +636,20 @@ public static class AppBootstrap
                 //
                 // The PANEL keeps the session-wide figures — that is the division: bar is this agent,
                 // panel is everything, and "Tokens by agent" is where the two are reconciled.
+                // LEDGER IS NULLABLE because a session before its first wire has none; this runs from
+                // a token event, which only a wired session raises.
+                if (session.Ledger is not { } spend) return;
+
                 mainWindow.SetSpend(new MainWindow.SpendReading
                 {
-                    ByInstance = session.Ledger.ByModel,
-                    SubAgentTokens = session.Ledger.SubAgentTokens,
-                    SplitByInstance = session.Ledger.SplitByModel,
-                    CacheHitRate = session.Ledger.CacheHitRate,
-                    CacheByAgent = session.Ledger.CacheHitRateByAgent,
-                    CacheWrittenTokens = session.Ledger.CacheWrittenTokens,
-                    CostByInstance = session.Ledger.CostByInstance,
-                    TotalCost = session.Ledger.TotalCost,
+                    ByInstance = spend.ByModel,
+                    SubAgentTokens = spend.SubAgentTokens,
+                    SplitByInstance = spend.SplitByModel,
+                    CacheHitRate = spend.CacheHitRate,
+                    CacheByAgent = spend.CacheHitRateByAgent,
+                    CacheWrittenTokens = spend.CacheWrittenTokens,
+                    CostByInstance = spend.CostByInstance,
+                    TotalCost = spend.TotalCost,
                 });
             });
             session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
@@ -652,7 +658,7 @@ public static class AppBootstrap
             // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
             // and nothing to re-raise — a per-prompt subscription would fire on every
             // prompt because every prompt minted a new id.
-            mainWindow.SessionId = session.SessionId;
+            mainWindow.SessionId = session.SessionId ?? "";
             mainWindow.RefreshSessionPanel();
             session.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
             {
@@ -958,8 +964,6 @@ public static class AppBootstrap
                             // splitting them is how a briefing ends up on the transcript as the user's
                             // own words. Session.Initialise carries the pair.
                             if (session.Initialise() is not Session.SubmitOutcome.Started init) return;
-
-                            turnRunning = true;
                             WhenTurnEnds(init.Turn);
                             mainWindow.RetireComposerHint();
                             return;
@@ -1025,12 +1029,10 @@ public static class AppBootstrap
             // THE PROCESS TOKEN, not a per-turn one. AgentHost links its own scope off whatever it
             // is handed, so Escape can cancel one turn while this still ends everything on Ctrl+Q or
             // /exit, without this layer owning a lifecycle that belongs to the turn.
-            turnRunning = true;
             WhenTurnEnds(started.Turn);
         }
 
         // WHAT THIS FRONT END DOES WHEN A TURN ENDS — not how it runs, which is the session's now.
-        // The await gives turnRunning its falling edge, and the drain below is the fallback for text
         // typed after the LAST tool barrier, which no barrier will reach.
         async void WhenTurnEnds(Task turn)
         {
@@ -1040,7 +1042,6 @@ public static class AppBootstrap
             }
             finally
             {
-                turnRunning = false;
             }
 
         }

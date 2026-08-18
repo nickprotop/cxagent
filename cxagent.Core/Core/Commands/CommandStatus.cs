@@ -27,7 +27,7 @@ public enum CommandStatus
 
     /// <summary>
     /// It ran and the session moved: a mode set, a model switched, a context cleared. A watcher
-    /// should expect the corresponding <see cref="Agent.SessionChangeKind"/> to have been announced.
+    /// should expect the corresponding <see cref="Sessions.SessionChangeKind"/> to have been announced.
     /// </summary>
     Changed,
 

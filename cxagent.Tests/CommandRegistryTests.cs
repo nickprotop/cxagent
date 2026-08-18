@@ -101,10 +101,10 @@ public class CommandRegistryTests : IDisposable
         var session = Wired(manager, provider);
 
         await session.SendAndWait("say hi");
-        Assert.NotEmpty(session.Host.Context.Messages);
+        Assert.NotEmpty(session.Host!.Context.Messages);
 
         Assert.True(manager.Commands.TryRun(session, "/clear"));
-        Assert.Empty(session.Host.Context.Messages);
+        Assert.Empty(session.Host!.Context.Messages);
     }
 
     // LAST REGISTRATION WINS, so a front end can override a seeded command with one that suits it —

@@ -399,6 +399,11 @@ public class PermissionPolicy
         // name a path, a URL or a credential. Generalising over something we cannot read would be
         // inventing a guarantee — so a rule covers "this tool on this server" and nothing narrower.
         PermissionKind.Mcp => request.AlwaysRule,
+
+        // A CAST INTEGER, not a case anyone forgot: every declared PermissionKind is handled above,
+        // and null means "cannot be generalised into a rule", which is the safe answer for a value
+        // this code has never seen.
+        _ => null,
     };
 
     /// <summary>Public wrapper over the same boundary check <see cref="IsSilentlyAllowed"/> uses

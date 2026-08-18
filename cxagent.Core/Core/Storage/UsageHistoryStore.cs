@@ -3,22 +3,30 @@ using Microsoft.Data.Sqlite;
 namespace CxAgent.Core.Storage;
 
 /// <summary>One finished session, as history remembers it.</summary>
+/// <param name="CachedInputTokens">
+/// Input tokens the provider served from its prefix cache.
+/// </param>
+/// <param name="CacheWrittenTokens">
+/// Input tokens written INTO the provider's cache — zero where warming is free, which
+/// is every local endpoint. Non-zero only where it is BILLED, and a hit rate reported without
+/// it reads as pure saving on exactly those providers.
+/// </param>
+/// <param name="CacheReported">
+/// Whether the provider reported cache figures at all. False makes
+/// <see cref="CachedInputTokens"/> mean "unknown" rather than "none", which is the difference
+/// between staying silent and claiming a 0% hit rate.
+/// </param>
+/// <param name="Cost">
+/// What the provider reported this session cost, or null when it reported nothing.
+/// Null is not zero — a local session is free but never says so.
+/// </param>
 public sealed record SessionRecord(
     string AgentId, string? WorkingDir, string? ModelId, string Mode,
     int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
     DateTimeOffset StartedAt, DateTimeOffset UpdatedAt,
-    /// <summary>Input tokens the provider served from its prefix cache.</summary>
     int CachedInputTokens = 0,
-    /// <summary>Input tokens written INTO the provider's cache — zero where warming is free, which
-    /// is every local endpoint. Non-zero only where it is BILLED, and a hit rate reported without
-    /// it reads as pure saving on exactly those providers.</summary>
     int CacheWrittenTokens = 0,
-    /// <summary>Whether the provider reported cache figures at all. False makes
-    /// <see cref="CachedInputTokens"/> mean "unknown" rather than "none", which is the difference
-    /// between staying silent and claiming a 0% hit rate.</summary>
     bool CacheReported = false,
-    /// <summary>What the provider reported this session cost, or null when it reported nothing.
-    /// Null is not zero — a local session is free but never says so.</summary>
     decimal? Cost = null);
 
 /// <summary>One sub-agent run, written by the PARENT when the child finishes.</summary>

@@ -72,6 +72,7 @@ public class OpenAiCompatibleProvider : ILlmProvider, IModelCatalog
     /// <remarks>
     /// Virtual so <see cref="OllamaProvider"/> can return its own type — a base-typed clone would
     /// silently lose Ollama's native /api/tags model enumeration.
+    /// </remarks>
     private HttpRequestMessage BuildRequest(string bodyJson)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/chat/completions")

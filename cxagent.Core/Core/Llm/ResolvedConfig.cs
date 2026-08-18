@@ -28,34 +28,7 @@ namespace CxAgent.Core.Llm;
 /// started on — a missed line rather than a compile error, because nothing named the set. Splitting
 /// this into a catalog and an active model would make that unexpressible; it is ~40 call sites and
 /// wants its own change.</para>
-/// </summary>
-/// <param name="Orchestrator">
-/// The orchestrator token budgets from config, threaded through so AppBootstrap can bound the live
-/// AgentHost. Defaulted to null (= unbounded) so --mock and the no-provider paths need not supply it.
-/// Without this the budgets parse and round-trip but never reach the runner, leaving the cap unit-tested
-/// and unenforced — which is exactly what shipped before this parameter existed.
-/// </param>
-/// <param name="Providers">
-/// The role→provider resolver <c>llm_agent</c> dispatches through, built from the SAME settings load
-/// as <paramref name="Provider"/>. Carried here because the default provider alone is not enough to
-/// run a role-bearing job: the plugin needs the whole catalog plus the role bindings. Null on the
-/// no-provider paths, where there is nothing to dispatch to anyway.
-/// </param>
-/// <param name="MaxConcurrentAgents">
-/// The resolved instance's <c>maxConcurrentAgents</c> — how many sub-agents may call THIS endpoint
-/// at once. Null (the default, and the common case) means unlimited: cxagent cannot discover what an
-/// endpoint tolerates, so it does not guess. Threaded here for the same reason ContextWindow is —
-/// config-only, resolved once at startup rather than re-read per spawn.
-/// </param>
-/// <param name="ContextWindow">
-/// The default provider instance's ProviderInstanceConfig.ContextWindow (P11 Task 1), threaded
-/// through so AppBootstrap can hand AgentHost the real number to derive its compression threshold
-/// from (P11 Task 2: OrchestratorSettings.EffectiveCompressThreshold). ILlmProvider itself carries no
-/// such property — it is config-only — so this is resolved here, once, from the same settings load as
-/// Provider, rather than re-read from config at every compression check. Null on the --mock and
-/// no-provider paths, and whenever the user hasn't set contextWindow for the resolved instance.
-/// </param>
-/// <summary>
+/// </summary>/// <summary>
 /// What config.json resolved to: the catalog, the model to start on, and what went wrong reading it.
 ///
 /// <para>THREE LIFETIMES, NOW NAMED. This was twelve members in one record — the catalog that never
@@ -271,11 +244,11 @@ public static class ConfigResolver
         }
         catch (ProviderConfigException ex)
         {
-            return new ResolvedConfig(null, null, ex.Errors);
+            return new ResolvedConfig(null, ProviderCatalog.Empty, ex.Errors);
         }
         catch (InvalidOperationException ex)
         {
-            return new ResolvedConfig(null, null, new[] { ex.Message });
+            return new ResolvedConfig(null, ProviderCatalog.Empty, new[] { ex.Message });
         }
     }
 }

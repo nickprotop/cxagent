@@ -302,10 +302,10 @@ public class AgentChallengeTests
         public string ModelId => "throwing-1";
         public bool SupportsToolCalling => true;
         public bool SupportsStreaming => true;
-        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition> tools,
+        public Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
             CancellationToken ct) => throw new InvalidOperationException("boom");
         public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
-            List<ToolDefinition> tools,
+            List<ToolDefinition>? tools,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.Yield();
@@ -746,8 +746,8 @@ public class AgentChallengeTests
         // other piece of work. Asserting on the JOB rather than on transcript text also pins the
         // thing that matters: silent memory loss is the failure, and a row the user can expand to
         // read the summary is what makes a lossy step auditable.
-        var row = Assert.Single(panel.Jobs.Where(j => j.PluginType == "compress"
-                                                   && j.State == JobState.Succeeded));
+        var row = Assert.Single(panel.Jobs, j => j.PluginType == "compress"
+                                                   && j.State == JobState.Succeeded);
 
         Assert.Contains("over", row.DisplayName, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("messages", row.Result!.Output!["content"]!.ToString()!, StringComparison.Ordinal);

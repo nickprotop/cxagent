@@ -99,7 +99,7 @@ public sealed class ProviderRegistry
     /// A registry over ALREADY-CONSTRUCTED providers, bypassing the config-driven factory. Exists
     /// because <see cref="Build"/> can only produce the concrete vendor drivers named in
     /// <see cref="ProviderInstanceConfig.Kind"/> — so there is otherwise no way to put a
-    /// <see cref="MockLlmProvider"/> (or any test double) behind a <see cref="RoleResolver"/>, and the
+    /// <see cref="MockLlmProvider"/> (or any test double) behind a <c>RoleResolver</c>, and the
     /// dispatch path could only ever be tested against a real HTTP driver.
     /// <paramref name="defaultName"/> may be null or name a missing instance, matching Build's
     /// tolerance of a config with no <c>defaultProvider</c>.

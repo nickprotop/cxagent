@@ -12,7 +12,7 @@ namespace CxAgent.Core.Mcp.Auth;
 /// file they treat as shareable. <c>permissions.json</c> beside it is the precedent: same directory,
 /// same mode, separate concern.</para>
 ///
-/// <para>BEST-EFFORT THROUGHOUT, like <see cref="PermissionRulesStore"/> and
+/// <para>BEST-EFFORT THROUGHOUT, like <c>PermissionRulesStore</c> and
 /// <see cref="SqliteSessionStore"/>. An unreadable token file means "you are not logged in", which is
 /// recoverable by logging in again; throwing would take down a session over a cache.</para>
 /// </summary>

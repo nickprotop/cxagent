@@ -81,27 +81,39 @@ words misattributes it on every later read.
 whole process tree), says "Stopped." through the observer, and hands anything queued back through
 `Cancelled`. The session, its context and its MCP servers survive.
 
-### The steer queue
+### Text typed while a turn runs
 
-Text typed while a turn runs is delivered at the turn's **next tool barrier**, where the model can
-still act on it.
+**`Submit` handles this for you.** Called while a turn is in flight, it queues the text and returns
+`Queued` — you do not call `Steer` yourself on the ordinary path. What is queued is delivered at the
+turn's **next tool barrier**, where the model can still act on it, and several lines typed in a burst
+become one message rather than several.
 
 ```csharp
-void    Steer(string text)          // append — several lines become one message
-void    CancelPending()             // empty it and hand it back through Cancelled
-string? PendingSteer                // what is waiting
-string? TakePendingSteer()          // take it, exactly once
-
-event Action<string, string>? Pending;    // (whole, added)
-event Action<string>?         Drained;    // the turn took it
+event Action<string, string>? Pending;    // (whole, justAdded) — something was queued
+event Action<string>?         Drained;    // the turn took it; the real message is coming
 event Action<string>?         Cancelled;  // taken back, never sent
 ```
 
-`Pending` carries both the whole and the increment because only that moment has both. `Drained` and
-`Cancelled` are separate although both empty the queue: one means "the real message is coming, take
-the placeholder down", the other means "put it back where it can be edited".
+`Pending` carries both the whole queue and the line just added, because only that moment has both: a
+subscriber holding only the whole cannot tell what changed, and one holding only the increment would
+have to read the queue back.
 
-Events are raised outside the lock, and subscribers marshal — Core has no dispatcher.
+`Drained` and `Cancelled` are separate although both empty the queue, because a subscriber does
+opposite things — take the placeholder down because the real message is about to appear, versus put
+the text back where it can be edited.
+
+```csharp
+void    CancelPending()      // empty it, hand it back through Cancelled
+string? PendingSteer         // what is waiting, or null
+void    Steer(string text)   // queue directly — Submit already does this when busy
+string? TakePendingSteer()   // take it, exactly once; raises Drained
+```
+
+`Steer` and `TakePendingSteer` are the mechanism `Submit` and the turn loop use. Call them directly
+only if you are driving the queue yourself — for example replaying queued input into a fresh session.
+
+Events are raised **outside** the queue's lock, and subscribers marshal to their own thread; Core has
+no dispatcher.
 
 ### Watching it work
 
@@ -154,14 +166,41 @@ Task<SessionCompressor.CompressResult>? CompressNow(CancellationToken ct)
 ### Identity
 
 ```csharp
-string  WorkingDirectory     // the permission boundary
+string  WorkingDirectory     // the permission boundary; what relative paths resolve against
 string? SessionId            // what --resume takes
-bool    HasAgent
+bool    HasAgent             // is there anything wired to talk to
 WorkingMode Mode
-ILlmProvider? Provider · string? InstanceName · ResolvedConfig? Resolution
-PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager
-IReadOnlyList<CompletionValue> Values(string set)
+
+ILlmProvider? Provider · string? InstanceName · string? SpendLabel
+ResolvedConfig? Resolution · PermissionPolicy? Policy
+SharedServices? Services · SessionManager? Manager · PluginRegistry? Plugins
+
+IReadOnlyList<CompletionValue> Values(string set)   // completions this session can answer
 ```
+
+The last group is what the session was wired WITH, exposed for diagnostics. A consumer supplies them
+through `SessionManager.Open`; reading them back is for a front end that wants to show what is in
+force.
+
+### Resuming and ending
+
+```csharp
+void PendResume(SessionSnapshot snapshot)   // arm a stored conversation BEFORE the first wire
+bool CarryToNextWire()                      // carry this conversation and its ledger across a re-wire
+bool MarkFinished()                         // record that this session ended properly
+bool HasSavedTurn                           // is there anything to come back to
+bool RefuseIfBusy()                         // true when a turn is running — and says so
+```
+
+`PendResume` is the one assemble-time member a consumer legitimately calls: `--resume` finds a
+snapshot and arms it before the session is wired. Everything else in that family is internal.
+
+`MarkFinished` matters because reaching it is the only evidence a process was not killed
+mid-session — an unfinished row is what makes "an earlier session ended without closing" mean
+something.
+
+`CarryToNextWire` is for a front end that rebuilds its host — a settings change, a provider swap —
+and wants the conversation and the spend to survive it.
 
 ---
 
@@ -234,30 +273,143 @@ folder — so the capable value is the default and `Single` is the opt-out.
 
 ## Permissions
 
-`SharedServices.Gate` is null by default: **no gating at all**, which is an ordinary headless
-arrangement but a choice rather than something inherited. Supply one and every shell command, file
-write and network call is judged by:
+`SharedServices.Gate` is null by default: **no gating at all**. That is an ordinary headless
+arrangement — a batch runner in a container may want exactly it — but it is a choice, not something
+you inherit by forgetting.
 
-1. **Trust** — per folder, identified by path *and* birth time, so a recreated folder is a new one
-2. **Edit mode** — see above
-3. **Stored rules** — what a user answered "always" to
-4. **The boundary** — the working directory, symlinks resolved
-5. **Read-only verbs** — a short list of commands that cannot write, confined to the boundary
+### Supplying a gate
 
-Every layer fails toward asking. A path that cannot be resolved is outside; a command with a token
-nothing could classify is refused.
+`SessionManager.Create` takes a `buildGate` delegate rather than a gate, because the gate needs the
+rules store and the store is built inside:
+
+```csharp
+var manager = SessionManager.Create(paths, buildGate: store =>
+    PermissionDecider.WithPrompt(
+        store,
+        notice: line => Console.Error.WriteLine(line),   // "auto-refused", rule notices; may be null
+        promptHook: async (request, offerTrust, ct) =>
+        {
+            Console.Error.WriteLine($"{request.Kind}: {request.Display}");
+            if (request.AlwaysRule is { } rule)
+                Console.Error.WriteLine($"  always would cover: {rule}");
+
+            return await AskSomehow(ct);   // your UI, your dialog, your queue
+        }));
+```
+
+`promptHook` is the whole seam. It is handed the request, whether offering "trust this folder" makes
+sense here, and a token — and returns one of:
+
+| `PermissionChoice` | |
+|---|---|
+| `Once` | allow this, ask again next time |
+| `Always` | allow and persist `request.AlwaysRule` for this folder |
+| `Deny` | refuse; the model sees the refusal and can adapt |
+| `TrustFolder` | trust the working directory, which unlocks the silent class inside it |
+
+**Cancellation must resolve the prompt, not abandon it.** The token is passed to your hook precisely
+so a cancelled turn does not leave a dialog waiting for a click nobody will make. Core treats a
+cancelled request as a refusal.
+
+### What a request carries
+
+```csharp
+record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule)
+```
+
+`Kind` is `Shell`, `FileRead`, `FileWrite`, `Http` or `Mcp`. `Display` is what to show — a verbatim
+command, or a **resolved** path. `AlwaysRule` is exactly what "always" would persist, precomputed so
+your button text and the stored rule cannot disagree; **null means this cannot be truthfully
+generalised** (a shell command carrying a custom environment, a chain), so do not offer an "always"
+button when it is.
+
+### How a decision is reached
+
+Before your hook is ever called, a request is judged by layers that only narrow:
+
+1. **Trust** — per folder, identified by path *and* birth time, so a folder deleted and recreated is
+   a different folder and inherits nothing
+2. **Edit mode** — `AlwaysAsk`, `AcceptEdits`, or `Auto`
+3. **Stored rules** — what was answered "always" to, confined to the boundary
+4. **The boundary** — the working directory, symlinks resolved, so a link pointing out is out
+5. **Read-only verbs** — a short list that cannot write however invoked (`ls`, `cat`, `grep`…),
+   allowed silently in a trusted folder **only when every path argument is inside the boundary**
+
+`Auto` adds a sixth: a model reviews what would otherwise ask. It can only **refuse** — it is
+consulted after the floor has already said yes, so it can add friction and never remove it. A
+timeout, a transport error, or any verdict it cannot parse all mean ask.
+
+Every layer fails toward asking. A path that cannot be resolved is outside the boundary; a command
+carrying a token nothing could classify is refused rather than allowed.
 
 ---
 
 ## Configuration
 
+Three ways in, depending on where your settings live.
+
+### From code — `AgentConfig`
+
+The one an embedder usually wants: no `config.json`, no file at all.
+
 ```csharp
-ConfigResolver.Resolve(paths, env, useMock: false)   // reads config.json
-ResolvedConfig.ForTesting(provider, instanceName)     // one provider, nothing else
+var resolution = new AgentConfig
+{
+    Models =
+    {
+        ["local"]  = new(ProviderKind.OpenAiCompatible, "qwen3.6-35b")
+                     { BaseUrl = "http://localhost:8771/v1", ContextWindow = 212_992 },
+
+        ["claude"] = new(ProviderKind.Anthropic, "claude-sonnet-4-5")
+                     { ApiKey = key, CacheControl = true },
+    },
+    DefaultModel = "local",
+    Classifier   = "claude",       // reviews writes in /mode edits auto
+}.Resolve();
+
+if (!resolution.HasProvider)
+    foreach (var e in resolution.Errors) Console.Error.WriteLine(e);
 ```
 
-`ResolvedConfig` carries an `ActiveModel` (what this session talks to) and a `ProviderCatalog`
-(everything configured). `catalog.Use(name)` derives a model from the catalog without touching disk.
+**Mistakes come back as errors, never exceptions.** A caller is usually assembling this from its own
+settings and wants to say what went wrong — a `DefaultModel` naming no entry, or a `Classifier` that
+is not configured, comes back in `Errors` with `HasProvider` false.
 
-Providers: `anthropic`, `openai-compatible`, `ollama`. Several may be configured at once and a
-sub-agent type can name a different one.
+| `AgentConfig` | |
+|---|---|
+| `Models` | every model, by the name a user types at `/model` |
+| `DefaultModel` | which one a session starts on — null takes the single entry when there is exactly one |
+| `Classifier` | which model reviews writes in `auto`; null means auto is not offered at all |
+| `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both |
+| `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
+| `Mcp` | MCP servers, stdio or HTTP |
+
+| `ModelConfig(Kind, Model)` | |
+|---|---|
+| `Kind` | `OpenAiCompatible`, `Anthropic`, `Ollama` |
+| `BaseUrl` · `ApiKey` | the endpoint and its credential |
+| `ContextWindow` | tokens; null probes the endpoint on first use, and falls back to a fixed threshold |
+| `MaxConcurrentAgents` | how many children may call this endpoint at once; null is unlimited |
+| `Headers` · `CacheControl` | extra headers, and prompt caching where the provider supports it |
+
+### From a file — `ConfigResolver`
+
+```csharp
+ConfigResolver.Resolve(paths, env, useMock: false)       // the config.json cxagent itself reads
+ConfigResolver.ResolveInstance(paths, env, "openrouter") // one named instance
+```
+
+Useful when you want to share configuration with an installed cxagent — both examples do this so
+they run against whatever provider is already set up.
+
+### For a test — `ResolvedConfig.ForTesting`
+
+```csharp
+ResolvedConfig.ForTesting(provider, instanceName)   // one provider, nothing else configured
+```
+
+### What comes out
+
+`ResolvedConfig` carries an `ActiveModel` (what this session talks to) and a `ProviderCatalog`
+(everything configured). `catalog.Use(name)` derives a model from the catalog without touching disk —
+which is what `/model` uses, so switching costs no file read.
