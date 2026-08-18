@@ -43,6 +43,18 @@ queues the text, and the running turn picks it up at its next tool call.
 **Nothing here writes to a console, opens a window, or ends a process.** Every word the session
 produces goes through the `ISessionObserver` you hand it.
 
+**What is actually yours to write** is small, and it is all at the edges:
+
+| | |
+|---|---|
+| `ISessionObserver` | where words go — the one thing you must implement |
+| `IToolObserver` | tool activity; a no-op is fine |
+| a prompt hook + a `PermissionPolicy` | how a human is asked, and which folder to judge against — see [Permissions](#permissions) |
+| a model | see [Configuration](#configuration) |
+
+The conversation, the turn loop, the tools, delegation, permissions, compaction, MCP and the stores
+are all in here.
+
 ---
 
 ## Who creates what
@@ -184,8 +196,36 @@ Whether the model *uses* a tool is the model's business, not the library's.
 
 ## Permissions
 
-**Nothing is gated unless you supply a gate.** `SharedServices.Gate` is null by default — an
-ordinary headless arrangement, but a choice rather than something you inherit by forgetting.
+**The engine is in here. The only thing left to you is asking a human.**
+
+Trust per folder, the working-directory boundary, edit modes, stored rules, the read-only command
+list, the `Auto` classifier, and the wrapper that gates every tool — all of it is Core, and none of
+it is yours to build. What Core cannot do is put a question on a screen, so you supply one delegate:
+*given this request, what does the human say?*
+
+```csharp
+buildGate: store => PermissionDecider.WithPrompt(store, notice, promptHook)
+//                                                ▲       ▲       ▲
+//                                    Core hands   │       │       └── YOURS: ask, somehow
+//                                    you this ────┘       └── optional: one-line notices
+```
+
+**Two halves, and one without the other is silent.** `buildGate` gives the decider a way to ask;
+`SessionPorts.Policy` gives it the folder and the edit mode to judge against:
+
+```csharp
+var policy = new PermissionPolicy(workingDirectory, manager.Rules!, EditMode.AlwaysAsk);
+
+var session = manager.Open(workingDirectory, resolution,
+    new SessionPorts { Observer = sink, Tools = jobs, Policy = policy });
+```
+
+Omit the policy and **every request is refused** — the decider has no directory to judge a path
+against and no edit mode to read, so it declines rather than guessing.
+
+If you pass no `buildGate` at all, **nothing is gated** — every tool runs. That is a legitimate
+headless arrangement (a batch job in a container), but it is a choice, not something to inherit by
+forgetting.
 
 ### How a request reaches you
 

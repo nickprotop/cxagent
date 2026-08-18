@@ -246,6 +246,7 @@ new SessionPorts { Observer = …, Tools = … }
 |---|---|---|
 | `Observer` | **yes** | `ISessionObserver` — where words go |
 | `Tools` | yes | `IToolObserver` — tool activity; pass a no-op to ignore it |
+| `Policy` | with a gate | `PermissionPolicy` — the folder and edit mode requests are judged against. **A gate without one refuses everything** |
 
 ## ISessionObserver
 
@@ -302,6 +303,10 @@ folder — so the capable value is the default and `Single` is the opt-out.
 ---
 
 # Permissions
+
+The whole engine is in `CxAgent.Core.Permissions` — policy, trust, the boundary, stored rules, the
+read-only command list, the `Auto` classifier, and the wrapper that gates every tool. **You
+implement one thing: how a human is asked.**
 
 ## PermissionDecider.WithPrompt
 

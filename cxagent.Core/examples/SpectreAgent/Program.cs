@@ -1,5 +1,6 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Permissions;
 using CxAgent.Core.Models;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
@@ -35,14 +36,57 @@ if (!resolution.HasProvider)
     return 1;
 }
 
-using var manager = SessionManager.Create(new AppPaths(configDir));
+// A PERMISSION GATE, because the alternative is silent. Without buildGate nothing is gated at all —
+// every shell command and file write runs — which is a legitimate headless arrangement and a poor
+// thing for an example to demonstrate without saying so.
+//
+// THE ENGINE IS NOT HERE. Trust, the working-directory boundary, edit modes, stored rules and the
+// read-only command list all live in CxAgent.Core; this hook is the one thing Core cannot do, which
+// is put the question to a human.
+using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: store =>
+    PermissionDecider.WithPrompt(store,
+        // STRIPPED, like Said: Core speaks its own markup dialect and this front end renders
+        // plain text. Escaping alone would print the tags literally.
+        notice: line => AnsiConsole.MarkupLine($"[grey]{StripMarkup(line)}[/]"),
+        promptHook: (request, offerTrust, ct) =>
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[yellow]{request.Kind}[/] {request.Display.EscapeMarkup()}");
+
+            var choices = new List<string> { "once", "deny" };
+
+            // NULL AlwaysRule MEANS IT CANNOT BE HONESTLY GENERALISED — a chain, or a command
+            // carrying its own environment — so the option is not offered rather than offered and
+            // quietly ignored.
+            if (request.AlwaysRule is { } rule) choices.Insert(1, $"always ({rule})");
+
+            // Only for a file inside the working directory: trusting the folder would not have
+            // permitted a shell command or an HTTP call anyway.
+            if (offerTrust) choices.Add("trust this folder");
+
+            var answer = AnsiConsole.Prompt(
+                new SelectionPrompt<string>().Title("  allow?").AddChoices(choices));
+
+            return Task.FromResult(answer switch
+            {
+                "once" => PermissionChoice.Once,
+                "trust this folder" => PermissionChoice.TrustFolder,
+                _ when answer.StartsWith("always") => PermissionChoice.Always,
+                _ => PermissionChoice.Deny,
+            });
+        }));
 
 var console = new ConsoleSink();
 // NO MODE PASSED, so this gets WorkingMode.Default — fan-out with always-ask edits. Delegation is
 // on because it is capability rather than permission: a child runs under the same gate, in the same
 // folder. A front end with nowhere to show a child would pass AgentMode.Single instead.
+// THE POLICY IS THE OTHER HALF OF THE GATE, and a gate without one refuses everything: the decider
+// has no working directory to judge a path against and no edit mode to read, so it declines rather
+// than guessing. It carries the folder — which is why it is per session rather than per process.
+var policy = new PermissionPolicy(workingDir, manager.Rules!, EditMode.AlwaysAsk);
+
 var session = manager.Open(workingDir, resolution,
-    new SessionPorts { Observer = console, Tools = new ToolSink() });
+    new SessionPorts { Observer = console, Tools = new ToolSink(), Policy = policy });
 
 AnsiConsole.MarkupLine($"[grey]model:[/] {session.InstanceName.EscapeMarkup()} · [grey]blank line to quit[/]");
 AnsiConsole.WriteLine();
@@ -71,6 +115,10 @@ if (session.Ledger is { TotalTokens: > 0 } ledger)
     AnsiConsole.MarkupLine($"[grey]{ledger.TotalTokens:N0} tokens[/]");
 
 return 0;
+
+/// <summary>Core speaks its own markup dialect; this front end renders plain text.</summary>
+static string StripMarkup(string s) =>
+    System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[^\]]*\]", "").EscapeMarkup();
 
 /// <summary>
 /// Where the session's words go. This is the ONLY thing a front end must supply, and it is why Core

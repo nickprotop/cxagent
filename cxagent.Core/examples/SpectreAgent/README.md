@@ -50,6 +50,33 @@ Delegation is capability rather than permission — a child runs under the same 
 folder, with the same rules. A front end with nowhere to show a child's progress passes
 `AgentMode.Single` instead.
 
+## It asks before writing
+
+The permission engine is entirely in `CxAgent.Core` — trust, the working-directory boundary, edit
+modes, stored rules, the read-only command list. **The only part this example writes is the
+question**, plus the policy that carries the folder:
+
+```
+> create a file /tmp/gate-test.txt containing the word hello
+  · file
+
+FileWrite /tmp/gate-test.txt
+  allow?
+> once
+  always (/tmp/)
+  deny
+```
+
+Denied, the file is not written and the model adapts — it noticed `/tmp/` is outside the working
+directory and offered a path inside it instead.
+
+`ls cxgpu/Export` does **not** prompt: a read-only verb inside the boundary is allowed silently, and
+that decision is the policy's, not this file's.
+
+**Two halves, and one without the other is silent.** `buildGate` gives the decider a way to ask;
+`SessionPorts.Policy` gives it the folder and the edit mode to judge against. Omit the policy and
+every request is refused with "no session policy" — which this example did at first.
+
 ## Two things worth copying
 
 **Announce tools from `ToolsChanged`, not `ToolUpdated`.** The first fires while jobs run; the
