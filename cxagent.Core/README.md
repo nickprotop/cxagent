@@ -3,15 +3,68 @@
 The sessions, agents and turn loop behind [cxagent](https://github.com/nickprotop/cxagent) — usable
 without a terminal.
 
-cxagent is a TUI coding agent. This package is everything underneath it: a conversation, the agent
-running it, tool execution, sub-agent delegation, permissions, MCP, and the stores that let a session
-be resumed. No UI dependency — you supply where text goes.
-
-## Install
-
 ```
 dotnet add package CxAgent.Core
 ```
+
+---
+
+## The mental model
+
+**A session is a conversation. An agent is the loop that runs one turn of it. You supply where words
+go.** Everything else follows from those three sentences.
+
+```
+        your app
+           │  supplies an observer, a working directory, a model
+           ▼
+    SessionManager ──── owns what sessions SHARE:
+           │             the resume database, the usage archive, the log directory,
+           │             the permission rules store, the command registry
+           │
+           ├── opens ──► Session ──── one conversation
+           │                │          · Submit(text) starts a turn
+           │                │          · a queue for text typed while one runs
+           │                │          · says everything through YOUR observer
+           │                ▼
+           │            AgentHost ──── owns the agent, its plugins, its MCP binding
+           │                ▼
+           │              Agent ────── the turn loop:
+           │                             send → tool calls? → run them → send again
+           │                             ▼
+           │                        tools, each wrapped in a permission gate
+           │                             ▼
+           └────────────────────► sub-agents: an Agent with no session of its own
+```
+
+**One turn at a time per session.** `Submit` while a turn runs does not start a second one — it
+queues the text, and the running turn picks it up at its next tool call.
+
+**Nothing here writes to a console, opens a window, or ends a process.** Every word the session
+produces goes through the `ISessionObserver` you hand it.
+
+---
+
+## Who creates what
+
+The thing that surprises people is how little you construct. `SessionManager.Create` builds the
+shared machinery; `Open` builds everything per-session.
+
+| You create | `SessionManager.Create` creates | `Open` creates, per session |
+|---|---|---|
+| `AppPaths` (where config and data live) | the resume database (SQLite) | the `Session` |
+| an `ISessionObserver` | the usage archive (a *different* database) | its `AgentHost` and `Agent` |
+| an `IToolObserver` | the log directory manager | the plugin registry, gated |
+| a model — see [Configuration](#configuration) | the permission rules store | the sub-agent spawner |
+| *optionally* a permission gate | the command registry | the agent-type catalog |
+
+You never construct an `Agent`, an `AgentHost`, or a tool. `AgentHost` is not even public.
+
+**Logs.** One directory per session, named by its id, under your config directory. A sub-agent gets
+its own directory *nested inside its parent's* — so a finished child is inspectable, and `ls -t`
+never shows a child above the session that spawned it.
+
+---
 
 ## An app is four calls
 
@@ -20,49 +73,48 @@ using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 
-var manager = SessionManager.Create(new AppPaths(configDir));
+using var manager = SessionManager.Create(new AppPaths(configDir));
 
 var session = manager.Open(
-    workingDirectory,
-    ResolvedConfig.ForTesting(provider),          // or resolve from config.json
-    new SessionPorts { Observer = sink, Tools = jobs });
+    workingDirectory,                                        // the permission boundary
+    resolution,                                              // which model — see below
+    new SessionPorts { Observer = sink, Tools = jobs });     // where words and tool activity go
 
 if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
     await started.Turn;
 ```
 
-`Submit` returns a receipt rather than a task, because there are three outcomes and they are three
-different things for a caller to do:
+`Submit` is **synchronous**. It returns a receipt, not a task, because there are three outcomes and
+they are three different things for a caller to do:
 
-| Outcome | Meaning |
-|---|---|
-| `Started(Task Turn)` | a turn began — await it, or attach a continuation |
-| `Queued` | a turn was already running; this was queued for its next tool barrier |
-| `NoAgent` | nothing is wired — leave the text where it is |
+| Outcome | What happened | What you do |
+|---|---|---|
+| `Started(Task Turn)` | a turn began | await it, or attach a continuation and keep rendering |
+| `Queued` | a turn was already running; this went to the queue | nothing — the `Pending` event already fired |
+| `NoAgent` | no model is wired | leave the text in your input box |
 
-## You supply the observer
+---
 
-`SessionPorts.Observer` is an `ISessionObserver` — where assistant text, tool activity and the
-session's own notices arrive. Nothing in this package writes to a console, opens a window, or ends a
-process, and this is why.
+## Where words go
 
-A complete one, in the shape a console front end wants:
+`ISessionObserver` is the only thing you *must* implement. Eight methods:
 
 ```csharp
 internal sealed class ConsoleSink : ISessionObserver
 {
-    public void UserTurnAdded(ChatMessageId id, string text) { }   // already on screen
+    public void UserTurnAdded(ChatMessageId id, string text) { }   // the prompt went in
     public void AssistantTurnBegan(ChatMessageId id) { }
 
-    // Written raw: this is model output, and a stray bracket in it is not a colour tag.
+    // Streaming body, token by token. Written raw: this is model output, and a bracket in it
+    // is not a colour tag.
     public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
 
-    public void AssistantReasoningAppended(ChatMessageId id, string text) { }   // hide it, or don't
+    public void AssistantReasoningAppended(ChatMessageId id, string text) { }   // show it, or don't
     public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    // The session's OWN notices — a mode change, a model switch, "Stopped." — in Core's markup
-    // dialect. Render the tags, or strip them; do not print them raw beside model output.
+    // The SESSION's own words — "Stopped.", a mode change, a model switch — in Core's markup
+    // dialect. Render the tags or strip them; never print them raw beside model output.
     public void Said(string message) => Console.WriteLine(Strip(message));
     public void Failed(string message) => Console.Error.WriteLine(message);
 
@@ -71,16 +123,18 @@ internal sealed class ConsoleSink : ISessionObserver
 }
 ```
 
-And the tool half, which is optional — pass a no-op if you do not want job rows:
+`ChatMessageId` identifies a turn so you can stream into the right row. Ids are minted by the
+session, so a parent and its children never collide.
+
+`IToolObserver` is optional — pass a no-op if you do not want to show tool activity:
 
 ```csharp
 internal sealed class ToolSink : IToolObserver
 {
     private readonly HashSet<string> _announced = [];
 
-    // ANNOUNCE FROM HERE, not from ToolUpdated. This fires while jobs RUN; ToolUpdated fires when
-    // one FINISHES, so announcing starts from there prints nothing at all — a finished job is never
-    // Running. The Spectre example got this wrong first.
+    // ANNOUNCE FROM HERE. This fires while jobs RUN; ToolUpdated fires when one FINISHES, so
+    // announcing starts from there prints nothing — a finished job is never Running.
     public void ToolsChanged(IReadOnlyList<Job> jobs)
     {
         foreach (var job in jobs)
@@ -98,96 +152,204 @@ internal sealed class ToolSink : IToolObserver
 `BufferedChatSink` and `BufferedJobPanel` ship with the package if you only need to collect output —
 they are what the tests use.
 
-## Steering a running turn
+---
 
-Text typed while a turn runs is delivered at the turn's **next tool barrier**, where the model can
-still act on it:
+## Text typed while a turn runs
+
+**`Submit` handles this.** Called mid-turn it queues the text and returns `Queued`; you do not call
+`Steer` yourself. What is queued arrives at the turn's **next tool call**, where the model can still
+act on it — and several lines typed in a burst become one message rather than several.
 
 ```csharp
-session.Pending   += (whole, added) => /* draw a "queued" block */;
-session.Drained   += text           => /* it went in — take the block down */;
-session.Cancelled += text           => /* Escape: put it back in the composer */;
-
-session.Steer("actually, only the Export folder");
+session.Pending   += (whole, added) => ShowQueuedBlock(whole);
+session.Drained   += text           => RemoveQueuedBlock();      // the turn took it
+session.Cancelled += text           => PutItBackInTheInputBox(text);
 ```
 
-`session.CancelTurn()` stops the turn, says so through the observer, and hands anything queued back
-through `Cancelled` — it does not decide where that text goes.
+`session.CancelTurn()` stops the turn, says "Stopped." through your observer, and hands anything
+queued back through `Cancelled` — it does not decide where that text goes.
+
+---
+
+## Tools
+
+The agent gets these without you registering anything: **read, write, edit, glob, grep, shell, http,
+web fetch**, plus `todo` (a plan it keeps across turns), `ask_user` (a question back to you), and
+`llm_agent` (delegation). Each is wrapped in a permission gate at construction, so there is no path
+that runs a tool ungated.
+
+Whether the model *uses* a tool is the model's business, not the library's.
+
+---
 
 ## Permissions
 
-`SharedServices.Gate` is null by default, which means **no gating at all** — an ordinary headless
-arrangement, but a deliberate choice rather than an inherited one. Supply a gate to have shell
-commands, file writes and network calls asked about; the policy layers trust (per folder), an edit
-mode, stored rules, and a working-directory boundary.
+**Nothing is gated unless you supply a gate.** `SharedServices.Gate` is null by default — an
+ordinary headless arrangement, but a choice rather than something you inherit by forgetting.
 
-## Sub-agents
+### How a request reaches you
 
-A session in fan-out mode can delegate. Children are agents without a session — their own context,
-their own log directory, their own token budget — and they report back as a tool result.
-
-## Reading what a session is doing
-
-Everything a front end draws comes from the observer plus a few properties:
-
-```csharp
-session.TokensUpdated           += (_, total) => …;   // after each provider call
-session.ContextUsedUpdated      += (_, used)  => …;   // how full the window is
-session.ContextCompressed       += (_, e)     => …;   // (Before, After)
-session.TurnCompleted           += (_, turns) => …;
-session.Changed                 += kind       => …;   // Mode, Model, Resumed, TurnCancelled…
-
-session.Ledger        // spend, by model and by agent, with cache rates
-session.OwnSpend      // this agent alone, excluding children
-session.IsBusy        // a turn is running
-session.Mode          // delegation and edit mode
+```
+  the model calls a tool
+        ▼
+  PermissionGatedPlugin wraps every built-in tool
+        ▼
+  PermissionPolicy.RequestsFor(...) turns the call into one or more requests
+        │    a shell command → one Shell request
+        │    a file copy     → a FileRead AND a FileWrite, judged separately
+        ▼
+  the policy answers silently if it can  ──── yes ──► the tool runs, you are never asked
+        │
+        no
+        ▼
+  YOUR promptHook            ──── you ask a human, however you like
+        ▼
+  Once / Always / Deny / TrustFolder
 ```
 
-Events attach to the host that exists when you subscribe, so subscribe after opening the session.
+### Supplying one
+
+`SessionManager.Create` takes a **delegate that builds a gate**, not a gate — the gate needs the
+rules store, and the store is created inside:
+
+```csharp
+var manager = SessionManager.Create(paths, buildGate: store =>
+    PermissionDecider.WithPrompt(
+        store,
+        notice: line => Console.Error.WriteLine(line),   // "auto-refused" and rule notices; may be null
+        promptHook: async (request, offerTrust, ct) =>
+        {
+            Console.Error.WriteLine($"{request.Kind}: {request.Display}");
+
+            // Null means this cannot be honestly generalised — do NOT offer an "always" button.
+            if (request.AlwaysRule is { } rule)
+                Console.Error.WriteLine($"  \"always\" would cover: {rule}");
+
+            return await AskAHuman(ct);
+        }));
+```
+
+| Your hook returns | |
+|---|---|
+| `Once` | allow this, ask again next time |
+| `Always` | allow and persist `request.AlwaysRule` for this folder |
+| `Deny` | refuse — the model sees the refusal and can adapt |
+| `TrustFolder` | trust the working directory, unlocking the silent class inside it |
+
+**Cancellation must resolve your prompt, not abandon it.** The token exists so a cancelled turn does
+not leave a dialog waiting for a click nobody will make; Core treats a cancelled request as a
+refusal.
+
+### What gets asked, and what does not
+
+A request is judged by layers that only ever *narrow*, before your hook is reached:
+
+| Layer | Effect |
+|---|---|
+| **Trust** | per folder, identified by path *and* birth time — delete and recreate a folder and it inherits nothing |
+| **Edit mode** | `AlwaysAsk` (every write asks), `AcceptEdits` (in-boundary writes are silent), `Auto` |
+| **Stored rules** | what a human answered "always" to, confined to the boundary |
+| **The boundary** | your working directory, symlinks resolved — a link pointing out is out |
+| **Read-only verbs** | `ls`, `cat`, `grep` and friends run silently in a trusted folder, but only when every path they name is inside the boundary |
+
+`Auto` adds a model that reviews what would otherwise ask. It can only **refuse** — it runs after the
+floor has already said yes, so it adds friction and never removes it. A timeout, a transport error,
+or a verdict it cannot parse all mean ask.
+
+Everything fails toward asking. An unresolvable path is outside the boundary; a command carrying a
+token nothing could classify is refused rather than allowed.
+
+---
 
 ## Commands
 
-A session services the commands cxagent exposes, and they work headlessly:
+A session services the same commands cxagent exposes, headlessly:
 
 ```csharp
-session.SetMode("edits auto");      // or SetMode(WorkingMode)
-session.UseFromInput("openrouter"); // /model — parses what a user typed
+session.SetMode("edits auto");        // or SetMode(WorkingMode)
+session.UseFromInput("openrouter");   // /model — parses what a user typed
 session.ListSessions("all");
-session.SayUsage("30");             // /stats
+session.SayUsage("30");               // /stats
 session.ClearContext();
 session.CompressNow(ct);
 ```
 
-Each returns a `CommandStatus` — `Reported` (it said something), `Changed` (the session moved),
-`Refused` (it could not run now, and said why), or `Unknown` (nothing services it). `.Handled()`
-collapses that to a bool if you are routing input.
+Each does the work, **says its own result through your observer**, and returns a `CommandStatus`:
+`Reported` (it said something, nothing moved), `Changed` (the session moved), `Refused` (it could
+not run now, and said why), `Unknown` (nothing services this). `.Handled()` collapses that to a bool
+if you are routing input.
 
-`SessionManager.Commands` is the registry those are seeded into; a front end registers its own on top
-and the last registration wins.
+`manager.Commands` is the registry they are seeded into. Register your own on top — last
+registration wins — for anything only your front end can service.
 
-## A worked example
+---
 
-[`examples/SpectreAgent`](examples/SpectreAgent) is
-a second front end in about a hundred lines — a prompt, streamed output, and a line per tool — built
-on [Spectre.Console](https://spectreconsole.net/) rather than the TUI cxagent itself uses. It reads
-the same `config.json`, so it runs against whatever provider is already configured:
+## Sub-agents
 
+A session in fan-out mode (the default) can delegate. A child is an `Agent` with **no session**: its
+own context, its own log directory nested under the parent's, its own token budget. It reports back
+as a tool result, and no child outlives the turn that started it.
+
+Pass `AgentMode.Single` if your front end has nowhere to show a child's progress. Delegation is
+capability rather than permission — a child runs under the same gate, in the same folder.
+
+---
+
+## Configuration
+
+Three ways in, depending on where your settings live. See the
+[API reference](docs/api.md#configuration) for every field.
+
+```csharp
+// From code — no config.json, no file at all.
+var resolution = new AgentConfig
+{
+    Models =
+    {
+        ["local"] = new(ProviderKind.OpenAiCompatible, "qwen3.6-35b")
+                    { BaseUrl = "http://localhost:8771/v1", ContextWindow = 212_992 },
+    },
+    DefaultModel = "local",
+}.Resolve();
+
+// From the same config.json cxagent reads — useful for sharing a setup.
+ConfigResolver.Resolve(paths, env, useMock: false);
+
+// For a test.
+ResolvedConfig.ForTesting(provider, instanceName);
 ```
-dotnet run --project cxagent.Core/examples/SpectreAgent -- /path/to/repo
+
+Mistakes come back in `resolution.Errors` with `HasProvider` false — **never as exceptions**, because
+a caller assembling this from its own settings wants to say what went wrong.
+
+Providers: `anthropic`, `openai-compatible`, `ollama`. Several at once, and a sub-agent type can name
+a different one.
+
+---
+
+## Watching a session work
+
+```csharp
+session.TokensUpdated      += (_, total) => …;   // after each provider call
+session.ContextUsedUpdated += (_, used)  => …;   // how full the window is
+session.ContextCompressed  += (_, e)     => …;   // (Before, After)
+session.TurnCompleted      += (_, turns) => …;
+session.Changed            += kind       => …;   // Mode, Model, Resumed, TurnCancelled, ContextCleared
+
+session.Ledger      // spend by model and by agent, cache rates, cost
+session.IsBusy      // a turn is running
+session.Mode        // delegation and edit mode
 ```
 
-## What is not here
+**Subscribe after opening the session** — these attach to the host that exists at subscription time.
 
-The terminal. `cxagent` itself supplies the window, the message loop, and the four commands that need
-one (`/help`, `/exit`, `/mcp`, and the confirmation half of `/stats`). Everything else — `/model`,
-`/mode`, `/sessions`, `/skills`, `/diff`, `/compress`, `/clear`, `/agents`, `/stats` — is in this
-package and works headlessly.
+---
 
-## Reference
+## Reference and examples
 
-**[Full API reference →](docs/api.md)** — every public member, grouped by the question it answers:
-running a turn, the steer queue, watching progress, commands, what you supply, permissions and
-configuration.
+- **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
+- **[SpectreAgent →](examples/SpectreAgent)** — a second front end in about a hundred lines: a
+  prompt, streamed text, one line per tool
 
 ## License
 

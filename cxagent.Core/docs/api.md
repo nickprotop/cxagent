@@ -1,32 +1,51 @@
 # CxAgent.Core — API reference
 
-Every public member, grouped by the question it answers. For the shape of a working app see the
-[README](../README.md); for a front end you can read end to end see
-[SpectreAgent](../examples/SpectreAgent).
+Every public member, with its parameters and who calls it. For the mental model — what owns what,
+how a permission request reaches you — read the [README](../README.md) first; this page assumes it.
 
-Namespaces: `CxAgent.Core.Sessions` (a conversation), `CxAgent.Core.Agents` (the loop that runs
-turns), `CxAgent.Core.Llm` (providers and config), `CxAgent.Core.Storage` (paths and stores),
-`CxAgent.Core.Permissions`, `CxAgent.Core.Commands`, `CxAgent.Core.Mcp`.
+**Namespaces**
+
+| | |
+|---|---|
+| `CxAgent.Core.Sessions` | `Session`, `SessionManager`, ports, observers, `WorkingMode` |
+| `CxAgent.Core.Agents` | `Agent`, agent types, sub-agent spawning |
+| `CxAgent.Core.Llm` | providers, `AgentConfig`, `ResolvedConfig`, the token ledger |
+| `CxAgent.Core.Permissions` | the gate, the policy, the rules store |
+| `CxAgent.Core.Commands` | `CommandStatus`, the command table |
+| `CxAgent.Core.Storage` | `AppPaths`, the resume and usage databases |
 
 ---
 
-## SessionManager
+# SessionManager
 
-One per process. It owns what sessions share — the stores, the log manager, the permission gate —
-and the command registry they dispatch through.
+One per process. Owns what sessions share and opens them.
 
-### Creating one
+## Create
 
 ```csharp
-static SessionManager Create(AppPaths paths, …)
+static SessionManager Create(
+    AppPaths paths,
+    Func<PermissionRulesStore, IPermissionGate>? buildGate = null,
+    McpToolset? mcp = null,
+    ResolvedConfig? config = null)
+
 static SessionManager Create(ProcessSetup setup)
 static SessionManager Over(SharedServices shared, PermissionRulesStore? rules = null, …)
 ```
 
-`Create(paths)` builds the stores itself and is what an app wants. `Over(...)` takes services
-somebody else built — for a host embedding several managers, or a test.
+| Parameter | |
+|---|---|
+| `paths` | where config and data live. Everything below is created under it |
+| `buildGate` | **a delegate that builds a gate, not a gate** — the gate needs the rules store, and the store is created inside. Null means no gating at all |
+| `mcp` | connected MCP servers, or null |
+| `config` | the process default model; a session may override it at `Open` |
 
-### Opening a session
+`Over(...)` takes services somebody else built — for a host running several managers, or a test.
+
+**Creates:** the resume database, the usage archive, the log directory manager, the permission rules
+store, the command registry. **Disposes:** all of it, on `Dispose`.
+
+## Open
 
 ```csharp
 Session Open(string workingDirectory, ResolvedConfig? config, SessionPorts ports, WorkingMode? mode = null)
@@ -34,125 +53,147 @@ Session Open(string workingDirectory, SessionPorts ports, WorkingMode? mode = nu
 Session Open(Session session, ResolvedConfig? config, SessionPorts ports, WorkingMode? mode = null)
 ```
 
-The working directory is the permission boundary and what relative paths resolve against. `mode`
-defaults to [`WorkingMode.Default`](#workingmode) — fan-out delegation, always-ask edits.
-
-The third overload re-wires an existing session over a new configuration; that is what `/model` and
-an F5-style settings change use, and it keeps the conversation.
-
-### The rest
-
-| Member | |
+| Parameter | |
 |---|---|
-| `Commands` | the registry every session dispatches through — register your own on top, last wins |
-| `Values(set, workingDirectory?)` | completion values for a command argument (`"models"`, `"sessions"`, …) |
-| `Sessions` | every session this manager has open |
-| `Resume(session, snapshot, rewire?)` | restore a stored conversation — arms, re-wires, retires the old row, says so |
-| `Rewire` | the delegate `Resume` uses when a caller passes none; the one thing only a front end can build |
-| `Close(session)` | dispose the host and release the turn scope |
-| `Shared` · `Rules` · `Config` | what was built at construction |
+| `workingDirectory` | the permission boundary, and what relative paths resolve against |
+| `config` | which model. Null takes the manager's `Config` |
+| `ports` | your observer and tool observer — see [SessionPorts](#sessionports) |
+| `mode` | null takes `WorkingMode.Default`: fan-out delegation, always-ask edits |
+
+The third overload **re-wires an existing session** over a new configuration, keeping the
+conversation. That is what a model switch or a settings change uses.
+
+**Creates, per session:** the `Session`, its `AgentHost` and `Agent`, the plugin registry (each tool
+wrapped in the gate), the sub-agent spawner, the agent-type catalog.
+
+## The rest
+
+| Member | | Called by |
+|---|---|---|
+| `Commands` | the registry every session dispatches through | you, to register front-end commands |
+| `Values(set, workingDirectory?)` | completion values for a command argument | a palette or tab completion |
+| `Sessions` | every session this manager has open | a front end with tabs |
+| `Resume(session, snapshot, rewire?)` | restore a stored conversation | `Session.ListSessions` on `/sessions resume`, or you |
+| `Rewire` | the delegate `Resume` uses when none is passed | set once by your front end |
+| `Close(session)` | dispose the host, release the turn scope | you, when a session ends |
+| `Shared` · `Rules` · `Config` | what was built at construction | diagnostics |
 
 ---
 
-## Session
+# Session
 
-### Running a turn
+## Running a turn
 
 ```csharp
 SubmitOutcome Submit(string text, string? echo = null)
-SubmitOutcome Initialise()                 // /init — sends a briefing, displays "/init"
+SubmitOutcome Initialise()
 bool          CancelTurn()
 bool          IsBusy
+bool          RefuseIfBusy()
 ```
 
-`Submit` is **synchronous** and returns a receipt:
+### `Submit(text, echo?)`
 
-| `SubmitOutcome` | Meaning | What a caller does |
+| Parameter | |
+|---|---|
+| `text` | what the model receives |
+| `echo` | what the USER sees, when it differs. `/init` sends paragraphs of briefing and displays `"/init"` — echoing the briefing would attribute words to them they never wrote |
+
+**Returns** a `SubmitOutcome`, synchronously:
+
+| | Carries | Meaning |
 |---|---|---|
-| `Started(Task Turn)` | a turn began | await it, or attach a continuation |
-| `Queued` | one was already running | nothing — `Pending` already fired |
-| `NoAgent` | nothing is wired | leave the text where it is |
+| `Started` | `Task Turn` | a turn began. Await it, or attach a continuation |
+| `Queued` | — | a turn was already running; the text went to the queue and `Pending` fired |
+| `NoAgent` | — | no model is wired |
 
-`echo` is what the user SEES when it differs from what the model receives — `/init` sends
-paragraphs and displays `/init`, because putting a briefing on the transcript as the user's own
-words misattributes it on every later read.
+**Raises:** `UserTurnAdded` then `AssistantTurnBegan` on your observer; `TokensUpdated` and
+`ContextUsedUpdated` as the turn proceeds; `TurnCompleted` at the end.
 
-`CancelTurn` unwinds the provider stream, the tool loop and any shell process (whose runner kills its
-whole process tree), says "Stopped." through the observer, and hands anything queued back through
-`Cancelled`. The session, its context and its MCP servers survive.
+### `Initialise()`
 
-### Text typed while a turn runs
+Runs `/init`: sends a briefing about the working directory, displays `"/init"`. Same return type.
 
-**`Submit` handles this for you.** Called while a turn is in flight, it queues the text and returns
-`Queued` — you do not call `Steer` yourself on the ordinary path. What is queued is delivered at the
-turn's **next tool barrier**, where the model can still act on it, and several lines typed in a burst
-become one message rather than several.
+### `CancelTurn()`
+
+Stops the provider stream, the tool loop, and any shell process (whose runner kills its whole process
+tree). Says `"Stopped."` through your observer, announces `TurnCancelled`, and hands anything queued
+back through `Cancelled`. **Returns false when no turn was running** — a stop arriving a moment late
+is ordinary, not an error.
+
+The session, its context and its MCP servers survive.
+
+### `IsBusy` / `RefuseIfBusy()`
+
+`IsBusy` is true from the moment a turn is accepted until it ends, however it ends. `RefuseIfBusy()`
+is the same test but **says so through the observer** — for an operation that must decline rather
+than queue.
+
+## The queue
+
+**`Submit` fills this for you.** These members are the mechanism; call them directly only if you are
+driving the queue yourself.
 
 ```csharp
-event Action<string, string>? Pending;    // (whole, justAdded) — something was queued
-event Action<string>?         Drained;    // the turn took it; the real message is coming
+event Action<string, string>? Pending;    // (whole, justAdded)
+event Action<string>?         Drained;    // the turn took it
 event Action<string>?         Cancelled;  // taken back, never sent
+
+void    Steer(string text)          // append; Submit calls this when busy
+void    CancelPending()             // empty it, hand it back through Cancelled
+string? PendingSteer                // what is waiting, or null
+string? TakePendingSteer()          // take it exactly once; raises Drained
 ```
 
-`Pending` carries both the whole queue and the line just added, because only that moment has both: a
-subscriber holding only the whole cannot tell what changed, and one holding only the increment would
-have to read the queue back.
+`Pending` carries **both** the whole queue and the line just added, because only that moment has
+both — a subscriber holding one cannot derive the other without reading the queue back.
 
-`Drained` and `Cancelled` are separate although both empty the queue, because a subscriber does
-opposite things — take the placeholder down because the real message is about to appear, versus put
-the text back where it can be edited.
+`Drained` and `Cancelled` are separate although both empty the queue: one means *the real message is
+coming, remove the placeholder*, the other means *put it back where it can be edited*.
 
-```csharp
-void    CancelPending()      // empty it, hand it back through Cancelled
-string? PendingSteer         // what is waiting, or null
-void    Steer(string text)   // queue directly — Submit already does this when busy
-string? TakePendingSteer()   // take it, exactly once; raises Drained
-```
+Events are raised **outside** the queue's lock; subscribers marshal to their own thread.
 
-`Steer` and `TakePendingSteer` are the mechanism `Submit` and the turn loop use. Call them directly
-only if you are driving the queue yourself — for example replaying queued input into a fresh session.
-
-Events are raised **outside** the queue's lock, and subscribers marshal to their own thread; Core has
-no dispatcher.
-
-### Watching it work
+## Watching it work
 
 ```csharp
-event EventHandler<int>? TokensUpdated;                    // total, after each provider call
+event EventHandler<int>? TokensUpdated;                    // running total
 event EventHandler<int>? ContextUsedUpdated;               // measured window use
-event EventHandler<int>? ContextEstimatedUpdated;          // between calls
+event EventHandler<int>? ContextEstimatedUpdated;          // estimate between provider calls
 event EventHandler<(int Before, int After)>? ContextCompressed;
-event EventHandler<int>? TurnCompleted;                    // turns taken
-event Action<SessionChangeKind>? Changed;                  // Mode, Model, Resumed, TurnCancelled, ContextCleared
-
-TokenLedger? Ledger        // spend by model and by agent, cache rates, cost
-(int, int)   OwnSpend      // this agent alone, excluding children
-string?      SpendLabel    // instance:model
-IReadOnlyList<string> LoadedSkills
-bool         HasSavedTurn  // is there anything to resume
+event EventHandler<int>? TurnCompleted;                    // turns the request took
+event Action<SessionChangeKind>? Changed;
 ```
 
-**Subscribe after opening.** The events attach to the host that exists at subscription time, and a
-re-wire builds a new one.
-
-### Commands
-
-Each does the work, says its own result through the observer, and returns a `CommandStatus`.
+`SessionChangeKind`: `Mode`, `Model`, `Resumed`, `TurnCancelled`, `ContextCleared`.
 
 ```csharp
-CommandStatus SetMode(string argument)      // "edits auto", "agent single"
-CommandStatus SetMode(WorkingMode mode)
-CommandStatus UseFromInput(string argument) // /model — parses what a user typed
-CommandStatus Use(string? instanceName)     // a name already decided on
-CommandStatus Use(ActiveModel? model, string? requestedName = null)
-CommandStatus ListSkills()
-CommandStatus ListSessions(string arguments)
-CommandStatus ListAgentTypes(string arguments)
-CommandStatus ShowDiff(string arguments)
-CommandStatus SayUsage(string arguments)    // /stats
-CommandStatus ClearContext()
-Task<SessionCompressor.CompressResult>? CompressNow(CancellationToken ct)
+TokenLedger? Ledger        // spend by model and by agent, cache rates, cost. Null before wiring
+(int, int)   OwnSpend      // this agent alone, excluding children
+string?      SpendLabel    // "instance:model"
+IReadOnlyList<string> LoadedSkills
 ```
+
+**Subscribe after `Open`.** These attach to the host that exists at subscription time, and a re-wire
+builds a new one.
+
+## Commands
+
+Each does the work, says its result through your observer, and returns a `CommandStatus`.
+
+| Method | Parameter | Does |
+|---|---|---|
+| `SetMode(string)` | `"edits auto"`, `"agent single"` | parses and applies |
+| `SetMode(WorkingMode)` | a mode | applies it |
+| `UseFromInput(string)` | `/model`'s argument — empty lists, a name switches | parses and applies |
+| `Use(string?)` | an instance name already decided on | switches |
+| `Use(ActiveModel?, string?)` | a model the catalog never knew | switches |
+| `ListSkills()` | — | says what skills are reachable |
+| `ListSessions(string)` | `""`, `"all"`, `"resume 3"` | lists, or restores through the manager |
+| `ListAgentTypes(string)` | a type name, or empty | lists types or one briefing |
+| `ShowDiff(string)` | a path, or empty | says the working-tree diff |
+| `SayUsage(string)` | a day count | says the usage dashboard |
+| `ClearContext()` | — | empties the conversation, announces `ContextCleared` |
+| `CompressNow(ct)` | a token | summarises the context; returns a `Task` or null if refused |
 
 | `CommandStatus` | |
 |---|---|
@@ -161,93 +202,82 @@ Task<SessionCompressor.CompressResult>? CompressNow(CancellationToken ct)
 | `Refused` | it could not run now, and said why |
 | `Unknown` | nothing here services this |
 
-`.Handled()` collapses that to a bool for routing; `.Moved()` asks whether a repaint is warranted.
+`.Handled()` → bool, for routing. `.Moved()` → whether a repaint is warranted.
 
-### Identity
+## Identity
 
 ```csharp
-string  WorkingDirectory     // the permission boundary; what relative paths resolve against
+string  WorkingDirectory     // the permission boundary
 string? SessionId            // what --resume takes
-bool    HasAgent             // is there anything wired to talk to
+bool    HasAgent             // is anything wired
 WorkingMode Mode
 
-ILlmProvider? Provider · string? InstanceName · string? SpendLabel
-ResolvedConfig? Resolution · PermissionPolicy? Policy
-SharedServices? Services · SessionManager? Manager · PluginRegistry? Plugins
+ILlmProvider? Provider · string? InstanceName · ResolvedConfig? Resolution
+PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · PluginRegistry? Plugins
 
-IReadOnlyList<CompletionValue> Values(string set)   // completions this session can answer
+IReadOnlyList<CompletionValue> Values(string set)
 ```
 
-The last group is what the session was wired WITH, exposed for diagnostics. A consumer supplies them
-through `SessionManager.Open`; reading them back is for a front end that wants to show what is in
-force.
+The third group is what the session was wired **with**, exposed for diagnostics.
 
-### Resuming and ending
+## Resume and shutdown
 
-```csharp
-void PendResume(SessionSnapshot snapshot)   // arm a stored conversation BEFORE the first wire
-bool CarryToNextWire()                      // carry this conversation and its ledger across a re-wire
-bool MarkFinished()                         // record that this session ended properly
-bool HasSavedTurn                           // is there anything to come back to
-bool RefuseIfBusy()                         // true when a turn is running — and says so
-```
+| Member | | Called by |
+|---|---|---|
+| `PendResume(snapshot)` | arm a stored conversation **before** the first wire | your `--resume` flag |
+| `HasSavedTurn` | is there anything to come back to | your exit path |
+| `MarkFinished()` | record that this session ended properly | your exit path |
+| `CarryToNextWire()` | carry the conversation and ledger across a re-wire | a settings or provider change |
 
-`PendResume` is the one assemble-time member a consumer legitimately calls: `--resume` finds a
-snapshot and arms it before the session is wired. Everything else in that family is internal.
-
-`MarkFinished` matters because reaching it is the only evidence a process was not killed
-mid-session — an unfinished row is what makes "an earlier session ended without closing" mean
-something.
-
-`CarryToNextWire` is for a front end that rebuilds its host — a settings change, a provider swap —
-and wants the conversation and the spend to survive it.
+`MarkFinished` matters because reaching it is the only evidence the process was not killed
+mid-session — that is what makes an unfinished row mean something.
 
 ---
 
-## What you supply
+# What you supply
 
-### SessionPorts
+## SessionPorts
 
 ```csharp
 new SessionPorts { Observer = …, Tools = … }
 ```
 
-`Observer` (`ISessionObserver`) is required — where assistant text and the session's notices go.
-`Tools` (`IToolObserver`) reports job activity. Both have buffered implementations in the package
-(`BufferedChatSink`, `BufferedJobPanel`) if you only need to collect output.
+| | Required | |
+|---|---|---|
+| `Observer` | **yes** | `ISessionObserver` — where words go |
+| `Tools` | yes | `IToolObserver` — tool activity; pass a no-op to ignore it |
 
-### ISessionObserver
+## ISessionObserver
 
-```csharp
-void UserTurnAdded(ChatMessageId id, string text);
-void AssistantTurnBegan(ChatMessageId id);
-void AssistantTextAppended(ChatMessageId id, string token);      // streaming body
-void AssistantReasoningAppended(ChatMessageId id, string text);  // streaming reasoning
-void AssistantTurnEnded(ChatMessageId id);
-void AssistantLabelled(ChatMessageId id, string header);
-void Said(string message);      // the session's own notices, in Core's markup dialect
-void Failed(string message);
-```
+| Method | Called when |
+|---|---|
+| `UserTurnAdded(id, text)` | a prompt goes in — including one delivered from the queue |
+| `AssistantTurnBegan(id)` | the model starts answering |
+| `AssistantTextAppended(id, token)` | streaming body, token by token |
+| `AssistantReasoningAppended(id, text)` | streaming reasoning, where the provider sends it |
+| `AssistantTurnEnded(id)` | that turn's answer is complete |
+| `AssistantLabelled(id, header)` | a header for the turn |
+| `Said(message)` | the **session's own** words, in Core's markup dialect |
+| `Failed(message)` | a turn failed |
 
-`Said` carries markup like `[yellow]Stopped.[/]` — render the tags or strip them, but do not print
-them raw beside model output, which may itself contain brackets.
+`ChatMessageId` identifies a turn so you can stream into the right row. Ids are minted by the
+session, so a parent and its children never collide.
 
-### IToolObserver
+## IToolObserver
 
-```csharp
-void ToolsChanged(IReadOnlyList<Job> jobs);   // the live set, while they RUN
-void ToolUpdated(Job job);                    // one FINISHED
-void ToolProgressed(Job job);
-void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot);
-void ToolOutputAppended(string jobId, string delta);
-```
+| Method | Called when |
+|---|---|
+| `ToolsChanged(jobs)` | the live set changed — **announce starts here** |
+| `ToolUpdated(job)` | one **finished** |
+| `ToolProgressed(job)` | a progress message |
+| `ToolResourcesSampled(jobId, snapshot)` | CPU and memory for a running process |
+| `ToolOutputAppended(jobId, delta)` | streaming tool output |
 
-Announce starts from `ToolsChanged`. `ToolUpdated` fires on completion, so a front end announcing
-from there prints nothing — a finished job is never `Running`.
+Announcing starts from `ToolUpdated` prints nothing — a finished job is never `Running`.
 
 ---
 
-## WorkingMode
+# WorkingMode
 
 ```csharp
 new WorkingMode(AgentMode Agent = FanOut, EditMode Edits = AlwaysAsk)
@@ -256,14 +286,14 @@ WorkingMode.Default
 
 | `AgentMode` | |
 |---|---|
-| `FanOut` | may delegate to sub-agents — the default |
-| `Single` | no spawn tool is offered at all |
+| `FanOut` | may delegate — the spawn tool is offered. **Default** |
+| `Single` | no spawn tool at all; the model never learns delegation exists |
 
 | `EditMode` | |
 |---|---|
-| `AlwaysAsk` | every write asks — the default |
+| `AlwaysAsk` | every write asks. **Default** |
 | `AcceptEdits` | in-boundary writes are silent, in a trusted folder |
-| `Auto` | a classifier reviews what would otherwise ask; it can only refuse, never widen |
+| `Auto` | a model reviews what would otherwise ask; it can only refuse |
 
 The two axes default in opposite directions on purpose. A permissive **edits** default is a silent
 widening nobody chose; **delegation** widens nothing — a child runs under the same gate, in the same
@@ -271,86 +301,69 @@ folder — so the capable value is the default and `Single` is the opt-out.
 
 ---
 
-## Permissions
+# Permissions
 
-`SharedServices.Gate` is null by default: **no gating at all**. That is an ordinary headless
-arrangement — a batch runner in a container may want exactly it — but it is a choice, not something
-you inherit by forgetting.
-
-### Supplying a gate
-
-`SessionManager.Create` takes a `buildGate` delegate rather than a gate, because the gate needs the
-rules store and the store is built inside:
+## PermissionDecider.WithPrompt
 
 ```csharp
-var manager = SessionManager.Create(paths, buildGate: store =>
-    PermissionDecider.WithPrompt(
-        store,
-        notice: line => Console.Error.WriteLine(line),   // "auto-refused", rule notices; may be null
-        promptHook: async (request, offerTrust, ct) =>
-        {
-            Console.Error.WriteLine($"{request.Kind}: {request.Display}");
-            if (request.AlwaysRule is { } rule)
-                Console.Error.WriteLine($"  always would cover: {rule}");
-
-            return await AskSomehow(ct);   // your UI, your dialog, your queue
-        }));
+static PermissionDecider WithPrompt(
+    PermissionRulesStore store,
+    Action<string>? notice,
+    Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
 ```
 
-`promptHook` is the whole seam. It is handed the request, whether offering "trust this folder" makes
-sense here, and a token — and returns one of:
-
-| `PermissionChoice` | |
+| Parameter | |
 |---|---|
-| `Once` | allow this, ask again next time |
-| `Always` | allow and persist `request.AlwaysRule` for this folder |
-| `Deny` | refuse; the model sees the refusal and can adapt |
-| `TrustFolder` | trust the working directory, which unlocks the silent class inside it |
+| `store` | handed to you by `buildGate` — do not construct one |
+| `notice` | one-line notices: "auto-refused", a rule that fired. May be null |
+| `promptHook` | `(request, offerTrust, ct)` → a choice. **Your dialog, your queue, your UI** |
 
-**Cancellation must resolve the prompt, not abandon it.** The token is passed to your hook precisely
-so a cancelled turn does not leave a dialog waiting for a click nobody will make. Core treats a
-cancelled request as a refusal.
+`offerTrust` is true for a **file** request whose path is inside the working directory — the only
+case where trusting the folder would actually help. It is false for shell, HTTP and MCP, and for a
+path outside the boundary, because trusting the folder would not have permitted those. Do not offer
+the button when it is false.
 
-### What a request carries
+**Cancellation must resolve your prompt**, not abandon it. Core treats a cancelled request as a
+refusal, and a hook that ignores the token leaves a dialog waiting forever.
+
+## PermissionRequest
 
 ```csharp
 record PermissionRequest(PermissionKind Kind, string Display, string? AlwaysRule)
 ```
 
-`Kind` is `Shell`, `FileRead`, `FileWrite`, `Http` or `Mcp`. `Display` is what to show — a verbatim
-command, or a **resolved** path. `AlwaysRule` is exactly what "always" would persist, precomputed so
-your button text and the stored rule cannot disagree; **null means this cannot be truthfully
-generalised** (a shell command carrying a custom environment, a chain), so do not offer an "always"
-button when it is.
+| Member | |
+|---|---|
+| `Kind` | `Shell`, `FileRead`, `FileWrite`, `Http`, `Mcp` |
+| `Display` | what to show — a verbatim command, or a **resolved** path |
+| `AlwaysRule` | exactly what "always" would persist. **Null means this cannot be honestly generalised** — a command carrying a custom environment, a chain — so do not offer an "always" button |
 
-### How a decision is reached
+## PermissionChoice
 
-Before your hook is ever called, a request is judged by layers that only narrow:
+| | |
+|---|---|
+| `Once` | allow this, ask again next time |
+| `Always` | allow and persist `AlwaysRule` for this folder |
+| `Deny` | refuse; the model sees it and can adapt |
+| `TrustFolder` | trust the working directory |
 
-1. **Trust** — per folder, identified by path *and* birth time, so a folder deleted and recreated is
-   a different folder and inherits nothing
-2. **Edit mode** — `AlwaysAsk`, `AcceptEdits`, or `Auto`
-3. **Stored rules** — what was answered "always" to, confined to the boundary
-4. **The boundary** — the working directory, symlinks resolved, so a link pointing out is out
-5. **Read-only verbs** — a short list that cannot write however invoked (`ls`, `cat`, `grep`…),
-   allowed silently in a trusted folder **only when every path argument is inside the boundary**
+## What is decided before your hook
 
-`Auto` adds a sixth: a model reviews what would otherwise ask. It can only **refuse** — it is
-consulted after the floor has already said yes, so it can add friction and never remove it. A
-timeout, a transport error, or any verdict it cannot parse all mean ask.
+| Layer | |
+|---|---|
+| **Trust** | per folder, by path *and* birth time — a recreated folder inherits nothing |
+| **Edit mode** | see `WorkingMode` above |
+| **Stored rules** | what was answered "always" to, confined to the boundary |
+| **The boundary** | the working directory, symlinks resolved |
+| **Read-only verbs** | `ls`, `cat`, `grep`… run silently in a trusted folder, but only when every path they name is inside the boundary |
 
-Every layer fails toward asking. A path that cannot be resolved is outside the boundary; a command
-carrying a token nothing could classify is refused rather than allowed.
+Everything fails toward asking.
 
 ---
 
-## Configuration
+# Configuration
 
-Three ways in, depending on where your settings live.
-
-### From code — `AgentConfig`
-
-The one an embedder usually wants: no `config.json`, no file at all.
+## AgentConfig — from code
 
 ```csharp
 var resolution = new AgentConfig
@@ -359,27 +372,19 @@ var resolution = new AgentConfig
     {
         ["local"]  = new(ProviderKind.OpenAiCompatible, "qwen3.6-35b")
                      { BaseUrl = "http://localhost:8771/v1", ContextWindow = 212_992 },
-
         ["claude"] = new(ProviderKind.Anthropic, "claude-sonnet-4-5")
                      { ApiKey = key, CacheControl = true },
     },
     DefaultModel = "local",
-    Classifier   = "claude",       // reviews writes in /mode edits auto
+    Classifier   = "claude",
 }.Resolve();
-
-if (!resolution.HasProvider)
-    foreach (var e in resolution.Errors) Console.Error.WriteLine(e);
 ```
-
-**Mistakes come back as errors, never exceptions.** A caller is usually assembling this from its own
-settings and wants to say what went wrong — a `DefaultModel` naming no entry, or a `Classifier` that
-is not configured, comes back in `Errors` with `HasProvider` false.
 
 | `AgentConfig` | |
 |---|---|
 | `Models` | every model, by the name a user types at `/model` |
-| `DefaultModel` | which one a session starts on — null takes the single entry when there is exactly one |
-| `Classifier` | which model reviews writes in `auto`; null means auto is not offered at all |
+| `DefaultModel` | which one a session starts on. Null takes the single entry when there is exactly one |
+| `Classifier` | which model reviews writes in `Auto`. **Null means Auto is not offered at all** |
 | `MaxTurns` · `CompressAbove` | turn ceiling and compaction threshold; null derives both |
 | `Agents` | sub-agent types, merged with the shipped ones rather than replacing them |
 | `Mcp` | MCP servers, stdio or HTTP |
@@ -388,28 +393,27 @@ is not configured, comes back in `Errors` with `HasProvider` false.
 |---|---|
 | `Kind` | `OpenAiCompatible`, `Anthropic`, `Ollama` |
 | `BaseUrl` · `ApiKey` | the endpoint and its credential |
-| `ContextWindow` | tokens; null probes the endpoint on first use, and falls back to a fixed threshold |
-| `MaxConcurrentAgents` | how many children may call this endpoint at once; null is unlimited |
-| `Headers` · `CacheControl` | extra headers, and prompt caching where the provider supports it |
+| `ContextWindow` | tokens. Null probes the endpoint on first use, then falls back to a fixed threshold |
+| `MaxConcurrentAgents` | how many children may call this endpoint at once. Null is unlimited |
+| `Headers` · `CacheControl` | extra headers, and prompt caching where the provider bills for it |
 
-### From a file — `ConfigResolver`
+**Mistakes come back as errors, never exceptions** — `resolution.Errors` with `HasProvider` false.
 
-```csharp
-ConfigResolver.Resolve(paths, env, useMock: false)       // the config.json cxagent itself reads
-ConfigResolver.ResolveInstance(paths, env, "openrouter") // one named instance
-```
-
-Useful when you want to share configuration with an installed cxagent — both examples do this so
-they run against whatever provider is already set up.
-
-### For a test — `ResolvedConfig.ForTesting`
+## From a file
 
 ```csharp
-ResolvedConfig.ForTesting(provider, instanceName)   // one provider, nothing else configured
+ConfigResolver.Resolve(paths, env, useMock: false)        // the config.json cxagent reads
+ConfigResolver.ResolveInstance(paths, env, "openrouter")  // one named instance
 ```
 
-### What comes out
+## For a test
+
+```csharp
+ResolvedConfig.ForTesting(provider, instanceName)
+```
+
+## What comes out
 
 `ResolvedConfig` carries an `ActiveModel` (what this session talks to) and a `ProviderCatalog`
-(everything configured). `catalog.Use(name)` derives a model from the catalog without touching disk —
-which is what `/model` uses, so switching costs no file read.
+(everything configured). `catalog.Use(name)` derives a model without touching disk — which is why a
+model switch costs no file read.
