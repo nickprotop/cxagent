@@ -390,6 +390,8 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[SpectreAgent →](examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool
+- **[ToolAgent →](examples/ToolAgent)** — injecting your own tools, and the two gates each one
+  passes through
 
 ## License
 

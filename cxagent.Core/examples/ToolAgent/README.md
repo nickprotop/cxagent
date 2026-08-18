@@ -1,0 +1,59 @@
+# ToolAgent — injecting your own tools
+
+Three tools this example owns, offered to the model beside cxagent's built-ins. The interesting part
+is one line in each: what `Gate` returns.
+
+```bash
+dotnet run --project cxagent.Core/examples/ToolAgent
+```
+
+## The two gates
+
+They are different questions, and conflating them is the mistake the design exists to prevent.
+
+**Gate 1 — may this tool run in this folder at all?** Asked once per folder by the permission
+engine, and persisted as a `Tool` rule in `permissions.json`.
+
+**Gate 2 — does THIS call need a human?** Your tool's own `Gate` method, on every call, for the life
+of the session.
+
+Answering gate 1 with "always" is permission to *use* the tool. It never exempts a call from gate 2.
+A tool trusted in a folder still runs its own checks every single time — otherwise one "always"
+would disarm every future call, which is a check that examines part of a request and lets the rest
+through unexamined.
+
+## What each tool demonstrates
+
+| Tool | `Gate` returns | Behaviour |
+|---|---|---|
+| `calc` | `null` | never asks — it adds two numbers and touches nothing |
+| `deploy` | request with `AlwaysRule = "deploy env=dev"` | asked once **per environment** |
+| `notify` | request with `AlwaysRule = null` | asked **every time**; no "always" is offered |
+
+Try it: answer **always** to `deploy env=dev`, then ask for a deploy to `prod`. It asks again. The
+scope of what you agreed to was decided by the rule the tool returned — not by the gate, which can
+only honour what it was given.
+
+`notify` never offers "always" at all. Its arguments are free text, and no rule string distinguishes
+`notify #eng` from `notify @ceo`; a button that promised to remember one would promise something the
+rule system cannot keep.
+
+## Wiring
+
+```csharp
+new SessionPorts
+{
+    Observer = new ConsoleSink(),
+    ToolObserver = new NullToolSink(),
+    Policy = policy,
+    Tools = [new Tools.Calc(), new Tools.Deploy(), new Tools.Notify()],
+}
+```
+
+`SessionFactory` wraps each one in `GatedAgentTool` on the way through, so nothing here has to
+remember to. A bare `IAgentTool` reaching an agent is not a compile error and would run with no gate
+at all — which is why the wrapping happens in the one place that has both the gate and the session's
+policy, rather than being left to each embedder.
+
+Sub-agents inherit these tools. Unlike `spawn` and `ask_user`, which are withheld because a child
+has no spawner and no user, a child edits files exactly as its parent does.
