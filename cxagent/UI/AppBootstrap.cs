@@ -342,24 +342,22 @@ public static class AppBootstrap
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
         // The running turn's cancellation scope, or null when nothing is running. Replaced on every
-        // submission and read by the Escape handler — a field rather than a local because the handler
-        // is registered once and must see the CURRENT turn, not whichever existed at registration.
-        CancellationTokenSource? turnCts = null;
-
-        // IS A TURN RUNNING — ONE DEFINITION, THREE CONSUMERS: the submission guard, /compress, and
-        // Escape. They were about to grow three subtly different answers to the same question.
+        // IS A TURN RUNNING, for this front end's own dispatch: whether a typed line becomes a steer
+        // or a prompt. Everything that REFUSES an action mid-turn asks the session, which knows
+        // whether its own state can change — see Session.IsBusy.
         //
-        // `turnCts` alone is NOT that predicate, and this is the trap the spec called out. It is
-        // never nulled when a turn ENDS, only replaced when the next one starts — so
-        // `turnCts is { IsCancellationRequested: false }` LATCHES TRUE after the first completed
-        // turn and would block every submission for the rest of the session. Escape got away with
-        // reading it because cancelling an already-finished turn is harmless. A guard cannot.
+        // THE CANCELLATION SCOPE IS NO LONGER HERE. It was a local owned by this method, which is
+        // what left a session able to report that it was busy with no way to stop; AgentHost holds it
+        // now, beside the busy flag and the turn it belongs to. That also retires the trap this
+        // comment used to describe — a token that latches true after the first completed turn,
+        // because it is replaced rather than cleared — since nothing here reads a token any more.
+        //
+        // STILL A LOCAL FLAG rather than session.IsBusy, and the difference is the falling edge: the
+        // continuation below clears this the moment a turn ends, while IsBusy is written by whichever
+        // thread ran the turn. Both are true mid-turn; only this one is guaranteed false by the time
+        // the continuation's next line runs, which is what the drain below depends on.
         var turnRunning = false;
-        // TWO CALLERS LEFT, both about this front end's own dispatch rather than about the
-        // session's state: whether a typed line becomes a steer or a prompt, and what /mode reports
-        // about what it can do right now. Everything that REFUSES an action mid-turn moved to the
-        // session, which knows whether its own state can change — see Session.IsBusy.
-        bool IsTurnRunning() => turnRunning && turnCts is { IsCancellationRequested: false };
+        bool IsTurnRunning() => turnRunning;
 
 
         // Messages typed while a turn was running, in the order they were typed. Joined into ONE
@@ -373,9 +371,9 @@ public static class AppBootstrap
 
             // ONE BLOCK, REWRITTEN. Adding a message updates the row rather than appending a new
             // one, so a burst of corrections stays one line and the running turn keeps the screen.
-            void ShowQueued()
+            void ShowQueued(string? body)
             {
-                if (session.PendingSteer is not { Length: > 0 } body) { RemoveQueuedBlock(); return; }
+                if (body is not { Length: > 0 }) { RemoveQueuedBlock(); return; }
 
                 var text = $"[dim]queued[/] {ChatTranscriptSink.Escape(body)}";
 
@@ -421,22 +419,36 @@ public static class AppBootstrap
                 queuedBlock = null;
             }
 
-            void DrainQueuedToComposer()
+            // ASKS THE SESSION TO EMPTY THE QUEUE; the restoring is done by the Cancelled handler
+            // below. This used to take the text AND place it AND remove the row — three steps at
+            // every call site, which is why the send path once left the block sitting above a
+            // duplicate of itself. Now there is one step here and one subscriber.
+            void DrainQueuedToComposer() => session.CancelPending();
+
+            // WHAT THIS FRONT END DOES WITH TEXT HANDED BACK. The session does not know a composer
+            // exists — it raises Cancelled and this decides. Placed ABOVE anything typed since,
+            // preserving the order things were written in: the queued lines were typed first.
+            //
+            // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the composer"
+            // row behind, which was inconsistent with the send path (where the block disappears) for
+            // what is the same event: the queue emptied, so the placeholder has nothing left to stand
+            // for. The trace earned nothing either — the text is sitting in the composer in plain
+            // view, so the row explained something already on screen while permanently costing a line
+            // of a transcript that scrolls.
+            session.Cancelled += text => system.EnqueueOnUIThread(() =>
             {
-                if (session.TakePendingSteer() is not { Length: > 0 } pending) return;
+                mainWindow.Input.Input = PromptQueue.Restore(text, mainWindow.Input.Input);
+                RemoveQueuedBlock();
+            });
 
-                mainWindow.Input.Input = PromptQueue.Restore(pending, mainWindow.Input.Input);
+            // AND WHEN THE TURN TAKES IT, the stand-in has no referent. This was called from three
+            // places that each had to remember; it is one subscription now, and the send path can no
+            // longer leave the block above the real message.
+            session.Drained += _ => system.EnqueueOnUIThread(RemoveQueuedBlock);
 
-                // REMOVED, not rewritten to a tombstone. This used to leave a "returned to the
-                // composer" row behind, which was inconsistent with the send path (where the block
-                // disappears) for what is the same event: the queue emptied, so the placeholder has
-                // nothing left to stand for. The trace earned nothing either — the text is sitting
-                // in the composer in plain view, so the row explained something already on screen
-                // while permanently costing a line of a transcript that scrolls.
-                if (queuedBlock is { } id)
-                    mainWindow.Chat.RemoveMessage(id);
-                queuedBlock = null;
-            }
+            // MARSHALLED HERE, NOT RAISED THERE. Core has no dispatcher and a headless subscriber
+            // should not pay for one — the same division Session.Changed already uses.
+            session.Pending += (whole, _) => system.EnqueueOnUIThread(() => ShowQueued(whole));
 
 
         // Tokens live beside config at 0600, never IN it. One HttpClient for the auth traffic, shared
@@ -1021,8 +1033,9 @@ public static class AppBootstrap
             // the model dispatch is blocked.
             if (IsTurnRunning())
             {
+                // NO RENDER CALL HERE. Steer raises Pending and the subscription above draws the
+                // block — the line that used to sit here is the line a second queueing path forgets.
                 session.Steer(goalText);
-                ShowQueued();
                 return;
             }
 
@@ -1032,17 +1045,11 @@ public static class AppBootstrap
             // a prompt while the agent was several tool calls into one.
             mainWindow.RetireComposerHint();
 
-            // A CANCELLATION SCOPE PER TURN, linked to the session's. Escape cancels THIS request;
-            // the session token still ends everything on Ctrl+Q or /exit. Before this the only token
-            // in existence was the session's, so there was no way to stop a turn without taking the
-            // whole app down with it.
-            var previousTurn = System.Threading.Interlocked.Exchange(ref turnCts,
-                CancellationTokenSource.CreateLinkedTokenSource(cts.Token));
-            // SAFE ONLY BECAUSE OF THE GUARD ABOVE. This disposes the PREVIOUS turn's token, which
-            // was a live one whenever a second submission landed mid-turn. Now a second submission
-            // queues and never reaches here, so whatever this disposes is always a finished turn.
-            previousTurn?.Dispose();
-            var turnToken = turnCts!.Token;
+            // THE PROCESS TOKEN, not a per-turn one. AgentHost links its own scope off whatever it
+            // is handed, so Escape can cancel one turn while this still ends everything on Ctrl+Q or
+            // /exit — the property the local scope here used to provide, kept, without this layer
+            // owning a lifecycle that belongs to the turn.
+            var turnToken = cts.Token;
 
             turnRunning = true;
             RunTurnAsync(goalText, turnToken, turnEcho);
@@ -1184,25 +1191,18 @@ public static class AppBootstrap
 
                 // Routed through EscapeRouting.For so the DECISION is unit-testable; the actions
                 // (which need a live dialog or a live turn) stay here.
-                var running = turnCts is { IsCancellationRequested: false };
-                switch (EscapeRouting.For(running))
-                {
-                    case EscapeTarget.CancelTurn:
-                        // Cancelling the token unwinds the whole turn: the provider stream, the tool
-                        // loop, and any shell process, whose ProcessRunner kills its ENTIRE process
-                        // tree on cancellation. The session, its context and its MCP servers survive.
-                        turnCts!.Cancel();
-                        transcript.Write("[yellow]Stopped.[/]");
-
-                        // ANYTHING QUEUED GOES BACK TO THE COMPOSER, not to the bin. That text was
-                        // never sent, so cancelling a run must not eat what someone typed — they can
-                        // now edit it, resend it, or clear it, which is the whole point of stopping.
-                        //
-                        // ABOVE any text already in the composer, preserving the order things were
-                        // written in: the queued lines were typed first.
-                        DrainQueuedToComposer();
-                        break;
-                }
+                // ONE CALL, AND THE SESSION OWNS ALL THREE STEPS. This was cancel-the-token, write
+                // "Stopped." to this front end's transcript, and drain the queue — three statements
+                // a second front end would have had to reproduce, and two of them were not this
+                // layer's: the turn's cancellation scope was a local here, so a session could report
+                // that it was busy and had no way to stop, and "Stopped." bypassed the session's own
+                // observer while every other state change went through it.
+                //
+                // WHAT STAYS IS THE ROUTING. A question and a permission prompt are answered above,
+                // because Escape there means "not answering that" rather than "throw the run away" —
+                // both need a live dialog, which is genuinely this layer's.
+                if (EscapeRouting.For(IsTurnRunning()) is EscapeTarget.CancelTurn)
+                    session.CancelTurn();
             });
 
         // MainWindow stays independent of SettingsDialog/SetupWizard; AppBootstrap supplies the flow

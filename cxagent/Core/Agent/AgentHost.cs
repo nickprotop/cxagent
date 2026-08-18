@@ -494,8 +494,56 @@ public sealed class AgentHost : IDisposable
 
     private bool _busy;
 
+    /// <summary>
+    /// The running turn's cancellation scope, or null between turns.
+    ///
+    /// <para>HERE BECAUSE THE TURN IS HERE. This was a local in the composition root — so a session
+    /// could report that it was busy and had no way to stop, and every front end would have had to
+    /// build the scope, link it, exchange it per turn and dispose the previous one correctly. That
+    /// lifecycle is the turn's, and the turn is this method's.</para>
+    ///
+    /// <para>LINKED TO THE CALLER'S TOKEN, so a process-wide shutdown still ends a turn that nobody
+    /// cancelled individually — the property the UI's own linked source had, kept.</para>
+    /// </summary>
+    private CancellationTokenSource? _turn;
+    private readonly object _turnGate = new();
+
+    /// <summary>
+    /// Stops the running turn, if there is one. True when something was actually cancelled.
+    ///
+    /// <para>THE WHOLE TURN UNWINDS: the provider stream, the tool loop, and any shell process, whose
+    /// ProcessRunner kills its entire process tree. The session, its context and its MCP servers
+    /// survive — stopping a turn is not ending a session.</para>
+    ///
+    /// <para>FALSE WHEN IDLE rather than throwing, because "stop" arriving a moment after a turn
+    /// ended is ordinary — a keystroke racing a completion — and not a condition anybody can act
+    /// on.</para>
+    /// </summary>
+    public bool CancelTurn()
+    {
+        CancellationTokenSource? turn;
+        lock (_turnGate) turn = _turn;
+
+        // NOT UNDER THE LOCK. Cancel runs registered callbacks synchronously on this thread, and a
+        // callback reaching back into the host would deadlock against a turn trying to finish.
+        if (turn is null || turn.IsCancellationRequested) return false;
+
+        turn.Cancel();
+        return true;
+    }
+
     public async Task SendAsync(string prompt, CancellationToken ct, string? echo = null)
     {
+        // A SCOPE PER TURN, linked to the caller's. Escape cancels THIS request; the caller's token
+        // still ends everything on shutdown. The previous turn's source is disposed as it is
+        // replaced — safe because a second turn cannot start while one runs (IsBusy guards it), so
+        // whatever is replaced here has already finished.
+        var scope = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationTokenSource? previous;
+        lock (_turnGate) { previous = _turn; _turn = scope; }
+        previous?.Dispose();
+        ct = scope.Token;
+
         Volatile.Write(ref _busy, true);
         try
         {
@@ -519,6 +567,12 @@ public sealed class AgentHost : IDisposable
             // died leaving this set would refuse every later command and look hung — the failure the
             // guard exists to prevent, caused by the guard.
             Volatile.Write(ref _busy, false);
+
+            // THE SCOPE STAYS UNTIL THE NEXT TURN REPLACES IT, deliberately not disposed here. A
+            // cancellation callback can still be running on another thread as this unwinds, and
+            // disposing under it throws ObjectDisposedException from a place nobody is catching.
+            // Clearing the field is enough: CancelTurn reads null and answers false.
+            lock (_turnGate) { if (ReferenceEquals(_turn, scope)) _turn = null; }
         }
     }
 
@@ -776,6 +830,14 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public void Dispose()
     {
+        // THE LAST TURN'S SCOPE. Every other one is disposed as the next turn replaces it; the final
+        // one has no successor, so without this it lives as long as the process. Safe here and not in
+        // SendAsync's finally: by the time a host is disposed no turn is running, which is the
+        // condition that makes disposing a cancellation source free of the callback race.
+        CancellationTokenSource? turn;
+        lock (_turnGate) { turn = _turn; _turn = null; }
+        turn?.Dispose();
+
         foreach (var server in _mcpServers)
             try { server.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); }
             catch (Exception) { /* it is going away regardless */ }

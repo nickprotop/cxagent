@@ -126,12 +126,71 @@ public sealed class Session
     private string? _pending;
     private readonly object _pendingGate = new();
 
+    /// <summary>
+    /// What is waiting changed: the whole queue, and the line just added.
+    ///
+    /// <para>BOTH, BECAUSE ONLY THIS MOMENT HAS BOTH. The append happens under the lock; afterwards a
+    /// subscriber holding only the whole cannot recover what changed, and one holding only the
+    /// increment has to read <see cref="PendingSteer"/> back — re-entering the lock this event exists
+    /// to keep it out of. Carrying both is what makes these events a COMPLETE account of the queue,
+    /// so a subscriber never needs the property at all.</para>
+    ///
+    /// <para>WHOLE FIRST because it is what every consumer today uses — the transcript block is
+    /// rewritten from it — and because <see cref="Drained"/> and <see cref="Cancelled"/> carry the
+    /// whole in the same position. A subscriber that only tracks current state reads parameter one
+    /// everywhere.</para>
+    ///
+    /// <para>PER APPEND, NOT COALESCED. The UI already redraws once per line — ShowQueued was called
+    /// inline after Steer, not on a render tick — so this reproduces existing behaviour exactly.
+    /// Coalescing here would need a timer or a frame hook, which is UI knowledge Core does not have,
+    /// and it would make the increment incoherent: three lines merged into one event have no single
+    /// "added". A subscriber that wants a slower rate already has a render loop to do it in.</para>
+    /// </summary>
+    public event Action<string, string>? Pending;
+
+    /// <summary>What was waiting has been given to the model. Carries what went.</summary>
+    public event Action<string>? Drained;
+
+    /// <summary>What was waiting has been taken back, and never sent. Carries what was returned.
+    ///
+    /// <para>SEPARATE FROM <see cref="Drained"/> even though both empty the queue, because a
+    /// subscriber does opposite things: drained means the real message is about to appear and the
+    /// stand-in should go, cancelled means put it back where it can be edited. One "emptied" event
+    /// would force every subscriber to reconstruct which happened.</para></summary>
+    public event Action<string>? Cancelled;
+
     /// <summary>Adds to what is waiting, starting it if nothing was. Newline-separated: the lines
     /// were separate thoughts when they were typed, and the break is structure a model reads.</summary>
     public void Steer(string text)
     {
+        string whole;
         lock (_pendingGate)
-            _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+            whole = _pending = string.IsNullOrEmpty(_pending) ? text : _pending + "\n" + text;
+
+        // RAISED OUTSIDE THE LOCK, always. A subscriber doing synchronous work — reading the queue
+        // back, or blocking on the UI thread while the UI thread waits here — deadlocks if this is
+        // raised while holding _pendingGate. It compiles, it passes every test, and it hangs only in
+        // the app: the same failure shape as a permission test that awaits a prompt nobody answers.
+        Pending?.Invoke(whole, text);
+    }
+
+    /// <summary>
+    /// Empties the queue and hands back what was in it, unsent.
+    ///
+    /// <para>AGNOSTIC ABOUT WHERE IT GOES. This does not know a composer exists; it raises
+    /// <see cref="Cancelled"/> and whoever cares decides. The UI puts it back above whatever has been
+    /// typed since — the queued lines came first — but a log writer would record it and a headless
+    /// embedder would drop it, and neither is this method's business.</para>
+    ///
+    /// <para>SILENT WHEN EMPTY. Cancelling nothing is not an event: a subscriber that restored an
+    /// empty string into a composer would clear what the user had typed since.</para>
+    /// </summary>
+    public void CancelPending()
+    {
+        string? taken;
+        lock (_pendingGate) { taken = _pending; _pending = null; }
+
+        if (taken is { Length: > 0 }) Cancelled?.Invoke(taken);
     }
 
     /// <summary>What is waiting, or null. For the UI to render — takes nothing.</summary>
@@ -149,12 +208,15 @@ public sealed class Session
     /// </summary>
     public string? TakePendingSteer()
     {
-        lock (_pendingGate)
-        {
-            var pending = _pending;
-            _pending = null;
-            return pending;
-        }
+        string? taken;
+        lock (_pendingGate) { taken = _pending; _pending = null; }
+
+        // OUTSIDE THE LOCK — see Steer. This one is raised from the agent's own flow while Steer
+        // comes from the render loop, which is the two-thread pair the lock exists for and the pair
+        // a subscriber would deadlock between.
+        if (taken is { Length: > 0 }) Drained?.Invoke(taken);
+
+        return taken;
     }
 
     /// <summary>
@@ -203,6 +265,41 @@ public sealed class Session
     /// tool results would land in a conversation nobody is reading, which is the orphan shape that
     /// 400s a session permanently.</para>
     /// </summary>
+    /// <summary>
+    /// Stops the running turn and hands back anything queued behind it. True when a turn was stopped.
+    ///
+    /// <para>THE WHOLE CASCADE IN ONE CALL, because the three steps only make sense together and were
+    /// three statements in the composition root: cancel the turn, say so, and return what was typed
+    /// while it ran. A front end that did two of the three left either a silent stop or text eaten by
+    /// a run the user chose to abandon.</para>
+    ///
+    /// <para>ANYTHING QUEUED GOES BACK, not to the bin. That text was never sent, so cancelling must
+    /// not eat it — and where it goes is not this method's business: <see cref="CancelPending"/>
+    /// raises <see cref="Cancelled"/> and a subscriber decides. The UI puts it in the composer above
+    /// whatever has been typed since; a log writer would record it.</para>
+    ///
+    /// <para>SAID THROUGH THE SESSION'S OWN OBSERVER. The root wrote "Stopped." straight to its
+    /// transcript, which meant a headless embedder driving a session was never told a turn had
+    /// stopped while every other state change — mode, model, resume — came through Say. Two channels
+    /// for one kind of fact.</para>
+    ///
+    /// <para>FALSE WHEN IDLE, and NOTHING is said or returned then: a stop arriving just after a turn
+    /// ended is an ordinary race, and announcing it would report an event that did not happen.</para>
+    /// </summary>
+    public bool CancelTurn()
+    {
+        if (Host?.CancelTurn() != true) return false;
+
+        Announce(SessionChangeKind.TurnCancelled);
+        Say("[yellow]Stopped.[/]");
+
+        // AFTER the announcement, so a subscriber restoring the text into a composer is drawing over
+        // a surface that has already reacted to the stop — announce before you say, and before you
+        // hand anything back.
+        CancelPending();
+        return true;
+    }
+
     /// <summary>Public form of <see cref="RefusedWhileBusy"/>, for the manager's resume — which is a
     /// session operation performed from outside because the store belongs to the manager.</summary>
     public bool RefuseIfBusy() => RefusedWhileBusy();

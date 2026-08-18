@@ -18,6 +18,10 @@ public enum SessionChangeKind
     /// <summary>An earlier conversation was restored into this session.</summary>
     Resumed,
 
+    /// <summary>The running turn was stopped. The session, its context and its MCP servers survive —
+    /// what a surface does about a half-drawn response is its own decision.</summary>
+    TurnCancelled,
+
     /// <summary>The conversation was emptied. What a surface does about its own scrollback is its
     /// own decision — the session only reports that the messages behind it are gone.</summary>
     ContextCleared,
