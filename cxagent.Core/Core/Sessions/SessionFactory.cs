@@ -43,6 +43,17 @@ internal static class SessionFactory
             ? PluginRegistry.CreateWithBuiltins()
             : PluginRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy);
 
+        // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
+        // error and would run with no gate at all — PermissionGatedPlugin cannot cover it, because
+        // that type keys off the built-in type names and a consumer tool matches none of them. So
+        // the one place that has both the gate and the session's policy does the wrapping, and an
+        // embedder cannot forget. With no gate (headless, tests) the tools are passed through: the
+        // paths with no gate are the paths with nothing to ask.
+        var agentTools = shared.Gate is null
+            ? ports.Tools
+            : ports.Tools.Select(t => (Plugins.IAgentTool)new Plugins.GatedAgentTool(
+                t, shared.Gate, ports.Policy)).ToList();
+
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
         // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
         // seed and the host's context come from it, and taking it inline in the argument list
@@ -83,6 +94,10 @@ internal static class SessionFactory
             Provider = resolution.Provider!,
             InstanceName = resolution.InstanceName,
             Plugins = plugins,
+
+            // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
+            // show the result as its parent, or the showing is silently skipped.
+            AgentTools = agentTools,
 
             // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
             Ledger = ledger,
@@ -164,6 +179,9 @@ internal static class SessionFactory
                 // is that named delegate for readability at its own call sites. The two shapes
                 // are identical but a named delegate has no implicit conversion to Func.
                 AskUser = ports.Ask is null ? null : (questions, ct) => ports.Ask(questions, ct),
+
+                // Already gated above. The host hands these to its agent and to every child.
+                AgentTools = agentTools,
             },
             ports.Observer,
             ports.ToolObserver,

@@ -185,6 +185,11 @@ public sealed class Agent
     /// </summary>
     private readonly AskUserTool? _askUser;
 
+    /// <summary>The embedder's own tools, or null when nothing was injected. Offered to a child as
+    /// well as a parent: a sub-agent that cannot call show_diff would do the work and skip the
+    /// showing, which is the one thing the tool exists for.</summary>
+    private readonly Plugins.AgentToolset? _agentTools;
+
     /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
     public IReadOnlyList<TodoItem> Todos => _todos.Items;
 
@@ -484,7 +489,8 @@ public sealed class Agent
         string? label = null,
         Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
         string? workingDir = null,
-        string? instanceName = null)
+        string? instanceName = null,
+        IReadOnlyList<Plugins.IAgentTool>? agentTools = null)
     {
         // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
         //
@@ -534,6 +540,12 @@ public sealed class Agent
         // when the parent's turn is cancelled. Enforced here rather than trusted to the factory, so
         // the guarantee holds for any construction path.
         _askUser = askUser is not null && !isSubAgent ? new AskUserTool(askUser) : null;
+
+        // UNLIKE _askUser, A CHILD KEEPS THESE. The no-nesting rule withholds spawn and ask from a
+        // sub-agent because a child has no user to answer and no spawner to nest with; neither is
+        // true of an injected tool, and the spec is explicit that "sub agents are getting what its
+        // parents have".
+        _agentTools = agentTools is { Count: > 0 } ? new Plugins.AgentToolset(agentTools) : null;
 
         _skills = new Skills.SkillLoader(() =>
         {
@@ -759,6 +771,11 @@ public sealed class Agent
             // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
             // the agent is asked to follow, a tool it was never given.
             .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
+            // THE EMBEDDER'S OWN. Last in the list, and dispatched last among the named tools, so a
+            // consumer can never shadow a built-in name the model already trusts. A tool the model
+            // is never TOLD about can never be called, so dispatch alone would have been half a
+            // feature.
+            .Concat(_agentTools?.Definitions() ?? [])
             .ToList();
         var wrote = false;
         var challenges = 0;
@@ -1717,6 +1734,10 @@ public sealed class Agent
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
                 ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
+                // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. WorkerToolset.InvokeAsync
+                // answers "no such tool" rather than null, so it ENDS this chain — a link placed
+                // after it never runs at all, and looks perfectly correct while never running.
+                ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

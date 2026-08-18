@@ -79,6 +79,16 @@ public sealed class SubAgentFactory
         public required PluginRegistry Plugins { get; init; }
 
         /// <summary>
+        /// The embedder's injected tools, inherited whole.
+        ///
+        /// <para>A CHILD KEEPS THESE, unlike spawn and ask. Those are withheld because a child has
+        /// no user to answer and no spawner to nest with — structural facts about a child. Neither
+        /// applies to an injected tool: a sub-agent that cannot call <c>show_diff</c> would do the
+        /// work and silently skip the showing, which is the one thing the tool exists for.</para>
+        /// </summary>
+        public IReadOnlyList<Plugins.IAgentTool>? AgentTools { get; init; }
+
+        /// <summary>
         /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
         /// a user reads covers the work, not the agent that happened to do it, and a child with its
         /// own ledger spends against nothing.
@@ -274,7 +284,12 @@ public sealed class SubAgentFactory
             // THE CHILD'S OWN SYSTEM PROMPT (D24). Without this it would be handed the session
             // prompt unchanged — told about /clear and /compress it cannot run, for a user it does
             // not have, and never told that its final message is the entire answer.
-            isSubAgent: true);
+            isSubAgent: true,
+
+            // INHERITED WHOLE, unlike spawn and ask below. Those are withheld for structural
+            // reasons that do not apply here — a child has no user and no spawner, but it edits
+            // files exactly as its parent does, so it needs the same way to show the result.
+            agentTools: _runtime.AgentTools);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //
@@ -284,6 +299,10 @@ public sealed class SubAgentFactory
         //   * NO SPAWNER — a child constructed without one structurally CANNOT nest. That is what
         //     makes "no sub-agents of sub-agents" true rather than aspirational: it is not a rule the
         //     child is asked to follow, it is a tool it was never given.
+        //
+        //   * INJECTED TOOLS *ARE* PASSED, and the difference is worth stating because the two
+        //     absences above make withholding look like the house style. They are withheld for
+        //     reasons that are facts about being a child; an injected tool answers to neither.
         // instance:model, THE SAME LABEL THE LEDGER KEYS BY. A bare model name is ambiguous — two
         // instances can serve one model with different endpoints and windows — and this row is
         // written to the same history database the session rows are, so the two must agree or a
