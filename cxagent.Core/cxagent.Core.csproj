@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <!-- The resume buffer and the usage archive. -->
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
 
     <!-- web_fetch parses HTML with AngleSharp rather than regex over a document.
          REFERENCED HERE NOW, and the old reasoning for not doing so has inverted. It used to arrive
