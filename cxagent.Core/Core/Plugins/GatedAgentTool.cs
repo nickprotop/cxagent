@@ -44,8 +44,60 @@ public sealed class GatedAgentTool : IAgentTool
     /// depending on whether it happened to be handed the wrapper.</summary>
     public PermissionRequest? Gate(JobParameters call) => _inner.Gate(call);
 
+    /// <summary>
+    /// Whether GATE 1 has been answered for this session — may this tool run in this folder at all.
+    ///
+    /// <para>ASKED ONCE, ON FIRST USE. Not once per call: that is gate 2's job. A denial does NOT
+    /// latch, per the spec — "if deny one, second time, asking again" — because a refusal is about
+    /// this moment, not a permanent verdict on the tool.</para>
+    /// </summary>
+    private bool _allowedHere;
+
     public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
     {
+        // GATE 1: MAY THIS TOOL RUN HERE AT ALL. A PermissionKind.Tool question, distinct from
+        // anything the tool itself asks — "may show_diff run in /tmp/cxdiff" is not a file question,
+        // and answering "always" to it grants the TOOL, never a bypass of its own checks below.
+        //
+        // WITHOUT THIS the tool was silently ungated on first use: show_diff's own gate returns a
+        // FileRead request, and a trusted folder answers that one silently, so a live drive ran an
+        // injected tool with no prompt at any point. Reported from that drive.
+        if (!_allowedHere)
+        {
+            var admission = new PermissionRequest(
+                PermissionKind.Tool,
+                $"use the {_inner.Definition.Name} tool in this folder",
+
+                // GENERALISABLE BY TOOL NAME, so "always" is answered once per folder per tool and
+                // means what it says. It does not name the arguments, because it is not about them.
+                AlwaysRule: $"tool {_inner.Definition.Name}");
+
+            context.ReportPermissionWait(true);
+            bool admitted;
+            try
+            {
+                admitted = await _gate.RequestAsync(
+                    admission with { Requester = context.Requester, Policy = _policy }, ct);
+            }
+            finally
+            {
+                context.ReportPermissionWait(false);
+            }
+
+            if (!admitted)
+                return new JobResult
+                {
+                    Success = false,
+                    ExitCode = -1,
+                    PermissionDenied = true,
+                    ErrorMessage = $"permission denied by the user: {admission.Display}. "
+                        + "Do not retry this operation or plan it again unless the user explicitly asks.",
+                };
+
+            // ONLY ON A YES. A denial leaves this false so the next call asks again.
+            _allowedHere = true;
+        }
+
         // GATE 2, ON EVERY CALL. Gate 1 — may this tool run in this folder — is answered by the
         // stored Tool rule the gate consults below, once per folder. This one is the tool's own
         // check on THIS call's arguments and has no memory by design: being trusted is permission

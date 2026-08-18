@@ -32,10 +32,26 @@ public sealed class AgentToolset
     public IReadOnlyList<ToolDefinition> Definitions() =>
         _byName.Values.Select(t => t.Definition).ToList();
 
+    /// <summary>
+    /// What the last dispatched call wants the TRANSCRIPT to show, when that differs from what the
+    /// model was told. Null when they are the same, which is the normal case.
+    ///
+    /// <para>WHY A SIDE CHANNEL RATHER THAN A RETURN VALUE. Agent rebuilds job.Result from the
+    /// returned STRING — <c>Output = { ["content"] = result }</c> — so a tool's own output dictionary
+    /// is discarded before the sink ever sees it. Returning a tuple would change a signature four
+    /// call sites deep for one tool's benefit; this is read immediately after the await, by the one
+    /// caller that closes the row.</para>
+    ///
+    /// <para>NOT THREAD-SAFE, AND IT DOES NOT NEED TO BE: tool calls within a turn run sequentially
+    /// through this chain, and it is consumed on the next line after the call that set it.</para>
+    /// </summary>
+    public string? LastDisplay { get; private set; }
+
     /// <summary>Null when no injected tool owns this name, so the caller's <c>??</c> chain
     /// continues to the built-ins' terminator.</summary>
     public async Task<string?> TryInvokeAsync(ToolCall call, IJobContext context, CancellationToken ct)
     {
+        LastDisplay = null;
         if (!_byName.TryGetValue(call.Name, out var tool)) return null;
 
         var result = await tool.ExecuteAsync(JobParametersFrom(call), context, ct);
@@ -47,17 +63,19 @@ public sealed class AgentToolset
         if (!result.Success)
             return result.ErrorMessage ?? "error: the tool failed without saying why";
 
-        // TWO AUDIENCES, TWO KEYS. Output["content"] is what the TRANSCRIPT renders; "summary" is
-        // what the MODEL is told. They are usually the same text and "summary" is absent, so this
-        // falls back — but show_diff is the case that forced the split: its content is native markup
-        // for a human to look at, and handing the model a blob of colour tags would cost a turn of
-        // it trying to describe them.
-        if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
-            return s;
+        var content = result.Output.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "";
 
-        return result.Output.TryGetValue("content", out var content)
-            ? content?.ToString() ?? string.Empty
-            : string.Empty;
+        // TWO AUDIENCES. "content" is what the TRANSCRIPT shows; "summary", when present, is what
+        // the MODEL is told instead. show_diff is the case that forced the split: its content is
+        // native markup for a person to look at, and handing the model a blob of colour tags costs a
+        // turn of it describing them.
+        if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
+        {
+            LastDisplay = content;   // the markup, which Agent would otherwise never see
+            return s;
+        }
+
+        return content;
     }
 
     /// <summary>

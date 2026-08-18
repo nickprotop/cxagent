@@ -45,6 +45,20 @@ public class GatedAgentToolTests
         }
     }
 
+    /// <summary>Records every request it was handed, so a test can assert WHAT was asked.</summary>
+    private sealed class RecordingGate : IPermissionGate
+    {
+        private readonly bool _allow;
+        public RecordingGate(bool allow) => _allow = allow;
+        public List<PermissionRequest> Seen { get; } = [];
+
+        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        {
+            Seen.Add(request);
+            return Task.FromResult(_allow);
+        }
+    }
+
     /// <summary>Says yes to everything, and counts how often it was asked.</summary>
     private sealed class CountingGate : IPermissionGate
     {
@@ -61,6 +75,51 @@ public class GatedAgentToolTests
 
     private static JobParameters Call(string value) =>
         new(new Dictionary<string, object?> { ["arg"] = value });
+
+    [Fact]
+    public async Task TheToolItselfIsAdmittedOnceBeforeTheFirstCall()
+    {
+        // GATE 1: may this tool run in this folder at all. Without it an injected tool was silently
+        // ungated on first use — seen on a live drive, where show_diff's own FileRead request was
+        // answered silently by a trusted folder and no prompt appeared at any point.
+        var gate = new RecordingGate(allow: true);
+        var tool = new GatedAgentTool(new RecordingTool(gatesEveryCall: false), gate);
+
+        await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+
+        var admission = Assert.Single(gate.Seen);
+        Assert.Equal(PermissionKind.Tool, admission.Kind);
+        Assert.Equal("tool recorder", admission.AlwaysRule);
+    }
+
+    [Fact]
+    public async Task AdmissionIsAskedOnceNotOncePerCall()
+    {
+        var gate = new RecordingGate(allow: true);
+        var tool = new GatedAgentTool(new RecordingTool(gatesEveryCall: false), gate);
+
+        await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+        await tool.ExecuteAsync(Call("b"), new TestJobContext(), CancellationToken.None);
+
+        Assert.Single(gate.Seen);   // gate 1 once; gate 2 is the per-call one
+    }
+
+    [Fact]
+    public async Task ADeniedAdmissionAsksAgainNextTime()
+    {
+        // Per the spec: "if deny one, second time, asking again." A refusal is about this moment,
+        // not a permanent verdict on the tool — latching it would mean one mis-typed no disabled a
+        // tool for the rest of the session with no way back.
+        var gate = new RecordingGate(allow: false);
+        var inner = new RecordingTool(gatesEveryCall: false);
+        var tool = new GatedAgentTool(inner, gate);
+
+        await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+        await tool.ExecuteAsync(Call("b"), new TestJobContext(), CancellationToken.None);
+
+        Assert.Equal(2, gate.Seen.Count);
+        Assert.Equal(0, inner.ExecuteCalls);
+    }
 
     [Fact]
     public async Task TrustedToolStillRunsItsOwnGateOnEveryCall()
@@ -81,15 +140,19 @@ public class GatedAgentToolTests
     public async Task AnUngatedCallNeedsNoHumanAndStillRuns()
     {
         // Gate returning null means "no human needed", NOT "do not run".
+        //
+        // The gate is still asked ONCE — that is gate 1, admitting the tool to this folder, and it
+        // is a different question from the one this tool declines to ask about its arguments.
         var inner = new RecordingTool(gatesEveryCall: false);
-        var gate = new CountingGate(allow: false);   // would refuse if it were ever asked
+        var gate = new CountingGate(allow: true);
         var tool = new GatedAgentTool(inner, gate);
 
-        var result = await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+        await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+        var result = await tool.ExecuteAsync(Call("b"), new TestJobContext(), CancellationToken.None);
 
         Assert.True(result.Success);
-        Assert.Equal(1, inner.ExecuteCalls);
-        Assert.Equal(0, gate.Asked);
+        Assert.Equal(2, inner.ExecuteCalls);
+        Assert.Equal(1, gate.Asked);   // admission only, and only once
     }
 
     [Fact]
@@ -129,6 +192,7 @@ public class GatedAgentToolTests
 
         await tool.ExecuteAsync(Call("a"), context, CancellationToken.None);
 
-        Assert.Equal([true, false], context.PermissionWaits);
+        // Twice: once for gate 1 (admitting the tool) and once for gate 2 (this call's own check).
+        Assert.Equal([true, false, true, false], context.PermissionWaits);
     }
 }

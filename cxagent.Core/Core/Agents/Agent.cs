@@ -1903,7 +1903,17 @@ public sealed class Agent
             ExitCode = failed ? -1 : 0,
             Duration = DateTimeOffset.UtcNow - started,
             ErrorMessage = failed ? result : null,
-            Output = new Dictionary<string, object?> { ["content"] = result },
+
+            // THE ROW SHOWS WHAT THE TOOL DREW, when that differs from what the model was told.
+            // This method rebuilds the result from the returned STRING, which discards a tool's own
+            // output dictionary — fine for every built-in, where the two are the same text, and
+            // wrong for an injected tool whose whole purpose is to render something. Seen live: a
+            // show_diff row displaying "README.md, +5 -1, shown above" — the model's confirmation —
+            // where the diff itself should have been.
+            Output = new Dictionary<string, object?>
+            {
+                ["content"] = _agentTools?.LastDisplay ?? result,
+            },
         };
         _jobs.ToolUpdated(job);
 
