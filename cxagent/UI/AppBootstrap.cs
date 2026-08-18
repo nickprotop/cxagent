@@ -342,22 +342,19 @@ public static class AppBootstrap
         // kill the servers. Assigned below, before the first WireRunner, and read by every host it
         // builds thereafter.
         // The running turn's cancellation scope, or null when nothing is running. Replaced on every
-        // IS A TURN RUNNING, for this front end's own dispatch: whether a typed line becomes a steer
-        // or a prompt. Everything that REFUSES an action mid-turn asks the session, which knows
-        // whether its own state can change — see Session.IsBusy.
+        // WHETHER THIS FRONT END'S OWN CONTINUATION IS STILL ON THE STACK — not whether a turn is
+        // running, which is the session's answer and is asked of it directly now.
         //
-        // THE CANCELLATION SCOPE IS NO LONGER HERE. It was a local owned by this method, which is
-        // what left a session able to report that it was busy with no way to stop; AgentHost holds it
-        // now, beside the busy flag and the turn it belongs to. That also retires the trap this
-        // comment used to describe — a token that latches true after the first completed turn,
-        // because it is replaced rather than cleared — since nothing here reads a token any more.
+        // THE DIFFERENCE IS THE FALLING EDGE, and it is why this survives: the continuation clears
+        // this the moment a turn ends, while IsBusy is written by whichever thread ran the turn.
+        // Both are true mid-turn; only this one is guaranteed false by the time the continuation's
+        // next line runs, which is what the post-turn drain below depends on.
         //
-        // STILL A LOCAL FLAG rather than session.IsBusy, and the difference is the falling edge: the
-        // continuation below clears this the moment a turn ends, while IsBusy is written by whichever
-        // thread ran the turn. Both are true mid-turn; only this one is guaranteed false by the time
-        // the continuation's next line runs, which is what the drain below depends on.
+        // WHAT LEFT. Deciding whether a typed line becomes a steer or a prompt moved to Session.Send,
+        // which reads IsBusy — that decision was the only thing enforcing "two SendAsync calls on one
+        // agent append to ONE live Context.Messages", from a bool a second front end could not see.
+        // The cancellation scope moved to AgentHost, beside the busy flag and the turn it belongs to.
         var turnRunning = false;
-        bool IsTurnRunning() => turnRunning;
 
 
         // Messages typed while a turn was running, in the order they were typed. Joined into ONE
@@ -1042,13 +1039,15 @@ public static class AppBootstrap
             // /help and /compress — the user could not quit while a turn ran, and the composer would
             // claim "no provider", which is a lie. Commands reach this point already handled; only
             // the model dispatch is blocked.
-            if (IsTurnRunning())
-            {
-                // NO RENDER CALL HERE. Steer raises Pending and the subscription above draws the
-                // block — the line that used to sit here is the line a second queueing path forgets.
-                session.Steer(goalText);
-                return;
-            }
+            // THE SESSION DECIDES, and queues when it must. This was `if (IsTurnRunning())` against
+            // a bool maintained here — the only thing enforcing "two SendAsync calls on one agent
+            // append to ONE live Context.Messages from two loops", while AgentHost's own comment
+            // leaned on the rule as though Core held it. Session.Send reads IsBusy, which the host
+            // writes as a turn begins and clears however it ends.
+            // ALREADY QUEUED BY Send, and nothing to draw here: Steer raised Pending and the
+            // subscription above drew the block. The two lines that used to sit here — queue it,
+            // then render it — are the pair a second submission path forgets.
+            if (session.Send(goalText) is Session.SendOutcome.Queued) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.
             // Retire the hint HERE, at submission — not when tokens first arrive. Tied to the token
@@ -1212,7 +1211,7 @@ public static class AppBootstrap
                 // WHAT STAYS IS THE ROUTING. A question and a permission prompt are answered above,
                 // because Escape there means "not answering that" rather than "throw the run away" —
                 // both need a live dialog, which is genuinely this layer's.
-                if (EscapeRouting.For(IsTurnRunning()) is EscapeTarget.CancelTurn)
+                if (EscapeRouting.For(session.IsBusy) is EscapeTarget.CancelTurn)
                     session.CancelTurn();
             });
 

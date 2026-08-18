@@ -266,6 +266,63 @@ public sealed class Session
     /// 400s a session permanently.</para>
     /// </summary>
     /// <summary>
+    /// What a caller asked to send, and what the session did with it.
+    ///
+    /// <para>THE THREE OUTCOMES ARE DIFFERENT ACTIONS FOR THE CALLER, which is why this is not a
+    /// bool: a started turn needs a spinner, a queued one needs nothing (the Pending event already
+    /// drew the block), and a refusal needs the text left in the composer rather than cleared.</para>
+    /// </summary>
+    public enum SendOutcome
+    {
+        /// <summary>No host — nothing was sent and nothing was kept.</summary>
+        NoAgent,
+
+        /// <summary>A turn began. The caller runs it and reports when it ends.</summary>
+        Started,
+
+        /// <summary>A turn was already running, so this was queued for its next tool barrier.</summary>
+        Queued,
+    }
+
+    /// <summary>
+    /// Sends this text, or queues it when a turn is already running.
+    ///
+    /// <para>THE DECISION MOVES HERE, and it is the one that matters most: two SendAsync calls on one
+    /// agent append to ONE live Context.Messages from two loops, which corrupts the conversation
+    /// rather than throwing. That rule was enforced by a bool local to one front end while
+    /// AgentHost's own comment leaned on it — "safe because a second turn cannot start while one runs
+    /// (IsBusy guards it)" — so a second front end, a headless driver, or a resume racing a
+    /// submission would each have had to rediscover it, and getting it wrong is silent.</para>
+    ///
+    /// <para>QUEUED, NOT REFUSED. A correction typed mid-turn is the normal case, not an error: it is
+    /// delivered at the turn's next tool barrier, where the model can still act on it. Refusing would
+    /// throw away what someone deliberately typed.</para>
+    ///
+    /// <para>THE CALLER STILL RUNS THE TURN. This says whether one may start, not how to await it —
+    /// a front end needs its own continuation for the spinner and the falling edge, and a headless
+    /// driver wants to await the Task. Returning the outcome rather than the Task keeps both honest;
+    /// see <see cref="InitialisePrompt"/>, which already splits deciding from running.</para>
+    /// </summary>
+    /// <param name="text">What to send.</param>
+    public SendOutcome Send(string text)
+    {
+        if (Host is null) return SendOutcome.NoAgent;
+
+        // ISBUSY, NOT A CALLER'S FLAG. The host writes it as the turn begins and clears it however
+        // the turn ends, including cancellation — so it cannot latch true the way a flag maintained
+        // beside the turn can.
+        if (IsBusy)
+        {
+            // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
+            // the block IS the report, and a line saying "queued" beside it would say it twice.
+            Steer(text);
+            return SendOutcome.Queued;
+        }
+
+        return SendOutcome.Started;
+    }
+
+    /// <summary>
     /// Stops the running turn and hands back anything queued behind it. True when a turn was stopped.
     ///
     /// <para>THE WHOLE CASCADE IN ONE CALL, because the three steps only make sense together and were

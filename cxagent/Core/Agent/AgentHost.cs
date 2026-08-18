@@ -534,10 +534,31 @@ public sealed class AgentHost : IDisposable
 
     public async Task SendAsync(string prompt, CancellationToken ct, string? echo = null)
     {
+        // ONE TURN AT A TIME, ENFORCED HERE RATHER THAN TRUSTED OF THE CALLER. Two SendAsync calls
+        // on one agent append to ONE live Context.Messages from two loops, and the second would
+        // dispose the RUNNING turn's scope below — so the first loop throws ObjectDisposedException
+        // at its next cancellation check instead of cancelling. Neither failure throws where the
+        // mistake was made; the conversation is simply wrong afterwards.
+        //
+        // THIS METHOD USED TO ASSERT THE RULE AND NOT HOLD IT. The comment below said "safe because
+        // a second turn cannot start while one runs (IsBusy guards it)" while the only guard was a
+        // bool local to one front end. Session.Send now queues rather than reaching here twice, and
+        // this is the backstop for every other caller — a headless driver, a second front end, a
+        // resume racing a submission.
+        //
+        // THROWS, because there is no honest alternative at this depth: the host has no queue (that
+        // is the session's) and returning quietly would report success for a turn that never ran.
+        lock (_turnGate)
+        {
+            if (Volatile.Read(ref _busy))
+                throw new InvalidOperationException(
+                    "A turn is already running on this agent. Queue the text through Session.Send "
+                    + "instead of starting a second turn.");
+        }
+
         // A SCOPE PER TURN, linked to the caller's. Escape cancels THIS request; the caller's token
         // still ends everything on shutdown. The previous turn's source is disposed as it is
-        // replaced — safe because a second turn cannot start while one runs (IsBusy guards it), so
-        // whatever is replaced here has already finished.
+        // replaced — safe because the guard above means whatever is replaced has already finished.
         var scope = CancellationTokenSource.CreateLinkedTokenSource(ct);
         CancellationTokenSource? previous;
         lock (_turnGate) { previous = _turn; _turn = scope; }
