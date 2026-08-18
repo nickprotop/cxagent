@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// The <c>task</c> tool: builds a child, runs it to completion, and returns its answer.

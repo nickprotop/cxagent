@@ -3,6 +3,7 @@ using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using Ctl = SharpConsoleUI.Builders.Controls;
+using CxAgent.Core.Agents;
 
 namespace CxAgent.UI;
 

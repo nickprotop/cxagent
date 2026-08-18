@@ -8,8 +8,9 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
 using CxAgent.Helpers;
+using CxAgent.Core.Sessions;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// The UI's side of one <see cref="Agent"/>: owns it for the session, feeds it what the user types,

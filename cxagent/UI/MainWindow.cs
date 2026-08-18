@@ -8,6 +8,7 @@ using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Themes;
+using CxAgent.Core.Agents;
 
 namespace CxAgent.UI;
 

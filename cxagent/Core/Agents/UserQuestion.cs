@@ -1,4 +1,5 @@
-namespace CxAgent.Core.Sessions;
+
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// One answer the model is offering, and what choosing it means.

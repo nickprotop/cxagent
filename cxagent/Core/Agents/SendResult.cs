@@ -1,4 +1,5 @@
-namespace CxAgent.Core.Sessions;
+
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// How a request ended. The kernel knows this at the point it returns; nothing downstream has to

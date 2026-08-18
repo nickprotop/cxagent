@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// <c>todowrite</c> — the model writes and rewrites its own plan.

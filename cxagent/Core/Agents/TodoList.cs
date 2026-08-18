@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>What has happened to one item.</summary>
 public enum TodoStatus

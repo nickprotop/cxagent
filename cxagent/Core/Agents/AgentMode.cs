@@ -1,4 +1,5 @@
-namespace CxAgent.Core.Sessions;
+
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// Whether this session's agent works alone or may delegate.

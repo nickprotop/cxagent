@@ -1,4 +1,5 @@
-namespace CxAgent.Core.Sessions;
+
+namespace CxAgent.Core.Agents;
 
 /// <summary>One built-in agent type, as shipped.</summary>
 /// <param name="Name">What a spawn's `type` argument names.</param>

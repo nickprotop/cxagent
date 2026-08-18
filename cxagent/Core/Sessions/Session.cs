@@ -2,6 +2,7 @@ using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Agents;
 
 namespace CxAgent.Core.Sessions;
 

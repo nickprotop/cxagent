@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// <c>question</c> — the model asks the user questions and waits for the answers.

@@ -1,3 +1,5 @@
+using CxAgent.Core.Agents;
+
 namespace CxAgent.Core.Sessions;
 
 /// <summary>

@@ -1,6 +1,6 @@
 using CxAgent.Core.Llm;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// One resolved sub-agent type: everything a child needs that a type decides.

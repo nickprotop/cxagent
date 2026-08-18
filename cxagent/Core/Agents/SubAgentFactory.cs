@@ -1,8 +1,9 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Sessions;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>A child, its captured output, and the panel holding its rows.</summary>
 /// <param name="Agent">The child itself. Its <c>Id</c> addresses its row and names its log directory.</param>

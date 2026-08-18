@@ -5,8 +5,9 @@ using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
+using CxAgent.Core.Sessions;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// The whole of single-agent mode: one model, its tools, and a turn loop. No plan, no DAG, no

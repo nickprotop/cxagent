@@ -1,7 +1,7 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Sessions;
+namespace CxAgent.Core.Agents;
 
 /// <summary>
 /// Runs a sub-agent on behalf of a tool call, or declines a name it does not own.
