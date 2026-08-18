@@ -212,4 +212,37 @@ public static class ColorScheme
     /// exactly this, and the colour in the screenshot that prompted the comparison.
     /// </summary>
     public const string ThinkingMarkup = "#f5a742";
+
+    // --- Diff -------------------------------------------------------------------
+    //
+    // GitHub's dark-theme diff colours, and the reason to borrow rather than invent is that these
+    // are the two colours every developer already reads without thinking. A palette of our own would
+    // be a small novelty tax on the one surface where recognition matters most.
+    //
+    // FOUR VALUES, NOT TWO. Each direction needs a ROW ground and a stronger SPAN ground on top of
+    // it: the row says "this line changed", the span says "this is the part that changed". One
+    // colour for both loses the intra-line highlight that is the whole point of the word-diff.
+    //
+    // NOT DangerMarkup / a green from Code. Those are semantic — failure and source code — and a
+    // removed line is neither failing nor code-as-such. Reusing them would mean a theme change that
+    // wanted louder errors also repainted every diff.
+
+    /// <summary>Removed text.</summary>
+    public const string DiffRemovedMarkup = "#f85149";
+
+    /// <summary>The ground under a removed row.</summary>
+    public const string DiffRemovedRow = "#3a0d0d";
+
+    /// <summary>The ground under the changed RUN inside a removed row — brighter than the row, so
+    /// the eye lands on the words that moved rather than on the line that holds them.</summary>
+    public const string DiffRemovedSpan = "#5a1a1a";
+
+    /// <summary>Added text.</summary>
+    public const string DiffAddedMarkup = "#7ee787";
+
+    /// <summary>The ground under an added row.</summary>
+    public const string DiffAddedRow = "#0d3a1a";
+
+    /// <summary>The ground under the changed RUN inside an added row.</summary>
+    public const string DiffAddedSpan = "#1a5a2a";
 }
