@@ -88,6 +88,55 @@ public class ToolSelectionTests
     }
 
     [Fact]
+    public void AllResetsToEverythingAndDiscardsWhatCameBefore()
+    {
+        // THE ONE TERM THAT DELIBERATELY WIDENS. A session under a read-only manager can say `all`
+        // and get the full set back — safe because a selection is only ever written in config or
+        // code, never by a model.
+        var composed = ToolSelection.Then(
+            new ToolSelection(["read_file"]),
+            new ToolSelection([Tool.All]));
+
+        Assert.Equal(["read_file", "run_shell", "write_file"],
+            Names(composed!.Apply(Offered("read_file", "run_shell", "write_file"))));
+    }
+
+    [Fact]
+    public void AllDiffersFromInheritedOnlyBelowTheTopLevel()
+    {
+        // At the top they are the same set: nothing has narrowed yet. Below it they diverge, and
+        // that divergence is the entire reason `all` exists.
+        var offered = Offered("read_file", "run_shell");
+
+        Assert.Equal(Names(new ToolSelection(["inherited"]).Apply(offered)),
+                     Names(new ToolSelection([Tool.All]).Apply(offered)));
+
+        var narrowed = new ToolSelection(["inherited", "-run_shell"]);
+
+        Assert.DoesNotContain("run_shell",
+            Names(ToolSelection.Then(narrowed, new ToolSelection(["inherited"]))!.Apply(offered)));
+        Assert.Contains("run_shell",
+            Names(ToolSelection.Then(narrowed, new ToolSelection([Tool.All]))!.Apply(offered)));
+    }
+
+    [Fact]
+    public void AllIsStillBoundedByS0()
+    {
+        // It resets the SELECTION, never the structure. A child saying `all` does not acquire
+        // ask_user, because ask_user was never in the set it was handed.
+        Assert.DoesNotContain("ask_user",
+            Names(new ToolSelection([Tool.All]).Apply(Offered("read_file"))));
+    }
+
+    [Fact]
+    public void ATermAfterAllStillApplies()
+    {
+        // `all` is a starting point, not a full stop.
+        Assert.Equal(["read_file"],
+            Names(new ToolSelection([Tool.All, "-run_shell"]).Apply(Offered("read_file", "run_shell"))));
+    }
+
+    [Fact]
     public void ChainingApplyIsNotComposition()
     {
         // The same two levels, applied one after the other, CANNOT reopen. Pinned so the difference

@@ -6,9 +6,14 @@ namespace CxAgent.Core.Plugins;
 /// Which tools an agent is offered, as WRITTEN — never as resolved.
 ///
 /// <para>A selection is a list of terms: <c>inherited</c> to start from what this agent would
-/// otherwise have, a bare <c>name</c> to include, <c>-name</c> to exclude, <c>+name</c> to include
-/// even where an earlier level excluded it. A list WITHOUT <c>inherited</c> starts from nothing, so
-/// it is an exact set.</para>
+/// otherwise have, <c>all</c> to start over from everything it COULD have, a bare <c>name</c> to
+/// include, <c>-name</c> to exclude, <c>+name</c> to include even where an earlier level excluded
+/// it. A list with none of those starts from nothing, so it is an exact set.</para>
+///
+/// <para><c>inherited</c> AND <c>all</c> DIFFER ONLY BELOW THE TOP LEVEL, and that is the whole
+/// point of having both: at S1 nothing has narrowed yet, so they mean the same set. Lower down,
+/// <c>inherited</c> respects what the level above decided and <c>all</c> discards it. A session that
+/// genuinely wants everything back from a narrowed manager writes <c>all</c> and means it.</para>
 ///
 /// <para>THE TYPE HOLDS TERMS BECAUSE THE OFFERED SET MOVES. Skills appear when a catalog file is
 /// added, injected tools vary per session, and MCP servers connect after config is read. An earlier
@@ -35,6 +40,7 @@ namespace CxAgent.Core.Plugins;
 public sealed record ToolSelection(IReadOnlyList<string> Terms)
 {
     private const string Inherited = "inherited";
+    private const string All = "all";
 
     /// <summary>
     /// Value equality over the terms, written by hand.
@@ -85,6 +91,34 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
         {
             var term = raw.Trim();
             if (term.Length == 0) continue;
+
+            // ALL IS A RESET, AND IT FIRES EVERY TIME. It means "everything this agent could have",
+            // discarding whatever earlier levels removed — the one term that deliberately widens.
+            // A session under a read-only manager can say ["all"] and get the full set back.
+            //
+            // STILL BOUNDED BY S0: `offered` is what this agent structurally has, so `all` on a
+            // child never produces ask_user and `all` without a spawner never produces agent. It
+            // resets the SELECTION, never the structure.
+            //
+            // THE DIFFERENCE FROM `inherited` IS WHOSE SET IT MEANS. `inherited` is "what the level
+            // above left me"; `all` is "start over from everything". At the top level they are the
+            // same thing, which is why `all` earns its keep only below it.
+            if (string.Equals(term, All, StringComparison.Ordinal))
+            {
+                // NO Clear() HERE, DELIBERATELY. Adding every offered name IS the reset: whatever an
+                // earlier level removed is back, and whatever it added was already in `offered`. A
+                // Clear() first was written and then deleted — injecting its removal left the whole
+                // suite green, which is the honest signal that it changed nothing.
+                //
+                // The one thing it cannot undo is a later term: `["all", "-run_shell"]` still ends
+                // without run_shell, because terms apply in order.
+                foreach (var tool in offered) chosen.Add(tool.Name);
+
+                // AND IT SATISFIES `inherited` TOO, so a later `inherited` stays a no-op rather than
+                // re-running as a second reset.
+                seenInherited = true;
+                continue;
+            }
 
             // INHERITED MEANS "WHAT I INHERIT", AND ONLY THE FIRST ONE MEANS THE WHOLE SET. After
             // composition the terms of several levels sit in one list, so

@@ -21,8 +21,21 @@ namespace CxAgent.Core.Plugins;
 /// </summary>
 public static class Tool
 {
-    /// <summary>Start from what this agent would otherwise have. Without it a list is an exact set.</summary>
+    /// <summary>Start from what the level above left. Without it (or <see cref="All"/>) a list is an
+    /// exact set.</summary>
     public const string Inherited = "inherited";
+
+    /// <summary>
+    /// Start over from everything this agent COULD have, discarding what earlier levels removed.
+    ///
+    /// <para>The one term that widens. Identical to <see cref="Inherited"/> at the manager level,
+    /// where nothing has narrowed yet — it earns its keep below that, where a session or a turn
+    /// wants the full set back rather than what it was handed.</para>
+    ///
+    /// <para>Still bounded by what the agent structurally has: <c>all</c> on a sub-agent never
+    /// produces <c>ask_user</c>.</para>
+    /// </summary>
+    public const string All = "all";
 
     // --- The eight built-ins (WorkerTool), by the name the MODEL sees ------------------
 
