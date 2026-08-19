@@ -10,7 +10,13 @@
 
   <PropertyGroup>
     <PackageId>CxAgent.Core</PackageId>
-    <Version>1.0.0</Version>
+
+    <!-- A LOCAL-BUILD PLACEHOLDER. The release workflow passes -p:Version from the git tag, so what
+         ships is always the tag and never this number. It stays 0.0.0 deliberately: a plausible
+         version here would be indistinguishable from a real one in a local `dotnet pack`, and the
+         one thing worse than an unversioned package is a wrongly versioned one.
+         The library and the app share a tag — v0.3.5 produces both. -->
+    <Version>0.0.0</Version>
     <Authors>Nikolaos Protopapas</Authors>
     <Company>Nikolaos Protopapas</Company>
     <Product>CxAgent</Product>

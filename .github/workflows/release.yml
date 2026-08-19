@@ -147,3 +147,72 @@ jobs:
             See `SHA256SUMS` in the release assets.
           draft: false
           prerelease: false
+
+  # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
+  # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an
+  # answer.
+  #
+  # TRUSTED PUBLISHING (OIDC) RATHER THAN AN API KEY. NuGet mints a short-lived token for this
+  # workflow on this repository; there is no long-lived secret to leak, rotate, or forget. The
+  # `id-token: write` permission below is what lets the runner request it, and it must be granted
+  # per job — the workflow-level `contents: write` above does not cover it.
+  #
+  # NEEDS THE RELEASE JOB so a failed build never publishes a version that cannot be unpublished.
+  # NuGet allows unlisting, never reuse: a version pushed by mistake burns that number permanently.
+  nuget:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      # THE TESTS GATE THE PACKAGE. The release job builds binaries and does not run them; a library
+      # published broken is worse than a binary published broken, because a consumer's build breaks
+      # rather than their session.
+      - name: Test
+        run: dotnet test --configuration Release
+
+      - name: Pack
+        run: |
+          dotnet pack cxagent.Core/cxagent.Core.csproj \
+            --configuration Release \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -p:ContinuousIntegrationBuild=true \
+            --output ./nupkg
+
+      # WHAT IS ACTUALLY IN IT, in the log. The README and docs/ are packed by an ItemGroup that a
+      # future edit could silently drop, and a package whose links all 404 looks fine from here.
+      - name: Show package contents
+        run: unzip -l ./nupkg/*.nupkg
+
+      # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
+      #   1. nuget.org → account → Trusted Publishing → add a policy for
+      #      owner `nickprotop`, package `CxAgent.Core`, repository `nickprotop/cxagent`,
+      #      workflow `release.yml`.
+      #   2. this repository → Settings → Secrets and variables → Actions → Variables →
+      #      add `NUGET_USER` with your nuget.org username.
+      # A policy is bound to the repository and workflow file, so a fork cannot publish and a
+      # renamed workflow stops working rather than silently using someone else's identity.
+      - name: Authenticate to NuGet
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
