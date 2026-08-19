@@ -318,8 +318,9 @@ public static class WorkerToolset
     /// Tool names that exist but are not in this table — today, MCP tools.
     ///
     /// <para>Without it the unknown-tool message below lists the built-ins only, so a model that
-    /// mis-typed an MCP tool is told the available tools are the seven built-ins, hiding every live
-    /// MCP tool. It bites hardest after a RESUME: the restored context is replayed verbatim, so a
+    /// mis-typed an MCP tool is told the available tools are just those, hiding every live MCP tool.
+    /// (It said "the seven built-ins" when there were seven; there are eight, and under a selection
+    /// there may be any number — which is why the message counts rather than asserts.) It bites hardest after a RESUME: the restored context is replayed verbatim, so a
     /// model that used <c>fs_read</c> last session will call it again, and if that server was since
     /// removed it gets a list omitting the servers still running.</para>
     /// </param>

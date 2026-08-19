@@ -450,6 +450,20 @@ public sealed partial class Session
     internal void NotePolicy(Permissions.PermissionPolicy? policy) => Policy = policy;
 
     /// <summary>
+    /// The selection this session's agent was built with (S1 composed with S2), so the commands
+    /// that REPORT what the agent can do can agree with what it was actually offered.
+    ///
+    /// <para>NOT S3. A turn selection is scoped to one request and gone; a command answering "what
+    /// can this agent do" is asking about the session, and folding a past turn's narrowing into
+    /// that answer would report a restriction that no longer applies.</para>
+    /// </summary>
+    internal Plugins.ToolSelection? ToolSelection { get; private set; }
+
+    /// <summary>Records the selection, like NotePolicy above and for the same reason: SessionFactory
+    /// composes it and nothing else can.</summary>
+    internal void NoteToolSelection(Plugins.ToolSelection? selection) => ToolSelection = selection;
+
+    /// <summary>
     /// The catalog this session was wired against, and whether a classifier is configured in it.
     ///
     /// <para>KEPT SO THE SESSION CAN ANSWER FOR ITSELF. <c>/model</c> offering the configured

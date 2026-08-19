@@ -242,6 +242,7 @@ internal static class SessionFactory
         if (spawnWithheld)
             session.SayFallbackToSingle();
         session.NotePolicy(ports.Policy);
+        session.NoteToolSelection(toolSelection);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, plugins);

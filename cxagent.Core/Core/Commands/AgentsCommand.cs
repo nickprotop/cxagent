@@ -26,7 +26,7 @@ namespace CxAgent.Core.Commands;
 /// in their file gets a warning at startup, once, and then never again — this is where they look when
 /// they wonder why their edit did nothing.</para>
 /// </summary>
-public sealed class AgentsCommand(AgentTypeCatalog catalog)
+public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffered = true)
 {
     /// <summary>The listing, or one type's briefing, as text. Renders rather than printing: it took
     /// a transcript writer, which made a listing that is pure text depend on a front end having
@@ -60,6 +60,17 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog)
             $"[{accent}]Agent types[/] [{muted}]· {catalog.All.Count} available[/]",
             "",
         };
+
+        // "AVAILABLE" IS ABOUT THE CATALOG, NOT THE AGENT. The types are configured and resolvable;
+        // with the spawn tool withheld nothing can reach them, and a list under that heading reads
+        // as a set of things the agent will do if asked. /mode already says this for the mode axis —
+        // the same fact reaches a user here who never typed /mode.
+        if (!spawnToolOffered)
+        {
+            lines.Add($"  [yellow]This agent cannot spawn[/] "
+                    + $"[{muted}]· the agent tool is not offered, so none of these can be reached.[/]");
+            lines.Add("");
+        }
 
         foreach (var type in catalog.All)
         {

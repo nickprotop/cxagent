@@ -1,7 +1,13 @@
 namespace CxAgent.Core.Llm;
 
 /// <summary>
-/// What a worker may do. Every worker gets all of these.
+/// What a worker may do. Every worker gets all of these UNLESS A SELECTION NARROWS THEM.
+///
+/// <para>The selection is not the role system returning. A role decided capability from IDENTITY,
+/// before the work was known, which is the part that failed. A selection is written by a person —
+/// in config, in code, or for one turn — who has decided what THIS deployment should offer, and it
+/// is applied to the assembled list rather than baked into a name. See
+/// <see cref="Plugins.ToolSelection"/>.</para>
 ///
 /// <para>These used to be granted per ROLE — implementer and debugger got the full set, planner and
 /// reviewer a read-only subset. That system is gone: it encoded capability as identity, and the

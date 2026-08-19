@@ -83,6 +83,45 @@ public class ToolSelectionGuardTests : IDisposable
         Assert.DoesNotContain(said.Notices, m => m.Contains("single mode"));
     }
 
+    // --- The commands that REPORT availability ------------------------------------------
+    //
+    // Testing the commands alone proved nothing about the session: hardcoding `true` at both call
+    // sites in Session.Commands left the whole suite green, which is why these exist. The command
+    // tests own the rendering; these own the WIRING.
+
+    [Fact]
+    public void SkillsSaysTheToolIsWithheldThroughTheSession()
+    {
+        var (session, said) = Wire(new ToolSelection([Tool.Inherited, Tool.Not.Skill]), AgentMode.Single);
+
+        session.ListSkills();
+
+        Assert.Contains("not offered", said.Transcript);
+    }
+
+    [Fact]
+    public void SkillsSaysNothingWhenTheToolIsOffered()
+    {
+        var (session, said) = Wire(new ToolSelection([Tool.Inherited, Tool.Not.RunShell]), AgentMode.Single);
+
+        session.ListSkills();
+
+        Assert.DoesNotContain("not offered", said.Transcript);
+    }
+
+    [Fact]
+    public void AgentTypesSayTheAgentCannotSpawnThroughTheSession()
+    {
+        // SINGLE MODE ON PURPOSE. Fan-out plus a withheld agent tool is the contradiction the guard
+        // above resolves, so the mode would be flipped before this ran and the selection would not
+        // be the thing under test.
+        var (session, said) = Wire(new ToolSelection([Tool.Inherited, Tool.Not.Agent]), AgentMode.Single);
+
+        if (session.ListAgentTypes("") == CxAgent.Core.Commands.CommandStatus.Unknown) return;
+
+        Assert.Contains("cannot spawn", said.Transcript);
+    }
+
     [Fact]
     public void SingleModeSaysNothingEitherWay()
     {

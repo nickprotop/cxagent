@@ -28,7 +28,10 @@ public sealed partial class Session
     public CommandStatus ListSkills()
     {
         Say(new Commands.SkillsCommand(
-            () => Skills.SkillCatalog.Find(WorkingDirectory, Services?.GlobalInstructionsDir ?? "")).Render());
+            () => Skills.SkillCatalog.Find(WorkingDirectory, Services?.GlobalInstructionsDir ?? ""),
+            // WHAT THE AGENT WAS ACTUALLY OFFERED. Listing loadable skills to a user whose agent
+            // cannot load one is the same defect as the todo header naming a withheld todowrite.
+            CxAgent.Core.Plugins.ToolSelection.Offers(ToolSelection, CxAgent.Core.Plugins.Tool.Skill)).Render());
 
         return CommandStatus.Reported;
     }
@@ -182,7 +185,9 @@ public sealed partial class Session
         // without agent types genuinely does not service this command.
         if (_agentTypes is not { } catalog) return CommandStatus.Unknown;
 
-        Say(new Commands.AgentsCommand(catalog).Render(arguments));
+        Say(new Commands.AgentsCommand(catalog,
+            CxAgent.Core.Plugins.ToolSelection.Offers(
+                ToolSelection, CxAgent.Core.Plugins.Tool.Agent)).Render(arguments));
         return CommandStatus.Reported;
     }
 

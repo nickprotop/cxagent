@@ -18,7 +18,7 @@ namespace CxAgent.Core.Commands;
 /// next one. A command that looked like the way to apply changes would teach a ritual nobody
 /// needs.</para>
 /// </summary>
-public sealed class SkillsCommand(Func<SkillCatalogResult> catalog)
+public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, bool skillToolOffered = true)
 {
     /// <summary>
     /// The listing, as text.
@@ -57,6 +57,8 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog)
             lines.Add($"[{accent}]Skills[/] [{muted}]· {found.Skills.Count} from {found.SourceDirectory}[/]");
             lines.Add("");
 
+
+
             foreach (var skill in found.Skills)
             {
                 lines.Add($"  [{accent}]{skill.Name}[/]");
@@ -64,6 +66,22 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog)
                 // "why was this never loaded?" needs to read exactly what the model read.
                 lines.Add($"    [{muted}]{skill.Description}[/]");
             }
+        }
+
+        // THE LISTING IS TRUE AND UNREACHABLE. Discovery does not consult the selection — these
+        // files are on disk and parsed — but with the skill tool withheld the model has no way to
+        // load any of them, and a bare list reads as a menu. Said once, after the rows, rather than
+        // marking each: the restriction is the agent's, not the skill's.
+        //
+        // AFTER BOTH BRANCHES, not inside the populated one. The empty branch ends by telling the
+        // user to go WRITE a skill at .cxagent/skills/<name> — the worst advice available to someone
+        // whose agent could not load it either way, and the case a first version missed because the
+        // test directory happened to be empty.
+        if (!skillToolOffered)
+        {
+            lines.Add("");
+            lines.Add($"  [yellow]The skill tool is not offered to this agent[/] "
+                    + $"[{muted}]· nothing here can be loaded.[/]");
         }
 
         if (found.Problems.Count > 0)
