@@ -60,7 +60,11 @@ internal static class SessionFactory
         //
         // llmAgent.tools (S1 in config) joins ahead of SharedServices in a later task; the shape
         // here is already the one that takes it.
-        var toolSelection = Plugins.ToolSelection.Then(shared.ToolSelection, ports.ToolSelection);
+        // S1 IS TWO HOMES, ONE LEVEL: the embedder's SharedServices and the user's llmAgent.tools.
+        // Config comes second so a machine can narrow further than the app it runs — or reopen with
+        // an `all`, which is the user's call about their own box.
+        var managerSelection = Plugins.ToolSelection.Then(shared.ToolSelection, resolution.Tools);
+        var toolSelection = Plugins.ToolSelection.Then(managerSelection, ports.ToolSelection);
 
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
         // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's

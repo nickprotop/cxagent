@@ -80,6 +80,15 @@ public sealed record AgentType(
     string? Description = null,
     bool WritesAPlanFile = false)
 {
+    /// <summary>
+    /// Which tools children of this type are offered, as written in config. Null when unset, which
+    /// is today's behaviour: the child inherits its parent's selection unchanged.
+    ///
+    /// <para>A NAMED MEMBER for the reason this record's own summary gives — the positional list
+    /// had already reached seven with four consecutive nullables, and an eighth would be worse.</para>
+    /// </summary>
+    public Plugins.ToolSelection? Tools { get; init; }
+
     /// <summary>Where this type runs, flattened for readers that want one field. The routing record
     /// is the truth; these exist so call sites do not all have to say <c>Routing.</c>.</summary>
     public ILlmProvider? Provider => Routing.Provider;
@@ -162,10 +171,15 @@ public sealed class AgentTypeCatalog
                 // than inventing a line — see AgentTypeConfig.Briefing.
                 ? new AgentType(name, cfg.Briefing ?? "",
                     new TypeRouting(provider, window, instanceName), cfg.MaxTurns, cfg.Description)
+                    { Tools = cfg.Tools }
+                // A BUILT-IN KEEPS ITS SHIPPED TEXT AND TAKES CONFIG'S TOOLS. Unlike briefing and
+                // description, which are shipped text the code depends on, a toolset is a property
+                // of this deployment — the user's fact, not ours.
                 : new AgentType(name, builtin.Briefing,
                     new TypeRouting(provider, window, instanceName),
                     cfg.MaxTurns ?? builtin.DefaultMaxTurns, builtin.Description,
-                    builtin.WritesAPlanFile);
+                    builtin.WritesAPlanFile)
+                    { Tools = cfg.Tools };
         }
 
         All = [_types[DefaultTypeName],

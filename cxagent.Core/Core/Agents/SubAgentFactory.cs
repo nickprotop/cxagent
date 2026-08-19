@@ -311,7 +311,11 @@ public sealed class SubAgentFactory
             // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL. Composed here because this is the only
             // place both are known: the runtime is built once at session wiring, the turn's
             // selection arrives with the spawn.
-            toolSelection: Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools));
+            // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL, S4 FROM THE TYPE — composed in that order.
+            // The type's terms go LAST so a `+` in it can reopen what a narrower session closed;
+            // composing onto a resolved set instead would make S4 narrowing-only, silently.
+            toolSelection: Plugins.ToolSelection.Then(
+                Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools));
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //

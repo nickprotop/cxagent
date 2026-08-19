@@ -262,7 +262,21 @@ public record McpServerConfig(
 /// says nothing was configured rather than inventing a line.</para>
 /// </param>
 public record AgentTypeConfig(string? Briefing = null, string? Provider = null, int? MaxTurns = null,
-    string? Description = null);
+    string? Description = null)
+{
+    /// <summary>
+    /// Which tools children of this type are offered, as WRITTEN. Null when the block said nothing.
+    ///
+    /// <para>A NAMED MEMBER, not a fifth positional parameter: this record is already at four, and
+    /// AgentType — its resolved counterpart — was refactored for exactly this reason once the list
+    /// reached seven with four consecutive nullables at the end.</para>
+    ///
+    /// <para>TERMS, NOT NAMES. Resolution happens per request against the tools that actually exist
+    /// then; a set resolved at load would freeze before a skills catalog or an injected tool
+    /// appeared.</para>
+    /// </summary>
+    public Plugins.ToolSelection? Tools { get; init; }
+}
 
 public record ProviderSettings(
     IReadOnlyDictionary<string, ProviderInstanceConfig> Providers,
@@ -280,6 +294,15 @@ public record ProviderSettings(
     /// claims background review while nothing reviews is worse than not having the mode.</para>
     /// </summary>
     public string? Classifier { get; init; }
+
+    /// <summary>
+    /// Which tools every session on this machine is offered, from <c>llmAgent.tools</c>.
+    ///
+    /// <para>S1 IN CONFIG. The same level as <c>SharedServices.ToolSelection</c>, which an embedder
+    /// writes in code — one decision, two authors. They compose in order: an embedder saying what
+    /// their application permits, a user saying what their machine does.</para>
+    /// </summary>
+    public Plugins.ToolSelection? Tools { get; init; }
 
     /// <summary>Configured MCP servers, empty when the block is absent — which is the common case.</summary>
     public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
@@ -324,6 +347,46 @@ public static class ProviderConfigLoader
 
     private static readonly IReadOnlySet<string> KeylessKinds =
         new HashSet<string> { "ollama" };
+
+    /// <summary>
+    /// A <c>tools</c> array as a selection, warning on any term whose SHAPE is wrong.
+    ///
+    /// <para>WARN, NEVER THROW. Config's contract is warn-and-continue for everything but a hard
+    /// error, and a malformed term is a typo rather than a broken installation. Throwing here would
+    /// also be worse than it sounds: Apply throws per REQUEST, so an unvalidated bad term opens the
+    /// session fine and fails every turn afterwards.</para>
+    ///
+    /// <para>UNKNOWN NAMES ARE NOT WARNED ABOUT. A name matching no tool today may match tomorrow —
+    /// an injected tool, a skill that appears — and an unmatched name grants nothing. Only the
+    /// grammar is checked.</para>
+    /// </summary>
+    private static Plugins.ToolSelection? ReadToolSelection(
+        JsonElement parent, string where, List<string> warnings)
+    {
+        if (!parent.TryGetProperty("tools", out var t) || t.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var terms = new List<string>();
+        foreach (var e in t.EnumerateArray())
+        {
+            if (e.ValueKind != JsonValueKind.String) continue;
+            var term = e.GetString();
+            if (string.IsNullOrWhiteSpace(term)) continue;
+
+            if (!Plugins.ToolSelection.IsWellFormed(term))
+            {
+                warnings.Add($"{where}.tools: '{term}' is not understood; ignored. Use 'inherited', "
+                           + "'all', a tool name, '-name' to remove, or '+name' to add back.");
+                continue;
+            }
+
+            terms.Add(term.Trim());
+        }
+
+        // AN EMPTY ARRAY IS A REAL ANSWER — "no tools" — and must not become null, which means "no
+        // opinion". Only a `tools` key that was absent returns null, handled above.
+        return new Plugins.ToolSelection(terms);
+    }
 
     public static ProviderSettings LoadAndValidate(AppPaths paths, IReadOnlyDictionary<string, string> env)
     {
@@ -439,6 +502,13 @@ public static class ProviderConfigLoader
             // HOISTED ABOVE THE ORCHESTRATOR BLOCK, which now warns about removed keys and about a
             // negative cap. One list for the whole load; the MCP block below appends to the same one.
             var warnings = new List<string>();
+
+            // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
+            // term warns rather than throwing, and there is nowhere to put a warning before this.
+            var llmAgentTools = root.TryGetProperty("llmAgent", out var laTools)
+                && laTools.ValueKind == JsonValueKind.Object
+                    ? ReadToolSelection(laTools, "llmAgent", warnings)
+                    : null;
 
             var orchestrator = OrchestratorSettings.Unbounded;
             if (root.TryGetProperty("orchestrator", out var orch) && orch.ValueKind == JsonValueKind.Object)
@@ -637,8 +707,16 @@ public static class ProviderConfigLoader
                     // BRIEFING IS EMPTY FOR A BUILT-IN NAME, and the catalog substitutes the shipped
                     // text. Storing the shipped briefing here instead would put it back in the shape
                     // that drifts — a copy, made at load, of something that lives elsewhere.
+                    // TOOLS ARE ALLOWED ON A BUILT-IN TYPE, unlike briefing and description above.
+                    // A briefing is shipped text the code depends on; a toolset is a property of
+                    // THIS DEPLOYMENT, which cxagent cannot know — refusing it would leave a user
+                    // wanting a read-only explorer no option but to fork a shipped type, copying a
+                    // briefing that then drifts.
                     agentTypes[entry.Name] = new AgentTypeConfig(briefing?.Trim(), typeProvider,
-                        maxTurns, description);
+                        maxTurns, description)
+                    {
+                        Tools = ReadToolSelection(entry.Value, $"agents.{entry.Name}", warnings),
+                    };
                 }
 
             if (errors.Count > 0)
@@ -648,6 +726,7 @@ public static class ProviderConfigLoader
             {
                 McpServers = mcpServers,
                 AgentTypes = agentTypes,
+                Tools = llmAgentTools,
                 Warnings = warnings,
                 Classifier = classifier,
             };

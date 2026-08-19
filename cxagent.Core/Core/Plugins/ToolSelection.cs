@@ -58,6 +58,28 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
         Terms.Aggregate(17, (h, t) => (h * 31) + StringComparer.Ordinal.GetHashCode(t));
 
     /// <summary>
+    /// Whether a term is grammar this type understands.
+    ///
+    /// <para>CONFIG VALIDATES WITHOUT RESOLVING. <see cref="Apply"/> throws on a malformed term, but
+    /// Apply runs per REQUEST — long after config is read — so a bad term would open the session
+    /// fine and then fail every turn. The loader calls this at load and warns instead, matching the
+    /// warn-and-continue contract the rest of config already holds.</para>
+    ///
+    /// <para>NOT A NAME CHECK. An unknown tool NAME is legal and ignored: names arrive late (a
+    /// skills catalog appears, an embedder injects per session) and a name matching nothing today
+    /// may match tomorrow. Only the SHAPE is checked here.</para>
+    /// </summary>
+    public static bool IsWellFormed(string term)
+    {
+        var t = term.Trim();
+        if (t.Length == 0) return false;
+        if (t is Inherited or All) return true;
+
+        var body = t[0] is '-' or '+' ? t[1..] : t;
+        return body.Length > 0 && body.All(c => char.IsLetterOrDigit(c) || c is '_' or '.');
+    }
+
+    /// <summary>
     /// Two levels as one selection: <paramref name="later"/>'s terms applied after
     /// <paramref name="earlier"/>'s.
     ///
@@ -149,7 +171,7 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
             // Keeping them distinct is for the READER of a config file, not for this loop.
             if (term[0] == '+') { chosen.Add(term[1..]); continue; }
 
-            if (term[0] is '*' or '!' or '?' || term.Contains(' '))
+            if (!IsWellFormed(term))
                 throw new FormatException(
                     $"tool selection term '{term}' is not understood. Use 'inherited', a tool name, "
                     + "'-name' to remove, or '+name' to add back.");

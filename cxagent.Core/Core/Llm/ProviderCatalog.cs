@@ -42,6 +42,15 @@ public sealed record ProviderCatalog(
     int? MaxConcurrentAgents = null,
     string? ClassifierInstance = null)
 {
+    /// <summary>
+    /// S1 as the user wrote it, from <c>llmAgent.tools</c>. Null when config said nothing.
+    ///
+    /// <para>A NAMED MEMBER: this record is already at six positional parameters, and a seventh is
+    /// where AV1561 says to stop and ask whether the group wants a name. It does not — these are
+    /// genuinely separate facts about one config file.</para>
+    /// </summary>
+    public Plugins.ToolSelection? Tools { get; init; }
+
     /// <summary>Never null, so a caller enumerating types need not check first.</summary>
     public IReadOnlyDictionary<string, AgentTypeConfig> Types =>
         AgentTypes ?? new Dictionary<string, AgentTypeConfig>();
