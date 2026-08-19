@@ -214,6 +214,19 @@ public sealed class Agent
     private Plugins.ToolSelection? _turnTools;
 
     /// <summary>
+    /// The names actually OFFERED for this request, so a call can be answered honestly.
+    ///
+    /// <para>Two conditions need distinguishing and only this set can do it: a name that matches
+    /// nothing that exists is "no such tool", while a name that exists but was not offered is "not
+    /// available" — and the second must make the model STOP rather than retry variations.</para>
+    ///
+    /// <para>Set where the list is assembled, for the same reason <see cref="_turnTools"/> is: the
+    /// dispatch chain is a separate method and threading it through every call between them would
+    /// touch paths that have nothing to do with selection.</para>
+    /// </summary>
+    private HashSet<string> _offeredNames = [];
+
+    /// <summary>
     /// The built-ins this agent may run, after its selection.
     ///
     /// <para>ONE DECISION, TWO SITES. The assembly uses it to decide what the model is TOLD;
@@ -816,6 +829,7 @@ public sealed class Agent
             }
         }
 
+
         // MCP tools join the built-ins here, at the point the request is built, so a server that
         // connected since the last prompt is picked up with no restart. Mid-request the list is
         // fixed, which is correct: a tool appearing between two turns of one request would be a
@@ -870,8 +884,13 @@ public sealed class Agent
             // rather than concatenating the two groups back together.
             var keptNames = kept.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
             tools = [.. tools.Where(t => mcpNames.Contains(t.Name) || keptNames.Contains(t.Name))];
-
         }
+
+        // AFTER THE FILTER, so a refusal lists what was actually offered rather than what could have
+        // been. Held for the turn because the dispatch chain is a separate method a thousand lines
+        // away, and threading it through every call between would touch unrelated paths.
+        _offeredNames = [.. tools.Select(t => t.Name)];
+
         var wrote = false;
         var challenges = 0;
 
@@ -1586,6 +1605,28 @@ public sealed class Agent
     /// same event; inventing a second visual language for it would be gratuitous. Without this the
     /// calls are invisible: <c>ToolCallReported</c> has no UI subscriber anywhere in the app.</para>
     /// </summary>
+    /// <summary>
+    /// The refusal for a tool this agent exists to have but was not offered, or null to dispatch.
+    ///
+    /// <para>KNOWN-BUT-WITHHELD ONLY. A name nobody owns falls through to WorkerToolset's "no such
+    /// tool", which lists what IS available and is the right answer for a typo. This one is for a
+    /// name that would have worked under a different selection.</para>
+    ///
+    /// <para>NO ALIASES TO RESOLVE. Every tool answers to exactly one name since 2026-08-19, so a
+    /// raw comparison is sound — an earlier design needed list_files→glob canonicalisation here, and
+    /// would have refused a legitimate call from a resumed conversation without it.</para>
+    /// </summary>
+    private string? Withheld(string name)
+    {
+        if (_offeredNames.Count == 0 || _offeredNames.Contains(name)) return null;
+
+        // COULD THIS NAME EVER BE OFFERED? Only a name this build knows is "withheld"; anything else
+        // is a typo or a stale memory, and belongs to the terminator's message.
+        if (!Plugins.Tool.IsKnown(name) && !(_agentTools?.Knows(name) ?? false)) return null;
+
+        return $"tool '{name}' is not available. Available: {string.Join(", ", _offeredNames)}";
+    }
+
     private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
     {
         var jobId = Helpers.UlidGenerator.NewId();
@@ -1814,6 +1855,22 @@ public sealed class Agent
             // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
             // task in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
+            // WITHHELD IS NOT UNKNOWN, and this is the only place that can tell them apart. Each
+            // link below answers for its own names and returns null otherwise, so the chain ends at
+            // WorkerToolset's "no such tool" — which is honest for a name nobody owns and WRONG for
+            // one this agent simply was not offered. The distinction matters to the model: "no such
+            // tool" should make it pick a real one, while a configuration fault should make it STOP
+            // rather than retry variations.
+            //
+            // ABOVE THE CHAIN, NOT INSIDE A LINK. Before this, only built-ins consulted the
+            // selection on dispatch (WorkerToolset's own guard) — so a withheld skill, todowrite,
+            // ask_user, agent or injected tool was hidden from the offer and still callable by name.
+            // A model that saw `agent` in an earlier turn would call it and it would run.
+            //
+            // MCP IS NOT IN _offeredNames' EXCLUSION because it does not need to be: MCP tools
+            // bypass selection entirely, so they are always in the offered set and never match this.
+            if (Withheld(call.Name) is { } refusal) result = refusal;
+            else
             result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
                 // any name, and a skill load answered by an MCP server would be silently wrong.

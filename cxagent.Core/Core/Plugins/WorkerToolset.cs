@@ -301,7 +301,7 @@ public static class WorkerToolset
         // variations. A shared string invites exactly that retry loop, and burns turns against the cap.
         var entry = Specs.FirstOrDefault(s => Answers(s.Spec, call.Name));
         if (entry.Spec is null)
-            return $"no such tool '{call.Name}'. Available to this role: "
+            return $"no such tool '{call.Name}'. Available: "
                 + $"{string.Join(", ", NamesFor(allowed).Concat(alsoAvailable ?? []))}";
 
         // THE ENFORCEMENT POINT, and it stays even though roles are gone. `allowed` is every tool at

@@ -68,6 +68,21 @@ public static class Tool
     public const string Skill = "skill";
 
     /// <summary>
+    /// Every name this build ships, for telling "withheld" apart from "no such tool".
+    ///
+    /// <para>MCP AND INJECTED TOOLS ARE ABSENT: their names are not knowable here — one comes from a
+    /// server at runtime, the other from an embedder. A caller that needs those asks their own
+    /// source, which is what Agent.Withheld does.</para>
+    /// </summary>
+    public static bool IsKnown(string name) => Names.Contains(name);
+
+    private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
+    {
+        ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
+        Agent, TodoWrite, AskUser, Skill,
+    };
+
+    /// <summary>
     /// Remove a tool: <c>Tool.Not.RunShell</c> is <c>"-run_shell"</c>.
     ///
     /// <para>A removal that matches nothing is harmless, which is the grammar's safety property —
