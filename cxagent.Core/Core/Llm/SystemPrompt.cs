@@ -247,6 +247,31 @@ public static class SystemPrompt
                         + "rather than doing the work yourself — a type exists because someone "
                         + "decided that work is better done by an agent briefed for it.");
             sb.AppendLine();
+            // AND WHEN THE USER HAS ALREADY DECIDED. Every other spawn rule here keys on the model's
+            // OWN reading of the task — "when answering means searching widely", "if a type fits" —
+            // which is right for the under-delegation this block was built to fix, and leaves the
+            // opposite case unwritten: the user says which agent to use and the model overrules them.
+            //
+            // MEASURED, once, on a live drive: "spawn a planner, then spawn a builder to carry out
+            // that plan" produced ONE agent call. The planner reported the task was "just one switch
+            // case and one help-text line", and the parent — which by then knew the file and the
+            // exact insertion point — did the work itself across twenty turns. No refusal, the tool
+            // still offered. It was obeying the spawn tool's own "a task you could finish yourself
+            // costs a full briefing", which describes that situation precisely.
+            //
+            // THE SAME SHAPE AS ask_user, WHICH IS THE PRECEDENT FOR FIXING IT IN BOTH PLACES: that
+            // tool went unused while restraint sat in the description AND the prompt, and the fix was
+            // to state the positive rule where judgement forms. The description now carries the
+            // carve-out too; this is the half that belongs here.
+            //
+            // IT DOES NOT DISABLE THE JUDGEMENT, deliberately — the model may still think a spawn is
+            // overkill, and saying so is useful. What it removes is doing the work anyway without
+            // mentioning it, which leaves the user believing something ran that never did.
+            sb.AppendLine("When the user names a type or asks for a sub-agent, that is a decision, "
+                        + "not a suggestion — spawn it, even if you judge the task small enough to "
+                        + "do yourself. If you think it is not worth an agent, say so; do not "
+                        + "silently do the work instead.");
+            sb.AppendLine();
             // WORKED EXAMPLES, opencode's shape (<example> blocks with a bracketed action). Two
             // interventions had already failed to move this — a sharpened tool description and the
             // rule above — and an example is the one lever opencode has that we did not: it shows

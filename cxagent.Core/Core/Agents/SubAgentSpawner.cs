@@ -69,6 +69,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         A sub-agent starts with none of this conversation, so a task you could finish yourself costs
         a full briefing and a full run to arrive at what you already had.
 
+        UNLESS THE USER ASKED FOR ONE. If they named a type or said to spawn an agent, that settles
+        it — send it, however small the task looks to you. Say it is more than the work needs if you
+        think so; do not quietly do the work yourself instead.
+
         Once you have delegated something, do not also do it yourself — wait for the results. Doing
         both pays twice and leaves you two answers to reconcile.
 
@@ -120,12 +124,24 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         sb.AppendLine();
         sb.AppendLine();
+        // "WHICH SETTLES IT" IS THE OTHER HALF OF THE SAME PROBLEM. Everything else here — and every
+        // spawn rule in the system prompt — keys on the MODEL's judgement of the task. Measured on a
+        // live drive: asked to "spawn a planner, then spawn a builder to carry out that plan", the
+        // parent spawned the planner, read its report ("just one switch case and one help-text
+        // line"), and did the building itself. One `agent` call in the whole session, no refusal, the
+        // tool still offered — it simply judged the task too small, exactly as the paragraph above
+        // tells it to.
+        //
+        // THE MODEL OBEYED THE DESCRIPTION OVER THE USER, which is a trust failure rather than an
+        // efficiency one. It is also the ask_user shape a second time: restraint in the description,
+        // restraint in the prompt, nothing anywhere saying a request outranks the sizing judgement.
+        //
         // SAY IT IS OPTIONAL AND WHAT OMITTING IT MEANS. A model that suddenly sees a catalog may
         // infer it MUST choose, and choose badly on the tasks where `general` was right — turning a
         // helpful list into a forced decision. This is the `context` failure from the other side: a
         // parameter whose purpose is unstated is either ignored or misused, never used well.
         sb.AppendLine("Agent types. Omit `type` for a general-purpose agent; name one when it fits "
-                    + "what you need done.");
+                    + "what you need done — or when the user named one, which settles it.");
 
         foreach (var type in _types.All)
         {
