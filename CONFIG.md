@@ -320,9 +320,25 @@ means stop, the other means try a different name.
 ### Set it once per session
 
 An S3 selection that changes between requests rewrites the cached prompt prefix each time it does.
-Measured here at **67,367 tokens and about 21 seconds** for a change of 134 characters. It is correct
-either way — this is a cost, not a bug, and a caller who varies it asked for the difference. But if
-the narrowing is a property of the session rather than of one request, S1 or S2 costs nothing.
+
+Measured against a local llama.cpp server, 2,800-token prompt:
+
+| | cached | processed | prompt eval |
+|---|---|---|---|
+| Prompt unchanged, conversation grows | 2,824 | 28 | **66 ms** |
+| Prompt changed | 0 | 2,830 | **773 ms** |
+
+**The change was appended to the END of the system prompt and still cost the whole prefix.** A
+prefix cache matches from token zero and stops at the first difference, so moving volatile text
+later in the prompt saves nothing — the conversation trails the system message either way. On a
+long session this is the difference between paying for one turn and paying for all of them: an
+earlier drive measured 67,367 tokens and about 21 seconds reprocessed for a 134-character change at
+turn 82.
+
+S1 and S2 are fixed for the agent's life, so the gated text is byte-identical every turn and none of
+this applies — verified on a five-turn drive where the system prompt hashed the same each time. It
+is correct either way, and a caller who varies S3 asked for the difference. But if the narrowing is
+a property of the session rather than of one request, S1 or S2 costs nothing.
 
 ## `mcp` — servers
 
