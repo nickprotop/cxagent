@@ -76,6 +76,13 @@ public static class Tool
     /// </summary>
     public static bool IsKnown(string name) => Names.Contains(name);
 
+    /// <summary>
+    /// Every built-in name. Exposed so documentation can be TESTED against it rather than kept in
+    /// step by hand — CONFIG.md prints this list, and a thirteenth tool would otherwise leave the
+    /// reference silently short while every test stayed green.
+    /// </summary>
+    public static IReadOnlyCollection<string> KnownNames => Names;
+
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,

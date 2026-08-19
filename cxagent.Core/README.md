@@ -186,11 +186,22 @@ queued back through `Cancelled` — it does not decide where that text goes.
 ## Tools
 
 The agent gets these without you registering anything: **read, write, edit, glob, grep, shell, http,
-web fetch**, plus `todo` (a plan it keeps across turns), `ask_user` (a question back to you), and
-`llm_agent` (delegation). Each is wrapped in a permission gate at construction, so there is no path
-that runs a tool ungated.
+web fetch**, plus `todowrite` (a plan it keeps across turns), `ask_user` (a question back to you),
+`agent` (delegation) and `skill`. Each is wrapped in a permission gate at construction, so there is
+no path that runs a tool ungated.
 
 Whether the model *uses* a tool is the model's business, not the library's.
+
+**Offering fewer of them is yours.** A `ToolSelection` narrows what an agent is handed — at
+construction, per session, or for one request:
+
+```csharp
+ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]),
+```
+
+`Tool` names every built-in, so the terms are checked by the compiler rather than spelled: `Tool.Glob`,
+`Tool.Not.RunShell`, `Tool.Also.Grep`, `Tool.Inherited`, `Tool.All`. A withheld tool is refused if
+called by name, not merely hidden. **[The terms, the levels, and what selection does not reach →](../CONFIG.md#tools)**
 
 ### Tools of your own
 

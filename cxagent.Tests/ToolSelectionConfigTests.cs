@@ -36,7 +36,12 @@ public class ToolSelectionConfigTests : IDisposable
     [Fact]
     public void LlmAgentToolsIsReadAsTerms()
     {
-        var s = Load(Config("\"llmAgent\": { \"tools\": [\"inherited\", \"-run_shell\"] }"));
+        // defaultProvider IS REQUIRED HERE, unlike the parse-only tests above: resolution asks the
+        // registry for its default and fails without one.
+        var s = Load("{ \"providers\": { \"p\": { \"kind\": \"openai-compatible\", "
+            + "\"model\": \"m\", \"apiKey\": \"k\", \"baseUrl\": \"http://x\" } }, "
+            + "\"defaultProvider\": \"p\", "
+            + "\"llmAgent\": { \"tools\": [\"inherited\", \"-run_shell\"] } }");
 
         Assert.Equal(["inherited", "-run_shell"], s.Tools!.Terms);
     }
@@ -99,6 +104,33 @@ public class ToolSelectionConfigTests : IDisposable
         var s = Load(Config("\"llmAgent\": { }"));
 
         Assert.Null(s.Tools);
+    }
+
+    [Fact]
+    public void LlmAgentToolsReachesTheSessionsAgent()
+    {
+        // PARSING IS NOT REACHING. Every test above proves config READS the key; none proved it is
+        // applied, and the chain is four hops — settings.Tools, Catalog.Tools, resolution.Tools,
+        // then Then() at SessionFactory. CONFIG.md documents this key, so something has to fail if
+        // a hop is dropped.
+        // defaultProvider IS REQUIRED HERE, unlike the parse-only tests above: resolution asks the
+        // registry for its default and fails without one, so Config() alone is not enough.
+        var s = Load(Config("\"defaultProvider\": \"p\", "
+            + "\"llmAgent\": { \"tools\": [\"inherited\", \"-run_shell\"] }"));
+
+        Assert.Equal(["inherited", "-run_shell"], s.Tools!.Terms);
+
+        // useMock: false, DELIBERATELY. The mock arm returns a fixed catalog before reading config
+        // at all, so a test that passed true would exercise none of the chain and pass however
+        // broken it was. The config names an http:// base URL that is never contacted: resolution
+        // builds a registry and reads settings, it does not call the provider.
+        var resolved = ConfigResolver.Resolve(
+            new AppPaths(_dir), new Dictionary<string, string>(), useMock: false);
+
+        Assert.True(resolved.Errors.Count == 0,
+            "resolution failed: " + string.Join("; ", resolved.Errors));
+        Assert.NotNull(resolved.Tools);
+        Assert.Equal(["inherited", "-run_shell"], resolved.Tools!.Terms);
     }
 
     [Fact]

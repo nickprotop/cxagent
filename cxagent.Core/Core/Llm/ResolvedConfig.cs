@@ -243,7 +243,13 @@ public static class ConfigResolver
                     McpServers: settings.McpServers,
                     Orchestrator: settings.Orchestrator,
                     MaxConcurrentAgents: cfg?.MaxConcurrentAgents,
-                    ClassifierInstance: settings.Classifier),
+                    ClassifierInstance: settings.Classifier)
+                // llmAgent.tools (S1 in config). ResolveInstance carried it and THIS PATH DID NOT,
+                // so the key parsed, validated, warned correctly about bad terms — and was then
+                // dropped on every normal startup, taking effect only after a /model switch went
+                // through the other method. Every config test was green: they proved the loader
+                // read it, and nothing proved anything applied it.
+                { Tools = settings.Tools },
                 [],
                 settings.Warnings);
         }

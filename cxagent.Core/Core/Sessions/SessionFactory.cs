@@ -58,8 +58,6 @@ internal static class SessionFactory
         // reopen with a `+` term — so this is Then(), not an intersection. S3 arrives per request
         // and is composed onto this at the assembly site; composing it here would freeze it.
         //
-        // llmAgent.tools (S1 in config) joins ahead of SharedServices in a later task; the shape
-        // here is already the one that takes it.
         // S1 IS TWO HOMES, ONE LEVEL: the embedder's SharedServices and the user's llmAgent.tools.
         // Config comes second so a machine can narrow further than the app it runs — or reopen with
         // an `all`, which is the user's call about their own box.

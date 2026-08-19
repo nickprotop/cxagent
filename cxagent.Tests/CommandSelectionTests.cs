@@ -1,5 +1,6 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Skills;
 using Xunit;
@@ -21,6 +22,37 @@ namespace CxAgent.Tests;
 /// </summary>
 public class CommandSelectionTests
 {
+    // --- The documented API compiles and means what CONFIG.md says --------------------
+
+    [Fact]
+    public void TheReadmeExampleIsRealCode()
+    {
+        // DOCUMENTATION ROTS SILENTLY. cxagent.Core/README.md shows exactly this line; if `Tool.Not`
+        // or `Tool.Inherited` is renamed, the docs keep claiming it and nothing else notices.
+        var selection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]);
+
+        Assert.Equal(["inherited", "-run_shell"], selection.Terms);
+    }
+
+    [Fact]
+    public void TheTwelveNamesInConfigMdAreTheTwelveNamesInCode()
+    {
+        // CONFIG.md lists these twelve. A thirteenth built-in, or a rename, must fail here rather
+        // than leave the reference silently short.
+        string[] documented =
+        [
+            Tool.ReadFile, Tool.WriteFile, Tool.ReplaceInFile, Tool.Glob, Tool.Grep, Tool.RunShell,
+            Tool.WebFetch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent, Tool.Skill,
+        ];
+
+        Assert.Equal(12, documented.Length);
+        Assert.All(documented, n => Assert.True(Tool.IsKnown(n), n + " is not a known tool"));
+
+        // AND NOTHING ELSE IS KNOWN. Without this the test passes while a new built-in goes
+        // undocumented — the failure mode that matters, since the list reads as complete.
+        Assert.Equal(12, Tool.KnownNames.Count);
+    }
+
     // --- /skills -------------------------------------------------------------------------
 
     private static SkillCatalogResult OneSkill() => new(

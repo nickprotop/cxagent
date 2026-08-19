@@ -162,9 +162,14 @@ displayed — it exists to keep a child's rows out of the parent's transcript �
 would do the work, report success, and have its output discarded. The model is then told its showing
 worked when nobody saw anything.
 
-A withheld tool is one the child was *never given*, so calling it gets the ordinary "no such tool" —
-the same mechanism that makes "no sub-agents of sub-agents" structural rather than a rule an agent is
-asked to follow.
+A tool never OFFERED to a child — because `OfferToSubAgents` is false, or because the child was
+built without it — does not exist for that child at all, so calling it gets the ordinary "no such
+tool". That is the same mechanism making "no sub-agents of sub-agents" structural rather than a rule
+an agent is asked to follow.
+
+A tool this build ships but a **selection** withheld is a different answer: `not available`. The
+distinction is for the model — "no such tool" means the name is wrong and it should try another,
+"not available" means stop asking. See [tool selection](../../CONFIG.md#tools).
 
 ---
 

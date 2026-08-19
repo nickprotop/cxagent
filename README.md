@@ -281,10 +281,15 @@ money for a result that was partly wrong.
 your chosen model provider, and to any MCP server you have enabled. What they do with it is between
 you and them.
 
-**A sub-agent is an agent.** It has the same tools and the same permission gate as the main one.
-A type's briefing — "never edit files" — is a request written into its prompt, not a sandbox. Models
-do not reliably follow instructions they are given. **Permissions are the mechanism that constrains
-an agent; prose is not.**
+**A sub-agent is an agent.** It inherits its parent's tools and the same permission gate. A type's
+briefing — "never edit files" — is a request written into its prompt, not a sandbox. Models do not
+reliably follow instructions they are given. **Permissions and tool selection are the mechanisms
+that constrain an agent; prose is not.**
+
+A [tool selection](CONFIG.md#tools) narrows what an agent is offered, and a withheld tool is
+refused if called by name rather than merely hidden — so it constrains rather than suggests. It is
+not a security boundary on its own: it decides what this deployment offers, while the permission
+gate decides what any offered tool may do.
 
 **Nobody is responsible for the results but you.** cxagent is provided as-is under the MIT licence,
 with no warranty of any kind. The authors are not liable for lost work, deleted files, broken builds,

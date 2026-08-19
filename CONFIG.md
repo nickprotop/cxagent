@@ -232,6 +232,98 @@ source of truth for both.
 
 > You implement a plan that already exists — you never write one. The plan reaches you as a path to read, or as text in your context. IF NEITHER IS PRESENT, STOP IMMEDIATELY and report that you were given no plan. Do not infer one from the task description, and do not start work to see how far you get: a builder that invents its own plan is the failure this type exists to prevent, and it is worse than doing nothing because it looks like progress. CHECK THAT WHAT YOU WERE GIVEN IS A PLAN. A plan names the steps in the order they can be carried out; a report describes code as it currently is. If you were handed a description of the codebase rather than a sequence of changes, with no ordered steps and no path to a plan file — say so and stop. This is not hypothetical: a parent that meant to spawn a planner and typed the wrong agent type gets an explorer's report back, calls it a plan, and hands it to you. Building from it produces confident work nobody designed. Follow the plan in the order written and do not re-decide it: if a step is wrong, or cannot be carried out as written, stop and say which step and why rather than substituting an approach nobody asked for — the plan may encode a constraint you cannot see, and a plan silently improved is a plan nobody reviewed. DO THE STEPS IN THE PLAN AND STOP. Work the plan does not name is not yours to do, however obviously it follows: if carrying out the plan reveals more that is needed, finish what the plan says, then REPORT what else you found and let whoever asked decide. A builder that keeps going until the feature feels complete has written its own plan after all — and it does so file by file, so nobody notices until the diff is far larger than what was agreed. Make each change, then run what proves it before moving on: a step whose verification you skipped is a step you have not finished. BUILD AS SOON AS THERE IS SOMETHING TO BUILD — the first file, not the last. Two measured runs wrote code for fifty-five turns and thirty-two turns respectively before compiling once, and both times the first build reported something trivial that had been wrong the whole way: a type whose members had been invented, and a missing import. Errors are cheap alone and expensive in a pile, because each one you find late may have shaped the code written after it. Report what you actually ran and what it said. Name any step you did not complete and why, and never report success for work you did not verify — a wrong 'done' is worse than a clear 'stuck'.
 
+## `tools` — what an agent is offered
+
+Every agent gets all twelve tools unless something narrows them. A **selection** is a list of terms
+saying which it should have:
+
+```json
+"llmAgent": { "tools": ["inherited", "-run_shell", "-write_file"] }
+```
+
+That is a session that reads and searches but never writes or shells out. Absent, nothing is
+narrowed — the default is unchanged and this key is one you can ignore entirely.
+
+### The terms
+
+| Term | Means |
+|---|---|
+| `inherited` | Start from what the level above offers. Only the FIRST one in a selection does anything; a second is a no-op. |
+| `all` | Start from everything, discarding what an outer level narrowed. |
+| `read_file` | A bare name is a whitelist: name every tool you want. |
+| `-run_shell` | Remove one tool from whatever is in force. |
+| `+run_shell` | Add one back that an outer level removed. |
+
+`["inherited", "-run_shell"]` is the common shape: everything I would normally get, minus one.
+`["read_file", "grep", "glob"]` is the other: exactly these three and nothing else.
+
+**`+` can reopen what a wider level closed.** That is deliberate, and it is safe for one reason: a
+selection is only ever written in config or in code, never by a model. A narrowed agent cannot widen
+itself by asking.
+
+### The four levels
+
+They compose outward-in, each applied to what the one before it left:
+
+| | Where | Scope |
+|---|---|---|
+| **S1** | `llmAgent.tools` here, or in code when embedding | The session's agent, for its whole life |
+| **S2** | The embedding application, per session | One session |
+| **S3** | Per turn, in code | One request |
+| **S4** | `agents.<type>.tools` | Every child spawned as that type |
+
+```json
+"agents": {
+  "explore": { "tools": ["inherited", "-write_file", "-replace_in_file"] }
+}
+```
+
+A shipped type may set `tools` even though it may not set `briefing`. The two are different kinds of
+thing: a briefing is text the code depends on, while a toolset is a property of **your** deployment,
+which cxagent cannot know.
+
+### The twelve names
+
+`read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
+`http_request` · `todowrite` · `ask_user` · `agent` · `skill`
+
+A name that matches nothing is not an error and not a warning: names arrive late — a skill appears,
+an application injects a tool — so a term matching nothing today may match tomorrow, and an
+unmatched name grants nothing either way. A malformed term (`*run_shell`) IS warned about at startup
+and dropped, because the grammar is checkable and a bad term would otherwise open a session cleanly
+and fail every turn of it.
+
+### What a selection does not reach
+
+**MCP tools are never narrowed.** Each server's `enabled` flag is its control, and it is a better
+one: servers connect asynchronously, so a selection resolved before a handshake finished would
+silently drop tools that arrived a moment later.
+
+**The permission gate still applies to everything offered.** Selection decides what an agent HAS;
+permissions decide what it may DO with it. Narrowing is not a substitute for the gate, and the gate
+is not a substitute for narrowing.
+
+**A withheld tool is refused, not hidden.** Call one by name and the answer is "not available" —
+distinct from "no such tool", which is what a typo gets. The distinction matters to a model: one
+means stop, the other means try a different name.
+
+### Things it changes that are easy to miss
+
+- **The system prompt.** Sections teaching delegation or asking are dropped when `agent` or
+  `ask_user` is withheld, and tool descriptions stop pointing at tools you do not have.
+- **`/skills` and `/agents`** say so when the tool that reaches them is not offered.
+- **Fan-out mode falls back to single** if `agent` is withheld, and says so once. Leaving the mode
+  set while nothing can delegate would keep `/mode` and reality disagreeing for the session's life.
+- **A planner gets no plan path** if it cannot write, rather than being told to write a file it
+  cannot create.
+
+### Set it once per session
+
+An S3 selection that changes between requests rewrites the cached prompt prefix each time it does.
+Measured here at **67,367 tokens and about 21 seconds** for a change of 134 characters. It is correct
+either way — this is a cost, not a bug, and a caller who varies it asked for the difference. But if
+the narrowing is a property of the session rather than of one request, S1 or S2 costs nothing.
+
 ## `mcp` — servers
 
 ```json
