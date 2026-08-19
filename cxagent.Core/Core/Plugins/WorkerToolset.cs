@@ -196,6 +196,24 @@ public static class WorkerToolset
     }
 
     /// <summary>
+    /// The enum members whose WIRE NAMES appear in <paramref name="names"/>.
+    ///
+    /// <para>The inverse of <see cref="NamesFor"/>, and it lives here for the same reason that does:
+    /// this type owns the enum-to-name mapping, and a second copy would drift the moment either
+    /// moves. <c>WorkerTool.ListFiles</c> is offered as <c>glob</c>, so a caller that mapped by
+    /// enum spelling would select nothing — the exact mistake a tool selection must not make.</para>
+    ///
+    /// <para>Used to narrow the DISPATCH list from a selection that was applied to definitions: the
+    /// offer site and the dispatch site must agree, and deriving one from the other is what makes
+    /// them agree by construction rather than by review.</para>
+    /// </summary>
+    public static IReadOnlyList<WorkerTool> ToolsNamed(IEnumerable<string> names)
+    {
+        var wanted = new HashSet<string>(names, StringComparer.Ordinal);
+        return [.. Specs.Where(s => wanted.Contains(s.Spec.Name)).Select(s => s.Tool)];
+    }
+
+    /// <summary>
     /// Builds one <see cref="ToolDefinition"/> per allowed <see cref="WorkerTool"/>, in the fixed
     /// order above. Empty (never null) when <paramref name="tools"/> is empty, so a call site needs
     /// no null check — both OpenAiWire and AnthropicWire gate on Count &gt; 0 and omit the `tools`

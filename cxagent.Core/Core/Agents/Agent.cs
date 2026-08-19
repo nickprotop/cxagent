@@ -190,6 +190,37 @@ public sealed class Agent
     /// showing, which is the one thing the tool exists for.</summary>
     private readonly Plugins.AgentToolset? _agentTools;
 
+    /// <summary>
+    /// S1 and S2 composed, or null when neither expressed an opinion.
+    ///
+    /// <para>NOT THE WHOLE PICTURE: S3 arrives per request and is composed onto this at the assembly
+    /// site, which is why the composed result is NOT cached here. Caching it would make turn-level
+    /// selection silently inert for the session's own agent — the caller most likely to use it.</para>
+    /// </summary>
+    private readonly Plugins.ToolSelection? _toolSelection;
+
+    /// <summary>
+    /// The built-ins this agent may run, after its selection.
+    ///
+    /// <para>ONE DECISION, TWO SITES. The assembly uses it to decide what the model is TOLD;
+    /// <see cref="InvokeAndShowAsync"/> passes it to WorkerToolset.InvokeAsync to decide what it may
+    /// RUN. Touch one without the other and you get a tool that is offered and refused, or hidden
+    /// and callable — which is exactly why InvokeAsync's enforcement was kept through the role
+    /// removal, for a caller that did not yet exist.</para>
+    ///
+    /// <para>Computed rather than cached: a selection composed with a per-request S3 is not known at
+    /// construction, and caching would make turn-level selection inert for the session's own agent.
+    /// It is a set operation over twelve names, called once per tool call.</para>
+    /// </summary>
+    private IReadOnlyList<WorkerTool> AllowedBuiltins(Plugins.ToolSelection? selection)
+    {
+        var composed = Plugins.ToolSelection.Then(_toolSelection, selection);
+        if (composed is null) return AllTools;
+
+        var offered = WorkerToolset.For(AllTools, _plugins);
+        return Plugins.WorkerToolset.ToolsNamed(composed.Apply(offered).Select(t => t.Name));
+    }
+
     /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
     /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
     internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
@@ -494,7 +525,8 @@ public sealed class Agent
         Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
         string? workingDir = null,
         string? instanceName = null,
-        IReadOnlyList<Plugins.IAgentTool>? agentTools = null)
+        IReadOnlyList<Plugins.IAgentTool>? agentTools = null,
+        Plugins.ToolSelection? toolSelection = null)
     {
         // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
         //
@@ -558,6 +590,7 @@ public sealed class Agent
             ? agentTools?.Where(t => t.OfferToSubAgents).ToList()
             : agentTools;
         _agentTools = offered is { Count: > 0 } ? new Plugins.AgentToolset(offered) : null;
+        _toolSelection = toolSelection;
 
         _skills = new Skills.SkillLoader(() =>
         {
@@ -789,6 +822,30 @@ public sealed class Agent
             // feature.
             .Concat(_agentTools?.Definitions() ?? [])
             .ToList();
+
+        // THE SELECTION, APPLIED ONCE, HERE. Everything above has already run every structural gate
+        // — a child has no ask_user, a single-mode agent has no `agent`, an empty catalog has no
+        // `skill` — so `tools` IS the S0 set and a `+` term can only match something already in it.
+        // That is why S0 needs no check of its own: a second place deciding it is a second place
+        // that can disagree with the first.
+        //
+        // MCP IS EXEMPT, and by name rather than by position: enabled servers' tools are added to
+        // every request whatever a selection says, because `enabled` per server is their control and
+        // their names arrive after config is read. Filtering them here would be the delta-timing bug
+        // this design removed rather than mitigated.
+        if (_toolSelection is { } selection)
+        {
+            var mcpNames = _mcp?.Names().ToHashSet(StringComparer.Ordinal) ?? [];
+            var selectable = tools.Where(t => !mcpNames.Contains(t.Name)).ToList();
+            var kept = selection.Apply(selectable);
+
+            // ORDER PRESERVED: the assembly order is deliberate (built-ins first, so a consumer
+            // cannot appear ahead of a name the model already trusts), so this filters in place
+            // rather than concatenating the two groups back together.
+            var keptNames = kept.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+            tools = [.. tools.Where(t => mcpNames.Contains(t.Name) || keptNames.Contains(t.Name))];
+
+        }
         var wrote = false;
         var challenges = 0;
 
@@ -1750,7 +1807,7 @@ public sealed class Agent
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
                 ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
-                ?? await WorkerToolset.InvokeAsync(call, AllTools, _plugins, ctx, ct, _mcp?.Names());
+                ?? await WorkerToolset.InvokeAsync(call, AllowedBuiltins(null), _plugins, ctx, ct, _mcp?.Names());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

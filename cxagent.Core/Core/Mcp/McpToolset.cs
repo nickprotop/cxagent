@@ -82,6 +82,12 @@ public sealed class McpToolset
 
         // Built-in names are claimed FIRST, so a server can never take one. Order matters: whoever
         // is in the map when a duplicate arrives keeps the name.
+        //
+        // THE FULL ENUM, NEVER A TOOL SELECTION, and this looks like an oversight until you see why:
+        // if a session withheld `write_file`, narrowing this set would let a server claim that name
+        // and backfill the tool the user just removed. The set answers "which names are spoken for",
+        // not "which tools does this agent have" — and every built-in name is spoken for whether or
+        // not this agent was offered it.
         var taken = new HashSet<string>(WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()),
             StringComparer.Ordinal);
 
