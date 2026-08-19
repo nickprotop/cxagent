@@ -102,7 +102,16 @@ public sealed partial class Session
         public sealed record NoAgent : SubmitOutcome;
 
         /// <summary>A turn was already running, so this was queued for its next tool barrier.</summary>
-        public sealed record Queued : SubmitOutcome;
+        /// <param name="ToolsIgnored">
+        /// True when this call passed a selection DIFFERENT from the one the running turn began
+        /// with. Queued text joins that turn, whose tools were fixed when it started, so a different
+        /// selection cannot take effect.
+        ///
+        /// <para>NOT "a selection was passed". A caller that passes the same one every time — the
+        /// normal shape for a front end holding a selection for the session — has had nothing
+        /// ignored, and telling it otherwise on every mid-turn correction is noise.</para>
+        /// </param>
+        public sealed record Queued(bool ToolsIgnored = false) : SubmitOutcome;
 
         /// <summary>
         /// A turn began. <paramref name="Turn"/> completes when it ends, however it ends.
@@ -114,6 +123,15 @@ public sealed partial class Session
         /// </summary>
         public sealed record Started(Task Turn) : SubmitOutcome;
     }
+
+    /// <summary>
+    /// The selection the RUNNING turn was started with, as the caller passed it.
+    ///
+    /// <para>Kept only to answer one question: did a queued Submit pass something different? Stored
+    /// AS PASSED rather than composed, because a composed value carries S1 and S2 terms the caller
+    /// never wrote and would compare unequal to an identical re-pass.</para>
+    /// </summary>
+    private Plugins.ToolSelection? _turnTools;
 
     /// <summary>
     /// Sends this text, or queues it when a turn is already running.
@@ -138,7 +156,8 @@ public sealed partial class Session
     /// displays <c>/init</c> — putting the briefing on the transcript as the user's own message
     /// attributes words to them they never wrote, on every later read of the log.
     /// </param>
-    public SubmitOutcome Submit(string text, string? echo = null)
+    public SubmitOutcome Submit(string text, string? echo = null,
+        Plugins.ToolSelection? tools = null)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
 
@@ -150,10 +169,28 @@ public sealed partial class Session
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
             Steer(text);
-            return new SubmitOutcome.Queued();
+
+            // A QUEUED MESSAGE IS NOT A SECOND REQUEST. It joins the running turn — taken at its
+            // next tool barrier, or drained by the loop below into a later lap of the SAME
+            // RunTurnAsync — so it runs under the selection that turn started with. There is
+            // nothing to apply.
+            //
+            // BUT NOT SILENTLY, AND NOT BLINDLY. A caller that passed a DIFFERENT selection had it
+            // dropped, and that is worth saying; a caller that passed the same one — the normal
+            // shape for a front end holding one for the session — had nothing ignored, and
+            // flagging it every time would be noise that trains people past the flag.
+            var ignored = tools is not null && !Equals(tools, _turnTools);
+            if (ignored)
+                Say("[yellow]tool selection not applied — a turn is already running, and this "
+                    + "joins it.[/]");
+
+            return new SubmitOutcome.Queued(ignored);
         }
 
-        return new SubmitOutcome.Started(RunTurnAsync(text, echo));
+        // REMEMBERED AS PASSED, not composed: the comparison above asks whether a later caller sent
+        // the same thing, and a composed value carries S1 and S2 terms the caller never wrote.
+        _turnTools = tools;
+        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools));
     }
 
     /// <summary>
@@ -167,7 +204,7 @@ public sealed partial class Session
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
-    private async Task RunTurnAsync(string text, string? echo)
+    private async Task RunTurnAsync(string text, string? echo, Plugins.ToolSelection? tools)
     {
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why
@@ -199,7 +236,7 @@ public sealed partial class Session
                 _sink?.AssistantTurnBegan(assistantId);
                 _sink?.AssistantTurnEnded(assistantId);   // the agent opens its own turns
 
-                await Host!.RunAsync(text, scope.Token);
+                await Host!.RunAsync(text, scope.Token, tools);
             }
             catch (OperationCanceledException)
             {

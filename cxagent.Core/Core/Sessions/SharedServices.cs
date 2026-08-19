@@ -52,6 +52,19 @@ public sealed record SharedServices
     public IPermissionGate? Gate { get; init; }
 
     /// <summary>
+    /// Which tools every session this manager opens is offered. Null means no opinion.
+    ///
+    /// <para>S1 IN CODE, and there is a second home for the same level: <c>llmAgent.tools</c> in
+    /// config, which a user writes. They compose in order — an embedder saying what their
+    /// application permits, a user saying what their machine does — and neither can exceed what the
+    /// agent structurally has.</para>
+    ///
+    /// <para>PROCESS-WIDE, like the gate above it: two sessions may narrow differently through
+    /// <see cref="SessionPorts.ToolSelection"/>, but this is the floor an embedder sets once.</para>
+    /// </summary>
+    public Plugins.ToolSelection? ToolSelection { get; init; }
+
+    /// <summary>
     /// cxagent's own config directory, for globally-installed instructions and skills.
     ///
     /// <para>A STRING RATHER THAN AppPaths, because that is all the assembly needs — the whole

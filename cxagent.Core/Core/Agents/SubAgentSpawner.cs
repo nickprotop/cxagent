@@ -191,7 +191,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             """).RootElement);
 
     public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
-        CancellationToken ct, string? parentAgentId = null)
+        CancellationToken ct, string? parentAgentId = null, Plugins.ToolSelection? turnTools = null)
     {
         if (!Claims(call.Name)) return null;
 
@@ -234,7 +234,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             label: Read(call, "description"),
             type: type,
             // So the child's logs land UNDER this agent's directory rather than beside it.
-            parentAgentId: parentAgentId);
+            parentAgentId: parentAgentId,
+            turnTools: turnTools);
         onChild?.Invoke(child);
 
         // THE CAP, WAITED HERE — inside the started task, never on the parent's walk. Waiting on the

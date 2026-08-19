@@ -877,7 +877,8 @@ public class SubAgentSpawnerTests
         public string ToolName => "agent";
         public ToolDefinition Definition => new(ToolName, "spawns", default);
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
-            CancellationToken ct, string? parentAgentId = null)
+            CancellationToken ct, string? parentAgentId = null,
+            CxAgent.Core.Plugins.ToolSelection? turnTools = null)
             => throw new InvalidOperationException("the child exploded");
     }
 

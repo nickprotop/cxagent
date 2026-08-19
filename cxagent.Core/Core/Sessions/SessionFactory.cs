@@ -54,6 +54,14 @@ internal static class SessionFactory
             : ports.Tools.Select(t => (Plugins.IAgentTool)new Plugins.GatedAgentTool(
                 t, shared.Gate, ports.Policy)).ToList();
 
+        // S1 THEN S2, COMPOSED ONCE. Levels apply in ORDER — a later one may narrow further or
+        // reopen with a `+` term — so this is Then(), not an intersection. S3 arrives per request
+        // and is composed onto this at the assembly site; composing it here would freeze it.
+        //
+        // llmAgent.tools (S1 in config) joins ahead of SharedServices in a later task; the shape
+        // here is already the one that takes it.
+        var toolSelection = Plugins.ToolSelection.Then(shared.ToolSelection, ports.ToolSelection);
+
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
         // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
         // seed and the host's context come from it, and taking it inline in the argument list
@@ -98,6 +106,7 @@ internal static class SessionFactory
             // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
             // show the result as its parent, or the showing is silently skipped.
             AgentTools = agentTools,
+            ToolSelection = toolSelection,
 
             // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
             Ledger = ledger,
@@ -182,6 +191,7 @@ internal static class SessionFactory
 
                 // Already gated above. The host hands these to its agent and to every child.
                 AgentTools = agentTools,
+                ToolSelection = toolSelection,
             },
             ports.Observer,
             ports.ToolObserver,

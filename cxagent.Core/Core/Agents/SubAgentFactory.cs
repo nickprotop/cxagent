@@ -94,6 +94,15 @@ public sealed class SubAgentFactory
         public IReadOnlyList<Plugins.IAgentTool>? AgentTools { get; init; }
 
         /// <summary>
+        /// The session's tool selection (S1 composed with S2), inherited by every child.
+        ///
+        /// <para>NOT THE TURN'S. This record is built once when the session is wired, so a
+        /// per-request S3 cannot live here — it rides the spawn call instead. A child gets
+        /// Then(this, turn's, type's), composed at the moment it is created.</para>
+        /// </summary>
+        public Plugins.ToolSelection? ToolSelection { get; init; }
+
+        /// <summary>
         /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
         /// a user reads covers the work, not the agent that happened to do it, and a child with its
         /// own ledger spends against nothing.
@@ -234,8 +243,11 @@ public sealed class SubAgentFactory
     /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
     /// only the tests that predate nesting pass nothing.
     /// </param>
+    /// <param name="turnTools">The parent's per-request selection, composed onto the session's for
+    /// this child. Null when the parent is not running under one.</param>
     public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
-        AgentType? type = null, string? parentAgentId = null)
+        AgentType? type = null, string? parentAgentId = null,
+        Plugins.ToolSelection? turnTools = null)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
@@ -295,7 +307,11 @@ public sealed class SubAgentFactory
             // injected tools are inherited — a child edits files exactly as its parent does — but one
             // that draws for a PERSON declares OfferToSubAgents => false and is withheld there, where
             // _askUser is withheld too, so the guarantee holds for every path that builds a child.
-            agentTools: _runtime.AgentTools);
+            agentTools: _runtime.AgentTools,
+            // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL. Composed here because this is the only
+            // place both are known: the runtime is built once at session wiring, the turn's
+            // selection arrives with the spawn.
+            toolSelection: Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools));
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //

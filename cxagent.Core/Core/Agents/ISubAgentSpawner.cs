@@ -48,8 +48,15 @@ public interface ISubAgentSpawner
     /// The spawning agent's id, so the child's logs nest under it rather than beside it. Optional
     /// because a spawner that keeps no logs does not need it.
     /// </param>
+    /// <param name="turnTools">
+    /// The selection the PARENT's current request is running under, so a child inherits it.
+    ///
+    /// <para>RIDES THE CALL rather than living on SubAgentRuntime, which is built once when the
+    /// session is wired and therefore cannot carry a per-request value. A turn narrowed to
+    /// read-only that then spawns a writing child has not narrowed anything.</para>
+    /// </param>
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
-        string? parentAgentId = null);
+        string? parentAgentId = null, Plugins.ToolSelection? turnTools = null);
 }
 
 /// <summary>

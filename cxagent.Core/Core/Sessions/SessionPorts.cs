@@ -47,6 +47,16 @@ public sealed record SessionPorts
     public IReadOnlyList<Plugins.IAgentTool> Tools { get; init; } = [];
 
     /// <summary>
+    /// Which tools THIS conversation is offered. Null means no opinion.
+    ///
+    /// <para>S2, applied after the manager's S1 (code and config alike) and before any per-request
+    /// selection. A later level may narrow further OR reopen with a <c>+</c> term — levels apply in
+    /// order rather than intersecting — and none of them reaches a tool this agent structurally
+    /// lacks.</para>
+    /// </summary>
+    public Plugins.ToolSelection? ToolSelection { get; init; }
+
+    /// <summary>
     /// How THIS session's permission questions are judged — its working directory and edit mode.
     ///
     /// <para>PER SESSION, unlike the gate that asks them. One gate serves the process because stored

@@ -72,6 +72,22 @@ public class ToolSelectionTests
     }
 
     [Fact]
+    public void ASecondInheritedDoesNotUndoTheLevelBeforeIt()
+    {
+        // THE MOST ORDINARY CONFIG ANYONE WILL WRITE: narrow globally, narrow further per session.
+        // Composition puts both levels' terms in one list, so a second `inherited` that reset to the
+        // whole set would silently re-add what the manager removed. Found by a levels test, pinned
+        // here because it is a property of Apply.
+        var composed = ToolSelection.Then(
+            new ToolSelection(["inherited", "-run_shell"]),
+            new ToolSelection(["inherited", "-write_file"]));
+
+        var kept = Names(composed!.Apply(Offered("read_file", "run_shell", "write_file")));
+
+        Assert.Equal(["read_file"], kept);
+    }
+
+    [Fact]
     public void ChainingApplyIsNotComposition()
     {
         // The same two levels, applied one after the other, CANNOT reopen. Pinned so the difference

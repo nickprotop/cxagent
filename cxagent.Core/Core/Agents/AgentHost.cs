@@ -393,6 +393,10 @@ public sealed class AgentHost : IDisposable
         /// being the copy that forgets.</para>
         /// </summary>
         public IReadOnlyList<Plugins.IAgentTool> AgentTools { get; init; } = [];
+
+        /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
+        /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
+        public Plugins.ToolSelection? ToolSelection { get; init; }
     }
 
     public AgentHost(AgentRuntime runtime, ISessionObserver sink, IToolObserver jobPanel,
@@ -443,7 +447,10 @@ public sealed class AgentHost : IDisposable
     /// plugins, its MCP binding and its ledger. Starting a turn, stopping it, saying what happened and
     /// numbering the rows are the session's, and now live there.</para>
     /// </summary>
-    public Task RunAsync(string prompt, CancellationToken ct) => _agent.SendAsync(prompt, ct);
+    /// <param name="turnTools">This request's tool selection, composed onto the session's. Null is
+    /// the normal case: a front end that narrows once per session passes nothing here.</param>
+    public Task RunAsync(string prompt, CancellationToken ct,
+        Plugins.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
 
 
     /// <summary>
@@ -571,7 +578,8 @@ public sealed class AgentHost : IDisposable
 
             // THE EMBEDDER'S OWN, gated before they got here. Offered to this agent and, through
             // SubAgentRuntime, to every child it spawns.
-            agentTools: _runtime.AgentTools)
+            agentTools: _runtime.AgentTools,
+            toolSelection: _runtime.ToolSelection)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more

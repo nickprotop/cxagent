@@ -200,6 +200,20 @@ public sealed class Agent
     private readonly Plugins.ToolSelection? _toolSelection;
 
     /// <summary>
+    /// THIS REQUEST's selection, held for the turn so the dispatch site sees what the offer site
+    /// showed.
+    ///
+    /// <para>NOT readonly, and not a parameter: InvokeAndShowAsync is a separate method a thousand
+    /// lines from the assembly, and threading the value through every call between them would touch
+    /// paths that have nothing to do with selection. Set at the top of SendAsync and cleared in its
+    /// finally, so a turn cannot leak its selection into the next.</para>
+    ///
+    /// <para>ONE TURN AT A TIME is what makes a field safe here — Session.Submit enforces it, and
+    /// two concurrent sends on one agent would corrupt Context.Messages long before this mattered.</para>
+    /// </summary>
+    private Plugins.ToolSelection? _turnTools;
+
+    /// <summary>
     /// The built-ins this agent may run, after its selection.
     ///
     /// <para>ONE DECISION, TWO SITES. The assembly uses it to decide what the model is TOLD;
@@ -644,8 +658,17 @@ public sealed class Agent
     /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it, and the pre-send
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
     /// </remarks>
-    public async Task<SendResult> SendAsync(string prompt, CancellationToken ct)
+    public async Task<SendResult> SendAsync(string prompt, CancellationToken ct,
+        Plugins.ToolSelection? turnTools = null)
     {
+        // HELD FOR THE TURN so the dispatch site can see what the offer site showed.
+        //
+        // ASSIGNED, NOT SCOPED. A try/finally around a method with several returns and a thousand
+        // lines between them is a larger change than this earns, and it would buy nothing: the next
+        // SendAsync overwrites this before any tool runs, and ONE TURN AT A TIME is enforced by
+        // Session.Submit — two concurrent sends would corrupt Context.Messages long before a stale
+        // selection mattered.
+        _turnTools = turnTools;
         // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
         // `new List<ChatMessage>(conversation)` — a fresh working list built from the session history
         // at the start of every goal and dropped at the end, so goal N's tool calls, file reads and
@@ -833,7 +856,10 @@ public sealed class Agent
         // every request whatever a selection says, because `enabled` per server is their control and
         // their names arrive after config is read. Filtering them here would be the delta-timing bug
         // this design removed rather than mitigated.
-        if (_toolSelection is { } selection)
+        // S3 COMPOSED HERE, NOT AT CONSTRUCTION. The request's own selection arrives as an argument
+        // and joins the session's; composing at construction would make it inert for the session's
+        // own agent, which is the caller most likely to use it.
+        if (Plugins.ToolSelection.Then(_toolSelection, turnTools) is { } selection)
         {
             var mcpNames = _mcp?.Names().ToHashSet(StringComparer.Ordinal) ?? [];
             var selectable = tools.Where(t => !mcpNames.Contains(t.Name)).ToList();
@@ -1788,7 +1814,7 @@ public sealed class Agent
             // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
             // task in an earlier fan-out turn could still call it by name after a switch to
             // single, and the branch would happily run a child the user had just turned off.
-            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id) : null)
+            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
                 // any name, and a skill load answered by an MCP server would be silently wrong.
                 // Reads _context.Messages — the agent's own conversation, which is what lets it
@@ -1807,7 +1833,7 @@ public sealed class Agent
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
                 ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
-                ?? await WorkerToolset.InvokeAsync(call, AllowedBuiltins(null), _plugins, ctx, ct, _mcp?.Names());
+                ?? await WorkerToolset.InvokeAsync(call, AllowedBuiltins(_turnTools), _plugins, ctx, ct, _mcp?.Names());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

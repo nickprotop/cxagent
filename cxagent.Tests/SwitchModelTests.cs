@@ -172,7 +172,8 @@ public class SwitchModelTests : IDisposable
         public ToolDefinition Definition => throw new NotSupportedException();
 
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
-            CancellationToken ct, string? label = null) => throw new NotSupportedException();
+            CancellationToken ct, string? label = null,
+            CxAgent.Core.Plugins.ToolSelection? turnTools = null) => throw new NotSupportedException();
     }
 
     // THE CATALOG SURVIVES A SWITCH, which is what the split makes structural rather than

@@ -79,15 +79,29 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
         // built-ins first, so a consumer tool cannot appear ahead of a name the model already
         // trusts — and a filter must not reorder what it filters.
         var chosen = new HashSet<string>(StringComparer.Ordinal);
+        var seenInherited = false;
 
         foreach (var raw in Terms)
         {
             var term = raw.Trim();
             if (term.Length == 0) continue;
 
+            // INHERITED MEANS "WHAT I INHERIT", AND ONLY THE FIRST ONE MEANS THE WHOLE SET. After
+            // composition the terms of several levels sit in one list, so
+            // ["inherited","-run_shell"] then ["inherited","-write_file"] would hit this twice —
+            // and a second reset would re-add run_shell, silently undoing the level above. That is
+            // the most ordinary config anyone will write: narrow globally, narrow further per
+            // session.
+            //
+            // A LATER `inherited` IS A NO-OP, which is exactly what it means: this level starts from
+            // what the previous one left, and saying so explicitly changes nothing.
             if (string.Equals(term, Inherited, StringComparison.Ordinal))
             {
-                foreach (var tool in offered) chosen.Add(tool.Name);
+                if (!seenInherited)
+                {
+                    foreach (var tool in offered) chosen.Add(tool.Name);
+                    seenInherited = true;
+                }
                 continue;
             }
 
