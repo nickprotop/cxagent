@@ -253,6 +253,38 @@ public sealed class Agent
     /// construction, and caching would make turn-level selection inert for the session's own agent.
     /// It is a set operation over twelve names, called once per tool call.</para>
     /// </summary>
+    /// <summary>
+    /// Whether one tool survives this request's selection — the SINGLE expression the prompt and the
+    /// tool list both consult.
+    ///
+    /// <para>THE PROMPT IS BUILT BEFORE THE TOOL LIST (`:790` against `:906`), so the gates cannot
+    /// read <c>_offeredNames</c> — it is not populated yet. Computing the answer twice is how
+    /// <c>Agent.cs:696</c> and <c>:777</c> became two independent reads of the skills catalog, which
+    /// is the divergence this feature keeps finding. One predicate, called from both.</para>
+    ///
+    /// <para>S0 STILL BOUNDS IT: this answers only "does the selection allow it", and the caller
+    /// combines that with whether the agent structurally has the tool at all.</para>
+    /// </summary>
+    /// CACHE: THIS TEXT RIDES IN THE CACHED PREFIX. A system-prompt change is compared at `:834`
+    /// and, if it differs, rewrites the prefix from token ZERO — measured on a 116-turn drive at
+    /// 67,367 tokens and about 21 seconds of prompt-eval for a 134-character change.
+    ///
+    /// <para>SAFE AT S1 AND S2, which are fixed for the agent's life: the gated text is byte-
+    /// identical every turn, the comparison finds no change, and nothing is invalidated. An S3
+    /// selection that VARIES between requests does rewrite it, once per change.</para>
+    ///
+    /// <para>NOT PINNED, unlike the MCP server list at `:742`, and the distinction there governs:
+    /// a caller passing turn tools ASKED for this request to differ and can see why they paid.
+    /// Nobody asks for an MCP handshake to land on turn 82. Documented as "set it once per session
+    /// unless you mean to", rather than prevented.</para>
+    ///
+    /// <para>MOVING THIS TEXT LATER IN THE PROMPT WOULD NOT HELP. Providers cache a prefix, not a
+    /// diff, and the whole conversation trails the system message — so any position within it
+    /// invalidates the same tokens. The layout is already the best available.</para>
+    private bool SelectionAllows(string toolName, Plugins.ToolSelection? turnTools)
+        => Plugins.ToolSelection.Offers(
+            Plugins.ToolSelection.Then(_toolSelection, turnTools), toolName);
+
     private IReadOnlyList<WorkerTool> AllowedBuiltins(Plugins.ToolSelection? selection)
     {
         var composed = Plugins.ToolSelection.Then(_toolSelection, selection);
@@ -787,11 +819,14 @@ public sealed class Agent
 
                     // The three parent-obligation lines are for an agent that can actually delegate.
                     // In single mode they describe machinery it does not have.
-                    CanSpawn = CanSpawn,
+                    // && THE SELECTION, so the prompt does not spend a block teaching delegation to
+                    // an agent whose `agent` tool was withheld. A child never has it either way —
+                    // this is the PARENT case, which the structural gate alone cannot see.
+                    CanSpawn = CanSpawn && SelectionAllows(Plugins.Tool.Agent, turnTools),
 
                     // Gated the same way, and false for a child by construction — _askUser is null
                     // for a sub-agent whatever the caller passed.
-                    CanAskUser = _askUser is not null,
+                    CanAskUser = _askUser is not null && SelectionAllows(Plugins.Tool.AskUser, turnTools),
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))

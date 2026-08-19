@@ -101,6 +101,41 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
     /// <exception cref="FormatException">A term that is neither <c>inherited</c>, a bare name,
     /// <c>-name</c> nor <c>+name</c>. Config validates before this can happen; a code-level caller
     /// sees it on the first request, in their own C#.</exception>
+    /// <summary>
+    /// Whether a selection would offer one named tool — the question every gate outside the tool
+    /// list actually asks.
+    ///
+    /// <para>WRITTEN TWICE BEFORE IT LIVED HERE: SessionFactory's fan-out guard and the system
+    /// prompt's spawn gate each built a one-element list and called Apply, which is the same
+    /// divergence this feature keeps finding in the skills catalog (Agent.cs `:696` and `:777`).
+    /// A static on the type both already depend on is the one place neither can drift from.</para>
+    ///
+    /// <para>NULL MEANS NO OPINION, hence true: an agent with no selection is offered everything,
+    /// and callers rely on that to leave the default untouched.</para>
+    ///
+    /// <para>A SYNTHETIC APPLY: at the gates that ask this, the agent's real offer does not exist
+    /// yet — SessionFactory runs before the host, the prompt is built before the tool list. Sound
+    /// because Apply only ever filters what it is handed: a name survives or it does not, and
+    /// nothing else about the offered set changes that answer for a single name.</para>
+    ///
+    /// <para>THIS IS THE SELECTION ONLY. Whether the agent structurally HAS the tool is a separate
+    /// question the caller combines with this one — S0 is not expressible as a term.</para>
+    /// </summary>
+    public static bool Offers(ToolSelection? selection, string name)
+    {
+        if (selection is null) return true;
+
+        // A ONE-ELEMENT OFFER. Apply is the whole grammar — `all`, `inherited`, `-name`, `+name`,
+        // and their ordering — so asking it about a single tool cannot fall out of step with what
+        // the real offer does. Re-deriving the answer from Terms here is how these two drift.
+        var one = new[]
+        {
+            new ToolDefinition(name, name,
+                System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" })),
+        };
+        return selection.Apply(one).Count > 0;
+    }
+
     public IReadOnlyList<ToolDefinition> Apply(IReadOnlyList<ToolDefinition> offered)
     {
         // ORDER IS THE OFFERED SET'S, not the selection's. The assembly order is deliberate —

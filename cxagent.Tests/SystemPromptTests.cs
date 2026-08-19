@@ -81,14 +81,25 @@ public class SystemPromptTests
         Assert.Contains("Is a git repo: no", p, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>The instruction our old prompt got right, kept: text in a message changes nothing.</summary>
+    /// <summary>
+    /// The instruction our old prompt got right, kept: text in a message changes nothing.
+    ///
+    /// <para>IT USED TO ASSERT THE TOOL NAMES, and that is what made it a test for the bug rather
+    /// than the behaviour. The line ordered EVERY agent to "make changes with write_file or
+    /// replace_in_file" unconditionally — correct until a selection withholds both, after which the
+    /// prompt tells a read-only agent to use tools it does not have. The discipline is what
+    /// matters; naming the tools is what tool definitions are for.</para>
+    /// </summary>
     [Fact]
     public void Build_KeepsTheUseTheToolsInstruction()
     {
         var p = Build();
 
-        Assert.Contains("write_file", p, StringComparison.Ordinal);
-        Assert.Contains("replace_in_file", p, StringComparison.Ordinal);
+        Assert.Contains("make changes with the tools you have", p, StringComparison.Ordinal);
+
+        // NO TOOL NAMED IN THE PROSE. A name here is unconditional text that a selection cannot
+        // reach, which is the whole defect class this pins shut.
+        Assert.DoesNotContain("write_file", p, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -121,8 +132,10 @@ public class SystemPromptTests
     {
         var p = Build();
 
-        Assert.Contains("http_request", p, StringComparison.Ordinal);
+        // THE GUARDRAIL, NOT THE TOOL NAME. The rule is worth keeping for any agent that can reach
+        // the network; the name belonged to a tool a selection may have withheld.
         Assert.Contains("never invent a url", p, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("http_request", p, StringComparison.Ordinal);
     }
 
     /// <summary>

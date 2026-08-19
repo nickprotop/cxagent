@@ -76,7 +76,7 @@ internal static class SessionFactory
         // A HINT, NOT A REFUSAL: the session opens. This design treats a mis-narrowing as the user's
         // to get wrong everywhere else, and a contradiction between two settings the same person
         // wrote is not the case to start failing on.
-        var spawnWithheld = mode.CanDelegate && !Offers(toolSelection, Plugins.Tool.Agent, plugins);
+        var spawnWithheld = mode.CanDelegate && !Plugins.ToolSelection.Offers(toolSelection, Plugins.Tool.Agent);
         if (spawnWithheld) mode = mode with { Agent = AgentMode.Single };
 
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
@@ -247,23 +247,4 @@ internal static class SessionFactory
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, plugins);
     }
 
-    /// <summary>
-    /// Whether a selection would still offer one tool by name.
-    ///
-    /// <para>A SYNTHETIC APPLY: the agent does not exist yet, so this asks the question against a
-    /// one-element set rather than a real assembled list. Sound because Apply only ever filters what
-    /// it is handed — a name survives or it does not, and nothing else about the offered set changes
-    /// that answer for a single name.</para>
-    /// </summary>
-    private static bool Offers(Plugins.ToolSelection? selection, string name, PluginRegistry plugins)
-    {
-        if (selection is null) return true;
-
-        var one = new[]
-        {
-            new Llm.ToolDefinition(name, name,
-                System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" })),
-        };
-        return selection.Apply(one).Count > 0;
-    }
 }

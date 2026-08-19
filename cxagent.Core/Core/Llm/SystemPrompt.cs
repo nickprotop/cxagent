@@ -137,8 +137,12 @@ public static class SystemPrompt
 
         sb.AppendLine("# Doing the work");
         sb.AppendLine();
-        sb.AppendLine("You have tools. USE THEM: read a file before editing it, and make changes with "
-                    + "write_file or replace_in_file rather than describing them. Text in a message "
+        // NAMES NO TOOL, DELIBERATELY. This said "make changes with write_file or replace_in_file"
+        // and was UNCONDITIONAL — so a read-only agent was ordered by its own prompt to use tools it
+        // did not have. The advice is true whatever the agent was offered; only the names could go
+        // stale, so they are gone rather than gated.
+        sb.AppendLine("You have tools. USE THEM: read a file before editing it, and make changes "
+                    + "with the tools you have rather than describing them. Text in a message "
                     + "changes nothing.");
         sb.AppendLine();
         sb.AppendLine("Search before you assume. Read the files around the one you are changing — "
@@ -149,7 +153,7 @@ public static class SystemPrompt
         sb.AppendLine();
         // A FETCH TOOL PLUS AN INVENTED URL is how an agent confidently reads a page that does not
         // exist. opencode's first substantive line is this same guardrail.
-        sb.AppendLine("Never invent a URL for http_request. Use one the user gave you, or one you "
+        sb.AppendLine("Never invent a URL for a request. Use one the user gave you, or one you "
                     + "read from a file in this project.");
         sb.AppendLine();
         sb.AppendLine("Do not commit unless the user asks. Running the tests is expected; committing "
@@ -415,7 +419,7 @@ public static class SystemPrompt
         // A SHELL CALL IS NOT A CHANNEL. `echo "let me look at that"` costs a permission prompt to
         // say something that belongs in the reply, and the user has to approve it to hear it.
         sb.AppendLine("Talk to the user in your reply, never through a tool. Do not echo messages "
-                    + "from run_shell or leave notes in code comments to be read.");
+                    + "through a shell command or leave notes in code comments to be read.");
         sb.AppendLine();
         // D26, THREE OF THREE. The tool description says this too, and the duplication is the point:
         // that is read when CHOOSING to spawn, this applies when ANSWERING, often many turns and
