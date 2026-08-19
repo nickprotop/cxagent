@@ -123,6 +123,23 @@ public class ToolSelectionGuardTests : IDisposable
     }
 
     [Fact]
+    public void TheStartupBannerAgreesWithTheFallback()
+    {
+        // FOUND ON A LIVE DRIVE, not by a test. SessionFactory flips the mode and corrects its OWN
+        // copy; AppBootstrap had already built the window from the CLI default, and the banner
+        // cannot be revised once written. So the notice said "working in single mode" and the status
+        // line three rows below read "fan-out" for the session's whole life.
+        //
+        // This pins the SHARED PREDICATE both call rather than AppBootstrap's ordering, which is UI
+        // wiring a Core test cannot reach: if Offers stops answering for `agent`, both the guard and
+        // the banner break together and this fails.
+        var withheld = new ToolSelection([Tool.Inherited, Tool.Not.Agent]);
+
+        Assert.False(ToolSelection.Offers(withheld, Tool.Agent));
+        Assert.True(ToolSelection.Offers(new ToolSelection([Tool.Inherited, Tool.Not.RunShell]), Tool.Agent));
+    }
+
+    [Fact]
     public void SingleModeSaysNothingEitherWay()
     {
         // The fallback answers a contradiction. Single mode without the spawn tool is agreement,

@@ -262,6 +262,19 @@ public static class AppBootstrap
         if (permissionRules.GetEditMode(session.WorkingDirectory) is { } rememberedEdits)
             startupMode = startupMode with { Edits = rememberedEdits };
 
+        // THE SAME FALLBACK SessionFactory APPLIES, applied here too because the BANNER cannot be
+        // revised. SessionFactory flips fan-out to single when the `agent` tool is withheld, but it
+        // runs after the window is built and corrects its own copy of the mode — so the session was
+        // genuinely in single mode while the status line read "fan-out" for its whole life. Seen on
+        // a live drive against a config carrying `-agent`: the notice printed, the mode line
+        // disagreed with it three rows below.
+        //
+        // NOT A SECOND GUARD: both call the one Offers, so there is no second rule to drift. What is
+        // duplicated is WHEN it is asked, which is forced by the banner being written once.
+        if (startupMode.CanDelegate
+            && !CxAgent.Core.Plugins.ToolSelection.Offers(resolution.Tools, CxAgent.Core.Plugins.Tool.Agent))
+            startupMode = startupMode with { Agent = CxAgent.Core.Agents.AgentMode.Single };
+
         var mainWindow = new MainWindow(system, resolution, logs)
         {
             // BEFORE Build(), because the banner it writes is a chat message and cannot be revised.
