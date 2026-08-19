@@ -229,7 +229,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // legitimate author of the highest-authority text in a child's prompt.
             briefing: null,
             callerContext: WithPlanPath(Read(call, "context"), type, Read(call, "description"),
-                out planPath),
+                canWrite: ChildCanWrite(turnTools, type), out planPath),
             // The label the USER sees — status row and permission prompts. Never sent to the model.
             label: Read(call, "description"),
             type: type,
@@ -300,11 +300,46 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         return $"plans/{slug}.md";
     }
 
+    /// <summary>
+    /// Whether a child under this selection would be offered a write tool.
+    ///
+    /// <para>A SYNTHETIC APPLY against a two-element set: the child does not exist yet, and Apply
+    /// only ever filters what it is handed, so asking about two names is sound. The composition
+    /// mirrors SubAgentFactory.Create — session, then turn, then type — because a difference between
+    /// them would be a mechanism disagreeing with the thing it predicts.</para>
+    /// </summary>
+    private bool ChildCanWrite(Plugins.ToolSelection? turnTools, AgentType? type)
+    {
+        var selection = Plugins.ToolSelection.Then(
+            Plugins.ToolSelection.Then(_factory.SessionToolSelection, turnTools), type?.Tools);
+        if (selection is null) return true;
+
+        var writes = new[] { Plugins.Tool.WriteFile, Plugins.Tool.ReplaceInFile }
+            .Select(n => new Llm.ToolDefinition(n, n,
+                System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" })))
+            .ToList();
+
+        return selection.Apply(writes).Count > 0;
+    }
+
+    /// <param name="canWrite">
+    /// Whether the child will actually be offered a write tool.
+    ///
+    /// <para>WITHOUT THIS THE MECHANISM CONTRADICTS ITSELF. It tells the child to write a file at an
+    /// exact path, then replaces a marker in the answer with what is on disk — so a child that
+    /// cannot write is instructed to do the impossible and then reported as having failed at it. The
+    /// contradiction is GUARANTEED rather than possible, which is why the path is not handed out at
+    /// all rather than handed out with a warning.</para>
+    ///
+    /// <para>This is one of the mechanisms that fails SILENTLY under a selection: nothing errors, a
+    /// plan simply never appears and the parent writes its own from chat text — which happened once
+    /// already, and the builder it fed went looking for Rust sources in a C# repository.</para>
+    /// </param>
     private static string? WithPlanPath(string? context, AgentType type, string? label,
-        out string? planPath)
+        bool canWrite, out string? planPath)
     {
         planPath = null;
-        if (!WritesAPlan(type)) return context;
+        if (!WritesAPlan(type) || !canWrite) return context;
         planPath = PlanPathFor(label);
 
         var line = $"Write your plan file to `{planPath}` — that exact path, relative to the working "

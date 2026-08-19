@@ -239,6 +239,11 @@ public sealed class SubAgentFactory
     /// having to trust a line of the child's own text.</summary>
     public string? WorkingDir => _runtime.WorkingDir;
 
+    /// <summary>The session's selection, for a caller that must predict what a child will have
+    /// before creating one — see SubAgentSpawner.ChildCanWrite.</summary>
+    internal Plugins.ToolSelection? SessionToolSelection => _runtime.ToolSelection;
+
+
     /// <param name="parentAgentId">
     /// The spawning agent's id, so the child's logs nest beneath it. Null keeps the flat layout —
     /// only the tests that predate nesting pass nothing.
