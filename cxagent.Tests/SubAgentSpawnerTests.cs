@@ -62,6 +62,10 @@ public class SubAgentSpawnerTests
         var spawner = new SubAgentSpawner(FactoryOver(Answering("x")));
 
         Assert.Equal("agent", spawner.Definition.Name);
+
+        // And the constant an embedder writes matches it. Pinned here rather than in
+        // ToolNameConstantsTests because this file already has the factory scaffolding.
+        Assert.Equal(CxAgent.Core.Plugins.Tool.Agent, spawner.Definition.Name);
     }
 
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
