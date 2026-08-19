@@ -18,7 +18,7 @@ public class SkillLoaderTests
     private static SkillLoader Loader(params SkillInfo[] skills) =>
         new(() => new SkillCatalogResult(skills, [], skills.Length > 0 ? "/tmp/skills" : null));
 
-    private static ToolCall Call(string? name, string tool = "load_skill") => new()
+    private static ToolCall Call(string? name, string tool = "skill") => new()
     {
         Name = tool,
         Id = "call-1",

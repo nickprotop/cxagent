@@ -92,17 +92,19 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `run_shell` | Run a command |
 | `http_request` | Call an HTTP endpoint |
 | `web_fetch` | Read a web page as text, markup stripped |
-| `load_skill` | Load a skill's instructions on demand |
+| `skill` | Load a skill's instructions on demand |
 | `todowrite` | Keep a task list across a long job |
-| `question` | Ask the user questions — options with descriptions, several per call |
-| `task` | Delegate a job to a sub-agent (fan-out mode) |
+| `ask_user` | Ask the user questions — options with descriptions, several per call |
+| `agent` | Delegate a job to a sub-agent (fan-out mode) |
 
-Three of these were renamed to the names opencode and Claude Code use — `question` was `ask_user`,
-`task` was `spawn_agent`, `todowrite` was `update_todos`. **The old names still work.** Only the new
-one is offered to the model, so nothing pulls it backwards, but a call under the old name is
-answered rather than refused: a rename is invisible to a model working from habit or resuming a
-conversation whose earlier turns used it, and an unknown tool is a hard failure costing a turn for a
-call that is completely unambiguous.
+**One name per tool, and no aliases.** Several of these have been renamed — `glob` was
+`list_files`, `grep` was `search_files`, `agent` was `spawn_agent` then `task`, `ask_user` was
+`question`. Each old name was accepted for a short window afterwards so a conversation resumed across
+the change would not fail on a name it had seen in its own history. Those windows are closed: a call
+under an old name gets `no such tool`, with the current names listed beside it.
+
+`todowrite` keeps its unusual spelling deliberately — it is what Claude Code calls it, and models
+distilled from it recognise the exact string.
 
 ### Permissions
 

@@ -270,7 +270,7 @@ public class WorkerToolsetTests
     public void EveryFileTool_PinsItsAction_SoNoneCanBeTurnedIntoADelete()
     {
         // The pinned-action property, re-pinned now that four tools share the file plugin: a worker
-        // calling list_files must not be able to pass action: "delete".
+        // calling glob must not be able to pass action: "delete".
         var registry = PluginRegistry.CreateWithBuiltins();
         foreach (var name in new[] { "read_file", "write_file", "glob", "grep", "replace_in_file" })
         {
@@ -388,7 +388,7 @@ public class WorkerToolsetTests
             File.WriteAllText(Path.Combine(dir, "a.txt"), "alpha\n");
 
             var r = await WorkerToolset.InvokeAsync(
-                Call("search_files", new { path = dir, pattern = "al.ha", regex = "true" }),
+                Call("grep", new { path = dir, pattern = "al.ha", regex = "true" }),
                 new[] { WorkerTool.SearchFiles }, PluginRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None);
 
@@ -401,7 +401,7 @@ public class WorkerToolsetTests
     public async Task Invoke_TreatsAnExplicitNullAsAbsent()
     {
         // A model with nothing to say for an optional arg emits null rather than omitting the key.
-        // TryGetValue then succeeded, the default was never applied, and list_files threw a
+        // TryGetValue then succeeded, the default was never applied, and glob threw a
         // NullReferenceException -- "Object reference not set to an instance of an object", which
         // tells the model nothing it can act on.
         var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
@@ -411,7 +411,7 @@ public class WorkerToolsetTests
             File.WriteAllText(Path.Combine(dir, "a.txt"), "x");
 
             var r = await WorkerToolset.InvokeAsync(
-                Call("list_files", new { path = dir, pattern = (string?)null }),
+                Call("glob", new { path = dir, pattern = (string?)null }),
                 new[] { WorkerTool.ListFiles }, PluginRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None);
 
@@ -474,23 +474,24 @@ public class WorkerToolsetTests
     }
 
     /// <summary>
-    /// THE OLD NAMES STILL ANSWER. A rename lands mid-conversation: a model that saw list_files in
-    /// an earlier turn's prompt, or learned it from a summary, will call it again — and "no such
-    /// tool" for something that worked a moment ago is a turn spent on our bookkeeping.
+    /// THE OLD NAMES ARE GONE. These answered to list_files/search_files for six days after the
+    /// 2026-08-13 rename, so a conversation resumed across the change would not fail on a name it
+    /// had seen in its own history. That window is closed, and one name per tool is what lets the
+    /// "no such tool" message be read literally.
     /// </summary>
     [Theory]
     [InlineData("list_files", "glob")]
     [InlineData("search_files", "grep")]
-    public void RenamedTools_StillAnswerToTheirOldNames_ButAdvertiseOnlyTheNew(string old, string current)
+    public void RenamedTools_NoLongerAnswerToTheirOldNames(string old, string current)
     {
         var names = WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()).ToList();
 
         Assert.Contains(current, names);
-        Assert.DoesNotContain(old, names);   // answered, never advertised
+        Assert.DoesNotContain(old, names);
     }
 
     [Fact]
-    public async Task ATool_CalledByItsOldName_StillRuns()
+    public async Task ATool_CalledByItsOldName_IsRefused()
     {
         var dir = Directory.CreateTempSubdirectory("wt-alias-").FullName;
         try
@@ -502,8 +503,9 @@ public class WorkerToolsetTests
                 Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None);
 
-            Assert.Contains("found.txt", r);
-            Assert.DoesNotContain("no such tool", r, StringComparison.OrdinalIgnoreCase);
+            // The honest answer, and the one that makes the model pick the real name.
+            Assert.Contains("no such tool 'list_files'", r);
+            Assert.Contains("glob", r);   // and the available list names it
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

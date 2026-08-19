@@ -351,11 +351,12 @@ public class TodoTests
     }
 
     /// <summary>
-    /// THE OLD NAME STILL WORKS — a rename is invisible to a model working from habit or resuming a
-    /// conversation whose earlier turns used it, and an unknown tool costs a turn to recover from.
+    /// THE OLD NAME IS DECLINED. It was accepted for six days after the 2026-08-13 rename so a
+    /// resumed conversation would not fail on a name in its own history; that window is closed.
+    /// Returning null lets the call fall through to "no such tool", which names the real one.
     /// </summary>
     [Fact]
-    public void Todos_StillAnswerToTheOldName()
+    public void Todos_DeclineTheOldName()
     {
         var list = new TodoList();
         var tool = new TodoTool(list);
@@ -368,8 +369,8 @@ public class TodoTests
                 new { todos = new[] { new { content = "ship it", status = "pending" } } }),
         });
 
-        Assert.NotNull(result);
-        Assert.Single(list.Items);
+        Assert.Null(result);
+        Assert.Empty(list.Items);
     }
 
     /// <summary>...and only the new name is advertised.</summary>

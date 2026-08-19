@@ -5,7 +5,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Agents;
 
 /// <summary>
-/// The <c>task</c> tool: builds a child, runs it to completion, and returns its answer.
+/// The <c>agent</c> tool: builds a child, runs it to completion, and returns its answer.
 ///
 /// <para>FOREGROUND AND BLOCKING in step 1 (D10). The parent waits, exactly as it waits for
 /// <c>run_shell</c>. Background is a different tool — it needs a registry, a notification route and a
@@ -30,23 +30,20 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         _types = types ?? new AgentTypeCatalog(new Dictionary<string, Llm.AgentTypeConfig>(), null);
     }
 
-    public string ToolName => "task";
+    public string ToolName => "agent";
 
     /// <summary>
-    /// A NAME THIS TOOL ALSO ANSWERS TO — the name this tool carried before it was renamed to match opencode and Claude Code.
+    /// Whether this tool answers to the name a call used.
     ///
-    /// <para>ACCEPTED, NOT ADVERTISED. Only <see cref="ToolName"/> is sent to the model, so nothing
-    /// pulls it toward the old spelling. But a rename is invisible to a model working from habit or
-    /// from a resumed conversation whose earlier turns used the old name, and an unknown tool is a
-    /// hard failure that costs a turn to recover from — for no reason, since the call is
-    /// unambiguous. Accepting it costs one comparison.</para>
+    /// <para>NO LEGACY NAME. This accepted its pre-rename spelling for six days after 2026-08-13, so
+    /// a conversation resumed across the change would not fail on a name it had seen in its own
+    /// history. That window is closed. Only cheap because nothing is published — a rename after
+    /// release needs the acceptance window again.</para>
     /// </summary>
-    private const string LegacyName = "spawn_agent";
 
-    /// <summary>Is this call for this tool, under either name?</summary>
+    /// <summary>Is this call for this tool? One name, no aliases since 2026-08-19.</summary>
     private bool Claims(string name) =>
-        string.Equals(name, ToolName, StringComparison.Ordinal)
-        || string.Equals(name, LegacyName, StringComparison.Ordinal);
+        string.Equals(name, ToolName, StringComparison.Ordinal);
 
     /// <summary>
     /// WHERE ALL SPAWN GUIDANCE LIVES (D25) — not in the system prompt.

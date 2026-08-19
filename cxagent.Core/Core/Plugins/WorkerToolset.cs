@@ -68,25 +68,27 @@ public static class WorkerToolset
     /// What the model is told this tool is for. Defaults to the plugin's DisplayName, which is right
     /// while one plugin backs one tool and useless the moment two share it.
     /// </param>
-    /// <param name="Aliases">
-    /// Former names, still answered but never advertised.
-    ///
-    /// <para>A rename lands mid-conversation: a model that saw <c>list_files</c> in an earlier turn's
-    /// prompt, or learned it from a summary, will call it again — and "no such tool" for something
-    /// that worked a moment ago is a turn spent on the app's bookkeeping. Accepting the old name is
-    /// two lines; the model never sees it, so nothing is spent on the prompt side.</para>
-    /// </param>
     private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
-        string? Description = null,
-        string[]? Aliases = null);
+        string? Description = null);
 
-    /// <summary>Whether a spec answers to this name, current or former.</summary>
+    /// <summary>
+    /// Whether a spec answers to this name.
+    ///
+    /// <para>NO ALIASES. These tools carried former names (<c>list_files</c>, <c>search_files</c>)
+    /// and answered to them for six days after the 2026-08-13 rename, so a conversation resumed
+    /// across the change would not fail on a name it had seen. That window is closed and the
+    /// acceptance is gone — one name per tool, which is what the "no such tool" message can then
+    /// state without qualification.</para>
+    ///
+    /// <para>THIS IS ONLY CHEAP BECAUSE NOTHING IS PUBLISHED. Once CxAgent.Core is on nuget.org a
+    /// rename needs the acceptance window again, for the same reason it needed one here: a resumed
+    /// conversation replays old tool names out of its own history, and an unknown tool costs a turn
+    /// to recover from. Do not read this as "aliases were unnecessary".</para>
+    /// </summary>
     private static bool Answers(ToolSpec? spec, string name) =>
-        spec is not null
-        && (string.Equals(spec.Name, name, StringComparison.Ordinal)
-            || (spec.Aliases?.Contains(name, StringComparer.Ordinal) ?? false));
+        spec is not null && string.Equals(spec.Name, name, StringComparison.Ordinal);
 
     // Ordered so WorkerTool.For's output is stable regardless of the caller's list order —
     // a stable tool order keeps the prompt (and provider-side caching of it) stable across calls.
@@ -126,8 +128,7 @@ public static class WorkerToolset
                        + "(e.g. \".\" or \"src\"); `pattern` is the glob matched against the file "
                        + "names beneath it (e.g. \"*.cs\", or \"**/*.cs\" to recurse), defaulting to "
                        + "\"*\". The glob goes in `pattern`, never in `path`. Use this rather than "
-                       + "run_shell with find or ls — it needs no approval.",
-            Aliases: ["list_files"])),
+                       + "run_shell with find or ls — it needs no approval.")),
         // Same inversion as glob, and for the same reason: the pattern is the request, the path is
         // an optional narrowing. grep already required BOTH, so it never produced the inverted call
         // — but requiring a directory the model has no opinion about is friction on every search.
@@ -135,8 +136,7 @@ public static class WorkerToolset
             Params: ["pattern", "path", "regex", "glob", "limit"], Required: ["pattern"],
             Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
                        + "matching a glob. Use this rather than run_shell with grep or rg — it "
-                       + "needs no approval.",
-            Aliases: ["search_files"])),
+                       + "needs no approval.")),
         // NO DESCRIPTION AT ALL until now, so the model was told this tool is a "File Operation" —
         // the plugin's DisplayName, which serves six actions. The one tool that can destroy work
         // silently was the one with nothing said about it.
@@ -443,7 +443,7 @@ public static class WorkerToolset
     /// <para>This advice used to be gated on <c>read_file</c>, leaving every other tool to show a
     /// hole with no way out — the exact re-issue loop the advice exists to prevent, unfixed for the
     /// tools that need it most. The distinction that matters is whether the tool can page at all:
-    /// <c>search_files</c> and <c>list_files</c> take a <c>limit</c>, while <c>run_shell</c> and
+    /// <c>grep</c> and <c>glob</c> take a <c>limit</c>, while <c>run_shell</c> and
     /// <c>http_request</c> expose nothing, so telling those two to "narrow the parameters" would be
     /// advice they cannot follow. They are told to narrow the COMMAND instead.</para>
     /// </summary>
@@ -454,7 +454,10 @@ public static class WorkerToolset
             + "(1-based line) and 'limit' (line count) parameters — see 'total_lines' above for how "
             + "far it goes. Do NOT repeat this call unchanged; it returns the same elision.",
 
-        "search_files" or "list_files" =>
+        // THE ADVERTISED NAMES. These read "search_files" or "list_files" — the pre-rename spellings
+        // — so after 2026-08-13 neither branch could ever match and a truncated glob or grep got no
+        // advice at all. Found by deleting the aliases: the old names had one live reader left.
+        "grep" or "glob" =>
             "\n\nToo many results to return whole. Narrow the search — a more specific 'pattern', a "
             + "'glob' that restricts the file types, or a path further down the tree — or set a "
             + "smaller 'limit' and work through it. Do NOT repeat this call unchanged.",

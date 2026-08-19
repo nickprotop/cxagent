@@ -485,7 +485,7 @@ public static class SessionCompressor
         if (skills.Count == 0) return "";
 
         return $"\n\nSkill instructions removed by compaction: {string.Join(", ", skills)}. "
-             + "You are no longer following them — call load_skill again if the task still needs one.";
+             + "You are no longer following them — call skill again if the task still needs one.";
     }
 
     /// <summary>The marker that makes a summary recognisable as one on the next compaction.</summary>

@@ -5,7 +5,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Skills;
 
 /// <summary>
-/// The <c>load_skill</c> tool: hands the model a skill's body when it decides a task matches one of
+/// The <c>skill</c> tool: hands the model a skill's body when it decides a task matches one of
 /// the descriptions in its catalog.
 ///
 /// <para>AGENT-OWNED, NOT AN <c>IJobPlugin</c>, AND THAT IS FORCED RATHER THAN PREFERRED. Answering
@@ -50,7 +50,7 @@ public sealed class SkillLoader
     /// </summary>
     public SkillCatalogResult Catalog() => _catalog();
 
-    public string ToolName => "load_skill";
+    public string ToolName => "skill";
 
     /// <summary>
     /// Hand-built, like the spawner's and MCP's: there is no plugin and no <c>JobSchema</c> behind
@@ -100,7 +100,7 @@ public sealed class SkillLoader
         var requested = ReadName(call);
 
         if (string.IsNullOrWhiteSpace(requested))
-            return "load_skill needs a 'name'. " + Available(catalog);
+            return "skill needs a 'name'. " + Available(catalog);
 
         var skill = catalog.Skills.FirstOrDefault(
             s => string.Equals(s.Name, requested, StringComparison.OrdinalIgnoreCase));

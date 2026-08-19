@@ -446,7 +446,7 @@ public static class SystemPrompt
         {
             sb.AppendLine("When you need something from the user — which of several files they "
                         + "meant, a preference, a decision on an implementation choice — call "
-                        + "question and wait. Do NOT end your turn with a question in the text: "
+                        + "ask_user and wait. Do NOT end your turn with a question in the text: "
                         + "that reads as an answer, and nobody is listening for a reply to it. Ask "
                         + "several related things in ONE call rather than one at a time, and give "
                         + "each option a description so the choice can be made without guessing "
@@ -527,7 +527,7 @@ public static class SystemPrompt
         sb.AppendLine("# Skills");
         sb.AppendLine();
         sb.AppendLine("Specialised instructions you can load when a task matches one. Call "
-                    + "load_skill with the name to read it; the description tells you when it "
+                    + "skill with the name to read it; the description tells you when it "
                     + "applies. Load one BEFORE starting work it covers, not after.");
         sb.AppendLine();
         // SAID HERE AND IN THE TOOL DESCRIPTION, because the first live drive showed that naming the
@@ -535,7 +535,7 @@ public static class SystemPrompt
         // read_file — the tool it reaches for whenever it holds a path. The instructions still
         // arrived, so the WORK was right and every downstream surface was wrong: no marker meant the
         // worker row, the session panel and the compaction notice all reported no skill in force.
-        sb.AppendLine("Use load_skill for this, never a file tool. Reading a SKILL.md directly gets "
+        sb.AppendLine("Use the skill tool for this, never a file tool. Reading a SKILL.md directly gets "
                     + "you the text but does not register the skill, so nothing else in the session "
                     + "knows it is in force — and you will not be told when it is compacted away. "
                     + "A skill may ship other files; those are listed by full path when you load it, "

@@ -143,7 +143,7 @@ public class SkillsUiTests
                 Text = "", StopReason = "tool_use",
                 ToolCalls = [new ToolCall
                 {
-                    Id = "call-1", Name = "task",
+                    Id = "call-1", Name = "agent",
                     Arguments = System.Text.Json.JsonDocument.Parse(
                         """{"description":"deploy it","prompt":"deploy it"}""").RootElement,
                 }],
@@ -157,7 +157,7 @@ public class SkillsUiTests
                 Text = "", StopReason = "tool_use",
                 ToolCalls = [new ToolCall
                 {
-                    Id = "t1", Name = "load_skill",
+                    Id = "t1", Name = "skill",
                     Arguments = System.Text.Json.JsonDocument.Parse(
                         """{"name":"deployment"}""").RootElement,
                 }],
@@ -220,7 +220,7 @@ public class SkillsUiTests
 
             await agent.SendAsync("do something", CancellationToken.None);
 
-            Assert.Contains("load_skill", provider.LastTools.Select(t => t.Name));
+            Assert.Contains("skill", provider.LastTools.Select(t => t.Name));
         }
         finally
         {
@@ -246,7 +246,7 @@ public class SkillsUiTests
 
             await agent.SendAsync("do something", CancellationToken.None);
 
-            Assert.DoesNotContain("load_skill", provider.LastTools.Select(t => t.Name));
+            Assert.DoesNotContain("skill", provider.LastTools.Select(t => t.Name));
         }
         finally
         {

@@ -620,7 +620,7 @@ public class SystemPromptTests
 
         Assert.DoesNotContain("# Skills", p, StringComparison.Ordinal);
         Assert.DoesNotContain("available_skills", p, StringComparison.Ordinal);
-        Assert.DoesNotContain("load_skill", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("skill", p, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -676,7 +676,7 @@ public class SystemPromptTests
     [Fact]
     public void Build_WithSkills_NamesTheToolThatLoadsThem()
     {
-        Assert.Contains("load_skill", WithSkills(Skill("anything")), StringComparison.Ordinal);
+        Assert.Contains("skill", WithSkills(Skill("anything")), StringComparison.Ordinal);
     }
 
     /// <summary>

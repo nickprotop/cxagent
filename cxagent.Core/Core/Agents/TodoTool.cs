@@ -21,20 +21,17 @@ public sealed class TodoTool(TodoList list)
     public string ToolName => "todowrite";
 
     /// <summary>
-    /// A NAME THIS TOOL ALSO ANSWERS TO — the name this tool carried before it was renamed to match opencode and Claude Code.
+    /// Whether this tool answers to the name a call used.
     ///
-    /// <para>ACCEPTED, NOT ADVERTISED. Only <see cref="ToolName"/> is sent to the model, so nothing
-    /// pulls it toward the old spelling. But a rename is invisible to a model working from habit or
-    /// from a resumed conversation whose earlier turns used the old name, and an unknown tool is a
-    /// hard failure that costs a turn to recover from — for no reason, since the call is
-    /// unambiguous. Accepting it costs one comparison.</para>
+    /// <para>NO LEGACY NAME. This accepted its pre-rename spelling for six days after 2026-08-13, so
+    /// a conversation resumed across the change would not fail on a name it had seen in its own
+    /// history. That window is closed. Only cheap because nothing is published — a rename after
+    /// release needs the acceptance window again.</para>
     /// </summary>
-    private const string LegacyName = "update_todos";
 
     /// <summary>Is this call for this tool, under either name?</summary>
     private bool Claims(string name) =>
-        string.Equals(name, ToolName, StringComparison.Ordinal)
-        || string.Equals(name, LegacyName, StringComparison.Ordinal);
+        string.Equals(name, ToolName, StringComparison.Ordinal);
 
     /// <summary>
     /// The description is doing most of the work here, and it is worth being long.

@@ -2340,7 +2340,7 @@ public sealed class Agent
         // keepOpen leaves it expanded, StatusText returns null so the worker's own content shows, and
         // JobDigest does not placeholder its bulk output. The concept was built for exactly this and
         // was, until now, unused.
-        "task" => "llm_agent",
+        "agent" => "llm_agent",
 
         // ITS OWN TYPE, so the row stays EXPANDED. The list is the point of this row — collapsed to
         // "plan · 2/5 · expand…" it hides exactly what the user wanted at the moment they wanted it,
@@ -2369,7 +2369,7 @@ public sealed class Agent
         // `{"description":"…` — so the description ate the budget and `type`, which serialises last,
         // was ALWAYS cut off. The row could not say whether it was an explore, a planner or a
         // general agent, which is the first thing anyone wants from it.
-        if (string.Equals(call.Name, "task", StringComparison.Ordinal))
+        if (string.Equals(call.Name, "agent", StringComparison.Ordinal))
         {
             var type = ReadArg(call, "type");
             var what = ReadArg(call, "description");
@@ -2381,13 +2381,13 @@ public sealed class Agent
         }
 
         // A SKILL LOAD IS NAMED BY THE SKILL. The generic branch would render
-        // `load_skill {"name":"rtl-aware-development"}` — the JSON scaffolding is noise around the
+        // `skill {"name":"rtl-aware-development"}` — the JSON scaffolding is noise around the
         // one word that matters, and the row is the only place a user sees that a skill entered the
         // conversation at all.
-        if (string.Equals(call.Name, "load_skill", StringComparison.Ordinal))
+        if (string.Equals(call.Name, "skill", StringComparison.Ordinal))
         {
             var skill = ReadArg(call, "name");
-            return string.IsNullOrWhiteSpace(skill) ? "load_skill" : $"skill · {skill!.Trim()}";
+            return string.IsNullOrWhiteSpace(skill) ? "skill" : $"skill · {skill!.Trim()}";
         }
 
         // A PLAN IS NAMED BY WHERE IT STANDS. The generic branch would render the entire list as

@@ -5,7 +5,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Agents;
 
 /// <summary>
-/// <c>question</c> — the model asks the user questions and waits for the answers.
+/// <c>ask_user</c> — the model asks the user questions and waits for the answers.
 ///
 /// <para>WHAT IT IS FOR, and what it is not. The permission gate already asks "may I"; nothing asked
 /// "which one did you mean". Without it an ambiguous request gets a guess — and a guess on "update
@@ -20,23 +20,20 @@ namespace CxAgent.Core.Agents;
 /// </summary>
 public sealed class AskUserTool(Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>> ask)
 {
-    public string ToolName => "question";
+    public string ToolName => "ask_user";
 
     /// <summary>
-    /// A NAME THIS TOOL ALSO ANSWERS TO — the name this tool carried before it was renamed to match opencode.
+    /// Whether this tool answers to the name a call used.
     ///
-    /// <para>ACCEPTED, NOT ADVERTISED. Only <see cref="ToolName"/> is sent to the model, so nothing
-    /// pulls it toward the old spelling. But a rename is invisible to a model working from habit or
-    /// from a resumed conversation whose earlier turns used the old name, and an unknown tool is a
-    /// hard failure that costs a turn to recover from — for no reason, since the call is
-    /// unambiguous. Accepting it costs one comparison.</para>
+    /// <para>NO LEGACY NAME. This accepted its pre-rename spelling for six days after 2026-08-13, so
+    /// a conversation resumed across the change would not fail on a name it had seen in its own
+    /// history. That window is closed. Only cheap because nothing is published — a rename after
+    /// release needs the acceptance window again.</para>
     /// </summary>
-    private const string LegacyName = "ask_user";
 
     /// <summary>Is this call for this tool, under either name?</summary>
     private bool Claims(string name) =>
-        string.Equals(name, ToolName, StringComparison.Ordinal)
-        || string.Equals(name, LegacyName, StringComparison.Ordinal);
+        string.Equals(name, ToolName, StringComparison.Ordinal);
 
     /// <summary>
     /// How many questions one call may carry.
@@ -146,12 +143,12 @@ public sealed class AskUserTool(Func<IReadOnlyList<UserQuestion>, CancellationTo
         }
         catch (Exception)
         {
-            return "question could not read its arguments. Send "
+            return "ask_user could not read its arguments. Send "
                  + "{\"questions\": [{\"question\": \"…\"}]}.";
         }
 
         if (questions.Count == 0)
-            return "question needs at least one question: "
+            return "ask_user needs at least one question: "
                  + "{\"questions\": [{\"question\": \"…\"}]}.";
 
         // CANCELLATION IS THE USER'S OTHER ANSWER. Escape while a question is up means "stop", and

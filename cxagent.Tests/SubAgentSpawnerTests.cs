@@ -32,12 +32,12 @@ public class SubAgentSpawnerTests
         });
 
     /// <summary>
-    /// THE OLD NAME STILL WORKS. A rename is invisible to a model working from habit, or to a
-    /// RESUMED conversation whose earlier turns called it spawn_agent — and an unknown tool is a
-    /// hard failure costing a turn, for a call that is completely unambiguous.
+    /// THE OLD NAME IS DECLINED. It was accepted for six days after the 2026-08-13 rename so a
+    /// resumed conversation would not fail on a name in its own history; that window is closed.
+    /// Returning null lets the call fall through to "no such tool", which names the real one.
     /// </summary>
     [Fact]
-    public async Task Spawn_StillAnswersToItsOldName()
+    public async Task Spawn_DeclinesItsOldName()
     {
         var spawner = new SubAgentSpawner(FactoryOver(Answering("found it")));
 
@@ -52,8 +52,7 @@ public class SubAgentSpawnerTests
             },
             onChild: null, CancellationToken.None);
 
-        Assert.NotNull(result);
-        Assert.Contains("found it", result!);
+        Assert.Null(result);
     }
 
     /// <summary>...but only the new name is advertised, so nothing pulls the model backwards.</summary>
@@ -62,14 +61,14 @@ public class SubAgentSpawnerTests
     {
         var spawner = new SubAgentSpawner(FactoryOver(Answering("x")));
 
-        Assert.Equal("task", spawner.Definition.Name);
+        Assert.Equal("agent", spawner.Definition.Name);
     }
 
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
         new()
         {
             Id = "call-1",
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new { description, prompt })).RootElement,
         };
@@ -147,7 +146,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "c",
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse("""{"description":"do a thing"}""").RootElement,
         };
 
@@ -208,7 +207,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "call-1",
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -239,7 +238,7 @@ public class SubAgentSpawnerTests
         var call = new ToolCall
         {
             Id = "call-1",
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -409,7 +408,7 @@ public class SubAgentSpawnerTests
         new()
         {
             Id = id,
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(
                     new { description, prompt = "do the thing" })).RootElement,
@@ -871,7 +870,7 @@ public class SubAgentSpawnerTests
     {
         public void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName) { }
 
-        public string ToolName => "task";
+        public string ToolName => "agent";
         public ToolDefinition Definition => new(ToolName, "spawns", default);
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
             CancellationToken ct, string? parentAgentId = null)
@@ -1231,7 +1230,7 @@ public class SubAgentSpawnerTests
         // The TYPE leads, and the raw tool name and JSON braces are gone from the header entirely.
         Assert.StartsWith("general", row.DisplayName, StringComparison.Ordinal);
         Assert.DoesNotContain("{", row.DisplayName, StringComparison.Ordinal);
-        Assert.DoesNotContain("task", row.DisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent", row.DisplayName, StringComparison.Ordinal);
 
         // The description still appears — it is what distinguishes two agents of the SAME type.
         Assert.Contains("Explore", row.DisplayName, StringComparison.Ordinal);
@@ -1488,7 +1487,7 @@ public class SubAgentSpawnerTests
         await agent.SendAsync("go", CancellationToken.None);
 
         Assert.NotNull(provider.LastTools);
-        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "task");
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "agent");
     }
 
     /// <summary>Fan-out offers it — the difference is the mode, not the wiring.</summary>
@@ -1505,7 +1504,7 @@ public class SubAgentSpawnerTests
 
         await agent.SendAsync("go", CancellationToken.None);
 
-        Assert.Contains(provider.LastTools!, t => t.Name == "task");
+        Assert.Contains(provider.LastTools!, t => t.Name == "agent");
     }
 
     /// <summary>
@@ -1529,14 +1528,14 @@ public class SubAgentSpawnerTests
         };
 
         await agent.SendAsync("remember this word: pelican", CancellationToken.None);
-        Assert.Contains(provider.LastTools!, t => t.Name == "task");
+        Assert.Contains(provider.LastTools!, t => t.Name == "agent");
         var messagesBefore = agent.Context.Messages.Count;
 
         agent.Mode = AgentMode.Single;
         await agent.SendAsync("and now?", CancellationToken.None);
 
         // The tool is gone...
-        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "task");
+        Assert.DoesNotContain(provider.LastTools!, t => t.Name == "agent");
         // ...and everything said before the switch is still there.
         Assert.True(agent.Context.Messages.Count > messagesBefore);
         Assert.Contains(agent.Context.Messages, m => m.Content.Contains("pelican", StringComparison.Ordinal));
@@ -1589,7 +1588,7 @@ public class SubAgentSpawnerTests
         new()
         {
             Id = "call-1",
-            Name = "task",
+            Name = "agent",
             Arguments = System.Text.Json.JsonDocument.Parse(
                 System.Text.Json.JsonSerializer.Serialize(
                     type is null ? new { description = "d", prompt }

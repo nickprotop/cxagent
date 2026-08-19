@@ -176,7 +176,7 @@ public class SessionCompressorTests
 
         var text = string.Concat(conversation.Select(m => m.Content));
         Assert.Contains("deployment", text, StringComparison.Ordinal);
-        Assert.Contains("load_skill", text, StringComparison.Ordinal);
+        Assert.Contains("skill", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -223,7 +223,7 @@ public class SessionCompressorTests
 
         var text = string.Concat(conversation.Select(m => m.Content));
         Assert.Contains("deployment", text, StringComparison.Ordinal);
-        Assert.Contains("load_skill", text, StringComparison.Ordinal);
+        Assert.Contains("skill", text, StringComparison.Ordinal);
     }
 
     /// <summary>
