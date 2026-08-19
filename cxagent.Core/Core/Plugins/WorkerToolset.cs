@@ -71,7 +71,23 @@ public static class WorkerToolset
     private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
-        string? Description = null);
+        string? Description = null,
+        ToolCrossReference? SeeAlso = null);
+
+    /// <summary>
+    /// One sentence of a description that names ANOTHER tool, kept separate so it can be dropped
+    /// when that tool is not offered.
+    ///
+    /// <para>A pointer is only advice if the model can follow it. "Use replace_in_file instead" is
+    /// the best line in write_file's description for an agent that has both, and a turn wasted for
+    /// an agent that has one — the tool is called, refused as not available, and the model is back
+    /// where it started with less context budget.</para>
+    ///
+    /// <para>ONLY FOR POINTERS AT A TOOL. A description that names a SHELL COMMAND (grep's "rather
+    /// than run_shell with grep or rg") is describing what this tool replaces, not routing anywhere,
+    /// and stays whole.</para>
+    /// </summary>
+    private sealed record ToolCrossReference(WorkerTool Tool, string Sentence);
 
     /// <summary>
     /// Whether a spec answers to this name.
@@ -147,13 +163,16 @@ public static class WorkerToolset
         (WorkerTool.WriteFile, new ToolSpec("write_file", "file", "write",
             Params: ["path", "content"], Required: ["path", "content"],
             Description: "Write a whole file, creating it or REPLACING everything in it. Parent "
-                       + "directories are created for you. To change part of a file that already "
-                       + "exists, use replace_in_file instead — a whole-file write means "
-                       + "reproducing every line you are not changing, and any one of them you "
-                       + "misremember is a silent edit nobody asked for. If you do overwrite an "
+                       + "directories are created for you. If you do overwrite an "
                        + "existing file, read it first: what it currently holds is the only thing "
                        + "that tells you whether replacing it is what you meant. The result says "
-                       + "whether it created or overwrote.")),
+                       + "whether it created or overwrote.",
+            // ONLY IF THE MODEL HAS replace_in_file. Routing it to a withheld tool costs a turn and
+            // teaches it nothing: the advice is good, and unreachable.
+            SeeAlso: new(WorkerTool.ReplaceInFile,
+                "To change part of a file that already exists, use replace_in_file instead — a "
+                + "whole-file write means reproducing every line you are not changing, and any one "
+                + "of them you misremember is a silent edit nobody asked for."))),
         // Producers only: replace EDITS an existing file. write_file is whole-file, so changing one
         // function meant reproducing every other line from memory.
         (WorkerTool.ReplaceInFile, new ToolSpec("replace_in_file", "file", "replace",
@@ -177,8 +196,9 @@ public static class WorkerToolset
             Pinned: new Dictionary<string, object?> { ["as_text"] = true },
             Description: "Read a web page as text. Fetches the URL and strips the markup, scripts, "
                        + "styles and navigation, leaving the readable content. Use this for "
-                       + "documentation and articles — use http_request for APIs, where the raw "
-                       + "response is what you want.")),
+                       + "documentation and articles.",
+            SeeAlso: new(WorkerTool.HttpRequest,
+                "Use http_request for APIs, where the raw response is what you want."))),
     };
 
     /// <summary>
@@ -227,12 +247,13 @@ public static class WorkerToolset
         {
             if (!allowed.Contains(tool)) continue;
             if (!plugins.TryGet(spec.PluginType, out var plugin) || plugin is null) continue;
-            result.Add(BuildDefinition(spec, plugin.GetSchema()));
+            result.Add(BuildDefinition(spec, plugin.GetSchema(), allowed));
         }
         return result;
     }
 
-    private static ToolDefinition BuildDefinition(ToolSpec spec, JobSchema schema)
+    private static ToolDefinition BuildDefinition(ToolSpec spec, JobSchema schema,
+        IReadOnlySet<WorkerTool> allowed)
     {
         var byName = schema.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
         var properties = new Dictionary<string, object>();
@@ -266,6 +287,17 @@ public static class WorkerToolset
             ?? (spec.PinnedAction is null
                 ? schema.DisplayName
                 : $"{schema.DisplayName} ({spec.PinnedAction})");
+
+        // THE CROSS-REFERENCE IS CONDITIONAL, and this is the only place that can know. A
+        // description naming another tool is written once and read every turn, so before the
+        // selection existed it was simply true; now "use replace_in_file instead" can name a tool
+        // this agent was never offered, which spends a turn to discover.
+        //
+        // NOT EVERY MENTION IS ONE OF THESE. grep and glob point AWAY from run_shell — toward the
+        // tool being described — so they stay correct however the set is narrowed and carry no
+        // SeeAlso.
+        if (spec.SeeAlso is { } also && allowed.Contains(also.Tool))
+            description += " " + also.Sentence;
 
         return new ToolDefinition(spec.Name, description, JsonSerializer.SerializeToElement(jsonSchema));
     }

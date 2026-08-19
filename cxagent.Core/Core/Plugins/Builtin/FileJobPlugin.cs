@@ -986,9 +986,14 @@ public class FileJobPlugin : IJobPlugin
                             return new JobResult
                             {
                                 Success = false,
+                                // NO TOOL NAMED. A plugin cannot see the selection, and this string
+                                // is read at the moment of a failure — the worst time to send the
+                                // model after a tool it may not have been offered. What happened and
+                                // why is the useful part; which tool to reach for next is a question
+                                // the offered list already answers.
                                 ErrorMessage = $"{path} already exists, and 'create' will not replace "
-                                             + "a file. Read it first, then use write_file if "
-                                             + "replacing it is what you meant. Nothing was written.",
+                                             + "a file. Read it first: if replacing it is what you "
+                                             + "meant, do that explicitly. Nothing was written.",
                             };
                         output["created"] = true;
                         output["content"] = $"created {path}";
