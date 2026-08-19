@@ -69,7 +69,19 @@ public sealed class TodoList
     /// is wrong: a model that cannot see what it has already done will redo it, and "I already
     /// handled that" is not something a fresh context can know.</para>
     /// </summary>
-    public string Render()
+    /// <param name="toolOffered">
+    /// Whether <c>todowrite</c> is actually offered this turn.
+    ///
+    /// <para>THE LIST OUTLIVES THE TOOL. Items live in the agent's state, so a selection applied
+    /// later leaves a non-empty list rendered beside an instruction to update it with something the
+    /// model no longer has. The list is still worth showing — it is what the agent was doing — but
+    /// the sentence naming the tool is not.</para>
+    ///
+    /// <para>A PARAMETER RATHER THAN A LOOKUP, so this stays a pure function of the list plus one
+    /// fact. Reaching for a static here would make a renderer depend on whichever agent happened to
+    /// run last.</para>
+    /// </param>
+    public string Render(bool toolOffered = true)
     {
         if (_items.Count == 0) return "";
 
@@ -77,8 +89,11 @@ public sealed class TodoList
         sb.AppendLine();
         sb.AppendLine("# Your task list");
         sb.AppendLine();
-        sb.AppendLine("You wrote this. Keep it current with todowrite as you work — mark an item "
-                    + "in_progress before starting it and completed once it is actually done.");
+        sb.AppendLine(toolOffered
+            ? "You wrote this. Keep it current with todowrite as you work — mark an item "
+              + "in_progress before starting it and completed once it is actually done."
+            : "You wrote this earlier. You can no longer update it — the tool for that is not "
+              + "available in this session — so treat it as a record of where you had got to.");
         sb.AppendLine();
 
         foreach (var item in _items)

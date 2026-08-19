@@ -87,9 +87,14 @@ public static class SessionCompressor
     /// is in the best position to know: after rewriting the conversation, the last measurement no
     /// longer describes it.</para>
     /// </remarks>
+    /// <param name="skillToolOffered">
+    /// Whether the <c>skill</c> tool is available this session. False suppresses the "call skill
+    /// again" remedy in the notice — telling a model to reload with a tool it does not have is the
+    /// lie a selection must not create.
+    /// </param>
     public static async Task<CompressResult> CompressAsync(
         AgentContext context, ILlmProvider provider, CancellationToken ct,
-        Action<LlmUsage>? meter = null)
+        Action<LlmUsage>? meter = null, bool skillToolOffered = true)
     {
         var conversation = context.Messages;
 
@@ -164,7 +169,7 @@ public static class SessionCompressor
             conversation.Insert(pin, new ChatMessage
             {
                 Role = "assistant",
-                Content = FormatSummary(summary.Text) + SkillNotice(oldTurns),
+                Content = FormatSummary(summary.Text) + SkillNotice(oldTurns, skillToolOffered),
                 Timestamp = DateTimeOffset.UtcNow,
             });
             // THE READING NO LONGER DESCRIBES THE CONVERSATION. Done here rather than left to the
@@ -190,7 +195,8 @@ public static class SessionCompressor
             // Truncate chooses its own boundary, which is not `cut` — so the range is recomputed
             // rather than reusing oldTurns above, which would name skills that survived.
             var keep = (conversation.Count - pin) / 2;
-            var notice = SkillNotice(conversation.GetRange(pin, Math.Max(0, conversation.Count - pin - keep)));
+            var notice = SkillNotice(conversation.GetRange(pin, Math.Max(0, conversation.Count - pin - keep)),
+                skillToolOffered);
 
             Truncate(conversation, pin);
 
@@ -479,13 +485,17 @@ public static class SessionCompressor
     /// <para>It reads as an instruction rather than a note, because the model's next decision is
     /// whether to reload: a line that only reported the loss would leave it to infer the remedy.</para>
     /// </summary>
-    private static string SkillNotice(IReadOnlyList<ChatMessage> removed)
+    private static string SkillNotice(IReadOnlyList<ChatMessage> removed, bool toolOffered)
     {
         var skills = Skills.SkillLoader.LoadedIn(removed);
         if (skills.Count == 0) return "";
 
+        // THE LOSS IS ALWAYS WORTH SAYING; the remedy is only worth saying when it exists. A line
+        // that names a tool this session withheld sends the model to spend a turn discovering that.
         return $"\n\nSkill instructions removed by compaction: {string.Join(", ", skills)}. "
-             + "You are no longer following them — call skill again if the task still needs one.";
+             + (toolOffered
+                 ? "You are no longer following them — call skill again if the task still needs one."
+                 : "You are no longer following them.");
     }
 
     /// <summary>The marker that makes a summary recognisable as one on the next compaction.</summary>

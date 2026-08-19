@@ -227,6 +227,20 @@ public sealed class Agent
     private HashSet<string> _offeredNames = [];
 
     /// <summary>
+    /// Whether the <c>skill</c> tool is offered, for the compaction notice.
+    ///
+    /// <para>ASKED OF THE AGENT rather than threaded through CompressionRun, which already carries
+    /// eight parameters and has three call sites — two here and one on /compress, all of which mean
+    /// the same session and would compute the same answer. A bool through three signatures for one
+    /// sentence is a worse trade than one accessor.</para>
+    ///
+    /// <para>TRUE BEFORE THE FIRST TURN, when nothing has been assembled yet: a compaction cannot
+    /// have happened either, so the notice this guards has not been written.</para>
+    /// </summary>
+    internal bool SkillToolOffered =>
+        _offeredNames.Count == 0 || _offeredNames.Contains(Plugins.Tool.Skill);
+
+    /// <summary>
     /// The built-ins this agent may run, after its selection.
     ///
     /// <para>ONE DECISION, TWO SITES. The assembly uses it to decide what the model is TOLD;
@@ -1025,17 +1039,21 @@ public sealed class Agent
                 // different states of the conversation and both are worth reading afterwards.
                 _turn++;
 
-                await CompressionRun.RunAsync(_context, _provider, _jobs, Id,
-                    "compress context · provider refused the request as too long",
-                    // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
-            // model, and a summarisation turn that vanished from the per-model tally
-            // would make the numbers disagree with the session total for no reason a
-            // reader could work out.
-            u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
-                    {
-                        ContextCompressed?.Invoke(b, a);
-                        if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
-                    });
+                await CompressionRun.RunAsync(
+                    new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered),
+                    new CompressionRun.CompressionReport(_jobs, Id,
+                        "compress context · provider refused the request as too long",
+                        // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
+                        // model, and a summarisation turn that vanished from the per-model tally
+                        // would make the numbers disagree with the session total for no reason a
+                        // reader could work out.
+                        u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); },
+                        (b, a) =>
+                        {
+                            ContextCompressed?.Invoke(b, a);
+                            if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
+                        }),
+                    ct);
 
                 continue;
             }
@@ -2181,7 +2199,7 @@ public sealed class Agent
         var messages = _context.Messages;
         messages.RemoveAll(m => m.IsTaskList);
 
-        var rendered = _todos.Render();
+        var rendered = _todos.Render(toolOffered: _offeredNames.Contains(Plugins.Tool.TodoWrite));
         if (string.IsNullOrWhiteSpace(rendered)) return;
 
         // USER ROLE, NO ToolCallId. Both compaction cut paths (SessionCompressor.SafeCut and
@@ -2237,19 +2255,22 @@ public sealed class Agent
         // The row itself lives in CompressionRun, which every compressing route now shares — this one
         // and the /compress command. The threshold test stays here because only this caller measures
         // per-turn pressure.
-        await CompressionRun.RunAsync(_context, _provider, _jobs, agentId,
-            $"compress context · {reason}",
-            // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
-            // model, and a summarisation turn that vanished from the per-model tally
-            // would make the numbers disagree with the session total for no reason a
-            // reader could work out.
-            u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); }, ct, compressed: (b, a) =>
-            {
-                ContextCompressed?.Invoke(b, a);
-                // The context re-estimated its own occupancy while compacting; publish it so the
-                // readout shows where that leaves us rather than the pre-compaction figure.
-                if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
-            });
+        await CompressionRun.RunAsync(
+            new CompressionRun.CompressionWork(_context, _provider, SkillToolOffered),
+            new CompressionRun.CompressionReport(_jobs, agentId, $"compress context · {reason}",
+                // ATTRIBUTED LIKE ANY OTHER CALL. Compaction is a real request to a real
+                // model, and a summarisation turn that vanished from the per-model tally
+                // would make the numbers disagree with the session total for no reason a
+                // reader could work out.
+                u => { _ledger.Record(u, SpendLabel, _isSubAgent); RecordOwnSpend(u); },
+                (b, a) =>
+                {
+                    ContextCompressed?.Invoke(b, a);
+                    // The context re-estimated its own occupancy while compacting; publish it so the
+                    // readout shows where that leaves us rather than the pre-compaction figure.
+                    if (_context.Used is { } estimated) ContextEstimated?.Invoke(estimated);
+                }),
+            ct);
     }
 
     private static bool IsWrite(string toolName) =>

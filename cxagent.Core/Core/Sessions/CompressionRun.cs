@@ -22,34 +22,60 @@ namespace CxAgent.Core.Sessions;
 public static class CompressionRun
 {
     /// <summary>
-    /// Compresses <paramref name="context"/>, rendering the work as a job row on
-    /// <paramref name="jobs"/>.
+    /// One compression, as one value.
+    ///
+    /// <para>NINE PARAMETERS WAS THE SIGNAL. RunAsync reached nine when the skill-tool flag arrived,
+    /// and the repo's own rule says to stop at the fourth and ask whether the group wants a name.
+    /// It does, and there are two of them: WHAT to compress and HOW to report it, which is also why
+    /// the list kept growing — every reporting need added a parameter beside the work.</para>
+    ///
+    /// <para>THE TYPES REPEAT, which is the case the rule exists for: <c>agentId</c> and
+    /// <c>title</c> are both <c>string</c> and adjacent. Transposed, this compiles cleanly and files
+    /// the row under a title-shaped id.</para>
     /// </summary>
+    /// <param name="Context">The agent's context, mutated in place.</param>
+    /// <param name="Provider">The provider used to write the summary.</param>
+    /// <param name="SkillToolOffered">
+    /// Whether <c>skill</c> is available. False drops the "call skill again" remedy from the
+    /// compaction notice — naming a withheld tool sends the model to spend a turn discovering it.
+    /// </param>
+    public readonly record struct CompressionWork(
+        AgentContext Context, ILlmProvider Provider, bool SkillToolOffered = true);
+
+    /// <summary>
+    /// Where one compression is reported.
+    ///
+    /// <para>Separate from <see cref="CompressionWork"/> because these are the parameters that grew:
+    /// a row, an id, a title, a meter, a callback — five ways of saying the same thing to different
+    /// audiences, none of which the compressor itself needs.</para>
+    /// </summary>
+    /// <param name="Jobs">Where the row is rendered.</param>
+    /// <param name="AgentId">The goal the row belongs to.</param>
+    /// <param name="Title">
+    /// The row's display name. The caller writes it because only the caller knows WHY this ran — the
+    /// pressure reading that tripped a threshold, or that the user asked.
+    /// </param>
+    /// <param name="Meter">Records the summarising call's own usage. Unmetered provider calls are
+    /// this project's recurring rot pattern, and housekeeping is not exempt.</param>
+    /// <param name="Compressed">
+    /// Invoked with (messages before, messages after) once a compression really happened, so the
+    /// context readout can stop presenting its last measurement as current AND say what changed.
+    /// Optional: callers with no UI to notify pass null.
+    /// </param>
+    public readonly record struct CompressionReport(
+        IToolObserver Jobs, string AgentId, string Title,
+        Action<LlmUsage>? Meter = null, Action<int, int>? Compressed = null);
+
+    /// <summary>Compresses one context, rendering the work as a job row.</summary>
     /// <remarks>
     /// <para>NEVER THROWS for the same reason the per-turn caller never did: compression failing must
     /// not end a session that is otherwise working. <see cref="SessionCompressor"/> falls back to
     /// truncation on a provider error and reports which happened, so the row can be honest about it.</para>
     /// </remarks>
-    /// <param name="context">The agent's context, mutated in place.</param>
-    /// <param name="provider">The provider used to write the summary.</param>
-    /// <param name="jobs">Where the row is rendered.</param>
-    /// <param name="agentId">The goal the row belongs to.</param>
-    /// <param name="title">
-    /// The row's display name. The caller writes it because only the caller knows WHY this ran — the
-    /// pressure reading that tripped a threshold, or that the user asked.
-    /// </param>
-    /// <param name="meter">Records the summarising call's own usage. Unmetered provider calls are
-    /// this project's recurring rot pattern, and housekeeping is not exempt.</param>
-    /// <param name="compressed">
-    /// Invoked with (messages before, messages after) once a compression really happened, so the
-    /// context readout can stop presenting its last measurement as current AND say what changed.
-    /// Optional: callers with no UI to notify pass null.
-    /// </param>
     public static async Task<SessionCompressor.CompressResult> RunAsync(
-        AgentContext context, ILlmProvider provider, IToolObserver jobs, string agentId,
-        string title, Action<LlmUsage>? meter, CancellationToken ct, Action<int, int>? compressed = null)
+        CompressionWork work, CompressionReport report, CancellationToken ct)
     {
-        // A JOB ROW, not a bare system line, because compression IS work: it takes a provider call of
+        // A JOB ROW, not a bare system line, because compression IS work: it takes a work.Provider call of
         // its own, runs for seconds, and rewrites the conversation. As a row it gets the machinery
         // every other tool call already has — a spinner while it runs (it looked like a hang before),
         // a one-line summary when it lands, red if it degrades to truncation, and an expandable body.
@@ -62,31 +88,31 @@ public static class CompressionRun
         {
             Id = Helpers.UlidGenerator.NewId(),
             PlanLocalId = "compress",
-            AgentId = agentId,
+            AgentId = report.AgentId,
             PluginType = "compress",
-            DisplayName = title,
+            DisplayName = report.Title,
             State = JobState.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow,
         };
-        jobs.ToolsChanged(new[] { job });
+        report.Jobs.ToolsChanged(new[] { job });
 
         var started = DateTimeOffset.UtcNow;
-        var before = context.Count;
+        var before = work.Context.Count;
 
         // CHARACTERS, NOT MESSAGES, for what the user is told. Compression replaces the older half
         // with ONE summary, so the COUNT barely moves and can be identical: a two-message
-        // conversation removes one and inserts one, and the status bar read "compressed 2→2 msgs" —
+        // conversation removes one and inserts one, and the status bar read "report.Compressed 2→2 msgs" —
         // a true statement that tells the user nothing and looks like a no-op. What actually shrank
         // is the text, often by an order of magnitude, and that is the number worth showing.
-        var charsBefore = context.TotalChars();
+        var charsBefore = work.Context.TotalChars();
 
-        var result = await SessionCompressor.CompressAsync(context, provider, ct, meter);
+        var result = await SessionCompressor.CompressAsync(work.Context, work.Provider, ct, report.Meter, work.SkillToolOffered);
 
         // The summary the compressor wrote, which is now the first message. Read back rather than
-        // returned, so the compressor's contract stays "shrink this context" rather than growing a
+        // returned, so the compressor's contract stays "shrink this work.Context" rather than growing a
         // reporting channel for one caller.
-        var summary = context.Count > 0 ? context.Messages[0].Content : "";
+        var summary = work.Context.Count > 0 ? work.Context.Messages[0].Content : "";
 
         // TRUNCATION IS A FAILURE, and shows red. It means the summarising call did not answer and
         // the oldest half was dropped unread — recoverable, but the user should see that it happened
@@ -108,24 +134,24 @@ public static class CompressionRun
             ErrorMessage = result.Summarised
                 ? null
                 : result.Declined
-                    ? "the model returned no usable summary — nothing was compressed, nothing was lost"
+                    ? "the model returned no usable summary — nothing was report.Compressed, nothing was lost"
                     : "summarisation failed — dropped the oldest messages unread",
             Output = new Dictionary<string, object?>
             {
-                ["content"] = $"{before} messages → {context.Count}\n\n{summary}",
+                ["content"] = $"{before} messages → {work.Context.Count}\n\n{summary}",
             },
         };
-        jobs.ToolUpdated(job);
+        report.Jobs.ToolUpdated(job);
 
         // KEYED ON Summarised, NOT ON THE MESSAGE COUNT — the same trap the /compress reply fell into
         // once already. Compression replaces the older half with ONE summary, so a two-message
         // conversation removes one and inserts one and ends at the count it started with, while its
         // content shrank from a full turn to a couple of hundred characters. Counting therefore
-        // reports "nothing happened" for a real compression, and the context reading stays marked
+        // reports "nothing happened" for a real compression, and the work.Context reading stays marked
         // fresh when it no longer describes the conversation at all.
         //
         // Summarised is the compressor's own answer to "did I do the work", which is the question.
-        if (result.Summarised) compressed?.Invoke(charsBefore, context.TotalChars());
+        if (result.Summarised) report.Compressed?.Invoke(charsBefore, work.Context.TotalChars());
 
         return result;
     }

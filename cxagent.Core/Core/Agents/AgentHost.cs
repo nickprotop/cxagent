@@ -687,17 +687,21 @@ public sealed class AgentHost : IDisposable
         // THE AGENT'S ID. This used to be the id of whichever goal last ran, falling back to the
         // literal "session" before the first one — so a /compress issued before any prompt filed its
         // row under a name no log directory had. The agent has one id for its whole life.
-        CompressionRun.RunAsync(Context, _runtime.Provider, _jobPanel, _agent.Id,
-            "compress context · requested", usage =>
-            {
-                Ledger.Record(usage, SpendLabel);
-                TokensUpdated?.Invoke(this, Ledger.TotalTokens);
-            }, ct, compressed: (b, a) =>
-            {
-                ContextCompressed?.Invoke(this, (b, a));
-                _stores.History?.SaveCompaction(new CompactionRecord(
-                    _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _runtime.WorkingDir));
-            });
+        CompressionRun.RunAsync(
+            new CompressionRun.CompressionWork(Context, _runtime.Provider, _agent.SkillToolOffered),
+            new CompressionRun.CompressionReport(_jobPanel, _agent.Id, "compress context · requested",
+                usage =>
+                {
+                    Ledger.Record(usage, SpendLabel);
+                    TokensUpdated?.Invoke(this, Ledger.TotalTokens);
+                },
+                (b, a) =>
+                {
+                    ContextCompressed?.Invoke(this, (b, a));
+                    _stores.History?.SaveCompaction(new CompactionRecord(
+                        _agent.Id, DateTimeOffset.UtcNow, b, a, "manual", _runtime.WorkingDir));
+                }),
+            ct);
 
 
 
