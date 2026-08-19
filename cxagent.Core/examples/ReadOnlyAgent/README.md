@@ -13,6 +13,26 @@ The interesting part is one line:
 var readOnly = new ToolSelection([Tool.ReadFile, Tool.Glob, Tool.Grep, Tool.TodoWrite]);
 ```
 
+## What it looks like
+
+Every tool call is printed, so the selection is something you watch rather than something you take
+on trust. Asked to find a symbol and then write a file:
+
+```
+  · grep {"pattern":"FormatMemory","path":"/tmp/cxgpu"}
+FormatMemory is defined in cxgpu/Export/UsageFormatter.cs at line 472
+
+Now writing /tmp/nope.txt:
+
+  · read_file {"path":"/tmp/nope.txt"}
+I don't have a tool to create or write new files — only read, glob, and grep.
+```
+
+Look at the second tool row. The model announced that it was writing the file, reached for a tool,
+and what it reached for was `read_file` — because `write_file` was never in its list. No file was
+created. That row is the reason this example prints tool activity at all: the first version
+discarded it, and an example about which tools an agent has was hiding the only thing worth seeing.
+
 ## Why not just tell it?
 
 A briefing that says *"never edit files"* is a request. Models do not reliably follow instructions
@@ -69,5 +89,8 @@ correction.
 | [ToolAgent](../ToolAgent) | adding a tool, and the two permission gates |
 | [SpectreAgent](../SpectreAgent) | a rendered front end in about a hundred lines |
 | **ReadOnlyAgent** | taking tools away, and when a boundary beats a briefing |
+
+Uses Spectre.Console, like SpectreAgent — the tool rows are the point, and printing them plainly
+would bury them in the model's own output. `CxAgent.Core` itself has no such dependency.
 
 [Tool selection in full →](../../docs/api.md#tool-selection)

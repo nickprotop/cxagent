@@ -4,6 +4,7 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
+using Spectre.Console;
 
 // AN AGENT THAT CANNOT CHANGE ANYTHING, and cannot delegate.
 //
@@ -14,21 +15,13 @@ using CxAgent.Core.Storage;
 // THE POINT IS THAT THE RESTRICTION IS STRUCTURAL. A briefing that says "never edit files" is a
 // request the model may ignore; a selection is a list it is never offered, and a withheld tool is
 // refused if it guesses the name anyway. Prose asks. This decides.
+//
+// EVERY TOOL CALL IS PRINTED, which is the whole reason this example is worth running rather than
+// reading. A selection you can only see in source is a claim; one you watch hold for a session is
+// evidence. The first version of this file discarded tool events through a null observer — for an
+// example about WHICH TOOLS AN AGENT HAS, that hid the only thing worth looking at.
 
 var workingDir = args.FirstOrDefault() ?? Directory.GetCurrentDirectory();
-
-var resolution = ConfigResolver.Resolve(new AppPaths(), Environment.GetEnvironmentVariables()
-    .Cast<System.Collections.DictionaryEntry>()
-    .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? ""), useMock: false);
-
-if (!resolution.HasProvider)
-{
-    // ERRORS, NOT EXCEPTIONS. ConfigResolver catches what the loader throws and reports it this
-    // way, so a missing file and a malformed one arrive through one path.
-    Console.Error.WriteLine("No provider configured. Run cxagent once to set one up.");
-    foreach (var error in resolution.Errors) Console.Error.WriteLine($"  {error}");
-    return 1;
-}
 
 // THE SELECTION. Read and search, nothing else.
 //
@@ -43,13 +36,35 @@ if (!resolution.HasProvider)
 // on a live drive when web_fetch was withheld and curl was not.
 var readOnly = new ToolSelection([Tool.ReadFile, Tool.Glob, Tool.Grep, Tool.TodoWrite]);
 
+AnsiConsole.Write(new Panel(
+        $"[grey]{workingDir.EscapeMarkup()}[/]\n\n"
+      + $"offered  [green]{string.Join("[/] · [green]", readOnly.Terms)}[/]\n"
+      + "withheld [red]write_file · replace_in_file · run_shell · agent · web_fetch · http_request · …[/]")
+    .Header("[steelblue] read-only agent [/]")
+    .BorderColor(Color.Grey));
+AnsiConsole.WriteLine();
+
+var resolution = ConfigResolver.Resolve(new AppPaths(), Environment.GetEnvironmentVariables()
+    .Cast<System.Collections.DictionaryEntry>()
+    .ToDictionary(e => (string)e.Key, e => (string?)e.Value ?? ""), useMock: false);
+
+if (!resolution.HasProvider)
+{
+    // ERRORS, NOT EXCEPTIONS. ConfigResolver catches what the loader throws and reports it this
+    // way, so a missing file and a malformed one arrive through one path.
+    AnsiConsole.MarkupLine("[red]No provider configured.[/] Run cxagent once to set one up.");
+    foreach (var error in resolution.Errors)
+        AnsiConsole.MarkupLine($"  [grey]{error.EscapeMarkup()}[/]");
+    return 1;
+}
+
 using var manager = SessionManager.Create(new AppPaths());
 
 var session = manager.Open(workingDir, resolution,
     new SessionPorts
     {
         Observer = new ConsoleSink(),
-        ToolObserver = new NullToolSink(),
+        ToolObserver = new ToolSink(),
 
         // S2 — this session. SharedServices.ToolSelection would be S1 and cover every session this
         // manager opens; either works here, and the session-level one is the narrower claim.
@@ -64,33 +79,35 @@ var session = manager.Open(workingDir, resolution,
 
 // NO PERMISSION GATE IS WIRED, and that is not an omission.
 //
-// Manager.Create without a buildGate leaves every call ungated — which would be reckless for an
-// agent that can write, and is fine for one that cannot. The tools it has read files inside a
+// SessionManager.Create without a buildGate leaves every call ungated — which would be reckless for
+// an agent that can write, and is fine for one that cannot. The tools it has read files inside a
 // working directory it was given. There is no destructive call to intercept, so there is nothing
 // for a human to answer, and a prompt that never fires teaches a user to press Enter without
 // reading. THE SELECTION IS DOING THE WORK THE GATE WOULD OTHERWISE DO.
 //
 // Add a gate the moment you add a tool that changes something. See ToolAgent for one.
 
-Console.WriteLine($"read-only agent · {workingDir}");
-Console.WriteLine("offered: read_file, glob, grep, todowrite — no writes, no shell, no sub-agents");
-Console.WriteLine("blank line to quit");
-Console.WriteLine();
+AnsiConsole.MarkupLine("[grey]Ask about the code. Blank line to quit.[/]");
+AnsiConsole.WriteLine();
 
 while (true)
 {
-    Console.Write("> ");
+    // Console.ReadLine RATHER THAN AnsiConsole.Prompt, which throws "Failed to read input in
+    // non-interactive mode" the moment stdin is a pipe. An example that dies under
+    // `echo "..." | dotnet run` is one nobody can script, test in CI, or paste into an issue.
+    AnsiConsole.Markup("[steelblue]>[/] ");
     var prompt = Console.ReadLine();
+
     if (string.IsNullOrWhiteSpace(prompt)) break;
 
     if (session.Submit(prompt) is not Session.SubmitOutcome.Started started)
     {
-        Console.WriteLine("busy");
+        AnsiConsole.MarkupLine("[yellow]busy[/]");
         continue;
     }
 
     await started.Turn;
-    Console.WriteLine();
+    AnsiConsole.WriteLine();
 }
 
 return 0;
@@ -100,19 +117,39 @@ internal sealed class ConsoleSink : ISessionObserver
 {
     public void UserTurnAdded(ChatMessageId id, string text) { }
     public void AssistantTurnBegan(ChatMessageId id) { }
+
+    // STREAMED, so Write rather than MarkupLine: the model's text is not markup and a stray
+    // bracket in a code identifier would otherwise throw mid-sentence.
     public void AssistantTextAppended(ChatMessageId id, string token) => Console.Write(token);
+
     public void AssistantReasoningAppended(ChatMessageId id, string text) { }
-    public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
+    public void AssistantTurnEnded(ChatMessageId id) => AnsiConsole.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
-    public void Failed(string message) => Console.Error.WriteLine(message);
-    public void Said(string message) => Console.WriteLine(message);
+    public void Failed(string message) => AnsiConsole.MarkupLine($"[red]{message.EscapeMarkup()}[/]");
+    public void Said(string message) => AnsiConsole.MarkupLine($"[grey]{message.EscapeMarkup()}[/]");
 }
 
-/// <summary>Tool activity, ignored — the port is non-nullable, so an embedder that does not care
-/// says so explicitly rather than by passing null.</summary>
-internal sealed class NullToolSink : IToolObserver
+/// <summary>
+/// One line per tool call — the selection, visible.
+///
+/// <para>ANNOUNCED FROM ToolsChanged, NOT ToolUpdated. ToolsChanged carries the live set while tools
+/// RUN; ToolUpdated fires when one finishes, and a finished job is never Running — so a front end
+/// that announced starts from ToolUpdated prints nothing at all. SpectreAgent's observer carries the
+/// same warning, having made the mistake first.</para>
+/// </summary>
+internal sealed class ToolSink : IToolObserver
 {
-    public void ToolsChanged(IReadOnlyList<Job> jobs) { }
+    private readonly HashSet<string> _announced = [];
+
+    public void ToolsChanged(IReadOnlyList<Job> jobs)
+    {
+        foreach (var job in jobs)
+        {
+            if (job.State is not JobState.Running || !_announced.Add(job.Id)) continue;
+            AnsiConsole.MarkupLine($"[grey]  · {job.DisplayName.EscapeMarkup()}[/]");
+        }
+    }
+
     public void ToolUpdated(Job job) { }
     public void ToolProgressed(Job job) { }
     public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }

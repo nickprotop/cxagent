@@ -33,7 +33,7 @@ Targets `net10.0`. **Pre-1.0 and moving** — public signatures change between v
 | **[tools.md](docs/tools.md)** | injecting tools of your own |
 | **[examples/ToolAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** | a runnable console app with an injected tool |
 | **[examples/SpectreAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** | the same, with a rendered UI |
-| **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — an agent that cannot change anything |
+| **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — a selection you can watch hold |
 
 Below: the mental model, then the four calls an app makes.
 
@@ -455,7 +455,8 @@ session.Mode        // delegation and edit mode
 - **[ToolAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** — injecting your own tools, and the two gates each one
   passes through
 - **[ReadOnlyAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** — the other direction: a selection that
-  leaves an agent unable to write, shell out or delegate, and why that beats a briefing
+  leaves an agent unable to write, shell out or delegate, printing every tool call so you can watch
+  it hold
 
 ## License
 

@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.51.1" />
+
     <!-- A PROJECT REFERENCE SO THE EXAMPLE MOVES WITH THE API. A consumer writes
          <PackageReference Include="CxAgent.Core" Version="…" /> instead; referencing the project
          here means a breaking change to the surface breaks this build rather than being discovered
