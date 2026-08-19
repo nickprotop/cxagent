@@ -3,9 +3,38 @@
 The sessions, agents and turn loop behind [cxagent](https://github.com/nickprotop/cxagent) — usable
 without a terminal.
 
+A conversation, the agent running it, tool execution, sub-agent delegation, permissions, MCP and
+resumable stores. You supply where the text goes; there is no UI dependency.
+
 ```
 dotnet add package CxAgent.Core
 ```
+
+Targets `net10.0`. **Pre-1.0 and moving** — public signatures change between versions.
+
+### What is in it
+
+| | |
+|---|---|
+| **Turn loop** | tool calls, retries, and compaction when the context fills |
+| **Twelve tools** | read, write, edit, glob, grep, shell, http, web fetch, todo, ask, delegate, skills |
+| **Sub-agents** | typed workers, each with its own context and briefing |
+| **Permissions** | every call passes a gate you answer; decisions persist and scope to a folder |
+| **Tool selection** | [narrow what an agent is offered](docs/api.md#tool-selection) — per session, turn, or type |
+| **MCP** | stdio and HTTP servers |
+| **Providers** | Anthropic, OpenAI-compatible, Ollama — several at once |
+| **Stores** | resume a session; a usage archive you can query |
+
+### The documentation
+
+| | |
+|---|---|
+| **[api.md](docs/api.md)** | every public type, configuration, and tool selection |
+| **[tools.md](docs/tools.md)** | injecting tools of your own |
+| **[examples/ToolAgent](examples/ToolAgent)** | a runnable console app with an injected tool |
+| **[examples/SpectreAgent](examples/SpectreAgent)** | the same, with a rendered UI |
+
+Below: the mental model, then the four calls an app makes.
 
 ---
 
@@ -201,7 +230,7 @@ ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]),
 
 `Tool` names every built-in, so the terms are checked by the compiler rather than spelled: `Tool.Glob`,
 `Tool.Not.RunShell`, `Tool.Also.Grep`, `Tool.Inherited`, `Tool.All`. A withheld tool is refused if
-called by name, not merely hidden. **[The terms, the levels, and what selection does not reach →](../CONFIG.md#tools)**
+called by name, not merely hidden. **[The terms, the levels, and what selection does not reach →](docs/api.md#tool-selection)**
 
 ### Tools of your own
 

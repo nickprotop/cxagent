@@ -45,6 +45,11 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
+
+    <!-- THE DOCS SHIP WITH THE PACKAGE, because the README links to them with relative paths and a
+         reader on nuget.org would otherwise follow four dead links. Packing them is what makes
+         `](docs/api.md)` mean the same thing in the repository and in the package. -->
+    <None Include="docs/*.md" Pack="true" PackagePath="docs/" />
   </ItemGroup>
 
   <!-- THE EXAMPLES ARE CONSUMERS, NOT SOURCES. They live under this directory so the package's own

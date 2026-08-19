@@ -415,10 +415,85 @@ var resolution = new AgentConfig
 
 ## From a file
 
+`config.json` is parsed by THIS LIBRARY — `ProviderConfigLoader` lives in `cxagent.Core`, and the
+terminal app is just one caller. `AppPaths` decides which directory it is read from, so an embedding
+application can keep its own rather than sharing cxagent's.
+
 ```csharp
-ConfigResolver.Resolve(paths, env, useMock: false)        // the config.json cxagent reads
+var paths = new AppPaths("/etc/myapp");                   // reads /etc/myapp/config.json
+var env   = new Dictionary<string, string>();             // ${VARS} in the file resolve from here
+
+ConfigResolver.Resolve(paths, env, useMock: false)        // the whole file
 ConfigResolver.ResolveInstance(paths, env, "openrouter")  // one named instance
+ProviderConfigLoader.LoadAndValidate(paths, env)          // parsed settings + warnings, unresolved
 ```
+
+`new AppPaths()` with no argument uses the per-user location: `$XDG_CONFIG_HOME/cxagent` on Linux,
+`%APPDATA%\cxagent` on Windows, `~/Library/Application Support/cxagent` on macOS. The directory also
+holds the resume database, the usage archive and the logs — see the README's mental model.
+
+**Reading a file throws where building from code does not.** `AgentConfig.Resolve()` reports through
+`Errors`; a missing or malformed `config.json` raises `ProviderConfigException`. A path you named and
+cannot read is a deployment fault, not a value to correct.
+
+### The blocks a library consumer touches
+
+| Block | What it decides |
+|---|---|
+| `providers` · `defaultProvider` | the endpoints and which one a session opens on. **Required** |
+| `agents` | sub-agent types — briefing, model, turn cap, and their own `tools` |
+| `llmAgent.tools` | which tools the session's agent is offered (see below) |
+| `orchestrator` | `maxTurns` per goal, and the compaction threshold |
+| `mcp` | MCP servers, each with its own `enabled` |
+| `classifier` | the model that reviews auto-accepted edits |
+
+Warnings — an unknown key, a malformed tool term — arrive in `settings.Warnings` rather than
+stopping the load, so a session opens and says what it ignored.
+
+**Every key, with examples:
+[the configuration reference](https://github.com/nickprotop/cxagent/blob/master/CONFIG.md).**
+
+## Tool selection
+
+Which tools an agent is offered, narrowed at four levels. Absent, an agent gets all twelve and
+nothing changes.
+
+```csharp
+using CxAgent.Core.Plugins;
+
+new SharedServices { ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]) }
+```
+
+`Tool` names every built-in, so terms are compiler-checked rather than spelled: `Tool.Glob`,
+`Tool.Not.RunShell` (`"-run_shell"`), `Tool.Also.Grep` (`"+grep"`), `Tool.Inherited`, `Tool.All`.
+
+| Term | Means |
+|---|---|
+| `Tool.Inherited` | start from what the level above offers. Only the first one acts |
+| `Tool.All` | start from everything, discarding an outer narrowing |
+| `Tool.ReadFile` | a bare name is a whitelist — name every tool you want |
+| `Tool.Not.RunShell` | remove one from whatever is in force |
+| `Tool.Also.RunShell` | add one back that an outer level removed |
+
+The four levels compose outward-in, each applied to what the last left:
+
+| | Where | Scope |
+|---|---|---|
+| **S1** | `SharedServices.ToolSelection`, or `llmAgent.tools` in config | the agent's whole life |
+| **S2** | `SessionPorts.ToolSelection` | one session |
+| **S3** | `Submit(text, tools: …)` | one request |
+| **S4** | `agents.<type>.tools` in config | every child of that type |
+
+**A withheld tool is refused, not hidden.** Calling one by name returns `not available` — distinct
+from `no such tool`, which is what a typo gets. One means stop; the other means try another name.
+
+**MCP tools are never narrowed** — each server's `enabled` flag is its control, because servers
+connect asynchronously and a selection resolved before a handshake would drop tools that arrived a
+moment later.
+
+**Set it once per session.** An S3 selection that varies between requests rewrites the cached prompt
+prefix each time it changes — measured locally at 2,824 tokens cached (66 ms) versus a full
+reprocess (773 ms). Correct either way; it is a cost, not a bug.
 
 ## For a test
 

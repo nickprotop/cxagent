@@ -169,7 +169,7 @@ an agent is asked to follow.
 
 A tool this build ships but a **selection** withheld is a different answer: `not available`. The
 distinction is for the model — "no such tool" means the name is wrong and it should try another,
-"not available" means stop asking. See [tool selection](../../CONFIG.md#tools).
+"not available" means stop asking. See [tool selection](api.md#tool-selection).
 
 ---
 
