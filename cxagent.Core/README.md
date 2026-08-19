@@ -31,8 +31,9 @@ Targets `net10.0`. **Pre-1.0 and moving** — public signatures change between v
 |---|---|
 | **[api.md](docs/api.md)** | every public type, configuration, and tool selection |
 | **[tools.md](docs/tools.md)** | injecting tools of your own |
-| **[examples/ToolAgent](examples/ToolAgent)** | a runnable console app with an injected tool |
-| **[examples/SpectreAgent](examples/SpectreAgent)** | the same, with a rendered UI |
+| **[examples/ToolAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** | a runnable console app with an injected tool |
+| **[examples/SpectreAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** | the same, with a rendered UI |
+| **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — an agent that cannot change anything |
 
 Below: the mental model, then the four calls an app makes.
 
@@ -449,10 +450,12 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
   what `Gate` should return
-- **[SpectreAgent →](examples/SpectreAgent)** — a second front end in about a hundred lines: a
+- **[SpectreAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool
-- **[ToolAgent →](examples/ToolAgent)** — injecting your own tools, and the two gates each one
+- **[ToolAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** — injecting your own tools, and the two gates each one
   passes through
+- **[ReadOnlyAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** — the other direction: a selection that
+  leaves an agent unable to write, shell out or delegate, and why that beats a briefing
 
 ## License
 

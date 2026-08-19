@@ -428,30 +428,20 @@ ConfigResolver.ResolveInstance(paths, env, "openrouter")  // one named instance
 ProviderConfigLoader.LoadAndValidate(paths, env)          // parsed settings + warnings, unresolved
 ```
 
-`new AppPaths()` with no argument uses the per-user location: `$XDG_CONFIG_HOME/cxagent` on Linux,
-`%APPDATA%\cxagent` on Windows, `~/Library/Application Support/cxagent` on macOS. The directory also
-holds the resume database, the usage archive and the logs — see the README's mental model.
+`new AppPaths()` with no argument uses the per-user location — `$XDG_CONFIG_HOME/cxagent` when that
+is set, otherwise the platform's application-data folder (`~/.config` on Linux, `%APPDATA%` on
+Windows, `~/Library/Application Support` on macOS). The directory holds more than the file: the
+resume database, the usage archive and the logs live beside it.
 
-**Reading a file throws where building from code does not.** `AgentConfig.Resolve()` reports through
-`Errors`; a missing or malformed `config.json` raises `ProviderConfigException`. A path you named and
-cannot read is a deployment fault, not a value to correct.
+**Errors, not exceptions — at the `ConfigResolver` layer.** A missing or malformed file comes back as
+`resolution.Errors` with `HasProvider` false, the same shape `AgentConfig.Resolve()` uses, so one
+error path handles both. `ProviderConfigLoader.LoadAndValidate` underneath it DOES throw
+`ProviderConfigException`; `Resolve` catches it for you.
 
-### The blocks a library consumer touches
-
-| Block | What it decides |
-|---|---|
-| `providers` · `defaultProvider` | the endpoints and which one a session opens on. **Required** |
-| `agents` | sub-agent types — briefing, model, turn cap, and their own `tools` |
-| `llmAgent.tools` | which tools the session's agent is offered (see below) |
-| `orchestrator` | `maxTurns` per goal, and the compaction threshold |
-| `mcp` | MCP servers, each with its own `enabled` |
-| `classifier` | the model that reviews auto-accepted edits |
-
-Warnings — an unknown key, a malformed tool term — arrive in `settings.Warnings` rather than
-stopping the load, so a session opens and says what it ignored.
-
-**Every key, with examples:
-[the configuration reference](https://github.com/nickprotop/cxagent/blob/master/CONFIG.md).**
+**Every key, and what a valid file looks like:
+[the configuration reference](https://github.com/nickprotop/cxagent/blob/master/CONFIG.md).** It is
+one schema — the same file serves this library and the terminal app — so it is documented once,
+there, rather than summarised here where the two copies would drift.
 
 ## Tool selection
 
@@ -494,6 +484,9 @@ moment later.
 **Set it once per session.** An S3 selection that varies between requests rewrites the cached prompt
 prefix each time it changes — measured locally at 2,824 tokens cached (66 ms) versus a full
 reprocess (773 ms). Correct either way; it is a cost, not a bug.
+
+**[ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** is a working example: four tools, no writes,
+no shell, no sub-agents, and why a whitelist beats subtracting.
 
 ## For a test
 
