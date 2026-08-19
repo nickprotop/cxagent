@@ -425,6 +425,17 @@ public sealed partial class Session
     // model change today, where the reaction only repaints a status bar; kept uniform so the next
     // change that redraws more does not have to rediscover it.
 
+    /// <summary>
+    /// Announces that fan-out was asked for but the spawn tool is not in this session's selection,
+    /// so the session opened in single instead.
+    ///
+    /// <para>Called by SessionFactory AFTER the observer is attached — Say is a no-op before that,
+    /// and the fallback itself happens earlier, where both the mode and the selection are known.</para>
+    /// </summary>
+    internal void SayFallbackToSingle() =>
+        Say("[yellow]fan-out was requested, but the `agent` tool is not in this session's tool "
+          + "selection — working in single mode.[/]");
+
     /// <summary>Announces that an earlier conversation was restored into this session. Called by the
     /// manager, which owns the resume sequence — see SessionManager.Resume.</summary>
     internal void SayResumed(int messages)

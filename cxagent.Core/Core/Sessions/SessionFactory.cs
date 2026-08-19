@@ -66,6 +66,19 @@ internal static class SessionFactory
         var managerSelection = Plugins.ToolSelection.Then(shared.ToolSelection, resolution.Tools);
         var toolSelection = Plugins.ToolSelection.Then(managerSelection, ports.ToolSelection);
 
+        // FAN-OUT WITHOUT THE SPAWN TOOL IS A CONTRADICTION, and this is the one moment both facts
+        // are known: the mode arrives as an argument, the selection was just composed.
+        //
+        // RESOLVED, NOT REPORTED. Leaving the mode at fan-out while nothing can delegate keeps the
+        // divergence alive for the session's whole life — /mode saying one thing, the tool list
+        // another. Falling back means mode and reality agree from the first request.
+        //
+        // A HINT, NOT A REFUSAL: the session opens. This design treats a mis-narrowing as the user's
+        // to get wrong everywhere else, and a contradiction between two settings the same person
+        // wrote is not the case to start failing on.
+        var spawnWithheld = mode.CanDelegate && !Offers(toolSelection, Plugins.Tool.Agent, plugins);
+        if (spawnWithheld) mode = mode with { Agent = AgentMode.Single };
+
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
         // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
         // seed and the host's context come from it, and taking it inline in the argument list
@@ -223,9 +236,34 @@ internal static class SessionFactory
         session.NoteAgentTypes(agentTypes);
         session.NoteSpawner(subAgents);
         session.NoteObserver(ports.Observer);
+
+        // AFTER NoteObserver, because Say is a no-op before it — the fallback above happens where
+        // both facts are known, and is reported here where there is somebody to report it to.
+        if (spawnWithheld)
+            session.SayFallbackToSingle();
         session.NotePolicy(ports.Policy);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, plugins);
+    }
+
+    /// <summary>
+    /// Whether a selection would still offer one tool by name.
+    ///
+    /// <para>A SYNTHETIC APPLY: the agent does not exist yet, so this asks the question against a
+    /// one-element set rather than a real assembled list. Sound because Apply only ever filters what
+    /// it is handed — a name survives or it does not, and nothing else about the offered set changes
+    /// that answer for a single name.</para>
+    /// </summary>
+    private static bool Offers(Plugins.ToolSelection? selection, string name, PluginRegistry plugins)
+    {
+        if (selection is null) return true;
+
+        var one = new[]
+        {
+            new Llm.ToolDefinition(name, name,
+                System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" })),
+        };
+        return selection.Apply(one).Count > 0;
     }
 }
