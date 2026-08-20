@@ -180,8 +180,17 @@ jobs:
       # THE TESTS GATE THE PACKAGE. The release job builds binaries and does not run them; a library
       # published broken is worse than a binary published broken, because a consumer's build breaks
       # rather than their session.
+      # THE TEST PROJECT, NOT THE SOLUTION. cxagent.slnx lists a sibling that lives OUTSIDE this
+      # repository — ../ConsoleEx/SharpConsoleUI — which exists on a developer's machine and never
+      # on a runner. The csprojs handle that with Condition="Exists(...)" and fall back to the
+      # published SharpConsoleUI package; a .slnx has no such conditional, so building the solution
+      # on CI fails with MSB3202 before a single test runs.
+      #
+      # MEASURED, on the first tag that used this job: the whole suite passed locally and the same
+      # command failed on the runner for a reason that had nothing to do with the code. Naming the
+      # test project reaches the same 2,046 tests through references that DO fall back.
       - name: Test
-        run: dotnet test --configuration Release
+        run: dotnet test cxagent.Tests/cxagent.Tests.csproj --configuration Release
 
       - name: Pack
         run: |
