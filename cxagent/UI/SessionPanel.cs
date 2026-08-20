@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using System.Diagnostics;
 using CxAgent.Core.Permissions;
 using SharpConsoleUI;
@@ -453,8 +454,8 @@ public sealed class SessionPanel
                 // figure there. On a paid provider — OpenAI charges 1.25x normal input to write,
                 // Anthropic up to 2x — a hit rate alone reads as pure saving when it is not.
                 lines.Add(Muted(state.CacheWrittenTokens > 0
-                    ? $"  cache {rate:P0} · wrote {Compact(state.CacheWrittenTokens)}"
-                    : $"  cache {rate:P0}"));
+                    ? $"  cache {StatsDashboard.Percent(rate)} · wrote {Compact(state.CacheWrittenTokens)}"
+                    : $"  cache {StatsDashboard.Percent(rate)}"));
             }
 
             // THE SESSION TOTAL, unindented like the cache line — both describe the section rather
@@ -480,12 +481,12 @@ public sealed class SessionPanel
             // -cram 0 pays full price on every switch. The session-wide figure averages the two and
             // hides which one you have: a parent at 95% conceals workers at 20%.
             if (state.WorkerCacheHitRate is { } workerRate)
-                lines.Add(Muted($"  cache {workerRate:P0}"));
+                lines.Add(Muted($"  cache {StatsDashboard.Percent(workerRate)}"));
 
             lines.Add(Value($"this agent · {state.OwnTokens:N0}"));
 
             if (state.OwnCacheHitRate is { } ownRate)
-                lines.Add(Muted($"  cache {ownRate:P0}"));
+                lines.Add(Muted($"  cache {StatsDashboard.Percent(ownRate)}"));
         }
 
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.

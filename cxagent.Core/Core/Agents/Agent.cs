@@ -1778,7 +1778,7 @@ public sealed class Agent
             // turns alone rather than "0% ctx", which would read as a measurement rather than as the
             // absence of one.
             var occupancy = child.Agent.Context.UsedFraction is { } f
-                ? $" · {f:P0} ctx"
+                ? $" · {Commands.StatsDashboard.Percent(f)} ctx"
                 : "";
             // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
             // at a prompt, so a row showing only those reads as working — and with several children

@@ -58,6 +58,25 @@ public static class StatsDashboard
         : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
         : n.ToString();
 
+    /// <summary>
+    /// A rate as a whole-number percentage — <c>0.94</c> becomes <c>94%</c>.
+    ///
+    /// <para>NOT <c>:P0</c>, WHICH IS LOCALE-DEPENDENT. The standard percent format uses the current
+    /// culture's pattern, and several cultures — including the INVARIANT one — put a space before
+    /// the sign: <c>94 %</c>, with a non-breaking space at that. Eight call sites formatted rates
+    /// this way and every one of them rendered differently depending on the machine.</para>
+    ///
+    /// <para>FOUND BY A RELEASE, not by a test run. The suite passed on a developer machine and
+    /// failed on a CI runner, which sets DOTNET_SYSTEM_GLOBALIZATION_INVARIANT — two assertions
+    /// looking for "94% cache" and "87%" in text that said "94 %" and "87 %". The tests were right
+    /// and the formatting was wrong; a user in a different locale saw a different panel.</para>
+    ///
+    /// <para>Multiplying by 100 here rather than relying on the format specifier is what makes the
+    /// output the same everywhere: the only culture-sensitive part left is the digits themselves.</para>
+    /// </summary>
+    public static string Percent(double rate) =>
+        $"{rate * 100:0}%";
+
     private static string Head(string text) =>
         $"[bold {Markup.Accent}]{text}[/]";
 
@@ -138,7 +157,7 @@ public static class StatsDashboard
         if (totals.WorkerShare is { } share && totals.SubAgentTokens > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"  {Bar(share)} [bold]{share:P0}[/] to workers  "
+            sb.AppendLine($"  {Bar(share)} [bold]{Percent(share)}[/] to workers  "
                         + Muted($"({Compact(totals.SubAgentTokens)} of {Compact(totals.TotalTokens)})"));
         }
 
@@ -153,7 +172,7 @@ public static class StatsDashboard
         if (totals.CacheHitRate is { } hit)
         {
             sb.AppendLine();
-            sb.AppendLine($"  {Bar(hit)} [bold]{hit:P0}[/] input cached  "
+            sb.AppendLine($"  {Bar(hit)} [bold]{Percent(hit)}[/] input cached  "
                         + Muted($"({Compact(totals.CachedInputTokens)} of "
                               + $"{Compact(totals.CacheReportingInputTokens)} sent)"));
 

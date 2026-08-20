@@ -1,3 +1,5 @@
+using CxAgent.Core.Commands;
+
 namespace CxAgent.UI;
 
 /// <summary>
@@ -90,7 +92,7 @@ public static class SessionHints
             // null when no price is configured — printing "0%" or "$0.00" for either would be a
             // number the user cannot act on and cannot tell from a real zero.
             var extras = new List<string>();
-            if (s.CacheHitRate is { } rate) extras.Add($"{rate:P0} cache");
+            if (s.CacheHitRate is { } rate) extras.Add($"{StatsDashboard.Percent(rate)} cache");
             if (s.SubAgentTokens > 0) extras.Add($"{s.SubAgentTokens:N0} in sub-agents");
             if (s.Cost is { } cost) extras.Add($"${cost:N2}");
             if (extras.Count > 0) lines.Add($"  {string.Join("  ·  ", extras)}");
