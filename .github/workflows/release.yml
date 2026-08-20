@@ -218,9 +218,10 @@ jobs:
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
       #      owner `nickprotop`, repository `nickprotop/cxagent`, workflow `release.yml`.
-      #      A POLICY IS PER-PACKAGE, so this job needs TWO: one for `CxAgent.Core` and one for
-      #      `cxagent` (the dotnet tool). A missing policy fails the push for that package alone,
-      #      after the other has already landed — which --skip-duplicate then makes safe to re-run.
+      #      A GLOB IN THE PACKAGE PATTERN (`cxagent*`) covers both packages this job pushes —
+      #      CxAgent.Core and cxagent, the dotnet tool — so one policy is enough. Without a glob a
+      #      policy is per-package, and a missing one fails that package's push alone, after the
+      #      other has landed; --skip-duplicate makes the re-run safe either way.
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
       #      (done: nickprotop). gh can set the variable; it cannot create the policy in step 1,
       #      which lives on nuget.org and has no CLI.
