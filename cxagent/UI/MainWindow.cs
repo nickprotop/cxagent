@@ -628,8 +628,11 @@ public sealed class MainWindow : IDisposable
         else
         {
             Chat.AddMessage(ChatRole.System,
-                "[red]No LLM provider configured.[/]\n\nEdit config.json and set a provider + defaultProvider "
-                + "(the setup wizard arrives in P5c), or run [cyan]cxagent --mock[/] to try the UI.");
+                // THE WIZARD SHIPPED. This said "the setup wizard arrives in P5c" and told the user
+                // to hand-edit config.json — while the wizard sat on screen offering to write it.
+                "[red]No LLM provider configured.[/]\n\nUse the setup wizard (it opens on this "
+                + "screen, or press [cyan]F5[/] later), or run [cyan]/model[/] to pick a configured "
+                + "instance. [cyan]cxagent --mock[/] tries the UI without a provider.");
             foreach (var err in _resolution.Errors)
                 Chat.AddMessage(ChatRole.System, $"[red]• {err}[/]");
             // Input stays constructed but the submission gate ignores Enter when !SubmissionEnabled.

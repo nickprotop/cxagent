@@ -935,9 +935,35 @@ public static class AppBootstrap
         // to do with a keystroke.
         void SubmitComposer()
         {
-            if (!session.HasAgent || !mainWindow.SubmissionEnabled) return;
+            if (!mainWindow.SubmissionEnabled) return;
             var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
+
+            // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. This used to read
+            // `if (!session.HasAgent || ...) return;` above, which swallowed the keystroke before
+            // anything looked at what was typed — so a session opened without a working provider
+            // could not run /exit, /help, /stats, /sessions, or even /model, the one command that
+            // FIXES having no provider. The window was unusable except by killing it.
+            //
+            // THE CLASSIFICATION ALREADY EXISTED. CommandOutcome says which commands need the
+            // model: NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says
+            // the rest "answer from state the app already holds, costing no tokens and no time" —
+            // this guard simply was not asking. Everything else runs with no agent at all.
+            if (!session.HasAgent)
+            {
+                var outcome = SessionCommands.Match(goalText)?.Outcome ?? CommandOutcome.NotACommand;
+                if (outcome is CommandOutcome.NotACommand
+                    or CommandOutcome.NeedsProvider or CommandOutcome.NeedsTurn)
+                {
+                    // SAY WHY, rather than dropping the keystroke. Silence here is what made this
+                    // read as a frozen window rather than a session waiting to be configured.
+                    mainWindow.Chat.AddMessage(ChatRole.System, outcome is CommandOutcome.NotACommand
+                        ? "No model is configured. Run /model to pick one, or /exit to leave."
+                        : "That command needs a model. Run /model to pick one first.");
+                    mainWindow.Input.Input = "";
+                    return;
+                }
+            }
             // RECORD IT FOR ↑/↓ OURSELVES. PromptControl records history inside its own Submit(),
             // which this handler pre-empts — we consume Enter before the control sees it, so nothing
             // would ever reach the history and the feature would be silently dead.
