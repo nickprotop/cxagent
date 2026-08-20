@@ -3,6 +3,11 @@
 Typed into the composer, like a message. They are handled by the app before the model sees anything,
 so they cost nothing — no request, no tokens.
 
+**Which means most of them work with no model configured.** A session opened before you have set up
+a provider can still run `/exit`, `/help`, `/stats`, `/sessions`, `/diff`, `/mode`, `/mcp`,
+`/skills`, `/agents`, `/clear` — and `/model`, the one that fixes it. Only `/compress` and `/init`
+need a model, because those two genuinely talk to it; both say so rather than doing nothing.
+
 **Type `/` and the list appears.** Arrow to a command, Enter to fill it in. A command that takes
 arguments shows them as a hint — `/stats  usage: …  [<days>|all|clear]` — and typing a space
 descends into them: `/mcp ` offers `reload`, `login` and `<server>`, `/mcp re` narrows to `reload`,
@@ -442,16 +447,28 @@ An earlier session here ended without closing (13 messages). /sessions to see it
 
 ## From the shell
 
-Three flags that concern sessions, alongside `--mock` and `--mode <single|fan-out>`.
+Three flags that concern sessions, alongside `--mock`, `--mode <single|fan-out>` and
+`--config-dir`.
 
 ```bash
 cxagent --version               # print the version and exit
 cxagent --model claude          # start on a configured instance, without editing config
+cxagent --config-dir /tmp/x     # use this directory instead of the usual one
 cxagent --sessions              # print this folder's sessions and exit
 cxagent --sessions all          # every folder
 cxagent --resume                # continue the most recent unfinished session here
 cxagent --resume 5ZFAVZ         # continue that one, by id or any unambiguous abbreviation
 ```
+
+**`--config-dir` takes the directory itself**, with no `cxagent` folder appended — unlike
+`XDG_CONFIG_HOME`, which does append one. So `--config-dir /tmp/x` reads `/tmp/x/config.json` and
+puts the session database and logs beside it. It overrides `XDG_CONFIG_HOME` when both are set,
+because a path typed on the command line is the more specific instruction.
+
+It is the quickest way to try something against a clean setup without touching your own — including
+first-run behaviour, which is otherwise awkward to reach once you have a working config. A bare
+`--config-dir` with no path is an error rather than a silent fall back to the usual directory: the
+flag exists to keep a run AWAY from that directory, so quietly using it would be the one wrong answer.
 
 **`--sessions` prints and exits — no TUI, no provider, no turn.** "Which conversations do I have
 here" is a question you answer by looking, and making someone launch a full-screen app to read a list
