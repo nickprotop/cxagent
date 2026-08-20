@@ -200,8 +200,11 @@ jobs:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
       #      owner `nickprotop`, package `CxAgent.Core`, repository `nickprotop/cxagent`,
       #      workflow `release.yml`.
-      #   2. this repository → Settings → Secrets and variables → Actions → Variables →
-      #      add `NUGET_USER` with your nuget.org username.
+      #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
+      #      (done: nickprotop). gh can set the variable; it cannot create the policy in step 1,
+      #      which lives on nuget.org and has no CLI.
+      # If the policy form rejects CxAgent.Core because it does not exist yet, push once by hand
+      # with a temporary API key to claim the ID, then add the policy for every release after.
       # A policy is bound to the repository and workflow file, so a fork cannot publish and a
       # renamed workflow stops working rather than silently using someone else's identity.
       - name: Authenticate to NuGet
