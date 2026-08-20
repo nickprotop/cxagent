@@ -3,6 +3,8 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![NuGet](https://img.shields.io/nuget/v/cxagent.svg?label=dotnet%20tool)](https://www.nuget.org/packages/cxagent)
+[![NuGet](https://img.shields.io/nuget/v/CxAgent.Core.svg?label=CxAgent.Core)](https://www.nuget.org/packages/CxAgent.Core)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20|%20macOS%20|%20Windows-orange.svg)]()
 
@@ -68,12 +70,7 @@ cxagent
 Updates with `dotnet tool update -g cxagent`. Unlike the binaries above this one is
 framework-dependent — it uses the .NET you already have rather than carrying its own.
 
-**Option 3: Arch Linux** ([AUR](https://aur.archlinux.org/packages/cxagent-bin))
-```bash
-yay -S cxagent-bin
-```
-
-**Option 4: Build from source** (requires .NET 10 SDK)
+**Option 3: Build from source** (requires .NET 10 SDK)
 ```bash
 git clone https://github.com/nickprotop/cxagent.git
 cd cxagent
@@ -312,13 +309,23 @@ diff. Keep backups. Do not run it against anything you cannot afford to have cha
 
 ## Uninstall
 
+However you installed it:
+
 ```bash
+# the install script (Linux/macOS)
 curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.sh | bash
+
+# the .NET tool
+dotnet tool uninstall -g cxagent
 ```
 
 ```powershell
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex
 ```
+
+Your configuration and session history are left alone — they live in
+`$XDG_CONFIG_HOME/cxagent` (`%APPDATA%\cxagent` on Windows, `~/Library/Application Support/cxagent`
+on macOS). Delete that directory to remove them too.
 
 ## The cx family
 

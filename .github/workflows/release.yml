@@ -127,6 +127,16 @@ jobs:
             irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
             ```
 
+            **.NET tool** (uses the .NET you already have, rather than carrying its own):
+            ```bash
+            dotnet tool install -g cxagent
+            ```
+
+            **Embedding it** — the library half is on NuGet, targeting net8.0, net9.0 and net10.0:
+            ```bash
+            dotnet add package CxAgent.Core
+            ```
+
             ## Manual Download
 
             | Platform | Binary |
@@ -212,8 +222,15 @@ jobs:
 
       # WHAT IS ACTUALLY IN IT, in the log. The README and docs/ are packed by an ItemGroup that a
       # future edit could silently drop, and a package whose links all 404 looks fine from here.
+      # ONE unzip PER PACKAGE. `unzip -l ./nupkg/*.nupkg` lists only the FIRST archive and says
+      # nothing about the rest — so with two packages this step showed CxAgent.Core's lib/ folders
+      # and hid the tool entirely, which is the exact blindness it was added to prevent.
       - name: Show package contents
-        run: unzip -l ./nupkg/*.nupkg
+        run: |
+          for p in ./nupkg/*.nupkg; do
+            echo "=== $p"
+            unzip -l "$p"
+          done
 
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for

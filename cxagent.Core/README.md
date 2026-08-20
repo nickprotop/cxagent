@@ -1,5 +1,10 @@
 # CxAgent.Core
 
+[![NuGet](https://img.shields.io/nuget/v/CxAgent.Core.svg)](https://www.nuget.org/packages/CxAgent.Core)
+[![Downloads](https://img.shields.io/nuget/dt/CxAgent.Core.svg)](https://www.nuget.org/packages/CxAgent.Core)
+[![.NET](https://img.shields.io/badge/.NET-net8.0%20|%20net9.0%20|%20net10.0-purple.svg)](https://dotnet.microsoft.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/nickprotop/cxagent/blob/master/LICENSE)
+
 The sessions, agents and turn loop behind [cxagent](https://github.com/nickprotop/cxagent) — usable
 without a terminal.
 
@@ -10,7 +15,8 @@ resumable stores. You supply where the text goes; there is no UI dependency.
 dotnet add package CxAgent.Core
 ```
 
-Targets `net10.0`. **Pre-1.0 and moving** — public signatures change between versions.
+Targets `net8.0`, `net9.0` and `net10.0`. **Pre-1.0 and moving** — public signatures change between
+versions.
 
 ### What is in it
 
