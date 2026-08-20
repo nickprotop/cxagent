@@ -77,8 +77,14 @@ cd cxagent
 ./build-and-install.sh
 ```
 
-On first run a setup wizard asks for a provider and model. Configuration is written to
-`~/.config/cxagent/config.json` — it is never stored in the repository.
+**You do not need to write any configuration to start.** On first run — with no config file, or none
+that names a working provider — a setup wizard asks for a provider and model and writes the file for
+you. It is never stored in the repository.
+
+It lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when set),
+`%APPDATA%\cxagent\config.json` on Windows, and
+`~/Library/Application Support/cxagent/config.json` on macOS. The same directory holds your session
+history and logs.
 
 ## What it does
 
@@ -297,7 +303,7 @@ briefing — "never edit files" — is a request written into its prompt, not a 
 reliably follow instructions they are given. **Permissions and tool selection are the mechanisms
 that constrain an agent; prose is not.**
 
-A [tool selection](CONFIG.md#tools) narrows what an agent is offered, and a withheld tool is
+A [tool selection](CONFIG.md#tools-what-an-agent-is-offered) narrows what an agent is offered, and a withheld tool is
 refused if called by name rather than merely hidden — so it constrains rather than suggests. It is
 not a security boundary on its own: it decides what this deployment offers, while the permission
 gate decides what any offered tool may do.
