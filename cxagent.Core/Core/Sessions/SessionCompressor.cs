@@ -92,6 +92,10 @@ public static class SessionCompressor
     /// again" remedy in the notice — telling a model to reload with a tool it does not have is the
     /// lie a selection must not create.
     /// </param>
+    /// <param name="context">The conversation to compact, edited in place.</param>
+    /// <param name="provider">The model that writes the summary — the SAME one the goal is using.</param>
+    /// <param name="ct">Cancels the summarising call.</param>
+    /// <param name="meter">Where the summary's own token cost is reported, or null to drop it.</param>
     public static async Task<CompressResult> CompressAsync(
         AgentContext context, ILlmProvider provider, CancellationToken ct,
         Action<LlmUsage>? meter = null, bool skillToolOffered = true)
@@ -239,6 +243,7 @@ public static class SessionCompressor
     /// survive. This dropped from index 0 unconditionally, so the fallback taken when summarisation
     /// FAILS destroyed the working-directory instructions by the other route.
     /// </param>
+    /// <param name="conversation">The messages to trim, edited in place.</param>
     public static void Truncate(List<ChatMessage> conversation, int pinnedHead = 0)
     {
         // Two messages is the smallest thing that can be halved at all; below that there is no older
@@ -338,6 +343,7 @@ public static class SessionCompressor
     /// makes late compactions useless. Feeding it back as something to UPDATE means still-true facts
     /// are preserved rather than re-derived from an ever-thinner source.</para>
     /// </param>
+    /// <param name="transcript">The conversation text being summarised.</param>
     public static string BuildPrompt(string transcript, string? previousSummary = null)
     {
         var framing = string.IsNullOrWhiteSpace(previousSummary)

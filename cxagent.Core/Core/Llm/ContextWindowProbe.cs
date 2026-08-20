@@ -33,6 +33,7 @@ public static class ContextWindowProbe
     /// <param name="baseUrl">The provider's base URL, e.g. <c>http://localhost:8771/v1</c>.</param>
     /// <param name="model">The model id to match; the first entry is used when it is not found.</param>
     /// <param name="apiKey">Sent as a bearer token when present.</param>
+    /// <param name="ct">Cancels the probe; it is bounded at three seconds regardless.</param>
     public static async Task<int?> TryGetAsync(
         string? baseUrl, string? model, string? apiKey, CancellationToken ct = default)
     {

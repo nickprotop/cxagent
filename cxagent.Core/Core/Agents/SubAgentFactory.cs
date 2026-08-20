@@ -250,6 +250,10 @@ public sealed class SubAgentFactory
     /// </param>
     /// <param name="turnTools">The parent's per-request selection, composed onto the session's for
     /// this child. Null when the parent is not running under one.</param>
+    /// <param name="briefing">The child's highest-authority text, or null to take its type's.</param>
+    /// <param name="callerContext">What the parent already knew and passed down.</param>
+    /// <param name="label">A short name for the child's row in the UI.</param>
+    /// <param name="type">Which agent type to build, or null for the general one.</param>
     public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
         AgentType? type = null, string? parentAgentId = null,
         Plugins.ToolSelection? turnTools = null)

@@ -92,6 +92,7 @@ public sealed class SkillLoader
     /// The agent's own conversation — READ, never written. This is what makes "already loaded"
     /// answerable without state, and it is why the tool must be agent-owned.
     /// </param>
+    /// <param name="call">The skill call the model issued; null is returned when it is not one.</param>
     public string? TryInvoke(ToolCall call, IReadOnlyList<ChatMessage> messages)
     {
         if (!string.Equals(call.Name, ToolName, StringComparison.Ordinal)) return null;

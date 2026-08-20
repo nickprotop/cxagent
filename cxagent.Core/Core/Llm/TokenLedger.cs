@@ -232,6 +232,7 @@ public sealed class TokenLedger
     /// nothing else — better than inventing a bucket named "unknown", which would look like a model.
     /// </param>
     /// <param name="subAgent">True when a CHILD spent this, so the panel can attribute it.</param>
+    /// <param name="usage">What the provider reported for one call.</param>
     public void Record(LlmUsage usage, string? modelId = null, bool subAgent = false)
     {
         if (!string.IsNullOrWhiteSpace(modelId))

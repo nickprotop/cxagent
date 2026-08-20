@@ -55,6 +55,8 @@ public interface ISubAgentSpawner
     /// session is wired and therefore cannot carry a per-request value. A turn narrowed to
     /// read-only that then spawns a writing child has not narrowed anything.</para>
     /// </param>
+    /// <param name="call">The spawn call the model issued.</param>
+    /// <param name="ct">Cancels the child mid-run.</param>
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
         string? parentAgentId = null, Plugins.ToolSelection? turnTools = null);
 }

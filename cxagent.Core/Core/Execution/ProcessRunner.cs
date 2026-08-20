@@ -21,6 +21,8 @@ public record ProcessSpec(
 /// from the model's side the listing genuinely produced nothing.</para>
 /// </param>
 /// <param name="Stderr">Diagnostics, same cap. Separate from Stdout so a job can reference either.</param>
+/// <param name="ExitCode">The process's exit code.</param>
+/// <param name="TimedOut">Whether it was killed for exceeding its deadline rather than exiting.</param>
 public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", string Stderr = "");
 
 /// <summary>

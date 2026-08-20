@@ -53,6 +53,7 @@ public class PluginRegistry
     /// whichever root and edit mode it happened to capture — invisible with one session, wrong with
     /// two. Null keeps the old behaviour for callers that have no policy.</para>
     /// </param>
+    /// <param name="providers">The configured models, for plugins that need one.</param>
     public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers,
         IPermissionGate permissions, PermissionPolicy? policy = null)
     {

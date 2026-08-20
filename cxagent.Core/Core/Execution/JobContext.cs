@@ -23,6 +23,10 @@ public sealed class JobContext : IJobContext
     /// (and tests) that only care about results keep compiling; an absent map degrades the label to
     /// the raw id rather than dropping it.
     /// </param>
+    /// <param name="agentId">Which agent this job belongs to — the grouping key for its logs.</param>
+    /// <param name="jobId">This job's own id.</param>
+    /// <param name="completedOutputs">Results of the jobs this one depends on, keyed by Job.Id.</param>
+    /// <param name="logs">Where the job's output is written, or null to keep none.</param>
     public JobContext(string agentId, string jobId,
         IReadOnlyDictionary<string, JobResult> completedOutputs, LogFileManager? logs,
         IReadOnlyDictionary<string, string>? completedNames = null)

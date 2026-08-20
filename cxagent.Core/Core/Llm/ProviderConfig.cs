@@ -38,6 +38,15 @@ namespace CxAgent.Core.Llm;
 /// OpenRouter: the same 7,002-token prefix twice gave 0 cached without a breakpoint and 7,002
 /// with one.</para>
 /// </param>
+/// <param name="Kind">Which driver serves this instance — <c>anthropic</c>, <c>openai-compatible</c> or <c>ollama</c>.</param>
+/// <param name="Model">The model id sent to the endpoint.</param>
+/// <param name="ApiKey">The credential, or null for an endpoint that needs none.</param>
+/// <param name="BaseUrl">The endpoint. Required by openai-compatible; defaulted by the others.</param>
+/// <param name="ExtraHeaders">Headers added to every request, for gateways that need them.</param>
+/// <param name="ContextWindow">
+/// The window in tokens, or null to probe the endpoint on first use. It is the denominator for the
+/// occupancy readout and the trigger for compaction.
+/// </param>
 public record ProviderInstanceConfig(
     string Kind, string Model, string? ApiKey, string? BaseUrl,
     IReadOnlyDictionary<string, string>? ExtraHeaders, int? ContextWindow = null,
@@ -80,6 +89,9 @@ public record RoutingTarget(string Provider, string Model);
 /// representable deleted that reader.</para>
 ///
 /// <para>Zero means no cap, the same explicit opt-out an agent type gets.</para>
+/// </param>
+/// <param name="ContextCompressThreshold">
+/// Input tokens past which a session compacts itself, or null for the default share of the window.
 /// </param>
 public record OrchestratorSettings(
     int? MaxTurns = null, int? ContextCompressThreshold = null)
@@ -171,6 +183,8 @@ public record OrchestratorSettings(
 /// with no OAuth at all. The spec's OAuth flow only begins when a server answers 401, which is why
 /// this alone makes the HTTP transport useful.</para>
 /// </param>
+/// <param name="Enabled">Whether to connect to this server at all — its own control, since MCP tools bypass tool selection.</param>
+/// <param name="TimeoutMs">How long a call to this server may take, or null for the default.</param>
 public record McpServerConfig(
     IReadOnlyList<string> Command,
     bool Enabled = true,

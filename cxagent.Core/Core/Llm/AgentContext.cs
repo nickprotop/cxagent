@@ -117,6 +117,7 @@ public sealed class AgentContext
     /// thousands of characters the reading never covered. Measured live, that inflated baseline made
     /// a −32% compaction move the estimate by 1%.</para>
     /// </param>
+    /// <param name="inputTokens">What the provider reported for the request just sent.</param>
     public void RecordUsage(int inputTokens, int atChars = 0)
     {
         if (inputTokens <= 0) return;

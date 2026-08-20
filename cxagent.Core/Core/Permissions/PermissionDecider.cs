@@ -112,6 +112,8 @@ public sealed class PermissionDecider : IPermissionGate
     /// <param name="notice">Where a save failure or an unavailable classifier is reported, or null
     /// to say nothing. Deliberately not an interface: this is one line of text going somewhere, and
     /// a Core type should not know what a transcript is.</param>
+    /// <param name="store">Where an "always" answer is remembered.</param>
+    /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
     public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<string>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(store, notice, promptHook);
@@ -135,6 +137,9 @@ public sealed class PermissionDecider : IPermissionGate
     /// policy — that is the point of the split — so a test that built one and expected the gate to
     /// remember it would be testing a shape that no longer exists.
     /// </param>
+    /// <param name="store">Where an "always" answer is remembered.</param>
+    /// <param name="notice">Where a one-line explanation goes, or null to say nothing.</param>
+    /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
     public static PermissionDecider ForTesting(PermissionPolicy policy, PermissionRulesStore store,
         Action<string>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>

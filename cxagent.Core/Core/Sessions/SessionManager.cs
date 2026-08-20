@@ -203,6 +203,8 @@ public sealed class SessionManager : IDisposable
     /// throws somewhere nobody expects, and the cost here is one File.Exists against a directory the
     /// caller just named.</para>
     /// </param>
+    /// <param name="paths">Which directory config, the stores and the logs live in.</param>
+    /// <param name="mcp">MCP servers to connect, or null for none.</param>
     public static SessionManager Create(AppPaths paths,
         Func<PermissionRulesStore, IPermissionGate>? buildGate = null,
         Mcp.McpToolset? mcp = null,
@@ -378,6 +380,8 @@ public sealed class SessionManager : IDisposable
     /// is the ordinary case rather than the exception. A caller that wants that resolves the instance
     /// and passes it here; one that does not says nothing.</para>
     /// </param>
+    /// <param name="session">The session to wire — already constructed with its working directory.</param>
+    /// <param name="ports">Where this session's words, tool activity and questions go.</param>
     public Session Open(Session session, ResolvedConfig? config,
         SessionPorts ports, WorkingMode? mode = null)
     {
@@ -410,6 +414,8 @@ public sealed class SessionManager : IDisposable
     /// Rebuilds the session's host over the armed resume. A delegate because the ports it needs — an
     /// observer, a tool sink, a way to ask the user — can only be built by a presentation layer.
     /// </param>
+    /// <param name="session">The session to restore into.</param>
+    /// <param name="snapshot">The saved conversation and its spend.</param>
     public void Resume(Session session, Storage.SessionSnapshot snapshot, Action? rewire = null)
     {
         if (session.RefuseIfBusy()) return;

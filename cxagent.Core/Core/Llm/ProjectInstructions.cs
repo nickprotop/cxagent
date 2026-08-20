@@ -96,6 +96,7 @@ public static class ProjectInstructions
     /// <para>Never throws. An unreadable directory, a permission error or a file that vanishes
     /// mid-walk means the agent runs without instructions — exactly as it did before this existed.</para>
     /// </remarks>
+    /// <param name="startDirectory">Where the search for instruction files begins, walking upward.</param>
     public static IReadOnlyList<ProjectInstructionFile> Find(
         string startDirectory, string? globalDirectory = null)
     {

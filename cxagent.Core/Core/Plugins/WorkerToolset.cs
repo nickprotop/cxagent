@@ -68,6 +68,16 @@ public static class WorkerToolset
     /// What the model is told this tool is for. Defaults to the plugin's DisplayName, which is right
     /// while one plugin backs one tool and useless the moment two share it.
     /// </param>
+    /// <param name="Name">The tool name the model sees and calls.</param>
+    /// <param name="PluginType">Which registered plugin services it.</param>
+    /// <param name="PinnedAction">
+    /// The plugin action this tool always performs, or null when the tool passes one through. What
+    /// lets several tools share one plugin without the model choosing an action.
+    /// </param>
+    /// <param name="SeeAlso">
+    /// A sentence naming ANOTHER tool, appended only when that tool is also offered. See
+    /// <see cref="ToolCrossReference"/>.
+    /// </param>
     private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
@@ -324,6 +334,11 @@ public static class WorkerToolset
     /// model that used <c>fs_read</c> last session will call it again, and if that server was since
     /// removed it gets a list omitting the servers still running.</para>
     /// </param>
+    /// <param name="call">The call the model issued.</param>
+    /// <param name="allowed">Which built-ins this agent was offered — a call outside it is refused.</param>
+    /// <param name="plugins">The plugin registry the call is dispatched through.</param>
+    /// <param name="ctx">The job context a plugin runs against.</param>
+    /// <param name="ct">Cancels the tool mid-run.</param>
     public static async Task<string> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
         PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
         IEnumerable<string>? alsoAvailable = null)

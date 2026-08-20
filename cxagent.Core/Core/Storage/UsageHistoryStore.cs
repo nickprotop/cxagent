@@ -20,6 +20,16 @@ namespace CxAgent.Core.Storage;
 /// What the provider reported this session cost, or null when it reported nothing.
 /// Null is not zero — a local session is free but never says so.
 /// </param>
+/// <param name="AgentId">The session's own id — the key its rows are grouped by.</param>
+/// <param name="WorkingDir">Which project the session ran in, or null when it was not recorded.</param>
+/// <param name="ModelId">Which model it talked to.</param>
+/// <param name="Mode">The working mode it ran under, as text.</param>
+/// <param name="InputTokens">Tokens sent across the session.</param>
+/// <param name="OutputTokens">Tokens generated across the session.</param>
+/// <param name="SubAgentTokens">The share spent inside children rather than the parent.</param>
+/// <param name="Turns">How many turns it took.</param>
+/// <param name="StartedAt">When the session opened.</param>
+/// <param name="UpdatedAt">When it last did anything — what makes a row prunable.</param>
 public sealed record SessionRecord(
     string AgentId, string? WorkingDir, string? ModelId, string Mode,
     int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
@@ -30,12 +40,32 @@ public sealed record SessionRecord(
     decimal? Cost = null);
 
 /// <summary>One sub-agent run, written by the PARENT when the child finishes.</summary>
+/// <param name="RunId">This run's id.</param>
+/// <param name="ParentAgentId">The agent that spawned it, which is how a run joins its session.</param>
+/// <param name="TypeName">Which agent type ran.</param>
+/// <param name="ModelId">Which model the child used — a type may be bound to a different one.</param>
+/// <param name="InputTokens">Tokens the child sent.</param>
+/// <param name="OutputTokens">Tokens the child generated.</param>
+/// <param name="Turns">Turns the child took.</param>
+/// <param name="ToolCalls">How many tools it called.</param>
+/// <param name="Outcome">How it ended — completed, failed, or capped.</param>
+/// <param name="StartedAt">When it was spawned.</param>
+/// <param name="DurationMs">How long it ran, in milliseconds.</param>
+/// <param name="WorkingDir">Which project it ran in.</param>
 public sealed record RunRecord(
     string RunId, string ParentAgentId, string TypeName, string? ModelId,
     int InputTokens, int OutputTokens, int Turns, int ToolCalls,
     string Outcome, DateTimeOffset StartedAt, long DurationMs, string? WorkingDir);
 
 /// <summary>One tool invocation, by whichever agent made it.</summary>
+/// <param name="CallId">This call's id, as the model issued it.</param>
+/// <param name="AgentId">Which agent made the call — parent or child.</param>
+/// <param name="ToolName">The tool name the model used.</param>
+/// <param name="PluginType">Which plugin serviced it, or null for a tool with none.</param>
+/// <param name="Outcome">How the call ended.</param>
+/// <param name="DurationMs">How long it took, in milliseconds.</param>
+/// <param name="ResultChars">How much text it returned — what fills a context.</param>
+/// <param name="StartedAt">When it ran.</param>
 /// <param name="WorkingDir">
 /// WHICH PROJECT. Carried on every event row, not only on the session, so each table can be grouped
 /// by project WITHOUT a join — and, more importantly, so a row survives its session being pruned. A

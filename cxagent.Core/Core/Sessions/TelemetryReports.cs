@@ -13,6 +13,12 @@ namespace CxAgent.Core.Sessions;
 /// What the result put into the context. The one figure here that is not otherwise recoverable, and
 /// the one that says whether a tool is cheap or is quietly filling the window.
 /// </param>
+/// <param name="CallId">The call's id, as the model issued it.</param>
+/// <param name="ToolName">The tool name the model used.</param>
+/// <param name="PluginType">Which plugin serviced it, or null for a tool with none.</param>
+/// <param name="Outcome">How the call ended.</param>
+/// <param name="DurationMs">How long it took, in milliseconds.</param>
+/// <param name="StartedAt">When it ran.</param>
 public sealed record ToolCallReport(
     string CallId,
     string AgentId,
@@ -29,6 +35,14 @@ public sealed record ToolCallReport(
 /// <param name="TypeName">The resolved type — <c>general</c> unless config named another.</param>
 /// <param name="ModelId">Which model it actually ran on, which need not be the session's.</param>
 /// <param name="Outcome">completed · failed · cancelled — what the envelope said.</param>
+/// <param name="RunId">This run's id.</param>
+/// <param name="ParentAgentId">The agent that spawned it — how a run joins its session.</param>
+/// <param name="InputTokens">Tokens the child sent.</param>
+/// <param name="OutputTokens">Tokens the child generated.</param>
+/// <param name="Turns">Turns the child took.</param>
+/// <param name="ToolCalls">How many tools it called.</param>
+/// <param name="StartedAt">When it was spawned.</param>
+/// <param name="DurationMs">How long it ran, in milliseconds.</param>
 public sealed record ChildRunReport(
     string RunId,
     string ParentAgentId,

@@ -4,6 +4,8 @@ namespace CxAgent.Core.Skills;
 /// <param name="Name">From the DIRECTORY, not from frontmatter — see <see cref="SkillCatalog"/>.</param>
 /// <param name="Directory">The skill's own folder. Returned to the model on load so a later version
 /// can point at files beside the SKILL.md without a second capability channel.</param>
+/// <param name="Description">What the skill is for — the only thing the model sees before loading it.</param>
+/// <param name="Body">The skill text itself, loaded on demand.</param>
 public sealed record SkillInfo(string Name, string Description, string Directory, string Body);
 
 /// <summary>A file that looked like a skill and was refused, with the reason a user can act on.</summary>
@@ -15,6 +17,8 @@ public sealed record SkillProblem(string Path, string Reason);
 /// <param name="SourceDirectory">The winning directory, or NULL when no directory held a usable
 /// skill. The null case is not an error — it is what a first attempt at writing a skill looks like,
 /// and /skills renders it as "no skills loaded" rather than claiming a directory is in use.</param>
+/// <param name="Skills">The skills that parsed, in the order they will be offered.</param>
+/// <param name="Problems">Files that were skipped, and why — the reason /skills exists.</param>
 public sealed record SkillCatalogResult(
     IReadOnlyList<SkillInfo> Skills,
     IReadOnlyList<SkillProblem> Problems,

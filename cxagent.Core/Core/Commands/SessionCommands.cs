@@ -490,6 +490,7 @@ public static class SessionCommands
     /// this file to a front end. Everything else here is a table and a parser; a second front end
     /// with a different palette can render the same help without a second copy of the table.</para>
     /// </param>
+    /// <param name="markupColor">The accent colour for command names.</param>
     public static string HelpLines(string markupColor, string mutedColor)
     {
         // ARGUMENTS ARE ROWS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only,

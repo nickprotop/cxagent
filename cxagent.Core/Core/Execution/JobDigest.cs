@@ -52,6 +52,7 @@ public record JobDigest(
     /// on the consult path by bulkOutputAsPlaceholder instead, which is the targeted fix a blanket
     /// cap was standing in for.
     /// </param>
+    /// <param name="job">The finished job to summarise.</param>
     public static JobDigest From(Job job, int perValueCap = DefaultPerValueCap, int? outputCap = null)
     {
         var result = job.Result;

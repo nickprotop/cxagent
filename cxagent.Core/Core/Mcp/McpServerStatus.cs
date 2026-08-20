@@ -16,6 +16,7 @@ namespace CxAgent.Core.Mcp;
 /// <param name="Enabled">False when switched off in config — deliberate, and reported as such.</param>
 /// <param name="ToolCount">How many tools it offered. Zero on a server that never handshook.</param>
 /// <param name="Error">Why it is not usable, or null when it is.</param>
+/// <param name="NeedsAuth">Whether the failure is a missing login — the one error a user can fix with /mcp.</param>
 public sealed record McpServerStatus(string Name, bool Enabled, int ToolCount, string? Error,
     bool NeedsAuth = false)
 {

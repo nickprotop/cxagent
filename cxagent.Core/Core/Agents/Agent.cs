@@ -581,10 +581,47 @@ public sealed class Agent
     /// </summary>
     private readonly int? _compressAbove;
 
+    /// <param name="provider">The model this agent talks to. Sub-agents may be given a different one.</param>
+    /// <param name="plugins">The tool implementations behind the built-in tool names.</param>
+    /// <param name="ledger">Where this agent's token spend is recorded; shared with its children.</param>
+    /// <param name="sink">Where the agent's words go — the observer an embedder supplies.</param>
+    /// <param name="jobs">Where tool activity is reported.</param>
+    /// <param name="logs">Per-turn transcripts on disk, or null to keep none.</param>
+    /// <param name="maxTurns">How many turns one goal may take before the agent stops and summarises.</param>
+    /// <param name="compressAbove">
+    /// Input tokens past which the loop compresses its own context, or null to never compress. See
+    /// the field of the same name for why this exists rather than a turn cap.
+    /// </param>
     /// <param name="context">
     /// The agent's context. Optional so existing callers and tests keep working — omitting it gives
     /// this agent a fresh one of its own, which is the right default: an agent that is not handed a
     /// context still HAS one, rather than borrowing the caller's list.
+    /// </param>
+    /// <param name="globalInstructionsDir">Where user-level AGENTS.md and friends are read from.</param>
+    /// <param name="mcp">Connected MCP servers, whose tools are offered beside the built-ins.</param>
+    /// <param name="briefing">
+    /// The highest-authority text in this agent's prompt — what an agent TYPE is told it is for.
+    /// Null for an agent with no type.
+    /// </param>
+    /// <param name="spawner">
+    /// How this agent delegates, or null if it cannot. A child is constructed without one, which is
+    /// what makes "no sub-agents of sub-agents" structural rather than a rule it is asked to obey.
+    /// </param>
+    /// <param name="isSubAgent">Whether this agent is itself a child — it reports and renders differently.</param>
+    /// <param name="callerContext">What the parent already knew and passed down. Ranks below the briefing.</param>
+    /// <param name="label">A short name for this agent in the UI, for children whose work needs a row.</param>
+    /// <param name="askUser">
+    /// How the agent asks its user a question, or null when nobody is listening — a sub-agent, or a
+    /// headless host. Null removes the ask_user tool rather than making it fail.
+    /// </param>
+    /// <param name="workingDir">The folder this agent works in; also the permission boundary.</param>
+    /// <param name="instanceName">
+    /// Which configured provider entry this is, for spend attribution. Two entries can serve the same
+    /// model against different endpoints, and keying spend by model alone would merge them.
+    /// </param>
+    /// <param name="agentTools">Tools the embedder injected, offered beside the built-ins.</param>
+    /// <param name="toolSelection">
+    /// Which tools this agent is offered, or null for all of them. See <see cref="Plugins.ToolSelection"/>.
     /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,

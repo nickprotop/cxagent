@@ -9,6 +9,8 @@ namespace CxAgent.Core.Mcp;
 /// The server author's own prose. Carried verbatim: it is the only thing telling the model what a
 /// tool is FOR, and a schema cannot say it.
 /// </param>
+/// <param name="Name">The tool name, as the server publishes it.</param>
+/// <param name="InputSchema">The JSON Schema for the tool's arguments, passed to the model unchanged.</param>
 public sealed record McpToolDef(string Name, string Description, JsonElement InputSchema);
 
 /// <summary>
@@ -110,6 +112,9 @@ public sealed class McpClient : IMcpConnection
     /// this specification, and instead retrieve credentials from the environment."</i>
     /// </param>
     /// <param name="workingDirectory">Where to start it, or null to inherit ours.</param>
+    /// <param name="name">The server name from config, used in messages and tool prefixes.</param>
+    /// <param name="command">The process to start, argv-style.</param>
+    /// <param name="timeout">How long one call may take, or null for the default.</param>
     public McpClient(string name, string[] command, TimeSpan? timeout = null,
         IReadOnlyDictionary<string, string>? environment = null, string? workingDirectory = null)
     {
@@ -326,6 +331,9 @@ public sealed class McpClient : IMcpConnection
     /// shows and <c>StartAsync</c> sets. That is genuinely per-server and genuinely sticky; only the
     /// per-call text had to move.</para>
     /// </param>
+    /// <param name="method">The JSON-RPC method to call.</param>
+    /// <param name="parameters">Its parameters, serialised as the request body.</param>
+    /// <param name="ct">Cancels the call.</param>
     private async Task<JsonElement?> SendAsync(string method, object parameters, CancellationToken ct,
         Action<string>? callError = null)
     {

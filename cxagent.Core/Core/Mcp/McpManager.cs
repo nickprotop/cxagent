@@ -38,6 +38,7 @@ public sealed class McpManager : IAsyncDisposable
     /// A stored OAuth token for a server, by name — supplied by the caller that owns the token store,
     /// so this type never touches disk.
     /// </param>
+    /// <param name="gate">Every MCP call passes through this before it runs.</param>
     public McpManager(Permissions.IPermissionGate gate, Func<string, string?>? accessToken = null)
     {
         _gate = gate;

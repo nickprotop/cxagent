@@ -108,6 +108,8 @@ public sealed class ProviderRegistry
     /// Per-instance context windows, when the caller knows them. Optional because the mock path and
     /// most tests do not — and "unknown" is the honest answer there, not a guess.
     /// </param>
+    /// <param name="providers">The configured instances, keyed by the name config gave them.</param>
+    /// <param name="defaultName">Which instance a session opens on, or null when none is set.</param>
     public static ProviderRegistry FromProviders(
         IReadOnlyDictionary<string, ILlmProvider> providers, string? defaultName,
         IReadOnlyDictionary<string, int?>? windows = null) =>

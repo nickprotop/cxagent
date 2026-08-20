@@ -32,6 +32,8 @@ public static class McpLauncher
     /// than captured once, so a login or a refresh that happens after startup takes effect without
     /// rebuilding the client.
     /// </param>
+    /// <param name="configured">The servers from config, keyed by name.</param>
+    /// <param name="ct">Cancels the connection attempts.</param>
     public static async Task<Result> StartAsync(
         IReadOnlyDictionary<string, McpServerConfig> configured, CancellationToken ct,
         Func<string, string?>? accessToken = null)

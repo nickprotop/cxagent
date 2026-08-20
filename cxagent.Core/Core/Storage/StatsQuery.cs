@@ -10,6 +10,17 @@ namespace CxAgent.Core.Storage;
 /// — a total silent about its own coverage would look complete when it may be a fraction of the
 /// window.
 /// </param>
+/// <param name="Sessions">How many sessions the window covers.</param>
+/// <param name="InputTokens">Tokens sent, summed across the window.</param>
+/// <param name="OutputTokens">Tokens generated, summed across the window.</param>
+/// <param name="SubAgentTokens">The share of the total spent inside children rather than the parent.</param>
+/// <param name="Turns">How many turns those sessions took.</param>
+/// <param name="CachedInputTokens">Input tokens served from the provider's prefix cache.</param>
+/// <param name="CacheReportingInputTokens">
+/// Input tokens from sessions whose provider REPORTED a cache figure — the denominator for a hit
+/// rate, since a provider that reports nothing must not be counted as a miss.
+/// </param>
+/// <param name="CacheWrittenTokens">Tokens written INTO the cache, which most providers bill for.</param>
 public sealed record StatsTotals(
     int Sessions, int InputTokens, int OutputTokens, int SubAgentTokens, int Turns,
     int CachedInputTokens = 0, int CacheReportingInputTokens = 0,
@@ -51,6 +62,12 @@ public sealed record ModelStat(string Model, int InputTokens, int OutputTokens, 
 /// <summary>
 /// One agent type's record across every run of it.
 /// </summary>
+/// <param name="Type">The agent type these runs were.</param>
+/// <param name="Runs">How many times it ran.</param>
+/// <param name="Tokens">What those runs cost, in and out together.</param>
+/// <param name="AvgTurns">Turns per run on average — how much work a type typically takes.</param>
+/// <param name="AvgDurationMs">Wall-clock per run on average.</param>
+/// <param name="Failed">Runs that ended in an error.</param>
 /// <param name="Capped">
 /// Runs that exhausted their turn cap. SEPARATE FROM <paramref name="Failed"/>, because a capped run
 /// did not fail — it ran out of room. Seen live: an explore child spent all 30 turns hunting a JSON
@@ -64,6 +81,10 @@ public sealed record TypeStat(
 /// <summary>
 /// One tool's record. The answer to "what is actually filling my context".
 /// </summary>
+/// <param name="Tool">The tool name as the model calls it.</param>
+/// <param name="Calls">How many times it was called.</param>
+/// <param name="AvgDurationMs">Wall-clock per call on average.</param>
+/// <param name="Failed">Calls that ended in an error.</param>
 /// <param name="ResultChars">
 /// Total characters this tool returned INTO a context. The figure that explains a 5.5M-token session:
 /// a turn re-sends everything before it, so a tool that returns large results does not cost its own

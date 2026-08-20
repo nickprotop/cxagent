@@ -39,6 +39,7 @@ public static class SessionsCommand
     /// How long a finished session survives. STATED IN THE OUTPUT rather than left to be discovered:
     /// a user who loses a month of conversations to a policy nobody mentioned has a grievance.
     /// </param>
+    /// <param name="all">Whether to list every folder rather than only this one.</param>
     public static SessionsCommandResult Decide(
         string argument, IReadOnlyList<SessionInfo> sessions, TimeSpan retention, bool all = false)
     {

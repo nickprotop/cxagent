@@ -107,6 +107,8 @@ public class PermissionPolicy
     /// about a file nobody is going to touch — allowing a write to a checkout the user never
     /// approved, with every layer behaving correctly on the way.</para>
     /// </param>
+    /// <param name="pluginType">Which plugin is about to run.</param>
+    /// <param name="parameters">The call's arguments, which decide what is actually being asked.</param>
     public static IReadOnlyList<PermissionRequest> RequestsFor(string pluginType,
         JobParameters parameters, string? root = null)
     {

@@ -24,6 +24,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// The catalog a `type` argument resolves against. Never empty — it always holds at least
     /// `general` — so an error can always name something valid.
     /// </param>
+    /// <param name="factory">Builds each child, carrying what every child shares.</param>
     public SubAgentSpawner(SubAgentFactory factory, AgentTypeCatalog? types = null)
     {
         _factory = factory;
@@ -351,6 +352,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// plan simply never appears and the parent writes its own from chat text — which happened once
     /// already, and the builder it fed went looking for Rust sources in a C# repository.</para>
     /// </param>
+    /// <param name="context">What the parent passed down, which this may append to.</param>
+    /// <param name="type">The child's type — only a plan-writing one gets a path.</param>
+    /// <param name="label">The child's short name, used to build a readable filename.</param>
+    /// <param name="planPath">Where the plan should be written, or null when the child cannot write.</param>
     private static string? WithPlanPath(string? context, AgentType type, string? label,
         bool canWrite, out string? planPath)
     {

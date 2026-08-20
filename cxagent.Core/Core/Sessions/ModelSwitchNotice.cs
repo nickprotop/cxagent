@@ -22,6 +22,9 @@ public static class ModelSwitchNotice
     /// <param name="previousWindow">The window of the model being LEFT — used to warn when the new
     /// one is smaller, which is the case where a long conversation starts compacting sooner.</param>
     /// <param name="used">How much of that window was in use at the moment of the switch.</param>
+    /// <param name="name">The instance being switched to.</param>
+    /// <param name="model">The model that instance serves.</param>
+    /// <param name="window">Its context window, or null when unknown.</param>
     public static string For(string name, string model, int? window, int? previousWindow, int? used)
     {
         var lines = new List<string>

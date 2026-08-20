@@ -312,6 +312,7 @@ public sealed class SqliteSessionStore
     /// FINISHED ROWS ARE INCLUDED. Why a session ended is worth seeing and is not a reason to hide
     /// it — the flag gates what <c>--resume</c> picks by DEFAULT, not what can be reached.
     /// </remarks>
+    /// <param name="workingDir">Only sessions from this folder, or null for every folder.</param>
     public IReadOnlyList<SessionInfo> List(string? workingDir = null, bool all = false)
     {
         try
@@ -598,6 +599,10 @@ public sealed class SqliteSessionStore
 /// Ended cleanly, OR superseded by a resume. Two meanings in one flag: see the resume path, which
 /// retires the row it restored so one conversation cannot be accepted twice.
 /// </param>
+/// <param name="WorkingDir">Which project the session ran in.</param>
+/// <param name="InputTokens">Tokens sent across the session.</param>
+/// <param name="OutputTokens">Tokens generated across the session.</param>
+/// <param name="UpdatedAt">When it last did anything — what orders a resume list.</param>
 public sealed record SessionInfo(
     string Uid,
     string? Title,
@@ -619,6 +624,11 @@ public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> A
     /// before this column existed genuinely has no mode, and that absence must stay distinguishable
     /// from a recorded choice — see <c>LoadLatestUnfinished</c> for which way it resolves.
     /// </param>
+/// <param name="AgentId">The session's own id.</param>
+/// <param name="Context">The restored conversation.</param>
+/// <param name="InputTokens">Tokens the session had sent when saved.</param>
+/// <param name="OutputTokens">Tokens it had generated.</param>
+/// <param name="UpdatedAt">When it was last written.</param>
 public sealed record SessionSnapshot(
     string AgentId,
     IReadOnlyList<ChatMessage> Context,

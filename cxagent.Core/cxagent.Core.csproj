@@ -60,10 +60,16 @@
          that at the package boundary would leave a consumer with signatures and no WHY — which is
          most of what this codebase's comments are for. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- CS1591 undocumented public member, CS1573 some-params-documented. Both are noise here: the
-         XML docs carry REASONING where there is any, and a <param> tag on every positional record
-         member merely to silence a warning would be ceremony rather than documentation. -->
-    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+    <!-- CS1591 (undocumented public member) STAYS SUPPRESSED, and CS1573 no longer is.
+         The two are not the same problem. CS1573 fires where a declaration documents SOME of its
+         parameters and not others — a half-finished doc, and a real one: StatsTotals explained the
+         two params about cache COVERAGE and said nothing about the eight around them, so a consumer
+         reading the tooltip saw the subtle half of a record and had to guess the rest. All 186 of
+         those tags are now written; the warning is on, so the next one is caught at the compiler.
+         CS1591 is different. It fires on members whose NAME is the documentation —
+         WorkerTool.ReadFile, WorkerTool.WriteFile, AskUserTool.ToolName. A <summary>Read a file.</summary>
+         there is ceremony that buries the reasoning the surrounding docs actually carry. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

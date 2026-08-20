@@ -156,6 +156,10 @@ public sealed partial class Session
     /// displays <c>/init</c> — putting the briefing on the transcript as the user's own message
     /// attributes words to them they never wrote, on every later read of the log.
     /// </param>
+    /// <param name="tools">
+    /// Which tools this ONE request may use, composed onto the session's selection. Null keeps
+    /// whatever the session already has. See <see cref="Plugins.ToolSelection"/>.
+    /// </param>
     public SubmitOutcome Submit(string text, string? echo = null,
         Plugins.ToolSelection? tools = null)
     {

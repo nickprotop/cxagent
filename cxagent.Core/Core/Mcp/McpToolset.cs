@@ -60,6 +60,7 @@ public sealed class McpToolset
     /// omission fail loudly and safely instead, the same reasoning as the headless default gate that
     /// can never say yes.</para>
     /// </param>
+    /// <param name="servers">The connected servers whose tools this offers.</param>
     public McpToolset(IReadOnlyList<IMcpServer> servers, Permissions.IPermissionGate? gate = null)
     {
         _gate = gate ?? Permissions.PermissionGate.DenyAll;
@@ -152,6 +153,8 @@ public sealed class McpToolset
     /// unhelpful. With two, a prompt saying "may I run this?" has no answer to "which of them wants
     /// it?" — and the user is being asked to approve third-party code on their machine.</para>
     /// </param>
+    /// <param name="call">The call the model issued; null is returned when no server owns the name.</param>
+    /// <param name="ct">Cancels the call.</param>
     public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct,
         string? requester = null)
     {

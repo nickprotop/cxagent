@@ -77,6 +77,7 @@ public static class ReadOnlyCommands
     /// Never throws, and answers false for anything it cannot parse confidently. A wrong `false`
     /// costs one prompt; a wrong `true` runs something nobody approved.
     /// </remarks>
+    /// <param name="command">The shell command to classify.</param>
     public static bool IsReadOnly(string? command, out string? changesTo)
     {
         changesTo = null;

@@ -30,6 +30,14 @@ public static class McpLogin
     /// How to hand the URL to a browser. Injected rather than called directly so this is testable
     /// without one actually opening — and so a headless caller can print the URL instead.
     /// </param>
+    /// <param name="http">The client the OAuth exchanges go through.</param>
+    /// <param name="tokens">Where the resulting token is stored.</param>
+    /// <param name="serverName">Which MCP server this login is for.</param>
+    /// <param name="metadataUrl">The authorization-server metadata document to start from.</param>
+    /// <param name="clientId">The registered client id.</param>
+    /// <param name="clientSecret">Its secret, or null for a public client.</param>
+    /// <param name="timeout">How long to wait for the user to finish in the browser.</param>
+    /// <param name="ct">Cancels the login.</param>
     public static async Task<Result> RunAsync(
         HttpClient http, TokenStore tokens, string serverName, string metadataUrl,
         string clientId, string? clientSecret, Action<string> openBrowser,

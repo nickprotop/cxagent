@@ -449,6 +449,8 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     /// <param name="turnTools">This request's tool selection, composed onto the session's. Null is
     /// the normal case: a front end that narrows once per session passes nothing here.</param>
+    /// <param name="prompt">What the user asked for.</param>
+    /// <param name="ct">Cancels the goal mid-run.</param>
     public Task RunAsync(string prompt, CancellationToken ct,
         Plugins.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
 

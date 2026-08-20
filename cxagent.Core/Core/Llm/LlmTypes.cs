@@ -89,6 +89,10 @@ public record LlmResponse
 /// 'stop' even when the assistant message contains tool calls." A local llama.cpp or vLLM server is
 /// exactly the kind of endpoint that does.</para>
 /// </param>
+/// <param name="TextDelta">Text produced since the last chunk, or null when this chunk carries none.</param>
+/// <param name="ToolCallDelta">A completed tool call, or null. One per chunk — several calls fan out.</param>
+/// <param name="IsFinal">Whether this is the last chunk; usage and the stop reason ride it.</param>
+/// <param name="Usage">What the call cost, on the final chunk only.</param>
 public record LlmStreamChunk(string? TextDelta, ToolCall? ToolCallDelta, bool IsFinal,
     LlmUsage? Usage = null, string? StopReason = null);
 

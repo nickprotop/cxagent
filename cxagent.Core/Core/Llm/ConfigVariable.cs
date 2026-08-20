@@ -88,6 +88,9 @@ public static class ConfigVariable
     /// case-insensitive but Unix environment names are NOT, and collapsing the two here would quietly
     /// merge <c>PATH</c> and <c>Path</c> into one variable.
     /// </param>
+    /// <param name="map">Where ${VARS} resolve from — normally the environment.</param>
+    /// <param name="warnings">Unresolved names are appended here rather than throwing.</param>
+    /// <param name="context">Which config key is being expanded, for the warning text.</param>
     public static IReadOnlyDictionary<string, string>? SubstituteValues(
         IReadOnlyDictionary<string, string>? map, IList<string> warnings, string context,
         StringComparer? comparer = null)
