@@ -1,0 +1,20 @@
+pkgbase = cxagent-bin
+	pkgdesc = A coding agent for the terminal, with sub-agents, permissions and MCP
+	pkgver = 0.4.0
+	pkgrel = 1
+	url = https://github.com/nickprotop/cxagent
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	depends = icu
+	provides = cxagent
+	conflicts = cxagent
+	options = !strip
+	source = LICENSE-0.4.0::https://github.com/nickprotop/cxagent/raw/v0.4.0/LICENSE
+	sha256sums = c5d50f2ab68a8939a4c0986e3ab5f9fe21f5f8b525f013f72680a2198b14ee73
+	source_x86_64 = cxagent-bin-0.4.0-x86_64::https://github.com/nickprotop/cxagent/releases/download/v0.4.0/cxagent-linux-x64
+	sha256sums_x86_64 = 0523015a16fb96fdd621c7c0b0601e0d51cdd585dfcc5ed212b0a6391064f217
+	source_aarch64 = cxagent-bin-0.4.0-aarch64::https://github.com/nickprotop/cxagent/releases/download/v0.4.0/cxagent-linux-arm64
+	sha256sums_aarch64 = 57f32795b3eec6cacb869f87c7fcd06ad607738a71fc23d951d9ccd2d9305ffb
+
+pkgname = cxagent-bin

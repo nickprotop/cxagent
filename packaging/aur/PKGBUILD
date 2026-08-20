@@ -1,0 +1,33 @@
+# Maintainer: Nikolaos Protopapas <nikolaos.protopapas@gmail.com>
+pkgname=cxagent-bin
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="A coding agent for the terminal, with sub-agents, permissions and MCP"
+arch=('x86_64' 'aarch64')
+url="https://github.com/nickprotop/cxagent"
+license=('MIT')
+
+# ICU IS REQUIRED AND ldd DOES NOT SHOW IT. The binary is self-contained — it carries its own .NET —
+# but .NET dlopens libicuuc.so and libicui18n.so at startup for globalization, so `ldd` reports only
+# glibc and libstdc++ and a missing icu fails at RUN time, not install time, with a globalization
+# error that names nothing useful. Verified by inspecting the published v0.4.0 binary.
+depends=('icu')
+
+provides=('cxagent')
+conflicts=('cxagent')
+options=('!strip')   # a single-file .NET bundle; stripping corrupts the embedded host
+
+source_x86_64=("$pkgname-$pkgver-x86_64::$url/releases/download/v$pkgver/cxagent-linux-x64")
+source_aarch64=("$pkgname-$pkgver-aarch64::$url/releases/download/v$pkgver/cxagent-linux-arm64")
+source=("LICENSE-$pkgver::$url/raw/v$pkgver/LICENSE")
+
+# From the release's own SHA256SUMS, which the workflow generates and publishes alongside the
+# binaries — the same file a user is told to verify with.
+sha256sums_x86_64=('0523015a16fb96fdd621c7c0b0601e0d51cdd585dfcc5ed212b0a6391064f217')
+sha256sums_aarch64=('57f32795b3eec6cacb869f87c7fcd06ad607738a71fc23d951d9ccd2d9305ffb')
+sha256sums=('c5d50f2ab68a8939a4c0986e3ab5f9fe21f5f8b525f013f72680a2198b14ee73')
+
+package() {
+    install -Dm755 "$srcdir/$pkgname-$pkgver-$CARCH" "$pkgdir/usr/bin/cxagent"
+    install -Dm644 "$srcdir/LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -228,3 +228,104 @@ jobs:
             --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+  # THE AUR PACKAGE, regenerated from the tag and pushed to aur.archlinux.org.
+  #
+  # NEEDS THE RELEASE JOB, because the PKGBUILD's sha256sums come from the binaries that job
+  # published — computing them before the assets exist would pin hashes of nothing.
+  #
+  # ONE-TIME SETUP, and this job is skipped until it is done:
+  #   1. Create the package once by hand: clone ssh://aur@aur.archlinux.org/cxagent-bin.git,
+  #      add the PKGBUILD and .SRCINFO from packaging/aur/, push. The AUR creates a package on
+  #      first push; there is no API to create one.
+  #   2. Add an SSH key to your AUR account (Account → SSH Public Key), and put the PRIVATE half in
+  #      this repository's secrets as AUR_SSH_KEY.
+  # The `if` below means a fork, or this repo before setup, skips rather than fails.
+  aur:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'nickprotop/cxagent' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      # THE HASHES COME FROM THE RELEASE'S OWN SHA256SUMS, not from a re-download and re-hash. That
+      # file is what a user is told to verify against, so pinning anything else here would let the
+      # package and the published checksums disagree.
+      - name: Regenerate PKGBUILD and .SRCINFO
+        env:
+          V: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/nickprotop/cxagent"
+          curl -fsSL -o SHA256SUMS "$BASE/releases/download/v$V/SHA256SUMS"
+          X64=$(awk '/cxagent-linux-x64$/  {print $1}' SHA256SUMS)
+          ARM=$(awk '/cxagent-linux-arm64$/{print $1}' SHA256SUMS)
+          LIC=$(curl -fsSL "$BASE/raw/v$V/LICENSE" | sha256sum | cut -d' ' -f1)
+
+          # EMPTY MEANS THE ASSET NAMES CHANGED. Failing here is the point: a silently empty hash
+          # would publish a PKGBUILD that cannot verify anything.
+          test -n "$X64" && test -n "$ARM" && test -n "$LIC"
+
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=$V/" \
+            -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$X64')/" \
+            -e "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('$ARM')/" \
+            -e "s/^sha256sums=.*/sha256sums=('$LIC')/" \
+            packaging/aur/PKGBUILD
+
+          sed -i \
+            -e "s/\tpkgver = .*/\tpkgver = $V/" \
+            -e "s/\tpkgrel = .*/\tpkgrel = 1/" \
+            -e "s|LICENSE-[0-9.]*::|LICENSE-$V::|" \
+            -e "s|cxagent-bin-[0-9.]*-x86_64::|cxagent-bin-$V-x86_64::|" \
+            -e "s|cxagent-bin-[0-9.]*-aarch64::|cxagent-bin-$V-aarch64::|" \
+            -e "s|/v[0-9.]*/LICENSE|/v$V/LICENSE|" \
+            -e "s|/download/v[0-9.]*/|/download/v$V/|g" \
+            packaging/aur/.SRCINFO
+
+          # .SRCINFO's hashes are order-dependent, so rewrite them positionally rather than by name.
+          python3 - "$X64" "$ARM" "$LIC" <<'PY'
+          import re, sys
+          x64, arm, lic = sys.argv[1:4]
+          p = 'packaging/aur/.SRCINFO'
+          s = open(p).read()
+          s = re.sub(r'(\tsha256sums = )[0-9a-f]{64}', r'\g<1>' + lic, s)
+          s = re.sub(r'(\tsha256sums_x86_64 = )[0-9a-f]{64}', r'\g<1>' + x64, s)
+          s = re.sub(r'(\tsha256sums_aarch64 = )[0-9a-f]{64}', r'\g<1>' + arm, s)
+          open(p, 'w').write(s)
+          PY
+
+          grep -E "^pkgver|^sha256sums" packaging/aur/PKGBUILD
+
+      - name: Publish to the AUR
+        env:
+          KEY: ${{ secrets.AUR_SSH_KEY }}
+          V: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY:-}" ]; then
+            echo "AUR_SSH_KEY is not set — skipping. See the setup note in this workflow."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t rsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'CFG'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            StrictHostKeyChecking yes
+          CFG
+
+          git clone ssh://aur@aur.archlinux.org/cxagent-bin.git aur-repo
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO aur-repo/
+          cd aur-repo
+          git -c user.name="cxagent release" -c user.email="noreply@github.com" \
+              commit -am "cxagent-bin $V" || { echo "nothing changed"; exit 0; }
+          git push
