@@ -935,21 +935,29 @@ public static class AppBootstrap
         // to do with a keystroke.
         void SubmitComposer()
         {
-            if (!mainWindow.SubmissionEnabled) return;
             var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
 
-            // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. This used to read
-            // `if (!session.HasAgent || ...) return;` above, which swallowed the keystroke before
-            // anything looked at what was typed — so a session opened without a working provider
-            // could not run /exit, /help, /stats, /sessions, or even /model, the one command that
-            // FIXES having no provider. The window was unusable except by killing it.
+            // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. This handler used to open with
+            // `if (!session.HasAgent || !mainWindow.SubmissionEnabled) return;`, swallowing the
+            // keystroke before anything looked at what was typed — so a session opened without a
+            // working provider could not run /exit, /help, /stats, /sessions, or even /model, the
+            // one command that FIXES having no provider. The window was unusable except by killing
+            // it, and it said nothing about why.
             //
-            // THE CLASSIFICATION ALREADY EXISTED. CommandOutcome says which commands need the
-            // model: NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says
-            // the rest "answer from state the app already holds, costing no tokens and no time" —
-            // this guard simply was not asking. Everything else runs with no agent at all.
-            if (!session.HasAgent)
+            // THE CLASSIFICATION ALREADY EXISTED. CommandOutcome says which commands need the model:
+            // NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says the rest
+            // "answer from state the app already holds, costing no tokens and no time" — the guard
+            // simply was not asking.
+            //
+            // TWO FLAGS MEAN "NO PROVIDER", AND THE FIRST FIX ONLY MOVED ONE. It added the check
+            // below but left `if (!mainWindow.SubmissionEnabled) return;` ABOVE it, and
+            // SubmissionEnabled is set from resolution.HasProvider (MainWindow.cs:500) — so the
+            // handler still returned before the classification ran and /exit still did nothing.
+            // Reported against v0.4.2: text types into the composer, Enter does nothing. Both flags
+            // now sit inside one check. SubmissionEnabled is safe here because it is not a busy
+            // flag: its only other use is choosing the placeholder text.
+            if (!session.HasAgent || !mainWindow.SubmissionEnabled)
             {
                 var outcome = SessionCommands.Match(goalText)?.Outcome ?? CommandOutcome.NotACommand;
                 if (outcome is CommandOutcome.NotACommand

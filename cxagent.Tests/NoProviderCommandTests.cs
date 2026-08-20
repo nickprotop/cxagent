@@ -27,6 +27,50 @@ public class NoProviderCommandTests
             or CommandOutcome.NeedsProvider or CommandOutcome.NeedsTurn;
     }
 
+    /// <summary>
+    /// The WHOLE handler, both gates, in the order it runs them.
+    ///
+    /// <para>THE FIRST FIX PASSED ITS TESTS AND SHIPPED BROKEN because they modelled only
+    /// <c>session.HasAgent</c>. The handler had a SECOND flag meaning the same thing —
+    /// <c>mainWindow.SubmissionEnabled</c>, set from <c>resolution.HasProvider</c> — and it was
+    /// still checked ABOVE the classification, so it returned before any of this ran. Testing a
+    /// predicate proves the predicate; this models the sequence.</para>
+    /// </summary>
+    private static bool KeystrokeReachesTheCommand(string input, bool hasAgent, bool submissionEnabled)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        if (!hasAgent || !submissionEnabled) return !NeedsAModel(input);
+        return true;
+    }
+
+    [Theory]
+    [InlineData("/exit")]
+    [InlineData("/model")]
+    [InlineData("/help")]
+    [InlineData("/stats")]
+    public void CommandsRunWithBothFlagsOff(string input)
+    {
+        // BOTH FALSE IS THE REAL NO-PROVIDER STATE. A session with no model has HasAgent false AND
+        // SubmissionEnabled false; testing either alone is what let the bug through.
+        Assert.True(KeystrokeReachesTheCommand(input, hasAgent: false, submissionEnabled: false),
+            $"{input} must reach its handler when no provider is configured");
+    }
+
+    [Fact]
+    public void SubmissionEnabledAloneDoesNotBlockACommand()
+    {
+        // The exact shape of the shipped bug: an agent exists but the composer flag is off.
+        Assert.True(KeystrokeReachesTheCommand("/exit", hasAgent: true, submissionEnabled: false));
+    }
+
+    [Fact]
+    public void AGoalIsStillBlockedByEitherFlag()
+    {
+        Assert.False(KeystrokeReachesTheCommand("summarise this", hasAgent: false, submissionEnabled: true));
+        Assert.False(KeystrokeReachesTheCommand("summarise this", hasAgent: true, submissionEnabled: false));
+        Assert.True(KeystrokeReachesTheCommand("summarise this", hasAgent: true, submissionEnabled: true));
+    }
+
     [Theory]
     [InlineData("/exit")]        // leaving must never require a model
     [InlineData("/help")]
