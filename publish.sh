@@ -60,12 +60,29 @@ esac
 NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 NEW_TAG="v$NEW_VERSION"
 
+# THE TESTS GATE THE TAG, not just the build. CI runs them before packing, but by then the tag
+# exists — and a tag that publishes to NuGet spends a version number permanently, because NuGet
+# allows unlisting and never reuse. Failing here costs a minute; failing there costs the number.
+echo ""
+echo "Running tests..."
+if ! dotnet test --configuration Release --verbosity quiet > /tmp/cxagent-release-test.log 2>&1; then
+    echo "Error: tests failed. Not tagging."
+    tail -20 /tmp/cxagent-release-test.log
+    exit 1
+fi
+grep -E "Passed!|Failed!" /tmp/cxagent-release-test.log || true
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  cxagent Release: $NEW_TAG"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Previous: $LATEST_TAG"
 echo "  New:      $NEW_TAG ($BUMP_TYPE)"
+echo ""
+echo "  This tag publishes TWO things:"
+echo "    · GitHub release — six platform binaries, revocable"
+echo "    · CxAgent.Core $NEW_VERSION to nuget.org — PERMANENT, the version"
+echo "      can be unlisted but never reused"
 echo ""
 
 if [ "$FORCE" = false ]; then
@@ -85,3 +102,9 @@ echo "  https://github.com/nickprotop/cxagent/actions"
 echo ""
 echo "Release will be at:"
 echo "  https://github.com/nickprotop/cxagent/releases/tag/$NEW_TAG"
+echo ""
+echo "And the package at:"
+echo "  https://www.nuget.org/packages/CxAgent.Core/$NEW_VERSION"
+echo ""
+echo "The nuget job runs LAST and only if the release job succeeded, so a failure"
+echo "there leaves the binaries shipped and the version unspent — fix and re-tag."
