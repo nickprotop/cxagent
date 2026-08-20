@@ -1,7 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- THREE TARGETS, BECAUSE net8.0 IS WHERE MOST PRODUCTION .NET LIVES. It is the current LTS,
+         supported into November 2026; net10 is months old. A library that only restores into net10
+         is unavailable to most of the people who would use it, which is a bigger adoption gap than
+         any missing feature — an evaluator who cannot `dotnet add package` never reaches the API.
+
+         FREE, AND VERIFIED BEFORE BEING CLAIMED: three assemblies, 0 warnings, 2,053 tests passing,
+         with NO source changes. Nothing here needed net10. The two features that looked
+         version-sensitive are not — collection expressions are C# 12, and SearchValues.Create(string)
+         (ReadOnlyCommands.cs) is a net8 API; only its generic overloads are net9.
+
+         THE APP DOES NOT FOLLOW. cxagent ships as self-contained binaries nobody references, so
+         multi-targeting it would triple six platform builds in the release workflow to serve nobody.
+
+         THIS IS NOW A PROMISE. Adopting a net9+ API later means dropping net8, which consumers
+         experience as a breaking change — and any future PackageReference must be checked for net8
+         support before it is added. Doing it now, while no code needs anything newer, is what makes
+         it cost nothing. -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>CxAgent.Core</RootNamespace>
