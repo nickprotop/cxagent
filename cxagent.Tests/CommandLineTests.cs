@@ -245,4 +245,52 @@ public class CommandLineTests
         Assert.Equal(AgentMode.Single, options.Mode);
         Assert.Null(options.Error);
     }
+
+    // --- --config-dir -------------------------------------------------------------------
+
+    [Fact]
+    public void ConfigDirTakesTheNextArgument()
+        => Assert.Equal("/tmp/scratch", CommandLine.Parse(["--config-dir", "/tmp/scratch"]).ConfigDir);
+
+    [Fact]
+    public void ConfigDirIsNullByDefault()
+    {
+        // NULL FALLS THROUGH to AppPaths' own resolution — XDG_CONFIG_HOME, then the platform
+        // location. The flag must not change where cxagent looks when nobody passed it.
+        Assert.Null(CommandLine.Parse([]).ConfigDir);
+    }
+
+    [Fact]
+    public void ConfigDirWithoutAPathIsAnError()
+    {
+        // A BARE --config-dir MUST NOT SILENTLY MEAN "DEFAULT". Someone who typed the flag and
+        // forgot the path wants to know, not to have their real config quietly used instead — this
+        // flag exists precisely to keep a test run away from it.
+        Assert.Contains("needs a directory", CommandLine.Parse(["--config-dir"]).Error ?? "");
+    }
+
+    [Fact]
+    public void ConfigDirDoesNotSwallowTheNextFlag()
+    {
+        var options = CommandLine.Parse(["--config-dir", "--mock"]);
+
+        Assert.Contains("needs a directory", options.Error ?? "");
+    }
+
+    [Fact]
+    public void ConfigDirComposesWithOtherFlags()
+    {
+        var options = CommandLine.Parse(["--config-dir", "/tmp/x", "--mock", "--mode", "single"]);
+
+        Assert.Equal("/tmp/x", options.ConfigDir);
+        Assert.True(options.UseMock);
+        Assert.Equal(AgentMode.Single, options.Mode);
+    }
+
+    [Fact]
+    public void TheUnknownArgumentMessageListsIt()
+    {
+        // The message is the only discovery path — there is no --help.
+        Assert.Contains("--config-dir", CommandLine.Parse(["--bogus"]).Error ?? "");
+    }
 }

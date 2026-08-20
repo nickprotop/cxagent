@@ -135,7 +135,10 @@ public static class AppBootstrap
         // A WORKING MODE, not a bare AgentMode: the edits axis joins it below when a resumed session
         // carries one. The implicit widening keeps --mode meaning exactly what it did.
         WorkingMode startupMode = options.Mode;
-        var paths = new AppPaths();
+        // --config-dir OVERRIDES EVERYTHING, including XDG_CONFIG_HOME, because it is the more
+        // specific instruction: someone who typed a path on the command line means that path.
+        // Null falls through to AppPaths' own resolution, so the default is untouched.
+        var paths = new AppPaths(options.ConfigDir);
         paths.EnsureCreated();
 
         // --sessions PRINTS AND EXITS, before anything builds a window or resolves a provider.

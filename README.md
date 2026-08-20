@@ -252,6 +252,28 @@ absence means.
 
 **[ROADMAP.md](ROADMAP.md)** is what is built, what is next, and what was tried and removed.
 
+### Command line
+
+```
+cxagent                          # start in the current folder
+cxagent --resume [<id>]          # continue the most recent session here, or one by id
+cxagent --sessions [all]         # list earlier sessions and exit
+cxagent --model <instance>       # open on a specific entry from `providers`
+cxagent --mode <single|fan-out>  # start in that mode
+cxagent --config-dir <dir>       # use this directory instead of the usual one
+cxagent --mock                   # a fake provider, to try the UI
+cxagent --version
+```
+
+**`--config-dir`** points cxagent at a different config directory — the one holding `config.json`,
+the session database and the logs. The path is used AS the directory, with no `cxagent` folder
+appended, unlike `XDG_CONFIG_HOME`. It is the quickest way to try something against a clean setup
+without touching your own:
+
+```bash
+cxagent --config-dir /tmp/scratch
+```
+
 ## Keys
 
 | Key | Action |

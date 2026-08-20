@@ -40,7 +40,8 @@ public readonly record struct CommandLineOptions(
     string? Instance = null,
     bool ListSessions = false,
     ResumeRequest Resume = default,
-    bool ListAllSessions = false);
+    bool ListAllSessions = false,
+    string? ConfigDir = null);
 
 /// <summary>Which session <c>--resume</c> asked for, if any.</summary>
 /// <param name="Wanted">Was <c>--resume</c> given at all?</param>
@@ -82,6 +83,7 @@ public static class CommandLine
         var listAll = false;
         var showVersion = false;
         string? instance = null;
+        string? configDir = null;
         var resume = ResumeRequest.No;
 
         for (var i = 0; i < args.Length; i++)
@@ -113,6 +115,21 @@ public static class CommandLine
                 instance = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
                 if (string.IsNullOrWhiteSpace(instance))
                     return new(useMock, mode, "--model needs an instance name from `providers`.");
+                continue;
+            }
+
+            // --config-dir, NOT --config: it takes a DIRECTORY, and config.json is only one of the
+            // things in it — the resume database, the usage archive and the logs live there too.
+            //
+            // XDG_CONFIG_HOME ALREADY DID THIS, and still does. The flag exists because an env var
+            // is awkward to type, invisible in a bug report, and does not survive being pasted into
+            // an issue — while "run it against an empty config dir" is the first thing to ask
+            // someone reporting first-run behaviour.
+            if (string.Equals(arg, "--config-dir", StringComparison.Ordinal))
+            {
+                configDir = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
+                if (string.IsNullOrWhiteSpace(configDir))
+                    return new(useMock, mode, "--config-dir needs a directory path.");
                 continue;
             }
 
@@ -175,7 +192,7 @@ public static class CommandLine
                 value = i + 1 < args.Length ? args[++i] : null;
             else
                 return new(useMock, mode,
-                    $"unknown argument '{arg}'. Valid: --version, --mock, "
+                    $"unknown argument '{arg}'. Valid: --version, --mock, --config-dir <dir>, "
                     + $"--mode <{AgentModes.Valid}>, --model <instance>, --sessions, "
                     + "--resume [<id>].");
 
@@ -196,6 +213,6 @@ public static class CommandLine
             return new(useMock, mode,
                 "--sessions prints the list and exits, so it cannot be combined with --resume.");
 
-        return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll);
+        return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll, configDir);
     }
 }
