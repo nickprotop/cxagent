@@ -4,7 +4,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![NuGet](https://img.shields.io/nuget/v/cxagent.svg?label=dotnet%20tool)](https://www.nuget.org/packages/cxagent)
-[![NuGet](https://img.shields.io/nuget/v/CxAgent.Core.svg?label=CxAgent.Core)](https://www.nuget.org/packages/CxAgent.Core)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20|%20macOS%20|%20Windows-orange.svg)]()
 
