@@ -192,9 +192,19 @@ jobs:
       - name: Test
         run: dotnet test cxagent.Tests/cxagent.Tests.csproj --configuration Release
 
+      # TWO PACKAGES, ONE JOB. CxAgent.Core is the library; cxagent is the same app the binaries
+      # above carry, packaged as `dotnet tool install -g cxagent` for developers who already have
+      # the SDK. They share this job because they share a version, a tag and one trusted-publishing
+      # identity — a second job would be a second place for those to drift apart.
       - name: Pack
         run: |
           dotnet pack cxagent.Core/cxagent.Core.csproj \
+            --configuration Release \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -p:ContinuousIntegrationBuild=true \
+            --output ./nupkg
+
+          dotnet pack cxagent/cxagent.csproj \
             --configuration Release \
             -p:Version=${{ steps.version.outputs.VERSION }} \
             -p:ContinuousIntegrationBuild=true \
@@ -207,8 +217,10 @@ jobs:
 
       # ONE-TIME SETUP ON NUGET.ORG, and this job fails until it is done:
       #   1. nuget.org → account → Trusted Publishing → add a policy for
-      #      owner `nickprotop`, package `CxAgent.Core`, repository `nickprotop/cxagent`,
-      #      workflow `release.yml`.
+      #      owner `nickprotop`, repository `nickprotop/cxagent`, workflow `release.yml`.
+      #      A POLICY IS PER-PACKAGE, so this job needs TWO: one for `CxAgent.Core` and one for
+      #      `cxagent` (the dotnet tool). A missing policy fails the push for that package alone,
+      #      after the other has already landed — which --skip-duplicate then makes safe to re-run.
       #   2. `gh variable set NUGET_USER --repo nickprotop/cxagent --body "<nuget.org user>"`
       #      (done: nickprotop). gh can set the variable; it cannot create the policy in step 1,
       #      which lives on nuget.org and has no CLI.
@@ -222,6 +234,8 @@ jobs:
         with:
           user: ${{ vars.NUGET_USER }}
 
+      # THE GLOB COVERS BOTH PACKAGES. --skip-duplicate makes a re-run after a partial failure safe:
+      # whichever package already landed is skipped rather than failing the job.
       - name: Push
         run: |
           dotnet nuget push ./nupkg/*.nupkg \

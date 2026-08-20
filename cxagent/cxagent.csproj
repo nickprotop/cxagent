@@ -9,6 +9,48 @@
     <AssemblyName>cxagent</AssemblyName>
   </PropertyGroup>
 
+  <!-- ALSO A DOTNET TOOL: `dotnet tool install -g cxagent`.
+
+       WHY THIS CHANNEL FIRST of the ones left: the audience is .NET developers who already have the
+       SDK, so this is the install they look for before any script — and it costs no new credential
+       and no new registry account, riding the trusted-publishing job that already ships
+       CxAgent.Core.
+
+       NOT A REPLACEMENT FOR THE BINARIES. A tool package is framework-dependent: it needs a net10
+       runtime present, where the release binaries carry their own. The GitHub release stays the
+       answer for anyone without the SDK, and install.sh keeps pointing there. -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>cxagent</ToolCommandName>
+    <PackageId>cxagent</PackageId>
+
+    <!-- A LOCAL-BUILD PLACEHOLDER, like CxAgent.Core's. The release workflow passes -p:Version from
+         the git tag, so what ships is always the tag; 0.0.0 stays deliberately implausible so a
+         local `dotnet pack` can never be mistaken for a real version. -->
+    <Version>0.0.0</Version>
+    <Authors>Nikolaos Protopapas</Authors>
+    <Company>Nikolaos Protopapas</Company>
+    <Copyright>Copyright (c) 2026 Nikolaos Protopapas</Copyright>
+    <Title>cxagent — a coding agent for the terminal</Title>
+    <Description>A coding agent that works in your checkout: sub-agent delegation, a permission gate on every tool call, MCP servers, and resumable sessions. Bring your own model — Anthropic, OpenAI-compatible or Ollama.</Description>
+    <PackageTags>ai;agent;llm;coding-agent;cli;dotnet-tool;mcp;tui</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/nickprotop/cxagent</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nickprotop/cxagent.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+    <IncludeSymbols>false</IncludeSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE ROOT README, which is the app's own documentation — install, commands, configuration.
+         CxAgent.Core packs its own; this is the other half of the story. -->
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
   <!-- Local dev: use ConsoleEx project reference when available as sibling repo -->
   <ItemGroup Condition="Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
     <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />

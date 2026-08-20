@@ -59,7 +59,21 @@ cxagent
 irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
 ```
 
-**Option 2: Build from source** (requires .NET 10 SDK)
+**Option 2: As a .NET tool** (requires the .NET 10 SDK or runtime)
+```bash
+dotnet tool install -g cxagent
+cxagent
+```
+
+Updates with `dotnet tool update -g cxagent`. Unlike the binaries above this one is
+framework-dependent — it uses the .NET you already have rather than carrying its own.
+
+**Option 3: Arch Linux** ([AUR](https://aur.archlinux.org/packages/cxagent-bin))
+```bash
+yay -S cxagent-bin
+```
+
+**Option 4: Build from source** (requires .NET 10 SDK)
 ```bash
 git clone https://github.com/nickprotop/cxagent.git
 cd cxagent
