@@ -303,7 +303,14 @@ public sealed class PermissionDecider : IPermissionGate
             // a path is "inside the working directory" depends on WHOSE working directory, and
             // offering to trust a folder on the strength of another session's root would offer the
             // wrong promise.
+            // NOT WHEN THE FOLDER IS ALREADY TRUSTED, which is the case that made the button a lie.
+            // Reported from a live run: the user had trusted the folder at startup, auto mode's
+            // classifier then said ask on a write inside it, and the prompt still offered "Trust
+            // this folder" — pressing it would have re-stored trust they already had and changed
+            // nothing, because trust was never what refused. The heading already says
+            // "auto review said ask?"; the button contradicted it.
             var offerTrust = (request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite)
+                && !request.Policy!.FolderTrusted
                 && request.Policy!.IsInBoundary(request.Display);
 
             // `ct` is handed straight to the prompt hook rather than raced against it with a

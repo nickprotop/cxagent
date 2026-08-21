@@ -219,6 +219,35 @@ public class PermissionDeciderTests
     }
 
     [Fact]
+    public async Task ATrustedFolder_IsNotOfferedTrustAgain()
+    {
+        // REPORTED FROM A LIVE RUN. The user trusted the folder at startup; auto mode's classifier
+        // then said ask on a write inside it, and the prompt still offered "Trust this folder".
+        // Pressing it would have re-stored trust they already had and changed nothing — trust was
+        // never what refused. The heading said "auto review said ask?" and the button contradicted
+        // it.
+        //
+        // AcceptEdits RATHER THAN Auto, deliberately: this pins the offerTrust CONDITION, and
+        // reaching the prompt in Auto would need a live classifier. What the user saw needed both
+        // halves; what was wrong is only this one.
+        var root = MakeTempDir();
+        var cfgDir = MakeTempDir();
+        var store = new PermissionRulesStore(new AppPaths(cfgDir));
+        store.SetTrust(root, TrustState.Trusted);
+
+        var gate = GateWithScriptedPrompt(out var script, store, root, EditMode.AlwaysAsk);
+
+        var pending = gate.RequestAsync(FileWrite(Path.Combine(root, "a.txt")), CancellationToken.None);
+        for (var i = 0; i < 100 && script.ShownCount == 0; i++) await Task.Delay(5);
+
+        Assert.Equal(1, script.ShownCount);
+        Assert.False(script.LastOfferTrust);   // already trusted → the button would be a no-op
+
+        script.Answer(PermissionChoice.Once);
+        Assert.True(await pending);
+    }
+
+    [Fact]
     public async Task AnInBoundaryFileWrite_InAnUntrustedScope_Prompts_AndTrustFolderAllowsItAndPersists()
     {
         var root = MakeTempDir();
