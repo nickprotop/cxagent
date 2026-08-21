@@ -54,7 +54,7 @@ public class AutoModeVisibilityTests : IDisposable
     {
         var gate = AutoGate("ALLOW", out var log);
 
-        Assert.True(await gate.RequestAsync(Request(), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(Request(), CancellationToken.None)).Allowed);
         Assert.Contains(log, d => d.Decision == "auto-allowed");
     }
 

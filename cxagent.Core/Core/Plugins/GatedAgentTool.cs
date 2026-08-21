@@ -75,10 +75,10 @@ public sealed class GatedAgentTool : IAgentTool
                 AlwaysRule: $"tool {_inner.Definition.Name}");
 
             context.ReportPermissionWait(true);
-            bool admitted;
+            PermissionOutcome outcome;
             try
             {
-                admitted = await _gate.RequestAsync(
+                outcome = await _gate.RequestAsync(
                     admission with { Requester = context.Requester, Policy = _policy }, ct);
             }
             finally
@@ -86,14 +86,13 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
-            if (!admitted)
+            if (!outcome.Allowed)
                 return new JobResult
                 {
                     Success = false,
                     ExitCode = -1,
                     PermissionDenied = true,
-                    ErrorMessage = $"permission denied by the user: {admission.Display}. "
-                        + "Do not retry this operation or plan it again unless the user explicitly asks.",
+                    ErrorMessage = DenialMessage.For(outcome, admission.Display),
                 };
         }
 
@@ -111,10 +110,10 @@ public sealed class GatedAgentTool : IAgentTool
             // this a parked job reads as a working one. In a finally because a request cancelled
             // while queued never returns here.
             context.ReportPermissionWait(true);
-            bool allowed;
+            PermissionOutcome outcome;
             try
             {
-                allowed = await _gate.RequestAsync(
+                outcome = await _gate.RequestAsync(
                     request with { Requester = context.Requester, Policy = _policy }, ct);
             }
             finally
@@ -122,7 +121,7 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
-            if (!allowed)
+            if (!outcome.Allowed)
             {
                 return new JobResult
                 {
@@ -133,8 +132,7 @@ public sealed class GatedAgentTool : IAgentTool
                     // automatic diagnosis — a paid diagnosis round cannot repair a user's decision,
                     // and without the flag every refusal bills the user for diagnosing their own no.
                     PermissionDenied = true,
-                    ErrorMessage = $"permission denied by the user: {request.Display}. "
-                        + "Do not retry this operation or plan it again unless the user explicitly asks.",
+                    ErrorMessage = DenialMessage.For(outcome, request.Display),
                 };
             }
         }

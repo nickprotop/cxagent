@@ -52,10 +52,10 @@ public class GatedAgentToolTests
         public RecordingGate(bool allow) => _allow = allow;
         public List<PermissionRequest> Seen { get; } = [];
 
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
             Seen.Add(request);
-            return Task.FromResult(_allow);
+            return Task.FromResult(_allow ? PermissionOutcome.Allow : PermissionOutcome.ByUser);
         }
     }
 
@@ -66,10 +66,10 @@ public class GatedAgentToolTests
         public CountingGate(bool allow) => _allow = allow;
         public int Asked { get; private set; }
 
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
             Asked++;
-            return Task.FromResult(_allow);
+            return Task.FromResult(_allow ? PermissionOutcome.Allow : PermissionOutcome.ByUser);
         }
     }
 
@@ -100,8 +100,8 @@ public class GatedAgentToolTests
     {
         // REPORTED FROM A DRIVE: the user pressed "Allow once" and the tool then ran on three more
         // files without asking again. The first version cached a bool after the first yes, which is
-        // "remember" implemented on a signal that cannot tell once from always —
-        // IPermissionGate.RequestAsync returns a BARE BOOL, and both answers return true.
+        // "remember" implemented on a signal that cannot tell once from always — the outcome's
+        // Allowed is true either way, and nothing about the return type tells them apart.
         //
         // So the gate is asked every call. That is not a second prompt for the user: "Always" writes
         // a rule and PermissionPolicy.IsSilentlyAllowed matches it before the prompt is ever built,

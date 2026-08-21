@@ -259,10 +259,13 @@ public class McpToolsetTests
     {
         public List<CxAgent.Core.Permissions.PermissionRequest> Asked { get; } = [];
 
-        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
+        public Task<CxAgent.Core.Permissions.PermissionOutcome> RequestAsync(
+            CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
         {
             Asked.Add(request);
-            return Task.FromResult(allow);
+            return Task.FromResult(allow
+                ? CxAgent.Core.Permissions.PermissionOutcome.Allow
+                : CxAgent.Core.Permissions.PermissionOutcome.ByUser);
         }
     }
 

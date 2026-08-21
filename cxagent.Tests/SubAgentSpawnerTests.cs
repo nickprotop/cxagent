@@ -659,8 +659,9 @@ public class SubAgentSpawnerTests
     /// <summary>Answers no, so the wait ends through the denial path rather than the happy one.</summary>
     private sealed class DenyingGate : CxAgent.Core.Permissions.IPermissionGate
     {
-        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request,
-            CancellationToken ct) => Task.FromResult(false);
+        public Task<CxAgent.Core.Permissions.PermissionOutcome> RequestAsync(
+            CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct) =>
+            Task.FromResult(CxAgent.Core.Permissions.PermissionOutcome.ByUser);
     }
 
     // ---- the cap, and the bound that matters more ----------------------------------------------
@@ -1389,10 +1390,11 @@ public class SubAgentSpawnerTests
     {
         public List<CxAgent.Core.Permissions.PermissionRequest> Seen { get; } = [];
 
-        public Task<bool> RequestAsync(CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
+        public Task<CxAgent.Core.Permissions.PermissionOutcome> RequestAsync(
+            CxAgent.Core.Permissions.PermissionRequest request, CancellationToken ct)
         {
             Seen.Add(request);
-            return Task.FromResult(true);
+            return Task.FromResult(CxAgent.Core.Permissions.PermissionOutcome.Allow);
         }
     }
 

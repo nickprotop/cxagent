@@ -290,7 +290,7 @@ public class CancelWhileWaitingTests
 
         var completed = await Task.WhenAny(pending, Task.Delay(TimeSpan.FromSeconds(5)));
         Assert.Same(pending, completed);   // it resolved rather than wedging
-        Assert.False(await pending);       // and resolved as a refusal, never a silent allow
+        Assert.False((await pending).Allowed);       // and resolved as a refusal, never a silent allow
     }
 }
 

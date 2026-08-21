@@ -116,11 +116,11 @@ public class PermissionDeciderTests
 
         Assert.Equal(1, script.ShownCount);        // second is queued, not overlaid
         script.Answer(PermissionChoice.Once);
-        Assert.True(await first);
+        Assert.True((await first).Allowed);
 
         for (var i = 0; i < 100 && script.ShownCount == 1; i++) await Task.Delay(5);
         script.Answer(PermissionChoice.Deny);
-        Assert.False(await second);
+        Assert.False((await second).Allowed);
         Assert.Equal(2, script.ShownCount);
     }
 
@@ -131,7 +131,7 @@ public class PermissionDeciderTests
         var gate = GateWithScriptedPrompt(out var script);
         var pending = gate.RequestAsync(Shell("slow"), cts.Token);
         cts.Cancel();
-        Assert.False(await pending);               // resolves; the goal is not wedged forever
+        Assert.False((await pending).Allowed);               // resolves; the goal is not wedged forever
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public class PermissionDeciderTests
 
         cts.Cancel();
 
-        Assert.False(await pending);               // resolves Deny...
+        Assert.False((await pending).Allowed);               // resolves Deny...
         Assert.Equal(1, script.RestoredCount);      // ...AND the prompt was actually torn down
     }
 
@@ -169,7 +169,7 @@ public class PermissionDeciderTests
         for (var i = 0; i < 100 && script.ShownCount == 0; i++) await Task.Delay(5);
 
         cts.Cancel();
-        Assert.False(await pending);
+        Assert.False((await pending).Allowed);
         Assert.Equal(1, script.RestoredCount);
 
         // The "late click": Answer resolves the SAME underlying TCS the cancellation already
@@ -196,10 +196,10 @@ public class PermissionDeciderTests
         var first = gate.RequestAsync(Shell("git status"), CancellationToken.None);
         for (var i = 0; i < 100 && script.ShownCount == 0; i++) await Task.Delay(5);
         script.Answer(PermissionChoice.Always);
-        Assert.True(await first);
+        Assert.True((await first).Allowed);
 
         var freshGate = GateWithScriptedPrompt(out var script2, new PermissionRulesStore(cfg), workingDir);
-        Assert.True(await freshGate.RequestAsync(Shell("git status"), CancellationToken.None));
+        Assert.True((await freshGate.RequestAsync(Shell("git status"), CancellationToken.None)).Allowed);
         Assert.Equal(0, script2.ShownCount);       // silent — the rule survived the "restart"
     }
 
@@ -214,7 +214,7 @@ public class PermissionDeciderTests
         rules.SetTrust(root, TrustState.Trusted);
         var gate = GateWithScriptedPrompt(out var script, rules, root, EditMode.AcceptEdits);
 
-        Assert.True(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.txt")), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.txt")), CancellationToken.None)).Allowed);
         Assert.Equal(0, script.ShownCount);
     }
 
@@ -244,7 +244,7 @@ public class PermissionDeciderTests
         Assert.False(script.LastOfferTrust);   // already trusted → the button would be a no-op
 
         script.Answer(PermissionChoice.Once);
-        Assert.True(await pending);
+        Assert.True((await pending).Allowed);
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public class PermissionDeciderTests
         Assert.True(script.LastOfferTrust);        // in-boundary + untrusted → offer the button
 
         script.Answer(PermissionChoice.TrustFolder);
-        Assert.True(await pending);
+        Assert.True((await pending).Allowed);
         Assert.Equal(TrustState.Trusted, store.GetTrust(root));
     }
 
@@ -289,7 +289,7 @@ public class PermissionDeciderTests
         var pending = gate.RequestAsync(req, CancellationToken.None);
         for (var i = 0; i < 100 && script.ShownCount == 0; i++) await Task.Delay(5);
         script.Answer(PermissionChoice.Always);
-        Assert.True(await pending);
+        Assert.True((await pending).Allowed);
 
         var expectedDir = Path.TrimEndingDirectorySeparator(workingDir) + Path.DirectorySeparatorChar;
         Assert.True(store.Matches(workingDir, PermissionKind.FileWrite, expectedDir));
@@ -301,7 +301,7 @@ public class PermissionDeciderTests
         var siblingReq = PermissionPolicy.RequestsFor("file",
                 new JobParameters(new Dictionary<string, object?> { ["action"] = "write", ["path"] = b }))
             .Single();
-        Assert.True(await freshGate.RequestAsync(siblingReq, CancellationToken.None));
+        Assert.True((await freshGate.RequestAsync(siblingReq, CancellationToken.None)).Allowed);
         Assert.Equal(0, script2.ShownCount);
     }
 
@@ -318,7 +318,7 @@ public class PermissionDeciderTests
         store.Add(dir, PermissionKind.Shell, "git status");
         var gate = GateWithScriptedPrompt(out var script, store, dir);
 
-        Assert.True(await gate.RequestAsync(Shell("git status"), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(Shell("git status"), CancellationToken.None)).Allowed);
         Assert.Equal(0, script.ShownCount);
     }
 

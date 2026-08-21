@@ -152,10 +152,11 @@ public class CodeConfiguredAppTests : IDisposable
     /// <summary>A gate that answers from a policy rather than a person.</summary>
     private sealed class RecordingGate(List<string> asked) : IPermissionGate
     {
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
             asked.Add(request.Display);
-            return Task.FromResult(request.Kind == PermissionKind.FileRead);
+            return Task.FromResult(request.Kind == PermissionKind.FileRead
+                ? PermissionOutcome.Allow : PermissionOutcome.ByUser);
         }
     }
 }

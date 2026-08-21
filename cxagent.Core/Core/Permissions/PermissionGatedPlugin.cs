@@ -61,10 +61,10 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             // as a working one — and with several up, the user cannot tell which row their answer
             // releases. In a finally because a cancelled-while-queued request never returns here.
             context.ReportPermissionWait(true);
-            bool allowed;
+            PermissionOutcome outcome;
             try
             {
-                allowed = await _gate.RequestAsync(
+                outcome = await _gate.RequestAsync(
                     request with { Requester = context.Requester, Policy = _policy }, ct);
             }
             finally
@@ -72,15 +72,14 @@ public sealed class PermissionGatedPlugin : IJobPlugin
                 context.ReportPermissionWait(false);
             }
 
-            if (!allowed)
+            if (!outcome.Allowed)
             {
                 return new JobResult
                 {
                     Success = false,
                     ExitCode = -1,
                     PermissionDenied = true,
-                    ErrorMessage = $"permission denied by the user: {request.Display}. "
-                        + "Do not retry this operation or plan it again unless the user explicitly asks.",
+                    ErrorMessage = DenialMessage.For(outcome, request.Display),
                 };
             }
         }

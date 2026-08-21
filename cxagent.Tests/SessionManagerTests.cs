@@ -194,9 +194,9 @@ public class SessionManagerTests : IDisposable
         var request = new Core.Permissions.PermissionRequest(
             Core.Permissions.PermissionKind.Shell, "rm -rf /", null) { Policy = policy };
 
-        var allowed = await manager.Shared.Gate!.RequestAsync(request, CancellationToken.None);
+        var outcome = await manager.Shared.Gate!.RequestAsync(request, CancellationToken.None);
 
-        Assert.False(allowed);
+        Assert.False(outcome.Allowed);
         Assert.Equal(1, asked);
     }
 }

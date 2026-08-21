@@ -141,9 +141,9 @@ public class HeadlessSessionTests : IDisposable
         var write = new PermissionRequest(
             PermissionKind.FileWrite, Path.Combine(_work, "notes.txt"), AlwaysRule: null);
 
-        var allowed = await manager.Shared.Gate!.RequestAsync(write, CancellationToken.None);
+        var outcome = await manager.Shared.Gate!.RequestAsync(write, CancellationToken.None);
 
-        Assert.False(allowed);
+        Assert.False(outcome.Allowed);
         Assert.Contains(refusals, r => r.Contains("notes.txt", StringComparison.Ordinal));
 
         // AND A READ IS ALLOWED BY THE SAME POLICY, so the gate is deciding rather than refusing
@@ -151,7 +151,7 @@ public class HeadlessSessionTests : IDisposable
         var read = new PermissionRequest(
             PermissionKind.FileRead, Path.Combine(_work, "notes.txt"), AlwaysRule: null);
 
-        Assert.True(await manager.Shared.Gate!.RequestAsync(read, CancellationToken.None));
+        Assert.True((await manager.Shared.Gate!.RequestAsync(read, CancellationToken.None)).Allowed);
 
         // AND A REAL TURN STILL COMPLETES. If anything waited on a person this would hang.
         await session.SendAndWait("hello");
@@ -235,12 +235,12 @@ public class HeadlessSessionTests : IDisposable
     /// </summary>
     private sealed class PolicyGate(List<string> refusals) : IPermissionGate
     {
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
-            if (request.Kind == PermissionKind.FileRead) return Task.FromResult(true);
+            if (request.Kind == PermissionKind.FileRead) return Task.FromResult(PermissionOutcome.Allow);
 
             refusals.Add($"{request.Kind}: {request.Display}");
-            return Task.FromResult(false);
+            return Task.FromResult(PermissionOutcome.ByUser);
         }
     }
 }

@@ -264,10 +264,10 @@ public class TwoSessionsTests : IDisposable
     private sealed class PolicySpy : IPermissionGate
     {
         public PermissionPolicy? Seen;
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
             Seen = request.Policy;
-            return Task.FromResult(true);
+            return Task.FromResult(PermissionOutcome.Allow);
         }
     }
 
@@ -281,10 +281,10 @@ public class TwoSessionsTests : IDisposable
     /// <summary>A gate that records what it was asked, standing in for the interactive one.</summary>
     private sealed class RecordingGate(List<string> asked) : IPermissionGate
     {
-        public Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
         {
             asked.Add(request.Display);
-            return Task.FromResult(true);
+            return Task.FromResult(PermissionOutcome.Allow);
         }
     }
 }

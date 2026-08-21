@@ -184,7 +184,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// cancelled-while-queued case. There are six returns inside; recording at each would leave the
     /// next one added silently unrecorded.
     /// </summary>
-    public async Task<bool> RequestAsync(PermissionRequest request, CancellationToken ct)
+    public async Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct)
     {
         // THE ASKING SESSION'S POLICY, not this gate's. One gate serves the process — stored rules
         // and the prompt queue have to be shared — but the policy behind it is per session: it holds
@@ -209,7 +209,12 @@ public sealed class PermissionDecider : IPermissionGate
             OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What));
             _notice?.Invoke("[yellow]refused: this request carried no session policy, so there "
                              + "was nothing to judge it against.[/]");
-            return false;
+            // NOBODY DECIDED THIS — there was no session to ask and no classifier consulted. Still
+            // reported as a user denial (DeniedBy left at its "user" default) because that is this
+            // gate's existing fail-closed vocabulary for "nothing else fits"; the alternative would
+            // invent a third DeniedBy value for a caller-programming-error path no production caller
+            // can actually reach.
+            return PermissionOutcome.ByUser;
         }
 
         // The silent path is reported separately: "allowed without asking" and "the user said yes"
@@ -218,7 +223,7 @@ public sealed class PermissionDecider : IPermissionGate
         if (policy.IsSilentlyAllowed(request))
         {
             OnDecision?.Invoke(new(request.Kind, "silent", request.Requester, request.What));
-            return true;
+            return PermissionOutcome.Allow;
         }
 
         // AUTO MODE'S SECOND OPINION, consulted only for what would otherwise prompt — never to
@@ -255,7 +260,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // trusted write, and a reader deciding whether auto is worth its latency needs the
                 // count.
                 OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What));
-                return true;
+                return PermissionOutcome.Allow;
             }
 
             // AND A DENY REFUSES OUTRIGHT, under the same effect and for the symmetric reason. If a
@@ -271,7 +276,11 @@ public sealed class PermissionDecider : IPermissionGate
             {
                 OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What));
                 request = request with { DeniedByClassifier = true, ClassifierReason = decision.Reason };
-                return false;
+                // THE REASON RIDES THE OUTCOME NOW, not only the request field above. That field
+                // still exists for the prompt-heading work (Task 8+); this is the return the MODEL
+                // actually reads, and it is the one place DenialMessage can tell an auto-denial from
+                // a human one.
+                return PermissionOutcome.ByClassifier(decision.Reason);
             }
 
             // EVERYTHING ELSE PROMPTS, and that is every failure too: a timeout, a transport error,
@@ -312,7 +321,11 @@ public sealed class PermissionDecider : IPermissionGate
         {
             var granted = await DecideAsync(request, ct);
             OnDecision?.Invoke(new(request.Kind, granted ? "allowed" : "denied", request.Requester, request.What));
-            return granted;
+            // A HUMAN ANSWERED HERE, always — DecideAsync is only reached once the silent path,
+            // auto-allow and auto-deny have all fallen through, so every bool it returns is either
+            // the user's own click (Once/Always/TrustFolder/Deny) or a cancellation the gate treats
+            // the same as one. ByUser/Allow are correct labels for both, unlike the fallback above.
+            return granted ? PermissionOutcome.Allow : PermissionOutcome.ByUser;
         }
         finally
         {

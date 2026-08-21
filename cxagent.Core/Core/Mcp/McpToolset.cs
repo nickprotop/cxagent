@@ -186,12 +186,12 @@ public sealed class McpToolset
             Policy = policy,
         };
 
-        if (!await _gate.RequestAsync(request, ct))
+        var outcome = await _gate.RequestAsync(request, ct);
+        if (!outcome.Allowed)
             // The same shape as a denied built-in: a refusal the MODEL reads, not an exception, and
             // one that tells it not to try again. Retrying a denial burns turns against the cap and
             // re-prompts the user for something they already said no to.
-            return $"permission denied by the user: {request.Display}. "
-                 + "Do not retry this operation or plan it again unless the user explicitly asks.";
+            return Permissions.DenialMessage.For(outcome, request.Display);
 
         // THE SERVER'S OWN NAME, not the composed one. The prefix is ours, and a server asked to run
         // "files_read" would rightly say it has no such tool.

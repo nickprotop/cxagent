@@ -223,7 +223,7 @@ public class ReviewEffectTests
         var rules = EmptyRules();
         var gate = AutoGate(root, rules, "ALLOW: ordinary source edit", out var script);
 
-        Assert.True(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(0, script.ShownCount);
     }
 
@@ -241,7 +241,7 @@ public class ReviewEffectTests
         var request = new PermissionRequest(PermissionKind.Http, "POST https://x.dev/a", "https://x.dev");
         script.AnswerWith(PermissionChoice.Deny);
 
-        Assert.False(await gate.RequestAsync(request, CancellationToken.None));
+        Assert.False((await gate.RequestAsync(request, CancellationToken.None)).Allowed);
         Assert.Equal(1, script.ShownCount);
     }
 
@@ -252,7 +252,7 @@ public class ReviewEffectTests
         var rules = EmptyRules();
         var gate = AutoGate(root, rules, "DENY: rewrites the build script", out var script);
 
-        Assert.False(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None));
+        Assert.False((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(0, script.ShownCount);
     }
 
@@ -269,7 +269,7 @@ public class ReviewEffectTests
 
         var request = new PermissionRequest(PermissionKind.Http, "POST https://x.dev/a", "https://x.dev");
 
-        Assert.True(await gate.RequestAsync(request, CancellationToken.None));
+        Assert.True((await gate.RequestAsync(request, CancellationToken.None)).Allowed);
         Assert.Equal(1, script.ShownCount);
     }
 
@@ -288,7 +288,7 @@ public class ReviewEffectTests
         gate.Classifier = new ActionClassifier(provider);
         script.AnswerWith(PermissionChoice.Deny);
 
-        Assert.False(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None));
+        Assert.False((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(0, provider.Calls);
         Assert.Equal(1, script.ShownCount);
     }
@@ -304,7 +304,7 @@ public class ReviewEffectTests
         var gate = AutoGate(root, rules, "ASK: I cannot tell what this file does", out var script);
         script.AnswerWith(PermissionChoice.Once);
 
-        Assert.True(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(1, script.ShownCount);
         Assert.True(script.LastRequest!.RefusedByClassifier);
         Assert.Equal("I cannot tell what this file does", script.LastRequest.ClassifierReason);
@@ -326,7 +326,7 @@ public class ReviewEffectTests
         gate.Classifier = new ActionClassifier(new ThrowingProvider(new InvalidOperationException("endpoint down")));
         script.AnswerWith(PermissionChoice.Once);
 
-        Assert.True(await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None));
+        Assert.True((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(1, script.ShownCount);
         Assert.Contains(notices, n => n.Contains("auto review unavailable"));
     }
