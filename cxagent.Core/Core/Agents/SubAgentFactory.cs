@@ -148,6 +148,15 @@ public sealed class SubAgentFactory
         public Core.Mcp.McpToolset? Mcp { get; init; }
 
         /// <summary>
+        /// The session's permission policy, inherited by every child so its MCP calls can be judged.
+        ///
+        /// <para>A child using an MCP tool is the common case — an explore agent calling a docs
+        /// server — and without this the gate refuses it for want of a policy, exactly as it did for
+        /// the parent. See AgentHost.AgentRuntime.Policy.</para>
+        /// </summary>
+        public Permissions.PermissionPolicy? Policy { get; init; }
+
+        /// <summary>
         /// A CHILD WORKS WHERE ITS PARENT DOES. Inherited rather than read from the process, so a
         /// session's children stay in that session's folder even when another session runs elsewhere.
         /// </summary>
@@ -324,7 +333,8 @@ public sealed class SubAgentFactory
             // The type's terms go LAST so a `+` in it can reopen what a narrower session closed;
             // composing onto a resolved set instead would make S4 narrowing-only, silently.
             toolSelection: Plugins.ToolSelection.Then(
-                Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools));
+                Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
+            policy: _runtime.Policy);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //

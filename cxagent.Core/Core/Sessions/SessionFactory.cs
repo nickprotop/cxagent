@@ -141,6 +141,10 @@ internal static class SessionFactory
             GlobalInstructionsDir = shared.GlobalInstructionsDir,
             Mcp = shared.Mcp,
 
+            // THE SAME POLICY THE PARENT GETS. A child calling an MCP tool is the common case, and
+            // without this the gate refuses it for want of a policy.
+            Policy = ports.Policy,
+
             // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
             // has a different window, so the threshold must be re-derived from it — and a second
             // copy of "80% of the window" in the factory would desynchronise the moment either
@@ -190,6 +194,11 @@ internal static class SessionFactory
                 // those over would let an F5 re-wire dispose them, killing every server on a
                 // provider change and leaving the new host with a toolset over dead pipes.
                 Mcp = shared.Mcp,
+
+                // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
+                // instead of going through PermissionGatedPlugin, so without this the gate refuses
+                // every MCP call for want of a policy.
+                Policy = ports.Policy,
 
                 Spawner = subAgents,
                 Mode = mode,

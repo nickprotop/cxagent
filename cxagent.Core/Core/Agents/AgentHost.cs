@@ -353,6 +353,19 @@ public sealed class AgentHost : IDisposable
 
         public Core.Mcp.McpToolset? Mcp { get; init; }
 
+        /// <summary>
+        /// The session's permission policy, carried so MCP calls can be judged.
+        ///
+        /// <para>THE TOOLSET CANNOT HOLD IT. An McpToolset is manager-level — one per process,
+        /// shared by every session — while a policy is per-session, so a field there would judge one
+        /// session's call by another session's rules. It travels with the CALL instead, the same way
+        /// Requester does.</para>
+        ///
+        /// <para>NULL IS REFUSED BY THE GATE, which is what shipped: nothing passed a policy, so
+        /// every MCP call was denied with "this request carried no session policy".</para>
+        /// </summary>
+        public Permissions.PermissionPolicy? Policy { get; init; }
+
         /// <summary>The servers themselves, held only so the session can dispose them.</summary>
         public IReadOnlyList<IAsyncDisposable>? McpServers { get; init; }
 
@@ -581,7 +594,8 @@ public sealed class AgentHost : IDisposable
             // THE EMBEDDER'S OWN, gated before they got here. Offered to this agent and, through
             // SubAgentRuntime, to every child it spawns.
             agentTools: _runtime.AgentTools,
-            toolSelection: _runtime.ToolSelection)
+            toolSelection: _runtime.ToolSelection,
+            policy: _runtime.Policy)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more

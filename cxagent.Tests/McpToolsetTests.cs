@@ -1,5 +1,7 @@
 using System.Text.Json;
 using CxAgent.Core.Mcp;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Storage;
 using CxAgent.Core.Models;
 using Xunit;
 
@@ -379,5 +381,31 @@ public class McpToolsetTests
         var only = Assert.Single(toolset.InstructionsByServer());
         Assert.Equal("db", only.Key);
         Assert.Equal("Call list_tables first.", only.Value);
+    }
+
+    [Fact]
+    public async Task AnMcpCall_ThroughTheREALGate_IsNotRefusedForWantOfAPolicy()
+    {
+        // REPRODUCTION. Every other test here uses RecordingGate, which allows unconditionally and
+        // never looks at Policy — so nothing exercised PermissionDecider, where the check lives.
+        var dir = Directory.CreateTempSubdirectory("mcppol").FullName;
+        var rules = new PermissionRulesStore(new AppPaths(dir));
+        // WithPrompt, NOT ForTesting: ForTesting sets StampForTesting, which patches the missing
+        // policy and hides the exact production defect this test is for.
+        var notices = new List<string>();
+        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+            (_, _, _) => Task.FromResult(PermissionChoice.Once));
+
+        var toolset = new McpToolset([new FakeServer("ctx", Tool("query"))], gate);
+
+        var result = await toolset.TryInvokeAsync(
+            new ToolCall { Name = "ctx_query", Arguments = JsonDocument.Parse("{}").RootElement.Clone() },
+            CancellationToken.None,
+            requester: null,
+            policy: new PermissionPolicy(dir, rules, EditMode.AcceptEdits));
+
+        // THE PROMPT HOOK SAID YES, so the only thing that can deny is the missing policy.
+        Assert.DoesNotContain(notices, n => n.Contains("carried no session policy"));
+        Assert.DoesNotContain("permission denied", result ?? "");
     }
 }

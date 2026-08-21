@@ -189,6 +189,7 @@ public sealed class Agent
     /// well as a parent: a sub-agent that cannot call show_diff would do the work and skip the
     /// showing, which is the one thing the tool exists for.</summary>
     private readonly Plugins.AgentToolset? _agentTools;
+    private readonly Permissions.PermissionPolicy? _policy;
 
     /// <summary>
     /// S1 and S2 composed, or null when neither expressed an opinion.
@@ -623,6 +624,10 @@ public sealed class Agent
     /// <param name="toolSelection">
     /// Which tools this agent is offered, or null for all of them. See <see cref="Plugins.ToolSelection"/>.
     /// </param>
+    /// <param name="policy">
+    /// The session's permission policy, passed to MCP calls. Null refuses every MCP call, which is
+    /// what shipped before this parameter existed.
+    /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -636,8 +641,13 @@ public sealed class Agent
         string? workingDir = null,
         string? instanceName = null,
         IReadOnlyList<Plugins.IAgentTool>? agentTools = null,
-        Plugins.ToolSelection? toolSelection = null)
+        Plugins.ToolSelection? toolSelection = null,
+        Permissions.PermissionPolicy? policy = null)
     {
+        // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
+        // PermissionGatedPlugin. Without it the gate refuses every MCP call for want of a policy —
+        // see McpToolset.TryInvokeAsync.
+        _policy = policy;
         // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
         //
         // Two `providers` entries can serve the SAME model against different endpoints with
@@ -1975,7 +1985,7 @@ public sealed class Agent
                 ?? (_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
-                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel))
+                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. WorkerToolset.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.

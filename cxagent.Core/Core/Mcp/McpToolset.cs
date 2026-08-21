@@ -155,8 +155,18 @@ public sealed class McpToolset
     /// </param>
     /// <param name="call">The call the model issued; null is returned when no server owns the name.</param>
     /// <param name="ct">Cancels the call.</param>
+    /// <param name="policy">
+    /// THE ASKING SESSION'S POLICY, and it must arrive PER CALL rather than being held on this
+    /// object. A toolset is manager-level — one per process, shared by every session — while a policy
+    /// is per-session, so a field here would judge one session's call by another session's rules.
+    ///
+    /// <para>NULL IS REFUSED BY THE GATE, out loud: "this request carried no session policy". That is
+    /// what shipped — nothing passed one, so EVERY MCP call was denied. The tests missed it because
+    /// they use a gate that allows unconditionally and never reads Policy, and the one seam that
+    /// would have caught it, PermissionDecider.ForTesting, stamps the missing policy itself.</para>
+    /// </param>
     public async Task<string?> TryInvokeAsync(ToolCall call, CancellationToken ct,
-        string? requester = null)
+        string? requester = null, Permissions.PermissionPolicy? policy = null)
     {
         if (!_byName.TryGetValue(call.Name, out var found)) return null;
 
@@ -173,6 +183,7 @@ public sealed class McpToolset
             $"mcp:{call.Name}")
         {
             Requester = requester,
+            Policy = policy,
         };
 
         if (!await _gate.RequestAsync(request, ct))
