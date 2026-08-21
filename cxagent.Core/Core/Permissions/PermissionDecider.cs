@@ -4,6 +4,10 @@ using CxAgent.Core.Permissions;
 namespace CxAgent.Core.Permissions;
 
 
+/// <summary>One permission decision, as reported for telemetry.</summary>
+public sealed record PermissionDecisionReport(
+    PermissionKind Kind, string Decision, string? Requester, string? Subject);
+
 /// <summary>
 /// The real, interactive <see cref="IPermissionGate"/>: consults <see cref="PermissionPolicy"/>
 /// for the silent classes (in-boundary-and-trusted file ops, stored "Always" rules), and for
@@ -157,7 +161,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// writing rows: a permission gate that knows about a database is a permission gate that can fail
     /// for a reason unrelated to permission.</para>
     /// </summary>
-    public Action<PermissionKind, string, string?>? OnDecision { get; set; }
+    public Action<PermissionDecisionReport>? OnDecision { get; set; }
 
     /// <summary>
     /// Called when a request starts WAITING for the user, and again when it stops — true then false,
@@ -202,7 +206,7 @@ public sealed class PermissionDecider : IPermissionGate
 
         if (request.Policy is not { } policy)
         {
-            OnDecision?.Invoke(request.Kind, "denied", request.Requester);
+            OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What));
             _notice?.Invoke("[yellow]refused: this request carried no session policy, so there "
                              + "was nothing to judge it against.[/]");
             return false;
@@ -213,7 +217,7 @@ public sealed class PermissionDecider : IPermissionGate
         // session of decisions.
         if (policy.IsSilentlyAllowed(request))
         {
-            OnDecision?.Invoke(request.Kind, "silent", request.Requester);
+            OnDecision?.Invoke(new(request.Kind, "silent", request.Requester, request.What));
             return true;
         }
 
@@ -235,7 +239,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // passed on the boundary alone. It is a real request to a real endpoint on every
                 // trusted write, and a reader deciding whether auto is worth its latency needs the
                 // count.
-                OnDecision?.Invoke(request.Kind, "auto-allowed", request.Requester);
+                OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What));
                 return true;
             }
 
@@ -243,7 +247,7 @@ public sealed class PermissionDecider : IPermissionGate
             // folder means the classifier said no and a prompt is about to appear — the single most
             // useful thing to be able to count, because it is the answer to "why did auto ask me
             // that?" and nothing recorded it.
-            OnDecision?.Invoke(request.Kind, "auto-refused", request.Requester);
+            OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What));
 
             // AND THE PROMPT IS TOLD WHY, so its heading names the classifier rather than blaming a
             // folder the user very likely trusts.
@@ -271,7 +275,7 @@ public sealed class PermissionDecider : IPermissionGate
         try
         {
             var granted = await DecideAsync(request, ct);
-            OnDecision?.Invoke(request.Kind, granted ? "allowed" : "denied", request.Requester);
+            OnDecision?.Invoke(new(request.Kind, granted ? "allowed" : "denied", request.Requester, request.What));
             return granted;
         }
         finally

@@ -43,7 +43,7 @@ public class AutoModeVisibilityTests : IDisposable
         var judge = new CxAgent.Core.Llm.MockLlmProvider();
         judge.EnqueueResponse(new CxAgent.Core.Llm.LlmResponse { Text = verdict });
         gate.Classifier = new ActionClassifier(judge);
-        gate.OnDecision = (kind, decision, _) => decisions.Add((kind, decision));
+        gate.OnDecision = report => decisions.Add((report.Kind, report.Decision));
         return gate;
     }
 

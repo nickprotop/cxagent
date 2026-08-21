@@ -83,9 +83,22 @@ public sealed record CompactionRecord(
     string? WorkingDir = null);
 
 /// <summary>One permission decision.</summary>
+/// <param name="AgentId">Which agent made the request.</param>
+/// <param name="At">When it was decided.</param>
+/// <param name="Kind">Which permission kind it was — Shell, FileRead, FileWrite, Http, Mcp, or Tool.</param>
+/// <param name="Decision">How it was resolved — allowed, denied, silent, auto-allowed, auto-refused.</param>
+/// <param name="Requester">Who asked, or null for the session's own agent.</param>
+/// <param name="WorkingDir">Which project the request was made in.</param>
+/// <param name="Subject">
+/// WHAT the decision was about — the command, the path, the origin. Null on rows written before
+/// this column existed, and on kinds whose subject is not worth storing.
+///
+/// <para>Capped at 500 characters. A permission row is a fact about a decision, not a copy of the
+/// action: an agent writing a 3,000-line file must not put the file in the history database.</para>
+/// </param>
 public sealed record PermissionRecord(
     string AgentId, DateTimeOffset At, string Kind, string Decision, string? Requester,
-    string? WorkingDir = null);
+    string? WorkingDir = null, string? Subject = null);
 
 /// <summary>
 /// Usage history: what this installation has actually done, kept across sessions.
@@ -216,6 +229,9 @@ public sealed class UsageHistoryStore
             AddColumnIfMissing(conn, "sessions", "cache_written_tokens", "INTEGER NOT NULL DEFAULT 0");
             // NULLABLE, because null means "not reported" and 0 would mean "free" — different facts.
             AddColumnIfMissing(conn, "sessions", "cost", "REAL");
+            // NULLABLE for the same reason: a row written before this column existed has no subject
+            // to report, and that must read back as "unknown", never as an empty string.
+            AddColumnIfMissing(conn, "permissions", "subject", "TEXT");
         }
         catch (Exception)
         {
@@ -387,8 +403,8 @@ public sealed class UsageHistoryStore
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                INSERT INTO permissions (agent_id, at, kind, decision, requester, working_dir)
-                VALUES ($agent, $at, $kind, $decision, $requester, $dir);
+                INSERT INTO permissions (agent_id, at, kind, decision, requester, working_dir, subject)
+                VALUES ($agent, $at, $kind, $decision, $requester, $dir, $subject);
                 """;
             cmd.Parameters.AddWithValue("$agent", r.AgentId);
             cmd.Parameters.AddWithValue("$at", Stamp(r.At));
@@ -396,6 +412,10 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$decision", r.Decision);
             cmd.Parameters.AddWithValue("$requester", (object?)r.Requester ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$dir", (object?)r.WorkingDir ?? DBNull.Value);
+            // CAPPED, NOT STORED WHOLE. A permission row is a fact about a decision, not a copy of
+            // the action — an agent writing a 3,000-line file must not put the file in this database.
+            cmd.Parameters.AddWithValue("$subject",
+                (object?)(r.Subject is { Length: > 500 } s ? s[..500] : r.Subject) ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception) { }
@@ -559,7 +579,7 @@ public sealed class UsageHistoryStore
         using var conn = Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT agent_id, at, kind, decision, requester, working_dir
+            SELECT agent_id, at, kind, decision, requester, working_dir, subject
             FROM permissions WHERE at >= $since ORDER BY at DESC;
             """;
         cmd.Parameters.AddWithValue("$since", Stamp(since));
@@ -572,7 +592,8 @@ public sealed class UsageHistoryStore
                 DateTimeOffset.Parse(reader.GetString(1), System.Globalization.CultureInfo.InvariantCulture),
                 reader.GetString(2), reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? null : reader.GetString(5)));
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
         return list;
     }
 }

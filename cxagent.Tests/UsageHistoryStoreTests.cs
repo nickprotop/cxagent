@@ -204,6 +204,34 @@ public class UsageHistoryStoreTests : IDisposable
     }
 
     /// <summary>
+    /// WITHOUT THE SUBJECT, "auto-refused: 4" cannot be acted on. The question a user has is which
+    /// COMMANDS are being refused, and a count answers a different one.
+    /// </summary>
+    [Fact]
+    public void APermissionRow_KeepsWhatItWasAbout()
+    {
+        _store.SavePermission(new PermissionRecord(
+            "a", Ago(1), "Shell", "auto-refused", null, "/tmp/p",
+            Subject: "dotnet build 2>&1 | tail -5"));
+
+        var back = _store.PermissionsSince(Ago(24));
+
+        Assert.Equal("dotnet build 2>&1 | tail -5", Assert.Single(back).Subject);
+    }
+
+    /// <summary>
+    /// MIGRATION, NOT A RESET. Rows written before this column existed must keep loading — a user's
+    /// history is the only evidence of what auto mode did before the change.
+    /// </summary>
+    [Fact]
+    public void AnOlderRowWithNoSubjectStillReads()
+    {
+        _store.SavePermission(new PermissionRecord("a", Ago(1), "Shell", "allowed", null));
+
+        Assert.Null(Assert.Single(_store.PermissionsSince(Ago(24))).Subject);
+    }
+
+    /// <summary>
     /// A BROKEN STORE COSTS STATISTICS, NEVER A SESSION. Every write swallows its failures — the same
     /// contract the resume store and LogFileManager have. Here the database path is a directory,
     /// which no SQLite connection can open.

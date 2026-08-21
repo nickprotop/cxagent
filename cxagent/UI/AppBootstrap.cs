@@ -637,10 +637,11 @@ public static class AppBootstrap
             // because the session id does not exist until the host does — and reassigned on every
             // re-wire (F5 changes provider), so the hook reads the session lazily rather than closing
             // over the id of a host that has since been replaced.
-            permissionGate.OnDecision = (kind, decision, requester) =>
+            permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
                     session.SessionId ?? "unknown", DateTimeOffset.UtcNow,
-                    kind.ToString(), decision, requester, session.WorkingDirectory));
+                    report.Kind.ToString(), report.Decision, report.Requester,
+                    session.WorkingDirectory, report.Subject));
 
             session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
