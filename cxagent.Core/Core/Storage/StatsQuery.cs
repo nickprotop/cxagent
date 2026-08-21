@@ -94,6 +94,21 @@ public sealed record ToolStat(
     string Tool, int Calls, long ResultChars, int Failed, long AvgDurationMs);
 
 /// <summary>
+/// Permission decisions, counted by who decided.
+///
+/// <para><c>Silent</c> is kept apart from <c>Allowed</c>: one is a rule the user set once, the other
+/// is a question they answered. The three auto counts are kept apart from both for the same reason —
+/// a model's decision is neither a stored rule nor a human's answer, and collapsing them would
+/// misrepresent how much was actually reviewed.</para>
+///
+/// <para>A RECORD, NOT A TUPLE. Seven members of the same type in positional order is the shape
+/// where transposing two compiles cleanly and renders the wrong number.</para>
+/// </summary>
+public sealed record PermissionCounts(
+    int Asked, int Allowed, int Denied, int Silent,
+    int AutoAllowed, int AutoRefused, int AutoDenied);
+
+/// <summary>
 /// Reads usage history into the shapes a dashboard renders.
 ///
 /// <para>PURE FUNCTIONS OVER RECORDS, deliberately: every method here takes lists and returns lists,
@@ -206,16 +221,19 @@ public static class StatsQuery
          rows.Count(r => r.Trigger == "manual"));
 
     /// <summary>
-    /// Permission decisions, counted by outcome.
+    /// Permission decisions, counted by who decided and how.
     ///
     /// <para><c>silent</c> is kept apart from <c>allowed</c>: one is a rule the user set once, the
-    /// other is a question they answered. A session of stored rules looking like a session of choices
-    /// would misrepresent how much was actually reviewed.</para>
+    /// other is a question they answered. The three auto counts are kept apart from both for the same
+    /// reason — a model's decision is neither a stored rule nor a human's answer, and collapsing
+    /// them would misrepresent how much was actually reviewed.</para>
     /// </summary>
-    public static (int Asked, int Allowed, int Denied, int Silent) Permissions(
-        IReadOnlyList<PermissionRecord> rows) =>
-        (rows.Count(r => r.Decision is "allowed" or "denied"),
-         rows.Count(r => r.Decision == "allowed"),
-         rows.Count(r => r.Decision == "denied"),
-         rows.Count(r => r.Decision == "silent"));
+    public static PermissionCounts Permissions(IReadOnlyList<PermissionRecord> rows) =>
+        new(rows.Count(r => r.Decision is "allowed" or "denied"),
+            rows.Count(r => r.Decision == "allowed"),
+            rows.Count(r => r.Decision == "denied"),
+            rows.Count(r => r.Decision == "silent"),
+            rows.Count(r => r.Decision == "auto-allowed"),
+            rows.Count(r => r.Decision == "auto-refused"),
+            rows.Count(r => r.Decision == "auto-denied"));
 }

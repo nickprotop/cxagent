@@ -188,16 +188,57 @@ public class StatsTests
     [Fact]
     public void Permissions_KeepSilentOutOfTheAskedCount()
     {
-        var (asked, allowed, denied, silent) = StatsQuery.Permissions([
+        var counts = StatsQuery.Permissions([
             new("a", Ago(1), "Shell", "silent", null, null),
             new("a", Ago(1), "Shell", "allowed", null, null),
             new("a", Ago(1), "Http", "denied", null, null),
         ]);
 
-        Assert.Equal(2, asked);
-        Assert.Equal(1, allowed);
-        Assert.Equal(1, denied);
-        Assert.Equal(1, silent);
+        Assert.Equal(2, counts.Asked);
+        Assert.Equal(1, counts.Allowed);
+        Assert.Equal(1, counts.Denied);
+        Assert.Equal(1, counts.Silent);
+    }
+
+    [Fact]
+    public void Permissions_CountsTheAutoDecisionsSeparately()
+    {
+        // THE BUG: auto-allowed and auto-refused are written by PermissionDecider and match none of
+        // the four buckets, so they are stored and then dropped. A user cannot answer "is auto mode
+        // helping?" from data the app already collects.
+        var rows = new List<PermissionRecord>
+        {
+            new("a", DateTimeOffset.UtcNow, "Shell", "allowed", null),
+            new("a", DateTimeOffset.UtcNow, "Shell", "denied", null),
+            new("a", DateTimeOffset.UtcNow, "Shell", "silent", null),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-refused", null),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-denied", null),
+        };
+
+        var counts = StatsQuery.Permissions(rows);
+
+        Assert.Equal(2, counts.Asked);          // allowed + denied — a human answered
+        Assert.Equal(1, counts.Allowed);
+        Assert.Equal(1, counts.Denied);
+        Assert.Equal(1, counts.Silent);
+        Assert.Equal(1, counts.AutoAllowed);
+        Assert.Equal(1, counts.AutoRefused);
+        Assert.Equal(1, counts.AutoDenied);
+    }
+
+    [Fact]
+    public void Permissions_AutoDecisionsAreNotCountedAsAsked()
+    {
+        // A classifier decision is not a question the user answered. Collapsing them would make auto
+        // mode look like a session of choices, which is the distinction the `silent` bucket already
+        // exists to preserve.
+        var rows = new List<PermissionRecord>
+        {
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null),
+        };
+
+        Assert.Equal(0, StatsQuery.Permissions(rows).Asked);
     }
 
     // ---- rendering -----------------------------------------------------------------------------
@@ -255,7 +296,7 @@ public class StatsTests
             Daily = StatsQuery.ByDay(sessions, DateOnly.FromDateTime(DateTime.Now).AddDays(-6),
                 DateOnly.FromDateTime(DateTime.Now)),
             Compaction = (1, 150_000, 0),
-            Permissions = (2, 1, 1, 3),
+            Permissions = new(2, 1, 1, 3, 0, 0, 0),
         });
 
         var opens = text.Split('[').Length - 1;

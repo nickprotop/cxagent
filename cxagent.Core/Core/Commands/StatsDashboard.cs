@@ -120,7 +120,7 @@ public static class StatsDashboard
         public required IReadOnlyList<ToolStat> Tools { get; init; }
         public required IReadOnlyList<(DateOnly Day, int Tokens)> Daily { get; init; }
         public (int Runs, int Reclaimed, int Manual) Compaction { get; init; }
-        public (int Asked, int Allowed, int Denied, int Silent) Permissions { get; init; }
+        public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0);
     }
 
     /// <summary>The whole dashboard.</summary>
@@ -291,10 +291,22 @@ public static class StatsDashboard
                     + $"{Compact(compaction.Reclaimed)} tokens reclaimed"
                     + (compaction.Manual > 0 ? Muted($" ({compaction.Manual} manual)") : ""));
 
-        if (permissions.Asked + permissions.Silent > 0)
+        if (permissions.Asked + permissions.Silent + permissions.AutoAllowed
+            + permissions.AutoRefused + permissions.AutoDenied > 0)
+        {
             lines.Add($"  permission  {permissions.Asked} asked "
                     + Muted($"({permissions.Allowed} allowed, {permissions.Denied} denied)")
                     + (permissions.Silent > 0 ? Muted($" · {permissions.Silent} by rule") : ""));
+
+            // AUTO ON ITS OWN LINE. The question a reader has is "how much did the model decide,
+            // and how often did I disagree with it" — which is unanswerable if its counts are
+            // folded into the human ones.
+            var auto = permissions.AutoAllowed + permissions.AutoRefused + permissions.AutoDenied;
+            if (auto > 0)
+                lines.Add($"  auto review {auto} decided "
+                        + Muted($"({permissions.AutoAllowed} allowed, "
+                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied)"));
+        }
 
         if (lines.Count > 0)
         {
