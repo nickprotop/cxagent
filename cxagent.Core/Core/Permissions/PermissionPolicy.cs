@@ -241,8 +241,25 @@ public class PermissionPolicy
     private static PermissionRequest HttpRequest(JobParameters parameters)
     {
         var url = parameters.Get<string>("url");
-        var origin = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority) : url;
-        return new PermissionRequest(PermissionKind.Http, origin, origin);
+        var method = parameters.Get<string?>("method", null);
+        var body = parameters.Get<string?>("body", null);
+
+        // THE ORIGIN IS STILL THE RULE, and only the rule. "Always allow api.github.com" is a grant
+        // for the host; rewriting it per-path would invalidate every rule a user already holds.
+        var origin = Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? uri.GetLeftPart(UriPartial.Authority) : url;
+
+        // AND THE WHOLE REQUEST IS THE DISPLAY. A user approving egress is answering "where is this
+        // going and how much of my data goes with it", and the origin alone answers neither. The
+        // BODY SIZE, never the body: a size says "this is sending something" without putting
+        // attacker-authored text in front of a human on every prompt.
+        var display = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(method)) display.Append(method!.ToUpperInvariant()).Append(' ');
+        display.Append(url);
+        if (body is { Length: > 0 })
+            display.Append(" (").Append((body.Length / 1024.0).ToString("0.0")).Append(" KB)");
+
+        return new PermissionRequest(PermissionKind.Http, display.ToString(), origin, origin);
     }
 
     /// <summary>True when this request needs no prompt: an in-boundary file read/write, or a

