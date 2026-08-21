@@ -231,7 +231,11 @@ public sealed class PermissionDecider : IPermissionGate
         // trust decision the user made. Modes narrow, trust bounds — a classifier is still a mode.
         if (policy.Edits == EditMode.Auto && Classifier is not null && policy.AllowsSilentWrites(request))
         {
-            if (await Classifier.AllowsAsync(request, ct))
+            // MINIMAL AND MECHANICAL: today only an explicit Allow lets the write through silently,
+            // and Deny falls through to the prompt exactly like Ask does — the same behaviour as the
+            // old bool. A real Deny effect (refusing rather than asking) is Task 6's job, wired
+            // against ReviewEffect; this call site is not the place to invent it early.
+            if ((await Classifier.JudgeAsync(request, ct)).Verdict == ClassifierVerdict.Allow)
             {
                 // "auto-allowed", NOT "silent". Both let the action through without asking, and
                 // recording them the same made the classifier invisible: in one drive's 317 silent
