@@ -1,4 +1,5 @@
 using CxAgent.Core.Storage;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -229,6 +230,74 @@ public class UsageHistoryStoreTests : IDisposable
         _store.SavePermission(new PermissionRecord("a", Ago(1), "Shell", "allowed", null));
 
         Assert.Null(Assert.Single(_store.PermissionsSince(Ago(24))).Subject);
+    }
+
+    /// <summary>
+    /// THE MIGRATION ITSELF, not the record. The two tests above write and read `subject` entirely
+    /// through the NEW code path against a FRESH database — neither would notice if
+    /// <c>AddColumnIfMissing(conn, "permissions", "subject", "TEXT")</c> were deleted from
+    /// <c>TryCreateSchema</c> tomorrow, because a fresh `CREATE TABLE` still has no `subject` column
+    /// either way and `SavePermission`/`PermissionsSince` would just throw "no such column" — same
+    /// crash whether the row is old or new. The only way to prove the ALTER runs is to build a
+    /// database that predates it, by hand, with the exact pre-change column list, and open it with
+    /// today's store.
+    /// </summary>
+    [Fact]
+    public void AnOldSchemaDatabase_IsUpgradedInPlace()
+    {
+        // A DIRECTORY OF ITS OWN, not `_dir` — the fixture's own `_store` already created a
+        // history.db (new schema) at `_dir` in the constructor, so writing the old schema there
+        // would collide with a table that already has `subject`. This has to be a database the
+        // current store has never opened.
+        var oldDir = Path.Combine(Path.GetTempPath(), "cxagent-hist-old-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(oldDir);
+        var dbPath = Path.Combine(oldDir, "history.db");
+
+        // Pre-change schema, written with a raw connection so this row is genuinely old — never
+        // touched by any version of UsageHistoryStore that knows about `subject`.
+        using (var raw = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            raw.Open();
+            using var cmd = raw.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE permissions (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id  TEXT NOT NULL,
+                    at        TEXT NOT NULL,
+                    kind      TEXT NOT NULL,
+                    decision  TEXT NOT NULL,
+                    requester TEXT,
+                    working_dir TEXT);
+                INSERT INTO permissions (agent_id, at, kind, decision, requester, working_dir)
+                VALUES ('old-agent', $at, 'Shell', 'allowed', NULL, '/tmp/old');
+                """;
+            cmd.Parameters.AddWithValue("$at", Ago(1).UtcDateTime.ToString("O"));
+            cmd.ExecuteNonQuery();
+        }
+
+        try
+        {
+            // Opening the store must run the migration, not throw — this is the line that fails
+            // first if AddColumnIfMissing regresses, because the constructor calls TryCreateSchema
+            // and that swallows its own exceptions (a broken migration would otherwise look like a
+            // working one).
+            var upgraded = new UsageHistoryStore(new AppPaths(oldDir));
+
+            var old = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "old-agent");
+            Assert.Null(old.Subject);
+
+            // AND A ROW WRITTEN AFTER THE UPGRADE ROUND-TRIPS ITS SUBJECT, in the SAME database
+            // file — proving the added column is not just present but usable both ways.
+            upgraded.SavePermission(new PermissionRecord("new-agent", Ago(1), "Shell", "auto-refused",
+                null, "/tmp/new", Subject: "echo hi"));
+
+            var fresh = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "new-agent");
+            Assert.Equal("echo hi", fresh.Subject);
+        }
+        finally
+        {
+            Directory.Delete(oldDir, recursive: true);
+        }
     }
 
     /// <summary>
