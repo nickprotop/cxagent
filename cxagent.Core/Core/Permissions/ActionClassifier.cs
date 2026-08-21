@@ -70,10 +70,16 @@ public sealed class ActionClassifier
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
 
+            // FACTS RENDER INSIDE THE SAME DELIMITER AS What, never appended outside it or interpolated
+            // into Instruction — Render() already neutralises any embedded "</action>", but the join
+            // here is what keeps facts data rather than letting them reopen the instruction half.
+            var body = $"{request.Kind}: {request.What}";
+            if (request.Facts is { } facts) body += "\n" + facts.Render();
+
             var messages = new List<ChatMessage>
             {
                 new() { Role = "system", Content = Instruction },
-                new() { Role = "user", Content = $"<action>{request.Kind}: {request.What}</action>" },
+                new() { Role = "user", Content = $"<action>{body}</action>" },
             };
 
             var response = await _provider.ChatAsync(messages, null, deadline.Token);

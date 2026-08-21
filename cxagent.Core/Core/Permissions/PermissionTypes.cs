@@ -62,6 +62,9 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// </summary>
     public string? Requester { get; init; }
 
+    /// <summary>What the classifier is shown about this action, or null when nothing was gathered.</summary>
+    public ActionFacts? Facts { get; init; }
+
     /// <summary>
     /// WHICH SESSION IS ASKING — its working directory, and the edit mode it is running under.
     ///
