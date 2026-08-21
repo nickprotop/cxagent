@@ -226,16 +226,27 @@ public sealed class PermissionDecider : IPermissionGate
         // denial is settled below by the user. This sits in the one gap where nothing has decided yet.
         // TRUST FLOORS AUTO TOO, and this guard is what makes that true. IsSilentlyAllowed holds the
         // floor for the other modes, and reaching this line means it said no — which on an untrusted
-        // folder it says for EVERY write. Without AllowsSilentWrites here, a classifier's ALLOW would
-        // return true below and hand auto the one power no mode is allowed to have: widening past a
-        // trust decision the user made. Modes narrow, trust bounds — a classifier is still a mode.
-        if (policy.Edits == EditMode.Auto && Classifier is not null && policy.AllowsSilentWrites(request))
+        // folder it says for EVERY write. Without a trust check here — it was a direct
+        // AllowsSilentWrites call before EffectFor absorbed it — a classifier's ALLOW would return
+        // true below and hand auto the one power no mode is allowed to have: widening past a trust
+        // decision the user made. Modes narrow, trust bounds — a classifier is still a mode.
+        //
+        // AND THE GUARD IS NOW AN EFFECT, NOT A BOOL. AllowsSilentWrites answered "may a write here
+        // be silent", which happened to be the right question only while writes were the sole
+        // reviewed kind. EffectFor answers "what may a verdict CHANGE here", which is the question
+        // that stays right as kinds are added: an http_request can be reviewed without an ALLOW on it
+        // ever meaning silence. A bool in this position cannot express that — the line below returns
+        // true on an ALLOW, so any population a bool admits is a population a bool silences. Trust is
+        // still the floor and EffectFor still checks it; see ReviewEffect.
+        var effect = policy.EffectFor(request);
+        if (effect != ReviewEffect.None && Classifier is not null)
         {
-            // MINIMAL AND MECHANICAL: today only an explicit Allow lets the write through silently,
-            // and Deny falls through to the prompt exactly like Ask does — the same behaviour as the
-            // old bool. A real Deny effect (refusing rather than asking) is Task 6's job, wired
-            // against ReviewEffect; this call site is not the place to invent it early.
-            if ((await Classifier.JudgeAsync(request, ct)).Verdict == ClassifierVerdict.Allow)
+            var decision = await Classifier.JudgeAsync(request, ct);
+
+            // AN ALLOW ONLY SILENCES WHERE THE EFFECT SAYS IT MAY. This is the whole point of the
+            // enum: MayAnnotate reaches here with a verdict and must still fall through to the
+            // prompt.
+            if (decision.Verdict == ClassifierVerdict.Allow && effect == ReviewEffect.MayApprove)
             {
                 // "auto-allowed", NOT "silent". Both let the action through without asking, and
                 // recording them the same made the classifier invisible: in one drive's 317 silent
@@ -247,15 +258,36 @@ public sealed class PermissionDecider : IPermissionGate
                 return true;
             }
 
+            // AND A DENY REFUSES OUTRIGHT, under the same effect and for the symmetric reason. If a
+            // verdict is trusted enough to skip the prompt on an ALLOW it is trusted enough to end
+            // the action on a DENY; treating a DENY as merely "ask" would make auto strictly more
+            // permissive than the mode it claims to be, since the user is then offered a yes on the
+            // one action a reviewer objected to.
+            //
+            // NOT UNDER MayAnnotate. There the verdict shapes the prompt and decides nothing, in
+            // BOTH directions — an annotate-only kind is one where we do not think a model's opinion
+            // should be the last word, and that is not a claim about which way it leans.
+            if (decision.Verdict == ClassifierVerdict.Deny && effect == ReviewEffect.MayApprove)
+            {
+                OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What));
+                request = request with { DeniedByClassifier = true, ClassifierReason = decision.Reason };
+                return false;
+            }
+
+            // EVERYTHING ELSE PROMPTS, and that is every failure too: a timeout, a transport error,
+            // an unparseable body all arrive here as Ask (see ClassifierVerdict). Never allow, never
+            // deny — a gate that cannot get an answer asks for one.
+            //
             // AND THE REFUSAL, which is the one a user actually sees. Reaching here on a trusted
-            // folder means the classifier said no and a prompt is about to appear — the single most
-            // useful thing to be able to count, because it is the answer to "why did auto ask me
-            // that?" and nothing recorded it.
+            // folder means the classifier did not clear the action and a prompt is about to appear —
+            // the single most useful thing to be able to count, because it is the answer to "why did
+            // auto ask me that?" and nothing recorded it.
             OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What));
 
             // AND THE PROMPT IS TOLD WHY, so its heading names the classifier rather than blaming a
-            // folder the user very likely trusts.
-            request = request with { RefusedByClassifier = true };
+            // folder the user very likely trusts — and carries the model's own reason when it gave
+            // one, which is the part the user can actually act on.
+            request = request with { RefusedByClassifier = true, ClassifierReason = decision.Reason };
 
 
             // FAILS CLOSED, OUT LOUD. A gate that quietly falls back looks like a classifier that

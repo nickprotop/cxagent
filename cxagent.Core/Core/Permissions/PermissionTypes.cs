@@ -96,8 +96,43 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// there is a second cause, and the folder is usually trusted: the classifier refused. A user
     /// reading "in this (untrusted) folder" about a folder they trusted learns the wrong thing from
     /// the one line meant to explain why they are being asked.</para>
+    ///
+    /// <para>NOW SET FOR EVERY REVIEWED KIND, not only writes — an annotate-only request that got a
+    /// verdict arrives at the prompt with this true too. PermissionPromptControl.HeadingFor still
+    /// branches on it for the FILE kinds only, so an Http or Mcp heading is unchanged today. That is
+    /// deliberate rather than an oversight: the flag records what happened, and deciding how an
+    /// annotated egress prompt should READ is the prompt-shaping work, not this gate's.</para>
     /// </summary>
     public bool RefusedByClassifier { get; init; }
+
+    /// <summary>
+    /// True when the classifier said DENY and the effect let that denial stand — the action was
+    /// refused outright, without a prompt.
+    ///
+    /// <para>DISTINCT FROM <see cref="RefusedByClassifier"/> BECAUSE THE OUTCOMES DIFFER. Refused
+    /// means "a prompt is about to appear and the classifier is why"; denied means no prompt appears
+    /// at all. Recording them under one flag would make a session where the user was asked look
+    /// identical to one where they were never given the choice, and those are exactly the two facts
+    /// a reader is trying to tell apart.</para>
+    ///
+    /// <para>ONLY UNDER <see cref="ReviewEffect.MayApprove"/>. A DENY on an annotate-only kind shapes
+    /// the prompt like any other verdict; it does not get to decide.</para>
+    /// </summary>
+    public bool DeniedByClassifier { get; init; }
+
+    /// <summary>
+    /// Why the classifier answered as it did, when the model gave a reason — the text after the
+    /// verdict in its completion, or null when it gave none.
+    ///
+    /// <para>THE VERDICT WITHOUT THE REASON IS THE PART THE USER CANNOT ACT ON. "auto review refused
+    /// this" tells them the machinery ran; it does not tell them whether to override it. Carried on
+    /// the request rather than passed alongside so the prompt, the transcript echo and anything added
+    /// later all read one field instead of threading a second argument through each layer.</para>
+    ///
+    /// <para>MODEL-AUTHORED TEXT, so any renderer must treat it as content and never as markup — the
+    /// same handling <see cref="ActionFacts"/> gives the action text it embeds.</para>
+    /// </summary>
+    public string? ClassifierReason { get; init; }
 }
 
 /// <summary>

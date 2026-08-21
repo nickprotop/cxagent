@@ -493,6 +493,72 @@ public class PermissionPolicy
         && !IsExecutableConfig(request);
 
     /// <summary>
+    /// What a classifier verdict may change for this request. See <see cref="ReviewEffect"/>.
+    ///
+    /// <para>TRUST IS CHECKED HERE because this is where the classifier's power is bounded. It is
+    /// checked in <see cref="AllowsSilentWrites"/> too, for that method's own callers — two checks of
+    /// one fact, because they answer different questions and sharing one would couple them. The
+    /// duplication is deliberate: <c>AllowsSilentWrites</c> answers "may a write here be silent",
+    /// which is a question about the boundary, and this answers "may a model's opinion do anything
+    /// here", which is a question about the trust decision. A refactor that merged them would have
+    /// to pick one meaning, and either choice is wrong somewhere.</para>
+    ///
+    /// <para>UNTRUSTED FLOORS EVEN <see cref="ReviewEffect.MayAnnotate"/>, which looks like it costs
+    /// nothing — an annotation cannot let anything through. It still sends the action's text to a
+    /// model, and that is itself a thing an untrusted folder has not been granted. Putting the trust
+    /// check above the switch rather than inside its arms is what makes that unarguable.</para>
+    /// </summary>
+    public ReviewEffect EffectFor(PermissionRequest request)
+    {
+        if (Edits != EditMode.Auto) return ReviewEffect.None;
+        if (_rules.GetTrust(_root) != TrustState.Trusted) return ReviewEffect.None;
+
+        return request.Kind switch
+        {
+            // THE STRUCTURAL CHECKS ARE NOT THE CLASSIFIER'S TO ARGUE WITH. AllowsSilentWrites is
+            // asked, not re-derived, so the boundary and the executable-config carve-out reach this
+            // gate as ONE fact with one definition — a second copy is the copy that drifts, which is
+            // the reason IsSilentlyAllowed factored it out in the first place.
+            //
+            // FileRead is listed and is unreachable from the gate today: IsSilentlyAllowed lets every
+            // trusted in-boundary read through in every mode, so a read never gets this far. It is
+            // here because this method answers a question about a REQUEST, not about a call site, and
+            // the answer must stay right if that free pass is ever narrowed.
+            PermissionKind.FileRead or PermissionKind.FileWrite =>
+                AllowsSilentWrites(request) ? ReviewEffect.MayApprove : ReviewEffect.None,
+
+            // EGRESS AND OPAQUE ARGUMENTS ANNOTATE ONLY. A verdict here improves the question; it
+            // never answers it. http_request exists to send data off the machine and there is no
+            // in-boundary version of it to carve out; an Mcp or Tool call takes arguments following a
+            // schema written by someone else, which nothing here can read. For all three the useful
+            // direction is adding a question, not removing one.
+            //
+            // ONLY THE NO-RULE POPULATION REACHES HERE AT ALL. A request matched by a stored "Always"
+            // rule returns true from IsSilentlyAllowed above the gate and never arrives, so a user
+            // who stored "always allow evil.com" keeps that rule unreviewed — today's behaviour,
+            // unchanged. Routing rule-silenced requests into the classifier needs IsSilentlyAllowed
+            // surgery and is deliberately not done here.
+            PermissionKind.Http or PermissionKind.Mcp or PermissionKind.Tool => ReviewEffect.MayAnnotate,
+
+            // SHELL ARRIVES LATER, AS MayApprove BOUNDED BY CommandSubjects.FullyExamined — a command
+            // it could not fully parse must stay unreviewable, because approving what we did not read
+            // is approving whatever we missed. Until then it is not reviewed, which is today's
+            // behaviour. This arm is written out separately from the fallback below precisely so that
+            // change is a one-line edit here rather than a restructuring.
+            PermissionKind.Shell => ReviewEffect.None,
+
+            // AND EVERY OTHER VALUE, INCLUDING A KIND SOMEONE ADDS AND FORGETS. RuleSubject's
+            // `_ => null` arm is the cautionary tale twenty lines up: it swallowed PermissionKind.Tool
+            // with no CS8509 and no failing test, and "Always allow" silently stopped persisting for
+            // months. This switch has the same hazard and a worse failure mode, so the fallback is
+            // aimed at the SAFE answer: an unhandled kind is not reviewed, and can therefore never be
+            // silenced by a verdict. Adding a kind without touching this switch costs a prompt, which
+            // is the direction a mistake here is allowed to go.
+            _ => ReviewEffect.None,
+        };
+    }
+
+    /// <summary>
     /// True when this WRITE lands in a directory whose contents execute — see
     /// <see cref="ExecutableConfigDirs"/> for why in-cwd is scope rather than safety.
     /// </summary>
