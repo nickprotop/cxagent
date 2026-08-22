@@ -369,7 +369,9 @@ widen past the trust decision your host already made.
 For shell, `MayApprove` only applies to a command that is already confined: every path it names,
 including a `cd` target, has to resolve inside the working directory; the whole command has to be
 parseable with no unresolved token; every segment has to name a program that appears in the command
-text — no `$(...)`, no backticks, no `eval`, `sh -c`, `xargs`, or `sudo`; and no egress verb (`curl`,
+text — no `$(...)`, no backticks, no `eval`, `sh -c`, `xargs`, or `sudo`; no recursive delete
+(`rm -rf` and friends, which the boundary cannot speak to — it bounds where a command reaches, not
+what it destroys there); and no egress verb (`curl`,
 `wget`, `scp`, `rsync`, and the rest) is ever eligible, for the same reason `http_request` is
 `MayAnnotate` rather than `MayApprove` — there is no in-boundary version of sending data off the
 machine. A command failing any one of those checks is never shown to the classifier, so a verdict is

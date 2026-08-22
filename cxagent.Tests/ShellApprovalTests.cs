@@ -368,10 +368,17 @@ public class ShellApprovalTests
         Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell("cat ./sub/../file.txt | head")));
     }
 
+    // THE rm -rf CASES THAT USED TO LIVE HERE MOVED, and the move is the point rather than a tidy-up.
+    // This theory once cited `rm -rf ./tmpscratch` and `rm -rf ./src` as ordinary in-boundary work,
+    // which was the honest reading while the bound only asked "could this escape the folder?". A user
+    // watching one go through in auto mode said otherwise, and they were right: see
+    // RecursiveDeletion_IsNeverOfferedForApproval. The chained and mkdir-then-remove shapes they were
+    // covering are kept below with a non-destructive tail, so this theory still proves a chain and a
+    // multi-segment command reach approval.
     [Theory]
     [InlineData("dotnet build 2>&1 | tail -5")]
-    [InlineData("mkdir -p ./tmpscratch && rm -rf ./tmpscratch && echo ok")]
-    [InlineData("rm -rf ./src && echo gone")]
+    [InlineData("mkdir -p ./tmpscratch && touch ./tmpscratch/x && echo ok")]
+    [InlineData("mv ./src ./src2 && echo moved")]
     public void OrdinaryInBoundaryWork_IsStillOffered(string command)
     {
         // THE OTHER HALF OF THE CONTRACT. A traversal fix that also refuses these would "pass" every
@@ -403,5 +410,52 @@ public class ShellApprovalTests
         // if a merge ever restores it rather than quietly passing on a substring that survived.
         Assert.DoesNotContain("ALLOW if it is an ordinary, low-risk command", instruction,
             StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Recursive deletion asks, however it is spelled.
+    ///
+    /// <para>FOUND IN USE, NOT BY A TEST. A user in auto mode watched <c>rm -rf</c> on a directory
+    /// inside the trusted folder go through with no prompt and said their nerve fired. It was
+    /// structurally correct — trusted, absolute, in boundary, fully examinable, no egress verb — and
+    /// the outcome was still wrong, because every clause in the bound answers "could this escape the
+    /// folder?" and none of them asks "could this destroy it?".</para>
+    /// </summary>
+    [Theory]
+    [InlineData("rm -rf ./plans/")]
+    [InlineData("rm -rf .")]
+    [InlineData("rm -rf .git")]
+    [InlineData("rm -fr ./src")]
+    [InlineData("rm -Rf ./build")]
+    [InlineData("rm --recursive ./x")]
+    [InlineData("shred -u secret.txt")]
+    [InlineData("dotnet build && rm -rf ./obj")]
+    public void RecursiveDeletion_IsNeverOfferedForApproval(string command)
+    {
+        var root = MakeTempDir();
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell(command)));
+    }
+
+    /// <summary>
+    /// And the refusal is NARROW: deleting one named file, or an empty directory, still qualifies.
+    ///
+    /// <para>THE CONTROL THAT MAKES THE CLAUSE WORTH HAVING. "Refuse anything containing rm" would
+    /// pass the theory above and cost the feature most of its point — ordinary cleanup is exactly the
+    /// traffic auto mode exists to stop prompting about. <c>rmdir</c> refuses a non-empty directory,
+    /// so it cannot delete work.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("rm ./obj/stale.o")]
+    [InlineData("rm -f ./bin/app")]
+    [InlineData("rmdir ./emptydir")]
+    [InlineData("dotnet build 2>&1 | tail -5")]
+    public void OrdinaryCleanupIsStillOffered(string command)
+    {
+        var root = MakeTempDir();
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell(command)));
     }
 }

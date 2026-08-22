@@ -814,9 +814,66 @@ public class PermissionPolicy
             if (verb.Contains('/', StringComparison.Ordinal)) return false;
 
             if (UnexaminableVerbs.Contains(verb)) return false;
+
+            // AND RECURSIVE DELETION, WHICH THE BOUNDARY CLAUSE CANNOT SPEAK TO. Every clause above
+            // answers "could this escape the folder?" and answers it correctly. None of them asks
+            // "could this destroy the folder?" — so `rm -rf .`, `rm -rf .git` and the working root
+            // itself all satisfy the confinement completely, and were one classifier ALLOW away from
+            // running with no prompt. Reported by a user whose nerve fired watching one go through:
+            // the verdict was structurally right and the outcome was still wrong.
+            //
+            // THE SAME ARGUMENT THAT MAKES EGRESS INELIGIBLE. There is no in-boundary version of
+            // sending data off the machine, and there is no in-boundary version of destroying the
+            // work the folder exists to hold. Deleting a tree is also the one action with no review
+            // step afterwards: this project's own readme tells a user to run it in a git repository
+            // because `git diff` is the review, and `rm -rf .git` deletes the reviewer.
+            //
+            // IT STILL RUNS — it asks first. This costs a prompt on a command issued rarely, which is
+            // the cheapest possible price for the only outcome that cannot be undone.
+            if (IsRecursiveRemoval(text)) return false;
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// A command that recursively deletes: <c>rm</c> with a recursive flag, or a tree-removal tool.
+    ///
+    /// <para>THE FLAG MATTERS, NOT JUST THE VERB. Plain <c>rm file.txt</c> deletes one named thing a
+    /// user can see in the command; <c>rm -rf dir</c> deletes an unbounded amount they cannot. Only
+    /// the second is refused, so ordinary single-file cleanup keeps its silent path.</para>
+    ///
+    /// <para>CLUSTERED FLAGS COUNT: <c>-rf</c>, <c>-fr</c> and <c>-Rf</c> are the spellings people
+    /// actually type, so this looks for the letter inside a short option rather than for an exact
+    /// token. <c>--recursive</c> is checked by name. Anything it cannot read the shape of costs a
+    /// prompt, which is this file's standing direction to fail toward.</para>
+    /// </summary>
+    private static bool IsRecursiveRemoval(string segment)
+    {
+        var parts = segment.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return false;
+
+        // SHRED IS DESTRUCTION BY NAME, with no non-destructive mode to carve out — it overwrites
+        // before unlinking, so even the undelete tools a plain rm leaves room for are gone.
+        // `rmdir` is deliberately NOT here: it refuses a non-empty directory, so it cannot delete
+        // work, and refusing it would cost a prompt that buys nothing.
+        if (parts[0] == "shred") return true;
+
+        if (parts[0] != "rm") return false;
+
+        foreach (var part in parts.Skip(1))
+        {
+            if (part == "--recursive") return true;
+
+            // A SHORT OPTION, not a path that happens to contain 'r'. `-rf`, `-fr`, `-Rf` all count;
+            // `report/` does not, because it does not start with a single dash.
+            if (part.Length > 1 && part[0] == '-' && part[1] != '-'
+                && (part.Contains('r', StringComparison.Ordinal)
+                    || part.Contains('R', StringComparison.Ordinal)))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

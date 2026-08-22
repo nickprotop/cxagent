@@ -159,6 +159,8 @@ honoured, the command must satisfy every one of these, and no verdict can overri
   glob, an unterminated quote) means it asks;
 - every segment names a program that appears in the command text, so no `$(...)`, no backticks, and
   no `eval`, `sh -c`, `xargs` or `sudo`;
+- no recursive delete — `rm -rf` and friends ask however confined they are, because the boundary
+  answers whether a command can leave the folder, never whether it can destroy it
 - no egress verb — `curl`, `wget`, `scp`, `rsync` and the rest are never approvable, for the same
   reason `http_request` never is: there is no in-boundary version of sending data off the machine.
 
