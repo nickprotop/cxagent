@@ -536,6 +536,26 @@ public sealed class Agent
     public event Action<ChildRunReport>? ChildFinished;
 
     /// <summary>
+    /// Raised the moment a child is BUILT, before it runs — the pairing of the row already on screen
+    /// with the child that row is about.
+    ///
+    /// <para>THE ONLY PLACE THAT PAIRING EXISTS. A spawn's row is minted here, per tool call, and the
+    /// child mints its own id inside the spawner; nothing downstream sees both. <see cref="ChildFinished"/>
+    /// is the same pairing an hour too late — a row that wants to show what its child is doing needs
+    /// it at the start, not at the end — and the envelope, which is how a FINISHED row joins to its
+    /// child, does not exist until the child has answered.</para>
+    ///
+    /// <para>BEFORE IT RUNS is the load-bearing half. A child that spends four minutes inside its
+    /// first turn raises no other event at all, and that is precisely the run whose progress somebody
+    /// is watching.</para>
+    ///
+    /// <para>AN EVENT, NOT A STORE OR A CONTROL REFERENCE, for the reason <see cref="ToolCallFinished"/>
+    /// gives: the loop must not know what is listening, and a host that does not subscribe learns
+    /// nothing and the loop cannot tell.</para>
+    /// </summary>
+    public event Action<SpawnedChild>? ChildSpawned;
+
+    /// <summary>
     /// What THIS agent has spent, input and output. A private tally, not a share of the ledger.
     ///
     /// <para>The ledger is deliberately shared — a budget belongs to the session, not to an agent —
@@ -1881,6 +1901,14 @@ public sealed class Agent
             // are the interesting ones: that is where the expensive reading happens. The report keeps
             // the CHILD's agent id, so forwarding attributes rather than absorbs.
             child.Agent.ToolCallFinished += report => ToolCallFinished?.Invoke(report);
+
+            // AND THE PAIRING ITSELF, announced. Everything above attaches this parent to the child's
+            // events; this hands the child to whoever is drawing the row, which is the one thing the
+            // events cannot do — they carry measurements, and a live row needs the child.
+            //
+            // AFTER the wiring rather than before it, so a subscriber that reads the child on this
+            // call finds it fully attached rather than half-built.
+            ChildSpawned?.Invoke(new SpawnedChild(job.Id, child));
 
             tick = new Timer(_ => Report(child, childTurns), null,
                 TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));

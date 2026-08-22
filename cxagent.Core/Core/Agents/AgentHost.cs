@@ -293,6 +293,19 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>
+    /// A child was built for a spawn row — the pairing of the row with the agent it started.
+    ///
+    /// <para>A FORWARDING ACCESSOR, like <see cref="ToolCallFinished"/> above and for its reason: the
+    /// kernel is what builds the child, and a copy raised here would be a second thing that can fall
+    /// out of step with the one a row is drawn from.</para>
+    /// </summary>
+    public event Action<SpawnedChild>? ChildSpawned
+    {
+        add => _agent.ChildSpawned += value;
+        remove => _agent.ChildSpawned -= value;
+    }
+
+    /// <summary>
     /// Records that this session ended normally, so it is never offered for resume.
     ///
     /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did

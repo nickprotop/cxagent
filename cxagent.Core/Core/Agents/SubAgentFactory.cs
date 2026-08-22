@@ -21,6 +21,21 @@ public sealed record SubAgent(Agent Agent, BufferedChatSink Sink, BufferedJobPan
     string TypeName, string? ModelId);
 
 /// <summary>
+/// A child, paired with the parent row that started it — what <see cref="Agent.ChildSpawned"/>
+/// carries.
+/// </summary>
+/// <param name="JobId">
+/// The PARENT's job id: the key the row on screen is addressed by, from the moment it appears.
+///
+/// <para>NOT the child's agent id, which the child already carries and which a finished row reads
+/// back out of the envelope instead. While the child is still running there is no envelope, so this
+/// is the only key a live row can join on.</para>
+/// </param>
+/// <param name="Child">The child itself, live — its <c>Jobs</c> panel is mutated in place as it
+/// works, so a holder of this can read what it is doing at any moment.</param>
+public sealed record SpawnedChild(string JobId, SubAgent Child);
+
+/// <summary>
 /// Builds a sub-agent from a parent's own wiring.
 ///
 /// <para>THE CHILD IS BUILT DIRECTLY AS AN <see cref="Agent"/>, NEVER THROUGH <see cref="AgentHost"/>,

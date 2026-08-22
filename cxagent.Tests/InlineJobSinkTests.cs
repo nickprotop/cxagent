@@ -858,8 +858,8 @@ public class InlineJobSinkTests
     /// are the record of the work: the same run in twenty lines, each one a fact.</para>
     /// </summary>
     private static ToolCallReport Call(string tool, string? target, string outcome,
-        long ms = 10, int chars = 0) =>
-        new(CallId: Guid.NewGuid().ToString(), AgentId: "child-1", ToolName: tool, JobType: null,
+        long ms = 10, int chars = 0, string agentId = "child-1") =>
+        new(CallId: Guid.NewGuid().ToString(), AgentId: agentId, ToolName: tool, JobType: null,
             Outcome: outcome, DurationMs: ms, ResultChars: chars,
             StartedAt: DateTimeOffset.UnixEpoch)
         { Target = target };
@@ -1153,6 +1153,222 @@ public class InlineJobSinkTests
         });
 
         Assert.StartsWith("0 calls", sink.WorkerBodyForTest(succeeded)!, StringComparison.Ordinal);
+    }
+
+
+    // ---- the LIVE worker body ---------------------------------------------------------------------
+
+    /// <summary>
+    /// A child built for real, because the live body reads its <c>BufferedJobPanel</c> — the one
+    /// thing a hand-rolled stand-in cannot have, since <see cref="SubAgent"/> requires an
+    /// <see cref="Agent"/> and the panel is what the sink actually walks.
+    /// </summary>
+    private static SubAgent Child() =>
+        new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = new CxAgent.Core.Llm.MockLlmProvider(),
+            Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
+            Ledger = new CxAgent.Core.Llm.TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        }).Create();
+
+    /// <summary>
+    /// A row for a child's own job, at whatever state the case under test needs.
+    ///
+    /// <para>PlanLocalId AND DisplayName BOTH, exactly as Agent.InvokeAndShowAsync fills them: the
+    /// tool name and then that name followed by its arguments. The in-flight row splits the two back
+    /// apart, so a helper that set only one would test a shape the app never produces.</para>
+    /// </summary>
+    private static Job ChildJob(string tool, string args, JobState state,
+        DateTimeOffset? startedAt = null) => new()
+    {
+        Id = "c1", AgentId = "child", JobType = "shell", PlanLocalId = tool,
+        DisplayName = args.Length == 0 ? tool : $"{tool} {args}", State = state,
+        CreatedAt = startedAt ?? DateTimeOffset.UtcNow,
+        StartedAt = startedAt ?? DateTimeOffset.UtcNow,
+    };
+
+    /// <summary>The parent's spawn row while the child is still going.</summary>
+    private static Job RunningWorker(string? progressBody = null) => new()
+    {
+        Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "read the RFC files",
+        State = JobState.Running,
+        CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+        ProgressBody = progressBody,
+    };
+
+    [Fact]
+    public void ARunningWorker_ShowsTheSameTimetable_AsAFinishedOne()
+    {
+        // THE ROW MUST NOT CHANGE SHAPE WHEN IT SETTLES. What lands at the finish line is this same
+        // table plus the `out` column and the final counts — so a reader who has been watching it
+        // grow is not handed a different artefact at the one moment they stop watching.
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", chars: 4_000,
+            agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker());
+
+        Assert.NotNull(body);
+        Assert.Contains("`read_file`", body!, StringComparison.Ordinal);
+        Assert.Contains("Agent.cs", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ARunningWorkersTable_HasNoOutColumn()
+    {
+        // Output size is noise mid-flight: it lands when the row settles, and a column of blanks
+        // beside a spinning row is a column that asks to be read and says nothing.
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", chars: 4_000,
+            agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker())!;
+
+        Assert.DoesNotContain(" out ", body, StringComparison.Ordinal);
+        Assert.Contains("| target |", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheInFlightCall_IsTheLastRow_WhileItRuns()
+    {
+        // The whole point of a live body: the call happening RIGHT NOW is the one that says whether
+        // the worker is on the right track, and it is the one the finished-calls list cannot hold.
+        var sink = HeadlessSink();
+        var child = Child();
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "dotnet build", JobState.Running)]);
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker())!;
+        var rows = body.Split('\n');
+
+        Assert.Contains("dotnet build", rows[^1], StringComparison.Ordinal);
+        Assert.Contains("read_file", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheInFlightRow_IsAbsent_OnceTheChildsJobIsTerminal()
+    {
+        // A finished child job is already in the completed list — ToolCallFinished forwards it — so
+        // rendering it again from the panel would show the same call twice, once with a spinner.
+        var sink = HeadlessSink();
+        var child = Child();
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "dotnet build", JobState.Succeeded)]);
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker())!;
+
+        Assert.DoesNotContain("dotnet build", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AWorkerWithNoCallsYet_FallsBackToItsProgressBody()
+    {
+        // Expanding a running spawn must never reveal an empty block — that is the worst moment to
+        // show nothing, and the progress body is what the row has to say until the first call lands.
+        var sink = HeadlessSink();
+        sink.NoteChild("j1", Child());
+
+        Assert.Null(sink.RunningWorkerBodyForTest(RunningWorker("  type: general")));
+    }
+
+    [Fact]
+    public void AGrandchildsRunningJob_IsNotShown()
+    {
+        // DIRECT CHILDREN ONLY. The completed list already carries nested calls, because a parent
+        // forwards its children's reports up the chain — but the in-flight row is a read of ONE
+        // panel, and walking into a grandchild's would put another agent's work on this row with
+        // nothing saying whose it is.
+        var sink = HeadlessSink();
+        var child = Child();
+        var grandchild = Child();
+        grandchild.Jobs.ToolsChanged([ChildJob("grep", "\"PluginType\"", JobState.Running)]);
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "dotnet build", JobState.Running)]);
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker())!;
+
+        Assert.Contains("dotnet build", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("grep", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFinishedWorkersChild_IsReleased()
+    {
+        // Same discipline as the call accumulator: a fan-out session must not retain every SubAgent
+        // it ever spawned, each of which pins a whole Agent and its context.
+        var sink = HeadlessSink();
+        var child = Child();
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "dotnet build", JobState.Running)]);
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var finished = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+        sink.WorkerBodyForTest(finished);
+
+        // Nothing is held under that row any more, so a live read finds no child and falls back.
+        Assert.Null(sink.RunningWorkerBodyForTest(RunningWorker("  type: general")));
+    }
+
+    [Fact]
+    public void TheLiveTimetable_RendersIdenticallyUnderAnyCulture()
+    {
+        // The in-flight row carries a live millisecond clock, which is exactly the kind of number
+        // that takes the current culture's decimal separator if it is not routed through
+        // DisplayNumber — and this repo has shipped a culture bug before.
+        var sink = HeadlessSink();
+        var child = Child();
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "dotnet build", JobState.Running,
+            DateTimeOffset.UtcNow - TimeSpan.FromSeconds(3))]);
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", ms: 4210,
+            agentId: child.Agent.Id));
+
+        var invariant = WithCulture(CultureInfo.InvariantCulture,
+            () => sink.RunningWorkerBodyForTest(RunningWorker()));
+        var french = WithCulture(new CultureInfo("fr-FR"),
+            () => sink.RunningWorkerBodyForTest(RunningWorker()));
+
+        Assert.Contains("4,210", invariant!, StringComparison.Ordinal);
+        // The elapsed figures differ between the two calls by however long the first took, so the
+        // comparison is of the SHAPE that culture would change: the separators, not the digits.
+        Assert.Equal(Digits(invariant!), Digits(french!));
+    }
+
+    /// <summary>Replaces every digit with '0', leaving the separators a culture would change.</summary>
+    private static string Digits(string text) =>
+        new(text.Select(c => char.IsDigit(c) ? '0' : c).ToArray());
+
+    [Fact]
+    public void TheInFlightRow_EscapesItsTargetButNotItsToolName()
+    {
+        // The same split the finished rows are pinned to: a tool name lives inside a code span, where
+        // a backslash would SHOW rather than protect — and nearly every tool name is underscored, so
+        // escaping there puts a stray mark on nearly every row. A bare target cell has no such
+        // shelter and must be escaped, or a raw pipe splits the row and Markdig drops the overflow.
+        var sink = HeadlessSink();
+        var child = Child();
+        child.Jobs.ToolsChanged([ChildJob("run_shell", "grep a_b | wc", JobState.Running)]);
+        sink.NoteChild("j1", child);
+
+        var row = sink.RunningWorkerBodyForTest(RunningWorker())!.Split('\n')[^1];
+
+        Assert.Contains("`run_shell`", row, StringComparison.Ordinal);
+        Assert.DoesNotContain("run\\_shell", row, StringComparison.Ordinal);
+        Assert.Contains("a\\_b", row, StringComparison.Ordinal);
+        Assert.DoesNotContain("b | wc", row, StringComparison.Ordinal);
     }
 
     private static InlineJobSink HeadlessSink() => new(

@@ -695,6 +695,15 @@ public static class AppBootstrap
             // and paying for one per tool call would put a UI-thread hop on the loop's hot path.
             session.ToolCallFinished += jobPanelSink.RecordToolCall;
 
+            // AND WHICH CHILD BELONGS TO WHICH ROW, so a RUNNING worker can show the same timetable
+            // its finished row will settle into — growing as calls land, with what the child is doing
+            // right now as the last line. The calls above are the finished half; this is the live one,
+            // and the child's own job panel is where it is read from.
+            //
+            // NOT MARSHALLED ONTO THE UI THREAD, for the same reason: this writes to a concurrent
+            // dictionary and touches no control.
+            session.ChildSpawned += spawned => jobPanelSink.NoteChild(spawned.JobId, spawned.Child);
+
             session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
                 // THE PARENT'S OWN SPEND, not `total`. The event carries Ledger.TotalTokens, which is

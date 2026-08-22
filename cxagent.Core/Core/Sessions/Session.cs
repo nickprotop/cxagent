@@ -159,6 +159,14 @@ public sealed partial class Session
         remove { if (Host is { } h) h.ToolCallFinished -= value; }
     }
 
+    /// <summary>A child was built for a spawn row, paired with the row that started it — so a live
+    /// row can show what its child is doing while it does it.</summary>
+    public event Action<Agents.SpawnedChild>? ChildSpawned
+    {
+        add { if (Host is { } h) h.ChildSpawned += value; }
+        remove { if (Host is { } h) h.ChildSpawned -= value; }
+    }
+
     /// <summary>The provider currently in use, tracked alongside <see cref="Host"/> so a diagnose
     /// action calls the CURRENT provider rather than whichever was resolved at startup.</summary>
     public ILlmProvider? Provider { get; private set; }

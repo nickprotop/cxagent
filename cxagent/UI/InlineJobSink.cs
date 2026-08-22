@@ -288,8 +288,13 @@ public sealed class InlineJobSink : IToolObserver
             // But a sub-agent does have something: its child's recent tool calls. Blank it too and
             // expanding a running spawn reveals an empty block, which is the worst moment to show
             // nothing.
+            //
+            // AND WHEN THE CHILD HAS CALLED SOMETHING, that something is the better answer: the same
+            // timetable the row will settle into, so a reader watching it grow is not handed a
+            // different artefact at the finish line. ProgressBody is what a spawn shows until its
+            // first call lands, and what every other running row shows always.
             if (!IsTerminal(job.State))
-                _chat.UpdateMessage(id, job.ProgressBody ?? string.Empty);
+                _chat.UpdateMessage(id, RunningWorkerBody(job) ?? job.ProgressBody ?? string.Empty);
 
             // A COMPACT row folds its whole result into ONE line and drops the expand affordance:
             // "20" does not need a header, a body, a full-width rule, a status row and a blank line
@@ -583,11 +588,15 @@ public sealed class InlineJobSink : IToolObserver
     /// and never again. The inline [spinner] in that header is NOT a driver either: it is resolved
     /// out of the stored string at parse time, so it animates a header nobody has recomputed.</para>
     ///
-    /// <para>HEADER ONLY, exactly like <see cref="ToolProgressed"/> and for exactly its reason — this
-    /// is the same SetHeader call, deliberately not routed through ToolUpdated, which force-expands
-    /// the row and blanks its body. Doing either once a second would re-open a row the user
-    /// collapsed and fight them for it. It does not touch the body at all: a tick knows nothing new
-    /// about the work, only about the time.</para>
+    /// <para>NOT ROUTED THROUGH ToolUpdated, exactly like <see cref="ToolProgressed"/> and for
+    /// exactly its reason: that method force-expands the row and blanks its body, and doing either
+    /// once a second would re-open a row the user collapsed and fight them for it. SetHeader and
+    /// UpdateMessage change what a row SAYS without touching whether it is open.</para>
+    ///
+    /// <para>THE BODY ONLY FOR A LIVE WORKER, which has a spinner and a clock of its own inside the
+    /// table and therefore needs the same driver the header's clock needs. Every other running row's
+    /// body is pushed by whatever produced it — a tick knows nothing new about that work, only about
+    /// the time.</para>
     ///
     /// <para>Terminal jobs are skipped: their header carries a fixed duration off JobResult and
     /// rewriting it every second would be pure churn for an unchanging string.</para>
@@ -620,6 +629,17 @@ public sealed class InlineJobSink : IToolObserver
             if (!_lines.TryGetValue(job.Id, out var id)) continue;
 
             _chat.SetHeader(id, CompactHeader(job));
+
+            // AND A LIVE WORKER'S BODY, which has its own spinner and its own clock and so needs the
+            // same driver the header's clock needs — for the same reason, spelled out above: the
+            // table is a pure projection of the child's panel and the moment it was rendered, so it
+            // freezes unless something re-renders it.
+            //
+            // UpdateMessage ALONE, never ToolUpdated: this must change what is BEHIND the expand
+            // without touching whether it is open, or a tick would re-open a row the user shut, once
+            // a second, forever. The same distinction ToolProgressed is built on.
+            if (RunningWorkerBody(job) is { } live) _chat.UpdateMessage(id, live);
+
             refreshed++;
         }
 
@@ -1253,6 +1273,106 @@ public sealed class InlineJobSink : IToolObserver
         lock (calls) calls.Add(report);
     }
 
+    /// <summary>
+    /// The live child behind a RUNNING spawn row, keyed by the PARENT's job id.
+    ///
+    /// <para>THE PARENT'S JOB ID IS THE ONLY KEY AVAILABLE WHILE IT RUNS. <see cref="_workerCalls"/>
+    /// keys by the CHILD's agent id, which the finished row reads back out of the envelope — and the
+    /// envelope does not exist until the child has answered. The row on screen is addressed by the
+    /// job id from the moment it appears, so that is what the live path can join on.</para>
+    ///
+    /// <para>Concurrent for the reason <see cref="_workerCalls"/> is: it is written from whatever
+    /// thread built the child and read from the UI thread on every tick.</para>
+    ///
+    /// <para>RELEASED WHEN THE ROW CLOSES. A <see cref="SubAgent"/> pins a whole
+    /// <see cref="CxAgent.Core.Agents.Agent"/> and its context, so a fan-out session that kept every
+    /// one it ever spawned would hold every child's conversation for as long as the process lives —
+    /// strictly worse than the call lists, which are a few hundred bytes each.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, SubAgent> _workerChildren = new();
+
+    /// <summary>
+    /// Associates a running spawn row with the child it started.
+    ///
+    /// <para>Wired to <c>Agent.ChildSpawned</c>, which fires the moment the child is built and
+    /// BEFORE it runs — the row is already on screen by then, so the live body has a child to read
+    /// from its first tick rather than from the first turn the child completes.</para>
+    ///
+    /// <para>NOT MARSHALLED ONTO THE UI THREAD, for the reason <see cref="RecordToolCall"/> gives:
+    /// this writes to a concurrent dictionary and touches no control.</para>
+    /// </summary>
+    public void NoteChild(string jobId, SubAgent child) => _workerChildren[jobId] = child;
+
+    /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
+    /// so cannot be static.</summary>
+    public string? RunningWorkerBodyForTest(Job job) => RunningWorkerBody(job);
+
+    /// <summary>
+    /// A RUNNING worker's body: the same timetable its finished row will show, growing as calls land,
+    /// with whatever the child is doing right now as the last line.
+    ///
+    /// <para>Returns null when there is nothing to draw — not a worker, no child noted yet, or a
+    /// child that has called nothing — and the caller then falls back to <c>ProgressBody</c>. Blanking
+    /// it instead would mean expanding a running spawn reveals an empty block, which is the worst
+    /// moment to show nothing.</para>
+    ///
+    /// <para>THE SAME RENDERER AS THE FINISHED ROW, so the row does not change SHAPE when it settles:
+    /// what it gains at the finish line is the <c>out</c> column and the final counts, and nothing
+    /// else moves. Two renderers would drift, and the drift would show up as the table visibly
+    /// reflowing at the exact moment the user stops watching it.</para>
+    /// </summary>
+    private string? RunningWorkerBody(Job job)
+    {
+        if (job.JobType != "llm_agent") return null;
+        if (!_workerChildren.TryGetValue(job.Id, out var child)) return null;
+
+        // THE CHILD'S OWN ID, held rather than parsed. This is the same key RecordToolCall files
+        // under, and while the child is running there is no envelope to read it back out of.
+        var calls = _workerCalls.TryGetValue(child.Agent.Id, out var recorded) ? recorded : null;
+
+        // THE DIRECT CHILD'S PANEL, AND NO DEEPER. A child may spawn its own children, and the
+        // completed list below already includes their calls because ToolCallFinished is forwarded up
+        // the chain. The in-flight row is different: it is a read of ONE panel, and walking into a
+        // grandchild's would put another agent's work on this row with nothing saying whose it is.
+        //
+        // The first non-terminal job, not the last: a child runs its calls one at a time, so there is
+        // at most one, and taking the first is what makes the absent case (all terminal) render as no
+        // row rather than as a stale one.
+        var inFlight = child.Jobs.Jobs.FirstOrDefault(j => !IsTerminal(j.State));
+
+        var snapshot = calls is null ? [] : Snapshot(calls);
+        if (snapshot.Count == 0 && inFlight is null) return null;
+
+        return Timetable(snapshot, Elapsed(job), new LiveRun(inFlight));
+    }
+
+    /// <summary>
+    /// That the run is STILL GOING, and what it is doing if it is doing anything — the difference
+    /// between a live table and a settled one.
+    ///
+    /// <para>A RECORD RATHER THAN A NULLABLE JOB, and a test found the reason. Keying "is this live"
+    /// on "is a call in flight" conflates two facts that come apart constantly: a child sits between
+    /// calls on every hop, thinking or waiting on the provider, and a table keyed that way would grow
+    /// and lose its <c>out</c> column several times over one run. Being present says the run is live;
+    /// <see cref="InFlight"/> says whether there is a call to draw for it.</para>
+    /// </summary>
+    /// <param name="InFlight">The child's currently-executing job, or null between calls.</param>
+    private sealed record LiveRun(Job? InFlight);
+
+    /// <summary>A copy taken under the list's own lock, so the render walks a set nothing is
+    /// appending to.</summary>
+    private static List<ToolCallReport> Snapshot(List<ToolCallReport> calls)
+    {
+        lock (calls) return [.. calls];
+    }
+
+    /// <summary>
+    /// How long the row has been running, off <c>StartedAt</c> rather than a second timer — the same
+    /// source the header's clock uses, so the two numbers cannot disagree.
+    /// </summary>
+    private static TimeSpan Elapsed(Job job) =>
+        job.StartedAt is { } started ? DateTimeOffset.UtcNow - started : TimeSpan.Zero;
+
     /// <summary>Test seam: the table is a pure projection of the calls and the run's length.</summary>
     public static string TimetableForTest(IReadOnlyList<ToolCallReport> calls, TimeSpan ran) =>
         Timetable(calls, ran);
@@ -1281,6 +1401,13 @@ public sealed class InlineJobSink : IToolObserver
     private string? WorkerBody(Job job)
     {
         if (job.JobType != "llm_agent") return null;
+
+        // THE CHILD GOES FIRST, BEFORE ANY OF THE RETURNS BELOW. Every path through this method is a
+        // TERMINAL transition, so the live body will never be drawn for this row again — and the
+        // failure paths are the ones a leak would collect, since a spawn that broke before answering
+        // has no envelope for the branch below to key on. Keyed by the parent's job id, which every
+        // one of those paths still has.
+        _workerChildren.TryRemove(job.Id, out _);
 
         // THE ENVELOPE IS THE JOIN. A spawn's row is the PARENT's job, and its child's calls are
         // filed under the CHILD's agent id — which the envelope carries and nothing else on this
@@ -1324,7 +1451,13 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>A WORKER THAT CALLED NOTHING GETS THE SUMMARY LINE ALONE. An empty table under a header
     /// row says only that the <c>expand…</c> lied; "0 calls · 1.2s" is a fact about the run.</para>
     /// </summary>
-    private static string Timetable(IReadOnlyList<ToolCallReport> calls, TimeSpan ran)
+    /// <param name="calls">Every call that has FINISHED, in the order it ran.</param>
+    /// <param name="ran">How long the run has lasted — its final duration, or its elapsed time so far.</param>
+    /// <param name="live">
+    /// How the run is going right now, or null for one that is over.
+    /// </param>
+    private static string Timetable(IReadOnlyList<ToolCallReport> calls, TimeSpan ran,
+        LiveRun? live = null)
     {
         // EVERY NUMBER THROUGH DisplayNumber, and the duration especially. A bare ":0.0" takes the
         // CURRENT CULTURE's decimal separator, so the same run reads "6.2s" or "6,2s" depending on
@@ -1350,14 +1483,14 @@ public sealed class InlineJobSink : IToolObserver
         AddCount(parts, calls, "cancelled", "cancelled");
 
         var summary = string.Join(" · ", parts);
-        if (calls.Count == 0) return summary;
+        if (calls.Count == 0 && live?.InFlight is null) return summary;
 
         var rows = new List<string>
         {
             summary,
             "",
-            "|   | tool | target | ms | out |",
-            "|---|------|--------|---:|----:|",
+            live is null ? "|   | tool | target | ms | out |" : "|   | tool | target | ms |",
+            live is null ? "|---|------|--------|---:|----:|" : "|---|------|--------|---:|",
         };
 
         foreach (var call in calls)
@@ -1370,11 +1503,71 @@ public sealed class InlineJobSink : IToolObserver
             var tool = Md.CodeSpan(call.ToolName);
             var target = string.IsNullOrWhiteSpace(call.Target) ? "" : Md.EscapeCell(call.Target!);
 
+            var outCell = live is null ? $" {Bytes(call.ResultChars)} |" : "";
             rows.Add($"| {Mark(call.Outcome)} | {tool} | {target} "
-                   + $"| {DisplayNumber.Grouped(call.DurationMs)} | {Bytes(call.ResultChars)} |");
+                   + $"| {DisplayNumber.Grouped(call.DurationMs)} |{outCell}");
         }
 
+        if (live?.InFlight is { } running) rows.Add(InFlightRow(running));
+
         return string.Join("\n", rows);
+    }
+
+    /// <summary>
+    /// The last row of a live table: what the child is doing right now, spinning, with its own clock.
+    ///
+    /// <para>A GLYPH DERIVED FROM ELAPSED MONOTONIC TIME rather than an inline <c>[spinner]</c> tag.
+    /// The header can carry that tag because a header is markup the parser resolves at paint time;
+    /// this is a MARKDOWN table cell, where the tag would render as its own literal text. The same
+    /// derivation the framework's own clock does, at the same cadence, so the two animate together.
+    /// </para>
+    ///
+    /// <para>WHAT TICKS IT IS <see cref="RefreshRunningHeadersNow"/>, exactly as with the header's
+    /// clock and for exactly its reason: this is a pure projection of the job and the moment it was
+    /// called, so nothing re-derives it unless something re-renders the body.</para>
+    ///
+    /// <para>THE SAME COLUMNS AS A FINISHED ROW, minus <c>out</c> — which the whole table is missing
+    /// while it is live. A row that changed shape when it settled would be the one thing this design
+    /// is trying not to do.</para>
+    /// </summary>
+    private static string InFlightRow(Job job)
+    {
+        // THE SAME TWO COLUMNS AS A FINISHED ROW, split out of what the child's panel holds.
+        // PlanLocalId IS the tool name on a call row — Agent.InvokeAndShowAsync sets it to call.Name
+        // — and DisplayName is that name followed by the arguments, so dropping the leading token
+        // leaves the target. Rendering the whole label in one column instead put `run_shell dotnet
+        // build` under `target` with the tool column blank, which is the row changing shape when it
+        // settles: the exact thing this design exists not to do.
+        var tool = job.PlanLocalId is { Length: > 0 } named ? named : job.DisplayName;
+
+        // Md.CodeSpan INSIDE, Md.EscapeCell OUTSIDE — the same split the finished rows above use, and
+        // for the same reason: a span processes no escapes, so EscapeCell's backslash would SHOW on
+        // nearly every row (read_file, run_shell, write_file are all underscored), while a bare cell
+        // has no shelter from a raw pipe splitting the row.
+        var target = job.DisplayName.Length > tool.Length && job.DisplayName.StartsWith(tool, StringComparison.Ordinal)
+            ? Md.EscapeCell(job.DisplayName[tool.Length..].Trim())
+            : "";
+
+        // MILLISECONDS, in the same column and the same format as every finished row above, so the
+        // in-flight call's cost is compared against theirs directly. Through DisplayNumber like all
+        // the rest: a bare format takes the current culture's group separator.
+        var ms = DisplayNumber.Grouped((long)Elapsed(job).TotalMilliseconds);
+
+        return $"| {SpinnerGlyph()} | {Md.CodeSpan(tool)} | {target} | {ms} |";
+    }
+
+    /// <summary>
+    /// The Braille frame for right now — the same alphabet the header's inline spinner animates
+    /// through, so a live row and its header do not spin in two different scripts.
+    /// </summary>
+    private static string SpinnerGlyph()
+    {
+        const string frames = "⣷⣯⣟⡿⢿⣻⣽⣾";
+
+        // MONOTONIC, not wall-clock: Environment.TickCount64 cannot step backwards over an NTP
+        // correction or a daylight-saving change, either of which would make the glyph jump or stall.
+        var frame = (int)(Environment.TickCount64 / SpinnerIntervalMs % frames.Length);
+        return frames[frame].ToString();
     }
 
     /// <summary>Appends "<c>2 denied</c>" when there are any, and nothing when there are none.</summary>
