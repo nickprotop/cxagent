@@ -31,7 +31,7 @@ public sealed class ActionClassifier
     /// to back, and a unit test that actually sits out 10 real seconds per stage cannot be told apart
     /// from a hang by anyone reading the suite's duration — this repo's whole "20s is a hang, not a
     /// slow test" convention depends on the suite staying in single digits. Injecting a short deadline
-    /// in <see cref="TwoStageClassifierTests"/>'s timeout cases keeps those tests proving the same
+    /// in `TwoStageClassifierTests`'s timeout cases keeps those tests proving the same
     /// thing (a stage that never answers still yields Ask) without paying the wall-clock cost of the
     /// real 10s production value.
     /// </summary>
