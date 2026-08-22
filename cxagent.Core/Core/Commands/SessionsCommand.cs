@@ -145,10 +145,11 @@ public static class SessionsCommand
         lines.Add("");
         lines.Add($"`/sessions resume <number|id>`{(all ? "" : "  ·  `/sessions all`")}");
 
-        // THE RETENTION WINDOW, SAID OUT LOUD. These rows used to be an invisible buffer, and
-        // deleting an invisible thing costs nobody anything. They are visible now.
+        // THE RETENTION WINDOW, SAID OUT LOUD. These rows are visible, and a user who can see a
+        // conversation listed will expect it to still be there tomorrow; silently expiring it
+        // breaks a promise the listing itself made.
         //
-        // "CLOSED CLEANLY" RATHER THAN "FINISHED", because those are no longer the same set: a
+        // "CLOSED CLEANLY" RATHER THAN "FINISHED", because those are not the same set: a
         // session someone resumed is retired too, and is kept. Saying "finished" here would promise
         // deletion of rows that survive, which is the wrong direction to be imprecise in.
         lines.Add($"sessions closed cleanly are removed after {(int)retention.TotalDays} days");
@@ -196,13 +197,13 @@ public static class SessionsCommand
 
     /// <summary>
     /// Six characters, like git — and like git, the FIRST six, because
-    /// <see cref="Helpers.UlidGenerator"/> now puts the randomness there.
+    /// <see cref="Helpers.UlidGenerator"/> puts the randomness there.
     ///
-    /// <para>It did not always. Ids used to open with a timestamp, so sessions started minutes apart
-    /// shared a prefix: three made during this feature's own drive all rendered as <c>01KZXC</c>, an
-    /// identifier that identified nothing. That was fixed where it was caused — in the generator —
-    /// rather than compensated for here by printing the tail, which would have left the same
-    /// collision in every other place an id is shown.</para>
+    /// <para>THE PREFIX ONLY IDENTIFIES BECAUSE THE GENERATOR PUTS RANDOMNESS FIRST. An id opening
+    /// with a timestamp gives sessions started minutes apart a shared prefix — three in one sitting
+    /// all render as <c>01KZXC</c>, an identifier that identifies nothing. The fix belongs in the
+    /// generator, not here: printing the tail instead would leave the same collision in every other
+    /// place an id is shown.</para>
     /// </summary>
     public static string Short(string uid) => uid.Length <= 6 ? uid : uid[..6];
 

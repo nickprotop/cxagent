@@ -201,10 +201,10 @@ public sealed class SubAgentFactory
     }
 
     // NOT readonly: /model swaps the session's provider in place, and a child with no provider of
-    // its own inherits from here. Left captured, every sub-agent kept talking to the model the
-    // session started on — confirmed in the usage archive, where every explore run after a switch
-    // still recorded the old instance, and contradicted by the switch notice's own promise that
-    // "sub-agents use this too unless their type names another provider".
+    // its own inherits from here. Left captured, every sub-agent keeps talking to the model the
+    // session started on — the usage archive then records the old instance for every explore run
+    // after a switch, contradicting the switch notice's own promise that "sub-agents use this too
+    // unless their type names another provider".
     private SubAgentRuntime _runtime;
 
     /// <summary>

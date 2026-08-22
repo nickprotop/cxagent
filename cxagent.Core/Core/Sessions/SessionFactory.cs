@@ -104,8 +104,8 @@ internal static class SessionFactory
 
         // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
         // it: the provider, the plugin registry, the ledger just built above, the context window
-        // and the orchestrator settings. That is exactly what the ledger hoist was for — those
-        // last two are private on AgentHost and were unreachable from any factory before it.
+        // and the orchestrator settings. That is why the ledger is built here rather than inside
+        // AgentHost — those last two are private on the host and unreachable from any factory.
         var orchestrator = resolution.Orchestrator ?? OrchestratorSettings.Unbounded;
         // THE TYPE CATALOG. Built per re-wire, like everything else here: an F5 provider change
         // must re-resolve every type's instance against the NEW registry, or a type would keep a
@@ -245,12 +245,12 @@ internal static class SessionFactory
             resume: resumeSnapshot,
 
             // Built above from the same snapshot `resume` came from, so a resumed session gets
-            // its spend back exactly as it did when AgentHost made this itself.
+            // its spend back — the host would otherwise make a fresh empty one and lose it.
             ledger: ledger);
 
         // THROUGH THE SESSION, which disposes the host it replaces and records the provider and
-        // instance alongside it — three facts that must move together, and used to be three
-        // assignments a re-wire had to remember.
+        // instance alongside it — three facts that must move together, and as three separate
+        // assignments are three things a re-wire has to remember.
         // SO THE SESSION CAN ANSWER FOR ITSELF — /model's instances and /mode's edit modes are both
         // questions about this session, and it needs the catalog it was wired against to answer them.
         session.NoteServices(shared);

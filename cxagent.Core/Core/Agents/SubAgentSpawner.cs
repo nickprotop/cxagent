@@ -146,21 +146,21 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         foreach (var type in _types.All)
         {
-            // WHAT THE PARENT NEEDS TO CHOOSE BY, WRITTEN FOR IT. This was Summarise(briefing) —
-            // the first sentence of text addressed to the CHILD — which produced lines like "You
-            // search and report.": grammatically about the agent, and useless to anyone deciding
-            // whether to reach for it.
+            // WHAT THE PARENT NEEDS TO CHOOSE BY, WRITTEN FOR IT — never derived from the briefing.
+            // Summarising the briefing takes the first sentence of text addressed to the CHILD and
+            // yields lines like "You search and report.": grammatically about the agent, and useless
+            // to anyone deciding whether to reach for it.
             //
-            // NO FALLBACK TO THE BRIEFING. A type with nothing configured already had an honest
-            // line, and it is the better answer: it says nothing was said, which is true, rather
-            // than saying something misleading with confidence. Keeping the derivation as a fallback
-            // would have preserved exactly the output this change removes, on a path the shipped
-            // config never takes and nobody would test.
+            // NO FALLBACK TO THE BRIEFING EITHER. The honest line below is the better answer for a
+            // type with nothing configured: it says nothing was said, which is true, rather than
+            // saying something misleading with confidence. A derivation kept as a fallback would
+            // produce exactly that misleading output on a path the shipped config never takes and
+            // nobody would test.
             //
-            // THE ONE-LINE RULE WAS NEVER "BE TERSE" — it was "do not drown the guidance above".
+            // THE ONE-LINE RULE IS NOT "BE TERSE" — it is "do not drown the guidance above".
             // Measured: the five shipped descriptions total ~1,620 characters against this tool's
             // ~2,150 of delegation advice (0.75x). Full briefings would be 4,558, or 2.3x, which is
-            // what the rule existed to prevent.
+            // what the rule exists to prevent.
             var what = type.Description is { Length: > 0 } described
                 ? described
                 : "runs where you do, no special instructions";
@@ -218,11 +218,11 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         // THREE CHANNELS, AND description IS NOT ONE OF THEM (D9).
         //
-        // `description` is a UI LABEL — 3-5 words for the status row and the permission prompt. It
-        // used to be passed as the briefing, which put "Analyze TextWrapping failures" into the
-        // highest-authority position in the child's system message under the heading "this is what
-        // you were created to do; where it disagrees with anything above, follow this". Harmless
-        // because it is contentless, and structurally the wrong thing in the wrong slot.
+        // `description` is a UI LABEL — 3-5 words for the status row and the permission prompt.
+        // Passing it as the briefing puts "Analyze TextWrapping failures" into the highest-authority
+        // position in the child's system message, under the heading "this is what you were created
+        // to do; where it disagrees with anything above, follow this". Harmless because it is
+        // contentless, and structurally the wrong thing in the wrong slot.
         //
         // `briefing` STAYS EMPTY until step 2 supplies config types. It is the one channel that
         // outranks everything else in the prompt, and the only legitimate author of it is a human

@@ -5,11 +5,11 @@ namespace CxAgent.Core.Mcp;
 /// <summary>
 /// Owns the running MCP servers for the life of the session, and can swap them without a restart.
 ///
-/// <para>WHY THIS EXISTS: config used to be read once at startup, so a server added in Settings did
-/// nothing until the app was restarted — the user changed a setting, saw no error, and got no
-/// server. Everything needed to avoid that was already in place: the agent asks the toolset for
-/// tools and instructions on EVERY prompt, so replacing the toolset's servers is enough for the next
-/// turn to see them. This is the piece that does the replacing.</para>
+/// <para>WHY THIS EXISTS: reading config once at startup means a server added in Settings does
+/// nothing until the app restarts — the user changes a setting, sees no error, and gets no server.
+/// The agent asks the toolset for tools and instructions on EVERY prompt, so replacing the
+/// toolset's servers is enough for the next turn to see them. This is the piece that does the
+/// replacing.</para>
 ///
 /// <para>The fleet belongs to the SESSION, not to any one <c>AgentHost</c> — an F5 provider swap
 /// rebuilds the host and must not kill the servers.</para>

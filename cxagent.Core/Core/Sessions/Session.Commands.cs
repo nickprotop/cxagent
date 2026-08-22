@@ -355,9 +355,9 @@ public sealed partial class Session
         Host.SwapProvider(next);
 
         // AND THE CHILDREN'S DEFAULT. A child with no provider of its own inherits it from the
-        // spawner, which held the model captured at wire time — so every sub-agent kept talking to
-        // the model the session started on. Confirmed in the usage archive: every explore run after
-        // a switch still recorded the old instance, while the switch notice promised the opposite.
+        // spawner, which holds the model captured at wire time — leave it and every sub-agent keeps
+        // talking to the model the session started on, so the usage archive records the old instance
+        // for every run after a switch while the switch notice promises the opposite.
         //
         // FUTURE CHILDREN ONLY. One already running keeps its provider: it holds its own dialogue
         // with that model, and moving it mid-flight would split that dialogue across two endpoints.
@@ -368,10 +368,10 @@ public sealed partial class Session
         Provider = next.Provider;
         InstanceName = next.InstanceName;
 
-        // THE CATALOG IS UNTOUCHED, and now unreachable from here: this method takes an ActiveModel,
-        // so there is no configuration in scope to replace by accident. That is the whole reason for
-        // the split — SwapProvider once moved the agent and the host and not the spawner, and nothing
-        // named the set that had to move together.
+        // THE CATALOG IS UNTOUCHED, and unreachable from here: this method takes an ActiveModel, so
+        // there is no configuration in scope to replace by accident. That is the whole reason for
+        // the split — a single swap that moves the agent and the host but not the spawner leaves
+        // nothing naming the set that has to move together.
         Resolution = Resolution?.WithModel(next) ?? new ResolvedConfig(next, Llm.ProviderCatalog.Empty, []);
 
         Announce(SessionChangeKind.Model);

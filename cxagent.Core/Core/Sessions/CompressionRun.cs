@@ -77,13 +77,13 @@ public static class CompressionRun
     {
         // A JOB ROW, not a bare system line, because compression IS work: it takes a work.Provider call of
         // its own, runs for seconds, and rewrites the conversation. As a row it gets the machinery
-        // every other tool call already has — a spinner while it runs (it looked like a hang before),
-        // a one-line summary when it lands, red if it degrades to truncation, and an expandable body.
+        // every other tool call already has — a spinner while it runs, without which seconds of
+        // silence read as a hang — a one-line summary when it lands, red if it degrades to
+        // truncation, and an expandable body.
         //
         // THE EXPANDABLE BODY IS THE POINT. Compression is the one operation that silently discards
-        // what the model knew, and the summary it wrote was previously visible nowhere: the user
-        // could see that memory had shrunk but never what survived. Putting the summary in the body
-        // makes a lossy step auditable.
+        // what the model knew. With the summary shown nowhere the user sees that memory shrank but
+        // never what survived; putting it in the body makes a lossy step auditable.
         var job = new Job
         {
             Id = Helpers.UlidGenerator.NewId(),
@@ -143,8 +143,8 @@ public static class CompressionRun
         };
         report.Jobs.ToolUpdated(job);
 
-        // KEYED ON Summarised, NOT ON THE MESSAGE COUNT — the same trap the /compress reply fell into
-        // once already. Compression replaces the older half with ONE summary, so a two-message
+        // KEYED ON Summarised, NOT ON THE MESSAGE COUNT — an easy trap for anything reporting on a
+        // compression. Compression replaces the older half with ONE summary, so a two-message
         // conversation removes one and inserts one and ends at the count it started with, while its
         // content shrank from a full turn to a couple of hundred characters. Counting therefore
         // reports "nothing happened" for a real compression, and the work.Context reading stays marked

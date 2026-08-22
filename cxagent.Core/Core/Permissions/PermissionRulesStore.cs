@@ -203,15 +203,15 @@ public class PermissionRulesStore
     /// <summary>Read-only snapshot for the Settings page: this scope's rules, and how many OTHER
     /// scopes hold rules (so the page can say they exist without listing them). Lock-protected
     /// copy — never a live view of the mutable lists. Grants can arrive from background threads
-    /// (P12 wired the permission gate to persist on scheduler threads) while this page renders, so
-    /// a lazy IEnumerable over _rules would be a collection-modified-during-enumeration crash in
-    /// the render loop; this materialises both results before releasing the lock.</summary>
+    /// (the permission gate persists on scheduler threads) while this page renders, so a lazy
+    /// IEnumerable over _rules would be a collection-modified-during-enumeration crash in the
+    /// render loop; this materialises both results before releasing the lock.</summary>
     public (IReadOnlyList<(PermissionKind Kind, string Pattern)> Rules, int OtherScopeCount) RulesFor(string scope)
     {
-        // NORMALISE, as Add/Matches/GetTrust all do. This method used to compare the caller's raw
-        // path against stored scopes, but Add persists under FolderIdentity.ScopeFor(...) — the
-        // "/tmp/x#20260815T201146" form — so a lookup by plain "/tmp/x" matched nothing and both
-        // the panel count and the Settings page reported zero rules no matter how many were granted.
+        // NORMALISE, as Add/Matches/GetTrust all do. Add persists under FolderIdentity.ScopeFor(...)
+        // — the "/tmp/x#20260815T201146" form — so comparing the caller's raw path against stored
+        // scopes matches nothing: a lookup by plain "/tmp/x" makes both the panel count and the
+        // Settings page report zero rules no matter how many were granted.
         scope = FolderIdentity.ScopeFor(scope);
         lock (_lock)
         {

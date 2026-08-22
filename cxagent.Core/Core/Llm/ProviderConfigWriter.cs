@@ -57,14 +57,12 @@ public static class ProviderConfigWriter
         root["providers"] = providers;
         root["defaultProvider"] = settings.DefaultProvider is null ? null : JsonValue.Create(settings.DefaultProvider);
 
-        // The llmAgent/roles block used to be written here. Roles are gone.
-
         {
             var orch = root["orchestrator"]?.AsObject() ?? new JsonObject();
             var o = settings.Orchestrator;
             // BOTH ARE NULL-MEANS-UNCONFIGURED, so an absent key is written as absent rather than as
-            // an explicit value. "Nobody said" has to survive a round-trip: collapsing it into a
-            // number is what made the loader read config.json a second time by hand to recover it.
+            // an explicit value. "Nobody said" has to survive a round-trip: collapse it into a
+            // number and the loader has to read config.json a second time by hand to recover it.
             if (o.MaxTurns is { } mt) orch["maxTurns"] = mt; else orch.Remove("maxTurns");
             if (o.ContextCompressThreshold is { } cct) orch["contextCompressThreshold"] = cct; else orch.Remove("contextCompressThreshold");
 

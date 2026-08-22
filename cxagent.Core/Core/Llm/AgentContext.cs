@@ -6,17 +6,17 @@ namespace CxAgent.Core.Llm;
 /// One agent's conversation: the messages it is working from, how full its window is, and the
 /// machinery for making room. Owned by the agent, for the agent's whole life.
 ///
-/// <para>WHAT THIS REPLACES. The loop used to build a fresh working list from the session
-/// conversation at the start of every goal and throw it away at the end — so the tool calls, file
-/// reads and reasoning of goal N were gone before goal N+1 began (measured on a real run: 33 turns
-/// of working context discarded). Only the goal text and the final answer survived. "Read X and
-/// explain it" followed by "now change it" therefore re-read X, and a session that reached 58,000
-/// tokens mid-goal dropped to ~5,000 the moment that goal ended.</para>
+/// <para>ONE LIST FOR THE AGENT'S LIFE, NEVER REBUILT PER GOAL. A loop that builds a fresh working
+/// list from the session conversation at the start of each goal and drops it at the end loses the
+/// tool calls, file reads and reasoning of goal N before goal N+1 begins — measured on a real run,
+/// 33 turns of working context discarded, with only the goal text and the final answer surviving.
+/// "Read X and explain it" followed by "now change it" then re-reads X, and a session at 58,000
+/// tokens mid-goal drops to ~5,000 the moment that goal ends.</para>
 ///
 /// <para>NOBODY ELSE DOES THAT. Claude Code, Codex, opencode, gemini-cli, Cline, Roo and goose all
 /// keep ONE growing list across user prompts, tool results included, and treat compaction as a
 /// pressure valve tripped by token pressure — never as something that happens at a task boundary.
-/// The rebuild also destroys the prompt cache: every one of those agents appends to a stable prefix
+/// A rebuild also destroys the prompt cache: every one of those agents appends to a stable prefix
 /// precisely so cached reads (~10% of input price) keep hitting, and rebuilding the list guarantees
 /// a miss on a prefix that was nearly free to keep.</para>
 ///
@@ -57,11 +57,10 @@ public sealed class AgentContext
     /// How full the window is, from the last turn the provider reported usage for.
     ///
     /// <para>ONE TURN'S MEASUREMENT, NOT A RUNNING SUM. This is the provider's own count of what it
-    /// received, so it rises and — after compaction — falls. The status bar used to divide the
-    /// CUMULATIVE ledger total by the window instead, which sums input and output across every turn;
-    /// since each turn re-sends the whole conversation that figure grows quadratically and read 107%
-    /// of a window that was not close to full, and being cumulative it could never move down to show
-    /// that a compression had worked.</para>
+    /// received, so it rises and — after compaction — falls. Dividing the CUMULATIVE ledger total by
+    /// the window instead sums input and output across every turn; since each turn re-sends the
+    /// whole conversation that figure grows quadratically — it reads 107% of a window nowhere near
+    /// full — and being cumulative it can never move down to show that a compression worked.</para>
     ///
     /// <para>Null until a turn reports usage. A reported 0 is never a measurement — both wires fall
     /// back to 0 when a provider omits usage, and treating that as "plenty of room" would mean a

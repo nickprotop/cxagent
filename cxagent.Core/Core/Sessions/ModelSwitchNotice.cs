@@ -5,17 +5,17 @@ namespace CxAgent.Core.Sessions;
 /// <summary>
 /// What a session says when it changes model.
 ///
-/// <para>IN CORE, BESIDE THE THING IT DESCRIBES. This lived in the UI, and the composition root read
-/// the session's context window and usage — in that order, before the switch — to call it. That made
-/// the ordering a caller's problem and the sentence a front end's responsibility: a second one would
-/// have reimplemented both, and the first to get the order wrong reports the new window against the
-/// old usage without anything catching it.</para>
+/// <para>IN CORE, BESIDE THE THING IT DESCRIBES. Built in the UI instead, the composition root has
+/// to read the session's context window and usage — in that order, before the switch — to call it.
+/// That makes the ordering a caller's problem and the sentence a front end's responsibility: a
+/// second front end reimplements both, and the first to get the order wrong reports the new window
+/// against the old usage with nothing to catch it.</para>
 ///
-/// <para>MARKDOWN, WITH ONE SEVERITY FOR THE WHOLE NOTICE. This used to colour individual lines with
-/// bare tag names — the same vocabulary <see cref="Permissions.PermissionDecider"/> used to write in
-/// — but <see cref="Message"/> carries one <see cref="Severity"/> per notice, not per line, so the
-/// near-full-window caution now decides the tone of the whole block instead of just one line of it:
-/// that is the one fact in here a reader must not miss.</para>
+/// <para>MARKDOWN, WITH ONE SEVERITY FOR THE WHOLE NOTICE. <see cref="Message"/> carries one
+/// <see cref="Severity"/> per notice, not per line, so individual lines cannot be coloured with
+/// bare tag names the way <see cref="Permissions.PermissionDecider"/> writes them: the
+/// near-full-window caution decides the tone of the whole block rather than just its own line.
+/// That is the one fact in here a reader must not miss.</para>
 ///
 /// <para>A PURE FUNCTION, so what it says under each condition is testable without a session, a
 /// provider or a window.</para>

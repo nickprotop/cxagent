@@ -36,10 +36,10 @@ public interface ISessionObserver
     /// Reasoning text from the model — what it is THINKING.
     ///
     /// <para>A SEPARATE METHOD RATHER THAN A FLAG, so the agent states a KIND and the sink chooses
-    /// how it looks. It used to hand over pre-styled markup, which put a colour decision inside the
-    /// turn loop and — because the same method also carried unstyled body text — left the sink unable
-    /// to tell which of its two inputs was safe to escape. Only one of them was escaped; the other
-    /// silently swallowed any recognised tag name a model happened to write.</para>
+    /// how it looks. Handing over pre-styled markup instead puts a colour decision inside the turn
+    /// loop, and — with one method carrying both styled reasoning and unstyled body text — leaves
+    /// the sink unable to tell which of its two inputs is safe to escape. Escape one and not the
+    /// other and the unescaped side silently swallows any recognised tag name a model writes.</para>
     ///
     /// <para>Same contract as <see cref="AssistantTextAppended"/>: plain text, escaped by the sink.</para>
     /// </summary>
@@ -51,8 +51,8 @@ public interface ISessionObserver
     ///
     /// <para>A turn is created with <c>thinking: true</c>, and ChatTranscriptControl only clears that
     /// flag when a message receives BODY CONTENT. A planning turn where the model returns a
-    /// create_plan tool call and no prose — the normal case — therefore span its spinner forever,
-    /// which read as "still working" long after the goal had finished.</para>
+    /// create_plan tool call and no prose — the normal case — never receives any, so without this
+    /// call its spinner spins forever, reading as "still working" long after the goal finished.</para>
     /// </summary>
     void AssistantTurnEnded(ChatMessageId id);
 
@@ -70,9 +70,9 @@ public interface ISessionObserver
     /// <summary>
     /// Something the session did, said in words for the user.
     ///
-    /// <para>MARKDOWN, and the severity beside it rather than inside it. This used to be two methods
-    /// — <c>Said</c> and <c>Failed</c> — which said the same thing twice once tone became explicit: a
-    /// front end implementing both wrote the same body with a different colour.</para>
+    /// <para>MARKDOWN, and the severity beside it rather than inside it. ONE method, not a pair of
+    /// <c>Said</c>/<c>Failed</c>: with tone explicit in the message, a pair says the same thing
+    /// twice and a front end implementing both writes the same body with a different colour.</para>
     ///
     /// <para>A plain string converts implicitly and arrives as <see cref="Severity.Info"/>, so an
     /// ordinary line stays an ordinary line at the call site.</para>

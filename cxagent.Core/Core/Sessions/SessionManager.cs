@@ -10,11 +10,11 @@ namespace CxAgent.Core.Sessions;
 /// <summary>
 /// Owns a process's sessions and the services they share.
 ///
-/// <para>WHAT IT REPLACES. The shared services were four locals in a 1,400-line UI method — a log
-/// manager, two Sqlite stores, a permission gate — assembled into a <see cref="SharedServices"/>
-/// record at the point of use and owned by nothing. That works while there is one session, which is
-/// exactly the shape <see cref="Session"/>'s own doc says stops working at two: "a local is one
-/// slot, so a second session would need a second copy of a 1,400-line method".</para>
+/// <para>WHY IT OWNS THEM. The shared services — a log manager, two Sqlite stores, a permission
+/// gate — are a <see cref="SharedServices"/> record. Left as locals in the UI method that uses
+/// them they would be owned by nothing, which works while there is one session and stops at two,
+/// exactly as <see cref="Session"/>'s own doc says: "a local is one slot, so a second session
+/// would need a second copy of a 1,400-line method".</para>
 ///
 /// <para>SO THIS IS THE SECOND SLOT. It holds the collection and builds the shared half once. A
 /// caller opens a session by naming a folder and handing over the two things only it can supply:
@@ -52,11 +52,11 @@ public sealed class SessionManager : IDisposable
     /// which is the part that breaks when it is copied: arming the resume, re-wiring, retiring the
     /// row it came from and saying so are four steps that only work together.</para>
     ///
-    /// <para>SET ONCE RATHER THAN PASSED PER CALL. It was a parameter on <see cref="Resume"/>, which
-    /// meant every caller carried a closure over the same invariant value — the composition root
-    /// passes <c>() =&gt; WireRunner(resolution)</c>, and <c>resolution</c> is single-assignment for
-    /// the life of the process. A per-call parameter implied a variation that does not exist, and it
-    /// is what kept <c>/sessions resume</c> in the UI: a command cannot supply a callback only the
+    /// <para>SET ONCE RATHER THAN PASSED PER CALL. As a parameter on <see cref="Resume"/> every
+    /// caller would carry a closure over the same invariant value — the composition root passes
+    /// <c>() =&gt; WireRunner(resolution)</c>, and <c>resolution</c> is single-assignment for the
+    /// life of the process. A per-call parameter implies a variation that does not exist, and it
+    /// would strand <c>/sessions resume</c> in the UI: a command cannot supply a callback only the
     /// root can build.</para>
     /// </summary>
     public Action? Rewire { get; set; }
@@ -126,9 +126,9 @@ public sealed class SessionManager : IDisposable
                     break;
 
                 // THE RESUME STORE IS THIS MANAGER'S, which is the whole argument for registering
-                // here. The UI reached into Shared.Resume through a captured local to list rows and
-                // restore one — doing the manager's job from outside it, with SessionsCommand
-                // already sitting in Core/Commands and DefaultRetention already referenced above.
+                // here. A front end listing rows and restoring one through Shared.Resume does the
+                // manager's job from outside it, with SessionsCommand already sitting in
+                // Core/Commands and DefaultRetention already referenced above.
                 //
                 // GATED ON THE STORE, exactly as /stats is on History: a command that cannot work is
                 // worse than one that is absent, because the user reads its silence as an answer.
@@ -136,12 +136,12 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.ListSessions(arguments).Handled());
                     break;
 
-                // EVERY INPUT IS THE SESSION'S OWN — see Session.SetMode(string). This was in the
-                // composition root for the rules store and the classifier flag, and the session now
-                // reaches both: the policy for trust, NoteCatalog for the flag.
+                // EVERY INPUT IS THE SESSION'S OWN — see Session.SetMode(string). The session
+                // reaches the rules store and the classifier flag itself: the policy for trust,
+                // NoteCatalog for the flag, so the composition root has nothing to hand it.
                 // BOTH INPUTS ARE THE SESSION'S — the catalog it was wired with and the instance it
-                // is on. This was in the composition root for config paths that /model no longer
-                // reads; what remained was nine lines reaching across for two values it already had.
+                // is on. Registering this in the composition root instead would mean nine lines
+                // reaching across for two values the session already holds.
                 case "/model":
                     Commands.Register(command, (session, arguments) => session.UseFromInput(arguments).Handled());
                     break;
@@ -361,11 +361,11 @@ public sealed class SessionManager : IDisposable
     /// <c>Open</c> demands an ordering
     /// that constraint forbids.</para>
     ///
-    /// <para>WHY THIS RATHER THAN THE ROOT CALLING SessionFactory ITSELF, which is what it did: a
-    /// session wired outside the manager is not in its collection, so the collection did not contain
-    /// the one session actually running. Adopt() existed to paper over exactly that — add the
-    /// session afterwards and hope the wiring matched. Two ways to wire is one too many; this is the
-    /// single routine, and the folder overload above is now a thin call into it.</para>
+    /// <para>WHY THIS RATHER THAN THE ROOT CALLING SessionFactory ITSELF: a session wired outside
+    /// the manager is not in its collection, so the collection would not contain the one session
+    /// actually running. Papering over that means adding the session afterwards and hoping the
+    /// wiring matched. Two ways to wire is one too many; this is the single routine, and the
+    /// folder overload above is a thin call into it.</para>
     /// </summary>
     /// <param name="mode">
     /// How the session starts. Null takes <see cref="WorkingMode.Default"/>, which is what an agent
@@ -401,9 +401,9 @@ public sealed class SessionManager : IDisposable
     /// Restores an earlier conversation into a session, and retires the row it came from.
     ///
     /// <para>THREE STEPS THAT ONLY WORK TOGETHER — arm the resume, re-wire over it, retire the old
-    /// row — and the composition root did all three by hand, which is exactly where a sequence like
-    /// that gets copied with one step quietly missing. The re-wire is the caller's because building
-    /// the ports needs a window; everything else is the manager's, because the resume store is.</para>
+    /// row. Doing all three by hand at the call site is exactly where a sequence like that gets
+    /// copied with one step quietly missing. The re-wire is the caller's because building the
+    /// ports needs a window; everything else is the manager's, because the resume store is.</para>
     ///
     /// <para>SUPERSEDED, NOT FINISHED. The resumed session is a NEW agent with a new id writing its
     /// own rows, so leaving the old one open would offer the same context again at every launch —
