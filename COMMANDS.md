@@ -147,9 +147,9 @@ bound that, so it does not pretend to.
 **Under `auto`, shell is different, and this is a behaviour change worth reading.** A command the
 static check refuses no longer necessarily prompts: it is shown to the [classifier](CONFIG.md#classifier--the-reviewer-for-mode-edits-auto),
 and an *allow* runs it silently. This exists because the static check refuses on *shape*, not on
-danger — `dotnet build 2>&1 | tail` is refused for containing a pipe, and 95.6% of real commands
-carry a metacharacter that refuses them the same way, so the mode's most common prompt was one nobody
-learned anything from.
+danger — `dotnet build 2>&1 | tail` is refused for containing a pipe, and most real commands carry a
+metacharacter that refuses them the same way, so the mode's most common prompt was one nobody learned
+anything from.
 
 **The classifier is only ever asked about commands that are already confined.** Before any verdict is
 honoured, the command must satisfy every one of these, and no verdict can override them:

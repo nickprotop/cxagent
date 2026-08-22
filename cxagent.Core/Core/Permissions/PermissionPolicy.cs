@@ -621,10 +621,10 @@ public class PermissionPolicy
     /// VACUOUSLY on an empty list while the command reads the user's home directory. Approving what we
     /// did not read is approving whatever we missed, so anything unclassifiable costs a prompt.</para>
     ///
-    /// <para>THIS RUNS ON NEARLY EVERY SHELL COMMAND. The repo's replay of 13,962 real invocations
-    /// (see <see cref="CommandSubjects"/>) found 95.6% carry a metacharacter and never reach the
-    /// read-only check — so the population reaching here is not an occasional second opinion, it is
-    /// most of the traffic. That is why every clause is a parse or a set lookup and nothing else; the
+    /// <para>THIS RUNS ON NEARLY EVERY SHELL COMMAND. Nearly all real invocations carry a
+    /// metacharacter and never reach the read-only check (see <see cref="CommandSubjects"/>, which
+    /// records the replay behind that) — so the population reaching here is not an occasional second
+    /// opinion, it is most of the traffic. That is why every clause is a parse or a set lookup and nothing else; the
     /// classifier call it gates is absorbed by the verdict cache, not by making this cleverer.</para>
     ///
     /// <para>THE FOUR-CLAUSE BOUND AS SPECIFIED WAS NOT SUFFICIENT, and this was found by writing the
@@ -724,7 +724,7 @@ public class PermissionPolicy
     ///
     /// <para>THE SAME SET <see cref="ReadOnlyCommands"/> CALLS <c>Dangerous</c>, and the difference in
     /// treatment is the whole feature: that class refuses a line containing any of them, which is why
-    /// 95.6% of real commands prompt. Here each side of the operator is examined instead.</para>
+    /// so many real commands prompt. Here each side of the operator is examined instead.</para>
     /// </summary>
     private static readonly char[] SegmentSeparators = ['&', ';', '|', '>', '<', '\n', '\r'];
 

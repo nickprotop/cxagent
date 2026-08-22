@@ -21,9 +21,9 @@ namespace CxAgent.Tests;
 /// asked to enforce a boundary it cannot see.</para>
 ///
 /// <para>THIS RUNS CONSTANTLY, which is why the bound has to be cheap and exact rather than clever.
-/// The repo's own replay of 13,962 real shell invocations (CommandSubjects.cs:36-41) found 95.6%
-/// carry a metacharacter and never reach the read-only check at all — so this is a classifier call
-/// on nearly every shell command an agent issues, not an occasional second opinion.</para>
+/// Nearly every real shell command carries a metacharacter and so never reaches the read-only check
+/// at all (CommandSubjects.cs:36-41 records the replay this comes from) — so this is a classifier
+/// call on almost every command an agent issues, not an occasional second opinion.</para>
 /// </summary>
 public class ShellApprovalTests
 {
@@ -202,7 +202,7 @@ public class ShellApprovalTests
         // THE TABLE FROM THE SPEC, and the reason the structural bound was added back after an
         // earlier draft argued trust alone was enough. Every one of these is parser-refused, so
         // without the bound every one of them is in the approvable population — with nothing between
-        // it and silence but a model with a cited 17% false-negative rate.
+        // it and silence but a model that is wrong some of the time.
         var root = MakeTempDir();
         var policy = TrustedAutoPolicy(root);
 

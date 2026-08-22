@@ -7,11 +7,11 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// TASK 12: ONE MODEL, TWO PROMPTS, NO CONFIG CHANGE. A single-token triage pass answers the common
-/// case in one cheap call; only what it flags pays for a second, reasoning call. Measured behind this
-/// split: single-token triage alone had an 8.5% false-positive rate (over-blocking ordinary, safe
-/// actions); adding the reasoning stage on flagged actions brought that down to 0.4%. Running the
-/// expensive stage on EVERY action would buy the same accuracy at several times the cost — the whole
-/// point of triage is that most actions never reach stage two.
+/// case in one cheap call; only what it flags pays for a second, reasoning call. The reasoning behind
+/// the split: a single-token pass alone over-blocks ordinary, safe actions, and reasoning about the
+/// ones it flags recovers most of that without paying for reasoning everywhere. Running the expensive
+/// stage on EVERY action would buy similar accuracy at several times the cost — the whole point of
+/// triage is that most actions never reach stage two.
 ///
 /// <para>See <see cref="ActionClassifier"/> for what "flagged" means (triage verdict != Allow) and
 /// why: a triage ALLOW is cheap to trust (a false ALLOW here is a false negative, not the failure mode
