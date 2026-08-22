@@ -76,7 +76,7 @@ public sealed class SubAgentFactory
         public string? InstanceName { get; init; }
 
         /// <summary>The tools a child may call — the parent's registry, not a narrowed copy.</summary>
-        public required JobRegistry Plugins { get; init; }
+        public required JobRegistry Executors { get; init; }
 
         /// <summary>
         /// The embedder's injected tools, inherited whole.
@@ -303,7 +303,7 @@ public sealed class SubAgentFactory
 
         var agent = new Agent(
             provider,
-            _runtime.Plugins,
+            _runtime.Executors,
             _runtime.Ledger,
             // BOTH BUFFERED, and both are required. A buffered chat sink with the parent's job panel
             // still leaks a row per tool call into the parent's transcript.

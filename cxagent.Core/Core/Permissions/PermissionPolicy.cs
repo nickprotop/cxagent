@@ -906,7 +906,7 @@ public class PermissionPolicy
     /// </summary>
     private static readonly HashSet<string> UnexaminableVerbs = new(StringComparer.Ordinal)
     {
-        // Plugins: what runs is not what was read.
+        // Executors: what runs is not what was read.
         "eval", "exec", "source", ".", "sh", "bash", "zsh", "dash", "ksh", "xargs", "env", "sudo",
         "doas", "nohup", "watch", "ssh", "screen", "tmux",
 

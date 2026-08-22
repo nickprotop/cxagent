@@ -109,7 +109,7 @@ public class ToolSelectionMechanismTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
             ToolSelection = selection,

@@ -190,7 +190,7 @@ public class AgentTypeToolsReachTheChildTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
         });

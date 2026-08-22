@@ -213,7 +213,7 @@ bool    HasAgent             // is anything wired
 WorkingMode Mode
 
 ILlmProvider? Provider · string? InstanceName · ResolvedConfig? Resolution
-PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · JobRegistry? Plugins
+PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · JobRegistry? Executors
 
 IReadOnlyList<CompletionValue> Values(string set)
 ```

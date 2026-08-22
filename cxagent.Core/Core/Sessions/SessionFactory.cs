@@ -116,7 +116,7 @@ internal static class SessionFactory
         {
             Provider = resolution.Provider!,
             InstanceName = resolution.InstanceName,
-            Plugins = executors,
+            Executors = executors,
 
             // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
             // show the result as its parent, or the showing is silently skipped.
@@ -170,7 +170,7 @@ internal static class SessionFactory
             {
                 Provider = resolution.Provider!,
                 InstanceName = resolution.InstanceName,
-                Plugins = executors,
+                Executors = executors,
 
                 // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
                 // Sessions and permission rules are both scoped to the project they belong to,

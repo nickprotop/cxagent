@@ -162,7 +162,7 @@ public sealed partial class Session
     /// <summary>The executor registry for the current wiring, or null before the first wire. Rebuilt
     /// per re-wire so an F7 rebinding dispatches through the NEW resolution rather than the bindings
     /// that existed at launch.</summary>
-    public JobRegistry? Plugins { get; private set; }
+    public JobRegistry? Executors { get; private set; }
 
     /// <summary>
     /// A ledger that must survive the next re-wire, or null for the usual fresh start.
@@ -226,12 +226,12 @@ public sealed partial class Session
         // the row the first is still streaming into.
         //
         // NULL-TOLERANT because callers pass null to change the OTHER fields — a provider swap that
-        // keeps the host, and tests that assert on Plugins alone. The signature does not say so,
+        // keeps the host, and tests that assert on Executors alone. The signature does not say so,
         // which is worth knowing rather than crashing on.
         host?.UseTurnIds(NextTurnId);
         Provider = provider;
         InstanceName = instanceName;
-        Plugins = executors;
+        Executors = executors;
     }
 
     /// <summary>

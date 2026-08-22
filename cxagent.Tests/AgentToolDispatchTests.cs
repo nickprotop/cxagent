@@ -181,7 +181,7 @@ public class AgentToolDispatchTests : IDisposable
         var runtime = new SubAgentFactory.SubAgentRuntime
         {
             Provider = new MockLlmProvider(),
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
             AgentTools = [new EchoTool()],

@@ -328,7 +328,7 @@ public sealed class AgentHost : IDisposable
     public sealed record AgentRuntime
     {
         public required ILlmProvider Provider { get; init; }
-        public required JobRegistry Plugins { get; init; }
+        public required JobRegistry Executors { get; init; }
 
         /// <summary>
         /// Which <c>providers</c> entry this is, for spend attribution and the UI's label.
@@ -572,7 +572,7 @@ public sealed class AgentHost : IDisposable
 
     private Agent BuildAgent()
     {
-        var agent = new Agent(_runtime.Provider, _runtime.Plugins, Ledger, _sink, _jobPanel, _stores.Logs,
+        var agent = new Agent(_runtime.Provider, _runtime.Executors, Ledger, _sink, _jobPanel, _stores.Logs,
             TurnCeiling,
 
             // THE CONTEXT BOUND, which is what the "no turn cap" decision above rests on: a

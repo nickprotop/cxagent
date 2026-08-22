@@ -46,7 +46,7 @@ public class SubAgentSpeculationTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,

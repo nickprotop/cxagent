@@ -22,7 +22,7 @@ public class SubAgentFactoryTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider ?? Answering(),
-            Plugins = executors ?? JobRegistry.CreateWithBuiltins(),
+            Executors = executors ?? JobRegistry.CreateWithBuiltins(),
             Ledger = ledger ?? new TokenLedger(),
             MaxTurns = maxTurns,
             CompressAbove = 40_000,
@@ -223,7 +223,7 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -244,7 +244,7 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,

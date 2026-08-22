@@ -125,12 +125,12 @@ public class SessionTests
     public void ReplacingTheHost_SuppliesTheJobRegistry()
     {
         var s = New();
-        Assert.Null(s.Plugins);
+        Assert.Null(s.Executors);
 
         var rewired = JobRegistry.CreateWithBuiltins();
         s.ReplaceHost(null!, new MockLlmProvider(), "local", rewired);
 
-        Assert.Same(rewired, s.Plugins);
+        Assert.Same(rewired, s.Executors);
     }
 
     // ---- the /model handoff ----------------------------------------------------------------------

@@ -43,7 +43,7 @@ public class JobPanelE2ETests : IDisposable
         var chat = new ChatTranscriptSink(_sys, mw.Chat);
         var jobPanel = new JobPanelSink(_sys, mw.JobPanel);   // mw.JobPanel is now a JobPanelControl
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = provider, Plugins = JobRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = provider, Executors = JobRegistry.CreateWithBuiltins() },
             chat,
             jobPanel);
 

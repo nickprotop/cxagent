@@ -24,7 +24,7 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -127,7 +127,7 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 2,
             CompressAbove = 40_000,
@@ -671,7 +671,7 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = JobRegistry.CreateWithBuiltins(),
+            Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = ledger,
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -1281,7 +1281,7 @@ public class SubAgentSpawnerTests
             spawner: new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = childProvider,
-                Plugins = JobRegistry.CreateWithBuiltins(),
+                Executors = JobRegistry.CreateWithBuiltins(),
                 Ledger = ledger,
                 MaxTurns = 50,
                 CompressAbove = 40_000,
@@ -1428,7 +1428,7 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Plugins = executors,
+            Executors = executors,
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
