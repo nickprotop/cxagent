@@ -145,9 +145,10 @@ public sealed class InlineJobSink : IToolObserver
             // (ApplyFooterSeparator/ApplyFooterSpacer re-derive them), so this needs the per-message
             // opt-out rather than setting properties on the rows.
             // A RUNNING or PENDING job has no output yet, so it is compact BY DEFINITION — there is
-            // nothing to expand into. Gating this on IsTerminal left a live tool rendering the full
-            // block with an "expand…" affordance revealing an empty body, which is exactly the noise
-            // this was meant to remove, and it is on screen for the whole time the tool runs.
+            // nothing to expand into. Gate this on IsTerminal and a live tool renders the full block
+            // with an "expand…" affordance revealing an empty body, which is exactly the noise the
+            // compact footer exists to remove — and it sits on screen for the whole time the tool
+            // runs.
             _chat.SetCompactFooter(id, IsCompactRow(job) || !IsTerminal(job.State));
             }
         }
@@ -222,9 +223,10 @@ public sealed class InlineJobSink : IToolObserver
             // (ApplyFooterSeparator/ApplyFooterSpacer re-derive them), so this needs the per-message
             // opt-out rather than setting properties on the rows.
             // A RUNNING or PENDING job has no output yet, so it is compact BY DEFINITION — there is
-            // nothing to expand into. Gating this on IsTerminal left a live tool rendering the full
-            // block with an "expand…" affordance revealing an empty body, which is exactly the noise
-            // this was meant to remove, and it is on screen for the whole time the tool runs.
+            // nothing to expand into. Gate this on IsTerminal and a live tool renders the full block
+            // with an "expand…" affordance revealing an empty body, which is exactly the noise the
+            // compact footer exists to remove — and it sits on screen for the whole time the tool
+            // runs.
             _chat.SetCompactFooter(id, compactRow);
 
             // EXPAND a compact row. SetCompactFooter removes the separator rule and the trailing
@@ -251,11 +253,12 @@ public sealed class InlineJobSink : IToolObserver
                 || job.JobType == ShowDiffType)
                 _chat.SetExpanded(id, true);
 
-            // THE BODY. Until now this method only touched the status row, so a job's message stayed
-            // whatever Title() produced when it first appeared — its NAME. The model's actual output
-            // was written by every executor (LlmAgentJobPlugin's transcript, ShellJobExecutor's stdout,
-            // both into Output["content"]) and read by NOTHING except IntrospectionTools, which is how
-            // the ORCHESTRATOR reads results. The user could not see what their own workers said.
+            // THE BODY, not only the status row. Touch the status row alone and a job's message
+            // stays whatever Title() produced when it first appeared — its NAME. The model's actual
+            // output is written by every executor (LlmAgentJobPlugin's transcript, ShellJobExecutor's
+            // stdout, both into Output["content"]) and read by nothing but IntrospectionTools, which
+            // is how the ORCHESTRATOR reads results — leaving the user unable to see what their own
+            // workers said.
             //
             // Terminal states only: a Running job has no output yet, and rewriting the body on every
             // transition would churn the transcript for no gain.
@@ -280,8 +283,9 @@ public sealed class InlineJobSink : IToolObserver
             // body, so a running tool would otherwise offer to expand into a copy of its own header,
             // and a RETRIED job would show the previous attempt's stderr under a live "running…".
             //
-            // But a sub-agent does have something: its child's recent tool calls. Expanding a running
-            // spawn used to reveal an empty block, which is the worst moment to show nothing.
+            // But a sub-agent does have something: its child's recent tool calls. Blank it too and
+            // expanding a running spawn reveals an empty block, which is the worst moment to show
+            // nothing.
             if (!IsTerminal(job.State))
                 _chat.UpdateMessage(id, job.ProgressBody ?? string.Empty);
 
@@ -290,10 +294,10 @@ public sealed class InlineJobSink : IToolObserver
             // to be read. The header carries the name, the ⎿ carries the result.
             if (IsTerminal(job.State) && IsCompactRow(job))
             {
-                // THE WHOLE OUTPUT, in the body, COLLAPSED. The row used to fold to its one-line
-                // summary and throw the body away, so "⎿ 254 lines, 8,990 chars" was all you could
-                // ever see — the actual text was only in the log file. Now the summary line stays as
-                // the collapsed header and the full output lives one keypress behind it.
+                // THE WHOLE OUTPUT, in the body, COLLAPSED. Folding to the one-line summary and
+                // throwing the body away makes "⎿ 254 lines, 8,990 chars" all you can ever see, with
+                // the actual text only in the log file. The summary line stays as the collapsed
+                // header and the full output lives one keypress behind it.
                 //
                 // Kept collapsed by default because a fan-out of tools each returning hundreds of
                 // lines would bury the conversation; the point is that the text is THERE when
@@ -347,20 +351,20 @@ public sealed class InlineJobSink : IToolObserver
                 // A tool's output is an echo of something already on disk, so it collapses to its
                 // one-line summary. A worker's output IS the answer that was asked for.
                 //
-                // FAILURE NO LONGER EXPANDS. It did, on the reasoning that the error and the buttons
-                // that act on it must be visible together — but those inline buttons were removed
-                // (see below), and what is left is an ordinary failed tool call. A read_file that
-                // missed is a one-line fact, and expanding it printed the same error twice, header
-                // and body, on every miss. The header already says `failed`, and `expand…` is there
-                // for anyone who wants the detail.
-                // EVERYTHING COLLAPSES NOW, INCLUDING A SPAWN.
+                // FAILURE DOES NOT EXPAND. The case for expanding it — the error and the buttons
+                // that act on it must be visible together — depends on inline buttons this row does
+                // not have (see the NO INLINE BUTTONS note below); what is left is an ordinary
+                // failed tool call. A read_file that missed is a one-line fact, and expanding it
+                // prints the same error twice, header and body, on every miss. The header already
+                // says `failed`, and `expand…` is there for anyone who wants the detail.
+                // EVERYTHING COLLAPSES, INCLUDING A SPAWN.
                 //
-                // The rule was "a worker stays expanded", written when llm_agent meant a STREAMING
-                // worker: its prose had been visible and growing for the whole run, so collapsing at
-                // the finish line snatched away what the user was reading. That argument does not
-                // survive contact with a sub-agent, which is the opposite case — its work is
-                // BUFFERED and was never on screen (D22), so there is nothing to snatch. What lands
-                // at the finish line is a wall of new text the user did not ask to have opened.
+                // "A worker stays expanded" holds only for a STREAMING worker, whose prose has been
+                // visible and growing for the whole run, so that collapsing at the finish line
+                // snatches away what the user is reading. A sub-agent is the opposite case — its
+                // work is BUFFERED and was never on screen (D22), so there is nothing to snatch.
+                // What lands at its finish line is a wall of new text the user did not ask to have
+                // opened.
                 //
                 // Seen in a screenshot: a completed spawn opened its whole envelope into the
                 // transcript, pushing the parent's own answer — the thing the user was waiting for —
@@ -387,10 +391,10 @@ public sealed class InlineJobSink : IToolObserver
                 _chat.SetExpanded(id, ExpandOnFinish(job));
             }
 
-            // NO INLINE BUTTONS. Retry/Skip/Diagnose were removed: they invited the user to drive
-            // the scheduler by hand while the orchestrator was mid-drive, which produced "a drive
-            // operation is already in progress; drive operations must not overlap" on screen, and a
-            // hand-skipped job desynchronised the plan from what the orchestrator believed had run.
+            // NO INLINE BUTTONS. Retry/Skip/Diagnose controls on a row invite the user to drive the
+            // scheduler by hand while the orchestrator is mid-drive, which puts "a drive operation is
+            // already in progress; drive operations must not overlap" on screen, and a hand-skipped
+            // job desynchronises the plan from what the orchestrator believes has run.
             // The failure message and its reason stay -- they are what the model reads on the next
             // consult, and letting it re-plan is both more reliable and the whole point of a loop
             // that already has a repair round.
@@ -513,10 +517,10 @@ public sealed class InlineJobSink : IToolObserver
     }
 
     /// <summary>
-    /// UNCLIPPED. The body used to cap at 4,000 chars with a visible marker, on the reasoning that a
-    /// long transcript makes the conversation unnavigable — but the row is COLLAPSED by default now,
-    /// so length costs nothing until the user opens it, and a clipped body meant the full text was
-    /// only ever in the log file. Kept as a pass-through rather than deleted so the call sites and
+    /// UNCLIPPED. Capping the body at a few thousand chars with a visible marker would answer a real
+    /// worry — a long transcript makes the conversation unnavigable — but the row is COLLAPSED by
+    /// default, so length costs nothing until the user opens it, and a clipped body puts the full
+    /// text only in the log file. Kept as a pass-through rather than removed so the call sites and
     /// their tests keep their shape.
     /// </summary>
     public static string Clip(string text) => text;
@@ -580,16 +584,16 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>
     /// The tick's actual work, split out so it is reachable without a running UI loop.
     ///
-    /// <para>PUBLIC BECAUSE THE ALTERNATIVE WAS NOT TESTING IT. Every other path in this sink is
-    /// verified through <c>CompactHeaderForTest</c>, a pure projection — which is exactly why the
-    /// frozen clock shipped: the projection was always right, and the bug was that nobody re-ran it.
-    /// A test written against the pure seam cannot see that, and the enqueue in the caller above puts
-    /// the work behind a queue only the framework's own loop drains. Splitting the marshalling from
-    /// the work leaves one method a test can call directly and watch the rows change.</para>
+    /// <para>PUBLIC BECAUSE THE ALTERNATIVE IS NOT TESTING IT. Every other path in this sink is
+    /// verified through <c>CompactHeaderForTest</c>, a pure projection — and a pure projection
+    /// cannot catch a clock that never ticks, because the projection is right every time and the
+    /// failure is that nobody re-runs it. The enqueue in the caller above puts the work behind a
+    /// queue only the framework's own loop drains, so splitting the marshalling from the work leaves
+    /// one method a test can call directly and watch the rows change.</para>
     ///
     /// <para>Returns how many rows it rewrote, so a test can distinguish "ticked nothing" from
-    /// "ticked and the header happened not to change" — a distinction the frozen clock had no way of
-    /// making. Callers in the app ignore it.</para>
+    /// "ticked and the header happened not to change" — without that count, a clock that never ticks
+    /// looks the same as one whose rows had nothing to change. Callers in the app ignore it.</para>
     ///
     /// <para>Must be on the UI thread; <see cref="RefreshRunningHeaders"/> is what guarantees it.</para>
     /// </summary>
@@ -658,8 +662,7 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     /// <summary>Test seam: the header label is a pure projection of the job.</summary>
 
-    /// <summary>Every job belongs in the transcript. A succeeded PLANNER used to be hidden here;
-    /// roles are gone, so there is no planner to hide.</summary>
+    /// <summary>Every job belongs in the transcript — no job type is filtered out.</summary>
     private static bool ShouldShow(Job job) => true;
 
     public static string AuthorForTest(Job job) => AuthorFor(job);
@@ -707,9 +710,9 @@ public sealed class InlineJobSink : IToolObserver
     /// its expandable block, which is the whole point of the distinction.
     /// </summary>
     /// <summary>
-    /// The header line for a compact step: its name plus the state that used to need a whole status
-    /// row of its own — and, while running, an inline <c>[spinner]</c> so the row does not change
-    /// SHAPE when it finishes, it just stops spinning.
+    /// The header line for a compact step: its name plus the state, folded in here rather than given
+    /// a whole status row of its own — and, while running, an inline <c>[spinner]</c> so the row does
+    /// not change SHAPE when it finishes, it just stops spinning.
     ///
     /// <para>This is what takes a tool step from three lines to two. The status row is the third
     /// line, and everything on it ("done · 0.0s") fits beside the name.</para>
@@ -744,10 +747,10 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>
     /// The word for a decision the USER did not make, or "" for every ordinary one.
     ///
-    /// <para>NO SEPARATOR OF ITS OWN. It used to return "  ·  auto-approved", and CompactHeader
-    /// appends its own "  ·  " after it — so a badged row rendered "· · auto-approved · done",
-    /// doubled. Seen on a live drive. The separators belong to the chain that assembles the header,
-    /// not to the pieces it joins.</para>
+    /// <para>NO SEPARATOR OF ITS OWN. Return "  ·  auto-approved" here and CompactHeader appends
+    /// its own "  ·  " after it, so a badged row renders "· · auto-approved · done", doubled — seen
+    /// on a live drive. The separators belong to the chain that assembles the header, not to the
+    /// pieces it joins.</para>
     /// </summary>
     private static string Badge(Job job) =>
         job.DecidedBy == "auto"
@@ -819,26 +822,27 @@ public sealed class InlineJobSink : IToolObserver
 
             // ELAPSED, AT THE END OF THE HEADER — sourced from StartedAt rather than a second timer.
             //
-            // THIS COMMENT USED TO CLAIM THE SPINNER TICKED THE CLOCK. It does not, and the number
-            // sat frozen on screen for as long as anyone cared to watch it. The tag below is resolved
-            // when this STRING is parsed, not when it is produced: MarkupSpinnerClock hands the
-            // parser a glyph derived from elapsed monotonic time, and its InvalidateForInlineSpinner
-            // asks the host to REPAINT — which re-parses the stored header text and picks a new
-            // glyph out of it. Nothing in that loop calls back into CompactHeader, so "now" here was
-            // whatever it happened to be the last time something pushed a header, and a row with no
-            // progress reports (a plain `run_shell` is exactly that) pushed exactly one.
+            // THE SPINNER DOES NOT TICK THE CLOCK, however much it looks like it should. The tag
+            // below is resolved when this STRING is parsed, not when it is produced:
+            // MarkupSpinnerClock hands the parser a glyph derived from elapsed monotonic time, and
+            // its InvalidateForInlineSpinner asks the host to REPAINT — which re-parses the stored
+            // header text and picks a new glyph out of it. Nothing in that loop calls back into
+            // CompactHeader, so relying on it leaves "now" at whatever it was the last time something
+            // pushed a header, and a row with no progress reports (a plain `run_shell` is exactly
+            // that) pushes exactly one — the number then sits frozen on screen indefinitely.
             //
-            // What ticks it now is RefreshRunningHeaders below, driven off the window's existing
+            // What ticks it is RefreshRunningHeaders below, driven off the window's existing
             // one-second panel clock. One second is the correct cadence for an hh:mm:ss field and
             // the spinner's own interval is far faster and belongs to the framework.
             //
             // NO CLOCK WHILE THE GATE IS STILL DECIDING. Reviewing means work has not begun, so
             // there is no runtime to report — and every candidate for what to show instead is worse
-            // than showing nothing. A live count would be the very review time this fix just took
-            // OUT of the number (see Agent.InvokeAndShowAsync); a frozen 00:00:00 reads as a hung
-            // clock, which is the same complaint that started all this. The badge in this slot
-            // already says "reviewing…", so the row is not silent about why the clock is absent, and
-            // the clock appearing at zero is then an honest signal that the work itself has started.
+            // than showing nothing. A live count would be the very review time that is deliberately
+            // kept OUT of the number (see Agent.InvokeAndShowAsync); a frozen 00:00:00 reads as a
+            // hung clock, which is exactly the complaint this whole clock exists to avoid. The badge
+            // in this slot already says "reviewing…", so the row is not silent about why the clock
+            // is absent, and the clock appearing at zero is then an honest signal that the work
+            // itself has started.
             //
             // A REVIEW TIMER, IF ONE IS EVER WANTED, NEEDS NOTHING BUILT HERE — noted only so that
             // nobody closes the door by tidying up. The two stamps are already distinct: CreatedAt is
@@ -1121,12 +1125,11 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>
     /// Whether a finished row is OPENED, and the distinction that made this a method.
     ///
-    /// <para>"DO NOT COLLAPSE IT" IS NOT "OPEN IT". A row is created collapsed, so the first version
-    /// of the show_diff exemption only skipped the SetExpanded(id, false) — and the diff rendered
-    /// perfectly while showing nothing but its header, because nothing on this path ever opened it.
-    /// The compact branch above does the opening for ordinary rows, and a diff no longer takes that
-    /// branch. Reported from a live session, not caught by a test, which is why the decision now has
-    /// a name and a seam.</para>
+    /// <para>"DO NOT COLLAPSE IT" IS NOT "OPEN IT". A row is created collapsed, so an exemption that
+    /// merely skips the SetExpanded(id, false) leaves the diff rendering perfectly while showing
+    /// nothing but its header, because nothing on this path ever opens it. The compact branch above
+    /// does the opening for ordinary rows, and a diff does not take that branch. That failure shows
+    /// up in a live session, not in a test, which is why the decision has a name and a seam.</para>
     ///
     /// <para>A WORKER IS THE EXCEPTION AMONG THE ANSWERS. llm_agent output is buffered and lands all
     /// at once at the finish line: opening it puts a wall of text on screen the user did not ask
@@ -1180,15 +1183,15 @@ public sealed class InlineJobSink : IToolObserver
     /// user asked for — not an echo of something already on disk. That is the whole distinction
     /// between a tool and a worker, and it is why the two are labelled differently.</para>
     ///
-    /// <para>FAILURE IS NO LONGER EXEMPT. It was — "a failed job keeps its error and its buttons
-    /// whatever its size" — and the buttons are gone (see the NO INLINE BUTTONS note above), so the
-    /// exemption was reserving a footer for an affordance that no longer exists. What it actually
-    /// bought was four lines to say one thing: the header already ends in "failed · 0.0s", then the
-    /// error, then a full-width rule, then "failed · 0.0s" AGAIN. Measured live on a missing file.
+    /// <para>FAILURE IS NOT EXEMPT. Exempting it — "a failed job keeps its error whatever its size"
+    /// — reserves a footer for inline buttons that do not exist (see the NO INLINE BUTTONS note
+    /// above), and buys four lines to say one thing: the header already ends in "failed · 0.0s",
+    /// then the error, then a full-width rule, then "failed · 0.0s" AGAIN. Measured live on a
+    /// missing file.
     ///
-    /// <para>A failed row is now compact on the same terms as any other: the header carries the
-    /// outcome and one line carries the reason. Nothing is hidden — the error is the body, and it
-    /// is what the model reads on the next consult either way.</para>
+    /// <para>A failed row is compact on the same terms as any other: the header carries the outcome
+    /// and one line carries the reason. Nothing is hidden — the error is the body, and it is what
+    /// the model reads on the next consult either way.</para>
     /// </summary>
     private static bool IsCompactRow(Job job)
     {

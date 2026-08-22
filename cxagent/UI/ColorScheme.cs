@@ -39,8 +39,8 @@ public static class ColorScheme
     /// value per process. The seam that matters — re-derivation on a theme change — is served just
     /// as well by a method the window system calls.</para>
     ///
-    /// <para>THE DEFAULTS ARE TODAY'S LITERALS, and they stay as the field initialisers rather than
-    /// being deleted, so a host that never calls this renders the palette this app shipped with.</para>
+    /// <para>THE FIELD INITIALISERS ARE KEPT as real literals rather than being removed once this
+    /// derives them, so a host that never calls this still renders the app's own palette.</para>
     /// </summary>
     /// <param name="theme">The active theme to express the palette in.</param>
     public static void DeriveFrom(ITheme theme)
@@ -49,12 +49,12 @@ public static class ColorScheme
 
         // THE CHAT SURFACE IS THE BASIS, not one derivation among several: every other surface here
         // is a step away from it, so taking it from the theme moves the whole palette together and
-        // keeps the relationships the old literals encoded by hand.
+        // keeps the relationships between surfaces fixed across themes.
         ChatSurface = theme.WindowBackgroundColor;
 
-        // THE STEPS ARE THE OLD DISTANCES, re-measured. The literals were 0x0d, 0x1e and 0x2a — a
-        // seventeen-point step to the panel and a further twelve to the composer, out of 255. Those
-        // ratios are what the amounts below reproduce, so ModernGray renders as it did before.
+        // THE STEPS ARE HAND-MEASURED DISTANCES. The reference greys are 0x0d, 0x1e and 0x2a — a
+        // seventeen-point step to the panel and a further twelve to the composer, out of 255. The
+        // ratios below reproduce those, which is what makes ModernGray render as designed.
         PanelSurface = Raised(ChatSurface, 0.0705);
         ComposerSurface = Raised(ChatSurface, 0.12);
 
@@ -128,9 +128,9 @@ public static class ColorScheme
     /// <summary>
     /// Failure, as markup — for text inside a string, where <see cref="Destructive"/> cannot reach.
     ///
-    /// <para>A failed tool row used to be distinguished only by NOT being muted, on the reasoning
-    /// that it must not recede. True but insufficient: "does not recede" left it the same colour as
-    /// ordinary text, so the one row the user has to act on looked like every other finished one.</para>
+    /// <para>A failed tool row needs a colour of its own, not merely the absence of muting. "Does
+    /// not recede" is true but insufficient: unmuted alone leaves it the same colour as ordinary
+    /// text, so the one row the user has to act on looks like every other finished one.</para>
     /// </summary>
     public static string DangerMarkup => Markup(Destructive, "red");
 
@@ -202,11 +202,11 @@ public static class ColorScheme
     /// <summary>
     /// The composer's surface — the prompt box AND the mode line under it.
     ///
-    /// <para>ONE CONSTANT FOR BOTH, because they are one control as far as the eye is concerned. The
-    /// prompt was picking up the framework's focused-edit background while the mode line sat on the
-    /// app background, so the composer read as a grey box with an unrelated caption floating beneath
-    /// it. Naming the surface here also means it no longer depends on which theme the framework
-    /// resolves at focus time.</para>
+    /// <para>ONE CONSTANT FOR BOTH, because they are one control as far as the eye is concerned.
+    /// Left to their defaults the prompt picks up the framework's focused-edit background while the
+    /// mode line sits on the app background, so the composer reads as a grey box with an unrelated
+    /// caption floating beneath it. Naming the surface here also keeps it independent of whichever
+    /// theme the framework resolves at focus time.</para>
     /// </summary>
     public static Color ComposerSurface { get; private set; } = new(0x2a, 0x2a, 0x2a);
 
@@ -266,10 +266,11 @@ public static class ColorScheme
     /// dimmed and undimmed landed wherever the prompt's height happened to fall. Raising ONE surface
     /// says the same thing, and nothing else on screen has to change.</para>
     ///
-    /// <para>THE SEPARATOR'S COLOUR. A first attempt tinted the composer by 0.22 and read as a grey
-    /// box pasted over the app — louder than the question printed on it. The separator is already
-    /// the palette's answer to "one step up from these two surfaces", so reusing it gives the app
-    /// ONE raised tone instead of two nearly-equal ones kept in sync by hand.</para>
+    /// <para>THE SEPARATOR'S COLOUR, not a tint of its own. Lifting the composer by its own amount
+    /// (0.22 was measured) reads as a grey box pasted over the app — louder than the question
+    /// printed on it. The separator is already the palette's answer to "one step up from these two
+    /// surfaces", so reusing it gives the app ONE raised tone instead of two nearly-equal ones kept
+    /// in sync by hand.</para>
     /// </summary>
     public static Color PromptSurface => Separator;
 

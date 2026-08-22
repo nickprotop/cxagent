@@ -220,9 +220,10 @@ public sealed class PermissionPromptControl
         // vocabulary rather than to three hex values chosen here.
         toolbar.AddButton(ChoiceButton("Allow once", ColorScheme.Affirmative, PermissionChoice.Once));
 
-        // NO LONGER "Always allow: <the whole command>". The command is already displayed, in full,
-        // three lines above — repeating it made the button as wide as the dialog and pushed the row
-        // off screen, so the answer to a question you could read was a control you could not.
+        // A FIXED LABEL, NOT "Always allow: <the whole command>". The command is already displayed,
+        // in full, three lines above — repeating it makes the button as wide as the dialog and
+        // pushes the row off screen, so the answer to a question you can read becomes a control you
+        // cannot.
         if (_request.AlwaysRule is not null)
             toolbar.AddButton(ChoiceButton("Always allow", ColorScheme.Caution, PermissionChoice.Always));
 
@@ -245,10 +246,10 @@ public sealed class PermissionPromptControl
     /// command, a blank line and a rule. The role still carries the meaning; the box added height,
     /// not information.</para>
     ///
-    /// <para>Labels are FIXED STRINGS now, so the escaping that used to matter here (an unescaped
-    /// '[' from a shell command in AlwaysRule rendered the button as an empty row) can no longer be
-    /// reached. It stays anyway: the cost is one call, and the failure it prevents is invisible
-    /// rather than loud.</para>
+    /// <para>Labels are FIXED STRINGS, so the escaping here is currently unreachable. It stays
+    /// anyway: the cost is one call, and the failure it guards against is invisible rather than loud
+    /// — an unescaped '[' from a shell command interpolated into a label renders the button as an
+    /// empty row.</para>
     /// </summary>
     /// <summary>
     /// The rule text, bounded. A shell rule is the whole command and a command can be a paragraph;

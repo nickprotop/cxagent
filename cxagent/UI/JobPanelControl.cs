@@ -116,8 +116,8 @@ public sealed class JobPanelControl : ScrollablePanelControl
         var poller = new LogTailPoller(_logs, job.AgentId, job.Id,
             newLines => _system.EnqueueOnUIThread(() =>
             {
-                // StopTail no longer waits for the poller (that self-deadlocked), so an emit already
-                // queued when it was cancelled can still land here. Two guards make that harmless:
+                // StopTail does not wait for the poller — waiting self-deadlocks — so an emit
+                // already queued when the tail was cancelled can still land here. Two guards make that harmless:
                 // the token, and an identity check that this is still the ACTIVE tail body — without
                 // the latter a late emit from a previous expansion would append to a control that has
                 // been detached from its block, or worse, to the wrong job's tail.

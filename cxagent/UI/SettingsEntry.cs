@@ -6,12 +6,11 @@ namespace CxAgent.UI;
 /// <summary>
 /// Reading config.json for the one caller that still edits it.
 ///
-/// <para>WHAT IT USED TO BE. This routed between a settings dialog, a roles editor and a providers
-/// editor, and told them apart from a genuine first run. All three are gone: config stopped being
-/// applied in place, which left the dialog writing a file and asking for a restart — an editor for a
-/// job a text editor does better, over a file the user can open. What could not be replaced that way
-/// is the FIRST run, where there is no file to open and no schema to guess, so the wizard survives
-/// and this survives with it.</para>
+/// <para>ONE CALLER, THE WIZARD. There are deliberately no in-app editors for config beside it:
+/// config is not applied in place, so an editor would write a file and ask for a restart — a job a
+/// text editor does better, over a file the user can open directly. What an editor CANNOT replace
+/// is the FIRST run, where there is no file to open and no schema to guess, which is why the wizard
+/// exists and why this classifier exists with it.</para>
 /// </summary>
 public static class SettingsEntry
 {
@@ -118,12 +117,11 @@ public static class EscapeRouting
     /// wrong, and the ordering matters: cancelling a turn while a modal is open would leave them
     /// looking at a dialog they cannot dismiss.</para>
     ///
-    /// <para>Otherwise NOTHING. This used to return DiscardPendingApproval unconditionally, which
-    /// had been a no-op since the copilot draft gate was deleted — so Escape did nothing at all
-    /// whenever no dialog was open, silently.</para>
+    /// <para>Otherwise NOTHING, said explicitly. A catch-all target that no handler acts on is the
+    /// same as this in behaviour but not in readability: Escape then does nothing whenever no dialog
+    /// is open, and nothing in the code says so.</para>
     /// </summary>
-    // ONE INPUT NOW. It took a dialogIsOpen flag while the Settings dialog existed; that dialog is
-    // gone, so the only thing Escape can find in front of it is a running turn. A prompt or a
+    // ONE INPUT. The only thing Escape can find in front of it is a running turn: a prompt or a
     // question is answered before this is reached — see the handler, which checks those first.
     public static EscapeTarget For(bool turnIsRunning) =>
         turnIsRunning ? EscapeTarget.CancelTurn : EscapeTarget.Nothing;

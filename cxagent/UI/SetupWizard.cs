@@ -27,10 +27,9 @@ public static partial class SetupWizard
     /// by the mandatory tmux drive instead).
     ///
     /// MERGES into <paramref name="existing"/> when one is supplied. This is what makes re-running the
-    /// wizard (F5) ADD a provider instead of replacing the catalog — and, critically, what stops it
-    /// wiping the user's roles: before this, BuildSettings never populated Roles at all, so an F5
-    /// re-run produced an empty roles block that the writer then faithfully persisted over the
-    /// user's bindings.
+    /// wizard (F5) ADD a provider instead of replacing the catalog. Building a fresh settings object
+    /// from the answers alone drops every part of the existing config the wizard does not ask about,
+    /// and the writer persists that emptiness faithfully.
     /// </summary>
     public static ProviderSettings BuildSettings(WizardState s, ProviderSettings? existing = null)
     {
@@ -51,10 +50,6 @@ public static partial class SetupWizard
                 ExtraHeaders: preset?.ExtraHeaders),
             makeDefault: firstRun);
 
-        // First run only: bind every role to the one provider just configured. On later runs (F5
-        // adding a second provider) the user's own bindings must survive untouched — seeding is a
-        // first-run affordance, not an every-save behaviour.
-        // Seeded role bindings used to be created here on first run. Roles are gone.
         return merged;
     }
 

@@ -8,13 +8,13 @@ namespace CxAgent.UI;
 ///
 /// <para>Every serious terminal agent opens with one — Claude Code, Antigravity, opencode — and the
 /// reason is the same in each: the first screen of a session is the one moment with nothing to read,
-/// and a name there tells you which tool you are talking to before you have typed anything. cxagent
-/// used to open with a single line that carried the provider, the model id and a keybinding hint all
-/// at once, which is the least glanceable arrangement of the three.</para>
+/// and a name there tells you which tool you are talking to before you have typed anything. A single
+/// startup line carrying the provider, the model id and a keybinding hint at once is the least
+/// glanceable arrangement of the three.</para>
 ///
-/// <para>WHAT IT DOES NOT SAY is half the design. The keybinding hint moved out (the composer's own
-/// placeholder already reads "Enter to run · end a line with \ to continue") and the model id is in the
-/// mode line under the prompt. Repeating either here would make the banner a third place to keep in
+/// <para>WHAT IT DOES NOT SAY is half the design. No keybinding hint (the composer's own placeholder
+/// already reads "Enter to run · end a line with \ to continue") and no model id (it is in the mode
+/// line under the prompt). Repeating either here would make the banner a third place to keep in
 /// sync.</para>
 ///
 /// <para>It scrolls away with the conversation, like Antigravity's. Pinning it would spend permanent

@@ -173,17 +173,17 @@ public static class AppBootstrap
             .Where(e => e.Key is string k && k.StartsWith("CXAGENT_"))
             .ToDictionary(e => (string)e.Key, e => (string)(e.Value ?? ""));
 
-        // RESOLVED ONCE, AND NEVER REBOUND. This was a mutable local that four sites repointed —
-        // startup, --model, F5's save, and /model — with every other consumer in this method closing
-        // over the VARIABLE. Correctness then depended on when each consumer happened to read, which
-        // is not a property anything can check: reading too early kept a stale record (the auto
-        // classifier consulted a provider config no longer described, silently, because the mode
-        // still worked), and reading too late compared a record with itself (the MCP reload was
-        // gated on `resolution.McpServers` after `resolution` had already become the new value —
-        // always equal, so the reload never ran once, and it compiled clean and shipped).
+        // RESOLVED ONCE, AND NEVER REBOUND. Four sites want to repoint it — startup, --model, F5's
+        // save, and /model — while every other consumer in this method closes over the VARIABLE. A
+        // mutable local makes correctness depend on when each consumer happens to read, which is not
+        // a property anything can check: read too early and a consumer keeps a stale record (the
+        // auto classifier consulting a provider config the settings no longer describe, silently,
+        // because the mode still works), read too late and it compares a record with itself (an MCP
+        // reload gated on `resolution.McpServers` AFTER `resolution` has become the new value is
+        // always equal, so the reload never runs — and it compiles clean).
         //
         // `readonly` in a local function's closure is not expressible, so this is a local that is
-        // simply never assigned again — every later site now takes it as a PARAMETER or reads it as
+        // simply never assigned again — every later site takes it as a PARAMETER or reads it as
         // the process's fixed catalog. The two startup cases fold into one expression below so that
         // there is no window where it holds a value somebody could observe and then see change.
         //
@@ -417,12 +417,12 @@ public static class AppBootstrap
 
                 var text = $"[dim]queued[/] {ChatTranscriptSink.Escape(body)}";
 
-                // REMOVED AND RE-ADDED, not rewritten in place. UpdateMessage left the block wherever
-                // it first appeared, so a turn producing output pushed it up the screen and the user
-                // was appending to something they could no longer see. It is the most recent thing
-                // they said; it belongs at the bottom, in the position the real message will occupy
-                // when it goes in. Still ONE row either way — the cost this avoids was a row per
-                // message, not a row that moves.
+                // REMOVED AND RE-ADDED, not rewritten in place. UpdateMessage leaves the block
+                // wherever it first appeared, so a turn producing output pushes it up the screen and
+                // the user ends up appending to something they cannot see. It is the most recent
+                // thing they said; it belongs at the bottom, in the position the real message will
+                // occupy when it goes in. Still ONE row either way — the cost this avoids is a row
+                // per message, not a row that moves.
                 RemoveQueuedBlock();
                 queuedBlock = mainWindow.Chat.AddMessage(ChatRole.System, text);
 
@@ -457,13 +457,14 @@ public static class AppBootstrap
             // tears down the message's siblings — actions toolbar, status bar, peek row — as well as
             // the panel.
             //
-            // IT DID NOT ALWAYS. The toolbar is a SIBLING of the panel rather than a child, so
-            // removing the message once left the cancel button on screen and still clickable. It
-            // looked intermittent because ShowQueued removes and re-adds the block on every queued
-            // line while queuedBlock only ever points at the newest one — so a second line orphaned
-            // the first line's toolbar with nothing able to reach it. One line looked fine; two and
-            // the buttons stayed. Fixed in SharpConsoleUI (RemoveMessage now removes every sibling),
-            // which is where it belonged: any caller removing a message with a footer hit it.
+            // THAT SIBLING TEARDOWN IS LOAD-BEARING, and it lives in SharpConsoleUI rather than
+            // here, because any caller removing a message with a footer needs it. The toolbar is a
+            // SIBLING of the panel rather than a child, so a RemoveMessage that dropped only the
+            // panel would leave the cancel button on screen and still clickable — and it would look
+            // intermittent, because ShowQueued removes and re-adds the block on every queued line
+            // while queuedBlock only ever points at the newest one, so a second line orphans the
+            // first line's toolbar with nothing able to reach it. One line looks fine; two and the
+            // buttons stay.
             void RemoveQueuedBlock()
             {
                 if (queuedBlock is { } block) mainWindow.Chat.RemoveMessage(block);
@@ -585,15 +586,15 @@ public static class AppBootstrap
         {
             if (!res.HasProvider) return;
 
-            // REBOUND ON EVERY WIRE, from THIS resolution. Binding once at startup would mean
-            // changing `classifier` in config and pressing F5 left `auto` mode consulting the old
-            // provider — silently, because the mode still worked. That is the shape of every bug in
+            // REBOUND ON EVERY WIRE, from THIS resolution. Bind once at startup and changing
+            // `classifier` in config and pressing F5 leaves `auto` mode consulting the outgoing
+            // provider — silently, because the mode still works. That is the shape of every bug in
             // this method: a re-wire that moves some consumers of a resolution and not others, with
             // nothing marking which is which.
             //
             // CLEARED WHEN NOTHING IS CONFIGURED, not left behind. Removing the classifier entry and
-            // re-wiring must actually turn `auto` off; leaving the old instance would keep a mode
-            // alive that config no longer describes.
+            // re-wiring must actually turn `auto` off; keeping the outgoing instance would keep a
+            // mode alive that config no longer describes.
             permissionGate.BindClassifier(res.ClassifierInstance, res.Providers);
 
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
@@ -609,9 +610,9 @@ public static class AppBootstrap
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             mainWindow.SetMode(startupMode);
-            // I3: permissionRules.Load ran at construction, before any sink existed to tell the
+            // I3: permissionRules.Load runs at construction, before any sink exists to tell the
             // user. Echo a load failure here, once — a bad hand-edit to permissions.json silently
-            // dropped every rule and all folder trust, and the user needs to know before they grant
+            // drops every rule and all folder trust, and the user needs to know before they grant
             // anything else (the next grant backs the unreadable file up to permissions.json.bad).
             if (!permissionLoadErrorReported && permissionRules.LoadError is { } loadError)
             {
@@ -810,9 +811,9 @@ public static class AppBootstrap
                 // existed says nothing about what the user chose, and absent is not permission.
                 startupMode = startupMode with { Edits = snapshot.Edits ?? EditMode.AlwaysAsk };
 
-                // AND THE POLICY WITH IT. The policy was seeded from startupMode before this block
-                // ran, so a resume that narrows the mode has to narrow the thing that enforces it —
-                // otherwise the status bar would say always-ask while writes stayed silent.
+                // AND THE POLICY WITH IT. The policy is seeded from startupMode before this block
+                // runs, so a resume that narrows the mode has to narrow the thing that enforces it —
+                // otherwise the status bar says always-ask while writes stay silent.
                 //
                 // DIRECTLY, NOT THROUGH Session.SetMode, and this is the one place that is correct:
                 // this runs before the first wire, so there is no host to move and SetMode would
@@ -820,9 +821,10 @@ public static class AppBootstrap
                 permissionPolicy.Edits = startupMode.Edits;
 
                 // RETIRE THE ROW IT CAME FROM: the resumed session is a new agent writing its own
-                // rows, and leaving the old one open would offer the same context again at the next
-                // launch. SUPERSEDED, not finished — it is a live conversation someone continued,
-                // and pruning it would delete the history behind work that is still going.
+                // rows, and leaving the source row open would offer the same context again at the
+                // next launch. SUPERSEDED, not finished — it is a live conversation someone
+                // continued, and pruning it would delete the history behind work that is still
+                // going.
                 sessions.MarkSuperseded(snapshot.AgentId);
                 resumeNotice = new Message($"Resumed an earlier session: {snapshot.Context.Count} "
                                          + "messages restored. They are not shown above, but the "
@@ -997,25 +999,25 @@ public static class AppBootstrap
             var goalText = mainWindow.Input.Input;
             if (string.IsNullOrWhiteSpace(goalText)) return;
 
-            // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. This handler used to open with
-            // `if (!session.HasAgent || !mainWindow.SubmissionEnabled) return;`, swallowing the
-            // keystroke before anything looked at what was typed — so a session opened without a
-            // working provider could not run /exit, /help, /stats, /sessions, or even /model, the
-            // one command that FIXES having no provider. The window was unusable except by killing
-            // it, and it said nothing about why.
+            // NO PROVIDER BLOCKS A GOAL, NOT A COMMAND. Opening this handler with
+            // `if (!session.HasAgent || !mainWindow.SubmissionEnabled) return;` swallows the
+            // keystroke before anything looks at what was typed — so a session opened without a
+            // working provider cannot run /exit, /help, /stats, /sessions, or even /model, the one
+            // command that FIXES having no provider. That leaves the window unusable except by
+            // killing it, and silent about why.
             //
-            // THE CLASSIFICATION ALREADY EXISTED. CommandOutcome says which commands need the model:
-            // NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says the rest
-            // "answer from state the app already holds, costing no tokens and no time" — the guard
-            // simply was not asking.
+            // THE CLASSIFICATION IS ALREADY THERE. CommandOutcome says which commands need the
+            // model: NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says
+            // the rest "answer from state the app already holds, costing no tokens and no time", so
+            // the guard has to ask it rather than guess.
             //
-            // TWO FLAGS MEAN "NO PROVIDER", AND THE FIRST FIX ONLY MOVED ONE. It added the check
-            // below but left `if (!mainWindow.SubmissionEnabled) return;` ABOVE it, and
-            // SubmissionEnabled is set from resolution.HasProvider (MainWindow.cs:500) — so the
-            // handler still returned before the classification ran and /exit still did nothing.
-            // Reported against v0.4.2: text types into the composer, Enter does nothing. Both flags
-            // now sit inside one check. SubmissionEnabled is safe here because it is not a busy
-            // flag: its only other use is choosing the placeholder text.
+            // TWO FLAGS MEAN "NO PROVIDER", AND BOTH BELONG INSIDE THE ONE CHECK. Guarding on
+            // `session.HasAgent` here while an `if (!mainWindow.SubmissionEnabled) return;` sits
+            // ABOVE it fixes nothing: SubmissionEnabled is set from resolution.HasProvider
+            // (MainWindow.cs:500), so the handler returns before the classification runs and /exit
+            // still does nothing. Reported against v0.4.2 — text types into the composer, Enter does
+            // nothing. SubmissionEnabled is safe to fold in here because it is not a busy flag: its
+            // only other use is choosing the placeholder text.
             if (!session.HasAgent || !mainWindow.SubmissionEnabled)
             {
                 var outcome = SessionCommands.Match(goalText)?.Outcome ?? CommandOutcome.NotACommand;
@@ -1171,9 +1173,8 @@ public static class AppBootstrap
         // (0x11) is proven working, so it keeps the quit binding.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
-        // F4 IS BACK, and the reason it left was half right. It focused the composer, and was
-        // removed as "a route back from a focus that can no longer happen" — true of the job panel it
-        // was written for, which is gone. But two things still take focus away deliberately:
+        // F4 FOCUSES THE COMPOSER, and it earns its binding even though most sessions never need
+        // it. Two things take focus away deliberately:
         // MainWindow.FocusQuestion moves it to a question's first option, and the permission prompt
         // moves it into the prompt panel. Both restore it on the way out; a user who reaches either
         // by another path, or a control that keeps focus after being dismissed, is left typing into
@@ -1263,28 +1264,22 @@ public static class AppBootstrap
 
         if (Features.ThemePicker) WireThemePicker();
 
-        // F2 and F6 are GONE, and F6 was DEAD CODE the whole time.
+        // NO "DIAGNOSE THE FOCUSED JOB" KEY. Such a key would resolve its target through
+        // FocusedJobId(), which walks the focus path for a JobBlockControl — and those are created
+        // only by JobPanelControl, which is never placed in the grid, because jobs render INLINE in
+        // the transcript. The lookup therefore always returns null, giving a key that is a no-op in
+        // every mode while Help advertises it. The flow is reachable from the Diagnose button on a
+        // failed job's own block, which addresses its job by id rather than by focus.
         //
-        // F6 diagnosed "whatever job has focus", resolved through FocusedJobId() — which walks the
-        // focus path for a JobBlockControl. Those are created only by JobPanelControl, and the job
-        // panel is never placed in the grid: jobs render INLINE in the transcript. So the lookup
-        // always returned null and the key was a no-op in every mode, while Help advertised it. The
-        // same flow is still reachable from the Diagnose button on a failed job's own block, which
-        // addresses its job by id rather than by focus.
+        // NO "CLEAR AND REFOCUS THE COMPOSER" KEY EITHER: that is two jobs in one binding, and both
+        // are already bound. Ctrl+U clears (and history on the up-arrow makes "empty the box" the
+        // rarer intent anyway); F4 above refocuses.
         //
-        // F2 cleared the composer and refocused it. The clearing half is what made it redundant:
-        // Ctrl+U does that, and history on the up-arrow made "empty the box" the rarer intent anyway.
-        // The refocusing half came back as F4 above, on its own, where it is one job and not two.
-        // F7/F8 are GONE. They existed because roles and providers were separate dialogs, and the
-        // old comment justified them as "each does one thing and the status bar can name both" —
-        // neither is true now. Both opened the SAME consolidated dialog, differing only in which
-        // page it landed on, so the status bar advertised three keys for one surface and a user
-        // pressing F7 had no way to know F5 and F8 went to the same place.
-        //
-        // The page they deep-linked to is still one keystroke away INSIDE the dialog (the nav pane
-        // is the first focus stop), so nothing became less reachable — the choice just moved from
-        // "remember which F-key" to "read the four page names in front of you", which is the point
-        // of having a nav pane at all.
+        // NO PER-PAGE SETTINGS KEYS. Deep-linking a key per settings page advertises several keys
+        // for one surface, and a user pressing one has no way to know the others reach the same
+        // place. Every page is one keystroke away INSIDE the dialog — the nav pane is the first
+        // focus stop — so the choice is "read the page names in front of you" rather than "remember
+        // which F-key", which is the point of having a nav pane at all.
         //
         system.RegisterGlobalShortcut(ConsoleModifiers.Control, ConsoleKey.Q, () => { cts.Cancel(); system.Shutdown(); });
         // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. The session is read
@@ -1312,10 +1307,10 @@ public static class AppBootstrap
                 if (mainWindow.TrySkipQuestion()) return;
 
                 // A PERMISSION PROMPT NEXT, for the same reason and with the same shape: Escape
-                // answers it "no" and the run continues. It used to fall through to CancelTurn below
-                // — a prompt only exists mid-turn — and cancelling fired the gate's registration,
-                // which resolves the prompt as Deny anyway. So the key denied AND destroyed the run,
-                // when Deny is a real answer the model can adapt to.
+                // answers it "no" and the run continues. Falling through to CancelTurn below would
+                // do both — a prompt only exists mid-turn, and cancelling fires the gate's
+                // registration, which resolves the prompt as Deny anyway. The key would then deny
+                // AND destroy the run, when Deny is a real answer the model can adapt to.
                 if (mainWindow.TryDenyPermission()) return;
 
                 if (EscapeRouting.For(session.IsBusy) is EscapeTarget.CancelTurn)
@@ -1331,11 +1326,11 @@ public static class AppBootstrap
         // and by OpenSettingsAsync's reentrancy check just below. Null whenever no dialog is open;
         // OpenSettingsAsync's `finally` is what guarantees that, so Escape is never left pointed at a
         // closed dialog.
-        // THE WIZARD IS FIRST-RUN ONLY NOW. The settings dialog it used to sit beside is gone: since
-        // config stopped being applied in place, that dialog wrote a file and asked for a restart —
-        // 680 lines of editor for a job a text editor does better, over a file the user can open
-        // directly. What could not be replaced by an editor is the FIRST run, where there is no file
-        // to open and no schema to guess from, so that is what survives.
+        // THE WIZARD IS FIRST-RUN ONLY. There is deliberately no settings dialog beside it: config
+        // is not applied in place, so such a dialog would write a file and ask for a restart —
+        // hundreds of lines of editor for a job a text editor does better, over a file the user can
+        // open directly. What an editor CANNOT replace is the FIRST run, where there is no file to
+        // open and no schema to guess from, so that is the case the wizard covers.
         //
         // Reached from exactly one place: startup with no usable provider.
         async Task RunFirstRunSetupAsync()
@@ -1423,11 +1418,11 @@ public static class AppBootstrap
                 permissionRules.RulesFor(session.WorkingDirectory).Rules.Count);
             mainWindow.RefreshSessionPanel();
 
-            // THE UI FOLLOWS THE SESSION, rather than each command remembering to repaint. Every
-            // place that changed a mode or a model used to call SetMode/SetResolution on the line
-            // after — which is a line a new command can forget, and a second front end would have
-            // had to know to write at all. The session announces what moved; this reads the new
-            // state off the session, which it already holds.
+            // THE UI FOLLOWS THE SESSION, rather than each command remembering to repaint. Calling
+            // SetMode/SetResolution on the line after every mode or model change is a line a new
+            // command can forget, and a line a second front end would have to know to write at all.
+            // The session announces what moved; this reads the new state off the session, which it
+            // already holds.
             //
             // MARSHALLED: a change can land from a turn's own thread, and these touch controls.
             session.Changed += kind => system.EnqueueOnUIThread(() =>
@@ -1453,19 +1448,19 @@ public static class AppBootstrap
                 }
             });
 
-            // KEEP THE COUNT LIVE. Seeding once left "Always" grants invisible until something else
-            // happened to redraw the panel. The grant can land on a scheduler thread, so the recount
-            // is marshalled rather than run inline — RefreshSessionPanel touches controls.
+            // KEEP THE COUNT LIVE. Seeding once leaves "Always" grants invisible until something
+            // else happens to redraw the panel. The grant can land on a scheduler thread, so the
+            // recount is marshalled rather than run inline — RefreshSessionPanel touches controls.
             permissionRules.RulesChanged += () => system.EnqueueOnUIThread(() =>
                 mainWindow.SetPermissionRuleCount(
                     permissionRules.RulesFor(session.WorkingDirectory).Rules.Count));
 
-            // ASK THE OWNER, and know nothing about what it looks up. This used to switch on the
-            // source name and reach into a resume store, a provider catalog and the session's own
+            // ASK THE OWNER, and know nothing about what it looks up. Switching on the source name
+            // here would mean reaching into a resume store, a provider catalog and the session's own
             // instance to build each answer — the internals of three layers in the one place least
-            // equipped to own any of them. It also discouraged the feature: adding a popup meant
-            // editing this method, so /mode edits and /mcp never got one despite the mechanism being
-            // right here.
+            // equipped to own any of them. It would also discourage the feature: adding a popup
+            // would mean editing this method, so commands like /mode edits and /mcp would go without
+            // one despite the mechanism being right here.
             //
             // SESSION FIRST, THEN MANAGER. Each returns empty for a set it does not own, so neither
             // has to know what the other answers. Read on every keystroke, never cached: a session
@@ -1498,25 +1493,25 @@ public static class AppBootstrap
 
         // A HINT, NOT A QUESTION.
         //
-        // This used to be a dialog: "an earlier session ended without closing — resume it?", asked on
-        // the first render, before the user had typed anything. Three things were wrong with it.
+        // A dialog here — "an earlier session ended without closing — resume it?", on the first
+        // render, before the user has typed anything — would be wrong three ways.
         //
-        // It asked at the worst possible moment. Someone opening the app is about to do something,
-        // and the first thing they met was a question about LAST time — one they had to answer to
+        // It asks at the worst possible moment. Someone opening the app is about to do something,
+        // and the first thing they would meet is a question about LAST time, one they must answer to
         // reach the composer, with the "wrong" answer costing them a conversation they might have
-        // wanted. During this feature's own drives it fired every single launch.
+        // wanted. On this feature's own drives that condition held on every single launch.
         //
-        // It could only ever offer ONE session, the newest unfinished one. Everything older was
-        // unreachable, so the dialog was not a way into your sessions — it was a way into exactly
+        // It can only ever offer ONE session, the newest unfinished one. Everything older stays
+        // unreachable, so such a dialog is not a way into your sessions — it is a way into exactly
         // one of them, presented as though it were the choice.
         //
-        // And it made "resume" a thing that happens TO you rather than something you ask for. Now
+        // And it makes "resume" a thing that happens TO you rather than something you ask for.
         // /sessions lists them and --resume opens one; this line only says the door exists.
         //
-        // NAMED FOR WHEN IT FIRES, and deliberately the same name as the Core half it calls. It read
-        // "HintAtResume" — a hint TOWARD resuming, as though the subject were this session — when
-        // what it reports is the OTHER sessions in this folder: how many there are, and whether one
-        // died mid-conversation. That is also why the line goes to this front end's own surface
+        // NAMED FOR WHEN IT FIRES, and deliberately the same name as the Core half it calls. A name
+        // like "HintAtResume" reads as a hint TOWARD resuming, as though the subject were this
+        // session, when what it reports is the OTHER sessions in this folder: how many there are,
+        // and whether one died mid-conversation. That is also why the line goes to this front end's own surface
         // rather than being said by the session: a session announcing facts about its predecessors
         // would claim authorship of state that is not its own.
         void StartupHint()
@@ -1543,12 +1538,12 @@ public static class AppBootstrap
         var endedSessionId = session.HasSavedTurn ? session.SessionId : null;
         session.MarkFinished();
         // I1 #1: AgentHost.Dispose releases EVERY scheduler this session's host ever created (each
-        // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest of
-        // the process's lifetime, since (as of review round 2's N2 fix) AgentHost no longer disposes
-        // schedulers one-at-a-time as goals swap; this is now the only release point.
-        // READ BEFORE THE CLOSE, because the ledger goes with the host. Everything the panel was
+        // one's CancellationTokenSource + two SemaphoreSlims) — without this they leak for the rest
+        // of the process's lifetime, because AgentHost does not dispose schedulers one-at-a-time as
+        // goals swap; this is the only release point.
+        // READ BEFORE THE CLOSE, because the ledger goes with the host. Everything the panel is
         // showing — spend, cache, what the children used — is available right up to this line and
-        // gone immediately after it, which is why the terminal used to be blank on the way out.
+        // gone immediately after it; read it later and the terminal is blank on the way out.
         var spend = session is { Ledger: { } ledger } && ledger.TotalTokens > 0
             ? new SessionSpend(ledger.TotalTokens, ledger.InputTokens, ledger.OutputTokens,
                 ledger.SubAgentTokens)

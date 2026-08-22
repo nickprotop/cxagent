@@ -25,10 +25,10 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// The provider this window reports on.
     ///
-    /// <para>NOT READONLY, and it used to be. A re-wire replaces the session's provider — F5 has
-    /// always been able to, and <c>/model</c> now does it deliberately — while this stayed at
-    /// whatever startup resolved. The status bar went on quoting the old model's context window, so
-    /// occupancy was measured against a denominator the agent had stopped using.</para>
+    /// <para>NOT READONLY, deliberately. A re-wire replaces the session's provider — F5 does it, and
+    /// so does <c>/model</c> — and this field has to move with it. Pinned to whatever startup
+    /// resolved, the status bar goes on quoting the previous model's context window, so occupancy is
+    /// measured against a denominator the agent is not using.</para>
     /// </summary>
     private ResolvedConfig _resolution;
 
@@ -50,11 +50,11 @@ public sealed class MainWindow : IDisposable
     /// composer needs — history on ↑/↓, a TabCompleter seam for slash commands, placeholder, max
     /// length — that were all absent before.</para>
     ///
-    /// <para>It also removes a workaround. MultilineEditControl is MODAL: focused but not editing it
-    /// bubbles printable keys instead of inserting them, and it normally leaves that mode on Enter —
-    /// which AppBootstrap consumes before the control ever sees it. Every path back to the composer
-    /// therefore had to re-assert IsEditing or typing silently died. PromptControl has no such mode
-    /// (its ProcessKey gates on IsEnabled alone), so the whole hazard is gone.</para>
+    /// <para>It also avoids a whole class of workaround. MultilineEditControl is MODAL: focused but
+    /// not editing it bubbles printable keys instead of inserting them, and it normally leaves that
+    /// mode on Enter — which AppBootstrap consumes before the control ever sees it. Every path back
+    /// to the composer would therefore have to re-assert IsEditing or typing silently dies.
+    /// PromptControl has no such mode; its ProcessKey gates on IsEnabled alone.</para>
     ///
     /// <para>FIXED HEIGHT, deliberately: MinRows == MaxRows. A growing composer would make the
     /// grid's composer row and the grip's height dynamic, and every agent CLI in this class keeps a
@@ -86,9 +86,9 @@ public sealed class MainWindow : IDisposable
 
         HistoryEnabled = true,
 
-        // BOTH states, so the composer does not change colour when focus enters it. Unfocused it was
-        // falling through to the app background and focused to the framework's own grey — two
-        // surfaces for one control, and neither matched the mode line below it.
+        // BOTH states, so the composer does not change colour when focus enters it. Set only one and
+        // unfocused falls through to the app background while focused takes the framework's own grey
+        // — two surfaces for one control, and neither matches the mode line below it.
         InputBackgroundColor = ColorScheme.ComposerSurface,
         InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
@@ -175,10 +175,10 @@ public sealed class MainWindow : IDisposable
     public string? WorkingDirectory { get; set; }
 
 
-    // ShowRoles (F7) and ShowProviders (F8) were removed with their keys. They existed to open two
-    // SEPARATE editors; once both became pages of the one Settings dialog they opened the same
-    // window on a different page, which is a parameter, not a seam. ShowSettings is the single
-    // entry point, and the page choice lives inside the dialog where the four names are visible.
+    // ShowSettings is the SINGLE entry point into the settings dialog. Roles and providers are pages
+    // of that one dialog, so separate hooks per page would each open the same window on a different
+    // page — that is a parameter, not a seam. The page choice lives inside the dialog, where all
+    // four names are visible together.
 
     private StatusBarItem? _tokenItem;
 
@@ -261,18 +261,16 @@ public sealed class MainWindow : IDisposable
     ///
     /// <para>opencode puts its agent mode here ("Build"), and the slot is worth copying because the
     /// answer changes what the app does. Ours is single-agent or fan-out — the one piece of state
-    /// that decides whether a goal becomes a plan of jobs or one agent with tools, and it was
-    /// previously visible nowhere at all. The model beside it was in a startup line that scrolls
-    /// away.</para>
+    /// that decides whether a goal becomes a plan of jobs or one agent with tools, and it has no
+    /// other home in the UI. The model beside it needs one too: a startup line scrolls away.</para>
     /// </summary>
     private MarkupControl _modeLine = null!;
 
     /// <summary>
     /// The mode shown on the row under the composer.
     ///
-    /// <para>IT USED TO BE THE LITERAL "Single agent", and it had always said that — a hardcoded
-    /// string that was true only until fan-out shipped, after which it would have claimed single mode
-    /// while the agent held a spawn tool. A status line that lies is worse than no status line,
+    /// <para>THE REAL MODE, never a literal. A hardcoded "Single agent" here would claim single mode
+    /// while the agent holds a spawn tool. A status line that lies is worse than no status line,
     /// because it is the one thing a user checks INSTEAD of asking.</para>
     /// </summary>
     private WorkingMode _mode = WorkingMode.Default;
@@ -421,10 +419,9 @@ public sealed class MainWindow : IDisposable
         _lastInput = input;
         _lastOutput = output;
 
-        // AND REPAINT. This used to store and stop, because the only reader was the session panel,
-        // which SetTokenTotal refreshed a moment later on the same event. The status bar now shows
-        // the split too, and it is the readout that is ALWAYS visible — leaving it to a neighbouring
-        // setter would work only for as long as the two stay wired to one event.
+        // AND REPAINT, rather than just storing. The status bar shows the split too, and it is the
+        // readout that is ALWAYS visible. Storing only and leaving the paint to SetTokenTotal (which
+        // the session panel relies on) works solely for as long as the two stay wired to one event.
         RefreshTokenItem();
     }
 
@@ -567,13 +564,13 @@ public sealed class MainWindow : IDisposable
 
         if (_resolution.HasProvider)
         {
-            // The keybinding hint that used to live here is gone: Input.Placeholder below says
-            // the same thing, in the control the user is about to type into.
-            // THE MODE, NOT THE WORD "single". This was hardcoded — it predates modes existing — so
-            // a session started with `--mode fan-out` opened with a banner claiming it was single.
-            // Unlike the composer line, a banner cannot be corrected afterwards: it is a chat
-            // message, and the transcript is a record rather than a live readout. So the mode has to
-            // be right BEFORE Build() runs, which is why it is a property set at construction.
+            // NO KEYBINDING HINT HERE: Input.Placeholder below says the same thing, in the control
+            // the user is about to type into.
+            // THE MODE, NOT THE WORD "single" — a session started with `--mode fan-out` must not
+            // open with a banner claiming it is single. Unlike the composer line, a banner cannot be
+            // corrected afterwards: it is a chat message, and the transcript is a record rather than
+            // a live readout. So the mode has to be right BEFORE Build() runs, which is why it is a
+            // property set at construction.
             // MARKUP, NOT MARKDOWN, for this row alone. The wordmark is ASCII art coloured per
             // character, so a markdown renderer would both reflow the art and show its colour tags.
             ChatTranscriptSink.Post(Chat, new ChatTranscriptSink.SystemRow(
@@ -582,8 +579,8 @@ public sealed class MainWindow : IDisposable
         else
         {
             Chat.AddMessage(ChatRole.System,
-                // THE WIZARD SHIPPED. This said "the setup wizard arrives in P5c" and told the user
-                // to hand-edit config.json — while the wizard sat on screen offering to write it.
+                // POINTS AT THE WIZARD, not at hand-editing config.json: the wizard is on screen
+                // offering to write that file, so any other instruction here contradicts it.
                 "**No LLM provider configured.**\n\nUse the setup wizard (it opens on this "
                 + "screen, or press `F5` later), or run `/model` to pick a configured "
                 + "instance. `cxagent --mock` tries the UI without a provider.");
@@ -752,11 +749,11 @@ public sealed class MainWindow : IDisposable
             .Place(StatusBar, 3, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
-            // taller than the composer — and that is exactly the defect: the row measured six rows
-            // larger than its contents, the composer sank to the bottom of it, and the unused top of
-            // the row became a band of dead space between the end of the transcript and the prompt.
-            // The chat's Star(1) row ends where this row begins, so those rows were unreachable by
-            // either pane. Sizing to content leaves nothing to sink through.
+            // taller than the composer — and when it is, that is the defect: a row measuring six rows
+            // larger than its contents sinks the composer to the bottom, and the unused top becomes a
+            // band of dead space between the end of the transcript and the prompt. The chat's Star(1)
+            // row ends where this row begins, so those rows are unreachable by either pane. Sizing to
+            // content leaves nothing to sink through.
             .WithVerticalAlignment(VerticalAlignment.Top)
             .Build();
 
@@ -802,10 +799,10 @@ public sealed class MainWindow : IDisposable
         // and in single-agent mode the composer is ALREADY cleared on submit and already holds
         // focus, so the key does nothing observable. In fan-out focus can legitimately be sitting in
         // a job block, and F2 is the way back.
-        // THE STATUS BAR IS TWO THINGS NOW: where you are, and how to leave. It used to carry six
-        // shortcuts, which is a menu rather than a status bar — and every one of them is a key the
-        // user either knows or will find in Help. The keys still WORK; they are simply no longer
-        // the loudest thing on screen.
+        // THE STATUS BAR IS TWO THINGS: where you are, and how to leave. Six shortcuts along here
+        // make a menu rather than a status bar, and every one of them is a key the user either knows
+        // or will find in Help. All the keys WORK regardless of whether they are advertised here;
+        // the bar's job is to stay quiet enough that the two things it does say get read.
         //
         // The working directory takes the left, because "which checkout am I editing" is the
         // question a status bar should answer and the one whose wrong answer costs most.
@@ -873,14 +870,13 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// Focuses the goal composer.
     ///
-    /// <para>It used to do two things: focus, then force IsEditing. That second half existed because
-    /// MultilineEditControl is MODAL — focused but not editing it bubbles printable keys instead of
-    /// inserting them, and the Enter that would normally leave that mode is consumed by
-    /// AppBootstrap before the control sees it. Every path back to the composer had to re-assert the
-    /// flag or typing silently died.</para>
+    /// <para>FOCUS IS THE WHOLE JOB, because PromptControl has no editing mode — ProcessKey gates on
+    /// IsEnabled alone. A MODAL composer would need more: MultilineEditControl, focused but not
+    /// editing, bubbles printable keys instead of inserting them, and the Enter that would normally
+    /// leave that mode is consumed by AppBootstrap before the control sees it, so every path back to
+    /// the composer would have to re-assert IsEditing or typing silently dies.</para>
     ///
-    /// <para>PromptControl has no such mode (ProcessKey gates on IsEnabled alone), so focus is now
-    /// the whole job. Kept as a named method because callers say what they mean.</para>
+    /// <para>Kept as a named method because callers say what they mean.</para>
     /// </summary>
     public void FocusComposer()
         => Window?.FocusManager.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
@@ -988,17 +984,17 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// Escape while a permission prompt is up: answer "no", and let the run continue.
     ///
-    /// <para>IT USED TO DO BOTH — deny AND kill the turn. Escape reached no handler on the prompt
-    /// (it is buttons only), fell through to the global shortcut, and took the CancelTurn branch
-    /// because a prompt only appears mid-turn; cancelling then fired the gate's registration, which
-    /// resolves the prompt as Deny. So the conventional "get me out of this" key destroyed the whole
-    /// run, showed only "Stopped.", and the model never saw the refusal it could have adapted to.
-    /// Observed in a live drive: a denied test-file write ended a drive that had cost two million
-    /// tokens, and the frozen token counter read as a hang.</para>
+    /// <para>DENY ONLY — this must not also kill the turn. Without a handler here Escape reaches no
+    /// handler on the prompt (it is buttons only), falls through to the global shortcut, and takes
+    /// the CancelTurn branch because a prompt only appears mid-turn; cancelling then fires the gate's
+    /// registration, which resolves the prompt as Deny. The conventional "get me out of this" key
+    /// then destroys the whole run, shows only "Stopped.", and the model never sees the refusal it
+    /// could have adapted to. Observed in a live drive: a denied test-file write ending a drive that
+    /// had cost two million tokens, with the frozen token counter reading as a hang.</para>
     ///
     /// <para>Deny is a real answer, not an escape hatch — the same reasoning as
     /// <see cref="TrySkipQuestion"/>, whose comment says a user's reluctance to answer must not cost
-    /// them their work. Escape now means "no" wherever something is being asked, and cancels the turn
+    /// them their work. Escape means "no" wherever something is being asked, and cancels the turn
     /// only when nothing is.</para>
     /// </summary>
     public bool TryDenyPermission()
@@ -1076,10 +1072,10 @@ public sealed class MainWindow : IDisposable
 
         ElevatePrompt(prompt);
 
-        // HIDE THE STATUS BAR OUTRIGHT while a prompt is up. Dimming it was the first attempt and
-        // it is the weaker answer: every key it advertises is inert until the prompt is answered,
-        // so a dimmed row still shows the user four shortcuts that will not respond. Removing it
-        // also gives the question the bottom of the screen to itself.
+        // HIDE THE STATUS BAR OUTRIGHT while a prompt is up. Dimming it is the weaker answer: every
+        // key it advertises is inert until the prompt is answered, so a dimmed row still shows the
+        // user four shortcuts that will not respond. Removing it also gives the question the bottom
+        // of the screen to itself.
         StatusBar.Visible = false;
         _statusRule.Visible = false;   // or the rule would sit above nothing
 
@@ -1212,9 +1208,9 @@ public sealed class MainWindow : IDisposable
 
             Rules = _permissionRuleCount,
 
-            // THE CEILING THAT ACTUALLY BINDS, not the configured value. The panel used to show the
-            // raw setting, so an unconfigured session printed "no cap" while a real ceiling was in
-            // force. int.MaxValue is the genuine no-cap case (an explicit 0), rendered as "no cap".
+            // THE CEILING THAT ACTUALLY BINDS, not the configured value: passing the raw setting
+            // makes an unconfigured session print "no cap" while a real ceiling is in force.
+            // int.MaxValue is the genuine no-cap case (an explicit 0), rendered as "no cap".
             MaxTurns = AgentHost.CeilingFor(_resolution.Orchestrator?.MaxTurns) is var ceiling
                 && ceiling == int.MaxValue ? 0 : ceiling,
 
@@ -1232,13 +1228,12 @@ public sealed class MainWindow : IDisposable
 
             McpServers = _mcpServers,
 
-            // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys — and that distinction
-            // grew teeth when the shipped types moved into code. `general` always exists whether or
-            // not config mentions it, and so do the five built-ins; a panel built from config alone
-            // reported three types on a session that had six, because the user's config had been
-            // trimmed to the two entries that still said anything (a maxTurns each). It made
-            // delegation look narrower than it was, which is the same failure the `general` note
-            // below describes, one source further along.
+            // THE NAMES THE CATALOG WILL RESOLVE, not the raw config keys — the shipped types live
+            // in code, so `general` exists whether or not config mentions it, and so do the five
+            // built-ins. A panel built from config alone reports three types on a session that has
+            // six when the user's config holds only the two entries that still say anything (a
+            // maxTurns each), making delegation look narrower than it is — the same failure the
+            // `general` note below describes, one source further along.
             //
             // Union, deduplicated: built-ins, then whatever config adds on top.
             AgentTypes =
@@ -1284,13 +1279,12 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// Raises the permission prompt onto its own surface.
     ///
-    /// <para>REPLACES A FULL-SCREEN DIM. The old answer overlaid everything above the prompt with
-    /// black at 0.45 — cxpost's convention for modal dialogs, borrowed for an inline swap it does
-    /// not fit. Two things were wrong with it. It darkened the entire transcript to draw attention
-    /// to six rows, which is a lot of screen changing state to say one thing; and the edge between
-    /// dimmed and undimmed had to be computed from the prompt's laid-out bounds, so it moved with
-    /// the height of whatever command was being asked about and left a bright band above the
-    /// question whenever the estimate ran long.</para>
+    /// <para>ELEVATION, NOT A FULL-SCREEN DIM. Overlaying everything above the prompt with black at
+    /// 0.45 is cxpost's convention for modal dialogs and it does not fit an inline swap: it darkens
+    /// the entire transcript to draw attention to six rows, which is a lot of screen changing state
+    /// to say one thing, and the edge between dimmed and undimmed has to be computed from the
+    /// prompt's laid-out bounds, so it moves with the height of whatever command is being asked
+    /// about and leaves a bright band above the question whenever the estimate runs long.</para>
     ///
     /// <para>Elevation says the same thing locally: the prompt sits a step above the composer it
     /// replaced, nothing else on screen moves, and there is no boundary to compute. The colour is
@@ -1364,10 +1358,10 @@ public sealed class MainWindow : IDisposable
             // also swallow the keystroke and stop Escape reaching the turn it was meant for.
             //
             // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. Matching on
-            // _activePrompt is not enough: a replacement shown before this restore ran hit the
+            // _activePrompt is not enough: a replacement shown before this restore ran hits the
             // idempotence guard above, so _activePrompt is STILL the outgoing content while the deny
-            // action is already the new prompt's — and clearing here would take Escape away from the
-            // prompt on screen. A test pins this; it failed before the _denyOwner check existed.
+            // action is already the new prompt's — and clearing on that match would take Escape away
+            // from the prompt on screen. A test pins the _denyOwner check.
             if (ReferenceEquals(_denyOwner, prompt))
             {
                 _denyActivePrompt = null;
@@ -1437,9 +1431,10 @@ public sealed class MainWindow : IDisposable
     /// Applies every chat role's style — colours included.
     ///
     /// <para>EXTRACTED SO A THEME CHANGE CAN RE-RUN IT. Each style captures its Background by VALUE
-    /// when SetRoleStyle is called, so re-deriving the palette left every message in the transcript
-    /// painted in the old theme's surfaces while the chrome around them moved. Reported live: the
-    /// user and assistant replies kept their dark grounds under a light theme.</para>
+    /// when SetRoleStyle is called, so re-deriving the palette without re-running this leaves every
+    /// message in the transcript painted in the outgoing theme's surfaces while the chrome around
+    /// them moves. Reported live: the user and assistant replies keeping their dark grounds under a
+    /// light theme.</para>
     ///
     /// <para>Messages ALREADY on screen do re-paint from these styles, unlike their inline markup —
     /// the surface is a property of the role, not text baked into the transcript.</para>
@@ -1791,11 +1786,11 @@ public sealed class MainWindow : IDisposable
 
     public void SetTokenTotal(int total)
     {
-        // THE PANEL IS UPDATED FIRST, and unconditionally. This method used to return early at zero
-        // — hiding the status-bar item, which is right, but taking the panel refresh with it. A
-        // provider that reports no usage (a local llama.cpp build often does not) therefore left the
-        // whole panel frozen at its startup values: 0 tokens, 0 turns, 0m 0s, forever. The one
-        // number that was missing hid four that were not.
+        // THE PANEL IS UPDATED FIRST, and unconditionally — before the zero check below. Returning
+        // early at zero hides the status-bar item, which is right, but it would take the panel
+        // refresh with it: a provider that reports no usage (a local llama.cpp build often does not)
+        // then leaves the whole panel frozen at its startup values — 0 tokens, 0 turns, 0m 0s,
+        // forever. The one number that is missing must not hide four that are not.
         _lastTokens = total;
         RefreshSessionPanel();
 
@@ -1845,25 +1840,25 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// The bottom-right readout: how full the context is, and what the session has spent.
     ///
-    /// <para>THE PERCENTAGE IS OCCUPANCY, NOT SPEND. It used to divide the cumulative ledger total by
-    /// the window, which is wrong twice over: that total sums input AND output across every turn, and
+    /// <para>THE PERCENTAGE IS OCCUPANCY, NOT SPEND. Dividing the cumulative ledger total by the
+    /// window would be wrong twice over: that total sums input AND output across every turn, and
     /// every turn re-sends the whole conversation, so it climbs quadratically and sails past 100%
     /// while the context may be nowhere near full. Worse, a cumulative counter never decreases — so
-    /// compressing, whose entire purpose is to free context, moved the number not at all. A user
-    /// watching "107%" after a successful compression had no way to tell it had worked.</para>
+    /// compressing, whose entire purpose is to free context, would move the number not at all, and a
+    /// user watching "107%" after a successful compression would have no way to tell it worked.</para>
     ///
-    /// <para>The numerator is now <paramref name="used"/> — the last turn's input tokens, the same
+    /// <para>The numerator is <paramref name="used"/> — the last turn's input tokens, the same
     /// measurement the compression trigger acts on, so what the user sees and what the app decides
-    /// can no longer disagree. Cumulative spend is still shown, as its own clearly-labelled figure,
-    /// because "what has this session cost" is a real question; it just is not this percentage.</para>
+    /// cannot disagree. Cumulative spend is shown too, as its own clearly-labelled figure, because
+    /// "what has this session cost" is a real question; it just is not this percentage.</para>
     /// </summary>
     /// <param name="used">Last turn's input tokens; null before any turn has reported usage.</param>
     /// <param name="spent">Cumulative tokens across the session.</param>
     /// <param name="window">The provider's context window, when known.</param>
     /// <param name="stale">
     /// True once compression has rewritten the conversation, until the next turn measures it again.
-    /// Shown as a <c>~</c> prefix and muted throughout: the figure is now an upper bound, not a
-    /// reading, and dressing it as one would be the same category of lie this method was fixing.
+    /// Shown as a <c>~</c> prefix and muted throughout: the figure is an upper bound, not a
+    /// reading, and dressing it as a reading would be exactly the lie this readout must not tell.
     /// </param>
     /// <summary>
     /// Test seam for <see cref="ContextLabel"/>. Public because this codebase has no
@@ -1876,8 +1871,8 @@ public sealed class MainWindow : IDisposable
     /// <summary>Status-bar magnitudes: two counts and a label must fit beside the context figures,
     /// so thousands collapse. Still its own name rather than calling the shared helper at each site
     /// — "compact tokens" is what the bar means, and the wrapper is where that intent lives — but
-    /// the formatting itself is now shared, because the <c>:0.0</c> it used to carry rendered
-    /// "153,1k" under a comma-decimal culture.
+    /// the formatting itself is shared, because a local <c>:0.0</c> renders "153,1k" under a
+    /// comma-decimal culture.
     /// </summary>
     private static string CompactTokens(int n) =>
         DisplayNumber.Compact(n);
@@ -1900,12 +1895,12 @@ public sealed class MainWindow : IDisposable
                 var colour = stale ? ColorScheme.MutedMarkup : ColorScheme.ThresholdMarkup(percent);
                 var tilde = stale ? "~" : "";
 
-                // BOTH, WHILE STALE. The fraction used to be dropped here because it was the
-                // pre-compression figure and printing it beside a "~" gave a wrong number the look of
-                // precision. It is no longer wrong: the reading is scaled by the character ratio
-                // compaction just measured, so it estimates the new occupancy rather than reporting
-                // the old one. The delta says what happened, the fraction says where that leaves us,
-                // and the "~" says the second is arithmetic rather than a measurement.
+                // BOTH, WHILE STALE. The fraction can be shown here because the reading is scaled
+                // by the character ratio compaction just measured — it estimates the new occupancy
+                // rather than reporting the pre-compression figure, which beside a "~" would give a
+                // wrong number the look of precision. The delta says what happened, the fraction
+                // says where that leaves us, and the "~" says the second is arithmetic rather than
+                // a measurement.
                 var detail = stale && delta is { Length: > 0 }
                     ? $"{delta} · ~{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}"
                     : $"{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}";

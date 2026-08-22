@@ -7,9 +7,9 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// Pure catalog transforms plus the interactive editor. The transforms are separated from the UI so
-/// multi-instance behaviour is unit-testable — before this existed, SetupWizard.BuildSettings built
-/// a single-entry dictionary, so the UI could never produce the multi-instance catalog the loader
-/// had always supported (two OpenRouter accounts plus a local endpoint, say).
+/// multi-instance behaviour is unit-testable. Fold them back into the wizard's own settings-building
+/// and it produces a single-entry dictionary, so the UI cannot express the multi-instance catalog
+/// the loader supports (two OpenRouter accounts plus a local endpoint, say).
 ///
 /// Nothing here keys on kind. Several instances of the SAME kind are a first-class case, so every
 /// lookup, suggestion, and removal goes through the instance NAME.
@@ -119,8 +119,8 @@ public static class ProviderCatalogEditor
         // Key rotation and a moved endpoint are routine. Without these, the only route was
         // Remove + Add — and RemoveInstance (correctly) unbinds every role pointing at the
         // instance, so rotating a key would silently cost the user all their role bindings.
-        // Rename is deliberately NOT offered: it needs the same role-REBINDING care as removal
-        // (every Target naming the old key must follow it), which is Task 8's territory.
+        // Rename is deliberately NOT offered: it needs the same rebinding care as removal, since
+        // every Target naming the instance has to follow the new key.
         var action = await FlowDialogs.ChooseAsync(
             ws, parent, name,
             new[] { "Change model…", "Change API key…", "Change endpoint…", "Make default", "Remove" }, ct);

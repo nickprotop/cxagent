@@ -158,8 +158,8 @@ public static class GitDiff
             // ONE GROUP CAN BE TWO LINES, and this is the format's least obvious property. A `~`
             // closes the word-diff GROUP, not a source line — a modification emits `-old`, `+new`
             // and then a SINGLE `~`, verified against real git output. Treating a group as one line
-            // merged both sides of every modification into a single row that showed the old and new
-            // text run together.
+            // merges both sides of every modification into a single row showing the removed and
+            // added text run together.
             //
             // So the group is projected onto each side: the removed line takes the unchanged runs
             // plus the `-` runs, the added line the unchanged runs plus the `+` runs. Context spans

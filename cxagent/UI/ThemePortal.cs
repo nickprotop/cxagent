@@ -63,8 +63,8 @@ public sealed class ThemePortal
             //
             // THROUGH THE ICON, NOT MARKUP IN THE LABEL. ListControl parses markup for its TITLE BAR
             // and paints item text in one flat colour, so a coloured block written into the label
-            // renders in the row's foreground and every theme's swatch comes out identical — which
-            // is exactly how it looked before this used the icon overload.
+            // renders in the row's foreground and every theme's swatch comes out identical. The icon
+            // overload is the only route that carries a per-row colour.
             var candidate = _system.ThemeRegistryService.GetTheme(info.Name);
             var swatch = candidate?.PrimaryColor ?? ColorScheme.AccentRgb;
             var mark = info.Name == active ? "●" : " ";

@@ -16,8 +16,8 @@ namespace CxAgent.UI;
 /// <para>The transcript answers "what happened" and answers it well. Everything here is a question
 /// you would otherwise have to INTERRUPT to ask — how much context is left, which model is
 /// answering, how long this has been running, which checkout is being edited, what has been granted.
-/// Each was previously either crammed into a status-bar corner, printed once in a startup line that
-/// scrolled away, or invisible until you opened Settings.</para>
+/// None of these has anywhere else to live: a status-bar corner is too small, a startup line
+/// scrolls away, and a settings page is not somewhere you glance mid-turn.</para>
 ///
 /// <para>GLANCEABLE, not readable: every block is a label and one or two values. Anything needing a
 /// sentence belongs in the transcript.</para>
@@ -164,11 +164,11 @@ public sealed class SessionPanel
     /// How full the context is RIGHT NOW, in tokens, as the provider last reported it — or null when
     /// no turn has reported usage yet.
     ///
-    /// <para>TWO PARAMETERS, NOT ONE. This was a single <c>tokens</c> argument, and the caller passed
-    /// the cumulative ledger total into it: the panel then divided a SUM by the window and reported
-    /// the result as occupancy. Measured live, that read "19,559 tokens · 9%" on a context holding
-    /// 4,441 tokens — 4.4x over, and rising quadratically because every turn re-sends the whole
-    /// conversation. A slot that accepts either number is how the wrong one gets in.</para>
+    /// <para>TWO PARAMETERS, NOT ONE. A single <c>tokens</c> argument invites the caller to pass the
+    /// cumulative ledger total, so the panel divides a SUM by the window and reports the result as
+    /// occupancy. Measured live, that reads "19,559 tokens · 9%" on a context holding 4,441 tokens —
+    /// 4.4x over, and rising quadratically because every turn re-sends the whole conversation. A
+    /// slot that accepts either number is how the wrong one gets in.</para>
     /// </param>
     /// <param name="spentTokens">Cumulative tokens billed this session. A cost, never a size.</param>
     /// <param name="contextWindow">The provider's context window, when configured.</param>
@@ -211,11 +211,11 @@ public sealed class SessionPanel
         /// <summary>
         /// What THIS agent spent, excluding its children — measured, never derived.
         ///
-        /// <para>IT USED TO BE <c>SpentTokens - SubAgentTokens</c>, and that subtraction was wrong on
-        /// both terms. SpentTokens is the parent's OWN spend (the status bar is this agent's readout,
-        /// so it is fed OwnSpend), while SubAgentTokens is the SESSION-wide worker total from the
-        /// shared ledger. Subtracting a session figure from an own figure drove "this agent" to zero
-        /// — clamped by Math.Max — the moment any worker spent anything.</para>
+        /// <para>NOT <c>SpentTokens - SubAgentTokens</c>: that subtraction is wrong on both terms.
+        /// SpentTokens is the parent's OWN spend (the status bar is this agent's readout, so it is
+        /// fed OwnSpend), while SubAgentTokens is the SESSION-wide worker total from the shared
+        /// ledger. Subtracting a session figure from an own figure drives "this agent" to zero —
+        /// clamped by Math.Max — the moment any worker spends anything.</para>
         /// </summary>
         public int OwnTokens { get; init; }
         public IReadOnlyDictionary<string, int>? SpendByModel { get; init; }
@@ -297,32 +297,32 @@ public sealed class SessionPanel
 
         // WHERE, which prevents the worst class of mistake there is: editing the wrong checkout.
         Section(lines, "Location");
-        // The branch used to sit here too. It moved to the Git block at the foot of the panel, where
-        // it reads with the working-tree state it belongs to rather than as a footnote to the path.
-        // GIVEN, NOT READ. The panel used to call Directory.GetCurrentDirectory() here, which is
-        // the session's directory only while there is one session per process — the same ambient
-        // read the agent stopped making. Falling back to the process keeps a caller that has no
-        // opinion working, exactly as the agent's own fallback does.
+        // NO BRANCH HERE: it belongs to the Git block at the foot of the panel, where it reads with
+        // the working-tree state it goes with rather than as a footnote to the path.
+        // GIVEN, NOT READ. Calling Directory.GetCurrentDirectory() here yields the session's
+        // directory only while there is one session per process — the same ambient read the agent
+        // itself avoids. Falling back to the process keeps a caller that has no opinion working,
+        // exactly as the agent's own fallback does.
         lines.Add(Value(ShortPath(state.Folder)));
 
         // CAPS, because they are the invisible thing that ends a run: a goal that stops "for no
         // reason" has almost always hit one.
         //
-        // SHOWN UNCONDITIONALLY, which is the correction. The first version gated this on the
-        // orchestrator CONFIG block, so with no such block — the common case — it rendered nothing
-        // and the caps stayed as invisible as before. The limits apply either way.
+        // SHOWN UNCONDITIONALLY. Gating this on the orchestrator CONFIG block means that with no
+        // such block — the common case — nothing renders and the caps stay invisible. The limits
+        // apply either way.
         Section(lines, "Limits");
 
-        // THE CEILING THAT BINDS, resolved by the caller — the default when nothing was configured,
-        // and 0 only for an explicit opt-out. This used to receive the raw configured value, so an
-        // unconfigured session read "no cap" while a real ceiling was in force.
+        // THE CEILING THAT BINDS, resolved by the caller — the default when nothing is configured,
+        // and 0 only for an explicit opt-out. Take the raw configured value here and an unconfigured
+        // session reads "no cap" while a real ceiling is in force.
         //
-        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. It used to render "{_turns}/{max}",
-        // pairing a session-lifetime count with a limit that resets on every prompt — so a long
-        // session read "290/300 turns" and looked one prompt from death while the current goal had
-        // taken three. Two different denominators sharing one slash.
+        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{_turns}/{max}" pairs a
+        // session-lifetime count with a limit that resets on every prompt — a long session then
+        // reads "290/300 turns" and looks one prompt from death while the current goal has taken
+        // three. Two different denominators sharing one slash.
         //
-        // The cap is now stated ALONE, as the rule it is. The session's own turn count already has a
+        // The cap is stated ALONE, as the rule it is. The session's own turn count already has a
         // home in the Session block above, where it is not standing next to a limit it is not
         // measured against.
         lines.Add(state.HasTurnCap
@@ -411,9 +411,9 @@ public sealed class SessionPanel
         //
         // This panel is the aggregator: the status bar shows the session's running total, and what
         // belongs here is the breakdown of that total across everything the session used. A
-        // session-wide ↑/↓ used to sit above a per-model list, which answered two different questions
-        // in one block — and the ↑/↓ read as the parent's when it was in fact the sum of every agent,
-        // including children on other providers.
+        // session-wide ↑/↓ above a per-model list would answer two different questions in one block
+        // — and that ↑/↓ reads as the parent's when it is in fact the sum of every agent, including
+        // children on other providers.
         //
         // SPLIT PER MODEL for the same reason the totals are split at all: input dominates a long
         // session (every turn re-sends the whole conversation) while output is what the model
@@ -505,11 +505,11 @@ public sealed class SessionPanel
 
         // EVERY TYPE THE MODEL CAN SPAWN, INCLUDING `general`.
         //
-        // This used to filter `general` out, on the reasoning that a permanent one-line section is
-        // noise on sessions that never spawn. That reads the panel as a summary of what the USER
-        // configured; it is a summary of what the SESSION can do. `general` is a real capability —
-        // it is what a bare spawn uses — and hiding it made delegation look unavailable to anyone
-        // who had not written a type of their own.
+        // Filtering `general` out — on the reasoning that a permanent one-line section is noise on
+        // sessions that never spawn — reads the panel as a summary of what the USER configured; it
+        // is a summary of what the SESSION can do. `general` is a real capability, the one a bare
+        // spawn uses, and hiding it makes delegation look unavailable to anyone who has not written
+        // a type of their own.
         //
         // NAMES ONLY. The briefing is what the MODEL reads; here it would not fit 24 columns and
         // would push the sections below it off screen. Anyone who wants the text has the config file.

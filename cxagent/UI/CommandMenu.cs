@@ -91,9 +91,9 @@ public sealed class CommandMenu
     /// Where live argument rows come from — the instances for <c>/model</c>, the sessions for
     /// <c>/sessions resume</c>.
     ///
-    /// <para>PER MENU, NOT PER PROCESS. This was a mutable static on <see cref="SessionCommands"/>,
-    /// which is fine while exactly one session exists and a latent bug the moment a second one does:
-    /// two menus would overwrite each other's source and each offer the other's rows.</para>
+    /// <para>PER MENU, NOT PER PROCESS. A mutable static on <see cref="SessionCommands"/> is fine
+    /// while exactly one session exists and a latent bug the moment a second one does: two menus
+    /// would overwrite each other's source and each offer the other's rows.</para>
     /// </summary>
     public Func<string, IReadOnlyList<CommandArgument>>? Values { get; set; }
 
@@ -134,24 +134,25 @@ public sealed class CommandMenu
             return;
         }
 
-        // A SPACE NO LONGER CLOSES THE MENU — it descends into the command's arguments. That was the
-        // discovery gap: the palette vanished at exactly the moment a user had committed to a command
-        // and needed to know what may follow it, leaving `/mcp reload` and `/stats clear` reachable
-        // only by having read the docs.
+        // A SPACE DESCENDS INTO THE COMMAND'S ARGUMENTS rather than closing the menu. Closing on a
+        // space is a discovery gap: the palette vanishes at exactly the moment a user has committed
+        // to a command and needs to know what may follow it, leaving `/mcp reload` and
+        // `/stats clear` reachable only by having read the docs.
         List<Row> matches;
         if (text.Contains(' '))
         {
             var args = SessionCommands.ArgumentsFor(text, Values);
 
-        // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. `show <name>` and
-        // `login <name>` were unselectable: Completes:false made them display-only, so the one way to
-        // reach the server list behind them was to type the verb by hand — the list worked, but only
-        // for someone who already knew the word the palette was showing them.
+        // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. Rows like
+        // `show <name>` and `login <name>` are otherwise unselectable: Completes:false makes them
+        // display-only, so the only way to reach the server list behind them is to type the verb by
+        // hand — the list works, but only for someone who already knows the word the palette is
+        // showing them.
         //
         // Completing the WHOLE name would put "<name>" in the composer literally, which is the
-        // failure Completes:false existed to prevent. Completing the part before the placeholder
-        // gives "…/mcp show " — a prefix with a trailing space, which is exactly what makes the
-        // palette open its next level and offer the servers.
+        // failure Completes:false guards against. Completing the part before the placeholder gives
+        // "…/mcp show " — a prefix with a trailing space, which is exactly what makes the palette
+        // open its next level and offer the servers.
             // THE PREFIX IS EVERYTHING ALREADY COMMITTED TO, not just the command name. At one level
             // down those are the same string; at two — "/sessions resume 3" — they are not, and
             // completing to "/sessions 3" would produce a command the dispatcher rejects.

@@ -1,14 +1,14 @@
 using CxAgent.UI;
 
-// LAST-RESORT CRASH LOG. A goal ran three reviewer workers to success and then the process VANISHED:
-// no goal-terminal line, no error, tokens frozen, the TUI frame still painted on a terminal whose
-// owner was gone. It read as a hang for twenty minutes before a process check showed there was
-// nothing left to hang.
+// LAST-RESORT CRASH LOG. Without this, a crash in a background task makes the process VANISH with
+// nothing written down: no goal-terminal line, no error, tokens frozen, the TUI frame still painted
+// on a terminal whose owner is gone. Observed live, it reads as a hang — twenty minutes before a
+// process check showed there was nothing left to hang.
 //
-// Nothing was written down because nothing catches this. An exception escaping a background task —
-// the orchestrator loop, a scheduler continuation, a provider call — terminates the runtime, and the
-// TUI owns the screen, so whatever the runtime printed was overwritten by the next frame. The crash
-// is invisible BOTH ways: no log on disk, and nothing readable on screen.
+// Nothing else catches this. An exception escaping a background task — the orchestrator loop, a
+// scheduler continuation, a provider call — terminates the runtime, and the TUI owns the screen, so
+// whatever the runtime prints is overwritten by the next frame. The crash is invisible BOTH ways:
+// no log on disk, and nothing readable on screen.
 //
 // Written to a file rather than the console for exactly that reason, and appended so a crash loop
 // leaves a history instead of each run erasing its predecessor's evidence.
