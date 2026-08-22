@@ -59,9 +59,9 @@ public static class StatsDashboard
 
     /// <summary>Compact magnitudes — a dashboard is read for scale, never for digits.
     ///
-    /// <para>Delegates rather than formatting here: the <c>:0.0</c> this used to carry took the
-    /// current culture's decimal separator, the same defect <see cref="Percent"/> below was written
-    /// for, sitting one method away from it.</para>
+    /// <para>Delegates rather than formatting here: a <c>:0.0</c> would take the current culture's
+    /// decimal separator, rendering 1,2k under fr-FR — the same defect <see cref="Percent"/> below
+    /// guards against, sitting one method away from it.</para>
     /// </summary>
     public static string Compact(long n) => DisplayNumber.Compact(n);
 

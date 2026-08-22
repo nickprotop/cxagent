@@ -38,8 +38,8 @@ public class CoreMarkdownTests
     public void InterpolatedValuesKeepTheirCharacters(string raw, string escaped)
     {
         // A PATH IS NOT EMPHASIS. `my_test_file.cs` interpolated raw into markdown renders as
-        // my<i>test</i>file.cs — the same class of bug the old Markup.Escape existed to prevent, in
-        // the new format. Core interpolates paths, error text and model output constantly.
+        // my<i>test</i>file.cs, because a pair of underscores is emphasis. Core interpolates paths,
+        // error text and model output constantly, so any of them can carry one.
         Assert.Equal(escaped, Md.Escape(raw));
     }
 
@@ -138,7 +138,7 @@ public class CoreMarkdownTests
         // `Say(new Message($"could not…"))`, the shape this task INTRODUCED and the one every later
         // task now writes. Message's severity parameter defaults to Info, so a forgotten second
         // argument compiles clean and reads as an aside — exactly the bug this test exists to catch,
-        // now in the one shape the old regex was blind to.
+        // and that shape is the one every call site here writes.
         //
         // EACH `Say(...)` CALL IS EXTRACTED WHOLE (non-greedy up to its closing `);`) rather than
         // matched by one monolithic pattern, because "does this call mention a failure word AND omit
@@ -208,7 +208,7 @@ public class CoreMarkdownTests
         // the opposite: the pipe IS the column delimiter, so an unescaped one in a session title
         // splits the row into more cells than the header declares and Markdig drops the overflow.
         // Asserting cell count, not "Contains", is the only way to catch that — a contains-assertion
-        // is exactly how this got through Task 6 in the first place.
+        // passes while the row is broken, because the title is still present in the text.
         var sessions = new List<CxAgent.Core.Storage.SessionInfo>
         {
             new(Uid: "ABCDEF0123456789", Title: "fix a|b parser", WorkingDir: "/w",
