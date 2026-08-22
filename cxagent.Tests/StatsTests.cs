@@ -277,6 +277,30 @@ public class StatsTests
         Assert.Equal(0, StatsQuery.Permissions(rows).Flagged);
     }
 
+    /// <summary>
+    /// CLASSIFIED COUNTS ONLY NON-NULL FLAGGED AUTO ROWS — the same population Flagged draws its
+    /// numerator from. A row that never touched the classifier, or an auto row that predates the
+    /// Flagged column, must not appear in this denominator, or the resulting rate understates how
+    /// often triage actually escalates within the rows that can answer the question.
+    /// </summary>
+    [Fact]
+    public void Permissions_ClassifiedCountsOnlyNonNullFlaggedAutoRows()
+    {
+        var rows = new List<PermissionRecord>
+        {
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null, Flagged: true),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null, Flagged: false),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-refused", null, Flagged: null),   // legacy row
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-denied", null, Flagged: null),    // legacy row
+            new("a", DateTimeOffset.UtcNow, "Shell", "allowed", null),   // never touched the classifier
+        };
+
+        var counts = StatsQuery.Permissions(rows);
+
+        Assert.Equal(1, counts.Flagged);
+        Assert.Equal(2, counts.Classified);
+    }
+
     // ---- rendering -----------------------------------------------------------------------------
 
     /// <summary>
@@ -332,7 +356,7 @@ public class StatsTests
             Daily = StatsQuery.ByDay(sessions, DateOnly.FromDateTime(DateTime.Now).AddDays(-6),
                 DateOnly.FromDateTime(DateTime.Now)),
             Compaction = (1, 150_000, 0),
-            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0),
+            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0, 0),
         });
 
         var opens = text.Split('[').Length - 1;
@@ -356,13 +380,65 @@ public class StatsTests
             Days = 7, Totals = StatsQuery.Totals(sessions),
             Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
             Types = [], Tools = [], Daily = [],
-            // 4 auto decisions, 1 flagged — a reader must be able to see 25% without doing the
-            // division themselves.
-            Permissions = new(0, 0, 0, 0, 3, 1, 0, 1),
+            // 4 auto decisions, all 4 classified (no legacy rows in this sample), 1 flagged — a
+            // reader must be able to see 25% without doing the division themselves.
+            Permissions = new(0, 0, 0, 0, 3, 1, 0, 1, 4),
         });
 
         Assert.Contains("auto review 4 decided", text, StringComparison.Ordinal);
         Assert.Contains("25% triage-flagged", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE RATE'S DENOMINATOR IS THE CLASSIFIED POPULATION, NOT THE RAW AUTO TOTAL. A real database
+    /// can hold auto decisions written before the Flagged column existed — their Flagged is null, and
+    /// StatsQuery.Permissions already excludes them from the Flagged count. If the dashboard divided
+    /// by the auto total instead, those same legacy rows would still dilute the denominator, reporting
+    /// a rate lower than the classified sample actually shows. Found live against a real database: 33
+    /// legacy auto rows with null Flagged, none contributing to the numerator but all inflating a
+    /// naive denominator.
+    /// </summary>
+    [Fact]
+    public void Render_TriageFlagRate_DividesByClassifiedNotByAutoTotal()
+    {
+        var sessions = new[] { S("a", 900, 100, sub: 0) };
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
+            Types = [], Tools = [], Daily = [],
+            // 10 auto decisions total, but only 2 are classified (Flagged non-null) and 1 of those
+            // is flagged. Dividing by the auto total (10) would read 10%; the honest answer, over the
+            // only population that can speak to it, is 50%.
+            Permissions = new(0, 0, 0, 0, 8, 2, 0, 1, 2),
+        });
+
+        Assert.Contains("50% triage-flagged", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("10% triage-flagged", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// NOTHING MEASURED YET IS NOT THE SAME FACT AS "NEVER FLAGGED", so it must not render as 0% —
+    /// that would claim triage screens out everything, when the true state is that every auto decision
+    /// on record predates the column that would say so. This is the user's own database's shape today.
+    /// </summary>
+    [Fact]
+    public void Render_WithNoClassifiedAutoDecisions_OmitsTheRateButKeepsTheCounts()
+    {
+        var sessions = new[] { S("a", 900, 100, sub: 0) };
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
+            Types = [], Tools = [], Daily = [],
+            // Auto decisions exist, but every one predates triage-flag telemetry — Classified is 0.
+            Permissions = new(0, 0, 0, 0, 29, 4, 0, 0, 0),
+        });
+
+        Assert.Contains("auto review 33 decided", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("triage-flagged", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("0%", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("NaN", text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -379,7 +455,7 @@ public class StatsTests
             Days = 7, Totals = StatsQuery.Totals(sessions),
             Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
             Types = [], Tools = [], Daily = [],
-            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0),
+            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0, 0),
         });
 
         Assert.DoesNotContain("auto review", text, StringComparison.Ordinal);

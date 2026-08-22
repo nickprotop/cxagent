@@ -120,7 +120,7 @@ public static class StatsDashboard
         public required IReadOnlyList<ToolStat> Tools { get; init; }
         public required IReadOnlyList<(DateOnly Day, int Tokens)> Daily { get; init; }
         public (int Runs, int Reclaimed, int Manual) Compaction { get; init; }
-        public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0, 0);
+        public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     /// <summary>The whole dashboard.</summary>
@@ -308,11 +308,24 @@ public static class StatsDashboard
                 // stage two (the reasoning call) is earning its cost, which is a rate question: a
                 // handful flagged out of thousands says stage one screens almost everything cheaply,
                 // the same handful out of a dozen says the split barely filters anything.
-                var flagRate = (double)permissions.Flagged / auto;
+                //
+                // DENOMINATOR IS Classified, NOT auto. A real database can hold auto decisions from
+                // before the Flagged column existed — their Flagged is null, which PermissionCounts
+                // already excludes from the Flagged count. Dividing by the raw auto total anyway
+                // would silently pad the denominator with rows that can never contribute to the
+                // numerator, understating the rate for as long as any legacy row is in the window.
+                // OMITTED ENTIRELY when Classified is zero: on a database that is all legacy rows
+                // (the exact shape found in review — auto decisions present, none of them measured),
+                // there is nothing this rate can honestly say. A rendered "0%" would claim triage
+                // never flags anything, when the true answer is "not measured yet" — a different
+                // fact a silent number cannot distinguish itself from.
+                var suffix = permissions.Classified > 0
+                    ? $" · {(double)permissions.Flagged / permissions.Classified:P0} triage-flagged"
+                    : "";
                 lines.Add($"  auto review {auto} decided "
                         + Muted($"({permissions.AutoAllowed} allowed, "
-                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied) · "
-                              + $"{flagRate:P0} triage-flagged"));
+                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied)"
+                              + suffix)); // suffix rides inside the same Muted() clause, matching style
             }
         }
 

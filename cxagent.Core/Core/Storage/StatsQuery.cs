@@ -112,14 +112,22 @@ public sealed record ToolStat(
 /// <param name="AutoRefused">Decisions the classifier declined to decide, so a human was asked.</param>
 /// <param name="AutoDenied">Decisions the classifier denied on its own.</param>
 /// <param name="Flagged">
-/// How many of the three auto decisions triage sent to stage two. The rate this is for — Flagged
-/// divided by the auto total — is what tells a reader whether the second, reasoning-model stage of
-/// the classifier earns its cost: a low rate means stage one screens almost everything out cheaply,
-/// a rate near the auto total means stage one is barely filtering and the split buys little.
+/// How many of the <see cref="Classified"/> auto decisions triage sent to stage two. The rate this is
+/// for — Flagged divided by Classified — is what tells a reader whether the second, reasoning-model
+/// stage of the classifier earns its cost: a low rate means stage one screens almost everything out
+/// cheaply, a rate near 100% means stage one is barely filtering and the split buys little.
+/// </param>
+/// <param name="Classified">
+/// How many of the three auto decisions have an ANSWER to "did triage flag this" at all — the
+/// denominator <see cref="Flagged"/> is a rate of. NOT the same as the auto total: a row written
+/// before the flagged column existed has a null answer, and a null must not silently pad the
+/// denominator any more than it pads the numerator — it is simply an auto decision this rate cannot
+/// speak to yet. Kept apart from the auto total for exactly the bug that shape invites: dividing a
+/// numerator that already excludes null rows by a denominator that does not.
 /// </param>
 public sealed record PermissionCounts(
     int Asked, int Allowed, int Denied, int Silent,
-    int AutoAllowed, int AutoRefused, int AutoDenied, int Flagged);
+    int AutoAllowed, int AutoRefused, int AutoDenied, int Flagged, int Classified);
 
 /// <summary>
 /// Reads usage history into the shapes a dashboard renders.
@@ -253,5 +261,12 @@ public static class StatsQuery
             // flagged" any more than it counts as flagged, so it is simply excluded here rather
             // than folded into either side of the rate.
             rows.Count(r => r.Decision is "auto-allowed" or "auto-refused" or "auto-denied"
-                          && r.Flagged == true));
+                          && r.Flagged == true),
+            // THE DENOMINATOR MATCHING NUMERATOR — count only rows whose Flagged is non-null, the
+            // exact population the count above draws from. Using the raw auto total here was the
+            // bug: a null row cannot contribute to Flagged but was still diluting the rate, which on
+            // a real database with legacy rows (no Flagged column when they were written) reported a
+            // rate far lower than the classified sample actually shows.
+            rows.Count(r => r.Decision is "auto-allowed" or "auto-refused" or "auto-denied"
+                          && r.Flagged is not null));
 }
