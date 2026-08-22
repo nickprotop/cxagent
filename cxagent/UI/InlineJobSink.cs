@@ -52,7 +52,16 @@ public sealed class InlineJobSink : IToolObserver
     /// before any of it runs — and in copilot mode, before deciding whether to let it.
     /// </summary>
     public void ToolsChanged(IReadOnlyList<Job> jobs) =>
-        _system.EnqueueOnUIThread(() =>
+        _system.EnqueueOnUIThread(() => ToolsChangedNow(jobs));
+
+    /// <summary>
+    /// The add path's work, split from its marshalling for the same reason as
+    /// <see cref="RefreshRunningHeadersNow"/>: a test needs rows on screen before it can watch the
+    /// tick rewrite them, and the enqueue above hands the work to a loop that is not running in a
+    /// unit test. Must be on the UI thread; <see cref="ToolsChanged"/> is what guarantees it.
+    /// </summary>
+    public void ToolsChangedNow(IReadOnlyList<Job> jobs)
+    {
         {
             // A re-plan (or a mid-goal addition) calls this again with the full set. Only add lines
             // for jobs not already on screen; re-adding every job each time would duplicate the
@@ -141,7 +150,8 @@ public sealed class InlineJobSink : IToolObserver
             // this was meant to remove, and it is on screen for the whole time the tool runs.
             _chat.SetCompactFooter(id, IsCompactRow(job) || !IsTerminal(job.State));
             }
-        });
+        }
+    }
 
     public void ToolUpdated(Job job) =>
         _system.EnqueueOnUIThread(() =>
@@ -545,6 +555,60 @@ public sealed class InlineJobSink : IToolObserver
                 _chat.UpdateMessage(id, job.ProgressBody);
         });
 
+    /// <summary>
+    /// Re-renders the header of every row still running. Called once a second from the window's
+    /// panel clock.
+    ///
+    /// <para>THE ELAPSED CLOCK HAS NO OTHER DRIVER. CompactHeader is a pure projection of a Job, so
+    /// the "now - StartedAt" it computes is frozen at whatever moment last pushed a header. Progress
+    /// reports push one, which is why a streaming sub-agent's clock looked fine — but a plain shell
+    /// call reports nothing at all between its start and its result, so its clock was stamped once
+    /// and never again. The inline [spinner] in that header is NOT a driver either: it is resolved
+    /// out of the stored string at parse time, so it animates a header nobody has recomputed.</para>
+    ///
+    /// <para>HEADER ONLY, exactly like <see cref="ToolProgressed"/> and for exactly its reason — this
+    /// is the same SetHeader call, deliberately not routed through ToolUpdated, which force-expands
+    /// the row and blanks its body. Doing either once a second would re-open a row the user
+    /// collapsed and fight them for it. It does not touch the body at all: a tick knows nothing new
+    /// about the work, only about the time.</para>
+    ///
+    /// <para>Terminal jobs are skipped: their header carries a fixed duration off JobResult and
+    /// rewriting it every second would be pure churn for an unchanging string.</para>
+    /// </summary>
+    public void RefreshRunningHeaders() => _system.EnqueueOnUIThread(() => RefreshRunningHeadersNow());
+
+    /// <summary>
+    /// The tick's actual work, split out so it is reachable without a running UI loop.
+    ///
+    /// <para>PUBLIC BECAUSE THE ALTERNATIVE WAS NOT TESTING IT. Every other path in this sink is
+    /// verified through <c>CompactHeaderForTest</c>, a pure projection — which is exactly why the
+    /// frozen clock shipped: the projection was always right, and the bug was that nobody re-ran it.
+    /// A test written against the pure seam cannot see that, and the enqueue in the caller above puts
+    /// the work behind a queue only the framework's own loop drains. Splitting the marshalling from
+    /// the work leaves one method a test can call directly and watch the rows change.</para>
+    ///
+    /// <para>Returns how many rows it rewrote, so a test can distinguish "ticked nothing" from
+    /// "ticked and the header happened not to change" — a distinction the frozen clock had no way of
+    /// making. Callers in the app ignore it.</para>
+    ///
+    /// <para>Must be on the UI thread; <see cref="RefreshRunningHeaders"/> is what guarantees it.</para>
+    /// </summary>
+    public int RefreshRunningHeadersNow()
+    {
+        var refreshed = 0;
+
+        foreach (var job in _known.Values)
+        {
+            if (IsTerminal(job.State)) continue;
+            if (!_lines.TryGetValue(job.Id, out var id)) continue;
+
+            _chat.SetHeader(id, CompactHeader(job));
+            refreshed++;
+        }
+
+        return refreshed;
+    }
+
     public void ToolResourcesSampled(string jobId, ResourceSnapshot snapshot) { }
 
     /// <summary>
@@ -754,13 +818,31 @@ public sealed class InlineJobSink : IToolObserver
             var deciding = Badge(job) is { Length: > 0 } word ? "  ·  " + word : "";
 
             // ELAPSED, AT THE END OF THE HEADER — sourced from StartedAt rather than a second timer.
-            // No new clock is needed: the spinner tag below already forces this whole header to be
-            // RE-EVALUATED on its own interval (see the comment on SpinnerIntervalMs just below), so
-            // computing "now - StartedAt" fresh on every call is enough to make the number visibly
-            // tick. StartedAt is null only in the instant between a row being created and
-            // WorkStarting firing, which is too brief to render — guarded anyway so that instant
-            // shows no clock rather than a negative or garbage one.
-            var elapsed = job.StartedAt is { } started
+            //
+            // THIS COMMENT USED TO CLAIM THE SPINNER TICKED THE CLOCK. It does not, and the number
+            // sat frozen on screen for as long as anyone cared to watch it. The tag below is resolved
+            // when this STRING is parsed, not when it is produced: MarkupSpinnerClock hands the
+            // parser a glyph derived from elapsed monotonic time, and its InvalidateForInlineSpinner
+            // asks the host to REPAINT — which re-parses the stored header text and picks a new
+            // glyph out of it. Nothing in that loop calls back into CompactHeader, so "now" here was
+            // whatever it happened to be the last time something pushed a header, and a row with no
+            // progress reports (a plain `run_shell` is exactly that) pushed exactly one.
+            //
+            // What ticks it now is RefreshRunningHeaders below, driven off the window's existing
+            // one-second panel clock. One second is the correct cadence for an hh:mm:ss field and
+            // the spinner's own interval is far faster and belongs to the framework.
+            //
+            // NO CLOCK WHILE THE GATE IS STILL DECIDING. Reviewing means work has not begun, so
+            // there is no runtime to report — and every candidate for what to show instead is worse
+            // than showing nothing. A live count would be the very review time this fix just took
+            // OUT of the number (see Agent.InvokeAndShowAsync); a frozen 00:00:00 reads as a hung
+            // clock, which is the same complaint that started all this. The badge in this slot
+            // already says "reviewing…", so the row is not silent about why the clock is absent, and
+            // the clock appearing at zero is then an honest signal that the work itself has started.
+            //
+            // StartedAt is also null in the instant between a row being created and its first stamp
+            // — guarded so that instant shows no clock rather than a negative or garbage one.
+            var elapsed = !job.Reviewing && job.StartedAt is { } started
                 ? "  ·  " + (DateTimeOffset.UtcNow - started).ToString(@"hh\:mm\:ss")
                 : "";
 

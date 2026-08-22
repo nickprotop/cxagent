@@ -1985,7 +1985,19 @@ public sealed class Agent
         //
         // Rebasing rather than replacing: a plugin that never reports (no gate, no
         // WorkStarting call) keeps the original stamp and the old behaviour exactly.
-        ctx.WorkStarted += () => started = DateTimeOffset.UtcNow;
+        //
+        // BOTH CONSUMERS, and that is the second half of this fix. `started` feeds JobResult.Duration
+        // — the number on the FINISHED row — and rebasing it alone left job.StartedAt still holding
+        // the row-creation stamp. That field is what the LIVE clock in the running header reads, so
+        // the same review time this comment says was removed from the finished row was still being
+        // counted by the clock ticking beside it: the two disagreed, and the one the user watches
+        // while they wait was the wrong one. Whatever the rule is, it has to be the same rule in
+        // both places, so they are set together here.
+        ctx.WorkStarted += () =>
+        {
+            started = DateTimeOffset.UtcNow;
+            job.StartedAt = started;
+        };
 
         // THE BADGE, THE MOMENT THE CLASSIFIER RULES — not when the tool finishes. The row already
         // exists by here (it was drawn when the model emitted the call); the gate decides next, and

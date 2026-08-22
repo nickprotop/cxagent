@@ -602,6 +602,13 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
+            // AND BACK TO THE WINDOW, so its one-second clock can tick the elapsed time on running
+            // rows. Assigned here rather than passed in because the sink needs the window's Chat
+            // control to exist first — see MainWindow.JobSink. Re-wiring (/model, resume) builds a
+            // new sink and overwrites this, which is what we want: the clock must drive whichever
+            // sink actually owns the rows on screen.
+            mainWindow.JobSink = jobPanelSink;
+
             // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
             // collection empty while a session was plainly running, which Adopt() was added to paper
             // over — the session went in afterwards, and nothing checked that what the root wired

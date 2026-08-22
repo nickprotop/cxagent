@@ -639,6 +639,109 @@ public class AgentTests
             $"the 250ms approval wait leaked into the reported duration ({duration.TotalMilliseconds:0}ms)");
     }
 
+    /// <summary>Never calls WorkStarting — the shape of a plugin behind no gate at all.</summary>
+    private sealed class SilentPlugin : IJobPlugin
+    {
+        public string TypeName => "shell";
+        public string DisplayName => "Silent";
+        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
+        {
+            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
+            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
+            new JobParamSpec("env", "object", Required: false, "Environment variables"),
+            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
+        });
+        public JobValidation Validate(JobParameters p) => JobValidation.Valid();
+
+        public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
+        {
+            await Task.Delay(250, ct);
+            return new JobResult { Success = true };
+        }
+    }
+
+    /// <summary>
+    /// THE LIVE CLOCK AGREES WITH THE FINISHED ROW'S DURATION.
+    ///
+    /// <para>The sibling test above pins the duration, and that fix rebased a LOCAL — it never
+    /// touched <c>job.StartedAt</c>, which is the field the RUNNING row's elapsed clock reads. So the
+    /// review time this codebase had already decided was not runtime went on being counted by the
+    /// clock the user actually watches while they wait, and the two numbers described the same call
+    /// differently. One rule, both readers.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartedAt_IsRebasedWhenTheWorkStarts_NotWhenTheRowAppears()
+    {
+        var plugins = new PluginRegistry();
+        plugins.Register(new SlowToApprovePlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "c1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"echo hi"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        await agent.SendAsync("run it", CancellationToken.None);
+
+        var job = Assert.Single(jobs.Jobs);
+
+        // AGAINST CreatedAt, not against a wall-clock reading taken here: the assertion is about the
+        // GAP the approval wait opened between the row appearing and the work beginning, and that
+        // gap is a property of the job rather than of when this test happened to look.
+        var reviewWait = job.StartedAt!.Value - job.CreatedAt;
+        Assert.True(reviewWait > TimeSpan.FromMilliseconds(200),
+            $"StartedAt still holds the row-creation stamp — the live clock would count the "
+            + $"approval wait as runtime (gap was {reviewWait.TotalMilliseconds:0}ms)");
+    }
+
+    /// <summary>
+    /// A PLUGIN THAT NEVER REPORTS KEEPS THE ORIGINAL STAMP.
+    ///
+    /// <para>The preserved half of the rebase, and the reason it is a rebase rather than a
+    /// replacement: an ordinary tool behind no gate never calls WorkStarting, and must behave exactly
+    /// as it did before any of this. If the stamp were moved unconditionally — cleared at creation
+    /// and set only on the event — these rows would show no clock at all, forever.</para>
+    /// </summary>
+    [Fact]
+    public async Task StartedAt_IsUnchangedForAPluginThatNeverReportsWorkStarting()
+    {
+        var plugins = new PluginRegistry();
+        plugins.Register(new SilentPlugin());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "c1", Name = "run_shell",
+                Arguments = System.Text.Json.JsonDocument.Parse("""{"command":"echo hi"}""").RootElement }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var jobs = new NullJobPanel();
+        var agent = new Agent(provider, plugins, new TokenLedger(),
+            new RecordingSink(), jobs, logs: null, maxTurns: 50);
+
+        await agent.SendAsync("run it", CancellationToken.None);
+
+        var job = Assert.Single(jobs.Jobs);
+
+        // The 250ms delay is the whole run here, and none of it may move the stamp: with no
+        // WorkStarting call StartedAt must still be the row-creation moment, which is CreatedAt.
+        var drift = job.StartedAt!.Value - job.CreatedAt;
+        Assert.True(drift < TimeSpan.FromMilliseconds(50),
+            $"StartedAt drifted for a plugin that never reported ({drift.TotalMilliseconds:0}ms) — "
+            + "the no-gate path must be untouched by the rebase");
+    }
+
     // ---- the context log keeps the full text ----------------------------------------------------
 
     /// <summary>

@@ -694,4 +694,156 @@ public class InlineJobSinkTests
 
         Assert.DoesNotContain("auto-approved", InlineJobSink.CompactHeaderForTest(job));
     }
+
+    // ---- the running clock actually ticks -------------------------------------------------------
+
+    /// <summary>
+    /// Builds a headless window system and a transcript, with no <c>Run()</c> loop.
+    ///
+    /// <para>Nothing drains the UI-thread queue in a unit test, which is precisely why the sink's
+    /// two paths under test here have synchronous <c>…Now</c> halves — see
+    /// <c>InlineJobSink.RefreshRunningHeadersNow</c>.</para>
+    /// </summary>
+    private static (InlineJobSink Sink, ChatTranscriptControl Chat) Headless()
+    {
+        var system = new ConsoleWindowSystem(new HeadlessConsoleDriver(80, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
+        var chat = new ChatTranscriptControl();
+        return (new InlineJobSink(system, chat), chat);
+    }
+
+    private static Job RunningRow(string id, DateTimeOffset startedAt) => new()
+    {
+        Id = id, AgentId = "g1", PluginType = "shell", DisplayName = "run_shell",
+        State = JobState.Running, CreatedAt = startedAt, StartedAt = startedAt,
+    };
+
+    /// <summary>
+    /// THE TICK REWRITES A RUNNING ROW'S HEADER, AND THE NUMBER IN IT MOVES.
+    ///
+    /// <para>USER-REPORTED: the elapsed clock beside a running tool was frozen. The header is a pure
+    /// projection of the Job, so it was always CORRECT — it was simply computed once, when the row
+    /// was last pushed, and a plain shell call pushes exactly one header between its start and its
+    /// result. The comment in the code claimed the inline <c>[spinner]</c> re-evaluated the whole
+    /// header on its own interval; it does not. That tag is resolved out of the STORED string when
+    /// the control repaints, so it animates a header nobody recomputed.</para>
+    ///
+    /// <para>This test does what no test did before: it puts a row on screen, waits real time, ticks,
+    /// and demands a DIFFERENT header. A test written against the pure projection alone cannot fail
+    /// on this bug, which is how it shipped.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheTick_RewritesARunningRowsHeader_WithAFreshClock()
+    {
+        var (sink, _) = Headless();
+
+        // A second and change back, so the hh:mm:ss field is guaranteed to differ after the wait
+        // below — the format has no sub-second digit, and a start "now" could otherwise tick from
+        // 00:00:00 to 00:00:01 or not, depending on where in the second the test landed.
+        var job = RunningRow("j1", DateTimeOffset.UtcNow - TimeSpan.FromSeconds(5));
+        sink.ToolsChangedNow(new[] { job });
+
+        var before = InlineJobSink.CompactHeaderForTest(job);
+
+        await Task.Delay(1100);
+
+        Assert.Equal(1, sink.RefreshRunningHeadersNow());
+
+        var after = InlineJobSink.CompactHeaderForTest(job);
+        Assert.NotEqual(before, after);
+
+        // AND IT WENT UP, not merely changed: an "is different" assertion alone would pass on a
+        // clock that reset to zero every tick, which is a different frozen clock wearing a disguise.
+        Assert.Contains("00:00:05", before);
+        Assert.Contains("00:00:06", after);
+    }
+
+    /// <summary>
+    /// THE TICK DOES NOT RE-OPEN A ROW THE USER COLLAPSED.
+    ///
+    /// <para>The reason the tick is a bare SetHeader rather than a call to ToolUpdated, which
+    /// force-expands the row and blanks its body on every invocation. Once a second, that would take
+    /// a row the user deliberately shut and open it again, forever, and the user would have no way to
+    /// win. This is the same invariant ToolProgressed exists to protect, and the tick is a second
+    /// caller of it.</para>
+    /// </summary>
+    [Fact]
+    public void TheTick_LeavesACollapsedRowCollapsed()
+    {
+        var (sink, chat) = Headless();
+
+        var job = RunningRow("j1", DateTimeOffset.UtcNow - TimeSpan.FromSeconds(5));
+        sink.ToolsChangedNow(new[] { job });
+
+        var id = Assert.Single(chat.MessageIds);
+        chat.SetExpanded(id, false);   // the user shuts it
+
+        sink.RefreshRunningHeadersNow();
+
+        Assert.False(chat.IsExpanded(id), "the tick re-opened a row the user had collapsed");
+    }
+
+    /// <summary>
+    /// A FINISHED ROW IS NOT TOUCHED BY THE TICK. Its header carries a fixed duration off JobResult,
+    /// so rewriting it once a second is churn for a string that cannot change — and the count is the
+    /// only way to see the difference, since the header would come out identical either way.
+    /// </summary>
+    [Fact]
+    public void TheTick_SkipsFinishedRows()
+    {
+        var (sink, _) = Headless();
+
+        var done = RunningRow("j1", DateTimeOffset.UtcNow) with
+        {
+            State = JobState.Succeeded,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(2) },
+        };
+        sink.ToolsChangedNow(new[] { done });
+
+        Assert.Equal(0, sink.RefreshRunningHeadersNow());
+    }
+
+    // ---- the clock does not count the review phase ----------------------------------------------
+
+    /// <summary>
+    /// NO CLOCK WHILE THE GATE IS STILL DECIDING.
+    ///
+    /// <para>Work has not started, so there is no runtime to report, and every alternative is worse:
+    /// a live count would be exactly the review time that Agent's rebase just removed from the
+    /// finished row's duration, putting the two numbers back into disagreement; a frozen 00:00:00
+    /// reads as a hung clock, which is the complaint that started this. The badge in the same slot
+    /// already says "reviewing…", so the row explains its own silence.</para>
+    /// </summary>
+    [Fact]
+    public void ARowStillUnderReview_ShowsNoClock()
+    {
+        var job = RunningRow("j1", DateTimeOffset.UtcNow - TimeSpan.FromSeconds(8)) with
+        {
+            Reviewing = true,
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.Contains("reviewing…", header);
+        Assert.DoesNotContain("00:00:", header);
+    }
+
+    /// <summary>
+    /// AND THE CLOCK APPEARS THE MOMENT THE VERDICT LANDS. The suppression above is scoped to the
+    /// review window alone — it must not be a way for a row to lose its clock permanently, which
+    /// would be the frozen-clock bug again by another route.
+    /// </summary>
+    [Fact]
+    public void OnceTheVerdictLands_TheClockAppears()
+    {
+        var job = RunningRow("j1", DateTimeOffset.UtcNow - TimeSpan.FromSeconds(8)) with
+        {
+            Reviewing = false, DecidedBy = "auto",
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.Contains("auto-approved", header);
+        Assert.Contains("00:00:0", header);
+    }
 }

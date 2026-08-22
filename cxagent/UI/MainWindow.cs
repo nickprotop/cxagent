@@ -1166,12 +1166,32 @@ public sealed class MainWindow : IDisposable
         _panelClock = null;
     }
 
+    /// <summary>
+    /// The job sink whose running rows this window's clock ticks, set by AppBootstrap once it exists.
+    ///
+    /// <para>A PROPERTY RATHER THAN A CONSTRUCTOR ARGUMENT because of build order: the window is
+    /// constructed first and the sink is handed the window's own Chat control, so there is no moment
+    /// at which both could be passed to the other. Null until then, and the tick simply does nothing
+    /// — the window runs for a while before any session is wired, and there are no rows to tick.</para>
+    /// </summary>
+    public InlineJobSink? JobSink { get; set; }
+
     private void StartPanelClock()
     {
         _panelClock = new System.Threading.Timer(
             _ => _system.EnqueueOnUIThread(() =>
             {
                 if (SessionPanel.Control.Visible) RefreshSessionPanel();
+
+                // OUTSIDE THE VISIBILITY GUARD ABOVE, and that is the point of putting it here rather
+                // than folding it into RefreshSessionPanel. The panel is a luxury of width and hides
+                // itself on a narrow terminal; the running rows are in the TRANSCRIPT and are always
+                // on screen, so a clock that stopped when the side panel did would freeze for exactly
+                // the users with the least room to spare.
+                //
+                // This is the only thing that advances a running row's elapsed time — see
+                // InlineJobSink.RefreshRunningHeaders for why the header cannot tick itself.
+                JobSink?.RefreshRunningHeaders();
             }),
             null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
