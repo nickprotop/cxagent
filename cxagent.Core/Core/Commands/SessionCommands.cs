@@ -427,7 +427,7 @@ public static class SessionCommands
             else if (server.ToolCount == 0) status = "connected, but offers no tools";
             else status = $"{server.ToolCount} {(server.ToolCount == 1 ? "tool" : "tools")}";
 
-            lines.Add($"| `{Md.EscapeCell(server.Name)}` | {status} |");
+            lines.Add($"| `{Md.Escape(server.Name)}` | {status} |");
         }
         lines.Add("");
         lines.Add("`/mcp <server>` for its tools · `/mcp reload` to re-read config");
@@ -513,13 +513,16 @@ public static class SessionCommands
         // plain two-space indent renders flush against the command above it and the subcommand rows
         // stop reading as modifiers of anything.
         //
+        // Md.Escape, NOT Md.EscapeCell: a code span already hides a pipe from the table parser, so
+        // `/sessions resume <number|id>` stays one cell either way — and EscapeCell's backslash
+        // survives inside the span, putting a literal \| on screen.
+        //
         // THE NAME IS ESCAPED AND THE SUMMARY IS NOT, which is not an oversight. A name is a literal
-        // spelling — `/sessions resume <number|id>` carries a pipe that would split the row into
-        // more cells than the header declares. A summary is markdown this file AUTHORS, backticks
-        // included ("a name from `providers` in config"); escaping it puts backslashes on screen and
+        // spelling whose underscores and asterisks must not become emphasis. A summary is markdown
+        // this file AUTHORS, backticks included ("a name from `providers` in config"); escaping it
         // turns intended inline code into punctuation.
         foreach (var (name, summary, isArg) in rows)
-            lines.Add($"| {(isArg ? "\u00a0\u00a0" : "")}`{Md.EscapeCell(name)}` | {summary} |");
+            lines.Add($"| {(isArg ? "\u00a0\u00a0" : "")}`{Md.Escape(name)}` | {summary} |");
 
         return string.Join('\n', lines);
     }

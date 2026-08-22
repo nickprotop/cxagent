@@ -582,17 +582,18 @@ public class SessionCommandTableTests
     /// <summary>
     /// A NAME IS ESCAPED, A SUMMARY IS NOT — the asymmetry this table depends on.
     ///
-    /// <para>`/sessions resume &lt;number|id&gt;` carries a pipe, which unescaped splits the row into
-    /// more cells than the header declares and Markdig drops the overflow silently. A summary is
-    /// markdown authored in SessionCommands itself, so escaping it would put backslashes on screen
-    /// and turn its intended inline code into punctuation.</para>
+    /// <para>A name is a literal spelling, so its underscores and asterisks must not become
+    /// emphasis. It is escaped for PROSE, not for cells: the name sits inside a code span, which
+    /// already hides its pipe from the table parser, and a cell escape's backslash would survive
+    /// the span and show on screen. A summary is markdown authored in SessionCommands itself, so
+    /// escaping it would turn its intended inline code into punctuation.</para>
     /// </summary>
     [Fact]
     public void HelpLines_EscapesNamesButLeavesSummariesAsMarkdown()
     {
         var help = SessionCommands.HelpLines();
 
-        Assert.Contains(@"`/sessions resume <number\|id>`", help, StringComparison.Ordinal);
+        Assert.Contains("`/sessions resume <number|id>`", help, StringComparison.Ordinal);
         Assert.Contains("a name from `providers` in config", help, StringComparison.Ordinal);
         Assert.DoesNotContain(@"\`", help, StringComparison.Ordinal);
     }

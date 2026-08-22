@@ -389,4 +389,18 @@ public class CoreMarkdownTests
 
         return dir ?? throw new DirectoryNotFoundException("repository root not found from " + AppContext.BaseDirectory);
     }
+
+    /// <summary>A value inside a code span keeps its pipe and gains no backslash.</summary>
+    [Fact]
+    public void ACodeSpanInACellIsEscapedForProseNotForCells()
+    {
+        // A code span hides a pipe from the table parser on its own, so EscapeCell's backslash has
+        // nothing to buy here and does not survive: it renders as a literal \| in the drawn table.
+        // /help's own `resume <number|id>` row is the case that shows it.
+        var help = SessionCommands.HelpLines();
+        var row = help.Split('\n').Single(l => l.Contains("resume <number"));
+
+        Assert.DoesNotContain(@"\|", row);
+        Assert.Contains("<number|id>", row);
+    }
 }

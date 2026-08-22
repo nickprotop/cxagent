@@ -115,7 +115,7 @@ public static class ModelCommand
             // A CELL ESCAPE, NOT Escape's SENTENCE ONE — Ruling 16. `label` lands inside a `|`-row
             // here, unlike every other call to Escape in this file: an instance name containing a
             // pipe would otherwise split the row and lose a column, the same bug /sessions had.
-            lines.Add($"| {(here ? "▸" : "")} | `{Md.EscapeCell(label)}` | {window} "
+            lines.Add($"| {(here ? "▸" : "")} | `{Md.Escape(label)}` | {window} "
                     + $"| {(here ? "in use" : "")} |");
         }
 
