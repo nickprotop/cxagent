@@ -15,8 +15,7 @@ resumable stores. You supply where the text goes; there is no UI dependency.
 dotnet add package CxAgent.Core
 ```
 
-Targets `net8.0`, `net9.0` and `net10.0`. **Pre-1.0 and moving** — public signatures change between
-versions.
+Targets `net8.0`, `net9.0` and `net10.0`.
 
 ### What is in it
 
