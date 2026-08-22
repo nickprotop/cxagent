@@ -1,6 +1,7 @@
 using CxAgent.Core.Sessions;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.UI;
@@ -48,7 +49,20 @@ public sealed class RecordingSink : ISessionObserver
 
     public void UserTurnAdded(ChatMessageId id, string text) => Users.Add(text);
     public readonly List<string> Notices = new();
-    public void Said(string message) => Notices.Add(message);
+
+    public void Said(Message message)
+    {
+        if (message.Severity == Severity.Error)
+        {
+            ErrorQueue.Enqueue(message.Text);
+            MessageQueue.Enqueue(message.Text);
+        }
+        else
+        {
+            Notices.Add(message.Text);
+        }
+    }
+
     public void AssistantTurnBegan(ChatMessageId id) { }
 
     /// <summary>Turns closed via AssistantTurnEnded — a turn left open spins its thinking indicator forever.</summary>
@@ -67,12 +81,6 @@ public sealed class RecordingSink : ISessionObserver
     public readonly System.Collections.Concurrent.ConcurrentQueue<string> ReasoningTokens = new();
 
     public void AssistantReasoningAppended(ChatMessageId id, string text) => ReasoningTokens.Enqueue(text);
-
-    public void Failed(string message)
-    {
-        ErrorQueue.Enqueue(message);
-        MessageQueue.Enqueue(message);
-    }
 
     public void AssistantLabelled(ChatMessageId id, string header) { }
 }

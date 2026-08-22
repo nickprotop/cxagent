@@ -1,5 +1,6 @@
 using System.Text;
 using System.Threading;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
@@ -1082,7 +1083,7 @@ public sealed class Agent
             if (turn >= _maxTurns)
             {
                 var summary = await SummariseAtCapAsync(messages, tools, ct);
-                _sink.Failed($"stopped after {_maxTurns} turns without finishing.");
+                _sink.Said(new Message($"stopped after {_maxTurns} turns without finishing.", Severity.Error));
 
                 // The salvaged summary IS the answer on this path — the caller puts it on the
                 // transcript, exactly as it does for an ordinary reply. CAPPED, not Completed: it is
@@ -1309,9 +1310,9 @@ public sealed class Agent
                 // did not compile, "Build FAILED" in the transcript, and a confident success summary
                 // in the same turn.
                 if (broken)
-                    _sink.Failed(
+                    _sink.Said(new Message(
                         "changes were written but the build did not succeed. The last build or test "
-                        + "run reported a failure and it was not resolved.");
+                        + "run reported a failure and it was not resolved.", Severity.Error));
 
                 // The answer, either way. It is already ON SCREEN — it streamed into the turn opened
                 // above — so this is for the caller's transcript, and it is returned rather than
@@ -1323,9 +1324,9 @@ public sealed class Agent
                 // terse answer, so a parent read "" and had to guess; see SendOutcome.Silent.
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    _sink.Failed(
+                    _sink.Said(new Message(
                         "the model returned no answer — the request may have been dropped or timed "
-                        + "out. Nothing was lost, but this run produced no result.");
+                        + "out. Nothing was lost, but this run produced no result.", Severity.Error));
 
                     return new SendResult(text, SendOutcome.Silent);
                 }
@@ -1602,9 +1603,9 @@ public sealed class Agent
             // session that stopped and a session that appears to still be running.
             if (stuckOn is not null)
             {
-                _sink.Failed(
+                _sink.Said(new Message(
                     $"stopped: {stuckOn} was called with the same arguments {stuckTimes} times and "
-                    + "returned the same result each time. The run was not making progress.");
+                    + "returned the same result each time. The run was not making progress.", Severity.Error));
                 return new SendResult(text, SendOutcome.Stuck);
             }
         }

@@ -1,4 +1,5 @@
 using CxAgent.Core.Agents;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -125,8 +126,11 @@ internal sealed class ConsoleSink : ISessionObserver
     public void AssistantReasoningAppended(ChatMessageId id, string text) { }
     public void AssistantTurnEnded(ChatMessageId id) => AnsiConsole.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
-    public void Failed(string message) => AnsiConsole.MarkupLine($"[red]{message.EscapeMarkup()}[/]");
-    public void Said(string message) => AnsiConsole.MarkupLine($"[grey]{message.EscapeMarkup()}[/]");
+    public void Said(Message message) => AnsiConsole.MarkupLine(message.Severity switch
+    {
+        Severity.Error => $"[red]{message.Text.EscapeMarkup()}[/]",
+        _ => $"[grey]{message.Text.EscapeMarkup()}[/]",
+    });
 }
 
 /// <summary>

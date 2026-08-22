@@ -1,4 +1,5 @@
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -36,8 +37,7 @@ public class TurnIdCollisionTests : IDisposable
         public void AssistantReasoningAppended(ChatMessageId id, string text) { }
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string label) { }
-        public void Said(string markup) { }
-        public void Failed(string message) { }
+        public void Said(Message message) { }
     }
 
     // A CHILD WRITES TO ITS OWN SINK, so its ids cannot collide with the parent's — verified rather

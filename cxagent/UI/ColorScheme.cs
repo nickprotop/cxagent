@@ -135,6 +135,16 @@ public static class ColorScheme
     public static string DangerMarkup => Markup(Destructive, "red");
 
     /// <summary>
+    /// Caution, as markup — for text inside a string, where <see cref="Caution"/> cannot reach.
+    ///
+    /// <para>Added beside <see cref="DangerMarkup"/> for the observer's <c>Warning</c> severity: a
+    /// sink colouring by <c>Message.Severity</c> needs the same bridge for the amber case that
+    /// already exists for the red one, rather than reaching for a role that resolves to nothing
+    /// inside an interpolated string.</para>
+    /// </summary>
+    public static string CautionMarkup => Markup(Caution, "yellow");
+
+    /// <summary>
     /// The accent as an RGB value — cyan1 is #00ffff — for the places a markup NAME cannot go.
     ///
     /// <para>Interpolation needs channels. The banner fades its wordmark from this to

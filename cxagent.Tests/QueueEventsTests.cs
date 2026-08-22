@@ -1,4 +1,5 @@
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -372,8 +373,7 @@ public class InitEchoTests : IDisposable
     {
         public List<string> Shown { get; } = [];
         public void UserTurnAdded(ChatMessageId id, string text) { lock (Shown) Shown.Add(text); }
-        public void Said(string markup) { }
-        public void Failed(string message) { }
+        public void Said(Message message) { }
         public void AssistantTurnBegan(ChatMessageId id) { }
         public void AssistantTextAppended(ChatMessageId id, string text) { }
         public void AssistantReasoningAppended(ChatMessageId id, string text) { }

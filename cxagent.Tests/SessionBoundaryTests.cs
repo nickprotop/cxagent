@@ -1,5 +1,6 @@
 using System.Reflection;
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using Xunit;
 
@@ -101,8 +102,7 @@ public class SessionBoundaryTests
         public void AssistantReasoningAppended(ChatMessageId id, string text) { }
         public void AssistantTurnEnded(ChatMessageId id) { }
         public void AssistantLabelled(ChatMessageId id, string label) { }
-        public void Failed(string message) { }
-        public void Said(string message) { }
+        public void Said(Message message) { }
     }
 
     /// <summary>Hands every report to two observers — the thing that was impossible while each minted
@@ -121,7 +121,6 @@ public class SessionBoundaryTests
         { a.AssistantTurnEnded(id); b.AssistantTurnEnded(id); }
         public void AssistantLabelled(ChatMessageId id, string label)
         { a.AssistantLabelled(id, label); b.AssistantLabelled(id, label); }
-        public void Failed(string message) { a.Failed(message); b.Failed(message); }
-        public void Said(string message) { }
+        public void Said(Message message) { a.Said(message); b.Said(message); }
     }
 }

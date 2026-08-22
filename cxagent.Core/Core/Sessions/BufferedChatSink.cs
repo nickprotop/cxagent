@@ -1,4 +1,5 @@
 using System.Text;
+using CxAgent.Core.Commands;
 
 namespace CxAgent.Core.Sessions;
 
@@ -24,21 +25,28 @@ public sealed class BufferedChatSink : ISessionObserver
 {
     private readonly object _gate = new();
     private readonly StringBuilder _transcript = new();
-    private readonly List<string> _errors = [];
+
+    /// <summary>Everything the session said, in order, with its tone.</summary>
+    private readonly List<Message> _lines = [];
 
     /// <summary>Everything the child said, in order — body and reasoning both.</summary>
     public string Transcript { get { lock (_gate) return _transcript.ToString(); } }
 
     /// <summary>
-    /// What the child reported as an error.
+    /// What the child reported as an error. Derived from severity rather than fed by a second
+    /// method.
     ///
     /// <para>SEPARATE FROM THE TRANSCRIPT because the spawn branch reads it. A cap or a stuck run
-    /// announces itself only through <see cref="Failed"/>, and for a child that is a buffer nobody
-    /// is watching — so the caller needs it addressable rather than buried in prose. <see
-    /// cref="Agents.SendResult"/> now carries the same information structurally; this stays because an
-    /// error raised mid-run (a provider fault the loop recovered from) never reaches the outcome.</para>
+    /// announces itself only through an Error-severity <see cref="Said"/>, and for a child that is a
+    /// buffer nobody is watching — so the caller needs it addressable rather than buried in prose.
+    /// <see cref="Agents.SendResult"/> now carries the same information structurally; this stays
+    /// because an error raised mid-run (a provider fault the loop recovered from) never reaches the
+    /// outcome.</para>
     /// </summary>
-    public IReadOnlyList<string> Errors { get { lock (_gate) return [.. _errors]; } }
+    public IReadOnlyList<string> Errors
+    {
+        get { lock (_gate) return [.. _lines.Where(l => l.Severity == Severity.Error).Select(l => l.Text)]; }
+    }
 
     /// <summary>Body text the child produced, without reasoning or system lines — what it actually
     /// said, for a caller that wants the words rather than the record.</summary>
@@ -79,27 +87,20 @@ public sealed class BufferedChatSink : ISessionObserver
     // states of a progress line nobody watched.
     public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    public void Failed(string message)
+    /// <summary>What the session said about itself. A mode change is not a fault, and a caller
+    /// checking for failures must not find one here.</summary>
+    public IReadOnlyList<string> Notices
     {
-        lock (_gate)
-        {
-            _errors.Add(message);
-            _transcript.Append("error: ").Append(message).AppendLine();
-        }
+        get { lock (_gate) return [.. _lines.Where(l => l.Severity != Severity.Error).Select(l => l.Text)]; }
     }
 
-    /// <summary>What the session said about itself. Kept apart from <see cref="Errors"/> — a mode
-    /// change is not a fault, and a caller checking for failures must not find one here.</summary>
-    public IReadOnlyList<string> Notices { get { lock (_gate) return [.. _notices]; } }
-
-    private readonly List<string> _notices = [];
-
-    public void Said(string message)
+    public void Said(Message message)
     {
         lock (_gate)
         {
-            _notices.Add(message);
-            _transcript.AppendLine(message);
+            _lines.Add(message);
+            if (message.Severity == Severity.Error) _transcript.Append("error: ");
+            _transcript.Append(message.Text).AppendLine();
         }
     }
 }

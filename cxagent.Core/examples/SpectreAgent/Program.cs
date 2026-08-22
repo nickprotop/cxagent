@@ -1,4 +1,5 @@
 using CxAgent.Core.Agents;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Models;
@@ -151,10 +152,13 @@ internal sealed class ConsoleSink : ISessionObserver
 
     public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    /// <summary>The session's own notices — a mode change, a model switch, "Stopped.".</summary>
-    public void Said(string message) => AnsiConsole.MarkupLine($"[grey]{Strip(message)}[/]");
-
-    public void Failed(string message) => AnsiConsole.MarkupLine($"[red]{message.EscapeMarkup()}[/]");
+    /// <summary>The session's own notices — a mode change, a model switch, "Stopped.", and now a
+    /// fault too: the colour follows severity instead of a second method.</summary>
+    public void Said(Message message) => AnsiConsole.MarkupLine(message.Severity switch
+    {
+        Severity.Error => $"[red]{Strip(message.Text)}[/]",
+        _ => $"[grey]{Strip(message.Text)}[/]",
+    });
 
     /// <summary>Core speaks in its own markup dialect; this front end renders plain text instead.</summary>
     private static string Strip(string s) =>

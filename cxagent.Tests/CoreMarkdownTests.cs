@@ -1,4 +1,5 @@
 using CxAgent.Core.Commands;
+using CxAgent.Core.Sessions;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -42,5 +43,26 @@ public class CoreMarkdownTests
     public void OrdinaryTextIsUntouched()
     {
         Assert.Equal("could not read the file", Md.Escape("could not read the file"));
+    }
+
+    [Fact]
+    public void ErrorsIsTheMessagesAtErrorSeverity()
+    {
+        // WAS A PARALLEL CHANNEL, NOW A FILTER. `Failed` routed into its own list, which is why it
+        // survived as a second method — but that list has 29 references and every one is a test
+        // using it as an assertion handle. Derived from severity, it answers the same question
+        // without the contract carrying a method to ask it.
+        var sink = new BufferedChatSink();
+
+        sink.Said("a mode change");
+        sink.Said(new("could not save this rule", Severity.Warning));
+        sink.Said(new("the model returned no answer", Severity.Error));
+
+        Assert.Single(sink.Errors);
+        Assert.Contains("no answer", sink.Errors[0]);
+
+        // A WARNING IS NOT A FAULT. A caller checking for failures must not find one here — the same
+        // distinction Notices and Errors were kept apart for.
+        Assert.DoesNotContain(sink.Errors, e => e.Contains("could not save"));
     }
 }

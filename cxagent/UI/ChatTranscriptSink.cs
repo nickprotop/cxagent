@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
@@ -153,14 +154,15 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// and an escape nobody can test is how the missing one survived.</remarks>
     public static string Escape(string text) => text.Replace("[", "[[");
 
-    public void Failed(string message) =>
+    // THE FRONT END COLOURS BY MEANING, which it could not do while the colour was baked into
+    // the text: Core chose the same red under every theme. These resolve through the theme.
+    public void Said(Message message) =>
         _system.EnqueueOnUIThread(() =>
-            _chat.AddMessage(ChatRole.System, $"[red]✗ {message}[/]"));
-
-    // THE SAME ROW STYLE AS EVERY OTHER SYSTEM LINE, unstyled beyond that: the session sent markup
-    // and chose its own emphasis, so wrapping it in a colour here would override a decision already
-    // made one layer down.
-    public void Said(string message) =>
-        _system.EnqueueOnUIThread(() => _chat.AddMessage(ChatRole.System, message));
+            _chat.AddMessage(ChatRole.System, message.Severity switch
+            {
+                Severity.Error => $"[{ColorScheme.DangerMarkup}]✗ {message.Text}[/]",
+                Severity.Warning => $"[{ColorScheme.CautionMarkup}]{message.Text}[/]",
+                _ => message.Text,
+            }));
 
 }

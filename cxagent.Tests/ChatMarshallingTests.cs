@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
 using CxAgent.UI;
 using SharpConsoleUI;
@@ -45,7 +46,7 @@ public class ChatMarshallingTests
         var ex = Record.Exception(() =>
         {
             sink.UserTurnAdded(new ChatMessageId(1), "hi");
-            sink.Failed("boom");
+            sink.Said(new Message("boom", Severity.Error));
         });
         Assert.Null(ex);   // enqueue-only; no synchronous control mutation, no throw
     }

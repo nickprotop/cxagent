@@ -1,4 +1,5 @@
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -948,8 +949,10 @@ public class AgentChallengeTests
         public readonly List<string> Reasoning = [];
         public void AssistantReasoningAppended(ChatMessageId id, string text) => Reasoning.Add(text);
         public void AssistantTurnEnded(ChatMessageId id) => Ends++;
-        public void Failed(string message) => Errors.Add(message);
-        public void Said(string message) { }
+        public void Said(Message message)
+        {
+            if (message.Severity == Severity.Error) Errors.Add(message.Text);
+        }
         public void AssistantLabelled(ChatMessageId id, string header) => Headers.Add(header);
     }
 

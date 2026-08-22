@@ -1,4 +1,5 @@
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Storage;
@@ -50,8 +51,7 @@ public class ErrorOnceTests : IDisposable
         public List<string> Lines { get; } = [];
         private void Note(string s) { lock (Lines) Lines.Add(s); }
 
-        public void Said(string markup) => Note(markup);
-        public void Failed(string message) => Note(message);
+        public void Said(Message message) => Note(message.Text);
         public void UserTurnAdded(ChatMessageId id, string text) { }
         public void AssistantTurnBegan(ChatMessageId id) { }
         public void AssistantTextAppended(ChatMessageId id, string text) { }

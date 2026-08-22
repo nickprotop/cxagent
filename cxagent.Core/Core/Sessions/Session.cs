@@ -398,7 +398,9 @@ public sealed partial class Session
     /// handed it in the ports.</summary>
     internal void NoteObserver(ISessionObserver? sink) => _sink = sink;
 
-    /// <summary>Says something to whoever is watching this session. A no-op when nobody is.</summary>
+    /// <summary>Says something to whoever is watching this session. A no-op when nobody is. The
+    /// string converts implicitly to an Info-severity <see cref="Message"/> — <see cref="Say"/>'s
+    /// callers do not yet have a reason to choose a different tone.</summary>
     private void Say(string markup) => _sink?.Said(markup);
 
     /// <summary>

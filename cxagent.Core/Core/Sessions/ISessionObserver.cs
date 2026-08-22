@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Sessions;
@@ -65,20 +66,17 @@ public interface ISessionObserver
     /// and it is where the job rows already put their status.</para>
     /// </summary>
     void AssistantLabelled(ChatMessageId id, string header);
-    void Failed(string message);
 
     /// <summary>
     /// Something the session did, said in words for the user.
     ///
-    /// <para>THE NON-FAILURE SIBLING OF <see cref="Failed"/>, and it exists because that was the only
-    /// way for a session to reach the transcript — so a session that switched model or changed mode
-    /// had no way to say so, and the composition root composed the sentence instead by reaching into
-    /// session state it should not have needed to read. Every front end would have had to reimplement
-    /// that, and the first one to miss a line has a session whose state changed silently.</para>
+    /// <para>MARKDOWN, and the severity beside it rather than inside it. This used to be two methods
+    /// — <c>Said</c> and <c>Failed</c> — which said the same thing twice once tone became explicit: a
+    /// front end implementing both wrote the same body with a different colour.</para>
     ///
-    /// <para>MARKUP, like the rest of this contract's text. The session is choosing EMPHASIS, which
-    /// is part of a sentence; a front end that does not render markup strips it, exactly as it would
-    /// for a model's own output.</para>
+    /// <para>A plain string converts implicitly and arrives as <see cref="Severity.Info"/>, so an
+    /// ordinary line stays an ordinary line at the call site.</para>
     /// </summary>
-    void Said(string message);
+    /// <param name="message">Markdown, and how loudly to say it.</param>
+    void Said(Message message);
 }

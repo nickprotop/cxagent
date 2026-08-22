@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
@@ -107,8 +108,8 @@ internal sealed class ConsoleSink : ISessionObserver
     public void AssistantReasoningAppended(ChatMessageId id, string text) { }
     public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
-    public void Failed(string message) => Console.Error.WriteLine(message);
-    public void Said(string message) => Console.WriteLine(message);
+    public void Said(Message message) =>
+        (message.Severity == Severity.Error ? Console.Error : Console.Out).WriteLine(message.Text);
 }
 
 /// <summary>
