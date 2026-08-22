@@ -84,6 +84,10 @@ public sealed record ResolvedConfig(
     public int? MaxConcurrentAgents => Catalog.MaxConcurrentAgents;
     public string? ClassifierInstance => Catalog.ClassifierInstance;
 
+    /// <summary>The theme name from config, or null for cxagent's own. Resolved at startup, where
+    /// an unknown name falls back rather than failing — the registry does not exist here.</summary>
+    public string? Theme => Catalog.Theme;
+
     /// <summary>
     /// The same configuration over a different model — what <c>/model</c> produces.
     ///
@@ -149,7 +153,8 @@ public static class ConfigResolver
                     McpServers: settings.McpServers,
                     Orchestrator: settings.Orchestrator,
                     MaxConcurrentAgents: cfg.MaxConcurrentAgents,
-                    ClassifierInstance: settings.Classifier)
+                    ClassifierInstance: settings.Classifier,
+                    Theme: settings.Theme)
                 { Tools = settings.Tools },
                 [],
                 settings.Warnings);
@@ -243,7 +248,8 @@ public static class ConfigResolver
                     McpServers: settings.McpServers,
                     Orchestrator: settings.Orchestrator,
                     MaxConcurrentAgents: cfg?.MaxConcurrentAgents,
-                    ClassifierInstance: settings.Classifier)
+                    ClassifierInstance: settings.Classifier,
+                    Theme: settings.Theme)
                 // llmAgent.tools (S1 in config). ResolveInstance carried it and THIS PATH DID NOT,
                 // so the key parsed, validated, warned correctly about bad terms — and was then
                 // dropped on every normal startup, taking effect only after a /model switch went

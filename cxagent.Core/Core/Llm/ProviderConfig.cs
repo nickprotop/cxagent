@@ -290,6 +290,8 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
     /// appeared.</para>
     /// </summary>
     public Plugins.ToolSelection? Tools { get; init; }
+
+
 }
 
 public record ProviderSettings(
@@ -308,6 +310,19 @@ public record ProviderSettings(
     /// claims background review while nothing reviews is worse than not having the mode.</para>
     /// </summary>
     public string? Classifier { get; init; }
+
+    /// <summary>
+    /// The name of the theme the terminal should start in, or null for cxagent's own.
+    ///
+    /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
+    /// set of them; storing a name lets a user pick any registered theme — including one a future
+    /// version adds — without this file learning what a colour is.</para>
+    ///
+    /// <para>Not validated here, deliberately. Which names exist is a question only the window
+    /// system can answer, and it does not exist when config is read; an unknown name falls back to
+    /// cxagent's own theme at startup rather than refusing to start over a misspelt colour scheme.</para>
+    /// </summary>
+    public string? Theme { get; init; }
 
     /// <summary>
     /// Which tools every session on this machine is offered, from <c>llmAgent.tools</c>.
@@ -481,6 +496,12 @@ public static class ProviderConfigLoader
                 ? cl.GetString() : null;
             if (classifier is not null && !providers.ContainsKey(classifier))
                 errors.Add($"classifier '{classifier}' is not a configured provider instance.");
+
+            // NOT VALIDATED AGAINST A LIST OF NAMES. The window system owns the theme registry and
+            // does not exist yet when config is read; an unknown name is resolved at startup, where
+            // it falls back to cxagent's own theme rather than failing.
+            string? theme = root.TryGetProperty("theme", out var th) && th.ValueKind == JsonValueKind.String
+                ? th.GetString() : null;
 
             var allowed = new List<string>();
             var routing = new Dictionary<string, RoutingTarget>();
@@ -743,6 +764,7 @@ public static class ProviderConfigLoader
                 Tools = llmAgentTools,
                 Warnings = warnings,
                 Classifier = classifier,
+                Theme = theme,
             };
         }
     }

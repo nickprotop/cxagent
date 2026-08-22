@@ -119,8 +119,21 @@ public static class AppBootstrap
         // point there is no window to show anything in.
         if (options.Error is { } error)
         {
+            // THE COMPLAINT, THEN THE OPTIONS. Someone who mistyped a flag has just demonstrated they
+            // do not know the flags; an error alone sends them looking for help, which is a step some
+            // never take. Both go to stderr so a script redirecting stdout still sees why it failed.
             Console.Error.WriteLine($"cxagent: {error}");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine(Usage.Text);
             return 2;
+        }
+
+        // --help PRINTS AND EXITS, like --version: a question about the binary, answered without
+        // reading config or building a window, so it works even when the app cannot start.
+        if (options.ShowHelp)
+        {
+            Console.WriteLine(Usage.Text);
+            return 0;
         }
 
         // --version PRINTS AND EXITS, before anything reads config or builds a window. It is the
@@ -207,6 +220,26 @@ public static class AppBootstrap
         var system = new ConsoleWindowSystem(driver,
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true, ShowTopPanel: false, ShowBottomPanel: false));
 
+        // THE PALETTE, EXPRESSED IN WHATEVER THEME IS ACTIVE — before any window is built, because
+        // MainWindow reads ColorScheme's surfaces in its own field initialisers and a palette derived
+        // after that point would leave the chrome painted in the defaults while everything built
+        // later used the theme.
+        //
+        // AND AGAIN ON EVERY CHANGE, which is the whole point of the picker: surfaces are PAINTED, so
+        // re-deriving and repainting shows the new theme at once. Text already written to the
+        // transcript keeps the colours it was written with — see the theme spec; scrollback is
+        // append-only and re-rendering it would fight that for no gain.
+        // CXAGENT'S OWN GROUND, REGISTERED AND MADE ACTIVE FIRST. ModernGray's background is lighter
+        // than the near-black this app was designed against, so deriving straight from it would have
+        // lightened every panel on upgrade. See CxAgentTheme for why that is a theme rather than a
+        // multiplier applied to whatever theme is active.
+        // PRECEDENCE: the argument beats config, and both are ignored when theme selection is off.
+        // An explicit --theme is a decision the user made for THIS run, so it outranks the file; the
+        // gate exists so the whole route can be closed without touching either.
+        CxAgentTheme.Install(system,
+            Features.ThemeSelection ? options.Theme ?? resolution.Theme : null);
+
+        ColorScheme.DeriveFrom(system.ThemeStateService.CurrentTheme);
         var logs = new LogFileManager(paths);
 
         // THE RESUME BUFFER. Built before the host so it can be handed in at construction, and
@@ -854,8 +887,22 @@ public static class AppBootstrap
         };
         mainWindow.Input.InputChanged += (_, text) => commandMenu.Sync(text);
 
+        // DECLARED BEFORE THE KEY HANDLER because the handler must forward to it, and assigned later
+        // where mainWindow exists. A desktop portal does NOT capture keys on its own here — the theme
+        // list drew, took no arrows and left the cursor in the composer until this forwarding existed.
+        ThemePortal? themePicker = null;
+
         window.PreviewKeyPressed += (_, e) =>
         {
+            // THE THEME LIST SWALLOWS EVERY KEY WHILE OPEN, so arrows move its selection rather than
+            // scrolling the transcript beneath it. Same contract cratis's status-bar chooser uses.
+            if (themePicker is { IsOpen: true } picker)
+            {
+                picker.ProcessKey(e.KeyInfo);
+                e.Handled = true;
+                return;
+            }
+
 
             // SHIFT+TAB CYCLES THE EDIT AXIS ONLY. Delegation changes what the model is offered and
             // what a turn may spend, so a keystroke beside the composer is the wrong weight for that
@@ -1135,6 +1182,86 @@ public static class AppBootstrap
         // A KEY THAT IS USUALLY UNNECESSARY IS STILL WORTH HAVING when the failure it covers is "the
         // keyboard does nothing and I cannot tell why". That is not a cost the user can debug.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusComposer);
+
+        // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
+        // click. One key for the whole registry rather than a key per theme: the list already knows
+        // what is installed, and pinning three of them to three keys would go stale the moment a
+        // seventh appeared.
+        // RE-DERIVED AND RE-APPLIED ON EVERY SWITCH. Subscribed here rather than beside the initial
+        // DeriveFrom because ReapplyTheme needs the window, which does not exist that early.
+        system.ThemeStateService.ThemeChanged += (_, e) =>
+        {
+            ColorScheme.DeriveFrom(e.NewTheme);
+            mainWindow.ReapplyTheme();
+            // ForceFullRepaint, NOT ForceFullRedraw. The first re-emits EVERY cell and resets the
+            // driver's front buffer; the second clears and invalidates, which still lets the diff
+            // renderer skip cells it believes are unchanged. A theme change moves colours without
+            // moving characters, so those skipped cells keep the OLD theme's escape sequences and
+            // the screen ends up with stray ANSI scattered through it. Reported live.
+            system.ForceFullRepaint();
+        };
+        // THE PICKER IS GATED; THE THEME IS NOT. CxAgentTheme is installed above regardless, and a
+        // `theme` key in config still switches at startup — what this skips is the interactive
+        // switcher. See Features.ThemePicker for why it is off.
+        //
+        // IN A LOCAL FUNCTION so a disabled flag compiles clean. Written inline, every line of it sat
+        // behind `if (false)` and the compiler rightly called the whole block unreachable and the
+        // picker variable never-assigned — four warnings for a feature that is merely switched off.
+        void WireThemePicker()
+        {
+    // LOCAL ALIASES. Both are definitely non-null by the time this runs — it is called below, after
+    // the window exists — but a local function is analysed independently of its one call site, so
+    // the compiler cannot see that and warns on every use.
+    var sys = system!;
+    var win = mainWindow!;
+    var picker = new ThemePortal(sys);
+    themePicker = picker;
+    picker.ThemeChosen += (_, name) =>
+    {
+        // The switch raises ThemeChanged, which re-derives ColorScheme and repaints — see where
+        // that is wired above. All this has to do is keep the label honest.
+        sys.ThemeStateService.SwitchTheme(name);
+        win.SetThemeLabel(name);
+        win.FocusComposer();   // hand the keyboard back to where the user was
+    };
+
+    // THE CARET FOLLOWS THE OVERLAY. Opening the list takes the composer out of editing mode so
+    // its cursor stops blinking behind the portal; closing puts it back where the user left it.
+    void ToggleThemePicker()
+    {
+        themePicker.Toggle();
+        win.SetComposerEditing(!picker.IsOpen);
+    }
+
+    sys.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F9, ToggleThemePicker);
+
+    // ARROWS, ENTER AND ESCAPE, THROUGH THE ONE ROUTE THAT REACHES A PORTAL. A desktop portal is
+    // painted above the window but does NOT capture the keyboard here, and PreviewKeyPressed
+    // fires too late to help — the list drew, took no keys, and stayed open on Escape. Global
+    // shortcuts ARE consulted first, which F9 proved by working when nothing else did.
+    //
+    // The Func<bool> overload is what makes this safe: it consumes the key ONLY while the list is
+    // open and declines otherwise, so arrows keep their ordinary meaning everywhere else rather
+    // than being swallowed for the whole session.
+    bool ToPicker(ConsoleKey key)
+    {
+        if (!picker.IsOpen) return false;
+        picker.ProcessKey(new ConsoleKeyInfo('\0', key, false, false, false));
+        win.SetComposerEditing(!picker.IsOpen);   // Enter/Escape may have closed it
+        return true;
+    }
+
+    foreach (var key in new[]
+             { ConsoleKey.UpArrow, ConsoleKey.DownArrow, ConsoleKey.Enter, ConsoleKey.Escape })
+    {
+        var captured = key;
+        sys.RegisterGlobalShortcut(ConsoleModifiers.None, captured, () => ToPicker(captured));
+    }
+    win.ShowThemeItem(
+        sys.ThemeStateService.CurrentTheme.Name ?? CxAgentTheme.Name, ToggleThemePicker);
+        }
+
+        if (Features.ThemePicker) WireThemePicker();
 
         // F2 and F6 are GONE, and F6 was DEAD CODE the whole time.
         //

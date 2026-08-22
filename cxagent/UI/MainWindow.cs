@@ -560,58 +560,7 @@ public sealed class MainWindow : IDisposable
         // NO HEADER EITHER. Stripping the border leaves a bare "You" label captioning a block that
         // already reads as the user's by its colour; opencode has no such label. The surface says
         // whose turn it is, which is all the label ever said.
-        Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
-        {
-            Markdown = false,
-            ColorRole = ColorRole.Primary,
-            HeaderStyle = CollapsibleHeaderStyle.Borderless,
-            ShowHeader = false,
-            Background = ColorScheme.UserSurface,
-            Header = static (_, author) => author ?? "You",
-        });
-
-        // The assistant gets ground of its own too, one step quieter than the user's — see
-        // ColorScheme.AssistantSurface for why the longer voice is the darker one. Markdown stays ON
-        // (the default): LLM output is genuine markdown.
-        //
-        // The "Assistant" header STAYS. Unlike "You", it is not redundant: an answer can be many
-        // screens long and its start is worth marking, and the reasoning stream that now precedes it
-        // in the body would otherwise run straight into the prose with nothing dividing them.
-        // BUILT FROM THE SEEDED STYLE, not from scratch. SetRoleStyle REPLACES the entry outright
-        // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
-        // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
-        // would vanish, which is the opposite of what is wanted here.
-        var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
-        Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
-        {
-            Markdown = assistant.Markdown,
-            ColorRole = assistant.ColorRole,
-            HeaderStyle = assistant.HeaderStyle,
-            ShowHeader = assistant.ShowHeader,
-            Collapsible = assistant.Collapsible,
-            StartCollapsed = assistant.StartCollapsed,
-            Margin = assistant.Margin,
-            Header = assistant.Header,
-            Background = ColorScheme.AssistantSurface,
-        });
-
-        // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
-        // render as markdown, exactly like Assistant. They used to post as System, which is
-        // Markdown = false because cxagent authors its OWN [red]/[cyan] markup in system lines; that
-        // setting is right for system lines and wrong for a worker's prose, which arrived with its
-        // headings and lists shown as literal syntax.
-        //
-        // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
-        // screen. The header stays readable, and the detail is one keypress away.
-        Chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
-        {
-            Markdown = true,
-            ColorRole = ColorRole.Info,
-            HeaderStyle = CollapsibleHeaderStyle.Borderless,
-            Collapsible = true,
-            StartCollapsed = true,
-            Header = static (_, author) => author ?? "Job",
-        });
+        ApplyRoleStyles();
 
         if (_resolution.HasProvider)
         {
@@ -1475,6 +1424,169 @@ public sealed class MainWindow : IDisposable
         if (_composerHint is not null) return;   // idempotent — a second call must not stack items
         _composerHint = StatusBar.AddRight(string.Empty,
             $"[{ColorScheme.MutedMarkup}]Type your goal below → Enter to run[/]");
+    }
+
+
+    /// <summary>
+    /// Applies every chat role's style — colours included.
+    ///
+    /// <para>EXTRACTED SO A THEME CHANGE CAN RE-RUN IT. Each style captures its Background by VALUE
+    /// when SetRoleStyle is called, so re-deriving the palette left every message in the transcript
+    /// painted in the old theme's surfaces while the chrome around them moved. Reported live: the
+    /// user and assistant replies kept their dark grounds under a light theme.</para>
+    ///
+    /// <para>Messages ALREADY on screen do re-paint from these styles, unlike their inline markup —
+    /// the surface is a property of the role, not text baked into the transcript.</para>
+    /// </summary>
+    private void ApplyRoleStyles()
+    {
+        Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
+        {
+            Markdown = false,
+            ColorRole = ColorRole.Primary,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            ShowHeader = false,
+            Background = ColorScheme.UserSurface,
+            Header = static (_, author) => author ?? "You",
+        });
+
+        // The assistant gets ground of its own too, one step quieter than the user's — see
+        // ColorScheme.AssistantSurface for why the longer voice is the darker one. Markdown stays ON
+        // (the default): LLM output is genuine markdown.
+        //
+        // The "Assistant" header STAYS. Unlike "You", it is not redundant: an answer can be many
+        // screens long and its start is worth marking, and the reasoning stream that now precedes it
+        // in the body would otherwise run straight into the prose with nothing dividing them.
+        // BUILT FROM THE SEEDED STYLE, not from scratch. SetRoleStyle REPLACES the entry outright
+        // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
+        // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
+        // would vanish, which is the opposite of what is wanted here.
+        var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
+        Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
+        {
+            Markdown = assistant.Markdown,
+            ColorRole = assistant.ColorRole,
+            HeaderStyle = assistant.HeaderStyle,
+            ShowHeader = assistant.ShowHeader,
+            Collapsible = assistant.Collapsible,
+            StartCollapsed = assistant.StartCollapsed,
+            Margin = assistant.Margin,
+            Header = assistant.Header,
+            Background = ColorScheme.AssistantSurface,
+        });
+
+        // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
+        // render as markdown, exactly like Assistant. They used to post as System, which is
+        // Markdown = false because cxagent authors its OWN [red]/[cyan] markup in system lines; that
+        // setting is right for system lines and wrong for a worker's prose, which arrived with its
+        // headings and lists shown as literal syntax.
+        //
+        // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
+        // screen. The header stays readable, and the detail is one keypress away.
+        Chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
+        {
+            Markdown = true,
+            ColorRole = ColorRole.Info,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            StartCollapsed = true,
+            Header = static (_, author) => author ?? "Job",
+        });
+    }
+
+    /// <summary>
+    /// Re-applies every surface this window captured at construction, after a theme change.
+    ///
+    /// <para>THE FIELD INITIALISERS ARE THE PROBLEM THIS SOLVES. Controls here take their colours
+    /// with <c>BackgroundColor = ColorScheme.Something</c> in an object initialiser, which copies the
+    /// VALUE once and never looks again. Re-deriving ColorScheme moves the constants and leaves every
+    /// control holding what it was handed at construction, so a theme switch changed the status-bar
+    /// label and nothing else — the app stayed dark under a light theme. Seen live.</para>
+    ///
+    /// <para>A REPAINT IS NOT ENOUGH EITHER: ForceFullRedraw draws the values the controls hold, and
+    /// those are the stale ones. The colours have to be pushed back in.</para>
+    /// </summary>
+    public void ReapplyTheme()
+    {
+        Input.InputBackgroundColor = ColorScheme.ComposerSurface;
+        Input.InputFocusedBackgroundColor = ColorScheme.ComposerSurface;
+        StatusBar.BackgroundColor = ColorScheme.ChatSurface;
+        // NULL UNTIL BuildWindow RUNS, and a config-named theme switches before that.
+        if (Window is not null) Window.BackgroundColor = ColorScheme.ChatSurface;
+        // NULL BEFORE THE COMPOSER IS BUILT — a theme switch during startup is possible (config names
+        // one) and must not fault on a control that does not exist yet.
+        if (_promptBox is not null) _promptBox.BackgroundColor = ColorScheme.ComposerSurface;
+
+        // THE MODE LINE CARRIES ITS BACKGROUND IN ITS MARKUP, not on the control — see where it is
+        // built. So it cannot be re-coloured by setting a property; the text has to be regenerated.
+        // BOTH PLACES, as the comment where this control is built explains: MarkupControl takes its
+        // main fill from Container?.BackgroundColor and its right-hand fill from its OWN, so setting
+        // only the container leaves the strip past the text in the old colour. Reported live — the
+        // composer's mode line kept the dark surface under a light theme.
+        if (_modeLine is not null)
+        {
+            _modeLine.BackgroundColor = ColorScheme.ComposerSurface;
+            _modeLine.SetContent([ModeLineText(_mode, ModelLabel)]);
+        }
+
+        // The session panel captured its own surfaces the same way this window did.
+        ApplyRoleStyles();   // each style captured its Background by value
+        SessionPanel.ReapplyTheme();
+    }
+
+    /// <summary>
+    /// Takes the caret out of the composer while an overlay owns the screen, and puts it back after.
+    ///
+    /// <para>THE CURSOR IS THE TELL. The composer is in editing mode from startup — it has to be,
+    /// because AppBootstrap consumes every Enter and the control can never flip itself in — so its
+    /// caret blinks whenever it is focused. An overlay that draws without changing that leaves the
+    /// cursor sitting in the input behind it, which reads as "the keyboard is still down there", and
+    /// on a portal that DOES take keys it is simply a lie.</para>
+    /// </summary>
+    /// <param name="editing">False while an overlay is open, true to return the caret.</param>
+    public void SetComposerEditing(bool editing)
+    {
+        if (editing) { FocusComposer(); return; }
+
+        // FOCUS RELEASED, NOT MOVED. PromptControl has no editing flag of its own — its caret follows
+        // FOCUS — so the only way to stop the cursor blinking behind an overlay is to take focus off
+        // it, and the status bar (the natural place to park it) is not focusable. Null clears it.
+        Window?.FocusManager.SetFocus(null, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    }
+
+    /// <summary>The theme item at the far LEFT of the status bar, or null before it is shown.</summary>
+    private StatusBarItem? _themeItem;
+
+    /// <summary>
+    /// Puts the theme name at the left end of the status bar and returns the item, so the caller can
+    /// keep its label current as the theme changes.
+    ///
+    /// <para>AFTER CONSTRUCTION, NEVER DURING IT. Adding a status-bar item inside BuildWindow HANGS:
+    /// StatusBarControl.OnItemChanged calls Invalidate(Relayout), a max-join at the render tick, and
+    /// during construction there is no tick to join. Measured on this codebase — MainWindowTests goes
+    /// from passing in milliseconds to hanging indefinitely. ShowComposerHint exists for the same
+    /// reason and this follows it.</para>
+    ///
+    /// <para>THE LEFT SIDE WAS EMPTY. Every other item — the panel key, the composer hint, the token
+    /// readout — is AddRight, so the theme sits alone at the far left with nothing to crowd.</para>
+    /// </summary>
+    /// <param name="themeName">The active theme's name, shown beside the glyph.</param>
+    /// <param name="onClick">Invoked when the item is clicked.</param>
+    public void ShowThemeItem(string themeName, Action onClick)
+    {
+        if (_themeItem is not null) return;   // idempotent, like ShowComposerHint
+        // "Theme F9" GOES IN THE SHORTCUT SLOT so the separator lands after the key rather than
+        // after the word — the item reads "Theme F9: cxagent". The slot is parsed as MARKUP
+        // (StatusBarControl renders item.Shortcut through MarkupParser), which is what lets "Theme"
+        // be ordinary text while F9 keeps the shortcut colour beside it.
+        _themeItem = StatusBar.AddLeft($"[{ColorScheme.MutedMarkup}]Theme[/] F9", themeName, onClick);
+    }
+
+    /// <summary>Re-labels the theme item after a switch. No-op before it is shown.</summary>
+    /// <param name="themeName">The newly active theme's name.</param>
+    public void SetThemeLabel(string themeName)
+    {
+        if (_themeItem is not null) _themeItem.Label = themeName;
     }
 
     /// <summary>

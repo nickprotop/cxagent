@@ -20,6 +20,79 @@ namespace CxAgent.UI;
 /// </summary>
 public static class ColorScheme
 {
+    // --- Deriving the palette from the active theme -------------------------------------
+
+    /// <summary>
+    /// The theme every derived colour here is currently expressed in, or null before
+    /// <see cref="DeriveFrom"/> has run. Markup lookups fall back to their literal defaults while
+    /// it is null, which is what keeps a headless or test host — one that never builds a window
+    /// system — rendering exactly as it did before any of this existed.
+    /// </summary>
+    private static ITheme? _theme;
+
+    /// <summary>
+    /// Re-expresses every surface and markup token in <paramref name="theme"/>.
+    ///
+    /// <para>STATIC, DELIBERATELY, THOUGH AN INSTANCE READS BETTER. The palette has roughly seventy
+    /// call sites across the UI, every one of them <c>ColorScheme.Something</c>; making it an
+    /// instance would rewrite all of them to reach a field, for a type that has exactly one live
+    /// value per process. The seam that matters — re-derivation on a theme change — is served just
+    /// as well by a method the window system calls.</para>
+    ///
+    /// <para>THE DEFAULTS ARE TODAY'S LITERALS, and they stay as the field initialisers rather than
+    /// being deleted, so a host that never calls this renders the palette this app shipped with.</para>
+    /// </summary>
+    /// <param name="theme">The active theme to express the palette in.</param>
+    public static void DeriveFrom(ITheme theme)
+    {
+        _theme = theme;
+
+        // THE CHAT SURFACE IS THE BASIS, not one derivation among several: every other surface here
+        // is a step away from it, so taking it from the theme moves the whole palette together and
+        // keeps the relationships the old literals encoded by hand.
+        ChatSurface = theme.WindowBackgroundColor;
+
+        // THE STEPS ARE THE OLD DISTANCES, re-measured. The literals were 0x0d, 0x1e and 0x2a — a
+        // seventeen-point step to the panel and a further twelve to the composer, out of 255. Those
+        // ratios are what the amounts below reproduce, so ModernGray renders as it did before.
+        PanelSurface = Raised(ChatSurface, 0.0705);
+        ComposerSurface = Raised(ChatSurface, 0.12);
+
+        // THE ACCENT AS CHANNELS, for the two places a markup NAME cannot go — the wordmark's
+        // per-column gradient and the grip. Derived here rather than read at each site so it moves
+        // with a theme change like everything else.
+        AccentRgb = ColorRoleResolver.Resolve(Accent, theme).Text;
+
+        Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
+        UserSurface = Raised(ChatSurface, 0.10);
+        AssistantSurface = Raised(ChatSurface, 0.05);
+    }
+
+    /// <summary>
+    /// A surface that reads as RAISED above <paramref name="basis"/>, whichever way the theme runs.
+    ///
+    /// <para>ON A DARK THEME THAT MEANS LIGHTER; ON A LIGHT THEME IT MEANS DARKER. Tinting
+    /// unconditionally is precisely what makes a dark-only palette look broken under a light theme
+    /// rather than merely different: every panel blows out toward white and the separations between
+    /// them disappear. The direction has to follow the surface, not the author's habits.</para>
+    /// </summary>
+    private static Color Raised(Color basis, double amount) =>
+        basis.IsDark() ? PaletteColors.Tint(basis, amount) : PaletteColors.Shade(basis, amount);
+
+    /// <summary>
+    /// The markup token for <paramref name="role"/> under the active theme, or
+    /// <paramref name="fallback"/> when no theme has been derived from yet.
+    ///
+    /// <para>THE BRIDGE THIS FILE ONCE SAID DID NOT EXIST. Its own summary claimed "the framework
+    /// offers no role-to-markup bridge", which was true when it was written: what closes the gap is
+    /// <c>ColorRoleResolver.Resolve</c> — already used for controls — composed with
+    /// <c>Color.ToMarkup</c>. Neither is new; nobody had put them together.</para>
+    /// </summary>
+    private static string Markup(ColorRole role, string fallback) =>
+        _theme is { } theme
+            ? ColorRoleResolver.Resolve(role, theme).Text.ToMarkup()
+            : fallback;
+
     // --- Roles: prefer these. Every control implementing IColorRoleableControl takes one. ---
 
     /// <summary>Accent: the agent's own voice, active state, primary affordance.</summary>
@@ -40,11 +113,17 @@ public static class ColorScheme
     // --- Markup tokens, for text inside a string, where a role cannot reach. ---
 
     /// <summary>Keybinds and hints: present but skippable.</summary>
-    public const string MutedMarkup = "grey50";
+    /// <para>DERIVED, NOT NAMED. There is no "muted" role — muted is a RELATIONSHIP, the foreground
+    /// carried most of the way toward the background, which is a different literal under every theme
+    /// and unreadable if it stays grey50 on a light one.</para>
+    public static string MutedMarkup =>
+        _theme is { } theme
+            ? PaletteColors.Mix(theme.WindowForegroundColor, theme.WindowBackgroundColor, 0.55).ToMarkup()
+            : "grey50";
 
 
     /// <summary>The accent, as markup. Kept beside <see cref="Accent"/> so the two cannot drift.</summary>
-    public const string AccentMarkup = "cyan1";
+    public static string AccentMarkup => Markup(Accent, "cyan1");
 
     /// <summary>
     /// Failure, as markup — for text inside a string, where <see cref="Destructive"/> cannot reach.
@@ -53,7 +132,7 @@ public static class ColorScheme
     /// that it must not recede. True but insufficient: "does not recede" left it the same colour as
     /// ordinary text, so the one row the user has to act on looked like every other finished one.</para>
     /// </summary>
-    public const string DangerMarkup = "red";
+    public static string DangerMarkup => Markup(Destructive, "red");
 
     /// <summary>
     /// The accent as an RGB value — cyan1 is #00ffff — for the places a markup NAME cannot go.
@@ -62,15 +141,20 @@ public static class ColorScheme
     /// <see cref="Heading"/> across its width, and a per-column colour cannot be expressed as a
     /// palette name, so the value is spelled once here rather than inline at the one call site.</para>
     /// </summary>
-    public static readonly Color AccentRgb = new(0x00, 0xff, 0xff);
+    public static Color AccentRgb { get; private set; } = new(0xe8, 0x9e, 0x64);
 
     /// <summary>
     /// Colour for a percentage readout, by how alarming it is. cxtop's thresholds — teal below 60,
     /// amber below 85, red above — which is the family's only precedent for a live percentage, and
     /// the one number a user reads at a glance rather than by reading.
     /// </summary>
+    /// <para>THE THRESHOLDS ARE UNCHANGED; only the colours they name now follow the theme. The
+    /// three bands are accent, caution and refusal — the same three meanings the buttons carry, so
+    /// they resolve through the same roles rather than through three more literals.</para>
     public static string ThresholdMarkup(double percent) =>
-        percent < 60 ? AccentMarkup : percent < 85 ? "yellow" : "red";
+        percent < 60 ? AccentMarkup
+        : percent < 85 ? Markup(Caution, "yellow")
+        : DangerMarkup;
 
     /// <summary>
     /// The session panel's surface — one step off the window background, so the column reads as a
@@ -82,7 +166,7 @@ public static class ColorScheme
     /// as more scattered code. Two different meanings cannot share one colour when they appear side
     /// by side.</para>
     /// </summary>
-    public static readonly Color PanelSurface = new(0x1e, 0x1e, 0x1e);
+    public static Color PanelSurface { get; private set; } = new(0x1e, 0x1e, 0x1e);
 
     /// <summary>
     /// The LEFT column's surface — the transcript and the composer cell under it: almost black.
@@ -92,7 +176,7 @@ public static class ColorScheme
     /// the panel was a shade lighter than a chat that was simply the app background — so the two
     /// columns did not read as two panes at all.</para>
     /// </summary>
-    public static readonly Color ChatSurface = new(0x0d, 0x0d, 0x0d);
+    public static Color ChatSurface { get; private set; } = new(0x0d, 0x0d, 0x0d);
 
 
     /// <summary>
@@ -104,7 +188,7 @@ public static class ColorScheme
     /// it. Naming the surface here also means it no longer depends on which theme the framework
     /// resolves at focus time.</para>
     /// </summary>
-    public static readonly Color ComposerSurface = new(0x2a, 0x2a, 0x2a);
+    public static Color ComposerSurface { get; private set; } = new(0x2a, 0x2a, 0x2a);
 
 
 
@@ -150,8 +234,8 @@ public static class ColorScheme
     /// and a divider carries none; borrowing it made the line the most saturated thing on a screen
     /// whose whole point is the text above it.</para>
     /// </summary>
-    public static readonly Color Separator =
-        PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
+    public static Color Separator { get; private set; } =
+        PaletteColors.Tint(PaletteColors.Mix(new Color(0x0d, 0x0d, 0x0d), new Color(0x2a, 0x2a, 0x2a), 0.5), 0.08);
 
     /// <summary>
     /// The permission prompt's surface: raised, but only just.
@@ -167,7 +251,7 @@ public static class ColorScheme
     /// the palette's answer to "one step up from these two surfaces", so reusing it gives the app
     /// ONE raised tone instead of two nearly-equal ones kept in sync by hand.</para>
     /// </summary>
-    public static readonly Color PromptSurface = Separator;
+    public static Color PromptSurface => Separator;
 
     /// <summary>
     /// The user's own turns: a flat block, a step above the transcript field.
@@ -190,9 +274,9 @@ public static class ColorScheme
     /// <para>Accent, because it is the one piece of chrome that tracks the app's active colour, and
     /// a grip that recedes has no reason to exist.</para>
     /// </summary>
-    public static readonly Color Grip = AccentRgb;
+    public static Color Grip => AccentRgb;
 
-    public static readonly Color UserSurface = PaletteColors.Tint(ChatSurface, 0.10);
+    public static Color UserSurface { get; private set; } = PaletteColors.Tint(new Color(0x0d, 0x0d, 0x0d), 0.10);
 
     /// <summary>
     /// The assistant's prose: the same idea as <see cref="UserSurface"/>, one step quieter.
@@ -205,13 +289,16 @@ public static class ColorScheme
     /// <para>Tool rows are deliberately NOT given a surface — they are chrome, and they stay on the
     /// field so the two conversational voices are the only things raised off it.</para>
     /// </summary>
-    public static readonly Color AssistantSurface = PaletteColors.Tint(ChatSurface, 0.05);
+    public static Color AssistantSurface { get; private set; } = PaletteColors.Tint(new Color(0x0d, 0x0d, 0x0d), 0.05);
 
     /// <summary>
     /// Reasoning and any "thinking" label. Amber — opencode's warning hue, which it reuses for
     /// exactly this, and the colour in the screenshot that prompted the comparison.
     /// </summary>
-    public const string ThinkingMarkup = "#f5a742";
+    /// <para>THROUGH THE CAUTION ROLE, because amber IS this theme's warning hue and a theme that
+    /// picks a different one means it for the same reason. The literal stays as the fallback so a
+    /// host with no theme renders the colour the screenshots were taken with.</para>
+    public static string ThinkingMarkup => Markup(Caution, "#f5a742");
 
     // --- Diff -------------------------------------------------------------------
     //

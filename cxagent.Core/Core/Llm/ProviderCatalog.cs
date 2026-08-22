@@ -34,13 +34,18 @@ namespace CxAgent.Core.Llm;
 /// <para>NULL MEANS AUTO IS NOT OFFERED — not listed, not cyclable, not parseable. A mode that
 /// promises review while nothing reviews is worse than no mode at all.</para>
 /// </param>
+/// <param name="Theme">
+/// The theme name from configuration, or null for cxagent's own. Not validated here — which themes
+/// exist is a question only the window system can answer, and it does not exist when config is read.
+/// </param>
 public sealed record ProviderCatalog(
     ProviderRegistry? Instances = null,
     IReadOnlyDictionary<string, AgentTypeConfig>? AgentTypes = null,
     IReadOnlyDictionary<string, McpServerConfig>? McpServers = null,
     OrchestratorSettings? Orchestrator = null,
     int? MaxConcurrentAgents = null,
-    string? ClassifierInstance = null)
+    string? ClassifierInstance = null,
+    string? Theme = null)
 {
     /// <summary>
     /// S1 as the user wrote it, from <c>llmAgent.tools</c>. Null when config said nothing.

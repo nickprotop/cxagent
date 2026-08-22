@@ -123,6 +123,19 @@ public sealed class SessionPanel
         _layout.BackgroundColor = ColorScheme.PanelSurface;
     }
 
+    /// <summary>
+    /// Re-applies the panel's surfaces after a theme change.
+    ///
+    /// <para>Both were captured with <c>= ColorScheme.PanelSurface</c> when the panel was built, which
+    /// copies the value once. Re-deriving the palette moves the constant and leaves these holding the
+    /// old colour — the panel stayed dark under a light theme while the rest of the app moved.</para>
+    /// </summary>
+    public void ReapplyTheme()
+    {
+        _host.BackgroundColor = ColorScheme.PanelSurface;
+        _layout.BackgroundColor = ColorScheme.PanelSurface;
+    }
+
     public IWindowControl Control => _layout;
 
     /// <summary>The rendered block text, for assertions. The body is nested inside the scrollable
