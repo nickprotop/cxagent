@@ -233,6 +233,38 @@ public class UsageHistoryStoreTests : IDisposable
     }
 
     /// <summary>
+    /// TRUE AND FALSE ROUND-TRIP DISTINCTLY — a triage flag matters exactly because it is sometimes
+    /// false: an auto-allowed action that triage cleared in stage one, with no second call at all,
+    /// must read back as Flagged == false, not merely "not true".
+    /// </summary>
+    [Fact]
+    public void APermissionRow_RoundTripsWhetherTriageFlaggedIt()
+    {
+        _store.SavePermission(new PermissionRecord(
+            "a", Ago(1), "Shell", "auto-refused", null, "/tmp/p", Flagged: true));
+        _store.SavePermission(new PermissionRecord(
+            "a", Ago(1), "Shell", "auto-allowed", null, "/tmp/p", Flagged: false));
+
+        var rows = _store.PermissionsSince(Ago(24));
+
+        Assert.True(Assert.Single(rows, r => r.Decision == "auto-refused").Flagged);
+        Assert.False(Assert.Single(rows, r => r.Decision == "auto-allowed").Flagged);
+    }
+
+    /// <summary>
+    /// A ROW THAT NEVER TOUCHED THE CLASSIFIER — a silent rule, a human's own answer — has no answer
+    /// to "did triage flag this" either, and must read back null rather than false. False would claim
+    /// the classifier looked at it and cleared it, which never happened.
+    /// </summary>
+    [Fact]
+    public void AnOlderRowWithNoFlaggedColumnValue_ReadsAsNull()
+    {
+        _store.SavePermission(new PermissionRecord("a", Ago(1), "Shell", "allowed", null));
+
+        Assert.Null(Assert.Single(_store.PermissionsSince(Ago(24))).Flagged);
+    }
+
+    /// <summary>
     /// THE MIGRATION ITSELF, not the record. The two tests above write and read `subject` entirely
     /// through the NEW code path against a FRESH database — neither would notice if
     /// <c>AddColumnIfMissing(conn, "permissions", "subject", "TEXT")</c> were deleted from
@@ -285,14 +317,18 @@ public class UsageHistoryStoreTests : IDisposable
 
             var old = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "old-agent");
             Assert.Null(old.Subject);
+            // SAME REASONING FOR `flagged` — this row predates triage-flag telemetry entirely, so
+            // it has no answer to "did triage flag this", not a false one.
+            Assert.Null(old.Flagged);
 
-            // AND A ROW WRITTEN AFTER THE UPGRADE ROUND-TRIPS ITS SUBJECT, in the SAME database
-            // file — proving the added column is not just present but usable both ways.
+            // AND A ROW WRITTEN AFTER THE UPGRADE ROUND-TRIPS ITS SUBJECT AND FLAGGED, in the SAME
+            // database file — proving the added columns are not just present but usable both ways.
             upgraded.SavePermission(new PermissionRecord("new-agent", Ago(1), "Shell", "auto-refused",
-                null, "/tmp/new", Subject: "echo hi"));
+                null, "/tmp/new", Subject: "echo hi", Flagged: true));
 
             var fresh = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "new-agent");
             Assert.Equal("echo hi", fresh.Subject);
+            Assert.True(fresh.Flagged);
         }
         finally
         {

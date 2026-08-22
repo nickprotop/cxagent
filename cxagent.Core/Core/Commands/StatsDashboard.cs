@@ -120,7 +120,7 @@ public static class StatsDashboard
         public required IReadOnlyList<ToolStat> Tools { get; init; }
         public required IReadOnlyList<(DateOnly Day, int Tokens)> Daily { get; init; }
         public (int Runs, int Reclaimed, int Manual) Compaction { get; init; }
-        public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0);
+        public PermissionCounts Permissions { get; init; } = new(0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     /// <summary>The whole dashboard.</summary>
@@ -303,9 +303,17 @@ public static class StatsDashboard
             // folded into the human ones.
             var auto = permissions.AutoAllowed + permissions.AutoRefused + permissions.AutoDenied;
             if (auto > 0)
+            {
+                // FLAG RATE, NOT A RAW COUNT — the question this line exists to answer is whether
+                // stage two (the reasoning call) is earning its cost, which is a rate question: a
+                // handful flagged out of thousands says stage one screens almost everything cheaply,
+                // the same handful out of a dozen says the split barely filters anything.
+                var flagRate = (double)permissions.Flagged / auto;
                 lines.Add($"  auto review {auto} decided "
                         + Muted($"({permissions.AutoAllowed} allowed, "
-                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied)"));
+                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied) · "
+                              + $"{flagRate:P0} triage-flagged"));
+            }
         }
 
         if (lines.Count > 0)

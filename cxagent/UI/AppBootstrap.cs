@@ -641,7 +641,7 @@ public static class AppBootstrap
                 history.SavePermission(new PermissionRecord(
                     session.SessionId ?? "unknown", DateTimeOffset.UtcNow,
                     report.Kind.ToString(), report.Decision, report.Requester,
-                    session.WorkingDirectory, report.Subject));
+                    session.WorkingDirectory, report.Subject, report.Flagged));
 
             session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {

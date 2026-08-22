@@ -104,9 +104,22 @@ public sealed record ToolStat(
 /// <para>A RECORD, NOT A TUPLE. Seven members of the same type in positional order is the shape
 /// where transposing two compiles cleanly and renders the wrong number.</para>
 /// </summary>
+/// <param name="Asked">Decisions a human answered directly — allowed plus denied.</param>
+/// <param name="Allowed">Of those, how many were allowed.</param>
+/// <param name="Denied">Of those, how many were denied.</param>
+/// <param name="Silent">Decisions made by a stored rule, without asking.</param>
+/// <param name="AutoAllowed">Decisions the classifier allowed on its own.</param>
+/// <param name="AutoRefused">Decisions the classifier declined to decide, so a human was asked.</param>
+/// <param name="AutoDenied">Decisions the classifier denied on its own.</param>
+/// <param name="Flagged">
+/// How many of the three auto decisions triage sent to stage two. The rate this is for — Flagged
+/// divided by the auto total — is what tells a reader whether the second, reasoning-model stage of
+/// the classifier earns its cost: a low rate means stage one screens almost everything out cheaply,
+/// a rate near the auto total means stage one is barely filtering and the split buys little.
+/// </param>
 public sealed record PermissionCounts(
     int Asked, int Allowed, int Denied, int Silent,
-    int AutoAllowed, int AutoRefused, int AutoDenied);
+    int AutoAllowed, int AutoRefused, int AutoDenied, int Flagged);
 
 /// <summary>
 /// Reads usage history into the shapes a dashboard renders.
@@ -235,5 +248,10 @@ public static class StatsQuery
             rows.Count(r => r.Decision == "silent"),
             rows.Count(r => r.Decision == "auto-allowed"),
             rows.Count(r => r.Decision == "auto-refused"),
-            rows.Count(r => r.Decision == "auto-denied"));
+            rows.Count(r => r.Decision == "auto-denied"),
+            // FLAGGED == TRUE ONLY — a null (row predates the column) must not count as "not
+            // flagged" any more than it counts as flagged, so it is simply excluded here rather
+            // than folded into either side of the rate.
+            rows.Count(r => r.Decision is "auto-allowed" or "auto-refused" or "auto-denied"
+                          && r.Flagged == true));
 }

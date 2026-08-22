@@ -241,6 +241,42 @@ public class StatsTests
         Assert.Equal(0, StatsQuery.Permissions(rows).Asked);
     }
 
+    /// <summary>
+    /// FLAGGED IS COUNTED ONLY OVER THE THREE AUTO DECISIONS, and only rows explicitly true — a
+    /// human's own "allowed"/"denied" and a stored "silent" rule never touched the classifier and
+    /// must not contribute to either side of the rate, even if some other bug ever set Flagged on
+    /// one of them.
+    /// </summary>
+    [Fact]
+    public void Permissions_CountsOnlyFlaggedAutoDecisions()
+    {
+        var rows = new List<PermissionRecord>
+        {
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null, Flagged: true),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null, Flagged: false),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-refused", null, Flagged: true),
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-denied", null, Flagged: false),
+            new("a", DateTimeOffset.UtcNow, "Shell", "allowed", null),   // never touched the classifier
+        };
+
+        Assert.Equal(2, StatsQuery.Permissions(rows).Flagged);
+    }
+
+    /// <summary>
+    /// A NULL FLAGGED — a row written before the column existed — MUST NOT COUNT AS FLAGGED. Treating
+    /// "unknown" as "yes" would inflate the rate with history that predates the question.
+    /// </summary>
+    [Fact]
+    public void Permissions_NullFlaggedDoesNotCountAsFlagged()
+    {
+        var rows = new List<PermissionRecord>
+        {
+            new("a", DateTimeOffset.UtcNow, "Shell", "auto-allowed", null, Flagged: null),
+        };
+
+        Assert.Equal(0, StatsQuery.Permissions(rows).Flagged);
+    }
+
     // ---- rendering -----------------------------------------------------------------------------
 
     /// <summary>
@@ -296,7 +332,7 @@ public class StatsTests
             Daily = StatsQuery.ByDay(sessions, DateOnly.FromDateTime(DateTime.Now).AddDays(-6),
                 DateOnly.FromDateTime(DateTime.Now)),
             Compaction = (1, 150_000, 0),
-            Permissions = new(2, 1, 1, 3, 0, 0, 0),
+            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0),
         });
 
         var opens = text.Split('[').Length - 1;
@@ -304,6 +340,50 @@ public class StatsTests
 
         // Every opening tag has a matching [/]; the closers are themselves counted as opens above.
         Assert.Equal(closes * 2, opens);
+    }
+
+    /// <summary>
+    /// THE RATE, RENDERED WHERE THE READER IS ALREADY LOOKING — on the existing "auto review" line,
+    /// because whether stage two is earning its cost is a property of the auto decisions already
+    /// being reported there, not a new fact needing its own line.
+    /// </summary>
+    [Fact]
+    public void Render_ShowsTheTriageFlagRateOnTheAutoReviewLine()
+    {
+        var sessions = new[] { S("a", 900, 100, sub: 0) };
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
+            Types = [], Tools = [], Daily = [],
+            // 4 auto decisions, 1 flagged — a reader must be able to see 25% without doing the
+            // division themselves.
+            Permissions = new(0, 0, 0, 0, 3, 1, 0, 1),
+        });
+
+        Assert.Contains("auto review 4 decided", text, StringComparison.Ordinal);
+        Assert.Contains("25% triage-flagged", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE CONTROL: a session with zero auto decisions renders BYTE-IDENTICALLY whether or not this
+    /// feature exists. Nothing about triage-flag telemetry may leak into a transcript for a user who
+    /// never enabled auto mode.
+    /// </summary>
+    [Fact]
+    public void Render_WithNoAutoDecisions_ShowsNoTriageFlagRate()
+    {
+        var sessions = new[] { S("a", 900, 100, sub: 0) };
+        var text = StatsDashboard.Render(new StatsDashboard.StatsView
+        {
+            Days = 7, Totals = StatsQuery.Totals(sessions),
+            Projects = StatsQuery.ByProject(sessions), Models = StatsQuery.ByModel(sessions),
+            Types = [], Tools = [], Daily = [],
+            Permissions = new(2, 1, 1, 3, 0, 0, 0, 0),
+        });
+
+        Assert.DoesNotContain("auto review", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("triage-flagged", text, StringComparison.Ordinal);
     }
 
     [Fact]

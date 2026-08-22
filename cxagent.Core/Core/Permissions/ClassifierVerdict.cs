@@ -18,8 +18,21 @@ public enum ClassifierVerdict
     Deny,
 }
 
-/// <summary>A verdict and, when the model gave one, why.</summary>
-public sealed record ClassifierDecision(ClassifierVerdict Verdict, string? Reason);
+/// <summary>
+/// A verdict and, when the model gave one, why.
+/// </summary>
+/// <param name="Verdict">What the classifier concluded.</param>
+/// <param name="Reason">Why, when stage two gave one.</param>
+/// <param name="Flagged">
+/// WHETHER TRIAGE SENT THIS ACTION TO STAGE TWO — the fact the triage-flag-rate counter needs, and
+/// the reason it lives on the decision rather than as a side-effect counter read separately. A
+/// classifier instance is shared across concurrent job threads (see PermissionDecider's docs on
+/// <c>maxParallel</c>), so a mutable "last flagged" flag on the classifier itself would race between
+/// requests; this rides with the exact decision it describes, which is race-free by construction and
+/// survives a cache hit correctly (a cached decision WAS flagged when it was computed, and returning
+/// it later must still say so).
+/// </param>
+public sealed record ClassifierDecision(ClassifierVerdict Verdict, string? Reason, bool Flagged = false);
 
 public static class VerdictParser
 {

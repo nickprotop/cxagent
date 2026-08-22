@@ -300,12 +300,16 @@ public sealed class ActionClassifier
         });
 
         var reasoned = await CallStageAsync(messages, ct);
-        if (reasoned is null) return new(ClassifierVerdict.Ask, null);   // stage-two failure
+        // FLAGGED EVEN ON FAILURE. Triage already sent this to stage two — that decision was made
+        // above, before this call could succeed or fail — so a timeout here is still a flagged
+        // action that cost a second call and got Ask back, not an unflagged one.
+        if (reasoned is null) return new(ClassifierVerdict.Ask, null, Flagged: true);   // stage-two failure
 
         // STAGE TWO IS WHERE A REAL REASON COMES FROM. Its instruction explicitly asks for one, so a
         // reasoned decision missing a reason is itself an unusual answer worth keeping as-is rather
         // than papering over — VerdictParser already returns null for "no colon", which is a fine
         // outcome here too.
+        reasoned = reasoned with { Flagged = true };
         Store(key, reasoned);
         return reasoned;
     }

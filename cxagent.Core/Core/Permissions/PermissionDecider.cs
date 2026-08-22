@@ -5,8 +5,21 @@ namespace CxAgent.Core.Permissions;
 
 
 /// <summary>One permission decision, as reported for telemetry.</summary>
+/// <param name="Kind">Which permission kind it was.</param>
+/// <param name="Decision">How it was resolved — allowed, denied, silent, auto-allowed, auto-refused, auto-denied.</param>
+/// <param name="Requester">Who asked, or null for the session's own agent.</param>
+/// <param name="Subject">What the decision was about — the command, the path, the origin.</param>
+/// <param name="Flagged">
+/// WHETHER TRIAGE SENT THIS ACTION TO STAGE TWO before the classifier reached its verdict. False for
+/// every decision that never touched the classifier (silent, human-decided) and for a triage ALLOW
+/// that never left stage one. True on any of the three auto-* decisions where stage one did NOT
+/// clearly allow — including an auto-allowed that only got there because stage two reversed a triage
+/// flag back to Allow, which is a flagged decision that still ended in "allowed". This is the field
+/// the triage-flag-rate in <c>/stats</c> is computed from; see
+/// <see cref="ClassifierDecision.Flagged"/> for why it rides the decision itself.
+/// </param>
 public sealed record PermissionDecisionReport(
-    PermissionKind Kind, string Decision, string? Requester, string? Subject);
+    PermissionKind Kind, string Decision, string? Requester, string? Subject, bool Flagged = false);
 
 /// <summary>
 /// The real, interactive <see cref="IPermissionGate"/>: consults <see cref="PermissionPolicy"/>
@@ -284,7 +297,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // passed on the boundary alone. It is a real request to a real endpoint on every
                 // trusted write, and a reader deciding whether auto is worth its latency needs the
                 // count.
-                OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What));
+                OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What, decision.Flagged));
                 // AutoAllow, not Allow — same effect (the action runs) but the outcome now says WHO
                 // decided, which is what lets the tool row badge "auto-approved" (Task 8) rather than
                 // looking identical to a silent rule/boundary allow.
@@ -302,7 +315,7 @@ public sealed class PermissionDecider : IPermissionGate
             // should be the last word, and that is not a claim about which way it leans.
             if (decision.Verdict == ClassifierVerdict.Deny && effect == ReviewEffect.MayApprove)
             {
-                OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What));
+                OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What, decision.Flagged));
                 request = request with { DeniedByClassifier = true, ClassifierReason = decision.Reason };
                 // THE REASON RIDES THE OUTCOME NOW, not only the request field above. That field
                 // still exists for the prompt-heading work (Task 8+); this is the return the MODEL
@@ -319,7 +332,7 @@ public sealed class PermissionDecider : IPermissionGate
             // folder means the classifier did not clear the action and a prompt is about to appear —
             // the single most useful thing to be able to count, because it is the answer to "why did
             // auto ask me that?" and nothing recorded it.
-            OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What));
+            OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What, decision.Flagged));
 
             // AND THE PROMPT IS TOLD WHY, so its heading names the classifier rather than blaming a
             // folder the user very likely trusts — and carries the model's own reason when it gave
