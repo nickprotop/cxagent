@@ -283,7 +283,7 @@ public static class DiffCommand
         }
     }
 
-    // Markup.Escape, not the toolkit's MarkupParser: this was the last line in Core reaching into
+    // Md.Escape, not the toolkit's MarkupParser: this was the last line in Core reaching into
     // SharpConsoleUI, for a one-character replacement Core can do itself.
-    private static string Escape(string text) => Markup.Escape(text);
+    private static string Escape(string text) => Md.Escape(text);
 }

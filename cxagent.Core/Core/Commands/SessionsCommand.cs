@@ -225,5 +225,5 @@ public static class SessionsCommand
              : $"{(int)age.TotalDays}d ago";
     }
 
-    private static string Escape(string text) => Markup.Escape(text);
+    private static string Escape(string text) => Md.Escape(text);
 }

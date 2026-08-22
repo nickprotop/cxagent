@@ -124,5 +124,5 @@ public static class ModelCommand
     private static string Compact(int tokens) =>
         tokens >= 1_000_000 ? $"{DisplayNumber.Trimmed(tokens / 1_000_000.0)}M" : $"{tokens / 1000}k";
 
-    private static string Escape(string text) => Markup.Escape(text);
+    private static string Escape(string text) => Md.Escape(text);
 }

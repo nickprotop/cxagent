@@ -3,6 +3,16 @@ namespace CxAgent.Core.Commands;
 /// <summary>
 /// The tones Core's own text is written in.
 ///
+/// <para>TEMPORARY REMNANT — SCHEDULED FOR DELETION. <c>Md</c> replaces this class; its
+/// <c>Escape</c> is gone because it escaped for markup, the format Core is leaving, not markdown, the
+/// one it is arriving at. What survives here is the four colour constants below, because 42 call
+/// sites across ten files still reference them (<c>DiffCommand</c>, <c>StatsDashboard</c>,
+/// <c>Session.Commands</c>, <c>ModelCommand</c>, <c>AgentsCommand</c>, <c>StatsCommand</c>,
+/// <c>SkillsCommand</c>, <c>SessionsCommand</c>, <c>ModeCommand</c>, <c>Session.Turn</c>). Later
+/// tasks rewrite each of those in markdown terms — some are sentences, some are table layouts, some
+/// are bar charts, so no single mechanical replacement covers them — and this file is deleted once
+/// the last one is gone.</para>
+///
 /// <para>MARKUP IS A TEXT FORMAT, NOT A UI DEPENDENCY — the same way markdown is. A reader renders
 /// it, strips it or logs it, and Core has written it for a long time: PermissionDecider's
 /// <c>[yellow]</c> for "did not work, nothing was denied", ModelSwitchNotice's window warnings. What
@@ -28,13 +38,4 @@ public static class Markup
     /// <summary>Something did not work as asked but was not a failure — a fallback taken, a request
     /// declined, a mode that changes nothing here.</summary>
     public const string Caution = "yellow";
-
-    /// <summary>
-    /// Text that must appear literally, with any markup opener neutralised.
-    ///
-    /// <para>The same escape SharpConsoleUI's MarkupParser applies, inlined so Core keeps no
-    /// dependency on the UI toolkit. A path or a model id containing '[' is unlikely; a crash in the
-    /// line reporting one is not worth finding out.</para>
-    /// </summary>
-    public static string Escape(string text) => text.Replace("[", "[[");
 }

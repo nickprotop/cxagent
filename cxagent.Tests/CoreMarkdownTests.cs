@@ -24,4 +24,23 @@ public class CoreMarkdownTests
 
         Assert.Equal(Severity.Warning, m.Severity);
     }
+
+    [Theory]
+    [InlineData("my_test_file.cs", @"my\_test\_file.cs")]
+    [InlineData("a*b", @"a\*b")]
+    [InlineData("`code`", @"\`code\`")]
+    [InlineData("[link]", @"\[link\]")]
+    public void InterpolatedValuesKeepTheirCharacters(string raw, string escaped)
+    {
+        // A PATH IS NOT EMPHASIS. `my_test_file.cs` interpolated raw into markdown renders as
+        // my<i>test</i>file.cs — the same class of bug the old Markup.Escape existed to prevent, in
+        // the new format. Core interpolates paths, error text and model output constantly.
+        Assert.Equal(escaped, Md.Escape(raw));
+    }
+
+    [Fact]
+    public void OrdinaryTextIsUntouched()
+    {
+        Assert.Equal("could not read the file", Md.Escape("could not read the file"));
+    }
 }

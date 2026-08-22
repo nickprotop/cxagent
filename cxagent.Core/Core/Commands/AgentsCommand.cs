@@ -104,7 +104,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
             var described = string.IsNullOrWhiteSpace(type.Description)
                 ? "no description — the catalog says \"runs where you do, no special instructions\""
                 : FirstSentence(type.Description);
-            lines.Add($"    [{muted}]{Markup.Escape(described)}[/]");
+            lines.Add($"    [{muted}]{Md.Escape(described)}[/]");
             lines.Add("");
         }
 
@@ -137,7 +137,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
             // type's briefing and look like an answer. Names are compared exactly for that reason.
             return
             [
-                $"[yellow]No agent type '{Markup.Escape(name)}'[/]",
+                $"[yellow]No agent type '{Md.Escape(name)}'[/]",
                 $"  [{muted}]available: {catalog.Names}[/]",
             ];
         }
@@ -147,7 +147,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
         if (!string.IsNullOrWhiteSpace(type.Description))
         {
             lines.Add($"  [{muted}]When to choose it — what the parent reads:[/]");
-            lines.Add($"  {Markup.Escape(type.Description)}");
+            lines.Add($"  {Md.Escape(type.Description)}");
             lines.Add("");
         }
 
@@ -162,7 +162,7 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
         {
             lines.Add($"  [{muted}]Its briefing — what the child reads, in full:[/]");
             lines.Add("");
-            lines.Add(Markup.Escape(type.Briefing));
+            lines.Add(Md.Escape(type.Briefing));
         }
 
         lines.Add("");
