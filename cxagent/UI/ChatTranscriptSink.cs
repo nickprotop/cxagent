@@ -154,15 +154,53 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// and an escape nobody can test is how the missing one survived.</remarks>
     public static string Escape(string text) => text.Replace("[", "[[");
 
-    // THE FRONT END COLOURS BY MEANING, which it could not do while the colour was baked into
-    // the text: Core chose the same red under every theme. These resolve through the theme.
-    public void Said(Message message) =>
-        _system.EnqueueOnUIThread(() =>
-            _chat.AddMessage(ChatRole.System, message.Severity switch
-            {
-                Severity.Error => $"[{ColorScheme.DangerMarkup}]✗ {message.Text}[/]",
-                Severity.Warning => $"[{ColorScheme.CautionMarkup}]{message.Text}[/]",
-                _ => message.Text,
-            }));
+    /// <summary>
+    /// One transcript row: what to write, and which dialect it is written in.
+    /// </summary>
+    /// <param name="Text">The body, already wrapped in a colour scope when the severity warrants one.</param>
+    /// <param name="Markdown">
+    /// The per-message rendering override — <c>false</c> for markup, <c>null</c> to inherit the role.
+    /// </param>
+    public readonly record struct SystemRow(string Text, bool? Markdown);
 
+    /// <summary>
+    /// Chooses a row's text and its rendering dialect from the message's severity.
+    ///
+    /// <para>THE FRONT END COLOURS BY MEANING, which it could not do while the colour was baked into
+    /// the text: Core chose the same red under every theme. These resolve through the theme.</para>
+    ///
+    /// <para>AND THE COLOUR IS WHY THE DIALECT IS PER MESSAGE. A colour scope is SharpConsoleUI
+    /// markup, and the System role renders markdown — handing a "[red]" to the markdown converter
+    /// puts those five characters on screen. An Info row carries Core's text untouched, so it defers
+    /// to the role and its tables and headings render; the two coloured branches say "markup" for
+    /// themselves alone. Neither has to be given up for the other.</para>
+    /// </summary>
+    /// <param name="message">What Core said, and how loudly.</param>
+    /// <returns>The row to add.</returns>
+    /// <remarks>Public and pure so the choice is testable without a live ConsoleWindowSystem — the
+    /// same seam <see cref="Escape"/> uses.</remarks>
+    public static SystemRow Row(Message message) => message.Severity switch
+    {
+        Severity.Error => new($"[{ColorScheme.DangerMarkup}]✗ {message.Text}[/]", false),
+        Severity.Warning => new($"[{ColorScheme.CautionMarkup}]{message.Text}[/]", false),
+        _ => new(message.Text, null),
+    };
+
+    /// <summary>
+    /// Posts a system row in the dialect it asks for.
+    /// </summary>
+    /// <remarks>
+    /// THE OVERLOAD THAT TAKES A MODE TAKES FIVE ARGUMENTS, three of which are only ever null here.
+    /// Spelling that out at each call site puts the one argument that MATTERS last, behind a row of
+    /// nulls that all look alike — and a transposed null is a silent behaviour change rather than a
+    /// build error. One place says it; everywhere else names the row.
+    /// </remarks>
+    /// <param name="chat">The transcript to add to.</param>
+    /// <param name="row">The text and its rendering mode.</param>
+    /// <returns>The id of the added message.</returns>
+    public static FwChatId Post(ChatTranscriptControl chat, SystemRow row) =>
+        chat.AddMessage(ChatRole.System, row.Text, null, null, null, row.Markdown);
+
+    public void Said(Message message) =>
+        _system.EnqueueOnUIThread(() => Post(_chat, Row(message)));
 }

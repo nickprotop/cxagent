@@ -80,7 +80,7 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLinesCoverEveryCommand()
     {
-        var help = SessionCommands.HelpLines("cyan", "grey50");
+        var help = SessionCommands.HelpLines();
 
         foreach (var c in SessionCommands.All)
         {
@@ -543,7 +543,7 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLines_ListEverySubcommand()
     {
-        var help = SessionCommands.HelpLines("cyan", "grey50");
+        var help = SessionCommands.HelpLines();
 
         Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
         Assert.Contains("/stats clear", help, StringComparison.Ordinal);
@@ -555,9 +555,45 @@ public class SessionCommandTableTests
     [Fact]
     public void HelpLines_ExplainEachSubcommand()
     {
-        var help = SessionCommands.HelpLines("cyan", "grey50");
+        var help = SessionCommands.HelpLines();
 
         Assert.Contains("re-read config.json", help, StringComparison.Ordinal);
         Assert.Contains("delete all usage history", help, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// /help IS A MARKDOWN TABLE. The System role renders markdown, so the box-drawn table it used
+    /// to build would have reached the screen as its own literal markup — palette parameters and all.
+    /// </summary>
+    [Fact]
+    public void HelpLines_IsAMarkdownTable()
+    {
+        var help = SessionCommands.HelpLines();
+
+        Assert.Contains("| command | what it does |", help, StringComparison.Ordinal);
+        Assert.Contains("|---", help, StringComparison.Ordinal);
+
+        // No box drawing and no markup tag survives — either one is a rendering bug on a markdown row.
+        Assert.DoesNotContain("┌", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("│", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("[/]", help, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A NAME IS ESCAPED, A SUMMARY IS NOT — the asymmetry this table depends on.
+    ///
+    /// <para>`/sessions resume &lt;number|id&gt;` carries a pipe, which unescaped splits the row into
+    /// more cells than the header declares and Markdig drops the overflow silently. A summary is
+    /// markdown authored in SessionCommands itself, so escaping it would put backslashes on screen
+    /// and turn its intended inline code into punctuation.</para>
+    /// </summary>
+    [Fact]
+    public void HelpLines_EscapesNamesButLeavesSummariesAsMarkdown()
+    {
+        var help = SessionCommands.HelpLines();
+
+        Assert.Contains(@"`/sessions resume <number\|id>`", help, StringComparison.Ordinal);
+        Assert.Contains("a name from `providers` in config", help, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"\`", help, StringComparison.Ordinal);
     }
 }

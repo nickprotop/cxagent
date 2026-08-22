@@ -502,12 +502,15 @@ public sealed class MainWindow : IDisposable
         InstallMarkdownStyle();
         StartPanelClock();
 
-        // Role rendering: ChatRoleStyle.Markdown defaults to TRUE, which routes content through
-        // MarkdownToMarkup and ESCAPES literal '[' — so cxagent's own [red]/[cyan] markup renders
-        // LITERALLY (e.g. a visible "[red]"). cxagent authors System/User lines using the library's
-        // Spectre markup, so those roles must render as MARKUP (Markdown = false). The Assistant role
-        // KEEPS markdown ON, because the LLM's chat responses are genuine markdown (headers, bold,
-        // lists) and contain no cxagent markup. (Preserve each role's seeded ColorRole/Header/Collapse.)
+        // EVERY ROLE RENDERS MARKDOWN. Core writes markdown — the same dialect the models write —
+        // so the transcript has one dialect instead of two, and a command's `## heading` or pipe
+        // table is a heading and a table rather than its own syntax on screen.
+        //
+        // THE EXCEPTION IS PER MESSAGE, NOT PER ROLE. A severity-coloured system row is wrapped in a
+        // SharpConsoleUI colour scope, and MarkdownToMarkup escapes '[' — so that one row asks for
+        // markup for itself (see ChatTranscriptSink.Row) while the role stays markdown.
+        // (Preserve each role's seeded ColorRole/Header/Collapse.)
+
         // A RAIL DOWN THE LEFT OF YOUR OWN MESSAGES, and nothing else's.
         //
         // The transcript is mostly not you: an assistant reply, a dozen tool rows, a worker's report.
@@ -536,7 +539,7 @@ public sealed class MainWindow : IDisposable
 
         Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
         {
-            Markdown = false,
+            Markdown = true,
             ColorRole = ColorRole.Info,
             HeaderStyle = CollapsibleHeaderStyle.Borderless,
             Collapsible = true,
@@ -571,20 +574,23 @@ public sealed class MainWindow : IDisposable
             // Unlike the composer line, a banner cannot be corrected afterwards: it is a chat
             // message, and the transcript is a record rather than a live readout. So the mode has to
             // be right BEFORE Build() runs, which is why it is a property set at construction.
-            Chat.AddMessage(ChatRole.System, Banner.Render(
-                _system.DesktopDimensions.Width,
-                $"{_mode} · {ModelLabel}"));
+            // MARKUP, NOT MARKDOWN, for this row alone. The wordmark is ASCII art coloured per
+            // character, so a markdown renderer would both reflow the art and show its colour tags.
+            ChatTranscriptSink.Post(Chat, new ChatTranscriptSink.SystemRow(
+                Banner.Render(_system.DesktopDimensions.Width, $"{_mode} · {ModelLabel}"), false));
         }
         else
         {
             Chat.AddMessage(ChatRole.System,
                 // THE WIZARD SHIPPED. This said "the setup wizard arrives in P5c" and told the user
                 // to hand-edit config.json — while the wizard sat on screen offering to write it.
-                "[red]No LLM provider configured.[/]\n\nUse the setup wizard (it opens on this "
-                + "screen, or press [cyan]F5[/] later), or run [cyan]/model[/] to pick a configured "
-                + "instance. [cyan]cxagent --mock[/] tries the UI without a provider.");
+                "**No LLM provider configured.**\n\nUse the setup wizard (it opens on this "
+                + "screen, or press `F5` later), or run `/model` to pick a configured "
+                + "instance. `cxagent --mock` tries the UI without a provider.");
+            // THROUGH THE SAME SEAM AS EVERY OTHER ERROR ROW, so a resolution failure is coloured
+            // and marked exactly like one Core reports, and renders as markup for the same reason.
             foreach (var err in _resolution.Errors)
-                Chat.AddMessage(ChatRole.System, $"[red]• {err}[/]");
+                ChatTranscriptSink.Post(Chat, ChatTranscriptSink.Row(new Message(err, Severity.Error)));
             // Input stays constructed but the submission gate ignores Enter when !SubmissionEnabled.
         }
         Input.Placeholder = SubmissionEnabled ? ComposerPlaceholder : NoProviderPlaceholder;
@@ -1442,7 +1448,7 @@ public sealed class MainWindow : IDisposable
     {
         Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
         {
-            Markdown = false,
+            Markdown = true,
             ColorRole = ColorRole.Primary,
             HeaderStyle = CollapsibleHeaderStyle.Borderless,
             ShowHeader = false,
@@ -1475,11 +1481,10 @@ public sealed class MainWindow : IDisposable
             Background = ColorScheme.AssistantSurface,
         });
 
-        // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it must
-        // render as markdown, exactly like Assistant. They used to post as System, which is
-        // Markdown = false because cxagent authors its OWN [red]/[cyan] markup in system lines; that
-        // setting is right for system lines and wrong for a worker's prose, which arrived with its
-        // headings and lists shown as literal syntax.
+        // Tool = jobs. Their BODY is model output or command stdout — genuine markdown — so it
+        // renders as markdown, exactly like Assistant. A job posted as a system notice rather than a
+        // role of its own would inherit that role's collapse and header, and a worker's report is
+        // neither short nor a notice.
         //
         // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
         // screen. The header stays readable, and the detail is one keypress away.
@@ -1962,20 +1967,27 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void ShowHelp()
     {
+        // MARKDOWN, LIKE EVERY OTHER SYSTEM ROW. A colour tag here would reach the screen as its
+        // own five characters, and hand-counted padding is only a layout at one terminal width. A
+        // table says "these are columns" and lets the renderer measure them.
         Chat.AddMessage(ChatRole.System,
-            "[cyan]Keys[/]\n"
-            + "  [cyan]Enter[/]        run the goal in the composer\n"
-            + "  [cyan]\\[/] + Enter   continue on a new line (Shift+Enter is not deliverable on a Unix terminal)\n"
-            + "  [cyan]↑[/] / [cyan]↓[/]        recall an earlier goal\n"
-            + "  [cyan]F1[/]           this help\n"
-            + "  [cyan]F3[/]           show or hide the session panel\n"
-            + "  [cyan]F4[/]           put the cursor back in the composer\n"
-            + "  [cyan]F5[/]           settings — providers, roles, orchestrator, permissions\n"
-            + "  [cyan]Ctrl+Q[/]       quit\n"
-            + "\n[cyan]Commands[/]\n"
+            "## Keys\n"
+            + "\n"
+            + "| key | what it does |\n"
+            + "|-----|--------------|\n"
+            + "| `Enter` | run the goal in the composer |\n"
+            + "| `\\` + `Enter` | continue on a new line (Shift+Enter is not deliverable on a Unix terminal) |\n"
+            + "| `↑` / `↓` | recall an earlier goal |\n"
+            + "| `F1` | this help |\n"
+            + "| `F3` | show or hide the session panel |\n"
+            + "| `F4` | put the cursor back in the composer |\n"
+            + "| `F5` | settings — providers, roles, orchestrator, permissions |\n"
+            + "| `Ctrl+Q` | quit |\n"
+            + "\n## Commands\n"
+            + "\n"
             // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand
             // drifts from the dispatcher the first time one is added.
-            + SessionCommands.HelpLines("cyan", ColorScheme.MutedMarkup));
+            + SessionCommands.HelpLines());
         FocusComposer();
     }
 }

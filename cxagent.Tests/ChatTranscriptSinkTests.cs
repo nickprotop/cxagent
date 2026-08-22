@@ -1,3 +1,5 @@
+using System;
+using CxAgent.Core.Commands;
 using CxAgent.UI;
 using Xunit;
 
@@ -100,5 +102,50 @@ public class ChatTranscriptSinkTests
         var rendered = AsAssistantBody(ChatTranscriptSink.Escape("call `segments[0].Length` on it"));
 
         Assert.Contains("[[", rendered, StringComparison.Ordinal);
+    }
+
+    // ---- severity keeps its colour while the System role renders markdown ---------------------
+
+    /// <summary>
+    /// A COLOURED ROW IS MARKUP, AND SAYS SO PER MESSAGE.
+    ///
+    /// <para>The System role renders markdown, which is what Core writes. The two severity branches
+    /// are the exception: this sink wraps them in a colour tag, and a colour tag handed to the
+    /// markdown converter reaches the screen as a literal "[red]". The per-message override is what
+    /// lets one row be markup while the rest of the role stays markdown.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(Severity.Error)]
+    [InlineData(Severity.Warning)]
+    public void ColouredRows_RenderAsMarkup(Severity severity)
+    {
+        var row = ChatTranscriptSink.Row(new Message("could not save this rule", severity));
+
+        Assert.False(row.Markdown);
+        Assert.Contains("[", row.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An ordinary row is untouched, so it inherits the role — which renders markdown. Forcing
+    /// markup here would undo the whole point: Core's tables and headings would show their syntax.
+    /// </summary>
+    [Fact]
+    public void InfoRows_DeferToTheRole()
+    {
+        var row = ChatTranscriptSink.Row(new Message("## Sessions\n| # | id |"));
+
+        Assert.Null(row.Markdown);
+        Assert.Equal("## Sessions\n| # | id |", row.Text);
+    }
+
+    /// <summary>An error still gets its mark and its danger tone — the colour did not go away, it
+    /// merely stopped fighting the renderer.</summary>
+    [Fact]
+    public void ErrorRows_KeepTheirMarkAndTone()
+    {
+        var row = ChatTranscriptSink.Row(new Message("boom", Severity.Error));
+
+        Assert.Contains("\u2717 boom", row.Text, StringComparison.Ordinal);
+        Assert.Contains(ColorScheme.DangerMarkup, row.Text, StringComparison.Ordinal);
     }
 }

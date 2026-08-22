@@ -1079,4 +1079,18 @@ public class MainWindowTests
         var text = window.SessionPanel.RenderedText;
         Assert.Contains("general, explore", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// THE OBSERVABLE END OF THE WHOLE CHANGE. Core writes markdown, so every role that carries
+    /// Core's text renders it — a `## heading` in a command result becomes a heading rather than
+    /// showing its hashes.
+    /// </summary>
+    [Fact]
+    public void SystemRowsRenderMarkdown()
+    {
+        var window = BuiltMainWindow();
+
+        Assert.True(window.Chat.GetRoleStyle(ChatRole.System).Markdown);
+        Assert.True(window.Chat.GetRoleStyle(ChatRole.User).Markdown);
+    }
 }

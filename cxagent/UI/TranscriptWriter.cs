@@ -17,10 +17,15 @@ namespace CxAgent.UI;
 public sealed class TranscriptWriter(ConsoleWindowSystem system, ChatTranscriptControl chat)
     : ITranscriptWriter
 {
+    // MARKUP, SAID PER MESSAGE. The System role renders markdown — which is what Core writes — and
+    // this port's contract is markup: its name says so, and WriteError wraps a colour scope that the
+    // markdown converter would put on screen as a literal "[red]". The per-message override keeps
+    // both, rather than making one of the two writers wrong.
     public void Write(string markup) =>
-        system.EnqueueOnUIThread(() => chat.AddMessage(ChatRole.System, markup));
+        system.EnqueueOnUIThread(() =>
+            ChatTranscriptSink.Post(chat, new ChatTranscriptSink.SystemRow(markup, false)));
 
     public void WriteError(string message) =>
-        system.EnqueueOnUIThread(() => chat.AddMessage(ChatRole.System,
-            $"[{ColorScheme.DangerMarkup}]{message}[/]"));
+        system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(chat,
+            new ChatTranscriptSink.SystemRow($"[{ColorScheme.DangerMarkup}]{message}[/]", false)));
 }

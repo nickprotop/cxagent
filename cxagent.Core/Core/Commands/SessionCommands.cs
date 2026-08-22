@@ -476,31 +476,20 @@ public static class SessionCommands
         return sb.ToString();
     }
 
-    /// <summary>The command list as help text, one indented line each.</summary>
     /// <summary>
-    /// The command list, as a table.
-    ///
-    /// <para>DRAWN, NOT MARKDOWN. <c>ChatRole.System</c> sets <c>Markdown = false</c> — a pipe table
-    /// would render as literal pipes — and flipping that role would change every system message in
-    /// the app, banner and errors included. Box characters go through the markup renderer untouched.
-    /// </para>
+    /// The command list, as a markdown table.
     ///
     /// <para>A TABLE SUITS THIS AND NOT EVERY LIST. Command names and summaries are short and
     /// uniform, which is what columns are for; a skill's description is a paragraph and belongs in
     /// indented rows, so <c>/skills</c> keeps that shape.</para>
     ///
-    /// <para>WIDTH IS BOUNDED BY THE CONTENT, not by the terminal: the name column is as wide as the
-    /// widest name, so the table cannot push the summary off a narrow pane on its own.</para>
+    /// <para>NO PALETTE, AND NO WIDTHS. Both were this file's last bindings to a front end: colour
+    /// arrived as parameters so no literal tag appeared here, and the column widths were computed
+    /// from character counts, which is only a layout in a monospace terminal at a width Core
+    /// guessed. Markdown says "these are columns" and lets whatever renders it decide.</para>
     /// </summary>
-    /// <param name="mutedColor">
-    /// The palette's muted tone, for the box rule and the argument rows.
-    ///
-    /// <para>A PARAMETER, not a reference to the UI's ColorScheme, and it was the last thing binding
-    /// this file to a front end. Everything else here is a table and a parser; a second front end
-    /// with a different palette can render the same help without a second copy of the table.</para>
-    /// </param>
-    /// <param name="markupColor">The accent colour for command names.</param>
-    public static string HelpLines(string markupColor, string mutedColor)
+    /// <returns>A markdown table of every command and subcommand.</returns>
+    public static string HelpLines()
     {
         // ARGUMENTS ARE ROWS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only,
         // so `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
@@ -514,25 +503,24 @@ public static class SessionCommands
                 rows.Add(($"{c.Name} {a.Name}", a.Summary, true));
         }
 
-        var width = rows.Max(r => r.Name.Length + (r.IsArg ? 2 : 0));
-        var muted = mutedColor;
-
         var lines = new List<string>
         {
-            $"  [{muted}]┌─{new string('─', width)}─┬─{new string('─', rows.Max(r => r.Summary.Length))}─┐[/]",
+            "| command | what it does |",
+            "|---------|--------------|",
         };
 
+        // A NON-BREAKING SPACE FOR THE INDENT. Markdown collapses leading spaces inside a cell, so a
+        // plain two-space indent renders flush against the command above it and the subcommand rows
+        // stop reading as modifiers of anything.
+        //
+        // THE NAME IS ESCAPED AND THE SUMMARY IS NOT, which is not an oversight. A name is a literal
+        // spelling — `/sessions resume <number|id>` carries a pipe that would split the row into
+        // more cells than the header declares. A summary is markdown this file AUTHORS, backticks
+        // included ("a name from `providers` in config"); escaping it puts backslashes on screen and
+        // turns intended inline code into punctuation.
         foreach (var (name, summary, isArg) in rows)
-        {
-            var label = isArg ? "  " + name : name;
-            var colour = isArg ? muted : markupColor;
-            lines.Add($"  [{muted}]│[/] [{colour}]{label}[/]{new string(' ', width - label.Length)} "
-                    + $"[{muted}]│[/] {(isArg ? $"[{muted}]{summary}[/]" : summary)}"
-                    + $"{new string(' ', rows.Max(r => r.Summary.Length) - summary.Length)} [{muted}]│[/]");
-        }
+            lines.Add($"| {(isArg ? "\u00a0\u00a0" : "")}`{Md.EscapeCell(name)}` | {summary} |");
 
-        lines.Add($"  [{muted}]└─{new string('─', width)}─┴─{new string('─', rows.Max(r => r.Summary.Length))}─┘[/]");
         return string.Join('\n', lines);
     }
-
 }

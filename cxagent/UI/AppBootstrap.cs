@@ -1607,9 +1607,14 @@ public static class AppBootstrap
         var load = SettingsEntry.LoadSettings(paths, env);
         var existing = load.Settings;
         if (load.IsInvalid)
-            mainWindow.Chat.AddMessage(ChatRole.System,
-                "[yellow]config.json did not load (" + load.ErrorText
-                + "), so setup starts fresh — existing providers and roles in that file will be replaced.[/]");
+        {
+            // THROUGH THE SINK'S OWN RULE, so this warning is coloured and rendered like every other
+            // one rather than carrying its own tag onto a row that renders markdown.
+            ChatTranscriptSink.Post(mainWindow.Chat, ChatTranscriptSink.Row(new Message(
+                "config.json did not load (" + load.ErrorText
+                + "), so setup starts fresh — existing providers and roles in that file will be replaced.",
+                Severity.Warning)));
+        }
 
         var settings = await SetupWizard.RunAsync(system, mainWindow.Window, ct, existing);
         if (settings is null) return;   // user cancelled

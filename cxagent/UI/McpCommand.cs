@@ -25,13 +25,25 @@ public sealed class McpCommand(
     IReadOnlyDictionary<string, string> env,
     MainWindow window)
 {
+    /// <summary>
+    /// Posts a system row, coloured by severity and rendered in the matching dialect.
+    ///
+    /// <para>THROUGH <see cref="ChatTranscriptSink.Row"/> BECAUSE THE RULE IS ONE RULE. A row's
+    /// colour comes from its severity and a coloured row is markup while a plain one is markdown;
+    /// a second copy of that here is a second place for it to drift.</para>
+    /// </summary>
+    private void Say(string text, Severity severity = Severity.Info)
+    {
+        ChatTranscriptSink.Post(window.Chat, ChatTranscriptSink.Row(new Message(text, severity)));
+    }
+
     // /mcp, including the reload that makes config LIVE.
     public async Task HandleAsync(string arguments)
     {
         if (SessionCommands.ArgumentWords("/mcp " + arguments) is [var first, ..]
             && first.Equals("reload", StringComparison.OrdinalIgnoreCase))
         {
-            window.Chat.AddMessage(ChatRole.System, "Reloading MCP servers…");
+            Say("Reloading MCP servers…");
 
             // RE-READ FROM DISK, not from the startup resolution. The whole point is to pick up
             // a change made since launch — in Settings, or by hand-editing config.json.
@@ -44,15 +56,14 @@ public sealed class McpCommand(
             {
                 // An unrelated config error must not silently leave the old servers in place
                 // without saying why the reload did nothing.
-                window.Chat.AddMessage(ChatRole.System, 
-                    $"[yellow]config.json could not be read: {string.Join("; ", ex.Errors)}[/]");
+                Say($"config.json could not be read: {string.Join("; ", ex.Errors)}", Severity.Warning);
                 return;
             }
 
             await mcp.ReloadAsync(configured, CancellationToken.None);
 
             foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                window.Chat.AddMessage(ChatRole.System, $"[yellow]{message}[/]");
+                Say(message, Severity.Warning);
 
             window.SetMcpServers(mcp.Statuses());
         }
@@ -64,7 +75,7 @@ public sealed class McpCommand(
             return;
         }
 
-        window.Chat.AddMessage(ChatRole.System, SessionCommands.DescribeMcp(
+        Say(SessionCommands.DescribeMcp(
             mcp.Statuses(), arguments, mcp.Toolset.Names().ToList()));
     }
 
@@ -75,13 +86,13 @@ public sealed class McpCommand(
     {
         if (mcp.AuthMetadataUrlFor(serverName) is not { } metadataUrl)
         {
-            window.Chat.AddMessage(ChatRole.System, 
-                $"[yellow]'{serverName}' has not asked for authorization. Only a remote server "
-                + "that answered 401 can be logged in to — run /mcp to see the servers.[/]");
+            Say($"`{serverName}` has not asked for authorization. Only a remote server "
+                + "that answered 401 can be logged in to — run `/mcp` to see the servers.",
+                Severity.Warning);
             return;
         }
 
-        window.Chat.AddMessage(ChatRole.System, $"Opening a browser to log in to '{serverName}'…");
+        Say($"Opening a browser to log in to `{Md.EscapeCell(serverName)}`…");
 
         var result = await Core.Mcp.Auth.McpLogin.RunAsync(
             http, tokens, serverName, metadataUrl,
@@ -95,21 +106,23 @@ public sealed class McpCommand(
                 if (!TryOpenBrowser(url))
                     // A headless or locked-down machine still gets its login: the URL is the
                     // whole of what a browser would have been handed.
-                    window.Chat.AddMessage(ChatRole.System, $"Open this URL to continue:\n{url}");
+                    // FENCED so the URL survives verbatim: it carries '_' and '~' in its query, and
+                    // markdown would read those as emphasis and eat them out of a link nobody can
+                    // retype.
+                    Say($"Open this URL to continue:\n\n{Md.Fence(url)}");
             },
             ct: CancellationToken.None);
 
-        window.Chat.AddMessage(ChatRole.System, 
-            result.Succeeded ? result.Message : $"[yellow]{result.Message}[/]");
+        Say(result.Message, result.Succeeded ? Severity.Info : Severity.Warning);
 
         if (!result.Succeeded) return;
 
         // RECONNECT, so the tools are usable NOW. A login that leaves the server still
         // unauthorized until the next restart is a login the user would reasonably think failed.
-        window.Chat.AddMessage(ChatRole.System, "Reconnecting…");
+        Say("Reconnecting…");
         await mcp.ReloadAsync(mcp.Configured, CancellationToken.None);
         window.SetMcpServers(mcp.Statuses());
-        window.Chat.AddMessage(ChatRole.System, SessionCommands.DescribeMcp(mcp.Statuses()));
+        Say(SessionCommands.DescribeMcp(mcp.Statuses()));
     }
 
     /// <summary>
