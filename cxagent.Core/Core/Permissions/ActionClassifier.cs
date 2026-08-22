@@ -32,6 +32,31 @@ public sealed class ActionClassifier
     public string? LastFailure { get; private set; }
 
     /// <summary>
+    /// ONE VERDICT PER TURN, KEYED ON EVERYTHING THE MODEL SAW. An agent editing one file five times
+    /// in a turn should not pay five model calls for an unchanged answer — but the cache key MUST be
+    /// exactly the text handed to the model, or it generalises a content-specific verdict across
+    /// different content. <see cref="CacheKeyFor"/> is the single definition of "the same action";
+    /// Task 11's speculative classifier reuses it rather than re-deriving its own notion of sameness.
+    ///
+    /// <para>BOUNDED AT <see cref="MaxCacheEntries"/> WITH FIFO EVICTION. An agent that touches
+    /// thousands of distinct files in one turn must not grow this without limit; FIFO (via the
+    /// insertion-ordered <see cref="_cacheOrder"/> queue) is the simplest eviction that keeps the
+    /// cache useful for the common case — a handful of paths visited repeatedly — without the
+    /// bookkeeping an LRU would need for a saving that only matters in a pathological turn.</para>
+    /// </summary>
+    private readonly Dictionary<string, ClassifierDecision> _cache = new(StringComparer.Ordinal);
+
+    // Eviction order for _cache. A List, not a Queue, because ResetTurnState needs to clear both
+    // in lockstep and a plain Queue<T> would work just as well here — kept as a List only so the
+    // count check in JudgeAsync and the eviction below read as one obvious index operation.
+    private readonly List<string> _cacheOrder = new();
+
+    /// <summary>Cap on distinct cached actions per turn. Chosen as "generous for a real turn, not
+    /// unbounded" — a session touching more than this many distinct actions in one turn is already
+    /// far outside normal use, and evicting the oldest entry is cheaper than growing without bound.</summary>
+    private const int MaxCacheEntries = 256;
+
+    /// <summary>
     /// THE PROMPT IS SHORT, FIXED, AND KEEPS THE ACTION AS DATA.
     ///
     /// <para>The delimiters are an INJECTION defence first and a caching optimisation second. The
@@ -155,18 +180,30 @@ public sealed class ActionClassifier
     {
         LastFailure = null;
 
+        // FACTS RENDER INSIDE THE SAME DELIMITER AS What, never appended outside it or interpolated
+        // into Instruction — Render() already neutralises any embedded "</action>", but the join
+        // here is what keeps facts data rather than letting them reopen the instruction half.
+        var body = $"{request.Kind}: {request.What}";
+        if (request.Facts is { } facts) body += "\n" + facts.Render();
+
+        // THE KEY IS THE INSTRUCTION PLUS THE EXACT TEXT THE MODEL WAS SHOWN — not (kind, subject).
+        // Two writes to the same path with different content produce different `body` strings (the
+        // diff renders inside Facts.Render()), so they hash to different keys and neither can reuse
+        // the other's verdict. Keying on anything coarser than "the literal prompt text" is the
+        // cache-poisoning hole this type exists to close: a benign first write caching ALLOW for a
+        // path, then a later malicious overwrite of that SAME path replaying it without the
+        // classifier ever seeing the new diff. If the model would see different text, this must
+        // produce a different key — that is the entire correctness argument, and it holds because
+        // the key is derived from nothing but the strings actually sent below.
+        var key = CacheKeyFor(request.Kind, body);
+        if (_cache.TryGetValue(key, out var cached)) return cached;
+
         try
         {
             // A SHORT DEADLINE, because this sits between the model asking and the work happening.
             // A classifier that takes 30 seconds has cost more than the prompt it saved.
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
-
-            // FACTS RENDER INSIDE THE SAME DELIMITER AS What, never appended outside it or interpolated
-            // into Instruction — Render() already neutralises any embedded "</action>", but the join
-            // here is what keeps facts data rather than letting them reopen the instruction half.
-            var body = $"{request.Kind}: {request.What}";
-            if (request.Facts is { } facts) body += "\n" + facts.Render();
 
             var messages = new List<ChatMessage>
             {
@@ -180,6 +217,11 @@ public sealed class ActionClassifier
             // NOT A FAILURE, EVEN WHEN THE VERDICT IS ASK — the classifier answered, and the answer
             // was "ask". Leaving LastFailure null keeps the transcript quiet: an ASK verdict working
             // as designed is not news. LastFailure is reserved for when nothing answered at all.
+            //
+            // CACHED, because it is a real verdict the model returned for this exact text — never a
+            // fallback ASK from a timeout or a parse failure below, which get their own catch blocks
+            // that return without touching the cache at all.
+            Store(key, decision);
             return decision;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -191,12 +233,66 @@ public sealed class ActionClassifier
         catch (OperationCanceledException)
         {
             LastFailure = "classifier timed out";
+            // NOT CACHED. A timeout is a blip, not an answer — caching it would turn one slow
+            // request into a whole turn of ASKs, and could paper over a verdict a retry (or the next
+            // JudgeAsync call for the same action) would have actually resolved.
             return new(ClassifierVerdict.Ask, null);
         }
         catch (Exception ex)
         {
             LastFailure = ex.Message;
+            // NOT CACHED, same reasoning as the timeout above — a transport error is not a verdict.
             return new(ClassifierVerdict.Ask, null);
         }
+    }
+
+    /// <summary>
+    /// THE ONE DEFINITION OF "THE SAME ACTION", shared with Task 11's speculative classifier so the
+    /// two features can never disagree about what counts as identical. <paramref name="body"/> must
+    /// be exactly the text that goes inside <c>&lt;action&gt;</c> — kind + <c>What</c> + rendered
+    /// facts — because that, plus the kind-specific instruction, is everything the model is shown.
+    /// Hashed rather than used verbatim only to keep dictionary keys a fixed, small size; the hash
+    /// input is not secret, so SHA-256 is used for collision resistance, not confidentiality.
+    /// </summary>
+    public static string CacheKeyFor(PermissionKind kind, string body)
+    {
+        // The instruction is included via `kind` rather than InstructionFor(kind) itself: the
+        // instruction text is a fixed function of kind (see InstructionFor's switch), so hashing
+        // the kind is equivalent to hashing the instruction and cheaper. If InstructionFor ever
+        // varied for a reason OTHER than kind, this equivalence would break and the key would need
+        // to hash the instruction text directly.
+        var bytes = System.Text.Encoding.UTF8.GetBytes($"{kind} {body}");
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    }
+
+    private void Store(string key, ClassifierDecision decision)
+    {
+        if (_cache.TryAdd(key, decision))
+        {
+            _cacheOrder.Add(key);
+            // FIFO EVICTION AT THE CAP — see MaxCacheEntries for why this bound and why FIFO. Evict
+            // before growing further, not after, so the dictionary never exceeds the cap even
+            // transiently.
+            if (_cacheOrder.Count > MaxCacheEntries)
+            {
+                _cache.Remove(_cacheOrder[0]);
+                _cacheOrder.RemoveAt(0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Clears the verdict cache. A CACHED VERDICT ANSWERS FOR ONE ACTION, NOT A STANDING RULE — it
+    /// must never outlive the turn it was computed for, or an allow given for this turn's context
+    /// (this goal, these project instructions) would silently apply to a later turn with different
+    /// context but a coincidentally identical action. Called from the same turn boundary as
+    /// <see cref="PermissionDecider.ResetTurnState"/> — the host resets both at the start of each
+    /// turn, so the two lifetimes stay in lockstep without this class needing to know how turns are
+    /// tracked upstream.
+    /// </summary>
+    public void ResetTurnState()
+    {
+        _cache.Clear();
+        _cacheOrder.Clear();
     }
 }

@@ -74,7 +74,17 @@ public sealed class PermissionDecider : IPermissionGate
     /// <summary>Lets a new turn report a classifier failure again — the fact is stale once the turn
     /// that observed it is over, and a session that stays quiet forever after one blip would hide a
     /// provider that never came back.</summary>
-    public void ResetTurnState() => _reportedClassifierFailure = false;
+    public void ResetTurnState()
+    {
+        _reportedClassifierFailure = false;
+        // KEPT IN LOCKSTEP WITH THE FAILURE FLAG ABOVE, not reset by a second call site — a cached
+        // verdict answers for one action, not a standing rule, and must not outlive the turn it was
+        // computed for. NOTHING IN THIS CODEBASE CALLS PermissionDecider.ResetTurnState() YET (it
+        // predates this change, unwired); piggybacking the classifier's reset onto it means that
+        // whichever host loop eventually calls this at the turn boundary gets the verdict cache
+        // cleared for free too, with nothing new to remember to wire up.
+        Classifier?.ResetTurnState();
+    }
 
     // The UI seam: shows a prompt for `request` (offerTrust decides whether the fourth "Trust
     // this folder" button appears) and completes with the user's choice. The real constructor
