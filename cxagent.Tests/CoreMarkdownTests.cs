@@ -213,6 +213,44 @@ public class CoreMarkdownTests
         Assert.DoesNotContain("[grey", reply.Text);
     }
 
+    [Fact]
+    public void ATitleContainingAPipeDoesNotSplitTheTableRow()
+    {
+        // RULING 16 — A CONTAINS-ASSERTION WOULD PASS ON A BROKEN ROW. `Md.Escape`'s Special set
+        // is `\`*_[]` — no pipe — because its contract is a markdown SENTENCE, where a pipe is
+        // ordinary punctuation (`/sessions resume <number|id>` must keep its pipe). A table CELL is
+        // the opposite: the pipe IS the column delimiter, so an unescaped one in a session title
+        // splits the row into more cells than the header declares and Markdig drops the overflow.
+        // Asserting cell count, not "Contains", is the only way to catch that — a contains-assertion
+        // is exactly how this got through Task 6 in the first place.
+        var sessions = new List<CxAgent.Core.Storage.SessionInfo>
+        {
+            new(Uid: "ABCDEF0123456789", Title: "fix a|b parser", WorkingDir: "/w",
+                InputTokens: 100, OutputTokens: 50, Finished: false,
+                UpdatedAt: DateTimeOffset.UtcNow.AddMinutes(-5)),
+        };
+
+        var reply = SessionsCommand.Decide("", sessions, TimeSpan.FromDays(7)).Reply;
+
+        var headerLine = reply.Text.Split('\n').First(l => l.StartsWith("| #"));
+        var rowLine = reply.Text.Split('\n').First(l => l.Contains("fix a"));
+
+        // COUNT UNESCAPED PIPES ONLY. A raw `|` character count does not change once escaped — `\|`
+        // still contains the character '|', just preceded by a backslash a markdown renderer treats
+        // as "not a delimiter". The bug this test exists to catch is about DELIMITERS, so an escaped
+        // pipe must not be counted as one.
+        static int Delimiters(string line)
+        {
+            var count = 0;
+            for (var i = 0; i < line.Length; i++)
+                if (line[i] == '|' && (i == 0 || line[i - 1] != '\\'))
+                    count++;
+            return count;
+        }
+
+        Assert.Equal(Delimiters(headerLine), Delimiters(rowLine));
+    }
+
     /// <summary>The repository root, found by walking up from the test assembly.</summary>
     private static string RepoRoot()
     {

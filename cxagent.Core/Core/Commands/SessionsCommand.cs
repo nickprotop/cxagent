@@ -236,5 +236,10 @@ public static class SessionsCommand
              : $"{(int)age.TotalDays}d ago";
     }
 
-    private static string Escape(string text) => Md.Escape(text);
+    // A CELL ESCAPE, NOT A SENTENCE ESCAPE — Ruling 16. Both call sites above land a value inside a
+    // `|`-delimited table row (the title column, the folder column), where an unescaped pipe in a
+    // session title splits the row into more cells than the header declares and Markdig drops the
+    // overflow. Md.Escape alone does not cover this: its contract is a markdown SENTENCE, where a
+    // pipe is ordinary punctuation that must survive (see `/sessions resume <number|id>` below).
+    private static string Escape(string text) => Md.EscapeCell(text);
 }

@@ -410,6 +410,10 @@ public static class SessionCommands
 
         // A TABLE, NOT A DASH-SEPARATED LINE PER SERVER. Server and status are two columns of data,
         // not one sentence — the same call this task makes for /sessions and /model.
+        //
+        // Md.EscapeCell, NOT Md.Escape — Ruling 16. Every value below lands inside a `|`-delimited
+        // row: an unescaped pipe in a server name or a connection error would split the row into
+        // more cells than the header declares, and Markdig drops the overflow silently.
         var lines = new List<string> { "| server | status |", "|---|---|" };
         foreach (var server in servers)
         {
@@ -417,12 +421,13 @@ public static class SessionCommands
             if (!server.Enabled) status = "disabled";
             // NEEDS AUTH IS NOT A FAILURE, and reads differently: nothing is broken, the server is
             // waiting to be logged in to. Saying "failed" would send someone to check their config.
-            else if (server.NeedsAuth) status = $"not logged in — run `/mcp login {server.Name}`";
-            else if (server.Error is { } error) status = $"failed: {Md.Escape(error)}";
+            else if (server.NeedsAuth)
+                status = $"not logged in — run `/mcp login {Md.EscapeCell(server.Name)}`";
+            else if (server.Error is { } error) status = $"failed: {Md.EscapeCell(error)}";
             else if (server.ToolCount == 0) status = "connected, but offers no tools";
             else status = $"{server.ToolCount} {(server.ToolCount == 1 ? "tool" : "tools")}";
 
-            lines.Add($"| `{Md.Escape(server.Name)}` | {status} |");
+            lines.Add($"| `{Md.EscapeCell(server.Name)}` | {status} |");
         }
         lines.Add("");
         lines.Add("`/mcp <server>` for its tools · `/mcp reload` to re-read config");
