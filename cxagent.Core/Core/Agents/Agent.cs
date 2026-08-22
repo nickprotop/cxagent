@@ -1227,6 +1227,38 @@ public sealed class Agent
 
             if (response.ToolCalls.Count == 0)
             {
+                // THE MODEL'S OWN ANSWER GOES INTO THE CONVERSATION, and this line is the whole
+                // difference between a chat and a series of unrelated questions. The tool-call path
+                // below appends its assistant message; THIS path used to return without one, so a
+                // plain conversational reply was rendered to the user, streamed into the transcript,
+                // counted in the token totals — and never added to `messages`.
+                //
+                // WHAT IT LOOKED LIKE: ask "say something", get "Hello! How can I help you today?",
+                // then ask "what have you replied before?" and be told "This is the first message in
+                // our conversation, so I haven't replied to you before." The model was telling the
+                // truth about what it could see. Reported from a live session, with the token counter
+                // showing history WAS being sent — which is what made it confusing: the user's turns
+                // were all there, and only the assistant's were missing.
+                //
+                // BEFORE THE CHALLENGE BLOCK BELOW, not after: that block appends a USER message and
+                // `continue`s, so an assistant reply added later would arrive out of order — the model
+                // would see its challenge before the answer that provoked it.
+                if (!string.IsNullOrWhiteSpace(response.Text))
+                {
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = response.Text,
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+
+                    // AND PUT THE TASK LIST BACK LAST. It is pinned to the end of the conversation
+                    // (PlaceTaskList removes and re-appends it for exactly this reason), so anything
+                    // appended after it silently demotes it — which is what appending the reply did
+                    // until this line existed.
+                    PlaceTaskList();
+                }
+
                 // A turn with no tool calls is the model saying it is done. CHALLENGE IT if the goal
                 // asked for a change and nothing was written — the failure this mode exists to fix
                 // ends exactly here, with a confident summary of work that never happened.
@@ -2415,9 +2447,23 @@ public sealed class Agent
     private void PlaceTaskList()
     {
         var messages = _context.Messages;
+        var rendered = _todos.Render(toolOffered: _offeredNames.Contains(Plugins.Tool.TodoWrite));
+
+        // NOTHING TO DO IF NOTHING MOVED, and the reason is the prefix cache. A provider serves
+        // everything up to the first changed byte from cache and reprocesses the rest, so rewriting
+        // the tail costs real time even when the new tail is identical to the old one. This method is
+        // called on every turn that ends without tool calls, not only when a todo changes, so without
+        // this guard an unchanged plan re-wrote the newest message every single turn.
+        //
+        // ALREADY LAST AND ALREADY EQUAL is the only case worth skipping: a list that is present but
+        // NOT last still has to move, which is the whole point of the method.
+        if (messages.Count > 0
+            && messages[^1].IsTaskList
+            && string.Equals(messages[^1].Content, rendered, StringComparison.Ordinal))
+            return;
+
         messages.RemoveAll(m => m.IsTaskList);
 
-        var rendered = _todos.Render(toolOffered: _offeredNames.Contains(Plugins.Tool.TodoWrite));
         if (string.IsNullOrWhiteSpace(rendered)) return;
 
         // USER ROLE, NO ToolCallId. Both compaction cut paths (SessionCompressor.SafeCut and

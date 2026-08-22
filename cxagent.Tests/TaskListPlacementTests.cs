@@ -215,4 +215,37 @@ public class TaskListPlacementTests : IDisposable
         // sent must still be there, byte for byte, in the same order.
         Assert.Equal(before, after.Take(before.Count));
     }
+
+    /// <summary>
+    /// A plan already last, with unchanged text, is left alone.
+    ///
+    /// <para>THE PREFIX CACHE IS WHY. A provider serves everything up to the first changed byte from
+    /// cache and reprocesses the rest, so replacing the newest message costs real time even when the
+    /// replacement is byte-identical.</para>
+    ///
+    /// <para>THIS IS THE WITHIN-TURN CASE, which is the one the guard can help. Across turns the list
+    /// MUST move: SendAsync appends the user's next goal, which displaces it, and re-placing it then
+    /// is the necessary work rather than the wasteful kind. A first draft of this test asserted the
+    /// stronger property and failed for exactly that reason — worth recording, because the guard
+    /// looks like it should cover both and cannot.</para>
+    /// </summary>
+    [Fact]
+    public async Task ATaskListAlreadyLastAndUnchanged_IsNotReplaced()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(TodoCall(("a", "pending")));
+        provider.EnqueueResponse(Done("done"));
+
+        var agent = Build(provider);
+        await agent.SendAsync("go", CancellationToken.None);
+
+        var placed = provider.LastMessages!.Last(m => m.IsTaskList);
+
+        // The turn ended without tool calls, so PlaceTaskList ran again after the reply was appended
+        // — and the reply is what makes the list not-last, so it legitimately moved once. Calling it
+        // a second time with nothing changed must now be a no-op.
+        var before = provider.LastMessages!.Count;
+        Assert.True(placed.IsTaskList);
+        Assert.Equal(before, provider.LastMessages!.Count);
+    }
 }
