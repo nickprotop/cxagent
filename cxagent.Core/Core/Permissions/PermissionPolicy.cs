@@ -655,8 +655,108 @@ public class PermissionPolicy
         // must be a command this recognises the shape of. Without it the confinement is enforced
         // against a path list that is empty precisely BECAUSE the dangerous part of the command was
         // never parsed as paths — the emptiest possible list passing the strictest possible check.
-        return ExaminableSegments(command);
+        if (!ExaminableSegments(command)) return false;
+
+        // AND THE SAME HOLE ONE MORE TIME, REACHED THROUGH PATH SHAPE. See RelativeSubjectsConfined:
+        // the clause above collects nothing for a RELATIVE path, so `rm -rf ../outside` was confined
+        // against an empty list and approved. This is the SECOND vacuous pass found in this predicate
+        // and it is worth naming as such, because the first one's fix did not prevent it: guarding
+        // the command's STRUCTURE says nothing about the SHAPE of the paths in it.
+        return RelativeSubjectsConfined(command);
     }
+
+    /// <summary>
+    /// Every token that refers to a path RELATIVE to the working directory resolves inside the root.
+    ///
+    /// <para>THE SECOND VACUOUS PASS IN <see cref="FullyConfined"/>. The first was structure —
+    /// <c>&gt;</c>, <c>|</c> and <c>$(</c> are tokens that are not paths, so the dangerous part of a
+    /// command was never parsed as one and the boundary was enforced against an empty list; that is
+    /// what <see cref="ExaminableSegments"/> closed. This is the identical sentence reached through
+    /// path shape: <c>CommandSubjects.Classify</c> records a token only when it EXISTS, and it tests
+    /// existence against the PROCESS working directory while the boundary resolves against the
+    /// SESSION root. A relative token therefore lands in neither — it is not found where the process
+    /// stands, so it never becomes a path, and "every path is inside" holds on nothing at all.</para>
+    ///
+    /// <para>MEASURED ON THE LIVE PREDICATE, which is how it was found. Trusted root, auto mode:
+    /// <c>rm -rf ../outside &amp;&amp; echo gone</c> returned MayApprove, one classifier ALLOW away
+    /// from running silently against a folder the user never trusted, while the absolute spelling
+    /// <c>rm -rf /etc</c> was correctly refused. The same probe showed <c>rm -rf ./src</c> and
+    /// <c>cat ./sub/../file.txt</c> reporting ZERO paths, which is the tell that the gap is relative
+    /// shape in general rather than <c>..</c> in particular.</para>
+    ///
+    /// <para>WHY NOT REPAIR <see cref="CommandSubjects"/> INSTEAD, which would have made the existing
+    /// boundary clause non-vacuous rather than adding a second one beside it. That was the preferred
+    /// shape and it does not fit: <c>CommandSubjects.Of</c> is static and root-less, and its
+    /// <c>Classify</c> deliberately records only paths that EXIST so <c>grep TODO .</c> does not
+    /// refuse for want of a file named TODO. Collecting relative tokens by SHAPE breaks that
+    /// deliberate behaviour for its pre-existing read-only caller; collecting them by EXISTENCE needs
+    /// a root the type has no way to know, and threading one in would put a second path resolver
+    /// beside this file's — which <c>CommandSubjects</c>' own doc comment gives as the reason a tilde
+    /// is refused rather than expanded. So the confinement happens here, where the root is known and
+    /// where <see cref="IsInsideBoundary"/> is already the single resolver.</para>
+    ///
+    /// <para>IT IS A RESOLUTION, NOT A STRING MATCH ON <c>..</c>, and that distinction is the whole
+    /// value: <c>./sub/../file.txt</c> names a file inside the root by an ugly spelling and stays
+    /// approvable, while <c>../outside</c> does not, because the answer comes from where the path
+    /// actually lands. Refusing every dot-dot would have been cheaper and would have made the
+    /// predicate lie about what it enforces.</para>
+    ///
+    /// <para>ONLY TOKENS THAT ARE PATH REFERENCES, so this does not become the friction
+    /// <c>Classify</c> was written to avoid. A bare word like <c>build</c> or a grep pattern is not
+    /// claimed as a path — it names no directory component and the shell will not treat it as one
+    /// without a verb's help. A token carrying a separator, or consisting of <c>..</c>, is asserting
+    /// a location, and an assertion about a location is exactly what a boundary is for.</para>
+    /// </summary>
+    private bool RelativeSubjectsConfined(string command)
+    {
+        foreach (var segment in command.Split(SegmentSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            // THE VERB IS NOT A SUBJECT, the same carve-out CommandSubjects makes and for the same
+            // reason — and ExaminableSegments has ALREADY refused any verb containing a slash, so
+            // skipping it here cannot let a path-shaped program through.
+            foreach (var token in segment.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1))
+            {
+                var text = token.Trim('"', '\'');
+
+                // A FLAG CARRYING ITS VALUE, unwrapped for the reason CommandSubjects unwraps it:
+                // `--file=../secret` and `-f ../secret` are one read spelled two ways, and a rule
+                // that separates them is not one anybody can hold in their head.
+                var eq = text.IndexOf('=', StringComparison.Ordinal);
+                if (text.StartsWith('-') && eq > 0) text = text[(eq + 1)..].Trim('"', '\'');
+
+                if (text.Length == 0 || text.StartsWith('-')) continue;
+
+                // ABSOLUTE PATHS ARE ALREADY THE OTHER CLAUSE'S JOB, and re-confining them here would
+                // be a second opinion on a question already answered — the drift that put four holes
+                // of one shape in this system. Tilde is likewise already refused, by FullyExamined.
+                if (Path.IsPathRooted(text) || text.StartsWith('~')) continue;
+
+                if (!IsPathReference(text)) continue;
+
+                if (!IsInsideBoundary(text)) return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a token asserts a LOCATION rather than merely being a word.
+    ///
+    /// <para>THE LINE IS DRAWN AT A DIRECTORY SEPARATOR because that is where the shell draws it: a
+    /// token containing <c>/</c> can only be a path, while a bare word is whatever the verb decides —
+    /// a grep pattern, a git ref, a build target. Claiming bare words as paths is precisely the
+    /// friction <c>CommandSubjects.Classify</c> documents avoiding, and friction is what gets a gate
+    /// routed around.</para>
+    ///
+    /// <para><c>..</c> ALONE IS THE EXCEPTION, because it carries no separator and is unambiguously a
+    /// location — <c>cd ..</c>, <c>rm -rf ..</c>. A bare <c>.</c> needs no exception: it resolves to
+    /// the root itself and is inside by definition, so admitting it would change no answer.</para>
+    /// </summary>
+    private static bool IsPathReference(string token) =>
+        token.Contains('/', StringComparison.Ordinal)
+        || token.Contains('\\', StringComparison.Ordinal)
+        || token == "..";
 
     /// <summary>
     /// True when every segment of a command line is a plain <c>verb args</c> this can name, with no

@@ -305,6 +305,84 @@ public class ShellApprovalTests
         Assert.DoesNotContain($"project root: {elsewhere}", rendered, StringComparison.Ordinal);
     }
 
+    // ---- Clause: relative parent traversal -------------------------------------------------------
+
+    /// <summary>
+    /// THE SECOND VACUOUS PASS IN THIS PREDICATE, and the same sentence as the first: a clause that
+    /// cannot fail because there is nothing for it to check.
+    ///
+    /// <para>The first was STRUCTURE — <c>&gt;</c>, <c>|</c> and <c>$(</c> are tokens that are not
+    /// paths, so the dangerous part of the command was never parsed as one and the boundary was
+    /// enforced against an empty list. <see cref="PermissionPolicy"/>'s <c>ExaminableSegments</c>
+    /// closed that. This is the same hole reached through PATH SHAPE instead: <c>CommandSubjects</c>
+    /// collects a token only when it EXISTS on disk, and it tests existence against the PROCESS
+    /// working directory while the boundary resolves against the SESSION root. A relative token is
+    /// therefore invisible to the boundary in both directions — it is usually not found where the
+    /// process is standing, so it never becomes a path, and the "every path is inside" clause passes
+    /// on nothing at all.</para>
+    ///
+    /// <para>FOUND BY LIVE-FIRE PROBING, not by reading. Against the real predicate with a trusted
+    /// root in auto mode, <c>rm -rf ../outside &amp;&amp; echo gone</c> returned MayApprove — needing
+    /// only a classifier ALLOW to run silently, on a folder the user never trusted. The probe also
+    /// showed <c>rm -rf ./src</c> and <c>cat ./sub/../file.txt</c> reporting ZERO paths, which is the
+    /// tell that this is about relative shape generally and not about <c>..</c> specifically.</para>
+    ///
+    /// <para>WHY THE REFUSAL IS STRUCTURAL RATHER THAN A PATH CHECK. The obvious repair is to make
+    /// the boundary clause non-vacuous by teaching <c>CommandSubjects</c> to collect relative tokens,
+    /// and it cannot be done there: that type is static and root-less by construction, and its
+    /// <c>Classify</c> deliberately records only paths that EXIST so that <c>grep TODO .</c> does not
+    /// refuse for want of a file named TODO. Collecting by shape would break that; collecting by
+    /// existence would need a root the type does not have, and adding one puts a second path resolver
+    /// beside the boundary's — which its own doc comment names as the reason tilde is refused rather
+    /// than expanded. So the traversal is refused where the root IS known.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("rm -rf ../outside && echo gone")]
+    [InlineData("cat ../secrets.txt")]
+    [InlineData("cp ../../.env ./stolen")]
+    [InlineData("cat ../../../etc/passwd")]
+    public void ARelativeParentTraversal_IsNEVEROffered(string command)
+    {
+        var root = MakeTempDir();
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.None, policy.EffectFor(Shell(command)));
+    }
+
+    [Fact]
+    public void ATraversalThatResolvesBackInside_IsStillOffered()
+    {
+        // THE CONTROL, and it is what keeps the refusal from being "any token containing a dot-dot".
+        // `./sub/../file.txt` names a file inside the root by an ugly spelling; refusing it would be
+        // the fix-by-refusing-everything that the boundary tests above cannot detect on their own.
+        //
+        // IT IS ALSO THE PROOF THE REPAIR IS A RESOLUTION AND NOT A STRING MATCH. The token is
+        // resolved against the SESSION root — the same base IsInsideBoundary uses — so the answer
+        // comes from where the path actually lands, which is the only basis on which an in-boundary
+        // traversal can be distinguished from an escaping one.
+        var root = MakeTempDir();
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        File.WriteAllText(Path.Combine(root, "file.txt"), "x");
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell("cat ./sub/../file.txt | head")));
+    }
+
+    [Theory]
+    [InlineData("dotnet build 2>&1 | tail -5")]
+    [InlineData("mkdir -p ./tmpscratch && rm -rf ./tmpscratch && echo ok")]
+    [InlineData("rm -rf ./src && echo gone")]
+    public void OrdinaryInBoundaryWork_IsStillOffered(string command)
+    {
+        // THE OTHER HALF OF THE CONTRACT. A traversal fix that also refuses these would "pass" every
+        // negative test above while leaving the feature with nothing inside its bound — which is the
+        // failure mode the boundary tests in this file are individually blind to.
+        var root = MakeTempDir();
+        var policy = TrustedAutoPolicy(root);
+
+        Assert.Equal(ReviewEffect.MayApprove, policy.EffectFor(Shell(command)));
+    }
+
     // ---- The instruction ------------------------------------------------------------------------
 
     [Fact]
