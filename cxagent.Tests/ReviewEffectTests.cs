@@ -177,20 +177,36 @@ public class ReviewEffectTests
             policy.EffectFor(new PermissionRequest(PermissionKind.Tool, "tool show_diff", "tool show_diff")));
     }
 
-    // ---- Shell, until Task 13 -------------------------------------------------------------------------
+    // ---- Shell ----------------------------------------------------------------------------------------
 
     [Fact]
-    public void Shell_IsNotReviewedYet()
+    public void ShellOutsideTheConfinement_IsNotReviewed()
     {
-        // TODAY'S BEHAVIOUR, PINNED SO THE CHANGE IS DELIBERATE. Task 13 turns this into MayApprove
-        // bounded by CommandSubjects.FullyExamined; until it does, a shell command in auto mode
-        // prompts exactly as it does in every other mode. When that task lands this assertion is the
-        // thing it must consciously rewrite.
+        // REWRITTEN BY TASK 13, WHICH THIS ASSERTION EXISTED TO FORCE. Shell is now MayApprove — but
+        // only inside the confinement, and `rm -rf /` is outside it: `/` is a real path outside the
+        // boundary, so the answer here is unchanged even though the arm above it is new.
+        //
+        // THE CLAUSES THEMSELVES LIVE IN ShellApprovalTests, one test per clause. This row stays
+        // because the effect TABLE is what this file pins, and "a shell command can still be
+        // unreviewable" is a row of it.
         var root = MakeTempDir();
         var policy = TrustedAuto(root, EmptyRules());
 
         Assert.Equal(ReviewEffect.None,
             policy.EffectFor(new PermissionRequest(PermissionKind.Shell, "rm -rf /", "rm -rf *", Subject: "rm -rf /")));
+    }
+
+    [Fact]
+    public void ShellInsideTheConfinement_MayBeApproved()
+    {
+        // THE OTHER ROW OF THE SAME TABLE, and the one that is new. Without it this file would record
+        // shell as unreviewable, which stopped being true.
+        var root = MakeTempDir();
+        var policy = TrustedAuto(root, EmptyRules());
+
+        Assert.Equal(ReviewEffect.MayApprove,
+            policy.EffectFor(new PermissionRequest(PermissionKind.Shell, "dotnet build 2>&1 | tail",
+                null, Subject: "dotnet build 2>&1 | tail")));
     }
 
     // ---- The hazard the checklist names ----------------------------------------------------------------

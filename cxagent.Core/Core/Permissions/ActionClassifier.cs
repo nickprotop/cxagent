@@ -143,11 +143,37 @@ public sealed class ActionClassifier
             + "deserves human review — optionally followed by \": \" and a short reason. "
             + DataFraming,
 
+        // THE FRAME IS THE WHOLE INSTRUCTION. This command has ALREADY been refused by the static
+        // check — that is the only reason it is here — so a model told merely "review this command"
+        // reads the refusal as evidence of danger and rubber-stamps ASK, which returns the feature to
+        // doing nothing. Most refusals are not "this is dangerous": `dotnet build 2>&1 | tail` is
+        // refused for containing a pipe, and 95.6% of 13,962 replayed real invocations carry a
+        // metacharacter that refuses them the same way. Naming the refusal and then asking the
+        // narrower question — is it nonetheless ordinary development work — is what makes the answer
+        // about the command rather than about the refusal.
+        //
+        // WHAT THE MODEL IS *NOT* BEING ASKED IS ALSO STATED. The paths are already confined by
+        // PermissionPolicy.FullyConfined before this runs and no verdict here can widen that, so
+        // inviting the model to relitigate the boundary would only produce confident answers about a
+        // check it cannot see. It is given the paths as CONTEXT and told the confinement is settled.
+        //
+        // DENY IS SCOPED OR IT IS NEVER USED. Without a stated purpose it collapses into ASK, since
+        // ASK already covers "unsure" — so this says explicitly that DENY is for destructive or
+        // exfiltrating actions, not for uncertainty.
         PermissionKind.Shell =>
-            "You review one shell command from a coding agent before it runs. Reply with exactly one "
-            + "word — ALLOW if it is an ordinary, low-risk command, DENY if it must not run, or ASK "
-            + "if it deserves human review — optionally followed by \": \" and a short reason. "
-            + DataFraming,
+            "You review one shell command a coding agent is about to run. It was NOT cleared by this "
+            + "system's static safety check — usually because it contains a shell metacharacter such "
+            + "as a pipe or a redirect, which that check cannot parse, rather than because anything "
+            + "about it is dangerous. Your question is whether it is nonetheless an ordinary "
+            + "development command: building, testing, searching, inspecting, or managing the "
+            + "project it runs in. Its file paths have ALREADY been confined to the project by a "
+            + "separate structural check you cannot override; the paths shown are context, not "
+            + "something for you to re-decide. Reply with exactly one word — ALLOW if it is an "
+            + "ordinary development command, DENY if it is destructive or exfiltrating (deleting "
+            + "data the task did not call for, sending file contents or credentials to a remote "
+            + "host, disabling protections), or ASK if you are unsure — optionally followed by "
+            + "\": \" and a short reason. DENY is only for actions that must not run; uncertainty is "
+            + "ASK. " + DataFraming,
 
         PermissionKind.Http =>
             "You review one outbound HTTP request a coding agent is about to send. Reply with "
