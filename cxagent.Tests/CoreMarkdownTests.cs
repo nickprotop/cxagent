@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using System.Linq;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
@@ -81,5 +84,90 @@ public class CoreMarkdownTests
 
         Assert.Equal(Severity.Warning, result.Reply.Severity);
         Assert.DoesNotContain("[yellow]", result.Reply.Text);
+    }
+
+    [Fact]
+    public void NoCoreFileNamesAColour()
+    {
+        // THE REGRESSION THIS EXISTS FOR is one message at a time: someone adds a line, reaches for
+        // the nearest example, and the example is still coloured. A grep in a test is the only thing
+        // that notices, because a stray tag renders as literal text a reader shrugs at.
+        //
+        // ROOTED AT cxagent.Core/Core, NOT cxagent.Core. The examples under cxagent.Core/examples
+        // (SpectreAgent, ReadOnlyAgent, ToolAgent) still write real markup on purpose — they render
+        // through SharpConsoleUI/Spectre, which is the one place a colour tag is still the right
+        // format — and a later task owns converting them. Rooting the sweep at the library itself
+        // would fail on files this task has no reason to touch and no way to fix without doing that
+        // task's work first.
+        //
+        // DOC-COMMENT LINES ARE SKIPPED, not scanned. Two files quote a colour tag on purpose inside
+        // `///` prose: ISessionObserver.cs (Ruling 6 — "a model writing \"[red]\" as ordinary prose
+        // must not open a style scope", the documentation of this very feature) and Message.cs
+        // (Severity's own doc, quoting what Core "used to write" before this change). Both are
+        // examples ABOUT markup, in a sentence, never rendered; every real offender this task fixed
+        // was a live `Say("[yellow]...[/]")` call outside a `///` line. Filtering by line prefix
+        // catches that distinction without hard-coding either filename — a THIRD file doing the same
+        // thing later would be exempted for the same reason, not because it dodged a filename list.
+        var core = Path.Combine(RepoRoot(), "cxagent.Core", "Core");
+        var tagPattern = new System.Text.RegularExpressions.Regex(@"\[(red|yellow|green|grey\d*|cyan\d*)\]");
+        var offenders = Directory.EnumerateFiles(core, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => File.ReadAllLines(f)
+                .Any(line => !line.TrimStart().StartsWith("///") && tagPattern.IsMatch(line)))
+            .Select(Path.GetFileName)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToArray();
+
+        // RULING 10 — A SHRINKING ALLOWLIST, NOT Assert.Empty, and DELIBERATELY TEMPORARY: these
+        // three still hold real colour tags because Markup.cs stays alive until its last consumer
+        // is gone (Task 6 takes Skills/Agents, Task 7 takes Diff and the stats pair — Ruling 8).
+        // Assert.Empty here would have to be skipped or ignored until Task 7 lands, and a guard test
+        // nobody trusts guards nothing. Asserting the exact set keeps the suite green today AND still
+        // fails the moment a FOURTH file grows a tag, or one of these three loses its tag without
+        // this list being updated — both are real regressions this construction catches.
+        //
+        // AS EACH TASK LANDS, DELETE ITS FILE FROM THIS LIST. The last deletion turns this back into
+        // Assert.Empty(offenders) and deletes Markup.cs alongside it — see Markup.cs's own doc
+        // comment, which names the same ten call sites from the other direction.
+        string[] stillOwnedByLaterTasks = ["AgentsCommand.cs", "DiffCommand.cs", "SkillsCommand.cs"];
+        Assert.Equal(stillOwnedByLaterTasks.OrderBy(f => f, StringComparer.Ordinal).ToArray(), offenders);
+    }
+
+    [Fact]
+    public void FailureVocabularyIsNeverInfo()
+    {
+        // THE DEFAULT IS WHAT MAKES THIS POSSIBLE. `Say("could not save…")` compiles and arrives as
+        // Info, so a forgotten severity silently turns a warning into an aside — the one thing the
+        // old two-method split could not get wrong. The default stays because ordinary lines are the
+        // common case; this test is the price of keeping it.
+        //
+        // Say(, NOT Said(. The observer method is Said(Message message); Core's own call sites never
+        // call that directly — they go through Session.Say, which forwards to the sink. A pattern
+        // written against "Said(" would match nothing under cxagent.Core/Core and pass vacuously,
+        // guarding nothing. This was checked by deliberately breaking a line back to a bare string
+        // literal carrying failure wording and confirming the test caught it before restoring it.
+        var core = Path.Combine(RepoRoot(), "cxagent.Core", "Core");
+        var pattern = new System.Text.RegularExpressions.Regex(
+            @"Say\(\s*\$?""[^""]*(could not|failed|refused|unavailable|cannot)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        var offenders = Directory.EnumerateFiles(core, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => pattern.IsMatch(File.ReadAllText(f)))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        // A bare Say("could not …") is the failure: the severity has to be stated for these.
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>The repository root, found by walking up from the test assembly.</summary>
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "cxagent.Core")))
+            dir = Path.GetDirectoryName(dir);
+
+        return dir ?? throw new DirectoryNotFoundException("repository root not found from " + AppContext.BaseDirectory);
     }
 }

@@ -143,7 +143,8 @@ public class ModelCommandTests
     [Fact]
     public void Switched_NamesTheModelAndItsWindow()
     {
-        var text = ModelSwitchNotice.For("claude", "claude-x", 200_000, 213_000, used: 1_000);
+        var msg = ModelSwitchNotice.For("claude", "claude-x", 200_000, 213_000, used: 1_000);
+        var text = msg.Text;
 
         Assert.Contains("claude:claude-x", text);
         Assert.Contains("200k", text);
@@ -158,17 +159,21 @@ public class ModelCommandTests
     [Fact]
     public void Switched_WarnsWhenTheConversationAlreadyFillsTheNewWindow()
     {
-        var text = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 30_000);
+        var msg = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 30_000);
+        var text = msg.Text;
 
         Assert.Contains("summarise", text);
         Assert.Contains("30k", text);
+        // THE ONE BRANCH THAT RAISES THE WHOLE NOTICE'S SEVERITY — see ModelSwitchNotice.For.
+        Assert.Equal(Severity.Warning, msg.Severity);
     }
 
     /// <summary>A roomy switch says nothing alarming — a line that always warns is one nobody reads.</summary>
     [Fact]
     public void Switched_DoesNotWarnWhenThereIsRoom()
     {
-        var text = ModelSwitchNotice.For("big", "large", 200_000, 32_000, used: 1_000);
+        var msg = ModelSwitchNotice.For("big", "large", 200_000, 32_000, used: 1_000);
+        var text = msg.Text;
 
         Assert.DoesNotContain("summarise", text);
     }
@@ -177,7 +182,8 @@ public class ModelCommandTests
     [Fact]
     public void Switched_NotesASmallerWindow()
     {
-        var text = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 100);
+        var msg = ModelSwitchNotice.For("small", "tiny", 32_000, 213_000, used: 100);
+        var text = msg.Text;
 
         Assert.Contains("Smaller window", text);
     }
@@ -186,7 +192,8 @@ public class ModelCommandTests
     [Fact]
     public void Switched_SaysWhenTheWindowIsUnknown()
     {
-        var text = ModelSwitchNotice.For("odd", "mystery", null, 200_000, used: 100);
+        var msg = ModelSwitchNotice.For("odd", "mystery", null, 200_000, used: 100);
+        var text = msg.Text;
 
         Assert.Contains("fixed threshold", text);
     }

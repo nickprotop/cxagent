@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 
 namespace CxAgent.Core.Sessions;
@@ -185,8 +186,8 @@ public sealed partial class Session
             // flagging it every time would be noise that trains people past the flag.
             var ignored = tools is not null && !Equals(tools, _turnTools);
             if (ignored)
-                Say("[yellow]tool selection not applied — a turn is already running, and this "
-                    + "joins it.[/]");
+                Say(new Message("tool selection not applied — a turn is already running, and this "
+                    + "joins it.", Severity.Warning));
 
             return new SubmitOutcome.Queued(ignored);
         }
@@ -272,7 +273,7 @@ public sealed partial class Session
                 // IT MUST STILL SAY SOMETHING. This loop is fire-and-forget from the caller's side —
                 // the Task is awaited for its falling edge, not its result — so an exception escaping
                 // silently would leave a session that stopped working with nothing on screen.
-                Say($"[{Commands.Markup.Danger}]{ex.Message}[/]");
+                Say(new Message(ex.Message, Severity.Error));
                 return;
             }
 
@@ -331,7 +332,7 @@ public sealed partial class Session
         turn.Cancel();
 
         Announce(SessionChangeKind.TurnCancelled);
-        Say("[yellow]Stopped.[/]");
+        Say("Stopped.");
 
         // AFTER the announcement, so a subscriber restoring the text into a composer is drawing over
         // a surface that has already reacted to the stop — announce before you say, and before you

@@ -258,7 +258,7 @@ public sealed partial class Session
         // chasing something that is no longer there. Changing mode or model under a running turn is
         // exactly that, and re-wiring or restoring goes further: it replaces the agent the turn is
         // appending to, so its tool results land in a conversation nobody is reading.
-        Say("[yellow]A turn is running — press Escape to stop it first.[/]");
+        Say(new Message("A turn is running — press Escape to stop it first.", Severity.Warning));
         return true;
     }
 
@@ -290,7 +290,7 @@ public sealed partial class Session
     {
         if (Host is null)
         {
-            Say("[yellow]No provider configured — there is no agent to set a mode on.[/]");
+            Say(new Message("No provider configured — there is no agent to set a mode on.", Severity.Warning));
             return CommandStatus.Refused;
         }
 
@@ -436,16 +436,16 @@ public sealed partial class Session
     /// and the fallback itself happens earlier, where both the mode and the selection are known.</para>
     /// </summary>
     internal void SayFallbackToSingle() =>
-        Say("[yellow]fan-out was requested, but the `agent` tool is not in this session's tool "
-          + "selection — working in single mode.[/]");
+        Say(new Message("fan-out was requested, but the `agent` tool is not in this session's tool "
+          + "selection — working in single mode.", Severity.Warning));
 
     /// <summary>Announces that an earlier conversation was restored into this session. Called by the
     /// manager, which owns the resume sequence — see SessionManager.Resume.</summary>
     internal void SayResumed(int messages)
     {
         Announce(SessionChangeKind.Resumed);
-        Say($"[yellow]Resumed an earlier session: {messages} messages restored. "
-          + "They are not shown above, but the agent remembers them.[/]");
+        Say($"Resumed an earlier session: {messages} messages restored. "
+          + "They are not shown above, but the agent remembers them.");
     }
 
     /// <summary>Records the policy this session is judged by, so it can move both mode axes

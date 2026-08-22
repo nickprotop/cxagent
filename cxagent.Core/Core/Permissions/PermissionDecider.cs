@@ -231,8 +231,8 @@ public sealed class PermissionDecider : IPermissionGate
         if (request.Policy is not { } policy)
         {
             OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What));
-            _notice?.Invoke("[yellow]refused: this request carried no session policy, so there "
-                             + "was nothing to judge it against.[/]");
+            _notice?.Invoke("refused: this request carried no session policy, so there "
+                             + "was nothing to judge it against.");
             // NOBODY DECIDED THIS — there was no session to ask and no classifier consulted. Still
             // reported as a user denial (DeniedBy left at its "user" default) because that is this
             // gate's existing fail-closed vocabulary for "nothing else fits"; the alternative would
@@ -342,15 +342,16 @@ public sealed class PermissionDecider : IPermissionGate
 
             // FAILS CLOSED, OUT LOUD. A gate that quietly falls back looks like a classifier that
             // disagreed, and the user learns nothing — worse, they conclude auto is simply strict.
-            // [yellow] is this file's vocabulary for "did not work, nothing was denied", the same
-            // shape as a rule that could not be saved.
+            // Plain text is this file's vocabulary for "did not work, nothing was denied", the same
+            // shape as a rule that could not be saved — a caller receiving the string decides how
+            // that tone renders; the gate itself no longer picks a colour for it.
             //
             // ONCE PER TURN, not per action: a shell-heavy turn would otherwise bury the transcript
             // in identical warnings, which is exactly what removing the per-allow echo fixed.
             if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
-                _notice?.Invoke($"[yellow]auto review unavailable ({failure}) — asking instead[/]");
+                _notice?.Invoke($"auto review unavailable ({failure}) — asking instead");
             }
         }
 
@@ -472,7 +473,7 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke($"[yellow]could not save this rule for next time: {ex.Message}[/]");
+                    _notice?.Invoke($"could not save this rule for next time: {ex.Message}");
                 }
                 // Silent on success. The rule IS visible — Settings → Permissions lists every stored
                 // rule for this folder — so this is discoverable rather than invisible, without a line
@@ -486,13 +487,13 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke($"[yellow]could not save folder trust for next time: {ex.Message}[/]");
+                    _notice?.Invoke($"could not save folder trust for next time: {ex.Message}");
                 }
                 return true;   // silent; the trust state is shown on Settings → Permissions
 
             case PermissionChoice.Deny:
             default:
-                _notice?.Invoke($"[red]denied: {request.Display}[/]");
+                _notice?.Invoke($"denied: {request.Display}");
                 return false;
         }
     }

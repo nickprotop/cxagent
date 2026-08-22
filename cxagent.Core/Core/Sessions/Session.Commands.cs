@@ -91,11 +91,15 @@ public sealed partial class Session
             if (store.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
                 manager.Resume(this, snapshot);
             else
-                Say("[yellow]That session could not be read back.[/]");
+                Say(new Message("That session could not be read back.", Severity.Warning));
         }
         catch (Exception ex)
         {
-            Say($"[{Commands.Markup.Danger}]Could not read sessions: {ex.Message}[/]");
+            // SEVERITY STATED HERE EVEN THOUGH THE MARKUP WRAPPER STAYS: Markup.Danger is text, not
+            // tone, so leaving Say to its default made this arrive as Info despite reading as a
+            // failure — the exact bug FailureVocabularyIsNeverInfo exists to catch. The [{markup}]
+            // tag itself is Task 6/7's cleanup, not this task's; only the missing severity is.
+            Say(new Message($"[{Commands.Markup.Danger}]Could not read sessions: {ex.Message}[/]", Severity.Error));
         }
 
         return CommandStatus.Reported;
@@ -105,8 +109,8 @@ public sealed partial class Session
     /// A headless arrangement with no rewire hook, which is a real configuration rather than an
     /// error — but it must be SAID, because a silent no-op reads as success.</summary>
     internal void SayCannotResume() =>
-        Say("[yellow]This session cannot restore an earlier conversation — nothing here can rebuild "
-          + "it. Use --resume at startup instead.[/]");
+        Say(new Message("This session cannot restore an earlier conversation — nothing here can rebuild "
+          + "it. Use --resume at startup instead.", Severity.Warning));
 
     public CommandStatus SayUsage(string arguments)
     {
@@ -123,8 +127,10 @@ public sealed partial class Session
         catch (Exception ex)
         {
             // REPORTED, like every other read of this store: an empty dashboard would say "you have
-            // spent nothing", which is a lie a user cannot detect.
-            Say($"[{Commands.Markup.Danger}]Could not read usage history: {ex.Message}[/]");
+            // spent nothing", which is a lie a user cannot detect. Severity stated explicitly for the
+            // same reason as ListSessions above — the markup wrapper is Task 6/7's, the missing
+            // severity is this task's.
+            Say(new Message($"[{Commands.Markup.Danger}]Could not read usage history: {ex.Message}[/]", Severity.Error));
         }
 
         return CommandStatus.Reported;
@@ -332,8 +338,8 @@ public sealed partial class Session
         // outcome, and this is the speaker.
         if (next is null)
         {
-            Say($"[red]Could not start {requestedName ?? "that model"} — it did not resolve to a "
-              + "usable provider. Check its entry in config.json.[/]");
+            Say(new Message($"Could not start {requestedName ?? "that model"} — it did not resolve to a "
+              + "usable provider. Check its entry in config.json.", Severity.Error));
             return CommandStatus.Refused;
         }
 
