@@ -60,6 +60,11 @@ public sealed class JobContext : IJobContext
     /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
     public string? WorkingDirectory { get; set; }
 
+    /// <summary>The classifier's verdict on this call, stamped by whichever dispatch path
+    /// (WorkerToolset, AgentToolset) unwraps the gate wrapper's JobResult down to a string — see
+    /// the interface doc for why this exists at all. Null until a dispatch path sets it.</summary>
+    public string? DecidedBy { get; set; }
+
     /// <summary>
     /// Raised true when this job stops at a permission prompt, false when it stops waiting.
     ///

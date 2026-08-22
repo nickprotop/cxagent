@@ -2215,6 +2215,16 @@ public sealed class Agent
             {
                 ["content"] = _agentTools?.LastDisplay ?? result,
             },
+            // THE SAME REBUILD-FROM-A-STRING PROBLEM, one field over. PermissionGatedPlugin and
+            // GatedAgentTool both stamp DecidedBy="auto" on their JobResult when the classifier
+            // decided a call, correctly, but this method never sees that object — only the string
+            // WorkerToolset/AgentToolset reduced it to. ctx.DecidedBy is the side channel that
+            // survives the reduction (see IJobContext.DecidedBy); read here, immediately after the
+            // dispatch chain above returns, which is the same "read right after the await" rule
+            // LastDisplay follows. Reported live: `du -sh . 2>&1 | tail -1` auto-approved and
+            // recorded correctly in the DB/`/stats`, while the row rendered plain "done", no badge —
+            // because this constructor discarded the decider along with the rest of the JobResult.
+            DecidedBy = ctx.DecidedBy,
         };
         _jobs.ToolUpdated(job);
 

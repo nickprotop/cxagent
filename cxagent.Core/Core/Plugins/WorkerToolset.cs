@@ -401,6 +401,12 @@ public static class WorkerToolset
         PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
         IEnumerable<string>? alsoAvailable = null)
     {
+        // RESET UP FRONT, same reason AgentToolset.TryInvokeAsync resets LastDisplay/DecidedBy: ctx
+        // is fresh per call at today's one call site, but every early return below (unknown tool,
+        // not offered, no plugin, bad arguments) skips the stamp near the bottom, and a caller must
+        // never read a PRIOR call's verdict off a context that never reached a gate this time.
+        ctx.DecidedBy = null;
+
         // Three DIFFERENT conditions, three different messages. The text goes back to the model as a
         // tool result and is the only thing it can act on: "no such tool" should make it pick a real
         // one, whereas a configuration fault should make it STOP asking rather than retry
@@ -494,6 +500,13 @@ public static class WorkerToolset
         {
             return Truncate($"error: {ex.Message}", MaxToolResultChars);
         }
+
+        // STAMPED HERE, IMMEDIATELY AFTER THE AWAIT — the one point that still holds the plugin's
+        // real JobResult. Everything below this line renders `result` down to a body STRING, which
+        // is the object Agent.cs rebuilds job.Result from; a decider left on `result` past this
+        // point is gone. See IJobContext.DecidedBy for why the value rides the context rather than
+        // a changed return type.
+        ctx.DecidedBy = result.DecidedBy;
 
         var body = result.Success
             ? JobDigest.RenderOutput(result.Output)

@@ -61,9 +61,19 @@ public sealed class AgentToolset
     public async Task<string?> TryInvokeAsync(ToolCall call, IJobContext context, CancellationToken ct)
     {
         LastDisplay = null;
+        // RESET FOR THE SAME REASON LastDisplay IS: a name that doesn't match falls through without
+        // touching context.DecidedBy at all, and a prior call's leftover value must not survive to
+        // be read as this one's verdict.
+        context.DecidedBy = null;
         if (!_byName.TryGetValue(call.Name, out var tool)) return null;
 
         var result = await tool.ExecuteAsync(JobParametersFrom(call), context, ct);
+
+        // STAMPED HERE, before any of the branches below reduce `result` to a string — see
+        // IJobContext.DecidedBy. GatedAgentTool (the wrapper an injected tool is given when a gate
+        // is configured) sets DecidedBy on its returned JobResult exactly as PermissionGatedPlugin
+        // does; an ungated tool's result carries null and this is a no-op.
+        context.DecidedBy = result.DecidedBy;
 
         // THE ERROR BECOMES THE RESULT, never an exception. Agent.RunAsync appends the assistant
         // message carrying the tool calls BEFORE running them, so an exception unwinding the loop

@@ -23,6 +23,7 @@ internal sealed class CollectingContext : IJobContext
     /// agent's working directory. Null by default — most tests pass absolute paths and care about
     /// neither.</summary>
     public string? WorkingDirectory { get; init; }
+    public string? DecidedBy { get; set; }
 
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Lines.Enqueue(line);

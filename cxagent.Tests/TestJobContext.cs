@@ -36,6 +36,10 @@ public sealed class TestJobContext : IJobContext
     /// which is what every test got before the property existed.</summary>
     public string? WorkingDirectory { get; set; }
 
+    /// <summary>Settable so a test can assert the join between a gate's verdict and the context a
+    /// dispatch path stamps it onto, without needing a real WorkerToolset/AgentToolset call.</summary>
+    public string? DecidedBy { get; set; }
+
     public void ReportProgress(double percent, string? message = null) { }
     public void Log(string line) => Logs.Add((JobLogLevel.Info, line));
     public void Log(JobLogLevel level, string line) => Logs.Add((level, line));

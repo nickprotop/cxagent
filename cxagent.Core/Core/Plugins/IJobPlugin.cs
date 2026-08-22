@@ -80,6 +80,31 @@ public interface IJobContext
     /// </summary>
     string? WorkingDirectory { get; }
 
+    /// <summary>
+    /// The classifier's verdict on THIS call, once the gate has run — "auto" when a rule the
+    /// classifier itself wrote allowed or denied it, null on every ordinary path (a stored rule
+    /// from a user's own "always", a silent in-boundary pass, a prompt the user answered).
+    ///
+    /// <para>THE SAME SEVERED-MIDDLE PROBLEM <see cref="AgentToolset.LastDisplay"/> exists to
+    /// solve, for a value instead of a display string. PermissionGatedPlugin and GatedAgentTool
+    /// both stamp <c>JobResult.DecidedBy</c> correctly, but WorkerToolset.InvokeAsync and
+    /// AgentToolset.TryInvokeAsync both discard that JobResult down to a bare string before Agent
+    /// ever sees it — Agent.cs rebuilds job.Result from the returned STRING, so a decider stamped
+    /// on the object that got thrown away never reaches the row. Reported live: a classifier
+    /// auto-approved `du -sh . 2>&amp;1 | tail -1`, and the DB/`/stats` recorded it correctly while
+    /// the row rendered plain "done", no badge.</para>
+    ///
+    /// <para>ON THE CONTEXT rather than a new dictionary or a tuple, for the reason
+    /// <see cref="Requester"/> already gives: JobContext is built per tool call, which is the
+    /// granularity a decider needs — one gate outcome per call, read once, by the one caller
+    /// (Agent.InvokeAndShowAsync) that closes the row right after the dispatch chain returns.</para>
+    ///
+    /// <para>NOT THREAD-SAFE, and for the same reason LastDisplay is not: tool calls within one
+    /// turn run sequentially through this chain, so nothing else can write it between the
+    /// dispatch call that sets it and the read on the next line.</para>
+    /// </summary>
+    string? DecidedBy { get; set; }
+
     void Log(string line);
     void Log(JobLogLevel level, string line);
     /// <summary>
