@@ -247,6 +247,87 @@ public sealed class ActionClassifier
     }
 
     /// <summary>
+    /// STARTS THE CLASSIFIER CALL AT PARSE TIME, before the gate that actually needs the verdict
+    /// exists. A tool call is parsed well before <c>PermissionGatedPlugin</c> asks for a decision on
+    /// it, and the classifier's 10-second deadline is exactly the latency a synchronous call there
+    /// pays in full — so <see cref="Agents.Agent"/> calls this the moment it has a <see cref="PermissionRequest"/>
+    /// to build, and by the time the gate calls <see cref="JudgeAsync"/> the answer is often already
+    /// sitting in the cache Task 10 added, waiting to be returned without another round trip.
+    ///
+    /// <para>REUSES <see cref="JudgeAsync"/> WHOLESALE rather than re-deriving "warm the cache" as a
+    /// second code path — the cache key, the prompt body, the storage, the failure handling are all
+    /// exactly the ones the real call would use, so there is no way for speculation to warm the
+    /// cache under a DIFFERENT notion of "the same action" than <see cref="CacheKeyFor"/>. If the
+    /// action changes between this call and the real one — <c>PermissionGatedPlugin</c> only sees
+    /// arguments AFTER <c>{{job.key}}</c> substitution, so a speculative call at parse time may run on
+    /// pre-substitution text — the body differs, the key differs, and the speculative entry is
+    /// simply never found. That miss, not any explicit check, is what makes a stale speculative
+    /// verdict impossible to reuse for a changed action.</para>
+    ///
+    /// <para>FIRE-AND-FORGET, SO NOTHING IT DOES MAY BE OBSERVABLE TO THE CALLER THAT DID NOT ASK.
+    /// Returns <c>void</c>, not <c>Task</c> — <see cref="Agents.Agent"/> does not await it, so any exception
+    /// this raised into the task itself would have nowhere to go but an unobserved-task-exception
+    /// crash of a turn nobody was waiting on. Every path below is therefore wrapped in try/catch that
+    /// swallows unconditionally: a faulted speculation costs nothing but the wasted call, and the
+    /// real, gated <see cref="JudgeAsync"/> that follows runs exactly as if speculation had never
+    /// happened.</para>
+    ///
+    /// <para><see cref="LastFailure"/> IS SAVED AND RESTORED AROUND THE CALL, not left to
+    /// <see cref="JudgeAsync"/>'s own bookkeeping. JudgeAsync clears LastFailure on entry and sets it
+    /// only on a real failure — exactly right for the synchronous, gated call the UI reports once per
+    /// turn, but wrong here: this call runs concurrently with, and often before, the real one, and
+    /// nobody is waiting on IT specifically. Left alone, a speculative timeout could set LastFailure
+    /// and either (a) make <see cref="PermissionDecider"/> report a failure for a call nobody asked
+    /// for, or (b) race a genuine failure from the real call and stomp the message the user actually
+    /// needed to see. Snapshotting the field before the call and putting it back after — success or
+    /// failure — makes speculation invisible on this field, which is the only guarantee that matters:
+    /// the real call still sees LastFailure exactly as its own outcome leaves it.</para>
+    ///
+    /// <para>NO PHANTOM TELEMETRY. <c>OnDecision</c> — the event behind the <c>/stats</c> auto-mode
+    /// counters — fires from <see cref="PermissionDecider"/>, never from this class; JudgeAsync only
+    /// ever returns a verdict; it does not raise anything itself. A speculative call that resolves to
+    /// ALLOW or DENY produces nothing but a cached <see cref="ClassifierDecision"/> sitting unread
+    /// until (if ever) a real request asks for that same key — no row is recorded for an action that
+    /// never actually happened.</para>
+    ///
+    /// <para>ONLY WORTH STARTING WHERE A VERDICT COULD MATTER. <see cref="Agents.Agent"/> calls this behind
+    /// its own <c>PermissionPolicy.EffectFor(request) != ReviewEffect.None</c> check — a request whose
+    /// effect is <see cref="ReviewEffect.None"/> will never reach the classifier at all (untrusted
+    /// folder, non-auto mode, or a kind the policy never gates), so speculating on it would only ever
+    /// waste the call, never save one. That gate lives in the caller, not here, so this method stays
+    /// usable from a test or any future caller without silently depending on Agent's own wiring.</para>
+    /// </summary>
+    public void Speculate(PermissionRequest request, CancellationToken ct)
+    {
+        var savedFailure = LastFailure;
+        _ = SpeculateAsync(request, ct, savedFailure);
+    }
+
+    private async Task SpeculateAsync(PermissionRequest request, CancellationToken ct, string? savedFailure)
+    {
+        try
+        {
+            await JudgeAsync(request, ct);
+        }
+        catch
+        {
+            // SWALLOWED, DELIBERATELY AND UNCONDITIONALLY. JudgeAsync itself never throws (every
+            // path inside it already catches down to an Ask verdict) — this catch exists only as a
+            // second line of defence so that ANY future change to JudgeAsync, or any exception from
+            // building `request` itself, still cannot escape into an unobserved task. The real,
+            // gated JudgeAsync call that follows is what produces the actual verdict; losing this one
+            // costs latency, nothing else.
+        }
+        finally
+        {
+            // RESTORE, NOT CLEAR — see the method summary. Whatever LastFailure said before this
+            // speculative call started is what it must say again after, so the field continues to
+            // describe only the gated call the UI actually reports on.
+            LastFailure = savedFailure;
+        }
+    }
+
+    /// <summary>
     /// THE ONE DEFINITION OF "THE SAME ACTION", shared with Task 11's speculative classifier so the
     /// two features can never disagree about what counts as identical. <paramref name="body"/> must
     /// be exactly the text that goes inside <c>&lt;action&gt;</c> — kind + <c>What</c> + rendered

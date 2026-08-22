@@ -313,6 +313,64 @@ public static class WorkerToolset
     }
 
     /// <summary>
+    /// TASK 11: the same call-to-plugin-type and argument mapping <see cref="InvokeAsync"/> uses to
+    /// dispatch a call, exposed so an agent can build the <see cref="Permissions.PermissionRequest"/>s
+    /// a call WOULD raise at parse time — before it is dispatched — and start speculating on them.
+    ///
+    /// <para>DELIBERATELY THE SAME LOOKUP, not a parallel one. Re-deriving "which plugin does this
+    /// tool name reach, and what parameters does it pass" as a second implementation is exactly the
+    /// kind of drift <see cref="Permissions.ActionClassifier.CacheKeyFor"/>'s own doc comment warns
+    /// against for the cache key itself: if this ever disagreed with <see cref="InvokeAsync"/> about
+    /// which plugin type or which parameters a tool name maps to, speculation would warm the cache
+    /// under one action while the gate later asks about a different one — the two would simply never
+    /// share a key, and every speculative call would be silent waste. Sharing <c>Specs</c>/<c>Answers</c>
+    /// makes that impossible rather than merely unlikely.</para>
+    ///
+    /// <para>RETURNS EMPTY FOR ANYTHING THIS TOOLSET DOES NOT RECOGNISE — an MCP call, an
+    /// embedder-injected tool, or a name the model made up. Those either build their own
+    /// PermissionRequest elsewhere (MCP, GatedAgentTool) or gate nothing at all; this method only
+    /// ever answers for the built-ins <see cref="Permissions.PermissionPolicy.RequestsFor"/> already
+    /// knows how to describe.</para>
+    /// </summary>
+    /// <param name="call">The call the model issued, read but not dispatched.</param>
+    /// <param name="root">What a relative path in the call resolves against — see
+    /// <see cref="Permissions.PermissionPolicy.RequestsFor"/>.</param>
+    public static IReadOnlyList<Permissions.PermissionRequest> RequestsFor(ToolCall call, string? root)
+    {
+        var entry = Specs.FirstOrDefault(s => Answers(s.Spec, call.Name));
+        if (entry.Spec is null) return Array.Empty<Permissions.PermissionRequest>();
+
+        // SAME CONSTRUCTION AS InvokeAsync, down to the pin order (model's own arguments first, the
+        // tool's pinned action, then any caller-pinned values last) — a divergence here would build
+        // JobParameters describing a DIFFERENT call than the one that actually runs, which is the
+        // exact hazard this method's doc comment exists to rule out.
+        var values = new Dictionary<string, object?>();
+        foreach (var prop in call.Arguments.EnumerateObject())
+            values[prop.Name] = prop.Value;
+        if (entry.Spec.PinnedAction is not null)
+            values["action"] = entry.Spec.PinnedAction;
+
+        Permissions.PermissionRequest[] result;
+        try
+        {
+            result = Permissions.PermissionPolicy.RequestsFor(entry.Spec.PluginType,
+                new JobParameters(values), root).ToArray();
+        }
+        catch
+        {
+            // A MALFORMED CALL IS NOT A CRASH HERE. Validate() below in InvokeAsync is what turns a
+            // bad argument into a tool-result message the model can act on; speculation runs ahead of
+            // that check and has no result channel to report through, so a call RequestsFor cannot
+            // describe (a missing "command", the argv-array shape JobParameters.Get<T> historically
+            // threw on) simply speculates on nothing. The real InvokeAsync path still validates and
+            // reports normally when the call is actually dispatched.
+            result = Array.Empty<Permissions.PermissionRequest>();
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Dispatches a model-issued <see cref="ToolCall"/> to its plugin and renders the result as text
     /// for a tool-result message. Never throws: every failure mode (unknown/refused tool, invalid
     /// params, a plugin exception) becomes a string the model can read and react to.
@@ -324,6 +382,11 @@ public static class WorkerToolset
     /// "'path' is required" instead of an opaque failure; (3) execute inside try/catch, since Validate
     /// does not cover I/O failures; (4) render and truncate.</para>
     /// </summary>
+    /// <param name="call">The call the model issued.</param>
+    /// <param name="allowed">Which built-ins this agent was offered — a call outside it is refused.</param>
+    /// <param name="plugins">The plugin registry the call is dispatched through.</param>
+    /// <param name="ctx">The job context a plugin runs against.</param>
+    /// <param name="ct">Cancels the tool mid-run.</param>
     /// <param name="alsoAvailable">
     /// Tool names that exist but are not in this table — today, MCP tools.
     ///
@@ -334,11 +397,6 @@ public static class WorkerToolset
     /// model that used <c>fs_read</c> last session will call it again, and if that server was since
     /// removed it gets a list omitting the servers still running.</para>
     /// </param>
-    /// <param name="call">The call the model issued.</param>
-    /// <param name="allowed">Which built-ins this agent was offered — a call outside it is refused.</param>
-    /// <param name="plugins">The plugin registry the call is dispatched through.</param>
-    /// <param name="ctx">The job context a plugin runs against.</param>
-    /// <param name="ct">Cancels the tool mid-run.</param>
     public static async Task<string> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
         PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
         IEnumerable<string>? alsoAvailable = null)

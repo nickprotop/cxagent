@@ -191,6 +191,11 @@ public sealed class Agent
     private readonly Plugins.AgentToolset? _agentTools;
     private readonly Permissions.PermissionPolicy? _policy;
 
+    /// <summary>Task 11's speculation handle — see the constructor parameter doc. Null wherever no
+    /// classifier is reachable, in which case every call site below is a no-op by construction
+    /// (each checks this for null before calling Speculate).</summary>
+    private readonly Permissions.ActionClassifier? _classifier;
+
     /// <summary>
     /// S1 and S2 composed, or null when neither expressed an opinion.
     ///
@@ -628,6 +633,15 @@ public sealed class Agent
     /// The session's permission policy, passed to MCP calls. Null refuses every MCP call, which is
     /// what shipped before this parameter existed.
     /// </param>
+    /// <param name="classifier">
+    /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults when a
+    /// gated call actually needs a verdict. Passed here so this agent can call
+    /// <see cref="Permissions.ActionClassifier.Speculate"/> the moment a tool call is PARSED,
+    /// before <see cref="Permissions.PermissionGatedPlugin"/> asks for one synchronously. Null
+    /// wherever no classifier is reachable (headless runs, most tests) — the agent simply never
+    /// speculates, and every gated call falls back to paying its own synchronous cost, exactly as
+    /// it did before this parameter existed.
+    /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -642,12 +656,17 @@ public sealed class Agent
         string? instanceName = null,
         IReadOnlyList<Plugins.IAgentTool>? agentTools = null,
         Plugins.ToolSelection? toolSelection = null,
-        Permissions.PermissionPolicy? policy = null)
+        Permissions.PermissionPolicy? policy = null,
+        Permissions.ActionClassifier? classifier = null)
     {
         // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
         // PermissionGatedPlugin. Without it the gate refuses every MCP call for want of a policy —
         // see McpToolset.TryInvokeAsync.
         _policy = policy;
+        // TASK 11'S SPECULATION HANDLE. Held as-is, not wrapped — Speculate is itself already the
+        // "start it and forget it" API, so there is nothing for this layer to add beyond deciding
+        // WHEN to call it (see the tool-call dispatch loop below).
+        _classifier = classifier;
         // WHICH CONFIGURED INSTANCE THIS IS, for spend attribution.
         //
         // Two `providers` entries can serve the SAME model against different endpoints with
@@ -1291,6 +1310,36 @@ public sealed class Agent
                 Content = response.Text ?? "",
                 ToolCalls = response.ToolCalls.ToList(),
             });
+
+            // TASK 11: SPECULATE THE MOMENT THE CALLS ARE PARSED, not when the walk below reaches
+            // each one. response.ToolCalls is complete right here — every call this turn's model
+            // response asked for, before any of them has actually been dispatched — so this is the
+            // earliest point that exists to start the classifier's 10-second round trip ahead of the
+            // synchronous gate that will eventually need its answer. By the time the walk below
+            // reaches a gated call, the verdict is often already sitting in Task 10's cache.
+            //
+            // ONLY WHERE A VERDICT COULD MATTER. WorkerToolset.RequestsFor answers empty for
+            // anything this toolset does not recognise (MCP, an embedder tool, a made-up name), and
+            // EffectFor(request) == None for anything the gate would never consult the classifier
+            // for anyway (not auto mode, an untrusted folder, a kind EffectFor never gates) — both
+            // checked so a wasted call is a genuine possible-but-not-taken action, not a call for a
+            // request that structurally could never reach the classifier.
+            //
+            // NOTHING IS AWAITED HERE. Speculate itself is fire-and-forget (see its own doc comment
+            // for why a fault inside it can never surface into this turn), and this loop's only job
+            // is to START calls, not wait on them — waiting would erase the entire benefit of
+            // starting early.
+            if (_classifier is not null && _policy is not null)
+            {
+                foreach (var call in response.ToolCalls)
+                {
+                    foreach (var request in Plugins.WorkerToolset.RequestsFor(call, _workingDir))
+                    {
+                        if (_policy.EffectFor(request) == Permissions.ReviewEffect.None) continue;
+                        _classifier.Speculate(request, ct);
+                    }
+                }
+            }
 
             // CANCELLATION MUST LEAVE THE CONVERSATION WELL-FORMED.
             //

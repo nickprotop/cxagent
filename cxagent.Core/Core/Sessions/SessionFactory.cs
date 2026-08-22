@@ -200,6 +200,14 @@ internal static class SessionFactory
                 // every MCP call for want of a policy.
                 Policy = ports.Policy,
 
+                // TASK 11: THE SAME CLASSIFIER PermissionDecider CONSULTS, so the agent can warm its
+                // cache at parse time. `is PermissionDecider` rather than a new field on
+                // IPermissionGate — see Session.Turn.cs's ResetTurnState call for the same pattern:
+                // only the real, interactive gate owns a classifier at all, so the fixed
+                // AllowAll/DenyAll gates (headless runs, most tests) simply leave this null and the
+                // agent never speculates.
+                Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
+
                 Spawner = subAgents,
                 Mode = mode,
 

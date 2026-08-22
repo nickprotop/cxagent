@@ -366,6 +366,20 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public Permissions.PermissionPolicy? Policy { get; init; }
 
+        /// <summary>
+        /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults, so the
+        /// agent can start warming its cache the moment a tool call is PARSED rather than waiting for
+        /// <see cref="Permissions.PermissionGatedPlugin"/> to ask for a verdict it needs synchronously.
+        ///
+        /// <para>NULL WHEREVER THE GATE ISN'T A <see cref="Permissions.PermissionDecider"/> — headless
+        /// runs and most tests use <see cref="Permissions.PermissionGate.AllowAll"/> or
+        /// <see cref="Permissions.PermissionGate.DenyAll"/>, neither of which owns a classifier at
+        /// all. Speculation is purely a latency optimisation, so "no classifier reachable" simply
+        /// means the agent never speculates and every gated call pays its normal synchronous cost —
+        /// exactly today's behaviour.</para>
+        /// </summary>
+        public Permissions.ActionClassifier? Classifier { get; init; }
+
         /// <summary>The servers themselves, held only so the session can dispose them.</summary>
         public IReadOnlyList<IAsyncDisposable>? McpServers { get; init; }
 
@@ -595,7 +609,8 @@ public sealed class AgentHost : IDisposable
             // SubAgentRuntime, to every child it spawns.
             agentTools: _runtime.AgentTools,
             toolSelection: _runtime.ToolSelection,
-            policy: _runtime.Policy)
+            policy: _runtime.Policy,
+            classifier: _runtime.Classifier)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more
