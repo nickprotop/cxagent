@@ -30,7 +30,7 @@ public interface IAgentTool
 }
 ```
 
-`ToolDefinition`, `JobParameters`, `IJobContext` and `JobResult` are the existing plugin contracts, so
+`ToolDefinition`, `JobParameters`, `IJobContext` and `JobResult` are the existing executor contracts, so
 your tool gets the working directory, progress reporting and cancellation for free.
 
 ---
@@ -189,7 +189,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 public sealed class DeployTool : IAgentTool
 {

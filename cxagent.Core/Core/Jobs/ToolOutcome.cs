@@ -1,9 +1,9 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
-/// What one dispatched tool call produced: the text the MODEL is told, and the plugin's own
+/// What one dispatched tool call produced: the text the MODEL is told, and the executor's own
 /// <see cref="JobResult"/> when there was one.
 ///
 /// <para>A RECORD RATHER THAN A TUPLE, though two members would be within the house rule. These two
@@ -16,10 +16,10 @@ namespace CxAgent.Core.Plugins;
 /// and returned nothing". Returning <c>ToolOutcome?</c> keeps that distinction; an empty <c>Text</c>
 /// is a tool that answered with nothing, which is a different fact and must stay one.</para>
 ///
-/// <para>WHY IT EXISTS AT ALL: the plugin's <see cref="JobResult"/> must travel WITH the text rather
+/// <para>WHY IT EXISTS AT ALL: the executor's <see cref="JobResult"/> must travel WITH the text rather
 /// than be rebuilt from it. Reconstructing <c>job.Result</c> from the returned STRING splits every
 /// field in two — the ones a caller can re-derive (Duration, Success, ExitCode) survive, and the ones
-/// only the plugin knows (Output, DecidedBy, LogFile) are silently dropped. Each dropped field then
+/// only the executor knows (Output, DecidedBy, LogFile) are silently dropped. Each dropped field then
 /// wants its own side channel to smuggle it past the rebuild: a LastDisplay on AgentToolset so a
 /// show_diff row renders the diff rather than the model's text confirmation, a DecidedBy on
 /// IJobContext so a classifier verdict reaches the row at all. Carrying the object ends that
@@ -27,7 +27,7 @@ namespace CxAgent.Core.Plugins;
 /// </summary>
 /// <param name="Text">What goes back to the model as this call's tool result. Never null.</param>
 /// <param name="Result">
-/// The plugin's own result, when the call went through a plugin. Null for the sources that have no
+/// The executor's own result, when the call went through an executor. Null for the sources that have no
 /// JobResult to give — the spawn branch, skills, todos, ask_user, MCP — whose text IS the whole
 /// answer.
 /// </param>

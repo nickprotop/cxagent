@@ -3,7 +3,7 @@ using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Mcp;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -55,7 +55,7 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([new FakeServer("files", instructions: null)]);
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
             workingDir: _dir, mcp: mcp);
 
@@ -83,7 +83,7 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 4; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([]);
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
             workingDir: _dir, mcp: mcp);
 
@@ -107,7 +107,7 @@ public class McpPromptStabilityTests : IDisposable
         for (var i = 0; i < 2; i++) provider.EnqueueResponse(Done("ok"));
 
         var mcp = new McpToolset([new FakeServer("context7", "Use this for library documentation.")]);
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5,
             workingDir: _dir, mcp: mcp);
 

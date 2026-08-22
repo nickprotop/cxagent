@@ -1,4 +1,4 @@
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;

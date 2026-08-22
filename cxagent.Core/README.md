@@ -62,7 +62,7 @@ go.** Everything else follows from those three sentences.
            │                │          · a queue for text typed while one runs
            │                │          · says everything through YOUR observer
            │                ▼
-           │            AgentHost ──── owns the agent, its plugins, its MCP binding
+           │            AgentHost ──── owns the agent, its executors, its MCP binding
            │                ▼
            │              Agent ────── the turn loop:
            │                             send → tool calls? → run them → send again
@@ -101,7 +101,7 @@ shared machinery; `Open` builds everything per-session.
 |---|---|---|
 | `AppPaths` (where config and data live) | the resume database (SQLite) | the `Session` |
 | an `ISessionObserver` | the usage archive (a *different* database) | its `AgentHost` and `Agent` |
-| an `IToolObserver` | the log directory manager | the plugin registry, gated |
+| an `IToolObserver` | the log directory manager | the job registry, gated |
 | a model — see [Configuration](#configuration) | the permission rules store | the sub-agent spawner |
 | *optionally* a permission gate | the command registry | the agent-type catalog |
 
@@ -307,7 +307,7 @@ forgetting.
 ```
   the model calls a tool
         ▼
-  PermissionGatedPlugin wraps every built-in tool
+  PermissionGatedExecutor wraps every built-in tool
         ▼
   PermissionPolicy.RequestsFor(...) turns the call into one or more requests
         │    a shell command → one Shell request

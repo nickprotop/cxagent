@@ -25,7 +25,7 @@ namespace CxAgent.Core.Sessions;
 /// move rather than a rewrite because the categories are already separated.</para>
 ///
 /// <para>ONE PROCESS-WIDE THING IS DELIBERATELY NOT OWNED HERE:
-/// <see cref="Plugins.Builtin.FileMutation"/>'s per-path lock table. It is static, and that is the
+/// <see cref="Jobs.Builtin.FileMutation"/>'s per-path lock table. It is static, and that is the
 /// point — a manager instance holding it would make "two managers" expressible, and two lock tables
 /// serialise nothing. Everything this class owns is a service that could legitimately differ between
 /// processes; that one is an invariant that must not.</para>

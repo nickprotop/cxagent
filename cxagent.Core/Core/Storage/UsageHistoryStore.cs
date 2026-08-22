@@ -61,7 +61,7 @@ public sealed record RunRecord(
 /// <param name="CallId">This call's id, as the model issued it.</param>
 /// <param name="AgentId">Which agent made the call — parent or child.</param>
 /// <param name="ToolName">The tool name the model used.</param>
-/// <param name="PluginType">Which plugin serviced it, or null for a tool with none.</param>
+/// <param name="PluginType">Which executor serviced it, or null for a tool with none.</param>
 /// <param name="Outcome">How the call ended.</param>
 /// <param name="DurationMs">How long it took, in milliseconds.</param>
 /// <param name="ResultChars">How much text it returned — what fills a context.</param>
@@ -370,12 +370,12 @@ public sealed class UsageHistoryStore
                 INSERT OR REPLACE INTO tool_calls
                     (call_id, agent_id, tool_name, plugin_type, outcome, duration_ms,
                      result_chars, started_at, working_dir)
-                VALUES ($id, $agent, $tool, $plugin, $outcome, $dur, $chars, $started, $dir);
+                VALUES ($id, $agent, $tool, $executor, $outcome, $dur, $chars, $started, $dir);
                 """;
             cmd.Parameters.AddWithValue("$id", r.CallId);
             cmd.Parameters.AddWithValue("$agent", r.AgentId);
             cmd.Parameters.AddWithValue("$tool", r.ToolName);
-            cmd.Parameters.AddWithValue("$plugin", (object?)r.PluginType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$executor", (object?)r.PluginType ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$outcome", r.Outcome);
             cmd.Parameters.AddWithValue("$dur", r.DurationMs);
             cmd.Parameters.AddWithValue("$chars", r.ResultChars);

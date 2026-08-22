@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -50,7 +50,7 @@ public class PromptSelectionTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             spawner: new StubSpawner(),
             askUser: (_, _) => Task.FromResult(new QuestionAnswers()),
@@ -130,7 +130,7 @@ public class PromptSelectionTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             spawner: new StubSpawner(),
             askUser: (_, _) => Task.FromResult(new QuestionAnswers()));

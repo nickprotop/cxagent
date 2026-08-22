@@ -6,7 +6,7 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Permissions;
 
 /// <summary>
-/// The one place that decides (a) what a plugin invocation is asking permission for
+/// The one place that decides (a) what an executor invocation is asking permission for
 /// (<see cref="RequestsFor"/>), and (b) whether that request can proceed without a prompt
 /// (<see cref="IsSilentlyAllowed"/>). File operations under the working-dir root are silent;
 /// everything else — including every shell command, regardless of what it touches — requires
@@ -95,7 +95,7 @@ public class PermissionPolicy
     // trigger it. The user runs `git commit` themselves constantly, which is the point of a hook.
     private static readonly string[] ExecutableConfigDirs = [".git", ".vscode", ".claude", ".idea"];
 
-    /// <summary>The one mapping from plugin params to permission requests: shell → one Shell
+    /// <summary>The one mapping from executor params to permission requests: shell → one Shell
     /// request; file → per-action read/write requests (copy/move produce both a read of the
     /// source and a write of the dest, checked independently); http → one Http request for the
     /// URL's origin.</summary>
@@ -103,17 +103,17 @@ public class PermissionPolicy
     /// What a RELATIVE path is relative to — the agent's folder. Null falls back to the process's
     /// current directory.
     ///
-    /// <para>IT MUST MATCH THE PLUGIN'S BASE. The file plugin resolves `src/foo.cs` against the
+    /// <para>IT MUST MATCH THE PLUGIN'S BASE. The file executor resolves `src/foo.cs` against the
     /// agent's directory; a gate that resolved the same string against a different one would decide
     /// about a file nobody is going to touch — allowing a write to a checkout the user never
     /// approved, with every layer behaving correctly on the way.</para>
     /// </param>
-    /// <param name="pluginType">Which plugin is about to run.</param>
+    /// <param name="jobType">Which executor is about to run.</param>
     /// <param name="parameters">The call's arguments, which decide what is actually being asked.</param>
-    public static IReadOnlyList<PermissionRequest> RequestsFor(string pluginType,
+    public static IReadOnlyList<PermissionRequest> RequestsFor(string jobType,
         JobParameters parameters, string? root = null)
     {
-        switch (pluginType)
+        switch (jobType)
         {
             case "shell":
                 return new[] { ShellRequest(parameters, root) };
@@ -196,7 +196,7 @@ public class PermissionPolicy
         // below (they are read-only and raise no request at all), but this line runs BEFORE the
         // switch, and the one-argument Get is Values[key]: demanding "path" here throws "The given
         // key 'path' was not present in the dictionary" out of the permission gate, before the
-        // plugin that knows the default is ever reached. A default in the plugin does not save it —
+        // executor that knows the default is ever reached. A default in the executor does not save it —
         // a live session failed 18 times on `grep {"pattern": ...}`, the exact call the tool
         // advertises.
         var path = parameters.Get<string?>("path", null);
@@ -205,7 +205,7 @@ public class PermissionPolicy
         var requests = new List<PermissionRequest>();
         var target = string.Empty;
 
-        // AN ACTION THAT NEEDS A PATH AND HAS NONE STILL ASKS. The plugin's own validation rejects
+        // AN ACTION THAT NEEDS A PATH AND HAS NONE STILL ASKS. The executor's own validation rejects
         // such a call, so this is unreachable today — but this is the gate, and the failure mode of
         // silently raising NO request for a write is that the write goes through unasked if that
         // validation ever moves. Fail toward asking, the same direction TryResolve already fails.
@@ -501,7 +501,7 @@ public class PermissionPolicy
     /// ".." but has no idea a directory is actually a door to somewhere else).
     ///
     /// RELATIVE TO THE SESSION'S ROOT, not the process's. The model is told "relative paths resolve
-    /// from the working directory", and the file plugin now makes that true — so a gate resolving
+    /// from the working directory", and the file executor now makes that true — so a gate resolving
     /// the SAME string against a different base would check a path nobody is going to touch. That is
     /// not a near-miss: it is a check that passes on one file while another is written.
     ///
@@ -906,7 +906,7 @@ public class PermissionPolicy
     /// </summary>
     private static readonly HashSet<string> UnexaminableVerbs = new(StringComparer.Ordinal)
     {
-        // Executors: what runs is not what was read.
+        // Plugins: what runs is not what was read.
         "eval", "exec", "source", ".", "sh", "bash", "zsh", "dash", "ksh", "xargs", "env", "sudo",
         "doas", "nohup", "watch", "ssh", "screen", "tmux",
 

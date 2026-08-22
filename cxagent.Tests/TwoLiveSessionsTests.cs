@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using Xunit;
 

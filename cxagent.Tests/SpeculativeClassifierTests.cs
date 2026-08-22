@@ -14,7 +14,7 @@ namespace CxAgent.Tests;
 /// <para>THE ONLY CORRECTNESS ARGUMENT IS <see cref="ActionClassifier.CacheKeyFor"/>. Speculation and
 /// the real request must agree on "the same action" through exactly one definition, or a verdict
 /// computed for one action could be handed to a different one. A speculative call started at parse
-/// time may run on PRE-SUBSTITUTION parameters — <c>PermissionGatedPlugin</c> only sees the request
+/// time may run on PRE-SUBSTITUTION parameters — <c>PermissionGatedExecutor</c> only sees the request
 /// after <c>{{job.key}}</c> expansion — so if the content differs by the time the gate asks, the
 /// cache key must differ too, and the speculative entry must simply not be found.</para>
 /// </summary>
@@ -40,7 +40,7 @@ public class SpeculativeClassifierTests
     public void ASPECULATIONFORADIFFERENTACTIONISDISCARDED()
     {
         // THE VERDICT MUST DESCRIBE THE EXACT ACTION. A speculative call may run on parameters that
-        // change before execution — PermissionGatedPlugin receives them AFTER {{job.key}} substitution —
+        // change before execution — PermissionGatedExecutor receives them AFTER {{job.key}} substitution —
         // so "the same action" is the Task 10 hash, not the subject alone.
         var provider = new CountingProvider("ALLOW");
         var classifier = new ActionClassifier(provider);

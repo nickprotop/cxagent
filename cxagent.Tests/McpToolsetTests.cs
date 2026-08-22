@@ -136,7 +136,7 @@ public class McpToolsetTests
     /// <summary>
     /// AN MCP PROMPT SAYS WHO IS ASKING. The attribution work reached every other
     /// request-construction site and missed this one, because MCP takes no JobContext to copy it
-    /// from — the plugin path gets it via <c>context.Requester</c>.
+    /// from — the executor path gets it via <c>context.Requester</c>.
     ///
     /// <para>With one child at a time this is merely unhelpful: the user knows what they started.
     /// With two children up, a prompt to approve third-party code on their machine has no answer to
@@ -185,14 +185,14 @@ public class McpToolsetTests
     {
         var server = new FakeServer("files", Tool("read"))
         {
-            Result = new string('x', CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars + 10_000),
+            Result = new string('x', CxAgent.Core.Jobs.ToolBindings.MaxToolResultChars + 10_000),
         };
 
         var result = await new McpToolset([server], new RecordingGate(allow: true))
             .TryInvokeAsync(Call("files_read"), CancellationToken.None);
 
         Assert.NotNull(result);
-        Assert.True(result!.Length <= CxAgent.Core.Plugins.WorkerToolset.MaxToolResultChars,
+        Assert.True(result!.Length <= CxAgent.Core.Jobs.ToolBindings.MaxToolResultChars,
             $"an MCP result escaped the cap at {result.Length} chars");
         Assert.Contains("elided", result, StringComparison.Ordinal);
     }
@@ -243,9 +243,9 @@ public class McpToolsetTests
     {
         var toolset = new McpToolset([new FakeServer("files", Tool("read"))]);
 
-        var result = (await CxAgent.Core.Plugins.WorkerToolset.InvokeAsync(
-            Call("totally_made_up"), Enum.GetValues<CxAgent.Core.Llm.WorkerTool>(),
-            CxAgent.Core.Plugins.PluginRegistry.CreateWithBuiltins(),
+        var result = (await CxAgent.Core.Jobs.ToolBindings.InvokeAsync(
+            Call("totally_made_up"), Enum.GetValues<CxAgent.Core.Llm.BuiltinTool>(),
+            CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None, toolset.Names())).Text;
 
         Assert.Contains("no such tool", result, StringComparison.Ordinal);
@@ -271,8 +271,8 @@ public class McpToolsetTests
     }
 
     /// <summary>
-    /// EVERY MCP CALL IS GATED. The built-in file, shell and http plugins are wrapped in
-    /// <c>PermissionGatedPlugin</c>; third-party code running on the user's machine with the user's
+    /// EVERY MCP CALL IS GATED. The built-in file, shell and http executors are wrapped in
+    /// <c>PermissionGatedExecutor</c>; third-party code running on the user's machine with the user's
     /// credentials gets no weaker treatment.
     /// </summary>
     [Fact]

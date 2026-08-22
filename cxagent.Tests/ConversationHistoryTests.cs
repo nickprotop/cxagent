@@ -1,6 +1,6 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -29,7 +29,7 @@ public class ConversationHistoryTests
     };
 
     private static Agent NewAgent(MockLlmProvider provider) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
 
     [Fact]

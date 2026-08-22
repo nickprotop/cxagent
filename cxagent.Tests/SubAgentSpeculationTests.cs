@@ -2,7 +2,7 @@ using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -46,7 +46,7 @@ public class SubAgentSpeculationTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -79,7 +79,7 @@ public class SubAgentSpeculationTests
         await child.Agent.SendAsync("write the file", CancellationToken.None);
 
         // ONE CALL, NOT TWO. The child's own dispatch loop parses the write_file call and starts
-        // Speculate before PermissionGatedPlugin's synchronous JudgeAsync ever runs — if the child
+        // Speculate before PermissionGatedExecutor's synchronous JudgeAsync ever runs — if the child
         // were built with no classifier, or built with one it never told Agent about, this would be
         // 2: one wasted speculative call never made, one full round trip paid at the gate.
         Assert.Equal(1, classifierProvider.Calls);

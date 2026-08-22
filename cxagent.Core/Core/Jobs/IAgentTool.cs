@@ -2,7 +2,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// A tool supplied by whoever embeds this library, offered to the model alongside the built-ins.

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>What a file looked like when it was read, and what it was.</summary>
 /// <param name="Text">The content, BOM stripped — what a caller matches against.</param>
@@ -33,7 +33,7 @@ public sealed class StaleContentException(string path) : Exception(
 /// <list type="number">
 ///   <item><b>Conventions survive.</b> BOM and line endings come from what is on disk, never from
 ///   the content being written. A file that does not exist yet has neither to keep.</item>
-///   <item><b>One writer per file.</b> Sub-agents run concurrently and share one plugin instance, so
+///   <item><b>One writer per file.</b> Sub-agents run concurrently and share one executor instance, so
 ///   two of them editing one file both read, both match, and the second overwrites the first with an
 ///   edit computed from a version that no longer existed — silently, both reporting success. Proven:
 ///   with the lock removed, the concurrent-replace test fails two runs in three.</item>
@@ -44,7 +44,7 @@ public sealed class StaleContentException(string path) : Exception(
 /// </list>
 ///
 /// <para>STATIC, because the thing being serialised is a PATH — a process-wide fact. An instance per
-/// plugin would hand each one its own lock table and serialise nothing.</para>
+/// executor would hand each one its own lock table and serialise nothing.</para>
 /// </summary>
 public static class FileMutation
 {

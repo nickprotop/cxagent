@@ -6,13 +6,13 @@ namespace CxAgent.Core.Agents;
 /// <summary>
 /// Runs a sub-agent on behalf of a tool call, or declines a name it does not own.
 ///
-/// <para>CONSULTED BEFORE <see cref="Plugins.WorkerToolset"/>, exactly as the MCP branch already is,
+/// <para>CONSULTED BEFORE <see cref="Jobs.ToolBindings"/>, exactly as the MCP branch already is,
 /// and returning null for a name it does not own — the same contract
 /// <c>McpToolset.TryInvokeAsync</c> holds, so the dispatch site gains one more <c>??</c> rather than a
 /// new shape.</para>
 ///
-/// <para>NOT A <see cref="Llm.WorkerTool"/> ENUM MEMBER, which is the obvious alternative and is
-/// wrong. <c>Agent.AllTools</c> is <c>Enum.GetValues&lt;WorkerTool&gt;()</c>, so an enum member is
+/// <para>NOT A <see cref="Llm.BuiltinTool"/> ENUM MEMBER, which is the obvious alternative and is
+/// wrong. <c>Agent.AllBuiltins</c> is <c>Enum.GetValues&lt;BuiltinTool&gt;()</c>, so an enum member is
 /// offered to EVERY agent — including children, which would make "no sub-agents of sub-agents" a rule
 /// the child is asked to obey rather than a capability it lacks. A child is constructed without a
 /// spawner and therefore cannot nest, whatever it is told.</para>
@@ -31,8 +31,8 @@ public interface ISubAgentSpawner
     /// </summary>
     void SwapDefaultProvider(ILlmProvider provider, int? contextWindow, string? instanceName);
 
-    /// <summary>The definition the model sees. Hand-built: a spawn tool has no plugin and no
-    /// <c>JobSchema</c>, so <c>WorkerToolset.BuildDefinition</c>'s drift guard has nothing to guard
+    /// <summary>The definition the model sees. Hand-built: a spawn tool has no executor and no
+    /// <c>JobSchema</c>, so <c>ToolBindings.BuildDefinition</c>'s drift guard has nothing to guard
     /// against — <c>McpToolset.Definitions()</c> constructs its own the same way.</summary>
     ToolDefinition Definition { get; }
 
@@ -58,7 +58,7 @@ public interface ISubAgentSpawner
     /// <param name="call">The spawn call the model issued.</param>
     /// <param name="ct">Cancels the child mid-run.</param>
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
-        string? parentAgentId = null, Plugins.ToolSelection? turnTools = null);
+        string? parentAgentId = null, Jobs.ToolSelection? turnTools = null);
 }
 
 /// <summary>

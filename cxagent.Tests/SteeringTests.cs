@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -35,7 +35,7 @@ public class SteeringTests
     }
 
     private static Agent NewAgent(MockLlmProvider provider, RecordingSink sink) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 50);
 
     // THE CORRECTION LANDS IN THE CONVERSATION, in the same turn it was typed. Taken at the tool

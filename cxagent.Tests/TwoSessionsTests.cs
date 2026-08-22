@@ -147,7 +147,7 @@ public class TwoSessionsTests : IDisposable
         var shared = Path.Combine(dir, "shared.cs");
         await File.WriteAllTextAsync(shared, "alpha\nbravo\n");
 
-        // Two sessions, two roots, one file between them — each with its own plugin instance, as
+        // Two sessions, two roots, one file between them — each with its own executor instance, as
         // separate sessions would have.
         var a = new FileJobPluginRunner(new Session(dir));
         var b = new FileJobPluginRunner(new Session(Path.GetTempPath()));
@@ -163,13 +163,13 @@ public class TwoSessionsTests : IDisposable
         Directory.Delete(dir, recursive: true);
     }
 
-    /// <summary>A session's own file plugin, as a second session would hold.</summary>
+    /// <summary>A session's own file executor, as a second session would hold.</summary>
     private sealed class FileJobPluginRunner(Session session)
     {
-        private readonly Core.Plugins.Builtin.FileJobPlugin _plugin = new();
+        private readonly Core.Jobs.Builtin.FileJobExecutor _executor = new();
 
         public Task ReplaceAsync(string path, string pattern, string replacement) =>
-            _plugin.ExecuteAsync(
+            _executor.ExecuteAsync(
                 new Core.Models.JobParameters(new Dictionary<string, object?>
                 {
                     ["action"] = "replace",
@@ -235,7 +235,7 @@ public class TwoSessionsTests : IDisposable
     }
 
     // END TO END: the wiring actually delivers it. SessionFactory builds the registry per session
-    // and passes the policy; the gated plugin stamps it on every request. Without this the two tests
+    // and passes the policy; the gated executor stamps it on every request. Without this the two tests
     // above would pass on a policy nothing ever sends.
     [Fact]
     public async Task TheSessionsPolicy_ReachesTheGate()
@@ -245,10 +245,10 @@ public class TwoSessionsTests : IDisposable
         var policy = new PermissionPolicy(dir, store);
         var spy = new PolicySpy();
 
-        var registry = Core.Plugins.PluginRegistry.CreateWithBuiltins(null, spy, policy);
-        registry.TryGet("file", out var plugin);
+        var registry = Core.Jobs.JobRegistry.CreateWithBuiltins(null, spy, policy);
+        registry.TryGet("file", out var executor);
 
-        await plugin!.ExecuteAsync(
+        await executor!.ExecuteAsync(
             new Core.Models.JobParameters(new Dictionary<string, object?>
             {
                 ["action"] = "write",

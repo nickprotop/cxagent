@@ -80,7 +80,7 @@ public sealed record ResolvedConfig(
 
     /// <summary>S1 as the USER wrote it, from <c>llmAgent.tools</c>. Composed ahead of the
     /// embedder's <c>SharedServices.ToolSelection</c> — one level, two authors.</summary>
-    public Plugins.ToolSelection? Tools => Catalog.Tools;
+    public Jobs.ToolSelection? Tools => Catalog.Tools;
     public int? MaxConcurrentAgents => Catalog.MaxConcurrentAgents;
     public string? ClassifierInstance => Catalog.ClassifierInstance;
 
@@ -206,7 +206,7 @@ public static class ConfigResolver
             var mock = new MockLlmProvider();
             SeedDemoPlan(mock);
             // The demo path gets a registry over the mock too, so an llm_agent job in a --mock
-            // session dispatches rather than failing to resolve a plugin type that is registered.
+            // session dispatches rather than failing to resolve an executor type that is registered.
             var mockRegistry = ProviderRegistry.FromProviders(
                 new Dictionary<string, ILlmProvider> { ["mock"] = mock }, "mock");
             return new ResolvedConfig(

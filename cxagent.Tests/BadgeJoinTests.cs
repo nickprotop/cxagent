@@ -8,13 +8,13 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// THE JOIN, not the ends. Task 8's tests proved PermissionGatedPlugin/GatedAgentTool stamp
+/// THE JOIN, not the ends. Task 8's tests proved PermissionGatedExecutor/GatedAgentTool stamp
 /// a JobResult's DecidedBy, and separately that InlineJobSink renders a badge given a job carrying
 /// it — and the feature still shipped broken, because nothing exercised the path BETWEEN them: a
 /// tool call driven through the real Agent, with a gate that hands back an auto-allow verdict.
 ///
 /// <para>THE BUG THIS WOULD HAVE CAUGHT: Agent.InvokeAndShowAsync rebuilds job.Result from the
-/// STRING WorkerToolset.InvokeAsync returns, discarding the JobResult the gate wrapper stamped
+/// STRING ToolBindings.InvokeAsync returns, discarding the JobResult the gate wrapper stamped
 /// DecidedBy onto — see ToolOutcome, which ended that severing.
 /// Reported live: `du -sh . 2>&amp;1 | tail -1` was recorded auto-allowed in the DB and /stats, and
 /// the row rendered plain "done", no badge.</para>

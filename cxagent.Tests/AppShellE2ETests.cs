@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.UI;
 using SharpConsoleUI;
@@ -34,7 +34,7 @@ public class AppShellE2ETests
         var sink = new ChatTranscriptSink(system, mw.Chat);
         var jobPanelSink = new JobPanelSink(system, mw.JobPanel);
         var runner = new AgentHost(
-            new AgentHost.AgentRuntime { Provider = provider, Plugins = PluginRegistry.CreateWithBuiltins() },
+            new AgentHost.AgentRuntime { Provider = provider, Plugins = JobRegistry.CreateWithBuiltins() },
             sink,
             jobPanelSink);
 

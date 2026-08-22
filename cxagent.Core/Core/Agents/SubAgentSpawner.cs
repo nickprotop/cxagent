@@ -102,8 +102,8 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
     /// <summary>
     /// HAND-BUILT, AND THAT IS NORMAL HERE. <c>McpToolset.Definitions()</c> constructs
-    /// <see cref="ToolDefinition"/>s directly too. <c>WorkerToolset.BuildDefinition</c> exists to stop
-    /// a tool's advertised params drifting from a plugin's <c>JobSchema</c>; a spawn tool has neither,
+    /// <see cref="ToolDefinition"/>s directly too. <c>ToolBindings.BuildDefinition</c> exists to stop
+    /// a tool's advertised params drifting from an executor's <c>JobSchema</c>; a spawn tool has neither,
     /// so the doctrine does not apply and looking for a generator would be looking for something that
     /// cannot exist.
     /// </summary>
@@ -208,7 +208,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             """).RootElement);
 
     public async Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
-        CancellationToken ct, string? parentAgentId = null, Plugins.ToolSelection? turnTools = null)
+        CancellationToken ct, string? parentAgentId = null, Jobs.ToolSelection? turnTools = null)
     {
         if (!Claims(call.Name)) return null;
 
@@ -325,13 +325,13 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// mirrors SubAgentFactory.Create — session, then turn, then type — because a difference between
     /// them would be a mechanism disagreeing with the thing it predicts.</para>
     /// </summary>
-    private bool ChildCanWrite(Plugins.ToolSelection? turnTools, AgentType? type)
+    private bool ChildCanWrite(Jobs.ToolSelection? turnTools, AgentType? type)
     {
-        var selection = Plugins.ToolSelection.Then(
-            Plugins.ToolSelection.Then(_factory.SessionToolSelection, turnTools), type?.Tools);
+        var selection = Jobs.ToolSelection.Then(
+            Jobs.ToolSelection.Then(_factory.SessionToolSelection, turnTools), type?.Tools);
         if (selection is null) return true;
 
-        var writes = new[] { Plugins.Tool.WriteFile, Plugins.Tool.ReplaceInFile }
+        var writes = new[] { Jobs.Tool.WriteFile, Jobs.Tool.ReplaceInFile }
             .Select(n => new Llm.ToolDefinition(n, n,
                 System.Text.Json.JsonSerializer.SerializeToElement(new { type = "object" })))
             .ToList();

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Core;
@@ -253,7 +253,7 @@ public sealed class InlineJobSink : IToolObserver
 
             // THE BODY. Until now this method only touched the status row, so a job's message stayed
             // whatever Title() produced when it first appeared — its NAME. The model's actual output
-            // was written by every plugin (LlmAgentJobPlugin's transcript, ShellJobPlugin's stdout,
+            // was written by every executor (LlmAgentJobPlugin's transcript, ShellJobExecutor's stdout,
             // both into Output["content"]) and read by NOTHING except IntrospectionTools, which is how
             // the ORCHESTRATOR reads results. The user could not see what their own workers said.
             //
@@ -470,7 +470,7 @@ public sealed class InlineJobSink : IToolObserver
                 parts.Add(job.Result!.ErrorMessage!);
 
             // STDERR, which is the whole point. A failed shell job's ErrorMessage is literally
-            // "command exited with code 1" (ShellJobPlugin.cs:49) — the actual reason lives in
+            // "command exited with code 1" (ShellJobExecutor.cs:49) — the actual reason lives in
             // Output["stderr"] and was being dropped, so the body said nothing the status row had
             // not already said. Whatever the command printed to stderr is what the user needs.
             if (output is not null
@@ -652,7 +652,7 @@ public sealed class InlineJobSink : IToolObserver
     /// think all of those are tools" — is the correct one.
     ///
     /// <para>"Worker" for an llm_agent (a model doing delegated thinking), "Tool" for the mechanical
-    /// plugins. Based on the plugin TYPE and nothing else, because the author is fixed when the
+    /// executors. Based on the executor TYPE and nothing else, because the author is fixed when the
     /// message is CREATED — before the job has run — so it cannot depend on what the job later
     /// produced. Verified: ChatTranscriptControl exposes no SetAuthor.</para>
     /// </summary>
@@ -1101,7 +1101,7 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>
     /// Whether this job renders as a compact single line rather than a full collapsible block.
     ///
-    /// <para>Driven by whether there is anything to READ, not by plugin type. The type rule this
+    /// <para>Driven by whether there is anything to READ, not by executor type. The type rule this
     /// replaces could not see the actual noise: the orchestrator plans an <c>llm_agent</c> for
     /// everything — "Read HeuristicEngine.cs" is a WORKER that calls read_file internally, not a
     /// <c>file</c> job — so five 0.0s rows still rendered as full blocks offering to expand into
@@ -1158,7 +1158,7 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     private static bool IsTheAnswer(Job job) => job.PluginType is "llm_agent" or "todo" or ShowDiffType;
 
-    /// <summary>The injected tool's plugin type. Named because this file matches on it in six
+    /// <summary>The injected tool's executor type. Named because this file matches on it in six
     /// places and a typo in a string literal is not a compile error.</summary>
     internal const string ShowDiffType = "show_diff";
 

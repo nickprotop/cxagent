@@ -1,15 +1,15 @@
 using System.Text;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
 
-public class FileJobPluginTests : IDisposable
+public class FileJobExecutorTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "cxagent-file-" + Guid.NewGuid().ToString("N"));
-    public FileJobPluginTests() => Directory.CreateDirectory(_dir);
+    public FileJobExecutorTests() => Directory.CreateDirectory(_dir);
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private static JobParameters P(params (string k, object? v)[] kv)
@@ -20,11 +20,11 @@ public class FileJobPluginTests : IDisposable
     public async Task Write_ThenRead_RoundTripsContent()
     {
         var path = Path.Combine(_dir, "f.txt");
-        var write = await new FileJobPlugin().ExecuteAsync(
+        var write = await new FileJobExecutor().ExecuteAsync(
             P(("action", "write"), ("path", path), ("content", "hello file")), Ctx, CancellationToken.None);
         Assert.True(write.Success);
 
-        var read = await new FileJobPlugin().ExecuteAsync(
+        var read = await new FileJobExecutor().ExecuteAsync(
             P(("action", "read"), ("path", path)), Ctx, CancellationToken.None);
         Assert.True(read.Success);
         Assert.Equal("hello file", (string)read.Output["content"]!);
@@ -154,7 +154,7 @@ public class FileJobPluginTests : IDisposable
         Assert.Equal("a\nb\n", await File.ReadAllTextAsync(path));
     }
 
-    // TWO AGENTS, ONE FILE. cxagent runs sub-agents concurrently and they share one plugin instance
+    // TWO AGENTS, ONE FILE. cxagent runs sub-agents concurrently and they share one executor instance
     // through the parent's registry, so a read-modify-write from each can interleave: both read the
     // same text, both match, and the second writes an edit computed from a version that no longer
     // exists — silently, with both reporting success.
@@ -164,11 +164,11 @@ public class FileJobPluginTests : IDisposable
         var path = Path.Combine(_dir, "shared.cs");
         await File.WriteAllTextAsync(path, "alpha\nbravo\n");
 
-        var plugin = new FileJobPlugin();
-        var one = plugin.ExecuteAsync(
+        var executor = new FileJobExecutor();
+        var one = executor.ExecuteAsync(
             P(("action", "replace"), ("path", path), ("pattern", "alpha"), ("replacement", "ALPHA")),
             Ctx, CancellationToken.None);
-        var two = plugin.ExecuteAsync(
+        var two = executor.ExecuteAsync(
             P(("action", "replace"), ("path", path), ("pattern", "bravo"), ("replacement", "BRAVO")),
             Ctx, CancellationToken.None);
 
@@ -186,8 +186,8 @@ public class FileJobPluginTests : IDisposable
     [Fact]
     public async Task Writes_ToDifferentFiles_AreNotSerialisedAgainstEachOther()
     {
-        var plugin = new FileJobPlugin();
-        var tasks = Enumerable.Range(0, 8).Select(i => plugin.ExecuteAsync(
+        var executor = new FileJobExecutor();
+        var tasks = Enumerable.Range(0, 8).Select(i => executor.ExecuteAsync(
             P(("action", "write"), ("path", Path.Combine(_dir, $"p{i}.txt")), ("content", $"{i}")),
             Ctx, CancellationToken.None));
 
@@ -368,7 +368,7 @@ public class FileJobPluginTests : IDisposable
     {
         var path = Path.Combine(_dir, "d.txt");
         await File.WriteAllTextAsync(path, "x");
-        var r = await new FileJobPlugin().ExecuteAsync(
+        var r = await new FileJobExecutor().ExecuteAsync(
             P(("action", "delete"), ("path", path)), Ctx, CancellationToken.None);
         Assert.True(r.Success);
         Assert.False(File.Exists(path));
@@ -377,32 +377,32 @@ public class FileJobPluginTests : IDisposable
     [Fact]
     public void Validate_RejectsMissingPath()
     {
-        var v = new FileJobPlugin().Validate(P(("action", "read")));
+        var v = new FileJobExecutor().Validate(P(("action", "read")));
         Assert.False(v.IsValid);
     }
 
     [Fact]
     public void Validate_RejectsWriteWithoutContent()
     {
-        var v = new FileJobPlugin().Validate(P(("action", "write"), ("path", "/tmp/x")));
+        var v = new FileJobExecutor().Validate(P(("action", "write"), ("path", "/tmp/x")));
         Assert.False(v.IsValid);
     }
 
     [Fact]
     public void Validate_RejectsCopyWithoutDest()
     {
-        var v = new FileJobPlugin().Validate(P(("action", "copy"), ("path", "/tmp/x")));
+        var v = new FileJobExecutor().Validate(P(("action", "copy"), ("path", "/tmp/x")));
         Assert.False(v.IsValid);
     }
 
     [Fact]
     public void TypeName_IsFile()
     {
-        Assert.Equal("file", new FileJobPlugin().TypeName);
+        Assert.Equal("file", new FileJobExecutor().TypeName);
     }
 
     private async Task<JobResult> Read(string path, params (string k, object? v)[] extra)
-        => await new FileJobPlugin().ExecuteAsync(
+        => await new FileJobExecutor().ExecuteAsync(
             P(new[] { ("action", (object?)"read"), ("path", path) }.Concat(extra).ToArray()),
             Ctx, CancellationToken.None);
 
@@ -476,7 +476,7 @@ public class FileJobPluginTests : IDisposable
     // --- list / search / replace ------------------------------------------------------------------
 
     private async Task<JobResult> Run(params (string k, object? v)[] kv) =>
-        await new FileJobPlugin().ExecuteAsync(P(kv), Ctx, CancellationToken.None);
+        await new FileJobExecutor().ExecuteAsync(P(kv), Ctx, CancellationToken.None);
 
     [Fact]
     public async Task List_FindsFilesWithoutAShellCommand()
@@ -592,7 +592,7 @@ public class FileJobPluginTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_dir, "a.cs"), "x");
 
-        var r = await new FileJobPlugin().ExecuteAsync(
+        var r = await new FileJobExecutor().ExecuteAsync(
             P(("action", "list"), ("pattern", "*.cs")), new CollectingContext { WorkingDirectory = _dir },
             CancellationToken.None);
 
@@ -605,7 +605,7 @@ public class FileJobPluginTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_dir, "a.cs"), "needle here");
 
-        var r = await new FileJobPlugin().ExecuteAsync(
+        var r = await new FileJobExecutor().ExecuteAsync(
             P(("action", "search"), ("pattern", "needle")), new CollectingContext { WorkingDirectory = _dir },
             CancellationToken.None);
 
@@ -618,7 +618,7 @@ public class FileJobPluginTests : IDisposable
     [Fact]
     public async Task Read_WithNoPath_FailsWithAMessageAboutThePath()
     {
-        var r = await new FileJobPlugin().ExecuteAsync(
+        var r = await new FileJobExecutor().ExecuteAsync(
             P(("action", "read")), new CollectingContext { WorkingDirectory = _dir }, CancellationToken.None);
 
         Assert.False(r.Success);
@@ -630,17 +630,17 @@ public class FileJobPluginTests : IDisposable
     [Fact]
     public void Validate_AcceptsListAndSearchWithNoPath()
     {
-        var plugin = new FileJobPlugin();
-        Assert.True(plugin.Validate(P(("action", "list"), ("pattern", "*.cs"))).IsValid);
-        Assert.True(plugin.Validate(P(("action", "search"), ("pattern", "needle"))).IsValid);
+        var executor = new FileJobExecutor();
+        Assert.True(executor.Validate(P(("action", "list"), ("pattern", "*.cs"))).IsValid);
+        Assert.True(executor.Validate(P(("action", "search"), ("pattern", "needle"))).IsValid);
     }
 
     [Fact]
     public void Validate_StillRequiresPathForActionsThatTargetAFile()
     {
-        var plugin = new FileJobPlugin();
-        Assert.False(plugin.Validate(P(("action", "read"))).IsValid);
-        Assert.False(plugin.Validate(P(("action", "write"), ("content", "x"))).IsValid);
+        var executor = new FileJobExecutor();
+        Assert.False(executor.Validate(P(("action", "read"))).IsValid);
+        Assert.False(executor.Validate(P(("action", "write"), ("content", "x"))).IsValid);
     }
 
     /// <summary>A real git repo in the test directory, so check-ignore has something to answer
@@ -1271,9 +1271,9 @@ public class FileJobPluginTests : IDisposable
     public async Task RelativePath_ResolvesAgainstTheContextsWorkingDirectory()
     {
         var ctx = new TestJobContext { WorkingDirectory = _dir };
-        Directory.CreateDirectory(Path.Combine(_dir, "nested"));   // the plugin writes, it does not mkdir
+        Directory.CreateDirectory(Path.Combine(_dir, "nested"));   // the executor writes, it does not mkdir
 
-        var write = await new FileJobPlugin().ExecuteAsync(
+        var write = await new FileJobExecutor().ExecuteAsync(
             P(("action", "write"), ("path", "nested/f.txt"), ("content", "landed")),
             ctx, CancellationToken.None);
 
@@ -1305,7 +1305,7 @@ public class FileJobPluginTests : IDisposable
         // _dir is absolute, e.g. /tmp/xyz — send it back with the leading separator dropped.
         var mangled = _dir.TrimStart(Path.DirectorySeparatorChar) + "/f.txt";
 
-        var result = await new FileJobPlugin().ExecuteAsync(
+        var result = await new FileJobExecutor().ExecuteAsync(
             P(("action", "read"), ("path", mangled)), ctx, CancellationToken.None);
 
         Assert.False(result.Success);
@@ -1320,7 +1320,7 @@ public class FileJobPluginTests : IDisposable
     {
         var ctx = new TestJobContext { WorkingDirectory = _dir };
 
-        var result = await new FileJobPlugin().ExecuteAsync(
+        var result = await new FileJobExecutor().ExecuteAsync(
             P(("action", "read"), ("path", "nope/missing.txt")), ctx, CancellationToken.None);
 
         Assert.False(result.Success);
@@ -1335,7 +1335,7 @@ public class FileJobPluginTests : IDisposable
         var ctx = new TestJobContext { WorkingDirectory = _dir };
         File.WriteAllText(Path.Combine(_dir, "here.txt"), "found me");
 
-        var read = await new FileJobPlugin().ExecuteAsync(
+        var read = await new FileJobExecutor().ExecuteAsync(
             P(("action", "read"), ("path", "here.txt")), ctx, CancellationToken.None);
 
         Assert.True(read.Success, read.ErrorMessage);
@@ -1351,7 +1351,7 @@ public class FileJobPluginTests : IDisposable
         File.WriteAllText(Path.Combine(_dir, "src.txt"), "copy me");
         Directory.CreateDirectory(Path.Combine(_dir, "out"));
 
-        var copy = await new FileJobPlugin().ExecuteAsync(
+        var copy = await new FileJobExecutor().ExecuteAsync(
             P(("action", "copy"), ("path", "src.txt"), ("dest", "out/dst.txt")),
             ctx, CancellationToken.None);
 
@@ -1366,7 +1366,7 @@ public class FileJobPluginTests : IDisposable
     {
         var path = Path.Combine(_dir, "abs.txt");
 
-        var write = await new FileJobPlugin().ExecuteAsync(
+        var write = await new FileJobExecutor().ExecuteAsync(
             P(("action", "write"), ("path", path), ("content", "absolute")),
             new TestJobContext(), CancellationToken.None);
 

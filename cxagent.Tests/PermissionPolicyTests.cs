@@ -725,10 +725,10 @@ public class PermissionPolicyTests
             new PermissionRequest(PermissionKind.Mcp, "server/tool", "server/tool")));
     }
 
-    // THE LAYER THE FIRST FIX MISSED. `path` became optional on glob/grep, the plugin was taught to
+    // THE LAYER THE FIRST FIX MISSED. `path` became optional on glob/grep, the executor was taught to
     // default it — and the permission gate still read it with the one-argument Get, which is
     // Values[key] and throws. The gate runs FIRST, so every `grep {"pattern": ...}` died here with
-    // "The given key 'path' was not present in the dictionary" before the plugin was reached: 18
+    // "The given key 'path' was not present in the dictionary" before the executor was reached: 18
     // failures in one live session, on the exact call shape the tool advertises.
     [Fact]
     public void SearchWithNoPath_RaisesNoRequestAndDoesNotThrow()

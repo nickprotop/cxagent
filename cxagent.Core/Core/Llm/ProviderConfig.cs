@@ -289,7 +289,7 @@ public record AgentTypeConfig(string? Briefing = null, string? Provider = null, 
     /// then; a set resolved at load would freeze before a skills catalog or an injected tool
     /// appeared.</para>
     /// </summary>
-    public Plugins.ToolSelection? Tools { get; init; }
+    public Jobs.ToolSelection? Tools { get; init; }
 
 
 }
@@ -331,7 +331,7 @@ public record ProviderSettings(
     /// writes in code — one decision, two authors. They compose in order: an embedder saying what
     /// their application permits, a user saying what their machine does.</para>
     /// </summary>
-    public Plugins.ToolSelection? Tools { get; init; }
+    public Jobs.ToolSelection? Tools { get; init; }
 
     /// <summary>Configured MCP servers, empty when the block is absent — which is the common case.</summary>
     public IReadOnlyDictionary<string, McpServerConfig> McpServers { get; init; } =
@@ -389,7 +389,7 @@ public static class ProviderConfigLoader
     /// an injected tool, a skill that appears — and an unmatched name grants nothing. Only the
     /// grammar is checked.</para>
     /// </summary>
-    private static Plugins.ToolSelection? ReadToolSelection(
+    private static Jobs.ToolSelection? ReadToolSelection(
         JsonElement parent, string where, List<string> warnings)
     {
         if (!parent.TryGetProperty("tools", out var t) || t.ValueKind != JsonValueKind.Array)
@@ -402,7 +402,7 @@ public static class ProviderConfigLoader
             var term = e.GetString();
             if (string.IsNullOrWhiteSpace(term)) continue;
 
-            if (!Plugins.ToolSelection.IsWellFormed(term))
+            if (!Jobs.ToolSelection.IsWellFormed(term))
             {
                 warnings.Add($"{where}.tools: '{term}' is not understood; ignored. Use 'inherited', "
                            + "'all', a tool name, '-name' to remove, or '+name' to add back.");
@@ -414,7 +414,7 @@ public static class ProviderConfigLoader
 
         // AN EMPTY ARRAY IS A REAL ANSWER — "no tools" — and must not become null, which means "no
         // opinion". Only a `tools` key that was absent returns null, handled above.
-        return new Plugins.ToolSelection(terms);
+        return new Jobs.ToolSelection(terms);
     }
 
     public static ProviderSettings LoadAndValidate(AppPaths paths, IReadOnlyDictionary<string, string> env)

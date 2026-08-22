@@ -63,7 +63,7 @@ Session Open(Session session, ResolvedConfig? config, SessionPorts ports, Workin
 The third overload **re-wires an existing session** over a new configuration, keeping the
 conversation. That is what a model switch or a settings change uses.
 
-**Creates, per session:** the `Session`, its `AgentHost` and `Agent`, the plugin registry (each tool
+**Creates, per session:** the `Session`, its `AgentHost` and `Agent`, the job registry (each tool
 wrapped in the gate), the sub-agent spawner, the agent-type catalog.
 
 ## The rest
@@ -213,7 +213,7 @@ bool    HasAgent             // is anything wired
 WorkingMode Mode
 
 ILlmProvider? Provider · string? InstanceName · ResolvedConfig? Resolution
-PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · PluginRegistry? Plugins
+PermissionPolicy? Policy · SharedServices? Services · SessionManager? Manager · JobRegistry? Plugins
 
 IReadOnlyList<CompletionValue> Values(string set)
 ```
@@ -449,7 +449,7 @@ Which tools an agent is offered, narrowed at four levels. Absent, an agent gets 
 nothing changes.
 
 ```csharp
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 new SharedServices { ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]) }
 ```

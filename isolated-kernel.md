@@ -165,7 +165,7 @@ something it should not have been handed.
 ```
 KERNEL                                          HOST
 Agent · AgentContext · ILlmProvider
-PluginRegistry · McpToolset
+JobRegistry · McpToolset
 AgentTypeCatalog · TokenLedger
 
   ── streaming ──▶  IChatSink, IJobPanel        TUI · buffer · anything
@@ -303,18 +303,18 @@ what the snapshot type is for.
 
 ### Tools: the builtins must be subtractable
 
-`PluginRegistry` is already half of this. Adding is solved:
+`JobRegistry` is already half of this. Adding is solved:
 
 ```csharp
-public void Register(IJobPlugin plugin)                  // hosts can add their own
-public static PluginRegistry CreateWithBuiltins(...)     // all four, or nothing
+public void Register(IJobExecutor executor)                  // hosts can add their own
+public static JobRegistry CreateWithBuiltins(...)     // all four, or nothing
 ```
 
 So lazydotide can register an editor tool today. What is missing is **subtraction** —
 `CreateWithBuiltins` is all-or-nothing and there is no `Remove`. A host that wants shell but not http
-must skip the factory and hand-register from the inside, which means depending on `ShellJobPlugin`,
-`FileJobPlugin` and `PermissionGatedPlugin` as public API. That is the wrong thing to make public: it
-turns four internal classes into a contract, and the wrapping in `PermissionGatedPlugin` — easy to
+must skip the factory and hand-register from the inside, which means depending on `ShellJobExecutor`,
+`FileJobExecutor` and `PermissionGatedExecutor` as public API. That is the wrong thing to make public: it
+turns four internal classes into a contract, and the wrapping in `PermissionGatedExecutor` — easy to
 forget, silently ungated if you do — becomes the host's problem instead of the kernel's.
 
 The fix is small and belongs with item 3, since "which tools" is config:
@@ -328,7 +328,7 @@ inside too, and no builtin type needs to become public. Hosts that want more sti
 hosts that want fewer no longer need to know how the four are constructed.
 
 What this does **not** do is make the builtins optional to *ship*. They stay in the package.
-`ProcessRunner` and the file plugin assume a working directory and a filesystem — fine for cxlog,
+`ProcessRunner` and the file executor assume a working directory and a filesystem — fine for cxlog,
 questionable for lazydotide (which has its own notion of the open project), wrong for a multi-tenant
 web host. Those hosts pass a narrower flag set, or none, and register their own. **The kernel ships
 the mechanism and a default; it does not insist on the default.**
@@ -340,7 +340,7 @@ CxAgent.Kernel/                     ← new csproj, netstandard2.1 or net10.0
   Agent/        AgentContext, Agent, SubAgentFactory, AgentTypes, IChatSink, IJobPanel
   Llm/          ILlmProvider, ProviderRegistry, SystemPrompt, Providers/
   Mcp/          McpClient, McpToolset, Auth/
-  Plugins/      PluginRegistry, Builtin/
+  Jobs/         JobRegistry, Builtin/
   Permissions/  IPermissionGate, rules
   Execution/    ProcessRunner, JobContext, JobDigest
   Models/

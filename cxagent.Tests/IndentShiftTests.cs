@@ -1,4 +1,4 @@
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -6,7 +6,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// The spec for shifting a replacement onto the file's indentation.
 ///
-/// <para>These exist because the same logic, embedded in the file plugin, took eight failed attempts
+/// <para>These exist because the same logic, embedded in the file executor, took eight failed attempts
 /// to fix. A wrong answer there could come from the matcher, the slice it produced, the shift, or a
 /// stale build — and separating those cost more than the fix itself. Here the function takes three
 /// strings and returns one, so a failure has exactly one place to be.</para>
@@ -305,7 +305,7 @@ public class IndentShiftTests
     [Fact]
     public void APatternRECONSTRUCTEDWithTheFilesIndentIsANoOp()
     {
-        // How the plugin calls this after an EXACT match: the span begins at the pattern's first
+        // How the executor calls this after an EXACT match: the span begins at the pattern's first
         // character, so the caller extends both the span and the pattern back to the line start.
         // Both sides then carry the file's indentation, the outdent cancels it on each, and the
         // measured offset is empty — a replacement that already has the right indent keeps it.
@@ -325,7 +325,7 @@ public class IndentShiftTests
     [InlineData("\t\tvar a = 1;", "    var a = 1;", "    var a = 2;", "\t\tvar a = 2;")]
     public void TheCallerSContract(string matched, string pattern, string replacement, string expected)
     {
-        // THE SEAM, pinned. The plugin passes the matched span extended to its line start, and the
+        // THE SEAM, pinned. The executor passes the matched span extended to its line start, and the
         // pattern and replacement exactly as the model sent them — neither reconstructed. Every
         // combination of "model indented it / model did not" must land on the file's indentation
         // once, and only once.

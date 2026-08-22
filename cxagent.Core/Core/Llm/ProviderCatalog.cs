@@ -54,7 +54,7 @@ public sealed record ProviderCatalog(
     /// where AV1561 says to stop and ask whether the group wants a name. It does not — these are
     /// genuinely separate facts about one config file.</para>
     /// </summary>
-    public Plugins.ToolSelection? Tools { get; init; }
+    public Jobs.ToolSelection? Tools { get; init; }
 
     /// <summary>Never null, so a caller enumerating types need not check first.</summary>
     public IReadOnlyDictionary<string, AgentTypeConfig> Types =>

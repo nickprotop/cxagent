@@ -2,7 +2,7 @@ using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using ToolAgent;

@@ -11,13 +11,13 @@ namespace CxAgent.Core.Llm;
 /// <para>A SELECTION IS THE OPPOSITE OF A ROLE, not a revival of one. It is written by a person — in
 /// config, in code, or for one turn — who has decided what THIS deployment should offer, and it is
 /// applied to the assembled list rather than baked into a name. See
-/// <see cref="Plugins.ToolSelection"/>.</para>
+/// <see cref="Jobs.ToolSelection"/>.</para>
 ///
-/// <para>The enum exists because tools are real and <see cref="Plugins.WorkerToolset"/> maps each one
-/// to a plugin action. Safety lives in the permission gate, which asks the user before anything
+/// <para>The enum exists because tools are real and <see cref="Jobs.ToolBindings"/> maps each one
+/// to an executor action. Safety lives in the permission gate, which asks the user before anything
 /// outside the working folder is touched and does not care what the job is called.</para>
 /// </summary>
-public enum WorkerTool
+public enum BuiltinTool
 {
     ReadFile,
     WriteFile,

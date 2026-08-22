@@ -1,6 +1,6 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -80,7 +80,7 @@ public class SessionTests
     public void SpendLabel_NamesTheInstanceAndTheModel()
     {
         var s = New();
-        s.ReplaceHost(null!, new MockLlmProvider("qwen3"), "local", PluginRegistry.CreateWithBuiltins());
+        s.ReplaceHost(null!, new MockLlmProvider("qwen3"), "local", JobRegistry.CreateWithBuiltins());
 
         Assert.Equal("local:qwen3", s.SpendLabel);
     }
@@ -91,7 +91,7 @@ public class SessionTests
     public void SpendLabel_FallsBackToTheBareModel()
     {
         var s = New();
-        s.ReplaceHost(null!, new MockLlmProvider("qwen3"), null, PluginRegistry.CreateWithBuiltins());
+        s.ReplaceHost(null!, new MockLlmProvider("qwen3"), null, JobRegistry.CreateWithBuiltins());
 
         Assert.Equal("qwen3", s.SpendLabel);
     }
@@ -105,8 +105,8 @@ public class SessionTests
     public void ReplacingTheHost_UpdatesTheProviderAndInstanceWithIt()
     {
         var s = New();
-        s.ReplaceHost(null!, new MockLlmProvider("first"), "local", PluginRegistry.CreateWithBuiltins());
-        s.ReplaceHost(null!, new MockLlmProvider("second"), "small", PluginRegistry.CreateWithBuiltins());
+        s.ReplaceHost(null!, new MockLlmProvider("first"), "local", JobRegistry.CreateWithBuiltins());
+        s.ReplaceHost(null!, new MockLlmProvider("second"), "small", JobRegistry.CreateWithBuiltins());
 
         Assert.Equal("small:second", s.SpendLabel);
         Assert.Equal("small", s.InstanceName);
@@ -122,12 +122,12 @@ public class SessionTests
     /// that the registry itself needs. Null until wired is what breaks that cycle.</para>
     /// </summary>
     [Fact]
-    public void ReplacingTheHost_SuppliesThePluginRegistry()
+    public void ReplacingTheHost_SuppliesTheJobRegistry()
     {
         var s = New();
         Assert.Null(s.Plugins);
 
-        var rewired = PluginRegistry.CreateWithBuiltins();
+        var rewired = JobRegistry.CreateWithBuiltins();
         s.ReplaceHost(null!, new MockLlmProvider(), "local", rewired);
 
         Assert.Same(rewired, s.Plugins);

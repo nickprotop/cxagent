@@ -133,7 +133,7 @@ Deliberately **not** passed:
   sub-agents" is not a rule the child is asked to follow — it is a tool it was never given.
 
 Shared with the parent: the **`TokenLedger`** (deliberately — one session, one bill, split by
-`SubAgentTokens`) and the plugin registry.
+`SubAgentTokens`) and the job registry.
 
 ## Failure modes this design forecloses
 
@@ -184,18 +184,18 @@ away from being handed a plan path it never writes.
 A sibling of the same rule, and the reason it is here: **the agent's working directory is data, not
 the process's.**
 
-`IJobContext.WorkingDirectory` carries it to every tool call. `FileJobPlugin` resolves `path` and
-`dest` against it once, before any action runs; `ShellJobPlugin` uses it when the model omits
+`IJobContext.WorkingDirectory` carries it to every tool call. `FileJobExecutor` resolves `path` and
+`dest` against it once, before any action runs; `ShellJobExecutor` uses it when the model omits
 `working_dir`; `PermissionPolicy.RequestsFor` takes it as `root` so the gate resolves the **same
-string against the same base** the plugin will.
+string against the same base** the executor will.
 
-That last one is the safety property. The gate and the plugin resolving differently is not a
+That last one is the safety property. The gate and the executor resolving differently is not a
 near-miss — it is a check that passes on one file while another is written:
 
 ```
 model: write "src/foo.cs"
-gate:    /home/nick/session-b/src/foo.cs   → inside root, allowed
-plugin:  /home/nick/session-a/src/foo.cs   → written
+gate:     /home/nick/session-b/src/foo.cs   → inside root, allowed
+executor: /home/nick/session-a/src/foo.cs   → written
 ```
 
 Every layer behaves correctly and the edit lands in a checkout the user never approved. Null root

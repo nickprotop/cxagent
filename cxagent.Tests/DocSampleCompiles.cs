@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 namespace DocCheck;
 

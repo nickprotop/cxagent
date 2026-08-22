@@ -1,10 +1,10 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Shared fake IJobContext for job plugin tests. Extracted here so there is exactly ONE copy — no
+/// Shared fake IJobContext for job executor tests. Extracted here so there is exactly ONE copy — no
 /// duplication between test files (same reason TestProviders.cs exists).
 /// </summary>
 public sealed class TestJobContext : IJobContext
@@ -38,12 +38,12 @@ public sealed class TestJobContext : IJobContext
 
     public string? Requester => null;
 
-    /// <summary>Settable so a test can root a plugin somewhere real; null keeps the process's own,
+    /// <summary>Settable so a test can root an executor somewhere real; null keeps the process's own,
     /// which is what every test got before the property existed.</summary>
     public string? WorkingDirectory { get; set; }
 
     /// <summary>Settable so a test can assert the join between a gate's verdict and the context a
-    /// dispatch path stamps it onto, without needing a real WorkerToolset/AgentToolset call.</summary>
+    /// dispatch path stamps it onto, without needing a real ToolBindings/AgentToolset call.</summary>
     public string? DecidedBy { get; set; }
 
     public void ReportProgress(double percent, string? message = null) { }

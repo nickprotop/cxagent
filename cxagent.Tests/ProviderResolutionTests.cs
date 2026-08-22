@@ -43,11 +43,11 @@ public class ResolvedConfigTests : IDisposable
         var jobs = call.Arguments.GetProperty("jobs");
         Assert.True(jobs.GetArrayLength() >= 2, "seeded plan should have multiple jobs so the panel shows several blocks");
 
-        // Every job must name a built-in plugin type, or the run fails at execution.
-        var builtins = CxAgent.Core.Plugins.PluginRegistry.CreateWithBuiltins();
+        // Every job must name a built-in executor type, or the run fails at execution.
+        var builtins = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins();
         foreach (var j in jobs.EnumerateArray())
             Assert.True(builtins.TryGet(j.GetProperty("type").GetString()!, out _),
-                $"seeded plan uses unknown plugin type '{j.GetProperty("type").GetString()}'");
+                $"seeded plan uses unknown executor type '{j.GetProperty("type").GetString()}'");
     }
 
     /// <summary>

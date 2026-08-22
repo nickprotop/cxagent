@@ -57,7 +57,7 @@ public sealed class SessionPanel
     /// </summary>
     public const int ResponsiveThreshold = 100;
 
-    /// <summary>Mirrors WorkerToolset.MaxToolResultChars. Duplicated rather than referenced because
+    /// <summary>Mirrors ToolBindings.MaxToolResultChars. Duplicated rather than referenced because
     /// the panel is UI and that constant is core plumbing; if it moves, this line is wrong in a way
     /// a reader can see, where a reference would silently follow it somewhere meaningless.</summary>
     private const int MaxToolResultChars = 65536;

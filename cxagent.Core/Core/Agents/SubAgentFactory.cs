@@ -1,5 +1,5 @@
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Sessions;
 
@@ -76,7 +76,7 @@ public sealed class SubAgentFactory
         public string? InstanceName { get; init; }
 
         /// <summary>The tools a child may call — the parent's registry, not a narrowed copy.</summary>
-        public required PluginRegistry Plugins { get; init; }
+        public required JobRegistry Plugins { get; init; }
 
         /// <summary>
         /// The embedder's injected tools, inherited whole.
@@ -91,7 +91,7 @@ public sealed class SubAgentFactory
         /// holds for any path that builds a child, not only this one. So this list is what a child
         /// COULD have; what it is offered is decided one layer down.</para>
         /// </summary>
-        public IReadOnlyList<Plugins.IAgentTool>? AgentTools { get; init; }
+        public IReadOnlyList<Jobs.IAgentTool>? AgentTools { get; init; }
 
         /// <summary>
         /// The session's tool selection (S1 composed with S2), inherited by every child.
@@ -100,7 +100,7 @@ public sealed class SubAgentFactory
         /// per-request S3 cannot live here — it rides the spawn call instead. A child gets
         /// Then(this, turn's, type's), composed at the moment it is created.</para>
         /// </summary>
-        public Plugins.ToolSelection? ToolSelection { get; init; }
+        public Jobs.ToolSelection? ToolSelection { get; init; }
 
         /// <summary>
         /// THE PARENT'S LEDGER, DELIBERATELY (D7). A child's spend is the session's spend: the figure
@@ -263,7 +263,7 @@ public sealed class SubAgentFactory
 
     /// <summary>The session's selection, for a caller that must predict what a child will have
     /// before creating one — see SubAgentSpawner.ChildCanWrite.</summary>
-    internal Plugins.ToolSelection? SessionToolSelection => _runtime.ToolSelection;
+    internal Jobs.ToolSelection? SessionToolSelection => _runtime.ToolSelection;
 
 
     /// <param name="parentAgentId">
@@ -278,7 +278,7 @@ public sealed class SubAgentFactory
     /// <param name="type">Which agent type to build, or null for the general one.</param>
     public SubAgent Create(string? briefing = null, string? callerContext = null, string? label = null,
         AgentType? type = null, string? parentAgentId = null,
-        Plugins.ToolSelection? turnTools = null)
+        Jobs.ToolSelection? turnTools = null)
     {
         var sink = new BufferedChatSink();
         var jobs = new BufferedJobPanel();
@@ -345,8 +345,8 @@ public sealed class SubAgentFactory
             // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL, S4 FROM THE TYPE — composed in that order.
             // The type's terms go LAST so a `+` in it can reopen what a narrower session closed;
             // composing onto a resolved set instead would make S4 narrowing-only, silently.
-            toolSelection: Plugins.ToolSelection.Then(
-                Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
+            toolSelection: Jobs.ToolSelection.Then(
+                Jobs.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
             policy: _runtime.Policy,
             // THE SAME CLASSIFIER THE PARENT SPECULATES WITH. Null passes straight through —
             // Agent's own null check is what makes this "never speculate" rather than a crash.

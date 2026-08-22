@@ -1,10 +1,10 @@
 using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>Runs a shell command via /bin/sh -c, streaming output and capturing the exit code.</summary>
-public class ShellJobPlugin : IJobPlugin
+public class ShellJobExecutor : IJobExecutor
 {
     public string TypeName => "shell";
     public string DisplayName => "Shell Command";

@@ -1,5 +1,5 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Execution;
@@ -44,7 +44,7 @@ public sealed class JobContext : IJobContext
     }
 
     /// <summary>
-    /// Raised when a plugin's real work begins, after any permission prompt has been answered. The
+    /// Raised when an executor's real work begins, after any permission prompt has been answered. The
     /// caller uses it to start the duration clock, so a row reports how long the WORK took rather
     /// than how long the user took to approve it.
     /// </summary>
@@ -64,7 +64,7 @@ public sealed class JobContext : IJobContext
 
     /// <summary>
     /// The classifier's verdict on this call — set by the gate wrapper the moment it has one, and
-    /// re-stamped by whichever dispatch path (WorkerToolset, AgentToolset) unwraps the gate's
+    /// re-stamped by whichever dispatch path (ToolBindings, AgentToolset) unwraps the gate's
     /// JobResult down to a string. See the interface doc for why it rides the context at all.
     ///
     /// <para>THE SETTER RAISES <see cref="DeciderReported"/>, which is what makes the badge a
@@ -116,7 +116,7 @@ public sealed class JobContext : IJobContext
     public void ReportReviewing(bool reviewing) => ReviewingChanged?.Invoke(reviewing);
 
     /// <summary>
-    /// Raised whenever a plugin reports a resource sample. ProcessRunner subscribes its
+    /// Raised whenever an executor reports a resource sample. ProcessRunner subscribes its
     /// ProcessResourceMonitor.Updated to ReportResources, which re-raises it here; the UI
     /// (Task 10 wiring) subscribes this event and marshals onto the UI thread itself — this
     /// class does not know about the UI thread.

@@ -3,17 +3,17 @@ using CxAgent.Core.Execution;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
 
 /// <summary>
 /// The agent's tool calls dispatch through the SAME registry that wraps shell/file/http in
-/// <see cref="PermissionGatedPlugin"/> before the caller ever sees them. WorkerToolset does not
+/// <see cref="PermissionGatedExecutor"/> before the caller ever sees them. ToolBindings does not
 /// change; that is the property under test.
 /// </summary>
-public class PermissionGatedPluginTests
+public class PermissionGatedExecutorTests
 {
     private static string TempDir()
     {
@@ -43,16 +43,16 @@ public class PermissionGatedPluginTests
     };
 
     [Fact]
-    public async Task WorkerToolPath_ADeniedWrite_ComesBackAsARefusalTheModelCanRead()
+    public async Task BuiltinToolPath_ADeniedWrite_ComesBackAsARefusalTheModelCanRead()
     {
-        // Chokepoint 2 of 2 (WorkerToolset.cs:147) — the path D7/D8/D11/D12 each forgot once.
-        // Same registry, ZERO WorkerToolset changes: the wrapper sits below both callers.
+        // Chokepoint 2 of 2 (ToolBindings.cs:147) — the path D7/D8/D11/D12 each forgot once.
+        // Same registry, ZERO ToolBindings changes: the wrapper sits below both callers.
         var target = Path.Combine(TempDir(), "out.txt");
-        var registry = PluginRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
+        var registry = JobRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
         var call = ToolCall("write_file", $$"""{"path": "{{target}}", "content": "x"}""");
 
-        var text = (await WorkerToolset.InvokeAsync(call,
-            new[] { WorkerTool.WriteFile }, registry, new TestJobContext(), CancellationToken.None)).Text;
+        var text = (await ToolBindings.InvokeAsync(call,
+            new[] { BuiltinTool.WriteFile }, registry, new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.False(File.Exists(target));
         Assert.Contains("denied by the user", text);     // routable refusal, not an opaque crash
@@ -64,10 +64,10 @@ public class PermissionGatedPluginTests
     {
         var file = Path.Combine(TempDir(), "in.txt");
         File.WriteAllText(file, "hello");
-        var registry = PluginRegistry.CreateWithBuiltins(null, PermissionGate.AllowAll);
-        registry.TryGet("file", out var plugin);
+        var registry = JobRegistry.CreateWithBuiltins(null, PermissionGate.AllowAll);
+        registry.TryGet("file", out var executor);
 
-        var result = await plugin!.ExecuteAsync(
+        var result = await executor!.ExecuteAsync(
             Params(("action", "read"), ("path", file)), new TestJobContext(), CancellationToken.None);
 
         Assert.True(result.Success);
@@ -101,10 +101,10 @@ public class PermissionGatedPluginTests
         var dest = Path.Combine(srcDir, "out.txt");
 
         var gate = new ScriptedGate(PermissionOutcome.AutoAllow, PermissionOutcome.Allow);
-        var registry = PluginRegistry.CreateWithBuiltins(null, gate);
-        registry.TryGet("file", out var plugin);
+        var registry = JobRegistry.CreateWithBuiltins(null, gate);
+        registry.TryGet("file", out var executor);
 
-        var result = await plugin!.ExecuteAsync(
+        var result = await executor!.ExecuteAsync(
             Params(("action", "copy"), ("path", src), ("dest", dest)),
             new TestJobContext(), CancellationToken.None);
 
@@ -113,18 +113,18 @@ public class PermissionGatedPluginTests
     }
 
     [Fact]
-    public void OnlyTheThreeRiskyPlugins_AreWrapped()
+    public void OnlyTheThreeRiskyExecutors_AreWrapped()
     {
         // llm_agent gated would double-prompt (its TOOLS are already gated one level down);
         // wait gated would be noise. The wrapper set is exactly shell|file|http.
-        var registry = PluginRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
+        var registry = JobRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
         foreach (var name in new[] { "shell", "file", "http" })
         {
             registry.TryGet(name, out var p);
-            Assert.IsType<PermissionGatedPlugin>(p);
+            Assert.IsType<PermissionGatedExecutor>(p);
         }
         registry.TryGet("wait", out var wait);
-        Assert.IsNotType<PermissionGatedPlugin>(wait);
+        Assert.IsNotType<PermissionGatedExecutor>(wait);
     }
 
 }

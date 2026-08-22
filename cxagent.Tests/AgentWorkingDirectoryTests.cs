@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -37,7 +37,7 @@ public class AgentWorkingDirectoryTests : IDisposable
     }
 
     private Agent Build(ToolCapturingProvider provider, string workingDir) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2,
             workingDir: workingDir);
 

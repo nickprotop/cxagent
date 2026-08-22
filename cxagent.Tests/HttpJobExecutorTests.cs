@@ -1,13 +1,13 @@
 using System.Net;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
 
 [Collection("http-listeners")]
-public class HttpJobPluginTests : IDisposable
+public class HttpJobExecutorTests : IDisposable
 {
     // NOT READONLY: TestPorts may have to REPLACE this listener. A failed Start elsewhere leaves a
     // registration in the process-global map, and another class unwinding it disposes this one
@@ -15,7 +15,7 @@ public class HttpJobPluginTests : IDisposable
     private HttpListener _listener = new();
     private readonly string _prefix;
 
-    public HttpJobPluginTests()
+    public HttpJobExecutorTests()
     {
         // Bind to a free loopback port for a real, network-free HTTP test. Uses the shared retrying
         // binder — picking a random port with no retry (as this did) collided with the LoopbackServer
@@ -54,7 +54,7 @@ public class HttpJobPluginTests : IDisposable
     /// schedules the handler; it does not run it. The caller then issues its request immediately,
     /// and on a loaded machine the client can reach the listener before that thread has called
     /// GetContext at all — the request is accepted by the OS backlog but nothing is waiting to read
-    /// it, so the plugin's timeout fires and the assertion sees an empty body.
+    /// it, so the executor's timeout fires and the assertion sees an empty body.
     ///
     /// <para>Whether it worked was thread scheduling: rare enough to look like a port collision,
     /// which is why fixing the binder appeared to fix this too and did not. Measured at two failures
@@ -98,7 +98,7 @@ public class HttpJobPluginTests : IDisposable
                  + "<h1>The Heading</h1><p>The paragraph.</p></body></html>";
 
         var serve = ServeOnceAs("text/html; charset=utf-8", html);
-        var r = await new HttpJobPlugin().ExecuteAsync(
+        var r = await new HttpJobExecutor().ExecuteAsync(
             P(("url", _prefix), ("as_text", true)), new CollectingContext(), CancellationToken.None);
         await serve;
 
@@ -122,7 +122,7 @@ public class HttpJobPluginTests : IDisposable
         const string json = """{"items":[{"id":1,"name":"<b>not markup</b>"}]}""";
 
         var serve = ServeOnceAs("application/json", json);
-        var r = await new HttpJobPlugin().ExecuteAsync(
+        var r = await new HttpJobExecutor().ExecuteAsync(
             P(("url", _prefix), ("as_text", true)), new CollectingContext(), CancellationToken.None);
         await serve;
 
@@ -136,7 +136,7 @@ public class HttpJobPluginTests : IDisposable
         const string html = "<body><p>Raw.</p></body>";
 
         var serve = ServeOnceAs("text/html", html);
-        var r = await new HttpJobPlugin().ExecuteAsync(
+        var r = await new HttpJobExecutor().ExecuteAsync(
             P(("url", _prefix)), new CollectingContext(), CancellationToken.None);
         await serve;
 
@@ -147,7 +147,7 @@ public class HttpJobPluginTests : IDisposable
     public async Task Execute_200_SucceedsWithBody()
     {
         var serve = ServeOnce(200, "pong");
-        var r = await new HttpJobPlugin().ExecuteAsync(
+        var r = await new HttpJobExecutor().ExecuteAsync(
             P(("url", _prefix)), new CollectingContext(), CancellationToken.None);
         await serve;
         Assert.True(r.Success);
@@ -160,7 +160,7 @@ public class HttpJobPluginTests : IDisposable
     {
         // Server always returns 500; expect 200 with 1 retry (2 attempts) at 0s interval.
         var t1 = ServeOnce(500, "err"); var t2 = ServeOnce(500, "err");
-        var r = await new HttpJobPlugin().ExecuteAsync(
+        var r = await new HttpJobExecutor().ExecuteAsync(
             P(("url", _prefix), ("expect_status", 200), ("max_retries", 1), ("retry_interval_seconds", 0)),
             new CollectingContext(), CancellationToken.None);
         await Task.WhenAll(t1, t2);
@@ -170,7 +170,7 @@ public class HttpJobPluginTests : IDisposable
     [Fact]
     public void Validate_RejectsBadUrl()
     {
-        var v = new HttpJobPlugin().Validate(P(("url", "not a url")));
+        var v = new HttpJobExecutor().Validate(P(("url", "not a url")));
         Assert.False(v.IsValid);
     }
 }

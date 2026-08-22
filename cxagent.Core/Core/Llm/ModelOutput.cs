@@ -4,8 +4,8 @@ namespace CxAgent.Core.Llm;
 /// Reading what a model emitted: separating its reasoning from its answer.
 ///
 /// <para>THIS IS AGENT BEHAVIOUR, and it lives here for that reason. It was written inside a DAG job
-/// plugin because that is where the first worker loop happened to be, and the single-agent loop then
-/// reached across into a plugin it otherwise has nothing to do with. An agent that cannot parse its
+/// executor because that is where the first worker loop happened to be, and the single-agent loop then
+/// reached across into an executor it otherwise has nothing to do with. An agent that cannot parse its
 /// own model's output is not self-contained.</para>
 /// </summary>
 public static class ModelOutput

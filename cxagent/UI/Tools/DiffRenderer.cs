@@ -11,7 +11,7 @@ namespace CxAgent.UI.Tools;
 ///
 /// <para>NATIVE MARKUP, NOT MARKDOWN. The transcript's Tool role is markdown by default, which
 /// escapes <c>[</c> and would print <c>[#7ee787]</c> literally. InlineJobSink turns that off for
-/// this one plugin type; what this produces is meaningless without that.</para>
+/// this one executor type; what this produces is meaningless without that.</para>
 /// </summary>
 public static class DiffRenderer
 {

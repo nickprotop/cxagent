@@ -1,11 +1,11 @@
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Agents;
 
 namespace CxAgent.Core.Sessions;
 
 /// <summary>
-/// Assembles a session's runtime: the ledger, the plugin registry, the agent-type catalog, the
+/// Assembles a session's runtime: the ledger, the executor registry, the agent-type catalog, the
 /// sub-agent seam and the host itself.
 ///
 /// <para>THIS USED TO LIVE IN THE UI. AppBootstrap.WireRunner built all of it, and six of its nine
@@ -39,19 +39,19 @@ internal static class SessionFactory
         // THE SESSION'S POLICY GOES WITH THE REGISTRY. The gate is shared across the process and
         // the registry is per session, so this is where "which session is asking" is attached — see
         // SessionPorts.Policy.
-        var plugins = shared.Gate is null
-            ? PluginRegistry.CreateWithBuiltins()
-            : PluginRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy);
+        var executors = shared.Gate is null
+            ? JobRegistry.CreateWithBuiltins()
+            : JobRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy);
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
-        // error and would run with no gate at all — PermissionGatedPlugin cannot cover it, because
+        // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because
         // that type keys off the built-in type names and a consumer tool matches none of them. So
         // the one place that has both the gate and the session's policy does the wrapping, and an
         // embedder cannot forget. With no gate (headless, tests) the tools are passed through: the
         // paths with no gate are the paths with nothing to ask.
         var agentTools = shared.Gate is null
             ? ports.Tools
-            : ports.Tools.Select(t => (Plugins.IAgentTool)new Plugins.GatedAgentTool(
+            : ports.Tools.Select(t => (Jobs.IAgentTool)new Jobs.GatedAgentTool(
                 t, shared.Gate, ports.Policy)).ToList();
 
         // S1 THEN S2, COMPOSED ONCE. Levels apply in ORDER — a later one may narrow further or
@@ -61,8 +61,8 @@ internal static class SessionFactory
         // S1 IS TWO HOMES, ONE LEVEL: the embedder's SharedServices and the user's llmAgent.tools.
         // Config comes second so a machine can narrow further than the app it runs — or reopen with
         // an `all`, which is the user's call about their own box.
-        var managerSelection = Plugins.ToolSelection.Then(shared.ToolSelection, resolution.Tools);
-        var toolSelection = Plugins.ToolSelection.Then(managerSelection, ports.ToolSelection);
+        var managerSelection = Jobs.ToolSelection.Then(shared.ToolSelection, resolution.Tools);
+        var toolSelection = Jobs.ToolSelection.Then(managerSelection, ports.ToolSelection);
 
         // FAN-OUT WITHOUT THE SPAWN TOOL IS A CONTRADICTION, and this is the one moment both facts
         // are known: the mode arrives as an argument, the selection was just composed.
@@ -74,7 +74,7 @@ internal static class SessionFactory
         // A HINT, NOT A REFUSAL: the session opens. This design treats a mis-narrowing as the user's
         // to get wrong everywhere else, and a contradiction between two settings the same person
         // wrote is not the case to start failing on.
-        var spawnWithheld = mode.CanDelegate && !Plugins.ToolSelection.Offers(toolSelection, Plugins.Tool.Agent);
+        var spawnWithheld = mode.CanDelegate && !Jobs.ToolSelection.Offers(toolSelection, Jobs.Tool.Agent);
         if (spawnWithheld) mode = mode with { Agent = AgentMode.Single };
 
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
@@ -103,7 +103,7 @@ internal static class SessionFactory
                 : new TokenLedger(resumeSnapshot.InputTokens, resumeSnapshot.OutputTokens));
 
         // THE SUB-AGENT SEAM, assembled here because this is the only place that holds all of
-        // it: the provider, the plugin registry, the ledger just built above, the context window
+        // it: the provider, the executor registry, the ledger just built above, the context window
         // and the orchestrator settings. That is why the ledger is built here rather than inside
         // AgentHost — those last two are private on the host and unreachable from any factory.
         var orchestrator = resolution.Orchestrator ?? OrchestratorSettings.Unbounded;
@@ -116,7 +116,7 @@ internal static class SessionFactory
         {
             Provider = resolution.Provider!,
             InstanceName = resolution.InstanceName,
-            Plugins = plugins,
+            Plugins = executors,
 
             // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
             // show the result as its parent, or the showing is silently skipped.
@@ -170,7 +170,7 @@ internal static class SessionFactory
             {
                 Provider = resolution.Provider!,
                 InstanceName = resolution.InstanceName,
-                Plugins = plugins,
+                Plugins = executors,
 
                 // THE SAME workingDir THE PERMISSION GATE USES, captured once at startup.
                 // Sessions and permission rules are both scoped to the project they belong to,
@@ -202,7 +202,7 @@ internal static class SessionFactory
                 Mcp = shared.Mcp,
 
                 // THE SAME POLICY THE PLUGINS GET (line 44). MCP builds its own PermissionRequest
-                // instead of going through PermissionGatedPlugin, so without this the gate refuses
+                // instead of going through PermissionGatedExecutor, so without this the gate refuses
                 // every MCP call for want of a policy.
                 Policy = ports.Policy,
 
@@ -266,7 +266,7 @@ internal static class SessionFactory
         session.NoteToolSelection(toolSelection);
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
-        session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, plugins);
+        session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, executors);
     }
 
 }

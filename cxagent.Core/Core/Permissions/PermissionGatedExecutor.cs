@@ -1,16 +1,16 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 namespace CxAgent.Core.Permissions;
 
 /// <summary>
-/// Wraps a risky <see cref="IJobPlugin"/> (shell/file/http) so permission is checked BELOW both
-/// execution paths at once — JobExecutor.cs (planned jobs) and WorkerToolset.cs (a worker's tool
+/// Wraps a risky <see cref="IJobExecutor"/> (shell/file/http) so permission is checked BELOW both
+/// execution paths at once — JobExecutor.cs (planned jobs) and ToolBindings.cs (a worker's tool
 /// calls) both dispatch through whatever the registry hands them, so wrapping the instance here
 /// closes both chokepoints with one class and zero changes to either caller.
 ///
 /// <para><see cref="TypeName"/>/<see cref="DisplayName"/>/<see cref="GetSchema"/>/
-/// <see cref="Validate"/> delegate straight to the inner plugin — nothing about advertising or
+/// <see cref="Validate"/> delegate straight to the inner executor — nothing about advertising or
 /// validating the job type changes. Only <see cref="ExecuteAsync"/> is intercepted.</para>
 ///
 /// <para>Requests from <see cref="PermissionPolicy.RequestsFor"/> are awaited SEQUENTIALLY and
@@ -18,12 +18,12 @@ namespace CxAgent.Core.Permissions;
 /// for, or performed, anything — including the read of its source, if the source request happens
 /// to be ordered first but the dest is what a rule or the user refuses. Because
 /// <c>parameters</c> here are the SUBSTITUTED, post-`{{job.key}}` values (both callers
-/// resolve/pin their parameters before invoking the plugin), every request this builds already
+/// resolve/pin their parameters before invoking the executor), every request this builds already
 /// reflects what will actually run.</para>
 /// </summary>
-public sealed class PermissionGatedPlugin : IJobPlugin
+public sealed class PermissionGatedExecutor : IJobExecutor
 {
-    private readonly IJobPlugin _inner;
+    private readonly IJobExecutor _inner;
     private readonly IPermissionGate _gate;
 
     /// <summary>
@@ -33,7 +33,7 @@ public sealed class PermissionGatedPlugin : IJobPlugin
     /// </summary>
     private readonly PermissionPolicy? _policy;
 
-    public PermissionGatedPlugin(IJobPlugin inner, IPermissionGate gate, PermissionPolicy? policy = null)
+    public PermissionGatedExecutor(IJobExecutor inner, IPermissionGate gate, PermissionPolicy? policy = null)
     {
         _inner = inner;
         _gate = gate;
@@ -48,7 +48,7 @@ public sealed class PermissionGatedPlugin : IJobPlugin
     public async Task<JobResult> ExecuteAsync(JobParameters parameters, IJobContext context, CancellationToken ct)
     {
         // THE CONTEXT'S ROOT, so the gate resolves a relative path against the SAME folder the
-        // plugin will. Still a pure function of its arguments — the root is passed in, not read —
+        // executor will. Still a pure function of its arguments — the root is passed in, not read —
         // which keeps RequestsFor ignorant of which agent is running, as below.
         // REPORTED ON THE CONTEXT the moment each request answers, so the tool row can badge
         // "auto-approved" / "auto-denied" WHILE THE CALL RUNS — see Job.DecidedBy. The LAST REQUEST
@@ -63,7 +63,7 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         foreach (var request in requests)
         {
             // STAMPED HERE, not built into RequestsFor. That method is a pure policy function over
-            // (pluginType, parameters) — it has no idea which agent is running and should not learn.
+            // (jobType, parameters) — it has no idea which agent is running and should not learn.
             // This is the one layer that sees both the request and the context it was made in.
             // MARKED WAITING FOR THE DURATION OF THE ASK. The row above this job keeps ticking turns
             // and elapsed time while a prompt sits unanswered, so without this a parked child reads
@@ -124,7 +124,7 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         var result = await _inner.ExecuteAsync(parameters, context, ct);
 
         // STAMPED ON THE WAY OUT — see GatedAgentTool's identical comment. Only when a gate actually
-        // ran, and never clobbering a DecidedBy the inner plugin set itself.
+        // ran, and never clobbering a DecidedBy the inner executor set itself.
         return decidedBy is null || result.DecidedBy is not null ? result : result with { DecidedBy = decidedBy };
     }
 }

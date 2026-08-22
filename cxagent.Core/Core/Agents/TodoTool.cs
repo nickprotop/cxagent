@@ -8,8 +8,8 @@ namespace CxAgent.Core.Agents;
 /// <c>todowrite</c> — the model writes and rewrites its own plan.
 ///
 /// <para>AGENT-OWNED, like the skill loader and for the same reason: the list is per-agent state,
-/// and a plugin has no agent identity. It sits in the dispatch chain beside the spawner rather than
-/// in <see cref="Plugins.PluginRegistry"/>.</para>
+/// and an executor has no agent identity. It sits in the dispatch chain beside the spawner rather than
+/// in <see cref="Jobs.JobRegistry"/>.</para>
 ///
 /// <para>NO PERMISSION GATE. Every other tool touches the world — a file, a shell, a socket — and
 /// the gate exists for that. This writes to a list the model already controls and that only the

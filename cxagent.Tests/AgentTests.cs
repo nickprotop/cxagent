@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.UI;
 using Xunit;
 
@@ -114,7 +114,7 @@ public class AgentTests
             provider.EnqueueResponse(new LlmResponse { Text = "ok", ToolCalls = [], Usage = new LlmUsage() });
 
         var sink = new RecordingSink();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 2);
 
         await agent.SendAsync("first", CancellationToken.None);
@@ -145,7 +145,7 @@ public class AgentTests
     {
         provider ??= NewProvider();
 
-        return new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
     }
     // ---- self-containment ----------------------------------------------------------------------
@@ -225,7 +225,7 @@ public class AgentTests
             Role = "user", Content = "restored from an earlier session",
         });
 
-        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, context: context);
 
         await agent.SendAsync("carry on", CancellationToken.None);
@@ -236,7 +236,7 @@ public class AgentTests
     // ---- the briefing --------------------------------------------------------------------------
 
     private static Agent BriefedAgent(string briefing, MockLlmProvider? provider = null) =>
-        new(provider ?? NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider ?? NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50, briefing: briefing);
 
     /// <summary>
@@ -382,7 +382,7 @@ public class AgentTests
         // and for the salvage call, so the returned string cannot tell them apart. What CAN is the
         // error the cap path announces before returning.
         var sink = new RecordingSink();
-        var agent = new Agent(NewProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(NewProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 0);
 
         await agent.SendAsync("hello", CancellationToken.None);
@@ -416,14 +416,14 @@ public class AgentTests
 
     /// <summary>Blocks until the token is cancelled, standing in for a slow tool — an MCP call, or a
     /// shell command someone pressed Escape on.</summary>
-    private sealed class BlockingPlugin : IJobPlugin
+    private sealed class BlockingExecutor : IJobExecutor
     {
-        public string TypeName => "shell";   // takes over run_shell: AllTools is a fixed enum
+        public string TypeName => "shell";   // takes over run_shell: AllBuiltins is a fixed enum
         public string DisplayName => "Blocking";
         public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
         {
-            // MUST MATCH the real shell plugin's params: WorkerToolset.BuildDefinition throws if a
-            // tool advertises a param its plugin does not accept, which is the drift guard doing
+            // MUST MATCH the real shell executor's params: ToolBindings.BuildDefinition throws if a
+            // tool advertises a param its executor does not accept, which is the drift guard doing
             // its job — a stub with no params is itself a drift.
             new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
             new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
@@ -456,8 +456,8 @@ public class AgentTests
     public async Task CancelledToolCall_ClosesTheRowAsCancelled()
     {
         // FIRST-WINS: register before the builtins so run_shell dispatches to the blocker.
-        var plugins = new PluginRegistry();
-        plugins.Register(new BlockingPlugin());
+        var executors = new JobRegistry();
+        executors.Register(new BlockingExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -468,7 +468,7 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         using var cts = new CancellationTokenSource();
@@ -486,7 +486,7 @@ public class AgentTests
     /// <summary>
     /// CANCELLATION IS NOT A TOOL RESULT.
     ///
-    /// <para><c>WorkerToolset.InvokeAsync</c>'s catch-all turned Escape into the string
+    /// <para><c>ToolBindings.InvokeAsync</c>'s catch-all turned Escape into the string
     /// <c>"error: The operation was canceled"</c> and handed it back as though the tool had answered —
     /// so the model reasoned about it and kept looping, after the user had pressed stop. It also made
     /// the row guard above unreachable for built-ins: nothing threw, so the row closed as
@@ -496,8 +496,8 @@ public class AgentTests
     public async Task CancelledToolCall_DoesNotBecomeAToolResultTheModelSees()
     {
         // FIRST-WINS: register before the builtins so run_shell dispatches to the blocker.
-        var plugins = new PluginRegistry();
-        plugins.Register(new BlockingPlugin());
+        var executors = new JobRegistry();
+        executors.Register(new BlockingExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -508,7 +508,7 @@ public class AgentTests
         });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         using var cts = new CancellationTokenSource();
@@ -528,10 +528,10 @@ public class AgentTests
     /// keeps its old behaviour — it is a fault the model should see and can act on, not a stop.
     /// </summary>
     [Fact]
-    public async Task PluginTimeout_WithoutUserCancellation_IsStillReportedToTheModel()
+    public async Task ExecutorTimeout_WithoutUserCancellation_IsStillReportedToTheModel()
     {
-        var plugins = new PluginRegistry();
-        plugins.Register(new SelfCancellingPlugin());
+        var executors = new JobRegistry();
+        executors.Register(new SelfCancellingExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -543,7 +543,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("go", CancellationToken.None);
@@ -552,15 +552,15 @@ public class AgentTests
         Assert.NotEqual(JobState.Cancelled, jobs.Jobs.Single().State);
     }
 
-    /// <summary>Throws OCE on a token of its OWN, never the caller's — a plugin-side timeout.</summary>
-    private sealed class SelfCancellingPlugin : IJobPlugin
+    /// <summary>Throws OCE on a token of its OWN, never the caller's — an executor-side timeout.</summary>
+    private sealed class SelfCancellingExecutor : IJobExecutor
     {
-        public string TypeName => "shell";   // same reason as BlockingPlugin
+        public string TypeName => "shell";   // same reason as BlockingExecutor
         public string DisplayName => "Self cancelling";
         public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
         {
-            // MUST MATCH the real shell plugin's params: WorkerToolset.BuildDefinition throws if a
-            // tool advertises a param its plugin does not accept, which is the drift guard doing
+            // MUST MATCH the real shell executor's params: ToolBindings.BuildDefinition throws if a
+            // tool advertises a param its executor does not accept, which is the drift guard doing
             // its job — a stub with no params is itself a drift.
             new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
             new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
@@ -582,7 +582,7 @@ public class AgentTests
 
     /// <summary>Blocks in ExecuteAsync exactly as a permission prompt does — the user thinking —
     /// then reports that the real work is starting.</summary>
-    private sealed class SlowToApprovePlugin : IJobPlugin
+    private sealed class SlowToApproveExecutor : IJobExecutor
     {
         public string TypeName => "shell";
         public string DisplayName => "Slow to approve";
@@ -615,8 +615,8 @@ public class AgentTests
     [Fact]
     public async Task ToolDuration_ExcludesTimeSpentWaitingForPermission()
     {
-        var plugins = new PluginRegistry();
-        plugins.Register(new SlowToApprovePlugin());
+        var executors = new JobRegistry();
+        executors.Register(new SlowToApproveExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -629,7 +629,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("run it", CancellationToken.None);
@@ -639,8 +639,8 @@ public class AgentTests
             $"the 250ms approval wait leaked into the reported duration ({duration.TotalMilliseconds:0}ms)");
     }
 
-    /// <summary>Never calls WorkStarting — the shape of a plugin behind no gate at all.</summary>
-    private sealed class SilentPlugin : IJobPlugin
+    /// <summary>Never calls WorkStarting — the shape of an executor behind no gate at all.</summary>
+    private sealed class SilentExecutor : IJobExecutor
     {
         public string TypeName => "shell";
         public string DisplayName => "Silent";
@@ -672,8 +672,8 @@ public class AgentTests
     [Fact]
     public async Task StartedAt_IsRebasedWhenTheWorkStarts_NotWhenTheRowAppears()
     {
-        var plugins = new PluginRegistry();
-        plugins.Register(new SlowToApprovePlugin());
+        var executors = new JobRegistry();
+        executors.Register(new SlowToApproveExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -686,7 +686,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("run it", CancellationToken.None);
@@ -711,10 +711,10 @@ public class AgentTests
     /// and set only on the event — these rows would show no clock at all, forever.</para>
     /// </summary>
     [Fact]
-    public async Task StartedAt_IsUnchangedForAPluginThatNeverReportsWorkStarting()
+    public async Task StartedAt_IsUnchangedForAnExecutorThatNeverReportsWorkStarting()
     {
-        var plugins = new PluginRegistry();
-        plugins.Register(new SilentPlugin());
+        var executors = new JobRegistry();
+        executors.Register(new SilentExecutor());
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -727,7 +727,7 @@ public class AgentTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var agent = new Agent(provider, plugins, new TokenLedger(),
+        var agent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50);
 
         await agent.SendAsync("run it", CancellationToken.None);
@@ -738,7 +738,7 @@ public class AgentTests
         // WorkStarting call StartedAt must still be the row-creation moment, which is CreatedAt.
         var drift = job.StartedAt!.Value - job.CreatedAt;
         Assert.True(drift < TimeSpan.FromMilliseconds(50),
-            $"StartedAt drifted for a plugin that never reported ({drift.TotalMilliseconds:0}ms) — "
+            $"StartedAt drifted for an executor that never reported ({drift.TotalMilliseconds:0}ms) — "
             + "the no-gate path must be untouched by the rebase");
     }
 
@@ -771,7 +771,7 @@ public class AgentTests
             // flattened those.
             var prompt = "REMEMBER THIS MARKER: " + new string('x', 300) + "\nand a second line.";
 
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs, maxTurns: 50);
             await agent.SendAsync(prompt, CancellationToken.None);
             await Task.Delay(300);   // AppendAsync is fire-and-forget
@@ -842,7 +842,7 @@ public class AgentTests
             provider.EnqueueResponse(new LlmResponse { Text = $"answer {goal}", StopReason = "end_turn" });
         }
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
         var first = await agent.SendAsync("first goal", CancellationToken.None);
@@ -867,7 +867,7 @@ public class AgentTests
             });
         provider.EnqueueResponse(new LlmResponse { Text = "here is what I got through", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
         var result = await agent.SendAsync("do something long", CancellationToken.None);
@@ -894,7 +894,7 @@ public class AgentTests
                 ToolCalls = [ReadOfNothing("does-not-exist.txt")],
             });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
 
         var result = await agent.SendAsync("read that file", CancellationToken.None);

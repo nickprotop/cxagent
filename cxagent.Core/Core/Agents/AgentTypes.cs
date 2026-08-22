@@ -87,7 +87,7 @@ public sealed record AgentType(
     /// <para>A NAMED MEMBER for the reason this record's own summary gives — the positional list
     /// had already reached seven with four consecutive nullables, and an eighth would be worse.</para>
     /// </summary>
-    public Plugins.ToolSelection? Tools { get; init; }
+    public Jobs.ToolSelection? Tools { get; init; }
 
     /// <summary>Where this type runs, flattened for readers that want one field. The routing record
     /// is the truth; these exist so call sites do not all have to say <c>Routing.</c>.</summary>

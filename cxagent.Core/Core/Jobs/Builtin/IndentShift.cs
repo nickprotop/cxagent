@@ -1,9 +1,9 @@
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>
 /// Shifts a replacement onto the indentation of the text it is replacing.
 ///
-/// <para>A PURE FUNCTION, deliberately. This logic lived inside <see cref="FileJobPlugin"/> reading
+/// <para>A PURE FUNCTION, deliberately. This logic lived inside <see cref="FileJobExecutor"/> reading
 /// file offsets and slices, and every attempt to fix it was validated through a whole tool call —
 /// which meant a wrong answer could come from the matcher, the slice, the shift, or a stale build,
 /// and telling those apart cost more than the fix. Three strings in, one string out: the spec is

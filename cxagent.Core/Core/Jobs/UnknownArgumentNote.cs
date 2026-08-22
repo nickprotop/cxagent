@@ -1,4 +1,4 @@
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// Names the arguments that were SENT BUT IGNORED, appended to a validation failure.

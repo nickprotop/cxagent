@@ -6,7 +6,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// Binds an <see cref="HttpListener"/> to a free loopback port, retrying on collision.
 ///
-/// Why this exists: <see cref="LoopbackServer"/> and <c>HttpJobPluginTests</c> each used to pick a
+/// Why this exists: <see cref="LoopbackServer"/> and <c>HttpJobExecutorTests</c> each used to pick a
 /// port as <c>20000 + Random.Shared.Next(1, 9000)</c> with NO retry, from the SAME range. Five test
 /// classes spin listeners up in parallel, so two occasionally drew the same port and one threw
 /// <see cref="HttpListenerException"/> ("Address already in use") at construction — surfacing as an

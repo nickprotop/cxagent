@@ -15,7 +15,7 @@ One class, `Core/Agent/Agent.cs`. Constructed as many times as there are agents.
 `Core.*` and `Helpers` — **nothing from `UI`**, proven by the compiler after the kernel move.
 
 ```csharp
-public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
+public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
     IChatSink sink, IJobPanel jobs, LogFileManager? logs, int maxTurns,
     int? compressAbove = null, AgentContext? context = null,
     string? globalInstructionsDir = null, McpToolset? mcp = null, string? briefing = null)
@@ -36,7 +36,7 @@ public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
 | Thing | Shared? | Note |
 |---|---|---|
 | `ILlmProvider` | yes | Stateless w.r.t. conversation. |
-| `PluginRegistry` | yes | Tool implementations; the permission gate is inside it. |
+| `JobRegistry` | yes | Tool implementations; the permission gate is inside it. |
 | `TokenLedger` | **yes — one per session** | Constructed in `AgentHost`, never in `Agent`. Thread-safe (`Interlocked`). Per-agent ledgers are deliberately deferred. |
 | `IChatSink` / `IJobPanel` | **per agent in principle** | Constructor parameters. A sub-agent is created by passing different implementations. This is the whole UI seam. |
 | `McpToolset` | yes | One fleet per session. |
@@ -230,7 +230,7 @@ A sub-agent inherits a token the same way, so stopping one is already expressibl
 
 **Still missing:**
 
-- a factory, and a spawn tool. `WorkerToolset.Specs` is a static table keyed on the `WorkerTool`
+- a factory, and a spawn tool. `ToolBindings.Specs` is a static table keyed on the `BuiltinTool`
   enum, so dispatch has no access to a factory — that is the one genuinely new seam
 - requester identity on `PermissionRequest` — `(Kind, Display, AlwaysRule)`, no agent id
 - a waiting-on-permission `JobState` and a gate→UI event

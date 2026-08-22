@@ -1,12 +1,12 @@
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
-/// <summary>The parameter schema a plugin advertises (used later to build the LLM's
-/// create_plan type enum and per-plugin param docs).</summary>
+/// <summary>The parameter schema an executor advertises (used later to build the LLM's
+/// create_plan type enum and per-executor param docs).</summary>
 public record JobSchema(string TypeName, string DisplayName, IReadOnlyList<JobParamSpec> Params);
 
 public record JobParamSpec(string Name, string Type, bool Required, string? Description = null, object? Default = null);
 
-/// <summary>Result of a plugin's parameter validation.</summary>
+/// <summary>Result of an executor's parameter validation.</summary>
 public record JobValidation(bool IsValid, IReadOnlyList<string> Errors)
 {
     public static JobValidation Valid() => new(true, Array.Empty<string>());

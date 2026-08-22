@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 namespace CxAgent.Core.Mcp;
 
@@ -14,10 +14,10 @@ namespace CxAgent.Core.Mcp;
 /// model — has the same three fields as <see cref="McpToolDef"/>. What this type exists for is
 /// NAMING: composing a name that cannot collide, and dropping the ones that would anyway.</para>
 ///
-/// <para>WHY THIS IS NOT PART OF <see cref="WorkerToolset"/>. Both of that type's seams are driven by
-/// a static table keyed on the <see cref="WorkerTool"/> enum, and an MCP tool has no enum value —
+/// <para>WHY THIS IS NOT PART OF <see cref="ToolBindings"/>. Both of that type's seams are driven by
+/// a static table keyed on the <see cref="BuiltinTool"/> enum, and an MCP tool has no enum value —
 /// so it cannot join the table, and <c>InvokeAsync</c>'s lookup can never match one. Composition
-/// happens at the two call sites in <c>Agent</c> instead, leaving <see cref="WorkerToolset"/>
+/// happens at the two call sites in <c>Agent</c> instead, leaving <see cref="ToolBindings"/>
 /// closed.</para>
 /// </summary>
 public sealed class McpToolset
@@ -35,9 +35,9 @@ public sealed class McpToolset
     /// <summary>
     /// The permission gate every call goes through.
     ///
-    /// <para>NOT VIA <c>PermissionGatedPlugin</c>, which is the obvious route and silently allows:
+    /// <para>NOT VIA <c>PermissionGatedExecutor</c>, which is the obvious route and silently allows:
     /// it asks <c>PermissionPolicy.RequestsFor(TypeName, …)</c>, whose <c>default:</c> arm returns an
-    /// EMPTY list for any plugin type it does not know, and then loops over zero requests and runs
+    /// EMPTY list for any executor type it does not know, and then loops over zero requests and runs
     /// the inner code with no prompt at all. Third-party code would execute ungated while LOOKING
     /// gated — the worst of both. So the request is built here and handed to the gate directly.</para>
     /// </summary>
@@ -89,7 +89,7 @@ public sealed class McpToolset
         // and backfill the tool the user just removed. The set answers "which names are spoken for",
         // not "which tools does this agent have" — and every built-in name is spoken for whether or
         // not this agent was offered it.
-        var taken = new HashSet<string>(WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()),
+        var taken = new HashSet<string>(ToolBindings.NamesFor(Enum.GetValues<BuiltinTool>()),
             StringComparer.Ordinal);
 
         foreach (var server in servers)
@@ -140,7 +140,7 @@ public sealed class McpToolset
     /// Runs an MCP tool, or returns NULL if no server owns the name.
     ///
     /// <para>Null rather than an error string, so the caller falls through to
-    /// <see cref="WorkerToolset.InvokeAsync"/> and its "no such tool" text stays the single message
+    /// <see cref="ToolBindings.InvokeAsync"/> and its "no such tool" text stays the single message
     /// for a name nobody owns. Two sources each producing their own version of that message is how a
     /// model ends up being told a tool does not exist by one and nothing by the other.</para>
     /// </summary>
@@ -148,7 +148,7 @@ public sealed class McpToolset
     /// WHO IS ASKING — null for the session's own agent, a short label for a sub-agent.
     ///
     /// <para>The attribution work reached every other request-construction site and missed this one:
-    /// <see cref="Permissions.PermissionGatedPlugin"/> copies it from its <c>JobContext</c>, and MCP
+    /// <see cref="Permissions.PermissionGatedExecutor"/> copies it from its <c>JobContext</c>, and MCP
     /// had no equivalent because it takes no context at all. With one child at a time that is merely
     /// unhelpful. With two, a prompt saying "may I run this?" has no answer to "which of them wants
     /// it?" — and the user is being asked to approve third-party code on their machine.</para>
@@ -171,7 +171,7 @@ public sealed class McpToolset
         if (!_byName.TryGetValue(call.Name, out var found)) return null;
 
         // GATED BEFORE THE SERVER IS TOUCHED. An MCP server is third-party code running on the user's
-        // machine with the user's credentials; the built-in file, shell and http plugins all prompt,
+        // machine with the user's credentials; the built-in file, shell and http executors all prompt,
         // and this gets no weaker treatment.
         //
         // The whole call is shown — server, tool AND arguments — because the user is approving a call
@@ -198,8 +198,8 @@ public sealed class McpToolset
         var result = await found.Server.CallToolAsync(found.Tool, call.Arguments, ct);
 
         // The same cap as every built-in tool result, or one call fills the context window. A second
-        // copy of the elision beats widening WorkerToolset's private helper for one caller.
-        return Truncate(result, WorkerToolset.MaxToolResultChars);
+        // copy of the elision beats widening ToolBindings's private helper for one caller.
+        return Truncate(result, ToolBindings.MaxToolResultChars);
     }
 
     /// <summary>
@@ -239,7 +239,7 @@ public sealed class McpToolset
         return sb.ToString();
     }
 
-    /// <summary>The same elision as <see cref="WorkerToolset"/>'s, marker counted inside the cap so
+    /// <summary>The same elision as <see cref="ToolBindings"/>'s, marker counted inside the cap so
     /// the one number it guarantees is actually guaranteed.</summary>
     private static string Truncate(string text, int cap)
     {

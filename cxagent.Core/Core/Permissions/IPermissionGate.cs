@@ -41,9 +41,9 @@ public static class DenialMessage
               + " again unless the user explicitly asks.";
 }
 
-/// <summary>The seam <see cref="PermissionGatedPlugin"/> awaits before letting an inner plugin
+/// <summary>The seam <see cref="PermissionGatedExecutor"/> awaits before letting an inner executor
 /// run. One call per request, sequential and short-circuiting on the first denial — see
-/// PermissionGatedPlugin's doc comment for why that ordering matters.</summary>
+/// PermissionGatedExecutor's doc comment for why that ordering matters.</summary>
 public interface IPermissionGate
 {
     /// <summary>The decision AND who made it. Implementations own the whole decision: silent

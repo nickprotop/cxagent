@@ -1,11 +1,11 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
 
-public class ShellJobPluginTests
+public class ShellJobExecutorTests
 {
     private static JobParameters P(params (string k, object? v)[] kv)
         => new(kv.ToDictionary(x => x.k, x => x.v));
@@ -13,21 +13,21 @@ public class ShellJobPluginTests
     [Fact]
     public void Validate_RejectsEmptyCommand()
     {
-        var v = new ShellJobPlugin().Validate(P(("command", "")));
+        var v = new ShellJobExecutor().Validate(P(("command", "")));
         Assert.False(v.IsValid);
     }
 
     [Fact]
     public void Validate_AcceptsNonEmptyCommand()
     {
-        var v = new ShellJobPlugin().Validate(P(("command", "echo hi")));
+        var v = new ShellJobExecutor().Validate(P(("command", "echo hi")));
         Assert.True(v.IsValid);
     }
 
     [Fact]
     public async Task Execute_EchoSucceeds_WithExitCodeZero()
     {
-        var result = await new ShellJobPlugin().ExecuteAsync(
+        var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "echo hi")), new CollectingContext(), CancellationToken.None);
         Assert.True(result.Success);
         Assert.Equal(0, result.ExitCode);
@@ -40,7 +40,7 @@ public class ShellJobPluginTests
         // any goal that shelled out and fed the result onward failed. Measured on a live drive of
         // "list ~/bin. what it does?": the job succeeded, the reference produced nothing, and the
         // model reported the directory EMPTY — it had six scripts.
-        var result = await new ShellJobPlugin().ExecuteAsync(
+        var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "echo hello-from-stdout")), new CollectingContext(), CancellationToken.None);
 
         Assert.True(result.Success);
@@ -56,7 +56,7 @@ public class ShellJobPluginTests
     {
         // Separate keys so a job can reference either — diagnostics must not be silently mixed into
         // the text a downstream job treats as the result.
-        var result = await new ShellJobPlugin().ExecuteAsync(
+        var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "echo oops >&2")), new CollectingContext(), CancellationToken.None);
 
         Assert.Contains("oops", result.Output!["stderr"]!.ToString()!);
@@ -66,7 +66,7 @@ public class ShellJobPluginTests
     [Fact]
     public async Task Execute_NonZeroExit_Fails()
     {
-        var result = await new ShellJobPlugin().ExecuteAsync(
+        var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "exit 2")), new CollectingContext(), CancellationToken.None);
         Assert.False(result.Success);
         Assert.Equal(2, result.ExitCode);
@@ -75,7 +75,7 @@ public class ShellJobPluginTests
     [Fact]
     public async Task Execute_Timeout_FailsWithTimedOut()
     {
-        var result = await new ShellJobPlugin().ExecuteAsync(
+        var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "sleep 30"), ("timeout_seconds", 1)), new CollectingContext(), CancellationToken.None);
         Assert.False(result.Success);
         Assert.Contains("timed out", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
@@ -84,7 +84,7 @@ public class ShellJobPluginTests
     [Fact]
     public void TypeName_IsShell()
     {
-        Assert.Equal("shell", new ShellJobPlugin().TypeName);
+        Assert.Equal("shell", new ShellJobExecutor().TypeName);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public class ShellJobPluginTests
         // Unredirected, the child INHERITS the TUI's stdin: `git commit` opens $EDITOR, `apt` waits
         // on y/n, and the command blocks until the timeout while stealing the user's keystrokes.
         // Closed, the read returns EOF and the command finishes in milliseconds.
-        var plugin = new ShellJobPlugin();
+        var executor = new ShellJobExecutor();
         var p = new JobParameters(new Dictionary<string, object?>
         {
             ["command"] = "cat",              // reads stdin until EOF
@@ -101,7 +101,7 @@ public class ShellJobPluginTests
         });
 
         var start = DateTimeOffset.UtcNow;
-        var r = await plugin.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
+        var r = await executor.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
         var elapsed = DateTimeOffset.UtcNow - start;
 
         Assert.True(r.Success, r.ErrorMessage);
@@ -115,10 +115,10 @@ public class ShellJobPluginTests
         // timeout_seconds is optional and a model almost never sends it. With no default,
         // ProcessRunner built a CancellationTokenSource that was never scheduled to fire, so a
         // blocking command waited forever with nothing able to interrupt it.
-        var plugin = new ShellJobPlugin();
+        var executor = new ShellJobExecutor();
         var p = new JobParameters(new Dictionary<string, object?> { ["command"] = "echo hi" });
 
-        var r = await plugin.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
+        var r = await executor.ExecuteAsync(p, new CollectingContext(), CancellationToken.None);
 
         Assert.True(r.Success, r.ErrorMessage);
     }

@@ -1,4 +1,4 @@
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>
 /// Where a replace pattern occurs in a file, and how it was found.
@@ -20,7 +20,7 @@ public readonly record struct PatternMatch(int Start, int Length, bool WholeLine
 /// Finds a replace pattern in a file's text.
 ///
 /// <para>A PURE FUNCTION over two strings, for the same reason <see cref="IndentShift"/> is: the
-/// previous version lived inside the plugin, and every attempt to change it produced failures that
+/// previous version lived inside the executor, and every attempt to change it produced failures that
 /// could have come from the matcher, the span it returned, the shift applied afterwards, or a stale
 /// build. Two strings in, a list of matches out — a wrong answer has one place to be.</para>
 ///

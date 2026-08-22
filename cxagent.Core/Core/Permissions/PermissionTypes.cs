@@ -5,11 +5,11 @@ namespace CxAgent.Core.Permissions;
 /// write, running locally with the user's credentials, whose arguments follow a schema we cannot
 /// interpret.
 ///
-/// <para><c>Tool</c> is a consumer-injected <see cref="Plugins.IAgentTool"/>: may this embedder's
+/// <para><c>Tool</c> is a consumer-injected <see cref="Jobs.IAgentTool"/>: may this embedder's
 /// own tool run in this folder at all. It is deliberately NOT reused from the kinds above — "may
 /// show_diff run here" is not a shell, file or http question, and a rule stored under one of those
 /// names would misdescribe itself to anyone reading permissions.json. Note that answering it yes
-/// never exempts the tool from its own <see cref="Plugins.IAgentTool.Gate"/>, which runs on every
+/// never exempts the tool from its own <see cref="Jobs.IAgentTool.Gate"/>, which runs on every
 /// call; the two are different questions and this kind only answers the first.</para>
 ///
 /// <para>PERSISTED BY NAME (<c>JsonStringEnumConverter</c>), so adding a value is a one-way change to
@@ -137,7 +137,7 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// <summary>
     /// Told true when the gate is about to consult the classifier for THIS request, and false once
     /// that consultation ends — mirrors how <see cref="Requester"/> and <see cref="Policy"/> ride
-    /// the request: the wrapper (PermissionGatedPlugin/GatedAgentTool) is the one layer that sees
+    /// the request: the wrapper (PermissionGatedExecutor/GatedAgentTool) is the one layer that sees
     /// both the request and the job context, so it is the one that stamps this from
     /// <c>context.ReportReviewing</c>. Null on the test seams that build a request with no context
     /// behind it — <see cref="PermissionDecider"/> guards every call with <c>?.</c>.

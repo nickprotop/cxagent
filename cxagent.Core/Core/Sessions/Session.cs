@@ -1,6 +1,6 @@
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Helpers;
@@ -37,7 +37,7 @@ public sealed partial class Session
     /// <remarks>
     /// TAKES ONLY ITS FOLDER. Everything else arrives with the first wire, which is what lets the
     /// session be constructed BEFORE the permission gate — the gate needs this root string, and a
-    /// session that also demanded a plugin registry would have to be built after the gate that
+    /// session that also demanded an executor registry would have to be built after the gate that
     /// needs the root the session holds. One of the two had to stop asking for more than it needs.
     /// </remarks>
     public Session(string workingDirectory)
@@ -159,10 +159,10 @@ public sealed partial class Session
     /// name. Two entries can serve one model, so the name is what identifies the endpoint.</summary>
     public string? InstanceName { get; private set; }
 
-    /// <summary>The plugin registry for the current wiring, or null before the first wire. Rebuilt
+    /// <summary>The executor registry for the current wiring, or null before the first wire. Rebuilt
     /// per re-wire so an F7 rebinding dispatches through the NEW resolution rather than the bindings
     /// that existed at launch.</summary>
-    public PluginRegistry? Plugins { get; private set; }
+    public JobRegistry? Plugins { get; private set; }
 
     /// <summary>
     /// A ledger that must survive the next re-wire, or null for the usual fresh start.
@@ -215,7 +215,7 @@ public sealed partial class Session
     /// remember when the host is a bare local, and cannot forget when it goes through here.</para>
     /// </summary>
     internal void ReplaceHost(AgentHost host, ILlmProvider provider, string? instanceName,
-        PluginRegistry plugins)
+        JobRegistry executors)
     {
         Host?.Dispose();
         Host = host;
@@ -231,7 +231,7 @@ public sealed partial class Session
         host?.UseTurnIds(NextTurnId);
         Provider = provider;
         InstanceName = instanceName;
-        Plugins = plugins;
+        Plugins = executors;
     }
 
     /// <summary>
@@ -460,11 +460,11 @@ public sealed partial class Session
     /// can this agent do" is asking about the session, and folding a past turn's narrowing into
     /// that answer would report a restriction that no longer applies.</para>
     /// </summary>
-    internal Plugins.ToolSelection? ToolSelection { get; private set; }
+    internal Jobs.ToolSelection? ToolSelection { get; private set; }
 
     /// <summary>Records the selection, like NotePolicy above and for the same reason: SessionFactory
     /// composes it and nothing else can.</summary>
-    internal void NoteToolSelection(Plugins.ToolSelection? selection) => ToolSelection = selection;
+    internal void NoteToolSelection(Jobs.ToolSelection? selection) => ToolSelection = selection;
 
     /// <summary>
     /// The catalog this session was wired against, and whether a classifier is configured in it.

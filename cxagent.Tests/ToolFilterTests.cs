@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -57,7 +57,7 @@ public class ToolFilterTests
     public async Task AWithheldBuiltinIsNotOffered()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             toolSelection: new ToolSelection([Tool.Inherited, Tool.Not.RunShell]));
 
@@ -82,7 +82,7 @@ public class ToolFilterTests
             Usage = new LlmUsage { InputTokens = 1, OutputTokens = 1 },
         });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             toolSelection: new ToolSelection([Tool.Inherited, Tool.Not.RunShell]));
 
@@ -96,7 +96,7 @@ public class ToolFilterTests
     public async Task AWithheldInjectedToolIsNotOffered()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             agentTools: [new EchoTool()],
             toolSelection: new ToolSelection([Tool.Inherited, "-echo_tool"]));
@@ -108,7 +108,7 @@ public class ToolFilterTests
     public async Task AnExactSetKeepsOnlyWhatItNames()
     {
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             toolSelection: new ToolSelection([Tool.ReadFile, Tool.Grep]));
 
@@ -126,7 +126,7 @@ public class ToolFilterTests
         // S0 IS ABSOLUTE. The agent has no spawner, so `agent` is not in the assembled list at all —
         // and a + term can only ever match something that is.
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             toolSelection: new ToolSelection([Tool.Inherited, Tool.Also.Agent]));
 
@@ -144,7 +144,7 @@ public class ToolFilterTests
                 JsonSerializer.SerializeToElement(new { type = "object" })))]);
 
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             mcp: mcp,
             toolSelection: new ToolSelection([Tool.ReadFile]));
@@ -161,7 +161,7 @@ public class ToolFilterTests
     {
         // The default must be free: every existing caller passes nothing and sees today's list.
         var provider = new MockLlmProvider();
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5);
 
         var offered = await OfferedNames(agent, provider);

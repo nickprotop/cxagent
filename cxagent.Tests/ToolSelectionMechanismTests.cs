@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -109,7 +109,7 @@ public class ToolSelectionMechanismTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
             ToolSelection = selection,

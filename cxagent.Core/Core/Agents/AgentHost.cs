@@ -5,7 +5,7 @@ using System.Threading;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Helpers;
 using CxAgent.Core.Sessions;
@@ -328,7 +328,7 @@ public sealed class AgentHost : IDisposable
     public sealed record AgentRuntime
     {
         public required ILlmProvider Provider { get; init; }
-        public required PluginRegistry Plugins { get; init; }
+        public required JobRegistry Plugins { get; init; }
 
         /// <summary>
         /// Which <c>providers</c> entry this is, for spend attribution and the UI's label.
@@ -369,7 +369,7 @@ public sealed class AgentHost : IDisposable
         /// <summary>
         /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults, so the
         /// agent can start warming its cache the moment a tool call is PARSED rather than waiting for
-        /// <see cref="Permissions.PermissionGatedPlugin"/> to ask for a verdict it needs synchronously.
+        /// <see cref="Permissions.PermissionGatedExecutor"/> to ask for a verdict it needs synchronously.
         ///
         /// <para>NULL WHEREVER THE GATE ISN'T A <see cref="Permissions.PermissionDecider"/> — headless
         /// runs and most tests use <see cref="Permissions.PermissionGate.AllowAll"/> or
@@ -412,18 +412,18 @@ public sealed class AgentHost : IDisposable
         public Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? AskUser { get; init; }
 
         /// <summary>
-        /// The embedder's own tools, already wrapped in <see cref="Plugins.GatedAgentTool"/> by
+        /// The embedder's own tools, already wrapped in <see cref="Jobs.GatedAgentTool"/> by
         /// SessionFactory. Empty in every path that injects nothing.
         ///
         /// <para>ALREADY GATED WHEN IT ARRIVES. This type does no wrapping of its own, because the
         /// session's policy is not visible here — doing it in two places is how one of them ends up
         /// being the copy that forgets.</para>
         /// </summary>
-        public IReadOnlyList<Plugins.IAgentTool> AgentTools { get; init; } = [];
+        public IReadOnlyList<Jobs.IAgentTool> AgentTools { get; init; } = [];
 
         /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
         /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
-        public Plugins.ToolSelection? ToolSelection { get; init; }
+        public Jobs.ToolSelection? ToolSelection { get; init; }
     }
 
     public AgentHost(AgentRuntime runtime, ISessionObserver sink, IToolObserver jobPanel,
@@ -471,7 +471,7 @@ public sealed class AgentHost : IDisposable
     /// Runs one turn on this host's agent. A DELEGATION — everything around it is the session's.
     ///
     /// <para>WHAT STAYS HERE IS THE AGENT, which is what a host is: the thing that owns the agent, its
-    /// plugins, its MCP binding and its ledger. Starting a turn, stopping it, saying what happened and
+    /// executors, its MCP binding and its ledger. Starting a turn, stopping it, saying what happened and
     /// numbering the rows are the session's, and now live there.</para>
     /// </summary>
     /// <param name="turnTools">This request's tool selection, composed onto the session's. Null is
@@ -479,7 +479,7 @@ public sealed class AgentHost : IDisposable
     /// <param name="prompt">What the user asked for.</param>
     /// <param name="ct">Cancels the goal mid-run.</param>
     public Task RunAsync(string prompt, CancellationToken ct,
-        Plugins.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
+        Jobs.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
 
 
     /// <summary>

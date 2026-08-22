@@ -1,7 +1,7 @@
 using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Agents;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Skills;
 using Xunit;
 
@@ -226,9 +226,9 @@ public class ToolSelectionTests
 public class ToolNameConstantsTests
 {
     [Fact]
-    public void TheEightBuiltinConstants_AreTheNamesWorkerToolsetOffers()
+    public void TheEightBuiltinConstants_AreTheNamesToolBindingsOffers()
     {
-        var offered = WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()).ToHashSet(StringComparer.Ordinal);
+        var offered = ToolBindings.NamesFor(Enum.GetValues<BuiltinTool>()).ToHashSet(StringComparer.Ordinal);
 
         Assert.Equal(8, offered.Count);
         foreach (var name in new[]

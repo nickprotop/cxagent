@@ -132,7 +132,7 @@ public sealed partial class Session
     /// AS PASSED rather than composed, because a composed value carries S1 and S2 terms the caller
     /// never wrote and would compare unequal to an identical re-pass.</para>
     /// </summary>
-    private Plugins.ToolSelection? _turnTools;
+    private Jobs.ToolSelection? _turnTools;
 
     /// <summary>
     /// Sends this text, or queues it when a turn is already running.
@@ -159,10 +159,10 @@ public sealed partial class Session
     /// </param>
     /// <param name="tools">
     /// Which tools this ONE request may use, composed onto the session's selection. Null keeps
-    /// whatever the session already has. See <see cref="Plugins.ToolSelection"/>.
+    /// whatever the session already has. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
     public SubmitOutcome Submit(string text, string? echo = null,
-        Plugins.ToolSelection? tools = null)
+        Jobs.ToolSelection? tools = null)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
 
@@ -209,7 +209,7 @@ public sealed partial class Session
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
-    private async Task RunTurnAsync(string text, string? echo, Plugins.ToolSelection? tools)
+    private async Task RunTurnAsync(string text, string? echo, Jobs.ToolSelection? tools)
     {
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why

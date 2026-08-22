@@ -40,11 +40,11 @@ public sealed record SessionPorts
     /// not a hypothetical — it is exactly what <c>show_diff</c> does, holding a chat control in its
     /// closure.</para>
     ///
-    /// <para>Wrap each in <see cref="Plugins.GatedAgentTool"/> before it reaches an agent. Passing a
+    /// <para>Wrap each in <see cref="Jobs.GatedAgentTool"/> before it reaches an agent. Passing a
     /// bare tool here is not a compile error and produces a tool that runs UNGATED, which is why
     /// SessionFactory does the wrapping rather than trusting every embedder to remember.</para>
     /// </summary>
-    public IReadOnlyList<Plugins.IAgentTool> Tools { get; init; } = [];
+    public IReadOnlyList<Jobs.IAgentTool> Tools { get; init; } = [];
 
     /// <summary>
     /// Which tools THIS conversation is offered. Null means no opinion.
@@ -54,7 +54,7 @@ public sealed record SessionPorts
     /// order rather than intersecting — and none of them reaches a tool this agent structurally
     /// lacks.</para>
     /// </summary>
-    public Plugins.ToolSelection? ToolSelection { get; init; }
+    public Jobs.ToolSelection? ToolSelection { get; init; }
 
     /// <summary>
     /// How THIS session's permission questions are judged — its working directory and edit mode.

@@ -2,7 +2,7 @@ using System.Text;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>
 /// Turns an HTML page into the text a reader would actually take from it.

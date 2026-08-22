@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;

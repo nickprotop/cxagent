@@ -2,19 +2,19 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// Wraps a consumer's <see cref="IAgentTool"/> so its calls reach the permission gate.
 ///
-/// <para>WHY NOT <see cref="PermissionGatedPlugin"/>. That type asks
+/// <para>WHY NOT <see cref="PermissionGatedExecutor"/>. That type asks
 /// <c>PermissionPolicy.RequestsFor(TypeName, ...)</c>, which knows the names "shell", "file" and
 /// "http". A consumer tool matches none of them, so RequestsFor returns an empty list, the foreach
 /// never runs, and the call proceeds UNGATED — silently, with every layer behaving as written. An
 /// injected tool without a wrapper of its own is a hole rather than a missing feature, which is why
 /// this is built before anything can be injected through it.</para>
 ///
-/// <para>THE ASYMMETRY WITH ITS SIBLING: PermissionGatedPlugin derives its requests from a POLICY
+/// <para>THE ASYMMETRY WITH ITS SIBLING: PermissionGatedExecutor derives its requests from a POLICY
 /// that reads the arguments of tools it knows. Nothing here knows what a consumer's arguments mean,
 /// so the tool declares its own requirement through <see cref="IAgentTool.Gate"/> and this only
 /// carries the answer to the gate. That is the whole reason Gate exists on the interface.</para>
@@ -100,11 +100,11 @@ public sealed class GatedAgentTool : IAgentTool
             }
 
             // `??`, NOT a plain assignment — see the identical fix and comment on gate 2 below,
-            // and PermissionGatedPlugin's sibling comment: a null DeniedBy never carries news and
+            // and PermissionGatedExecutor's sibling comment: a null DeniedBy never carries news and
             // must not overwrite a verdict a request already named.
             decidedBy = outcome.DeniedBy ?? decidedBy;
 
-            // REPORTED AT DECISION TIME — see PermissionGatedPlugin's sibling comment. A JobResult
+            // REPORTED AT DECISION TIME — see PermissionGatedExecutor's sibling comment. A JobResult
             // exists only at completion, so the badge could not appear until then; the gate knows
             // now, while the row is still running, and a denied call never runs to produce one.
             context.DecidedBy = decidedBy;
@@ -129,7 +129,7 @@ public sealed class GatedAgentTool : IAgentTool
 
         if (request is not null)
         {
-            // MARKED WAITING FOR THE DURATION OF THE ASK, as PermissionGatedPlugin does: the row
+            // MARKED WAITING FOR THE DURATION OF THE ASK, as PermissionGatedExecutor does: the row
             // above this job keeps ticking elapsed time while a prompt sits unanswered, so without
             // this a parked job reads as a working one. In a finally because a request cancelled
             // while queued never returns here.
@@ -155,7 +155,7 @@ public sealed class GatedAgentTool : IAgentTool
             // tool declared one via Gate(call) — that clears silently, e.g. a stored rule, and
             // comes back as a plain Allow with DeniedBy null. Assigning that over gate 1's "auto"
             // erased the classifier's verdict from the badge on the way out, the same bug
-            // PermissionGatedPlugin had for its multi-request loop. A null outcome never carries
+            // PermissionGatedExecutor had for its multi-request loop. A null outcome never carries
             // news, so it must never overwrite whatever the last request that DID name a decider
             // said.
             decidedBy = outcome.DeniedBy ?? decidedBy;

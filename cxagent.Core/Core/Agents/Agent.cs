@@ -4,7 +4,7 @@ using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Sessions;
 
@@ -29,8 +29,8 @@ namespace CxAgent.Core.Agents;
 /// from a digest because nothing round-trips through one.</para>
 ///
 /// <para>PERMISSIONS ARE UNCHANGED, and that is structural rather than careful: every call goes
-/// through <see cref="WorkerToolset.InvokeAsync"/> into the same <see cref="PluginRegistry"/>, whose
-/// file/shell/http plugins are wrapped in <c>PermissionGatedPlugin</c>. The gate reads
+/// through <see cref="ToolBindings.InvokeAsync"/> into the same <see cref="JobRegistry"/>, whose
+/// file/shell/http executors are wrapped in <c>PermissionGatedExecutor</c>. The gate reads
 /// <c>(TypeName, parameters)</c> and nothing else — no part of the job path was load-bearing for it,
 /// which is what makes this substitution safe.</para>
 ///
@@ -44,7 +44,7 @@ public sealed class Agent
     // replaced only when its text differs, and CompressionRun takes the provider as an argument — so
     // there is no derived state a swap could leave stale. See SwapProvider.
     private ILlmProvider _provider;
-    private readonly PluginRegistry _plugins;
+    private readonly JobRegistry _executors;
     private readonly TokenLedger _ledger;
     private readonly ISessionObserver _sink;
     private readonly IToolObserver _jobs;
@@ -189,7 +189,7 @@ public sealed class Agent
     /// <summary>The embedder's own tools, or null when nothing was injected. Offered to a child as
     /// well as a parent: a sub-agent that cannot call show_diff would do the work and skip the
     /// showing, which is the one thing the tool exists for.</summary>
-    private readonly Plugins.AgentToolset? _agentTools;
+    private readonly Jobs.AgentToolset? _agentTools;
     private readonly Permissions.PermissionPolicy? _policy;
 
     /// <summary>Task 11's speculation handle — see the constructor parameter doc. Null wherever no
@@ -204,7 +204,7 @@ public sealed class Agent
     /// site, which is why the composed result is NOT cached here. Caching it would make turn-level
     /// selection silently inert for the session's own agent — the caller most likely to use it.</para>
     /// </summary>
-    private readonly Plugins.ToolSelection? _toolSelection;
+    private readonly Jobs.ToolSelection? _toolSelection;
 
     /// <summary>
     /// THIS REQUEST's selection, held for the turn so the dispatch site sees what the offer site
@@ -218,7 +218,7 @@ public sealed class Agent
     /// <para>ONE TURN AT A TIME is what makes a field safe here — Session.Submit enforces it, and
     /// two concurrent sends on one agent would corrupt Context.Messages long before this mattered.</para>
     /// </summary>
-    private Plugins.ToolSelection? _turnTools;
+    private Jobs.ToolSelection? _turnTools;
 
     /// <summary>
     /// The names actually OFFERED for this request, so a call can be answered honestly.
@@ -245,13 +245,13 @@ public sealed class Agent
     /// have happened either, so the notice this guards has not been written.</para>
     /// </summary>
     internal bool SkillToolOffered =>
-        _offeredNames.Count == 0 || _offeredNames.Contains(Plugins.Tool.Skill);
+        _offeredNames.Count == 0 || _offeredNames.Contains(Jobs.Tool.Skill);
 
     /// <summary>
     /// The built-ins this agent may run, after its selection.
     ///
     /// <para>ONE DECISION, TWO SITES. The assembly uses it to decide what the model is TOLD;
-    /// <see cref="InvokeAndShowAsync"/> passes it to WorkerToolset.InvokeAsync to decide what it may
+    /// <see cref="InvokeAndShowAsync"/> passes it to ToolBindings.InvokeAsync to decide what it may
     /// RUN. Touch one without the other and you get a tool that is offered and refused, or hidden
     /// and callable — which is exactly why InvokeAsync's enforcement was kept through the role
     /// removal, for a caller that did not yet exist.</para>
@@ -288,17 +288,17 @@ public sealed class Agent
     /// <para>MOVING THIS TEXT LATER IN THE PROMPT WOULD NOT HELP. Providers cache a prefix, not a
     /// diff, and the whole conversation trails the system message — so any position within it
     /// invalidates the same tokens. The layout is already the best available.</para>
-    private bool SelectionAllows(string toolName, Plugins.ToolSelection? turnTools)
-        => Plugins.ToolSelection.Offers(
-            Plugins.ToolSelection.Then(_toolSelection, turnTools), toolName);
+    private bool SelectionAllows(string toolName, Jobs.ToolSelection? turnTools)
+        => Jobs.ToolSelection.Offers(
+            Jobs.ToolSelection.Then(_toolSelection, turnTools), toolName);
 
-    private IReadOnlyList<WorkerTool> AllowedBuiltins(Plugins.ToolSelection? selection)
+    private IReadOnlyList<BuiltinTool> AllowedBuiltins(Jobs.ToolSelection? selection)
     {
-        var composed = Plugins.ToolSelection.Then(_toolSelection, selection);
-        if (composed is null) return AllTools;
+        var composed = Jobs.ToolSelection.Then(_toolSelection, selection);
+        if (composed is null) return AllBuiltins;
 
-        var offered = WorkerToolset.For(AllTools, _plugins);
-        return Plugins.WorkerToolset.ToolsNamed(composed.Apply(offered).Select(t => t.Name));
+        var offered = ToolBindings.For(AllBuiltins, _executors);
+        return Jobs.ToolBindings.ToolsNamed(composed.Apply(offered).Select(t => t.Name));
     }
 
     /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
@@ -512,7 +512,7 @@ public sealed class Agent
     public event Action? ChildSpend;
 
     /// <summary>
-    /// Raised when a tool call finishes: name, plugin type, outcome, duration, and how many
+    /// Raised when a tool call finishes: name, executor type, outcome, duration, and how many
     /// characters its result put INTO the context.
     ///
     /// <para>AN EVENT, NOT A STORE REFERENCE. The loop must not know that history is a database, or
@@ -590,7 +590,7 @@ public sealed class Agent
     private readonly int? _compressAbove;
 
     /// <param name="provider">The model this agent talks to. Sub-agents may be given a different one.</param>
-    /// <param name="plugins">The tool implementations behind the built-in tool names.</param>
+    /// <param name="executors">The tool implementations behind the built-in tool names.</param>
     /// <param name="ledger">Where this agent's token spend is recorded; shared with its children.</param>
     /// <param name="sink">Where the agent's words go — the observer an embedder supplies.</param>
     /// <param name="jobs">Where tool activity is reported.</param>
@@ -629,7 +629,7 @@ public sealed class Agent
     /// </param>
     /// <param name="agentTools">Tools the embedder injected, offered beside the built-ins.</param>
     /// <param name="toolSelection">
-    /// Which tools this agent is offered, or null for all of them. See <see cref="Plugins.ToolSelection"/>.
+    /// Which tools this agent is offered, or null for all of them. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
     /// <param name="policy">
     /// The session's permission policy, passed to MCP calls. Null refuses every MCP call.
@@ -638,11 +638,11 @@ public sealed class Agent
     /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults when a
     /// gated call actually needs a verdict. Passed here so this agent can call
     /// <see cref="Permissions.ActionClassifier.Speculate"/> the moment a tool call is PARSED,
-    /// before <see cref="Permissions.PermissionGatedPlugin"/> asks for one synchronously. Null
+    /// before <see cref="Permissions.PermissionGatedExecutor"/> asks for one synchronously. Null
     /// wherever no classifier is reachable (headless runs, most tests) — the agent simply never
     /// speculates, and every gated call falls back to paying its own synchronous cost.
     /// </param>
-    public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
+    public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
         Core.Mcp.McpToolset? mcp = null,
@@ -654,13 +654,13 @@ public sealed class Agent
         Func<IReadOnlyList<UserQuestion>, CancellationToken, Task<QuestionAnswers>>? askUser = null,
         string? workingDir = null,
         string? instanceName = null,
-        IReadOnlyList<Plugins.IAgentTool>? agentTools = null,
-        Plugins.ToolSelection? toolSelection = null,
+        IReadOnlyList<Jobs.IAgentTool>? agentTools = null,
+        Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null)
     {
         // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
-        // PermissionGatedPlugin. Without it the gate refuses every MCP call for want of a policy —
+        // PermissionGatedExecutor. Without it the gate refuses every MCP call for want of a policy —
         // see McpToolset.TryInvokeAsync.
         _policy = policy;
         // TASK 11'S SPECULATION HANDLE. Held as-is, not wrapped — Speculate is itself already the
@@ -728,7 +728,7 @@ public sealed class Agent
         var offered = isSubAgent
             ? agentTools?.Where(t => t.OfferToSubAgents).ToList()
             : agentTools;
-        _agentTools = offered is { Count: > 0 } ? new Plugins.AgentToolset(offered) : null;
+        _agentTools = offered is { Count: > 0 } ? new Jobs.AgentToolset(offered) : null;
         _toolSelection = toolSelection;
 
         _skills = new Skills.SkillLoader(() =>
@@ -741,7 +741,7 @@ public sealed class Agent
         _isSubAgent = isSubAgent;
         _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
-        _plugins = plugins;
+        _executors = executors;
         _ledger = ledger;
         _sink = sink;
         _jobs = jobs;
@@ -763,7 +763,7 @@ public sealed class Agent
 
     /// <summary>Every tool, always. Safety lives in the permission gate, not in withholding
     /// capability from a worker by name.</summary>
-    private static readonly IReadOnlyList<WorkerTool> AllTools = Enum.GetValues<WorkerTool>();
+    private static readonly IReadOnlyList<BuiltinTool> AllBuiltins = Enum.GetValues<BuiltinTool>();
 
     /// <summary>
     /// One exchange on the linear path: prompt → tools → answer.
@@ -784,7 +784,7 @@ public sealed class Agent
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
     /// </remarks>
     public async Task<SendResult> SendAsync(string prompt, CancellationToken ct,
-        Plugins.ToolSelection? turnTools = null)
+        Jobs.ToolSelection? turnTools = null)
     {
         // HELD FOR THE TURN so the dispatch site can see what the offer site showed.
         //
@@ -887,11 +887,11 @@ public sealed class Agent
                     // && THE SELECTION, so the prompt does not spend a block teaching delegation to
                     // an agent whose `agent` tool was withheld. A child never has it either way —
                     // this is the PARENT case, which the structural gate alone cannot see.
-                    CanSpawn = CanSpawn && SelectionAllows(Plugins.Tool.Agent, turnTools),
+                    CanSpawn = CanSpawn && SelectionAllows(Jobs.Tool.Agent, turnTools),
 
                     // Gated the same way, and false for a child by construction — _askUser is null
                     // for a sub-agent whatever the caller passed.
-                    CanAskUser = _askUser is not null && SelectionAllows(Plugins.Tool.AskUser, turnTools),
+                    CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))
@@ -947,7 +947,7 @@ public sealed class Agent
         // connected since the last prompt is picked up with no restart. Mid-request the list is
         // fixed, which is correct: a tool appearing between two turns of one request would be a
         // moving target for the model.
-        var tools = WorkerToolset.For(AllTools, _plugins)
+        var tools = ToolBindings.For(AllBuiltins, _executors)
             .Concat(_mcp?.Definitions() ?? [])
             // THE SPAWN TOOL, only when this agent CAN spawn — fan-out mode, and a spawner to do it
             // with. Two independent reasons not to offer it, and both matter: a child has no spawner
@@ -986,7 +986,7 @@ public sealed class Agent
         // S3 COMPOSED HERE, NOT AT CONSTRUCTION. The request's own selection arrives as an argument
         // and joins the session's; composing at construction would make it inert for the session's
         // own agent, which is the caller most likely to use it.
-        if (Plugins.ToolSelection.Then(_toolSelection, turnTools) is { } selection)
+        if (Jobs.ToolSelection.Then(_toolSelection, turnTools) is { } selection)
         {
             var mcpNames = _mcp?.Names().ToHashSet(StringComparer.Ordinal) ?? [];
             var selectable = tools.Where(t => !mcpNames.Contains(t.Name)).ToList();
@@ -1347,7 +1347,7 @@ public sealed class Agent
             // synchronous gate that will eventually need its answer. By the time the walk below
             // reaches a gated call, the verdict is often already sitting in Task 10's cache.
             //
-            // ONLY WHERE A VERDICT COULD MATTER. WorkerToolset.RequestsFor answers empty for
+            // ONLY WHERE A VERDICT COULD MATTER. ToolBindings.RequestsFor answers empty for
             // anything this toolset does not recognise (MCP, an embedder tool, a made-up name), and
             // EffectFor(request) == None for anything the gate would never consult the classifier
             // for anyway (not auto mode, an untrusted folder, a kind EffectFor never gates) — both
@@ -1362,7 +1362,7 @@ public sealed class Agent
             {
                 foreach (var call in response.ToolCalls)
                 {
-                    foreach (var request in Plugins.WorkerToolset.RequestsFor(call, _workingDir))
+                    foreach (var request in Jobs.ToolBindings.RequestsFor(call, _workingDir))
                     {
                         if (_policy.EffectFor(request) == Permissions.ReviewEffect.None) continue;
                         _classifier.Speculate(request, ct);
@@ -1786,7 +1786,7 @@ public sealed class Agent
     /// <summary>
     /// The refusal for a tool this agent exists to have but was not offered, or null to dispatch.
     ///
-    /// <para>KNOWN-BUT-WITHHELD ONLY. A name nobody owns falls through to WorkerToolset's "no such
+    /// <para>KNOWN-BUT-WITHHELD ONLY. A name nobody owns falls through to ToolBindings's "no such
     /// tool", which lists what IS available and is the right answer for a typo. This one is for a
     /// name that would have worked under a different selection.</para>
     ///
@@ -1800,7 +1800,7 @@ public sealed class Agent
 
         // COULD THIS NAME EVER BE OFFERED? Only a name this build knows is "withheld"; anything else
         // is a typo or a stale memory, and belongs to the terminator's message.
-        if (!Plugins.Tool.IsKnown(name) && !(_agentTools?.Knows(name) ?? false)) return null;
+        if (!Jobs.Tool.IsKnown(name) && !(_agentTools?.Knows(name) ?? false)) return null;
 
         return $"tool '{name}' is not available. Available: {string.Join(", ", _offeredNames)}";
     }
@@ -2012,7 +2012,7 @@ public sealed class Agent
         // whose own timeout fired at 15s rendered as `failed · 270.8s`, a number that sends whoever
         // reads it hunting for a slow command that never existed.
         //
-        // Rebasing rather than replacing: a plugin that never reports (no gate, no
+        // Rebasing rather than replacing: an executor that never reports (no gate, no
         // WorkStarting call) keeps the original stamp.
         //
         // THE SHAPE TO RECOGNISE, because it splits into two independent bugs that each look whole:
@@ -2069,14 +2069,14 @@ public sealed class Agent
             _jobs.ToolProgressed(job);
         };
         // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
-        // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
+        // ToolBindings's "no such tool" text stays the single message for a name nobody owns — two
         // sources each producing their own version is how a model gets told a tool does not exist by
         // one and nothing by the other.
         //
         // Inside the job wrapper deliberately: an MCP call gets the same transcript row, the same
         // result rendering and the same ct as a built-in. Composed around it, a slow server would
         // show a frozen spinner with no indication of what was being waited on.
-        // THE OUTCOME, NOT JUST ITS TEXT. `job.Result` below starts FROM the plugin's own result
+        // THE OUTCOME, NOT JUST ITS TEXT. `job.Result` below starts FROM the executor's own result
         // rather than being rebuilt from this string — see ToolOutcome for why that rebuild was a
         // defect rather than a shortcut. Text-only sources (spawn, skills, todos, ask_user, MCP)
         // carry a null Result and lose nothing: their text is the whole answer they ever had.
@@ -2084,7 +2084,7 @@ public sealed class Agent
         try
         {
             // SPAWN FIRST, then MCP, then the built-ins — each returning null for a name it does not
-            // own, so the chain is one ?? per source and "no such tool" stays WorkerToolset's single
+            // own, so the chain is one ?? per source and "no such tool" stays ToolBindings's single
             // message. Spawn leads because it is the only name that could otherwise be shadowed: an
             // MCP server is free to advertise anything.
             // GATED ON CanSpawn, NOT on _spawner alone. Without the mode check a model that saw
@@ -2092,13 +2092,13 @@ public sealed class Agent
             // single, and the branch would happily run a child the user had just turned off.
             // WITHHELD IS NOT UNKNOWN, and this is the only place that can tell them apart. Each
             // link below answers for its own names and returns null otherwise, so the chain ends at
-            // WorkerToolset's "no such tool" — which is honest for a name nobody owns and WRONG for
+            // ToolBindings's "no such tool" — which is honest for a name nobody owns and WRONG for
             // one this agent simply was not offered. The distinction matters to the model: "no such
             // tool" should make it pick a real one, while a configuration fault should make it STOP
             // rather than retry variations.
             //
             // ABOVE THE CHAIN, NOT INSIDE A LINK. Before this, only built-ins consulted the
-            // selection on dispatch (WorkerToolset's own guard) — so a withheld skill, todowrite,
+            // selection on dispatch (ToolBindings's own guard) — so a withheld skill, todowrite,
             // ask_user, agent or injected tool was hidden from the offer and still callable by name.
             // A model that saw `agent` in an earlier turn would call it and it would run.
             //
@@ -2116,21 +2116,21 @@ public sealed class Agent
                 // Reads _context.Messages — the agent's own conversation, which is what lets it
                 // answer "already loaded" without keeping state that could drift from the window.
                 ?? Text(_skills.TryInvoke(call, _context.Messages))
-                // The plan is this agent's own state, so it resolves here rather than in a plugin —
+                // The plan is this agent's own state, so it resolves here rather than in an executor —
                 // and the event fires only on a real write, not on every call that missed.
                 ?? Text(TryUpdateTodos(call))
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
-                // JobContext carries into the plugin path a few lines below.
+                // JobContext carries into the executor path a few lines below.
                 ?? Text(_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy))
-                // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. WorkerToolset.InvokeAsync
+                // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
                 ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
-                ?? await WorkerToolset.InvokeAsync(call, AllowedBuiltins(_turnTools), _plugins, ctx, ct, _mcp?.Names());
-            // No Text() on the last two: they return the plugin's own ToolOutcome, which is the
+                ?? await ToolBindings.InvokeAsync(call, AllowedBuiltins(_turnTools), _executors, ctx, ct, _mcp?.Names());
+            // No Text() on the last two: they return the executor's own ToolOutcome, which is the
             // whole point of the chain's type — everything below builds job.Result from it.
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -2145,7 +2145,7 @@ public sealed class Agent
             // AFTER the failure, which is what makes it hard to diagnose.
             //
             // So the error becomes the tool RESULT and falls through to the messages.Add below.
-            // WorkerToolset.InvokeAsync already holds this contract for built-ins; this extends it to
+            // ToolBindings.InvokeAsync already holds this contract for built-ins; this extends it to
             // the two sources that did not — the spawn branch and _mcp.TryInvokeAsync.
             //
             // NOTE THE FALL-THROUGH RATHER THAN A RETURN. An early `return ErrorEnvelope(ex)` reads
@@ -2295,7 +2295,7 @@ public sealed class Agent
         }
         // FROM THE PLUGIN'S OWN RESULT, overriding only what this method genuinely owns. Building a
         // NEW JobResult from the returned string — which is what this did — split every field in
-        // two: the ones Agent can re-derive survived, and the ones only the plugin knows (Output,
+        // two: the ones Agent can re-derive survived, and the ones only the executor knows (Output,
         // DecidedBy, LogFile) were silently dropped. That is not a hypothetical: TWO side channels
         // existed solely to smuggle values back past it. Seen live, a show_diff row displayed
         // "README.md, +5 -1, shown above" — the model's confirmation — where the diff itself
@@ -2304,10 +2304,10 @@ public sealed class Agent
         // rather than adding a third channel for the next field.
         //
         // THE OVERRIDES ARE THE FIELDS AGENT REALLY DOES OWN. Success/ExitCode come from
-        // LooksLikeFailure over the model-facing TEXT, which is broader than a plugin's own verdict —
+        // LooksLikeFailure over the model-facing TEXT, which is broader than an executor's own verdict —
         // a spawn envelope or an MCP refusal is a failure with no JobResult behind it at all. And
         // Duration is Agent's stopwatch, rebased by ctx.WorkStarted so it measures the WORK rather
-        // than how long a user took to approve it; ShellJobPlugin's own copy would not be.
+        // than how long a user took to approve it; ShellJobExecutor's own copy would not be.
         //
         // The null branch is the text-only sources — spawn, skills, todos, ask_user, MCP — which
         // never had a result to start from. Output stays the returned text there, exactly as before.
@@ -2443,7 +2443,7 @@ public sealed class Agent
     private void PlaceTaskList()
     {
         var messages = _context.Messages;
-        var rendered = _todos.Render(toolOffered: _offeredNames.Contains(Plugins.Tool.TodoWrite));
+        var rendered = _todos.Render(toolOffered: _offeredNames.Contains(Jobs.Tool.TodoWrite));
 
         // NOTHING TO DO IF NOTHING MOVED, and the reason is the prefix cache. A provider serves
         // everything up to the first changed byte from cache and reprocesses the rest, so rewriting
@@ -2579,9 +2579,9 @@ public sealed class Agent
     private const int MaxToolUseMismatches = 2;
 
     /// <summary>
-    /// Whether a tool result reads as a failure. WorkerToolset never throws — every failure comes
+    /// Whether a tool result reads as a failure. ToolBindings never throws — every failure comes
     /// back as a STRING — so "did that write land" cannot be answered by exception handling. Matched
-    /// on the two shapes the plugins actually produce.
+    /// on the two shapes the executors actually produce.
     /// </summary>
     /// <remarks>
     /// THIS CATCHES MCP RESULTS TOO, and that is intended rather than incidental.
@@ -2650,7 +2650,7 @@ public sealed class Agent
     /// <summary>
     /// Whether a build/test result reads as a failure.
     ///
-    /// <para>Exit code would be the honest signal, but it does not survive: WorkerToolset renders a
+    /// <para>Exit code would be the honest signal, but it does not survive: ToolBindings renders a
     /// shell result as text, and a non-zero exit already arrives prefixed "error:". Both forms are
     /// matched, plus the phrases the major toolchains print, because a command that fails INSIDE a
     /// pipeline (`… | tail -30`) exits 0 and only says so in its output — which is exactly how the
@@ -2744,7 +2744,7 @@ public sealed class Agent
               + "anything above, follow this.\n\n" + briefing + "\n";
 
 
-    /// <summary>The plugin a tool dispatches to, for the transcript row's author label only.</summary>
+    /// <summary>The executor a tool dispatches to, for the transcript row's author label only.</summary>
     private string ToolPluginType(string toolName) => toolName switch
     {
         "run_shell" => "shell",

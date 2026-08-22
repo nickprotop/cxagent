@@ -11,7 +11,7 @@ namespace CxAgent.Tests;
 /// /model points a session at a different model WITHOUT rebuilding it.
 ///
 /// <para>WHAT IT REPLACED. The command used to arm a handoff, re-wire the whole session and dispose
-/// the outgoing host — rebuilding the agent, its plugin registry, its sub-agent factory and its MCP
+/// the outgoing host — rebuilding the agent, its executor registry, its sub-agent factory and its MCP
 /// binding in order to change which endpoint gets called, then carrying the context and the ledger
 /// back across the gap by hand. Everything but the provider was rebuilt identically, because /model
 /// reads the same config file it always did.</para>
@@ -173,7 +173,7 @@ public class SwitchModelTests : IDisposable
 
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
             CancellationToken ct, string? label = null,
-            CxAgent.Core.Plugins.ToolSelection? turnTools = null) => throw new NotSupportedException();
+            CxAgent.Core.Jobs.ToolSelection? turnTools = null) => throw new NotSupportedException();
     }
 
     // THE CATALOG SURVIVES A SWITCH, which is what the split makes structural rather than

@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -27,7 +27,7 @@ public class TaskListPlacementTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
     private Agent Build(MockLlmProvider provider) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 10,
             workingDir: _dir);
 

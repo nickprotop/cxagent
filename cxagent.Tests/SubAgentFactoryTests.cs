@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -18,11 +18,11 @@ public class SubAgentFactoryTests
 {
     private static SubAgentFactory NewFactory(
         TokenLedger? ledger = null, int maxTurns = 50, int? contextWindow = 200_000,
-        PluginRegistry? plugins = null, MockLlmProvider? provider = null) =>
+        JobRegistry? executors = null, MockLlmProvider? provider = null) =>
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider ?? Answering(),
-            Plugins = plugins ?? PluginRegistry.CreateWithBuiltins(),
+            Plugins = executors ?? JobRegistry.CreateWithBuiltins(),
             Ledger = ledger ?? new TokenLedger(),
             MaxTurns = maxTurns,
             CompressAbove = 40_000,
@@ -223,7 +223,7 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -244,7 +244,7 @@ public class SubAgentFactoryTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = Answering(),
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,

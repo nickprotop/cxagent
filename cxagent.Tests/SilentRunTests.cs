@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -18,7 +18,7 @@ namespace CxAgent.Tests;
 public class SilentRunTests
 {
     private static Agent NewAgent(MockLlmProvider provider, RecordingSink sink) =>
-        new(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        new(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             sink, new NullJobPanel(), logs: null, maxTurns: 50);
 
     // AN EMPTY ANSWER IS NOT A COMPLETED RUN. Reported as Completed it was indistinguishable from a

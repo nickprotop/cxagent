@@ -2,22 +2,22 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
 
-public class WorkerToolsetTests
+public class ToolBindingsTests
 {
     private static ToolCall Call(string name, object args) =>
         new() { Name = name, Arguments = JsonSerializer.SerializeToElement(args), Id = "call-1" };
 
     [Fact]
-    public void For_GeneratesSchemasFromTheLIVEPluginSchema()
+    public void For_GeneratesSchemasFromTheLIVEExecutorSchema()
     {
-        // Never hand-write the tool schema. FileJobPlugin requires "action", and a hand-written example
+        // Never hand-write the tool schema. FileJobExecutor requires "action", and a hand-written example
         // once said "operation" — the model followed it faithfully and every file job failed validation.
-        var tools = WorkerToolset.For(new[] { WorkerTool.WriteFile }, PluginRegistry.CreateWithBuiltins());
+        var tools = ToolBindings.For(new[] { BuiltinTool.WriteFile }, JobRegistry.CreateWithBuiltins());
 
         // Assert on the PARSED structure, not a substring of the serialized blob: "action" would match
         // a description reading "…the file action…", so a substring test passes on a hand-written
@@ -25,18 +25,18 @@ public class WorkerToolsetTests
         var props = tools.Single().InputSchema.GetProperty("properties");
 
         // `action` is pinned by the tool NAME, so it must NOT be offered to the model.
-        var real = PluginRegistry.CreateWithBuiltins().All
+        var real = JobRegistry.CreateWithBuiltins().All
             .Single(p => p.TypeName == "file").GetSchema().Params.Select(p => p.Name).ToList();
 
-        Assert.Contains("action", real);            // guards the premise: if the plugin drops `action`,
+        Assert.Contains("action", real);            // guards the premise: if the executor drops `action`,
                                                     // the pinning is silently wrong.
         Assert.False(props.TryGetProperty("action", out _));
 
-        // Every param this tool DOES offer must be one the plugin really accepts. The rule used to be
+        // Every param this tool DOES offer must be one the executor really accepts. The rule used to be
         // "offer all of them", which is why read_file advertised content, dest and replacement; a
         // tool now SELECTS from the live schema. Selecting is allowed, inventing is not —
-        // BuildDefinition throws on a name the plugin does not accept, and this pins the direction
-        // that matters: nothing reaches the model that the plugin would reject.
+        // BuildDefinition throws on a name the executor does not accept, and this pins the direction
+        // that matters: nothing reaches the model that the executor would reject.
         foreach (var offered in props.EnumerateObject())
             Assert.Contains(offered.Name, real);
 
@@ -48,7 +48,7 @@ public class WorkerToolsetTests
     [Fact]
     public void For_OffersOnlyTheAllowedTools()
     {
-        var tools = WorkerToolset.For(new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins());
+        var tools = ToolBindings.For(new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins());
         Assert.Single(tools);
         Assert.DoesNotContain(tools, t => t.Name.Contains("write", StringComparison.OrdinalIgnoreCase));
     }
@@ -56,12 +56,12 @@ public class WorkerToolsetTests
     [Fact]
     public void For_PinnedParamsAreExcludedFromRequiredToo()
     {
-        // `action` is Required:true in FileJobPlugin's schema AND pinned by the tool name, so it must
+        // `action` is Required:true in FileJobExecutor's schema AND pinned by the tool name, so it must
         // be absent from BOTH `properties` and `required`. Listing it as required while never offering
         // it emits a schema demanding a param the model cannot supply. That holds today only because
         // the pinned-param `continue` precedes the required-add — true by construction, not by test,
         // until now.
-        var schema = WorkerToolset.For(new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins())
+        var schema = ToolBindings.For(new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins())
             .Single().InputSchema;
 
         var required = schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
@@ -77,11 +77,11 @@ public class WorkerToolsetTests
         // OFFERED For()'s definitions. If the two ever diverge the failure is silent — the orchestrator
         // plans against a tool name the worker cannot call. Assert they are the same strings, in the
         // same order, for the full set.
-        var all = new[] { WorkerTool.ReadFile, WorkerTool.WriteFile, WorkerTool.RunShell, WorkerTool.HttpRequest };
+        var all = new[] { BuiltinTool.ReadFile, BuiltinTool.WriteFile, BuiltinTool.RunShell, BuiltinTool.HttpRequest };
 
         Assert.Equal(
-            WorkerToolset.For(all, PluginRegistry.CreateWithBuiltins()).Select(t => t.Name),
-            WorkerToolset.NamesFor(all));
+            ToolBindings.For(all, JobRegistry.CreateWithBuiltins()).Select(t => t.Name),
+            ToolBindings.NamesFor(all));
     }
 
     [Fact]
@@ -90,18 +90,18 @@ public class WorkerToolsetTests
         // Empty rather than null so the CALL SITE needs no null check. Note the two are identical on
         // the wire — both OpenAiWire.cs:53 and AnthropicWire.cs:64 gate on `Count > 0`, so an empty
         // list emits no `tools` key at all. This is an API-ergonomics guarantee, not a protocol one.
-        Assert.Empty(WorkerToolset.For(Array.Empty<WorkerTool>(), PluginRegistry.CreateWithBuiltins()));
+        Assert.Empty(ToolBindings.For(Array.Empty<BuiltinTool>(), JobRegistry.CreateWithBuiltins()));
     }
 
     [Fact]
-    public async Task InvokeAsync_RunsTheToolThroughItsPlugin()
+    public async Task InvokeAsync_RunsTheToolThroughItsExecutor()
     {
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, "HELLO");
 
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { action = "read", path }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("HELLO", result);
@@ -114,9 +114,9 @@ public class WorkerToolsetTests
         // THE ENFORCEMENT POINT, and it outlives roles. Nothing withholds tools today — every agent
         // is offered all of them — but a model can emit a call for a tool it was never shown, and
         // being un-offered is not the same as being refused. This is what refuses it.
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("write_file", new { action = "write", path = "/tmp/nope.txt", content = "x" }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("not available", result, StringComparison.OrdinalIgnoreCase);
@@ -131,19 +131,19 @@ public class WorkerToolsetTests
     public async Task InvokeAsync_AWorkerCannotSpawnAnotherWorker()
     {
         // No sub-agents. The property holds STRUCTURALLY — llm_agent is simply absent from
-        // WorkerToolset.Specs, so there is no WorkerTool value that maps to it — but nothing pinned
+        // ToolBindings.Specs, so there is no BuiltinTool value that maps to it — but nothing pinned
         // it, and an absence is exactly the kind of invariant that vanishes when someone later adds
         // "one more useful tool" to that table.
         //
         // Asserted against the FULL tool set, so it cannot pass merely because the role under test
         // happened to be read-only.
-        var all = new[] { WorkerTool.ReadFile, WorkerTool.WriteFile, WorkerTool.RunShell, WorkerTool.HttpRequest };
+        var all = new[] { BuiltinTool.ReadFile, BuiltinTool.WriteFile, BuiltinTool.RunShell, BuiltinTool.HttpRequest };
 
-        Assert.DoesNotContain("llm_agent", WorkerToolset.NamesFor(all));
+        Assert.DoesNotContain("llm_agent", ToolBindings.NamesFor(all));
 
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("llm_agent", new { prompt = "spawn a helper", role = "implementer" }),
-            all, PluginRegistry.CreateWithBuiltins(), new TestJobContext(), CancellationToken.None)).Text;
+            all, JobRegistry.CreateWithBuiltins(), new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("no such tool", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -153,14 +153,14 @@ public class WorkerToolsetTests
     {
         // Two different conditions the model must respond to differently: "no such tool" means pick a
         // real one; a role refusal means STOP asking. One shared string invites a retry loop.
-        var unknown = (await WorkerToolset.InvokeAsync(
+        var unknown = (await ToolBindings.InvokeAsync(
             Call("delete_everything", new { }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
-        var refused = (await WorkerToolset.InvokeAsync(
+        var refused = (await ToolBindings.InvokeAsync(
             Call("write_file", new { action = "write", path = "/tmp/nope2.txt", content = "x" }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("no such tool", unknown, StringComparison.OrdinalIgnoreCase);
@@ -169,13 +169,13 @@ public class WorkerToolsetTests
     }
 
     [Fact]
-    public async Task InvokeAsync_APluginFailure_ReturnsTextNotAnException()
+    public async Task InvokeAsync_AnExecutorFailure_ReturnsTextNotAnException()
     {
         // The result is fed back to the model as a tool message. A throw here would kill the job over a
         // bad path, when the worker could have read the error and tried something else.
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { action = "read", path = "/definitely/not/here.txt" }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.False(string.IsNullOrWhiteSpace(result));
@@ -184,13 +184,13 @@ public class WorkerToolsetTests
     [Fact]
     public async Task InvokeAsync_MissingRequiredParam_ReturnsTheValidationError()
     {
-        // NOT the same case as a bad path. `FileJobPlugin.ExecuteAsync` reads Get<string>("action") and
-        // Get<string>("path") ABOVE its try/catch (FileJobPlugin.cs:36-37), and JobParameters.Get<T>
+        // NOT the same case as a bad path. `FileJobExecutor.ExecuteAsync` reads Get<string>("action") and
+        // Get<string>("path") ABOVE its try/catch (FileJobExecutor.cs:36-37), and JobParameters.Get<T>
         // indexes Values[key] (JobParameters.cs:16) — so a model that emits read_file with no `path`
-        // throws KeyNotFoundException straight out of the plugin and kills the job. Validate first.
-        var result = (await WorkerToolset.InvokeAsync(
+        // throws KeyNotFoundException straight out of the executor and kills the job. Validate first.
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         // The model must be told WHICH param it omitted, or it retries the same malformed call.
@@ -203,14 +203,14 @@ public class WorkerToolsetTests
         // read_file on a large file feeds the whole thing into the NEXT ChatAsync, every turn, for the
         // rest of the loop. Unbounded here means a context blowout mid-job.
         var path = Path.Combine(Path.GetTempPath(), $"wt-big-{Guid.NewGuid():N}.txt");
-        File.WriteAllText(path, new string('x', WorkerToolset.MaxToolResultChars * 4));
+        File.WriteAllText(path, new string('x', ToolBindings.MaxToolResultChars * 4));
 
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { action = "read", path }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
-        Assert.True(result.Length < WorkerToolset.MaxToolResultChars * 2);
+        Assert.True(result.Length < ToolBindings.MaxToolResultChars * 2);
         Assert.Contains("elided", result, StringComparison.OrdinalIgnoreCase);  // the cut must be VISIBLE
         File.Delete(path);
     }
@@ -223,11 +223,11 @@ public class WorkerToolsetTests
         // the turn cap killed the job. The model cannot see the tool schema at the moment it is
         // staring at a hole -- the way out has to travel with the cut.
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
-        File.WriteAllText(path, new string('x', WorkerToolset.MaxToolResultChars * 2));
+        File.WriteAllText(path, new string('x', ToolBindings.MaxToolResultChars * 2));
 
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { action = "read", path }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("offset", result);
@@ -242,9 +242,9 @@ public class WorkerToolsetTests
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, "small");
 
-        var result = (await WorkerToolset.InvokeAsync(
+        var result = (await ToolBindings.InvokeAsync(
             Call("read_file", new { action = "read", path }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.DoesNotContain("too large", result);
@@ -254,10 +254,10 @@ public class WorkerToolsetTests
     [Fact]
     public void For_ReadFileExposesOffsetAndLimit()
     {
-        // The params must reach the MODEL. They are generated from the plugin's JobSchema, so a
+        // The params must reach the MODEL. They are generated from the executor's JobSchema, so a
         // schema change is the only thing that puts them on the wire -- and the pinned-action
         // filter has dropped params from this surface before.
-        var def = WorkerToolset.For(new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins())
+        var def = ToolBindings.For(new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins())
             .Single(d => d.Name == "read_file");
         var json = def.InputSchema.ToString();
 
@@ -269,12 +269,12 @@ public class WorkerToolsetTests
     [Fact]
     public void EveryFileTool_PinsItsAction_SoNoneCanBeTurnedIntoADelete()
     {
-        // The pinned-action property, re-pinned now that four tools share the file plugin: a worker
+        // The pinned-action property, re-pinned now that four tools share the file executor: a worker
         // calling glob must not be able to pass action: "delete".
-        var registry = PluginRegistry.CreateWithBuiltins();
+        var registry = JobRegistry.CreateWithBuiltins();
         foreach (var name in new[] { "read_file", "write_file", "glob", "grep", "replace_in_file" })
         {
-            var def = WorkerToolset.For(Enum.GetValues<WorkerTool>(), registry)
+            var def = ToolBindings.For(Enum.GetValues<BuiltinTool>(), registry)
                 .SingleOrDefault(d => d.Name == name);
             Assert.NotNull(def);
             Assert.DoesNotContain("\"action\"", def!.InputSchema.GetRawText());
@@ -282,13 +282,13 @@ public class WorkerToolsetTests
     }
 
     private static string SchemaFor(string toolName) =>
-        WorkerToolset.For(Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins())
+        ToolBindings.For(Enum.GetValues<BuiltinTool>(), JobRegistry.CreateWithBuiltins())
             .Single(d => d.Name == toolName).InputSchema.GetRawText();
 
     [Fact]
     public void ReadFile_ShowsOnlyTheParamsAReadCanUse()
     {
-        // It used to show NINE: the whole FileJobPlugin schema minus the pinned action, so a read
+        // It used to show NINE: the whole FileJobExecutor schema minus the pinned action, so a read
         // advertised content, dest, replacement, regex and glob. A tool with nine optional-looking
         // params and one required has no shape the model can read -- a live drive produced nine
         // consecutive `read_file {}` calls with empty arguments before its first good one.
@@ -304,10 +304,10 @@ public class WorkerToolsetTests
     [Fact]
     public void WriteAndReplace_MARKTheirRealRequirements()
     {
-        // FileJobPlugin serves six actions from one schema, so it can only mark `action` and `path`
+        // FileJobExecutor serves six actions from one schema, so it can only mark `action` and `path`
         // required -- `content` cannot be required there because `read` does not use it. With action
-        // pinned away, every file tool said "path is all you need", which the plugin then rejects
-        // for a write. Requiredness is a property of the TOOL, not of the plugin.
+        // pinned away, every file tool said "path is all you need", which the executor then rejects
+        // for a write. Requiredness is a property of the TOOL, not of the executor.
         var write = SchemaFor("write_file").Replace(" ", "");
         Assert.Contains("\"required\":[\"path\",\"content\"]", write);
 
@@ -336,12 +336,12 @@ public class WorkerToolsetTests
     }
 
     [Fact]
-    public void EveryToolStillProjectsRealPluginParams()
+    public void EveryToolStillProjectsRealExecutorParams()
     {
         // The anti-drift property that generating-from-schema existed for: selecting is allowed,
-        // inventing is not. BuildDefinition throws on a name the plugin does not accept, so simply
+        // inventing is not. BuildDefinition throws on a name the executor does not accept, so simply
         // building every tool is the assertion.
-        var tools = WorkerToolset.For(Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins());
+        var tools = ToolBindings.For(Enum.GetValues<BuiltinTool>(), JobRegistry.CreateWithBuiltins());
 
         // The count is a tripwire, not a fact worth asserting on its own: every tool is permanent
         // prompt weight, so adding one should be a deliberate edit here rather than something that
@@ -367,9 +367,9 @@ public class WorkerToolsetTests
             var f = Path.Combine(dir, "f.txt");
             File.WriteAllText(f, "one\ntwo\nthree\nfour\n");
 
-            var r = (await WorkerToolset.InvokeAsync(
+            var r = (await ToolBindings.InvokeAsync(
                 Call("read_file", new { path = f, offset = "2", limit = "1" }),
-                new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+                new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("two", r);
@@ -387,9 +387,9 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "a.txt"), "alpha\n");
 
-            var r = (await WorkerToolset.InvokeAsync(
+            var r = (await ToolBindings.InvokeAsync(
                 Call("grep", new { path = dir, pattern = "al.ha", regex = "true" }),
-                new[] { WorkerTool.SearchFiles }, PluginRegistry.CreateWithBuiltins(),
+                new[] { BuiltinTool.SearchFiles }, JobRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("alpha", r);   // regex actually took effect
@@ -410,9 +410,9 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "a.txt"), "x");
 
-            var r = (await WorkerToolset.InvokeAsync(
+            var r = (await ToolBindings.InvokeAsync(
                 Call("glob", new { path = dir, pattern = (string?)null }),
-                new[] { WorkerTool.ListFiles }, PluginRegistry.CreateWithBuiltins(),
+                new[] { BuiltinTool.ListFiles }, JobRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("a.txt", r);
@@ -426,9 +426,9 @@ public class WorkerToolsetTests
     {
         // Argv-array form is natural -- many shell tools take one. This threw a JsonException out of
         // Validate, which sits OUTSIDE the try/catch, past both call sites and killed the turn.
-        var r = (await WorkerToolset.InvokeAsync(
+        var r = (await ToolBindings.InvokeAsync(
             Call("run_shell", new { command = new[] { "ls", "-l" } }),
-            new[] { WorkerTool.RunShell }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.RunShell }, JobRegistry.CreateWithBuiltins(),
             new CollectingContext(), CancellationToken.None)).Text;
 
         Assert.Contains("command", r);        // names the offending argument
@@ -441,9 +441,9 @@ public class WorkerToolsetTests
         // "'path' is required" contradicts what the model just sent: it DID supply a path, under the
         // wrong name. Faced with a message asserting an absence it can see is untrue, its cheapest
         // move is to resend the same shape.
-        var r = (await WorkerToolset.InvokeAsync(
+        var r = (await ToolBindings.InvokeAsync(
             Call("read_file", new { file_path = "/tmp/x.txt" }),
-            new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+            new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
             new CollectingContext(), CancellationToken.None)).Text;
 
         Assert.Contains("file_path", r);
@@ -462,9 +462,9 @@ public class WorkerToolsetTests
             var f = Path.Combine(dir, "f.txt");
             File.WriteAllText(f, "hello\n");
 
-            var r = (await WorkerToolset.InvokeAsync(
+            var r = (await ToolBindings.InvokeAsync(
                 Call("read_file", new { path = f, encoding = "utf8" }),
-                new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
+                new[] { BuiltinTool.ReadFile }, JobRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("hello", r);
@@ -484,7 +484,7 @@ public class WorkerToolsetTests
     [InlineData("search_files", "grep")]
     public void RenamedTools_NoLongerAnswerToTheirOldNames(string old, string current)
     {
-        var names = WorkerToolset.NamesFor(Enum.GetValues<WorkerTool>()).ToList();
+        var names = ToolBindings.NamesFor(Enum.GetValues<BuiltinTool>()).ToList();
 
         Assert.Contains(current, names);
         Assert.DoesNotContain(old, names);
@@ -498,9 +498,9 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "found.txt"), "needle\n");
 
-            var r = (await WorkerToolset.InvokeAsync(
+            var r = (await ToolBindings.InvokeAsync(
                 Call("list_files", new { path = dir }),
-                Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins(),
+                Enum.GetValues<BuiltinTool>(), JobRegistry.CreateWithBuiltins(),
                 new CollectingContext(), CancellationToken.None)).Text;
 
             // The honest answer, and the one that makes the model pick the real name.
@@ -511,18 +511,18 @@ public class WorkerToolsetTests
     }
 
     /// <summary>
-    /// web_fetch is the http plugin with as_text pinned. The model must not be offered the flag —
+    /// web_fetch is the http executor with as_text pinned. The model must not be offered the flag —
     /// the choice between "read this page" and "call this endpoint" is the choice between the two
     /// TOOLS, and a boolean it can forget to set is a decision that goes wrong silently.
     /// </summary>
     [Fact]
     public void WebFetch_DoesNotOfferTheFlagItPins()
     {
-        var tools = WorkerToolset.For(new[] { WorkerTool.WebFetch }, PluginRegistry.CreateWithBuiltins());
+        var tools = ToolBindings.For(new[] { BuiltinTool.WebFetch }, JobRegistry.CreateWithBuiltins());
         var props = tools.Single().InputSchema.GetProperty("properties");
 
-        // Guards the premise: if the plugin ever drops as_text, the pinning is silently a no-op.
-        var real = PluginRegistry.CreateWithBuiltins().All
+        // Guards the premise: if the executor ever drops as_text, the pinning is silently a no-op.
+        var real = JobRegistry.CreateWithBuiltins().All
             .Single(p => p.TypeName == "http").GetSchema().Params.Select(p => p.Name).ToList();
         Assert.Contains("as_text", real);
 
@@ -536,11 +536,11 @@ public class WorkerToolsetTests
     /// for.
     /// </summary>
     [Fact]
-    public void HttpRequest_AndWebFetch_AreDistinctToolsOverOnePlugin()
+    public void HttpRequest_AndWebFetch_AreDistinctToolsOverOneExecutor()
     {
-        var tools = WorkerToolset.For(
-            new[] { WorkerTool.HttpRequest, WorkerTool.WebFetch },
-            PluginRegistry.CreateWithBuiltins());
+        var tools = ToolBindings.For(
+            new[] { BuiltinTool.HttpRequest, BuiltinTool.WebFetch },
+            JobRegistry.CreateWithBuiltins());
 
         var names = tools.Select(t => t.Name).ToList();
 
@@ -552,7 +552,7 @@ public class WorkerToolsetTests
         Assert.True(request.TryGetProperty("method", out _));
         Assert.True(request.TryGetProperty("body", out _));
 
-        // AND THEIR DESCRIPTIONS MUST DIFFER. Sharing a plugin means sharing its DisplayName, which
+        // AND THEIR DESCRIPTIONS MUST DIFFER. Sharing an executor means sharing its DisplayName, which
         // would leave the model choosing between them on the tool name alone — the way load_skill
         // lost out to read_file on a live drive.
         var fetch = tools.Single(t => t.Name == "web_fetch").Description;

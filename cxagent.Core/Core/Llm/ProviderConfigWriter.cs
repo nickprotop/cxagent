@@ -12,7 +12,7 @@ namespace CxAgent.Core.Llm;
 ///    config intact rather than a truncated file the loader would reject at next startup.
 ///  * 0600 — the file holds API keys (spec §Config &amp; data location). Unix only; no-op elsewhere.
 ///  * PRESERVING — only 'providers', 'defaultProvider', 'llmAgent', 'orchestrator' and 'mcp' are cxagent's
-///    to own here. Every other top-level key (jobs/ui/plugins, plus anything a future version adds)
+///    to own here. Every other top-level key (jobs/ui/executors, plus anything a future version adds)
 ///    is read from the existing file and written back untouched, so the wizard never destroys
 ///    hand-edits. Within an owned block, only the sub-keys the loader reads are ours — anything else
 ///    (a future knob, a hand-added field) is merged in from the existing object, same as 'roles'.

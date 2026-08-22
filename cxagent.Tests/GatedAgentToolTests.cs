@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -10,7 +10,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// The wrapper that makes an injected tool safe to offer at all.
 ///
-/// <para>WHY THIS EXISTS AS ITS OWN TYPE: <see cref="PermissionGatedPlugin"/> cannot be reused. It
+/// <para>WHY THIS EXISTS AS ITS OWN TYPE: <see cref="PermissionGatedExecutor"/> cannot be reused. It
 /// asks <c>PermissionPolicy.RequestsFor(TypeName, ...)</c>, which keys off the names "shell",
 /// "file" and "http" — a consumer tool matches none of them, so RequestsFor returns nothing and the
 /// call proceeds UNGATED AND SILENTLY. An injected tool without this wrapper is a hole, not a
@@ -89,7 +89,7 @@ public class GatedAgentToolTests
     [Fact]
     public async Task AnAutoApprovedAdmission_SurvivesTheToolsOwnSilentAllow()
     {
-        // Same bug PermissionGatedPlugin had, in this type's own two-gate shape: gate 1 (tool
+        // Same bug PermissionGatedExecutor had, in this type's own two-gate shape: gate 1 (tool
         // admission) can be an AutoAllow — the classifier said yes to running this tool here at
         // all — while gate 2 (the tool's own check on THIS call's arguments) clears silently and
         // comes back as a plain Allow, DeniedBy null. `decidedBy = outcome.DeniedBy` let that null
@@ -226,7 +226,7 @@ public class GatedAgentToolTests
     [Fact]
     public async Task TheAskIsReportedSoTheRowReadsAsWaitingNotWorking()
     {
-        // Same contract PermissionGatedPlugin holds: without this a parked job's row keeps ticking
+        // Same contract PermissionGatedExecutor holds: without this a parked job's row keeps ticking
         // elapsed time and reads as a working one, and with several up the user cannot tell which
         // row their answer releases.
         var context = new TestJobContext();

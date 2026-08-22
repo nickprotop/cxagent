@@ -1,14 +1,14 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>Makes an HTTP request with optional retry-until-expected-status.</summary>
-public class HttpJobPlugin : IJobPlugin
+public class HttpJobExecutor : IJobExecutor
 {
     private static readonly HttpClient Shared = new();
     private readonly HttpClient _client;
 
-    public HttpJobPlugin(HttpClient? client = null) => _client = client ?? Shared;
+    public HttpJobExecutor(HttpClient? client = null) => _client = client ?? Shared;
 
     public string TypeName => "http";
     public string DisplayName => "HTTP Request";

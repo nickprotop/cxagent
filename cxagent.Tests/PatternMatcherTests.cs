@@ -1,4 +1,4 @@
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -6,7 +6,7 @@ namespace CxAgent.Tests;
 /// <summary>
 /// The spec for locating a replace pattern.
 ///
-/// <para>Extracted for the same reason as <see cref="IndentShift"/>: embedded in the plugin, a wrong
+/// <para>Extracted for the same reason as <see cref="IndentShift"/>: embedded in the executor, a wrong
 /// answer could come from the matcher, the span it returned, the shift applied afterwards, or a
 /// stale build. Two strings in, a list out.</para>
 /// </summary>

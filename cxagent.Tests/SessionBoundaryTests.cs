@@ -81,7 +81,7 @@ public class SessionBoundaryTests
         var first = new RecordingObserver();
         var second = new RecordingObserver();
 
-        var agent = new Agent(provider, Core.Plugins.PluginRegistry.CreateWithBuiltins(),
+        var agent = new Agent(provider, Core.Jobs.JobRegistry.CreateWithBuiltins(),
             new Core.Llm.TokenLedger(), new FanOutObserver(first, second), new NullJobPanel(),
             logs: null, maxTurns: 5);
 

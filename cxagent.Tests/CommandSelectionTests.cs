@@ -1,6 +1,6 @@
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Skills;
 using Xunit;

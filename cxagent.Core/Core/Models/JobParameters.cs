@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 namespace CxAgent.Core.Models;
 
 /// <summary>
-/// Plugin-specific job parameters. Values arrive from two untyped sources — the
+/// Executor-specific job parameters. Values arrive from two untyped sources — the
 /// LLM's create_plan args and parameters_json from SQLite — so after a round-trip
 /// an int is a JsonElement, not an int. Get&lt;T&gt; MUST convert, never blind-cast:
 /// a raw (T)Values[key] throws InvalidCastException on every reload.

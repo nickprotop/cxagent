@@ -1,7 +1,7 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -24,7 +24,7 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -65,7 +65,7 @@ public class SubAgentSpawnerTests
 
         // And the constant an embedder writes matches it. Pinned here rather than in
         // ToolNameConstantsTests because this file already has the factory scaffolding.
-        Assert.Equal(CxAgent.Core.Plugins.Tool.Agent, spawner.Definition.Name);
+        Assert.Equal(CxAgent.Core.Jobs.Tool.Agent, spawner.Definition.Name);
     }
 
     private static ToolCall SpawnCall(string prompt = "find the thing", string description = "find thing") =>
@@ -127,7 +127,7 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 2,
             CompressAbove = 40_000,
@@ -293,7 +293,7 @@ public class SubAgentSpawnerTests
         // child mid-run, since the token is the parent's turn token handed straight down.
         var childProvider = new CancellingProvider(cts);
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(childProvider)))
         {
@@ -352,7 +352,7 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
         {
@@ -388,7 +388,7 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
         {
@@ -442,7 +442,7 @@ public class SubAgentSpawnerTests
         var bothArrived = new TaskCompletionSource();
         var gate = new RendezvousProvider(arrived, bothArrived);
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(gate)))
         {
@@ -505,7 +505,7 @@ public class SubAgentSpawnerTests
         var childProvider = new RecordingOrderProvider(order, "child-started");
 
         var jobs = new OrderRecordingJobPanel(order);
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(childProvider)))
         {
@@ -538,7 +538,7 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(new FaultOnFirstProvider())))
         {
@@ -574,7 +574,7 @@ public class SubAgentSpawnerTests
 
         using var cts = new CancellationTokenSource();
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(new CancellingProvider(cts))))
         {
@@ -608,9 +608,9 @@ public class SubAgentSpawnerTests
     [Fact]
     public void EveryAgentTracksItsOwnWait_AndStartsNotWaiting()
     {
-        var a = new Agent(new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(),
+        var a = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(),
             new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
-        var b = new Agent(new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(),
+        var b = new Agent(new MockLlmProvider(), JobRegistry.CreateWithBuiltins(),
             new TokenLedger(), new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 5);
 
         // PER AGENT, not per gate. The flag lives here precisely so two children sharing one gate —
@@ -626,25 +626,25 @@ public class SubAgentSpawnerTests
     /// never said it was waiting. The signal is what an agent subscribes to in order to mark itself.
     /// </summary>
     [Fact]
-    public async Task TheGatedPlugin_ReportsTheWaitAndItsEnd()
+    public async Task TheGatedExecutor_ReportsTheWaitAndItsEnd()
     {
         var ctx = new TestJobContext();
-        var plugin = new CxAgent.Core.Permissions.PermissionGatedPlugin(
-            new AlwaysAskPlugin(), new DenyingGate());
+        var executor = new CxAgent.Core.Permissions.PermissionGatedExecutor(
+            new AlwaysAskExecutor(), new DenyingGate());
 
         // A real shell parameter set — PermissionPolicy reads `command` to build the request, so an
         // empty one throws before the gate is ever consulted and the test would pass on a fixture
         // fault rather than on the behaviour.
         var parameters = new JobParameters(new Dictionary<string, object?> { ["command"] = "ls" });
 
-        await plugin.ExecuteAsync(parameters, ctx, CancellationToken.None);
+        await executor.ExecuteAsync(parameters, ctx, CancellationToken.None);
 
         // True then false, in that order: the interval had a start and an end.
         Assert.Equal([true, false], ctx.PermissionWaits);
     }
 
-    /// <summary>A shell plugin, so the gate is genuinely consulted rather than short-circuited.</summary>
-    private sealed class AlwaysAskPlugin : IJobPlugin
+    /// <summary>A shell executor, so the gate is genuinely consulted rather than short-circuited.</summary>
+    private sealed class AlwaysAskExecutor : IJobExecutor
     {
         public string TypeName => "shell";
         public string DisplayName => "shell";
@@ -671,7 +671,7 @@ public class SubAgentSpawnerTests
         new(new SubAgentFactory.SubAgentRuntime
         {
             Provider = provider,
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = ledger,
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -699,7 +699,7 @@ public class SubAgentSpawnerTests
         var release = new TaskCompletionSource();
         var gate = new RendezvousProvider(arrived, release);
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(gate, new TokenLedger(), maxConcurrent: 1)))
         {
@@ -745,7 +745,7 @@ public class SubAgentSpawnerTests
         var arrived = new SemaphoreSlim(0, 2);
         var release = new TaskCompletionSource();
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(
                 new RendezvousProvider(arrived, release), new TokenLedger())))
@@ -879,7 +879,7 @@ public class SubAgentSpawnerTests
         public ToolDefinition Definition => new(ToolName, "spawns", default);
         public Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild,
             CancellationToken ct, string? parentAgentId = null,
-            CxAgent.Core.Plugins.ToolSelection? turnTools = null)
+            CxAgent.Core.Jobs.ToolSelection? turnTools = null)
             => throw new InvalidOperationException("the child exploded");
     }
 
@@ -909,7 +909,7 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "the child failed, here is what I know", StopReason = "end_turn" });
         provider.EnqueueResponse(new LlmResponse { Text = "a later answer", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new ThrowingSpawner())
         {
@@ -1163,7 +1163,7 @@ public class SubAgentSpawnerTests
         childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(childProvider)))
         {
@@ -1222,7 +1222,7 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
         {
@@ -1276,12 +1276,12 @@ public class SubAgentSpawnerTests
             Usage = new LlmUsage { InputTokens = 700, OutputTokens = 30 },
         });
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), ledger,
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), ledger,
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
             {
                 Provider = childProvider,
-                Plugins = PluginRegistry.CreateWithBuiltins(),
+                Plugins = JobRegistry.CreateWithBuiltins(),
                 Ledger = ledger,
                 MaxTurns = 50,
                 CompressAbove = 40_000,
@@ -1333,7 +1333,7 @@ public class SubAgentSpawnerTests
         });
         childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(childProvider)))
         {
@@ -1369,7 +1369,7 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var jobs = new NullJobPanel();
-        var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), jobs, logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child done"))))
         {
@@ -1404,7 +1404,7 @@ public class SubAgentSpawnerTests
     /// <para>Observed live: a child asked to run shell commands and the prompt looked exactly like
     /// the parent asking. This pins the whole chain — spawn description becomes the child's briefing,
     /// the briefing becomes its requester label, the label rides on its JobContext, and the gated
-    /// plugin stamps it onto every request it raises.</para>
+    /// executor stamps it onto every request it raises.</para>
     ///
     /// <para>A LABEL, NOT AN ID: "01KZQ…" in a prompt is unanswerable, where the phrase the parent's
     /// model wrote to name the task is something a user can weigh.</para>
@@ -1413,7 +1413,7 @@ public class SubAgentSpawnerTests
     public async Task AChildsPermissionRequest_NamesTheChild()
     {
         var gate = new RecordingGate();
-        var plugins = PluginRegistry.CreateWithBuiltins(null, gate);
+        var executors = JobRegistry.CreateWithBuiltins(null, gate);
 
         var childProvider = new MockLlmProvider();
         childProvider.EnqueueResponse(new LlmResponse
@@ -1428,7 +1428,7 @@ public class SubAgentSpawnerTests
         var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = childProvider,
-            Plugins = plugins,
+            Plugins = executors,
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
@@ -1449,7 +1449,7 @@ public class SubAgentSpawnerTests
     public async Task TheParentsOwnPermissionRequest_HasNoRequester()
     {
         var gate = new RecordingGate();
-        var plugins = PluginRegistry.CreateWithBuiltins(null, gate);
+        var executors = JobRegistry.CreateWithBuiltins(null, gate);
 
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
@@ -1461,7 +1461,7 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "listed", StopReason = "end_turn" });
 
-        var parent = new Agent(provider, plugins, new TokenLedger(),
+        var parent = new Agent(provider, executors, new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
 
         await parent.SendAsync("list the files", CancellationToken.None);
@@ -1484,7 +1484,7 @@ public class SubAgentSpawnerTests
     public async Task SingleMode_DoesNotOfferTheSpawnTool_EvenWithASpawnerWired()
     {
         var provider = Answering("done");
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
         {
@@ -1502,7 +1502,7 @@ public class SubAgentSpawnerTests
     public async Task FanOutMode_OffersTheSpawnTool()
     {
         var provider = Answering("done");
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
         {
@@ -1527,7 +1527,7 @@ public class SubAgentSpawnerTests
     public async Task SwitchingMode_TakesEffectNextPrompt_AndKeepsTheConversation()
     {
         var provider = Answering("one", "two", "three");
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child"))))
         {
@@ -1568,7 +1568,7 @@ public class SubAgentSpawnerTests
         });
         provider.EnqueueResponse(new LlmResponse { Text = "understood", StopReason = "end_turn" });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child ran!"))))
         {

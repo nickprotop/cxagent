@@ -1,4 +1,4 @@
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// The wire names, as constants, for writing a <see cref="ToolSelection"/> in C#.
@@ -9,8 +9,8 @@ namespace CxAgent.Core.Plugins;
 /// read and no error. These constants move that failure to compile time for the one caller who can
 /// have it, the embedder writing C#.</para>
 ///
-/// <para>THE ENUM MEMBER IS NOT THE WIRE NAME. <c>WorkerTool.ListFiles</c> is offered as
-/// <c>glob</c> and <c>WorkerTool.SearchFiles</c> as <c>grep</c>, which is exactly the mistake this
+/// <para>THE ENUM MEMBER IS NOT THE WIRE NAME. <c>BuiltinTool.ListFiles</c> is offered as
+/// <c>glob</c> and <c>BuiltinTool.SearchFiles</c> as <c>grep</c>, which is exactly the mistake this
 /// removes: a caller reaching for the enum spelling selects nothing.</para>
 ///
 /// <para>CONFIG CANNOT USE THESE and does not need to — a JSON file writes the same strings, and
@@ -37,16 +37,16 @@ public static class Tool
     /// </summary>
     public const string All = "all";
 
-    // --- The eight built-ins (WorkerTool), by the name the MODEL sees ------------------
+    // --- The eight built-ins (BuiltinTool), by the name the MODEL sees ------------------
 
     public const string ReadFile = "read_file";
     public const string WriteFile = "write_file";
     public const string ReplaceInFile = "replace_in_file";
 
-    /// <summary>Find files by path pattern. <c>WorkerTool.ListFiles</c>, renamed for the model.</summary>
+    /// <summary>Find files by path pattern. <c>BuiltinTool.ListFiles</c>, renamed for the model.</summary>
     public const string Glob = "glob";
 
-    /// <summary>Search file contents. <c>WorkerTool.SearchFiles</c>, renamed for the model.</summary>
+    /// <summary>Search file contents. <c>BuiltinTool.SearchFiles</c>, renamed for the model.</summary>
     public const string Grep = "grep";
 
     public const string RunShell = "run_shell";

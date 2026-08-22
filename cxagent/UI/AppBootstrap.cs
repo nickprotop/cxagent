@@ -5,7 +5,7 @@ using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
 using SharpConsoleUI.Configuration;
@@ -309,7 +309,7 @@ public static class AppBootstrap
         // NOT A SECOND GUARD: both call the one Offers, so there is no second rule to drift. What is
         // duplicated is WHEN it is asked, which is forced by the banner being written once.
         if (startupMode.CanDelegate
-            && !CxAgent.Core.Plugins.ToolSelection.Offers(resolution.Tools, CxAgent.Core.Plugins.Tool.Agent))
+            && !CxAgent.Core.Jobs.ToolSelection.Offers(resolution.Tools, CxAgent.Core.Jobs.Tool.Agent))
             startupMode = startupMode with { Agent = CxAgent.Core.Agents.AgentMode.Single };
 
         var mainWindow = new MainWindow(system, resolution, logs)
@@ -327,17 +327,17 @@ public static class AppBootstrap
         // trust entry by this exact string). rulesStore/policy/gate are likewise built once and
         // reused across every WireRunner call: a fresh store per re-wire would forget every rule
         // and trust decision the user made earlier in the same session — ONE gate instance across
-        // re-wires, matching PluginRegistry.CreateWithBuiltins being rebuilt around it below.
+        // re-wires, matching JobRegistry.CreateWithBuiltins being rebuilt around it below.
         // THE SESSION, as an object rather than as six locals scattered through this method.
         //
-        // Every field it holds was already here — host, provider, instance name, plugins, the
+        // Every field it holds was already here — host, provider, instance name, executors, the
         // carried ledger, the pending resume — captured by WireRunner's closure. A local is ONE
         // slot, so a second session would need a second copy of this method; naming the state is
         // what makes a second one possible. The comments below already reasoned in these terms
         // ("owned by the SESSION, not by any one AgentHost") long before there was a type to say it.
         //
         // FIRST, BEFORE THE GATE, so its folder is the ONE source every layer below reads. The gate
-        // needs this root string, so a session that also demanded a plugin registry could not be
+        // needs this root string, so a session that also demanded an executor registry could not be
         // built before the gate that needs the root the session holds — which is why the session
         // takes only its folder and everything else arrives with the first wire.
         //

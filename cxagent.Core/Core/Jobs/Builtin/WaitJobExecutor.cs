@@ -1,9 +1,9 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>Waits a fixed duration, or (in the full app) until a manual user action.</summary>
-public class WaitJobPlugin : IJobPlugin
+public class WaitJobExecutor : IJobExecutor
 {
     public string TypeName => "wait";
     public string DisplayName => "Wait";

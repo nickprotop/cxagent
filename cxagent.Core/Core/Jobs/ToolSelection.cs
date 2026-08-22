@@ -1,6 +1,6 @@
 using CxAgent.Core.Llm;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// Which tools an agent is offered, as WRITTEN — never as resolved.

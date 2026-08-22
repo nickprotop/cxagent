@@ -367,7 +367,7 @@ public sealed class ActionClassifier
 
     /// <summary>
     /// STARTS THE CLASSIFIER CALL AT PARSE TIME, before the gate that actually needs the verdict
-    /// exists. A tool call is parsed well before <c>PermissionGatedPlugin</c> asks for a decision on
+    /// exists. A tool call is parsed well before <c>PermissionGatedExecutor</c> asks for a decision on
     /// it, and the classifier's 10-second deadline is exactly the latency a synchronous call there
     /// pays in full — so <see cref="Agents.Agent"/> calls this the moment it has a <see cref="PermissionRequest"/>
     /// to build, and by the time the gate calls <see cref="JudgeAsync"/> the answer is often already
@@ -377,7 +377,7 @@ public sealed class ActionClassifier
     /// second code path — the cache key, the prompt body, the storage, the failure handling are all
     /// exactly the ones the real call would use, so there is no way for speculation to warm the
     /// cache under a DIFFERENT notion of "the same action" than <see cref="CacheKeyFor"/>. If the
-    /// action changes between this call and the real one — <c>PermissionGatedPlugin</c> only sees
+    /// action changes between this call and the real one — <c>PermissionGatedExecutor</c> only sees
     /// arguments AFTER <c>{{job.key}}</c> substitution, so a speculative call at parse time may run on
     /// pre-substitution text — the body differs, the key differs, and the speculative entry is
     /// simply never found. That miss, not any explicit check, is what makes a stale speculative

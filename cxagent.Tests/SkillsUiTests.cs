@@ -2,7 +2,7 @@ using CxAgent.Core.Commands;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Skills;
 using CxAgent.UI;
 using Xunit;
@@ -165,13 +165,13 @@ public class SkillsUiTests
             childProvider.EnqueueResponse(new LlmResponse { Text = "child done", StopReason = "end_turn" });
 
             var jobs = new NullJobPanel();
-            var parent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), jobs, logs: null, maxTurns: 50,
                 spawner: new SubAgentSpawner(new SubAgentFactory(
                     new SubAgentFactory.SubAgentRuntime
                     {
                         Provider = childProvider,
-                        Plugins = PluginRegistry.CreateWithBuiltins(),
+                        Plugins = JobRegistry.CreateWithBuiltins(),
                         Ledger = new TokenLedger(),
                         MaxTurns = 50,
                         CompressAbove = 40_000,
@@ -215,7 +215,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
             await agent.SendAsync("do something", CancellationToken.None);
@@ -241,7 +241,7 @@ public class SkillsUiTests
             Directory.SetCurrentDirectory(root);
 
             var provider = new ToolCapturingProvider();
-            var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
                 new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 2);
 
             await agent.SendAsync("do something", CancellationToken.None);

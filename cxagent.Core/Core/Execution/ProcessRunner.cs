@@ -1,6 +1,6 @@
 using System.Text;
 using System.Diagnostics;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 
 namespace CxAgent.Core.Execution;
 
@@ -15,7 +15,7 @@ public record ProcessSpec(
 /// What the command printed, capped at <see cref="ProcessRunner.MaxCapturedChars"/>.
 ///
 /// <para>Captured as well as logged because the log file is for the USER and this is for the next
-/// JOB. Without it <c>{{some_shell_job.stdout}}</c> could never resolve: ShellJobPlugin had nothing
+/// JOB. Without it <c>{{some_shell_job.stdout}}</c> could never resolve: ShellJobExecutor had nothing
 /// but an exit code to put in its output bag, so any goal that shelled out and fed the result
 /// onward failed. A live drive of "list ~/bin. what it does?" reported the directory EMPTY, because
 /// from the model's side the listing genuinely produced nothing.</para>
@@ -33,7 +33,7 @@ public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", str
 public static class ProcessRunner
 {
     /// <summary>
-    /// Cap on captured stdout/stderr, per stream. Matches WorkerToolset.MaxToolResultChars — both
+    /// Cap on captured stdout/stderr, per stream. Matches ToolBindings.MaxToolResultChars — both
     /// bound the same thing, text on its way into a model's context, and a command's output feeding
     /// a downstream job is subject to exactly that pressure. The full text is always in the log file,
     /// which is why capping here loses nothing the user cannot still read.

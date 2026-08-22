@@ -1,7 +1,7 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
 /// The consumer's injected tools, as one dispatchable set.
@@ -11,7 +11,7 @@ namespace CxAgent.Core.Plugins;
 /// would be a silent hijack of a name the model already trusts, and the kind of thing that reads as
 /// a model bug rather than a configuration one.</para>
 ///
-/// <para>AND BEFORE <see cref="WorkerToolset.InvokeAsync"/>, which is not a preference. That method
+/// <para>AND BEFORE <see cref="ToolBindings.InvokeAsync"/>, which is not a preference. That method
 /// answers "no such tool" rather than returning null, so it TERMINATES the <c>??</c> chain in
 /// Agent.RunAsync: anything placed after it is unreachable code that looks correct.</para>
 /// </summary>
@@ -63,7 +63,7 @@ public sealed class AgentToolset
         // THE ERROR BECOMES THE RESULT, never an exception. Agent.RunAsync appends the assistant
         // message carrying the tool calls BEFORE running them, so an exception unwinding the loop
         // leaves tool calls with no matching results — an orphan the provider rejects with a 400
-        // that no recovery path matches. WorkerToolset.InvokeAsync holds the same contract.
+        // that no recovery path matches. ToolBindings.InvokeAsync holds the same contract.
         if (!result.Success)
             return new ToolOutcome(result.ErrorMessage ?? "error: the tool failed without saying why", result);
 
@@ -81,7 +81,7 @@ public sealed class AgentToolset
     }
 
     /// <summary>
-    /// A tool call's arguments as plugin parameters.
+    /// A tool call's arguments as executor parameters.
     ///
     /// <para>Values arrive as <c>JsonElement</c> and STAY that way — JobParameters.Get converts on
     /// read, which is the same shape a persisted job's parameters have. Unwrapping to CLR types

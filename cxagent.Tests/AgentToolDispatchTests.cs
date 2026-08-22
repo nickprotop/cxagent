@@ -3,7 +3,7 @@ using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using Xunit;
@@ -14,7 +14,7 @@ namespace CxAgent.Tests;
 /// That an injected tool is REACHED, which is a different question from whether it works.
 ///
 /// <para>The dispatch chain in Agent.RunAsync is a <c>??</c> chain whose last link is
-/// WorkerToolset.InvokeAsync — and that link answers "no such tool" rather than returning null, so
+/// ToolBindings.InvokeAsync — and that link answers "no such tool" rather than returning null, so
 /// it TERMINATES the chain. A link placed after it is unreachable code that reads as correct, which
 /// is the failure these tests exist to catch.</para>
 /// </summary>
@@ -181,7 +181,7 @@ public class AgentToolDispatchTests : IDisposable
         var runtime = new SubAgentFactory.SubAgentRuntime
         {
             Provider = new MockLlmProvider(),
-            Plugins = PluginRegistry.CreateWithBuiltins(),
+            Plugins = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 5,
             AgentTools = [new EchoTool()],
@@ -201,7 +201,7 @@ public class AgentToolDispatchTests : IDisposable
         // WITHHELD AT CONSTRUCTION, like ask_user, so the guarantee holds for any path that builds a
         // child rather than only the factory's.
         var child = new Agent(
-            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             isSubAgent: true,
             agentTools: [new EchoTool(offerToChildren: false)]);
@@ -214,7 +214,7 @@ public class AgentToolDispatchTests : IDisposable
     {
         // The default is true, so adding the opt-out changed nothing for tools that already existed.
         var child = new Agent(
-            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             isSubAgent: true,
             agentTools: [new EchoTool(offerToChildren: true)]);
@@ -228,7 +228,7 @@ public class AgentToolDispatchTests : IDisposable
         // The opt-out is about children specifically. A parent withheld from its own tool would be
         // the feature deleting itself.
         var parent = new Agent(
-            new MockLlmProvider(), PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new MockLlmProvider(), JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             isSubAgent: false,
             agentTools: [new EchoTool(offerToChildren: false)]);

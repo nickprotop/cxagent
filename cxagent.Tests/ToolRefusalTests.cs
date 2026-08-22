@@ -2,7 +2,7 @@ using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -51,7 +51,7 @@ public class ToolRefusalTests
         provider.EnqueueResponse(LlmResponse.WithToolCall(toolName, new { }));
         provider.EnqueueResponse(Done());
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), new TokenLedger(),
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
             agentTools: injected, toolSelection: selection);
 

@@ -1,6 +1,6 @@
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Sessions;
@@ -31,7 +31,7 @@ public sealed partial class Session
             () => Skills.SkillCatalog.Find(WorkingDirectory, Services?.GlobalInstructionsDir ?? ""),
             // WHAT THE AGENT WAS ACTUALLY OFFERED. Listing loadable skills to a user whose agent
             // cannot load one is the same defect as the todo header naming a withheld todowrite.
-            CxAgent.Core.Plugins.ToolSelection.Offers(ToolSelection, CxAgent.Core.Plugins.Tool.Skill)).Render());
+            CxAgent.Core.Jobs.ToolSelection.Offers(ToolSelection, CxAgent.Core.Jobs.Tool.Skill)).Render());
 
         return CommandStatus.Reported;
     }
@@ -193,8 +193,8 @@ public sealed partial class Session
         if (_agentTypes is not { } catalog) return CommandStatus.Unknown;
 
         Say(new Commands.AgentsCommand(catalog,
-            CxAgent.Core.Plugins.ToolSelection.Offers(
-                ToolSelection, CxAgent.Core.Plugins.Tool.Agent)).Render(arguments));
+            CxAgent.Core.Jobs.ToolSelection.Offers(
+                ToolSelection, CxAgent.Core.Jobs.Tool.Agent)).Render(arguments));
         return CommandStatus.Reported;
     }
 

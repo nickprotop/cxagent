@@ -8,11 +8,11 @@ namespace CxAgent.Core.Skills;
 /// The <c>skill</c> tool: hands the model a skill's body when it decides a task matches one of
 /// the descriptions in its catalog.
 ///
-/// <para>AGENT-OWNED, NOT AN <c>IJobPlugin</c>, AND THAT IS FORCED RATHER THAN PREFERRED. Answering
-/// "have I already loaded this?" means reading the agent's own message list, and a plugin cannot:
+/// <para>AGENT-OWNED, NOT AN <c>IJobExecutor</c>, AND THAT IS FORCED RATHER THAN PREFERRED. Answering
+/// "have I already loaded this?" means reading the agent's own message list, and an executor cannot:
 /// <c>IJobContext</c> carries progress, log and telemetry callbacks plus <c>Requester</c> — whose own
 /// documentation calls it "A LABEL, NOT AN ID". With several children running concurrently through
-/// one shared plugin instance, a plugin could not even tell which of them was asking. So this sits
+/// one shared executor instance, an executor could not even tell which of them was asking. So this sits
 /// beside the spawner in the dispatch chain, which is the same shape for the same reason.</para>
 ///
 /// <para>NO STORED STATE AT ALL. What has been loaded is DERIVED from the conversation, so it cannot
@@ -53,8 +53,8 @@ public sealed class SkillLoader
     public string ToolName => "skill";
 
     /// <summary>
-    /// Hand-built, like the spawner's and MCP's: there is no plugin and no <c>JobSchema</c> behind
-    /// this, so <c>WorkerToolset.BuildDefinition</c>'s drift guard has nothing to guard.
+    /// Hand-built, like the spawner's and MCP's: there is no executor and no <c>JobSchema</c> behind
+    /// this, so <c>ToolBindings.BuildDefinition</c>'s drift guard has nothing to guard.
     ///
     /// <para>IT SAYS "DO NOT READ THE FILE" BECAUSE A MODEL OTHERWISE WILL. On the first live drive
     /// the model saw the catalog, decided it wanted the skill, then found the SKILL.md with

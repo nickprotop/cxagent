@@ -1,6 +1,6 @@
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Jobs;
 using Xunit;
 namespace CxAgent.Tests;
 /// <summary>
@@ -20,7 +20,7 @@ public class AgentSpendAttributionTests
         provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" }
             with { Usage = new LlmUsage { InputTokens = 100, OutputTokens = 20 } });
 
-        var agent = new Agent(provider, PluginRegistry.CreateWithBuiltins(), ledger,
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), ledger,
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50);
         await agent.SendAsync("go", CancellationToken.None);
 

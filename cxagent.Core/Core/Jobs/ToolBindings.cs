@@ -3,19 +3,19 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Execution;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.Core.Jobs;
 
 /// <summary>
-/// Bridges <see cref="WorkerTool"/> to the LLM tool-calling protocol: turns the allowed subset into
+/// Bridges <see cref="BuiltinTool"/> to the LLM tool-calling protocol: turns the allowed subset into
 /// <see cref="ToolDefinition"/>s the model can call, and dispatches a returned <see cref="ToolCall"/>
-/// back to the plugin that implements it.
+/// back to the executor that implements it.
 ///
-/// <para>Every tool schema is generated from the plugin's own <see cref="JobSchema"/> — never
-/// hand-written. <c>read_file</c>/<c>write_file</c> both dispatch to <see cref="Builtin.FileJobPlugin"/>
+/// <para>Every tool schema is generated from the executor's own <see cref="JobSchema"/> — never
+/// hand-written. <c>read_file</c>/<c>write_file</c> both dispatch to <see cref="Builtin.FileJobExecutor"/>
 /// with <c>action</c> PINNED by the tool name, so the schema shown to the model omits `action`
 /// entirely and a worker calling <c>read_file</c> cannot pass <c>action: "delete"</c>.</para>
 /// </summary>
-public static class WorkerToolset
+public static class ToolBindings
 {
     /// <summary>
     /// Cap on a tool-result string. Unbounded output would be fed into every subsequent ChatAsync
@@ -37,9 +37,9 @@ public static class WorkerToolset
 
     /// <param name="Params">
     /// The params THIS tool takes, in the order the model should read them. Selected from the
-    /// plugin's real schema, never invented — a name absent from the plugin throws at build time.
+    /// executor's real schema, never invented — a name absent from the executor throws at build time.
     ///
-    /// <para>Selecting rather than dumping is the whole point. Exposing the plugin's entire param
+    /// <para>Selecting rather than dumping is the whole point. Exposing the executor's entire param
     /// list minus the pinned action makes <c>read_file</c> advertise nine parameters, five of them
     /// meaningless for reading (content, dest, replacement, regex, glob). A tool with nine
     /// optional-looking params and one required has no shape the model can read reliably; a live
@@ -47,37 +47,37 @@ public static class WorkerToolset
     /// arguments before its first good one.</para>
     /// </param>
     /// <param name="Required">
-    /// The params without which the call cannot work. NOT taken from the plugin: FileJobPlugin
+    /// The params without which the call cannot work. NOT taken from the executor: FileJobExecutor
     /// serves six actions from one schema, so it can only mark <c>action</c> and <c>path</c>
     /// required — <c>content</c> cannot be required there because `read` does not use it. The
     /// consequence was a schema that told the model "path is all you need" for write_file and
-    /// replace_in_file, both of which the plugin then rejects. Requiredness is a property of the
+    /// replace_in_file, both of which the executor then rejects. Requiredness is a property of the
     /// TOOL, so it is stated per tool.
     /// </param>
     /// <param name="Pinned">
     /// Parameter values this tool always sends, whatever the model said.
     ///
-    /// <para>The action is the usual one — <c>read_file</c> is the file plugin with
-    /// <c>action=read</c> — but not the only one. <c>web_fetch</c> is the http plugin with
-    /// <c>as_text=true</c>: the same plugin, the same request, a different treatment of the
-    /// response. Pinning it here rather than adding a plugin keeps one HTTP implementation with one
+    /// <para>The action is the usual one — <c>read_file</c> is the file executor with
+    /// <c>action=read</c> — but not the only one. <c>web_fetch</c> is the http executor with
+    /// <c>as_text=true</c>: the same executor, the same request, a different treatment of the
+    /// response. Pinning it here rather than adding an executor keeps one HTTP implementation with one
     /// set of validation, retry and header rules.</para>
     /// </param>
     /// <param name="Description">
-    /// What the model is told this tool is for. Defaults to the plugin's DisplayName, which is right
-    /// while one plugin backs one tool and useless the moment two share it.
+    /// What the model is told this tool is for. Defaults to the executor's DisplayName, which is right
+    /// while one executor backs one tool and useless the moment two share it.
     /// </param>
     /// <param name="Name">The tool name the model sees and calls.</param>
-    /// <param name="PluginType">Which registered plugin services it.</param>
+    /// <param name="JobType">Which registered executor services it.</param>
     /// <param name="PinnedAction">
-    /// The plugin action this tool always performs, or null when the tool passes one through. What
-    /// lets several tools share one plugin without the model choosing an action.
+    /// The executor action this tool always performs, or null when the tool passes one through. What
+    /// lets several tools share one executor without the model choosing an action.
     /// </param>
     /// <param name="SeeAlso">
     /// A sentence naming ANOTHER tool, appended only when that tool is also offered. See
     /// <see cref="ToolCrossReference"/>.
     /// </param>
-    private sealed record ToolSpec(string Name, string PluginType, string? PinnedAction,
+    private sealed record ToolBinding(string Name, string JobType, string? PinnedAction,
         string[] Params, string[] Required,
         IReadOnlyDictionary<string, object?>? Pinned = null,
         string? Description = null,
@@ -96,7 +96,7 @@ public static class WorkerToolset
     /// than run_shell with grep or rg") is describing what this tool replaces, not routing anywhere,
     /// and stays whole.</para>
     /// </summary>
-    private sealed record ToolCrossReference(WorkerTool Tool, string Sentence);
+    private sealed record ToolCrossReference(BuiltinTool Tool, string Sentence);
 
     /// <summary>
     /// Whether a spec answers to this name.
@@ -111,14 +111,14 @@ public static class WorkerToolset
     /// conversation replays old tool names out of its own history, and an unknown tool costs a turn
     /// to recover from. Do not read this as "aliases were unnecessary".</para>
     /// </summary>
-    private static bool Answers(ToolSpec? spec, string name) =>
+    private static bool Answers(ToolBinding? spec, string name) =>
         spec is not null && string.Equals(spec.Name, name, StringComparison.Ordinal);
 
-    // Ordered so WorkerTool.For's output is stable regardless of the caller's list order —
+    // Ordered so BuiltinTool.For's output is stable regardless of the caller's list order —
     // a stable tool order keeps the prompt (and provider-side caching of it) stable across calls.
-    private static readonly IReadOnlyList<(WorkerTool Tool, ToolSpec Spec)> Specs = new[]
+    private static readonly IReadOnlyList<(BuiltinTool Tool, ToolBinding Spec)> Specs = new[]
     {
-        (WorkerTool.ReadFile, new ToolSpec("read_file", "file", "read",
+        (BuiltinTool.ReadFile, new ToolBinding("read_file", "file", "read",
             Params: ["path", "offset", "limit"], Required: ["path"])),
         // NAMED FOR WHAT THE MODEL ALREADY KNOWS. These were list_files and search_files — accurate
         // names that describe the operation, and the model shelled out to `find` and `grep` anyway.
@@ -135,7 +135,7 @@ public static class WorkerToolset
         // exactly that had to fill in a directory it did not care about, and put its pattern in the
         // only required slot it had been given. Order matters too: Params is documented as "the
         // order the model should read them".
-        (WorkerTool.ListFiles, new ToolSpec("glob", "file", "list",
+        (BuiltinTool.ListFiles, new ToolBinding("glob", "file", "list",
             Params: ["pattern", "path", "limit"], Required: ["pattern"],
             // SAY WHICH ARGUMENT IS WHICH. This read "Find files by path pattern, e.g. **/*.cs"
             // with `path` as the only required param, so the glob looks like it belongs in `path` —
@@ -156,19 +156,19 @@ public static class WorkerToolset
         // Same inversion as glob, and for the same reason: the pattern is the request, the path is
         // an optional narrowing. grep already required BOTH, so it never produced the inverted call
         // — but requiring a directory the model has no opinion about is friction on every search.
-        (WorkerTool.SearchFiles, new ToolSpec("grep", "file", "search",
+        (BuiltinTool.SearchFiles, new ToolBinding("grep", "file", "search",
             Params: ["pattern", "path", "regex", "glob", "limit"], Required: ["pattern"],
             Description: "Search file CONTENTS for text or a regex, optionally restricted to files "
                        + "matching a glob. Use this rather than run_shell with grep or rg — it "
                        + "needs no approval.")),
         // NO DESCRIPTION AT ALL until now, so the model was told this tool is a "File Operation" —
-        // the plugin's DisplayName, which serves six actions. The one tool that can destroy work
+        // the executor's DisplayName, which serves six actions. The one tool that can destroy work
         // silently was the one with nothing said about it.
         //
         // MOST OF IT IS WHEN NOT TO, the same shape as the spawn tool's. Overwriting is the failure
         // that costs the most and announces itself the least: the write succeeds, the tool reports
         // success, and the content that was there is simply gone.
-        (WorkerTool.WriteFile, new ToolSpec("write_file", "file", "write",
+        (BuiltinTool.WriteFile, new ToolBinding("write_file", "file", "write",
             Params: ["path", "content"], Required: ["path", "content"],
             Description: "Write a whole file, creating it or REPLACING everything in it. Parent "
                        + "directories are created for you. If you do overwrite an "
@@ -177,19 +177,19 @@ public static class WorkerToolset
                        + "whether it created or overwrote.",
             // ONLY IF THE MODEL HAS replace_in_file. Routing it to a withheld tool costs a turn and
             // teaches it nothing: the advice is good, and unreachable.
-            SeeAlso: new(WorkerTool.ReplaceInFile,
+            SeeAlso: new(BuiltinTool.ReplaceInFile,
                 "To change part of a file that already exists, use replace_in_file instead — a "
                 + "whole-file write means reproducing every line you are not changing, and any one "
                 + "of them you misremember is a silent edit nobody asked for."))),
         // Producers only: replace EDITS an existing file. write_file is whole-file, so changing one
         // function meant reproducing every other line from memory.
-        (WorkerTool.ReplaceInFile, new ToolSpec("replace_in_file", "file", "replace",
+        (BuiltinTool.ReplaceInFile, new ToolBinding("replace_in_file", "file", "replace",
             Params: ["path", "pattern", "replacement"],
             Required: ["path", "pattern", "replacement"])),
-        // Unpinned: the shell plugin serves one action, so its whole schema IS this tool's.
-        (WorkerTool.RunShell, new ToolSpec("run_shell", "shell", null,
+        // Unpinned: the shell executor serves one action, so its whole schema IS this tool's.
+        (BuiltinTool.RunShell, new ToolBinding("run_shell", "shell", null,
             Params: ["command", "working_dir", "timeout_seconds"], Required: ["command"])),
-        (WorkerTool.HttpRequest, new ToolSpec("http_request", "http", null,
+        (BuiltinTool.HttpRequest, new ToolBinding("http_request", "http", null,
             Params: ["url", "method", "headers", "body"], Required: ["url"])),
         // THE SAME PLUGIN, READING RATHER THAN CALLING. http_request hands back what the server
         // sent, which is right for an API and ruinous for a page: raw HTML is nearly all markup, a
@@ -199,13 +199,13 @@ public static class WorkerToolset
         // A SEPARATE TOOL RATHER THAN A PARAMETER, because the model must choose between them by
         // INTENT — "read this page" against "call this endpoint" — and a boolean on one tool is a
         // decision it can forget to make. The names say which is which.
-        (WorkerTool.WebFetch, new ToolSpec("web_fetch", "http", null,
+        (BuiltinTool.WebFetch, new ToolBinding("web_fetch", "http", null,
             Params: ["url"], Required: ["url"],
             Pinned: new Dictionary<string, object?> { ["as_text"] = true },
             Description: "Read a web page as text. Fetches the URL and strips the markup, scripts, "
                        + "styles and navigation, leaving the readable content. Use this for "
                        + "documentation and articles.",
-            SeeAlso: new(WorkerTool.HttpRequest,
+            SeeAlso: new(BuiltinTool.HttpRequest,
                 "Use http_request for APIs, where the raw response is what you want."))),
     };
 
@@ -217,9 +217,9 @@ public static class WorkerToolset
     /// names a worker is actually OFFERED must be the same strings — two mappings would drift, and the
     /// failure is silent: the orchestrator plans against a tool name the worker cannot call.</para>
     /// </summary>
-    public static IEnumerable<string> NamesFor(IReadOnlyList<WorkerTool> tools)
+    public static IEnumerable<string> NamesFor(IReadOnlyList<BuiltinTool> tools)
     {
-        var allowed = new HashSet<WorkerTool>(tools);
+        var allowed = new HashSet<BuiltinTool>(tools);
         return Specs.Where(s => allowed.Contains(s.Tool)).Select(s => s.Spec.Name);
     }
 
@@ -228,52 +228,52 @@ public static class WorkerToolset
     ///
     /// <para>The inverse of <see cref="NamesFor"/>, and it lives here for the same reason that does:
     /// this type owns the enum-to-name mapping, and a second copy would drift the moment either
-    /// moves. <c>WorkerTool.ListFiles</c> is offered as <c>glob</c>, so a caller that mapped by
+    /// moves. <c>BuiltinTool.ListFiles</c> is offered as <c>glob</c>, so a caller that mapped by
     /// enum spelling would select nothing — the exact mistake a tool selection must not make.</para>
     ///
     /// <para>Used to narrow the DISPATCH list from a selection that was applied to definitions: the
     /// offer site and the dispatch site must agree, and deriving one from the other is what makes
     /// them agree by construction rather than by review.</para>
     /// </summary>
-    public static IReadOnlyList<WorkerTool> ToolsNamed(IEnumerable<string> names)
+    public static IReadOnlyList<BuiltinTool> ToolsNamed(IEnumerable<string> names)
     {
         var wanted = new HashSet<string>(names, StringComparer.Ordinal);
         return [.. Specs.Where(s => wanted.Contains(s.Spec.Name)).Select(s => s.Tool)];
     }
 
     /// <summary>
-    /// Builds one <see cref="ToolDefinition"/> per allowed <see cref="WorkerTool"/>, in the fixed
+    /// Builds one <see cref="ToolDefinition"/> per allowed <see cref="BuiltinTool"/>, in the fixed
     /// order above. Empty (never null) when <paramref name="tools"/> is empty, so a call site needs
     /// no null check — both OpenAiWire and AnthropicWire gate on Count &gt; 0 and omit the `tools`
     /// key entirely for an empty list, so the two are identical on the wire anyway.
     /// </summary>
-    public static IReadOnlyList<ToolDefinition> For(IReadOnlyList<WorkerTool> tools, PluginRegistry plugins)
+    public static IReadOnlyList<ToolDefinition> For(IReadOnlyList<BuiltinTool> tools, JobRegistry executors)
     {
-        var allowed = new HashSet<WorkerTool>(tools);
+        var allowed = new HashSet<BuiltinTool>(tools);
         var result = new List<ToolDefinition>();
         foreach (var (tool, spec) in Specs)
         {
             if (!allowed.Contains(tool)) continue;
-            if (!plugins.TryGet(spec.PluginType, out var plugin) || plugin is null) continue;
-            result.Add(BuildDefinition(spec, plugin.GetSchema(), allowed));
+            if (!executors.TryGet(spec.JobType, out var executor) || executor is null) continue;
+            result.Add(BuildDefinition(spec, executor.GetSchema(), allowed));
         }
         return result;
     }
 
-    private static ToolDefinition BuildDefinition(ToolSpec spec, JobSchema schema,
-        IReadOnlySet<WorkerTool> allowed)
+    private static ToolDefinition BuildDefinition(ToolBinding spec, JobSchema schema,
+        IReadOnlySet<BuiltinTool> allowed)
     {
         var byName = schema.Params.ToDictionary(p => p.Name, StringComparer.Ordinal);
         var properties = new Dictionary<string, object>();
 
         foreach (var name in spec.Params)
         {
-            // Throws rather than skipping: a param this tool advertises but the plugin does not
+            // Throws rather than skipping: a param this tool advertises but the executor does not
             // accept is exactly the drift generating-from-schema exists to prevent, and a silent
             // skip would ship a tool missing the parameter it needs.
             if (!byName.TryGetValue(name, out var p))
                 throw new InvalidOperationException(
-                    $"tool '{spec.Name}' names param '{name}', which plugin '{spec.PluginType}' "
+                    $"tool '{spec.Name}' names param '{name}', which executor '{spec.JobType}' "
                     + "does not accept.");
 
             properties[name] = new { type = p.Type, description = p.Description };
@@ -286,8 +286,8 @@ public static class WorkerToolset
             required = spec.Required,
         };
 
-        // THE SPEC'S OWN WORDS WIN. Two tools can share a plugin — web_fetch and http_request are
-        // both "http" — and the plugin's DisplayName then describes both identically, leaving the
+        // THE SPEC'S OWN WORDS WIN. Two tools can share an executor — web_fetch and http_request are
+        // both "http" — and the executor's DisplayName then describes both identically, leaving the
         // model to choose between them on the tool name alone. That is exactly how load_skill lost
         // out to read_file on a live drive: the model reaches for what it understands, and a
         // description that does not distinguish the two is not doing its job.
@@ -311,15 +311,15 @@ public static class WorkerToolset
     }
 
     /// <summary>
-    /// TASK 11: the same call-to-plugin-type and argument mapping <see cref="InvokeAsync"/> uses to
+    /// TASK 11: the same call-to-executor-type and argument mapping <see cref="InvokeAsync"/> uses to
     /// dispatch a call, exposed so an agent can build the <see cref="Permissions.PermissionRequest"/>s
     /// a call WOULD raise at parse time — before it is dispatched — and start speculating on them.
     ///
-    /// <para>DELIBERATELY THE SAME LOOKUP, not a parallel one. Re-deriving "which plugin does this
+    /// <para>DELIBERATELY THE SAME LOOKUP, not a parallel one. Re-deriving "which executor does this
     /// tool name reach, and what parameters does it pass" as a second implementation is exactly the
     /// kind of drift <see cref="Permissions.ActionClassifier.CacheKeyFor"/>'s own doc comment warns
     /// against for the cache key itself: if this ever disagreed with <see cref="InvokeAsync"/> about
-    /// which plugin type or which parameters a tool name maps to, speculation would warm the cache
+    /// which executor type or which parameters a tool name maps to, speculation would warm the cache
     /// under one action while the gate later asks about a different one — the two would simply never
     /// share a key, and every speculative call would be silent waste. Sharing <c>Specs</c>/<c>Answers</c>
     /// makes that impossible rather than merely unlikely.</para>
@@ -351,7 +351,7 @@ public static class WorkerToolset
         Permissions.PermissionRequest[] result;
         try
         {
-            result = Permissions.PermissionPolicy.RequestsFor(entry.Spec.PluginType,
+            result = Permissions.PermissionPolicy.RequestsFor(entry.Spec.JobType,
                 new JobParameters(values), root).ToArray();
         }
         catch
@@ -369,21 +369,21 @@ public static class WorkerToolset
     }
 
     /// <summary>
-    /// Dispatches a model-issued <see cref="ToolCall"/> to its plugin and renders the result as text
+    /// Dispatches a model-issued <see cref="ToolCall"/> to its executor and renders the result as text
     /// for a tool-result message. Never throws: every failure mode (unknown/refused tool, invalid
-    /// params, a plugin exception) becomes a string the model can read and react to.
+    /// params, an executor exception) becomes a string the model can read and react to.
     ///
     /// <para>Order matters: (1) allow-check against <paramref name="allowed"/> BEFORE anything else —
-    /// a refused tool must never reach a plugin, since a model can emit a call for a tool it was
-    /// never shown; (2) <see cref="IJobPlugin.Validate"/> before execute, both as a crash guard (some
-    /// plugins read required params before their own try/catch) and so the model gets a specific
+    /// a refused tool must never reach an executor, since a model can emit a call for a tool it was
+    /// never shown; (2) <see cref="IJobExecutor.Validate"/> before execute, both as a crash guard (some
+    /// executors read required params before their own try/catch) and so the model gets a specific
     /// "'path' is required" instead of an opaque failure; (3) execute inside try/catch, since Validate
     /// does not cover I/O failures; (4) render and truncate.</para>
     /// </summary>
     /// <param name="call">The call the model issued.</param>
     /// <param name="allowed">Which built-ins this agent was offered — a call outside it is refused.</param>
-    /// <param name="plugins">The plugin registry the call is dispatched through.</param>
-    /// <param name="ctx">The job context a plugin runs against.</param>
+    /// <param name="executors">The executor registry the call is dispatched through.</param>
+    /// <param name="ctx">The job context an executor runs against.</param>
     /// <param name="ct">Cancels the tool mid-run.</param>
     /// <param name="alsoAvailable">
     /// Tool names that exist but are not in this table — today, MCP tools.
@@ -396,18 +396,18 @@ public static class WorkerToolset
     /// removed it gets a list omitting the servers still running.</para>
     /// </param>
     /// <returns>
-    /// The model-facing text plus the plugin's own JobResult, when a plugin ran. Never null — this
+    /// The model-facing text plus the executor's own JobResult, when an executor ran. Never null — this
     /// method ENDS Agent's dispatch chain, answering "no such tool" as text rather than declining.
-    /// The early returns below are dispatch failures with no plugin behind them, so they carry text
+    /// The early returns below are dispatch failures with no executor behind them, so they carry text
     /// only.
     /// </returns>
-    public static async Task<ToolOutcome> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
-        PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
+    public static async Task<ToolOutcome> InvokeAsync(ToolCall call, IReadOnlyList<BuiltinTool> allowed,
+        JobRegistry executors, IJobContext ctx, CancellationToken ct,
         IEnumerable<string>? alsoAvailable = null)
     {
         // RESET UP FRONT, same reason AgentToolset.TryInvokeAsync resets it: ctx is fresh per call
         // at today's one call site, but every early return below (unknown tool, not offered, no
-        // plugin, bad arguments) never reaches a gate at all, and a caller must never read a PRIOR
+        // executor, bad arguments) never reaches a gate at all, and a caller must never read a PRIOR
         // call's verdict off a context this one never had decided.
         //
         // NULL DOES NOT RAISE the context's report — see JobContext.DecidedBy. If it did, this
@@ -435,9 +435,9 @@ public static class WorkerToolset
             return $"tool '{call.Name}' is not available. Available: "
                 + $"{string.Join(", ", NamesFor(allowed))}";
 
-        // A missing plugin is a CONFIGURATION fault, not a restriction, and says so.
-        if (!plugins.TryGet(entry.Spec.PluginType, out var plugin) || plugin is null)
-            return $"tool '{call.Name}' is unavailable: no '{entry.Spec.PluginType}' plugin is registered";
+        // A missing executor is a CONFIGURATION fault, not a restriction, and says so.
+        if (!executors.TryGet(entry.Spec.JobType, out var executor) || executor is null)
+            return $"tool '{call.Name}' is unavailable: no '{entry.Spec.JobType}' executor is registered";
 
         var values = new Dictionary<string, object?>();
         foreach (var prop in call.Arguments.EnumerateObject())
@@ -460,7 +460,7 @@ public static class WorkerToolset
         JobValidation validation;
         try
         {
-            validation = plugin.Validate(parameters);
+            validation = executor.Validate(parameters);
         }
         catch (Exception ex)
         {
@@ -481,7 +481,7 @@ public static class WorkerToolset
         JobResult result;
         try
         {
-            result = await plugin.ExecuteAsync(parameters, ctx, ct);
+            result = await executor.ExecuteAsync(parameters, ctx, ct);
         }
         catch (System.Text.Json.JsonException ex)
         {
@@ -499,7 +499,7 @@ public static class WorkerToolset
             // nothing threw, so the row closed as Failed rather than Cancelled and the two paths
             // (built-in, MCP) disagreed about what stopping looks like.
             //
-            // GUARDED ON ct: an OCE when cancellation was NOT requested is a plugin's own timeout or
+            // GUARDED ON ct: an OCE when cancellation was NOT requested is an executor's own timeout or
             // a bug, and that IS a tool failure the model should see — it falls through below.
             throw;
         }

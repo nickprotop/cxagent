@@ -13,8 +13,8 @@ namespace CxAgent.Tests;
 ///
 /// <para>The answer was that <c>ToolUpdated</c> only ever called <c>SetStatus</c> — the message BODY
 /// stayed whatever <c>Title(job)</c> produced when the job first appeared, i.e. the job's NAME. Every
-/// plugin writes its real output to <c>Output["content"]</c> (LlmAgentJobPlugin's worker transcript,
-/// ShellJobPlugin's stdout) and the ONLY reader was IntrospectionTools — the tool the ORCHESTRATOR
+/// executor writes its real output to <c>Output["content"]</c> (LlmAgentJobPlugin's worker transcript,
+/// ShellJobExecutor's stdout) and the ONLY reader was IntrospectionTools — the tool the ORCHESTRATOR
 /// uses to read results. The user could not see what their own workers said.</para>
 ///
 /// <para>There were no InlineJobSink tests at all before this file, which is why it shipped.</para>
@@ -150,13 +150,13 @@ public class InlineJobSinkTests
         Assert.Equal("short", InlineJobSink.Clip("short"));
     }
 
-    // --- Compact rows: driven by "is there anything to read", not by plugin type ------------------
+    // --- Compact rows: driven by "is there anything to read", not by executor type ------------------
 
-    private static Job TypedJob(string pluginType, JobState state,
+    private static Job TypedJob(string jobType, JobState state,
         Dictionary<string, object?>? output = null) =>
         new()
         {
-            Id = "j1", AgentId = "g1", PluginType = pluginType, DisplayName = "step", State = state,
+            Id = "j1", AgentId = "g1", PluginType = jobType, DisplayName = "step", State = state,
             Result = new JobResult
             {
                 Success = state == JobState.Succeeded, Output = output ?? new(), Duration = TimeSpan.Zero,
@@ -167,7 +167,7 @@ public class InlineJobSinkTests
     public void AJobThatProducedNOTHING_RendersCompact_WhateverItsType()
     {
         // From a live screenshot: five rows reading "Read HeuristicEngine.c...  expand..." at 0.0s,
-        // each offering to expand into nothing. The FIRST attempt at this compacted by plugin type
+        // each offering to expand into nothing. The FIRST attempt at this compacted by executor type
         // and could not see them -- the orchestrator plans an llm_agent for EVERYTHING, so "Read
         // HeuristicEngine.cs" is a WORKER that calls read_file internally, not a `file` job.
         Assert.True(InlineJobSink.IsCompactRowForTest(TypedJob("llm_agent", JobState.Succeeded)));

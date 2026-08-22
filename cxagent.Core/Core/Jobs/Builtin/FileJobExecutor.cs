@@ -1,9 +1,9 @@
 using CxAgent.Core.Models;
 
-namespace CxAgent.Core.Plugins.Builtin;
+namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>File operations: read/write/append/delete/copy/move, plus read-only list/search.</summary>
-public class FileJobPlugin : IJobPlugin
+public class FileJobExecutor : IJobExecutor
 {
     private static readonly HashSet<string> Actions =
         new() { "read", "write", "append", "delete", "copy", "move", "list", "search", "replace",
@@ -103,7 +103,7 @@ public class FileJobPlugin : IJobPlugin
     /// Reads a file, optionally a line window of it.
     ///
     /// <para>Exists because of a LOOP seen on a five-way fan-out: a worker asked for a 36 KB source
-    /// file, <see cref="WorkerToolset.MaxToolResultChars"/> elided the middle, and the worker — with
+    /// file, <see cref="ToolBindings.MaxToolResultChars"/> elided the middle, and the worker — with
     /// no way to ask for the missing part — re-issued the SAME call and got the SAME cut, until the
     /// turn cap killed it. The cap is right (an unbounded read is re-sent on every subsequent
     /// ChatAsync call for the rest of the tool loop); what was missing was a way to NAVIGATE it.</para>
@@ -914,7 +914,7 @@ public class FileJobPlugin : IJobPlugin
         {
             // RESOLVED INSIDE THE TRY, so a bad path becomes a failed RESULT rather than an escaping
             // exception. It sat outside, which meant the one error most worth explaining to a model
-            // — a path it can fix — was the one that bypassed the plugin's own error handling.
+            // — a path it can fix — was the one that bypassed the executor's own error handling.
             // PATH DEFAULTS TO THE WORKING DIRECTORY FOR THE SEARCHING ACTIONS, which is what makes
             // it optional on the `glob` and `grep` tools. Everything else needs a real target and
             // still fails without one — a `write` with no path is a mistake, not a search of ".".
@@ -986,7 +986,7 @@ public class FileJobPlugin : IJobPlugin
                             return new JobResult
                             {
                                 Success = false,
-                                // NO TOOL NAMED. A plugin cannot see the selection, and this string
+                                // NO TOOL NAMED. An executor cannot see the selection, and this string
                                 // is read at the moment of a failure — the worst time to send the
                                 // model after a tool it may not have been offered. What happened and
                                 // why is the useful part; which tool to reach for next is a question

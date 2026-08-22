@@ -24,7 +24,7 @@ namespace CxAgent.Core.Sessions;
 /// gate, and that is an ordinary configuration rather than a degraded one.</para>
 ///
 /// <para>ONE PROCESS-WIDE THING IS DELIBERATELY NOT HERE:
-/// <see cref="Plugins.Builtin.FileMutation"/>, whose per-path lock table serialises two sessions
+/// <see cref="Jobs.Builtin.FileMutation"/>, whose per-path lock table serialises two sessions
 /// editing one file. It is reached statically rather than injected, and that is the difference
 /// between this record and an invariant. Every member below is CONFIGURATION — a headless session
 /// passes null, a test passes a fake, and a session receiving a different one is a legitimate
@@ -62,7 +62,7 @@ public sealed record SharedServices
     /// <para>PROCESS-WIDE, like the gate above it: two sessions may narrow differently through
     /// <see cref="SessionPorts.ToolSelection"/>, but this is the floor an embedder sets once.</para>
     /// </summary>
-    public Plugins.ToolSelection? ToolSelection { get; init; }
+    public Jobs.ToolSelection? ToolSelection { get; init; }
 
     /// <summary>
     /// cxagent's own config directory, for globally-installed instructions and skills.

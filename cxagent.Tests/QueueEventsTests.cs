@@ -276,7 +276,7 @@ public class CancelWhileWaitingTests
 
         // A POLICY, because a request without one is refused before any prompt goes up — the gate
         // holds no session and cannot judge for one. That guard is right; it just means this test has
-        // to stamp what PermissionGatedPlugin stamps in production.
+        // to stamp what PermissionGatedExecutor stamps in production.
         var root = Directory.CreateTempSubdirectory("cw-root").FullName;
         var request = new CxAgent.Core.Permissions.PermissionRequest(
             CxAgent.Core.Permissions.PermissionKind.Shell, "sleep 999", null)

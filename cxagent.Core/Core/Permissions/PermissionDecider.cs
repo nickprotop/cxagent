@@ -166,7 +166,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// constructor above.</summary>
     /// <param name="policy">
     /// Stamped onto every request this gate receives, standing in for
-    /// <see cref="PermissionGatedPlugin"/>, which does it in production. The gate itself holds no
+    /// <see cref="PermissionGatedExecutor"/>, which does it in production. The gate itself holds no
     /// policy — that is the point of the split — so a test that builds one and expects the gate to
     /// remember it is testing a shape this type does not have.
     /// </param>
@@ -179,7 +179,7 @@ public sealed class PermissionDecider : IPermissionGate
         new(store, notice, promptHook) { StampForTesting = policy };
 
     /// <summary>Test-only: the policy to attach to requests that arrive without one. Null in
-    /// production, where PermissionGatedPlugin has already stamped them.</summary>
+    /// production, where PermissionGatedExecutor has already stamped them.</summary>
     public PermissionPolicy? StampForTesting { get; init; }
 
     /// <summary>
@@ -227,9 +227,9 @@ public sealed class PermissionDecider : IPermissionGate
         // without a policy is one nobody can judge: there is no root to check a path against and no
         // edit mode to read. Refusing is the only honest answer — inventing one would decide a
         // question using another session's rules, which is the failure this whole split exists to
-        // end. Every production path stamps it (PermissionGatedPlugin); this is the guard for a
+        // end. Every production path stamps it (PermissionGatedExecutor); this is the guard for a
         // caller that forgets.
-        // The test seam stands in for PermissionGatedPlugin, which stamps this in production.
+        // The test seam stands in for PermissionGatedExecutor, which stamps this in production.
         if (StampForTesting is not null && request.Policy is null)
             request = request with { Policy = StampForTesting };
 

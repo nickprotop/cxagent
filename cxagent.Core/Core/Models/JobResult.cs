@@ -5,7 +5,7 @@ public record JobResult
     public required bool Success { get; init; }
     public int ExitCode { get; init; }
     public string? ErrorMessage { get; init; }
-    /// <summary>True when this failure is a user permission refusal, not a plugin fault.
+    /// <summary>True when this failure is a user permission refusal, not an executor fault.
     /// AgentHost.ShouldAutoDiagnose reads this to skip automatic diagnosis: a paid diagnosis
     /// round cannot repair a user's decision.</summary>
     public bool PermissionDenied { get; init; }
@@ -19,7 +19,7 @@ public record JobResult
     /// nothing here and the row stays exactly as it reads today.
     ///
     /// <para>MIRRORS <see cref="Permissions.PermissionOutcome.DeniedBy"/>'s "auto" vocabulary rather
-    /// than inventing a second one — both gate wrappers (GatedAgentTool, PermissionGatedPlugin) copy
+    /// than inventing a second one — both gate wrappers (GatedAgentTool, PermissionGatedExecutor) copy
     /// it straight from the outcome they already have, on both the deny return and the success
     /// return once every gate has cleared.</para>
     /// </summary>

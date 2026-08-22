@@ -1,35 +1,35 @@
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
-using CxAgent.Core.Plugins.Builtin;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Jobs.Builtin;
 using Xunit;
 
 namespace CxAgent.Tests;
 
-public class PluginRegistryTests
+public class JobRegistryTests
 {
     [Fact]
-    public void CreateWithBuiltins_RegistersTheFourSelfContainedPlugins()
+    public void CreateWithBuiltins_RegistersTheFourSelfContainedExecutors()
     {
-        var reg = PluginRegistry.CreateWithBuiltins();
+        var reg = JobRegistry.CreateWithBuiltins();
         foreach (var type in new[] { "shell", "file", "wait", "http" })
         {
-            Assert.True(reg.TryGet(type, out var plugin), $"expected '{type}' registered");
-            Assert.Equal(type, plugin!.TypeName);
+            Assert.True(reg.TryGet(type, out var executor), $"expected '{type}' registered");
+            Assert.Equal(type, executor!.TypeName);
         }
     }
 
     [Fact]
     public void TryGet_UnknownType_ReturnsFalse()
     {
-        var reg = PluginRegistry.CreateWithBuiltins();
+        var reg = JobRegistry.CreateWithBuiltins();
         Assert.False(reg.TryGet("nonexistent", out _));
     }
 
     [Fact]
     public void Register_DuplicateTypeName_FirstWins_AndRecordsShadowWarning()
     {
-        var reg = new PluginRegistry();
-        var first = new ShellJobPlugin();
+        var reg = new JobRegistry();
+        var first = new ShellJobExecutor();
         var second = new AnotherShell();
         reg.Register(first);
         reg.Register(second);
@@ -39,7 +39,7 @@ public class PluginRegistryTests
         Assert.Contains(reg.ShadowWarnings, w => w.Contains("shell"));
     }
 
-    private sealed class AnotherShell : IJobPlugin
+    private sealed class AnotherShell : IJobExecutor
     {
         public string TypeName => "shell";
         public string DisplayName => "Impostor Shell";
