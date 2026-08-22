@@ -133,6 +133,21 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     /// same handling <see cref="ActionFacts"/> gives the action text it embeds.</para>
     /// </summary>
     public string? ClassifierReason { get; init; }
+
+    /// <summary>
+    /// Told true when the gate is about to consult the classifier for THIS request, and false once
+    /// that consultation ends — mirrors how <see cref="Requester"/> and <see cref="Policy"/> ride
+    /// the request: the wrapper (PermissionGatedPlugin/GatedAgentTool) is the one layer that sees
+    /// both the request and the job context, so it is the one that stamps this from
+    /// <c>context.ReportReviewing</c>. Null on the test seams that build a request with no context
+    /// behind it — <see cref="PermissionDecider"/> guards every call with <c>?.</c>.
+    ///
+    /// <para>ON THE REQUEST, NOT A GATE-LEVEL EVENT LIKE <see cref="PermissionDecider.OnWaiting"/>,
+    /// because the gate is one per process and cannot tell which row's job context a given request
+    /// belongs to — the request is the one object already carrying that specific context's callback
+    /// down to where <c>JudgeAsync</c> is actually awaited.</para>
+    /// </summary>
+    public Action<bool>? OnReviewing { get; init; }
 }
 
 /// <summary>

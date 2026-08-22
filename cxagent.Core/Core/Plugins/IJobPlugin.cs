@@ -45,6 +45,18 @@ public interface IJobContext
     void ReportPermissionWait(bool waiting);
 
     /// <summary>
+    /// Reports that auto mode's classifier has started being consulted for this call's permission
+    /// gate (true), or has stopped (false) — the verdict landed, or the gate fell through to a user
+    /// prompt.
+    ///
+    /// <para>SEPARATE FROM <see cref="ReportPermissionWait"/>. That one covers a HUMAN prompt sitting
+    /// unanswered; this covers the model round trip that happens BEFORE a prompt is ever shown, and
+    /// which a stored rule or an in-boundary pass never reaches at all — this fires only on the path
+    /// that actually calls the classifier, so an ordinary silent allow never sees it.</para>
+    /// </summary>
+    void ReportReviewing(bool reviewing);
+
+    /// <summary>
     /// WHO THIS WORK IS FOR, in words a user can act on — null for the session's own agent.
     ///
     /// <para>A LABEL, NOT AN ID. The permission prompt is the only place this surfaces, and a ULID

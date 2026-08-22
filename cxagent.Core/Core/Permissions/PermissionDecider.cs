@@ -257,7 +257,21 @@ public sealed class PermissionDecider : IPermissionGate
         var effect = policy.EffectFor(request);
         if (effect != ReviewEffect.None && Classifier is not null)
         {
-            var decision = await Classifier.JudgeAsync(request, ct);
+            // TOLD ONLY HERE, inside the branch that actually calls the classifier. Neither the
+            // silent path above nor the trust-floor guard above that ever reach this line, so a
+            // stored rule or an in-boundary pass never flashes "reviewing…" — the row must show it
+            // only for the one path that genuinely goes out to a model. Wrapped so a thrown/awaited
+            // failure below still clears it; leaving it stuck true would read as a hang forever.
+            request.OnReviewing?.Invoke(true);
+            ClassifierDecision decision;
+            try
+            {
+                decision = await Classifier.JudgeAsync(request, ct);
+            }
+            finally
+            {
+                request.OnReviewing?.Invoke(false);
+            }
 
             // AN ALLOW ONLY SILENCES WHERE THE EFFECT SAYS IT MAY. This is the whole point of the
             // enum: MayAnnotate reaches here with a verdict and must still fall through to the

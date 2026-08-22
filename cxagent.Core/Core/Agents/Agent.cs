@@ -2006,6 +2006,20 @@ public sealed class Agent
             job.DecidedBy = decidedBy;
             _jobs.ToolProgressed(job);
         };
+
+        // "reviewing…" WHILE THE CLASSIFIER IS OUT, for the identical reason the badge above rides
+        // the Job rather than waiting for Result: the classifier is two-stage with a fresh deadline
+        // per stage, so on a local model this can run for many seconds, and the row otherwise shows
+        // nothing in that gap — indistinguishable from a hung tool. Cleared the moment the verdict
+        // lands (ReviewingChanged fires false right before/around DeciderReported firing true) or
+        // the request falls through to a user prompt, in which case ReportPermissionWait's existing
+        // waiting-row mechanism takes over; the two never show at once because the gate always
+        // stops reviewing before it either returns a verdict or falls through to the prompt.
+        ctx.ReviewingChanged += reviewing =>
+        {
+            job.Reviewing = reviewing;
+            _jobs.ToolProgressed(job);
+        };
         // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
         // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
         // sources each producing their own version is how a model gets told a tool does not exist by

@@ -75,6 +75,26 @@ public record Job
     /// </summary>
     public string? DecidedBy { get; set; }
 
+    /// <summary>
+    /// True while auto mode's classifier is being consulted for this call's permission gate — false
+    /// once the verdict lands (whether that resolves to <see cref="DecidedBy"/> or falls through to
+    /// a user prompt). The tool row reads it to show "reviewing…" in the gap between the row
+    /// appearing and the verdict arriving.
+    ///
+    /// <para>WHY THE GAP NEEDED A WORD AT ALL: the classifier is two-stage with a fresh deadline per
+    /// stage, so on a local model this can run for many seconds — for a fast command like `ls` it is
+    /// the slowest part of the whole call — and until now the row showed nothing while it waited.
+    /// Reported before: a user cannot tell "a model is deliberating" from "the tool is slow" from
+    /// "it is hung" without something saying which.</para>
+    ///
+    /// <para>SEPARATE FROM <see cref="DecidedBy"/> RATHER THAN A THIRD STATE ON IT, because the two
+    /// facts are not mutually exclusive for long: this goes true, then EITHER DecidedBy gets set
+    /// (auto-allow/auto-deny) OR the request falls through to a user prompt with DecidedBy still
+    /// null. Badge() prefers DecidedBy when set and this when not, so the word never lingers once a
+    /// verdict — or a prompt — has taken over the row.</para>
+    /// </summary>
+    public bool Reviewing { get; set; }
+
     public double? Progress { get; set; }
     public string? ProgressMessage { get; set; }
 

@@ -108,6 +108,13 @@ public sealed class JobContext : IJobContext
 
     public void ReportPermissionWait(bool waiting) => PermissionWaitChanged?.Invoke(waiting);
 
+    /// <summary>Raised when the classifier starts (true) or stops (false) being consulted for this
+    /// call's gate. Same contract as <see cref="PermissionWaitChanged"/>: the agent subscribes and
+    /// stamps the running Job so the row can show "reviewing…" while it is true.</summary>
+    public event Action<bool>? ReviewingChanged;
+
+    public void ReportReviewing(bool reviewing) => ReviewingChanged?.Invoke(reviewing);
+
     /// <summary>
     /// Raised whenever a plugin reports a resource sample. ProcessRunner subscribes its
     /// ProcessResourceMonitor.Updated to ReportResources, which re-raises it here; the UI

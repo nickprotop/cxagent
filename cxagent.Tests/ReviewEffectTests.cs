@@ -310,6 +310,72 @@ public class ReviewEffectTests
     }
 
     [Fact]
+    public async Task ConsultingTheClassifier_ReportsReviewingThenClearsIt()
+    {
+        // THE SEAM HALF 1 HOOKS: PermissionDecider.RequestAsync, exactly around the
+        // Classifier.JudgeAsync await — the one branch that structurally can only be reached once
+        // EffectFor(request) != None and a classifier is configured, which is the same guard the
+        // classifier consultation itself already sits behind. Recording the two calls in order pins
+        // both that it fires and that it clears once the verdict is in.
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        var gate = AutoGate(root, rules, "ALLOW: fine", out _);
+        var reports = new List<bool>();
+
+        var outcome = await gate.RequestAsync(
+            FileWrite(Path.Combine(root, "a.cs")) with { OnReviewing = reports.Add },
+            CancellationToken.None);
+
+        Assert.True(outcome.Allowed);
+        Assert.Equal(new[] { true, false }, reports);
+    }
+
+    [Fact]
+    public async Task AnUntrustedFolder_NeverReportsReviewing()
+    {
+        // THE CONTROL a "always report reviewing" non-fix would fail: on the trust floor the gate
+        // never reaches the classifier at all (see AnUntrustedFolderNeverReachesTheClassifier
+        // above), so OnReviewing must never fire either — a stored rule or a silent in-boundary
+        // pass must not flash "reviewing…" on a row that never asked a model anything.
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        var provider = new ScriptedProvider("ALLOW: fine");
+        var script = new PromptScript();
+        var policy = new PermissionPolicy(root, rules, EditMode.Auto);   // deliberately not trusted
+        var gate = PermissionDecider.ForTesting(policy, rules, notice: null, script.Show);
+        gate.Classifier = new ActionClassifier(provider);
+        script.AnswerWith(PermissionChoice.Deny);
+        var reports = new List<bool>();
+
+        await gate.RequestAsync(
+            FileWrite(Path.Combine(root, "a.cs")) with { OnReviewing = reports.Add },
+            CancellationToken.None);
+
+        Assert.Empty(reports);
+    }
+
+    [Fact]
+    public async Task AClassifierRefusal_ReportsReviewingThenClearsIt_BeforeThePromptAppears()
+    {
+        // THE FALL-THROUGH CASE the brief calls out: the classifier declines to clear the action
+        // (ASK) and a user prompt follows. Reviewing must have already ended by the time the prompt
+        // shows — the row is then waiting on a HUMAN, which ReportPermissionWait already reports;
+        // "reviewing…" lingering alongside it would describe an interval that is over.
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        var gate = AutoGate(root, rules, "ASK: not sure", out var script);
+        script.AnswerWith(PermissionChoice.Once);
+        var reports = new List<bool>();
+
+        await gate.RequestAsync(
+            FileWrite(Path.Combine(root, "a.cs")) with { OnReviewing = reports.Add },
+            CancellationToken.None);
+
+        Assert.Equal(new[] { true, false }, reports);
+        Assert.Equal(1, script.ShownCount);
+    }
+
+    [Fact]
     public async Task AnAskCarriesTheReasonToThePrompt()
     {
         // RefusedByClassifier KEEPS WORKING, and now carries the model's own words. The heading it

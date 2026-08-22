@@ -18,6 +18,11 @@ internal sealed class CollectingContext : IJobContext
     public List<bool> PermissionWaits { get; } = [];
     public void ReportPermissionWait(bool waiting) => PermissionWaits.Add(waiting);
 
+    /// <summary>Recorded rather than ignored, mirroring PermissionWaits above — a test can assert
+    /// whether "reviewing…" was raised for this call.</summary>
+    public List<bool> ReviewingReports { get; } = [];
+    public void ReportReviewing(bool reviewing) => ReviewingReports.Add(reviewing);
+
     public string? Requester => null;
     /// <summary>Settable so a test can exercise a path-less file call, which resolves against the
     /// agent's working directory. Null by default — most tests pass absolute paths and care about

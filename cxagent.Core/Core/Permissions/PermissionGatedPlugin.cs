@@ -74,7 +74,12 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             try
             {
                 outcome = await _gate.RequestAsync(
-                    request with { Requester = context.Requester, Policy = _policy }, ct);
+                    request with
+                    {
+                        Requester = context.Requester,
+                        Policy = _policy,
+                        OnReviewing = context.ReportReviewing,
+                    }, ct);
             }
             finally
             {

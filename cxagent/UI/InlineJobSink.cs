@@ -687,7 +687,31 @@ public sealed class InlineJobSink : IToolObserver
     private static string Badge(Job job) =>
         job.DecidedBy == "auto"
             ? (job.State == JobState.Failed ? "auto-denied" : "auto-approved")
-            : "";
+            // REVIEWING TAKES OVER ONLY WHILE NO VERDICT EXISTS YET, and only on a row still
+            // running — DecidedBy above always wins once it is set, which is what makes this word
+            // disappear the instant the classifier rules rather than sit beside its badge. Guarded
+            // on IsTerminal defensively: Job.Reviewing is set false before the gate either returns a
+            // verdict or falls through to a prompt, so a terminal row should never see it true, but
+            // a badge read off a finished job must never show a word that means "still deciding".
+            : job.Reviewing && !IsTerminal(job.State)
+                ? "reviewing…"
+                : "";
+
+    /// <summary>
+    /// " · 2.0s" for anything under a minute, " · hh:mm:ss" at or past one — or "" when the job has
+    /// no duration yet. Shared by CompactHeader's finished branch and StatusText, both of which
+    /// showed the same defect: rendering `{TotalSeconds:0.0}s` unconditionally reads "660.0s" for an
+    /// eleven-minute build, a number nobody can parse at a glance without doing the division
+    /// themselves. SIXTY SECONDS is the threshold rather than something larger because short
+    /// durations are compared AT A GLANCE against neighbouring rows ("2.0s" vs "5.0s") and that
+    /// habit should not change just because a few of them are now formatted differently — the switch
+    /// only needs to happen once tenths-of-a-second precision has stopped being the useful unit,
+    /// which is exactly at a minute.
+    /// </summary>
+    private static string DurationSuffix(TimeSpan? duration) =>
+        duration is not { } d ? ""
+        : d.TotalSeconds < 60 ? $" · {d.TotalSeconds:0.0}s"
+        : $" · {d:hh\\:mm\\:ss}";
 
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
     public static string CompactHeaderForTest(Job job) => CompactHeader(job);
@@ -728,6 +752,17 @@ public sealed class InlineJobSink : IToolObserver
             // caller adds exactly the one its shape needs.
             var deciding = Badge(job) is { Length: > 0 } word ? "  ·  " + word : "";
 
+            // ELAPSED, AT THE END OF THE HEADER — sourced from StartedAt rather than a second timer.
+            // No new clock is needed: the spinner tag below already forces this whole header to be
+            // RE-EVALUATED on its own interval (see the comment on SpinnerIntervalMs just below), so
+            // computing "now - StartedAt" fresh on every call is enough to make the number visibly
+            // tick. StartedAt is null only in the instant between a row being created and
+            // WorkStarting firing, which is too brief to render — guarded anyway so that instant
+            // shows no clock rather than a negative or garbage one.
+            var elapsed = job.StartedAt is { } started
+                ? "  ·  " + (DateTimeOffset.UtcNow - started).ToString(@"hh\:mm\:ss")
+                : "";
+
             // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick. Single-cell like Arc, so the text after it does
             // not shift as it animates (Dots is three columns wide and does exactly that).
             //
@@ -739,11 +774,12 @@ public sealed class InlineJobSink : IToolObserver
             //
             // Stated here anyway because the clock ticks at the SHORTEST interval any parsed tag
             // reports, so this is the app declaring the repaint cadence it wants rather than
-            // inheriting whatever else is on screen.
-            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{deciding}{progress}";
+            // inheriting whatever else is on screen — and it is also what makes `elapsed` above tick
+            // without a dedicated clock of its own.
+            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{deciding}{progress}{elapsed}";
         }
 
-        var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
+        var duration = DurationSuffix(job.Result?.Duration);
         var state = job.State switch
         {
             JobState.Succeeded => "done",
@@ -937,7 +973,7 @@ public sealed class InlineJobSink : IToolObserver
 
     private string StatusText(Job job)
     {
-        var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
+        var duration = DurationSuffix(job.Result?.Duration);
 
         return job.State switch
         {

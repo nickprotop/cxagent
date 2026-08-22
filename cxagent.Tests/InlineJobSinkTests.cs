@@ -569,6 +569,85 @@ public class InlineJobSinkTests
     }
 
     [Fact]
+    public void AReviewingJob_ShowsTheWordWhilePending()
+    {
+        // The gap between the row appearing and the verdict landing — the classifier can take many
+        // seconds, and until this existed the row showed nothing there at all, indistinguishable
+        // from a hung tool.
+        var job = TypedJob("shell", JobState.Running) with { Reviewing = true };
+
+        Assert.Contains("reviewing…", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void AVerdictReplaces_NotAppendsTo_TheReviewingWord()
+    {
+        // Once DecidedBy is set the classifier HAS ruled, so "reviewing…" must be gone, not merely
+        // joined by "auto-approved" — Badge() prefers DecidedBy and this is what pins that ordering.
+        var job = TypedJob("shell", JobState.Running) with { Reviewing = true, DecidedBy = "auto" };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.Contains("auto-approved", header);
+        Assert.DoesNotContain("reviewing…", header);
+    }
+
+    [Fact]
+    public void AnOrdinaryRunningRow_NeverShowsReviewing()
+    {
+        // The control against a lazy "always show reviewing" fix: a stored rule or a silent
+        // in-boundary pass never sets Reviewing at all, and this pins that the row stays silent
+        // about it — not merely that a badged row eventually clears it.
+        var job = TypedJob("shell", JobState.Running);
+
+        Assert.DoesNotContain("reviewing…", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void ARunningRow_ShowsElapsedTimeAtTheEnd()
+    {
+        var job = TypedJob("shell", JobState.Running) with
+        {
+            StartedAt = DateTimeOffset.UtcNow - TimeSpan.FromSeconds(34),
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        // hh:mm:ss — loosely matched on seconds since the clock advances between stamping StartedAt
+        // above and rendering here; 00:00:3 covers the one-second slop without pinning an exact tick.
+        Assert.Matches(@"00:00:3\d$", header.TrimEnd());
+    }
+
+    [Fact]
+    public void AShortFinishedDuration_KeepsTheTenthsFormat()
+    {
+        // UNCHANGED FORMAT, on purpose: short durations are compared at a glance between neighbouring
+        // rows ("2.0s" vs "5.0s"), and that habit must survive the long-duration fix below.
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(2) },
+        };
+
+        Assert.Contains("2.0s", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void ALongFinishedDuration_RendersAsAClock()
+    {
+        // The defect this replaces: an eleven-minute build rendered "660.0s", unreadable without
+        // doing the division in your head. Past a minute the row switches to hh:mm:ss instead.
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromMinutes(11) },
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.Contains("00:11:00", header);
+        Assert.DoesNotContain("660.0s", header);
+    }
+
+    [Fact]
     public void AUserAnsweredPrompt_GetsNoBadge()
     {
         // The ordinary case: the user was right there and answered. Naming that would be noise,

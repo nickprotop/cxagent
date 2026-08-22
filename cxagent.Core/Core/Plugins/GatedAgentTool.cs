@@ -87,7 +87,12 @@ public sealed class GatedAgentTool : IAgentTool
             try
             {
                 outcome = await _gate.RequestAsync(
-                    admission with { Requester = context.Requester, Policy = _policy }, ct);
+                    admission with
+                    {
+                        Requester = context.Requester,
+                        Policy = _policy,
+                        OnReviewing = context.ReportReviewing,
+                    }, ct);
             }
             finally
             {
@@ -133,7 +138,12 @@ public sealed class GatedAgentTool : IAgentTool
             try
             {
                 outcome = await _gate.RequestAsync(
-                    request with { Requester = context.Requester, Policy = _policy }, ct);
+                    request with
+                    {
+                        Requester = context.Requester,
+                        Policy = _policy,
+                        OnReviewing = context.ReportReviewing,
+                    }, ct);
             }
             finally
             {

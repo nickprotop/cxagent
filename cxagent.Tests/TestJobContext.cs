@@ -30,6 +30,12 @@ public sealed class TestJobContext : IJobContext
     public List<bool> PermissionWaits { get; } = [];
     public void ReportPermissionWait(bool waiting) => PermissionWaits.Add(waiting);
 
+    /// <summary>Recorded rather than ignored, mirroring PermissionWaits above — a test can assert
+    /// whether "reviewing…" was raised (and cleared) for a call that reached the classifier, and
+    /// that ordinary silent/rule-based calls never raise it at all.</summary>
+    public List<bool> ReviewingReports { get; } = [];
+    public void ReportReviewing(bool reviewing) => ReviewingReports.Add(reviewing);
+
     public string? Requester => null;
 
     /// <summary>Settable so a test can root a plugin somewhere real; null keeps the process's own,
