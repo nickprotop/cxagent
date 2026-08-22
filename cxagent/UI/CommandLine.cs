@@ -41,7 +41,9 @@ public readonly record struct CommandLineOptions(
     bool ListSessions = false,
     ResumeRequest Resume = default,
     bool ListAllSessions = false,
-    string? ConfigDir = null);
+    string? ConfigDir = null,
+    string? Theme = null,
+    bool ShowHelp = false);
 
 /// <summary>Which session <c>--resume</c> asked for, if any.</summary>
 /// <param name="Wanted">Was <c>--resume</c> given at all?</param>
@@ -84,6 +86,8 @@ public static class CommandLine
         var showVersion = false;
         string? instance = null;
         string? configDir = null;
+        string? theme = null;
+        var showHelp = false;
         var resume = ResumeRequest.No;
 
         for (var i = 0; i < args.Length; i++)
@@ -130,6 +134,24 @@ public static class CommandLine
                 configDir = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
                 if (string.IsNullOrWhiteSpace(configDir))
                     return new(useMock, mode, "--config-dir needs a directory path.");
+                continue;
+            }
+
+            // --theme NAME. Not validated here: which themes exist is a question only the window
+            // system can answer, and it does not exist yet. An unknown name falls back to cxagent's
+            // own at startup rather than refusing to start over a colour scheme.
+            if (string.Equals(arg, "--theme", StringComparison.Ordinal))
+            {
+                theme = i + 1 < args.Length && !args[i + 1].StartsWith('-') ? args[++i] : null;
+                if (string.IsNullOrWhiteSpace(theme))
+                    return new(useMock, mode, "--theme needs a theme name.");
+                continue;
+            }
+
+            if (string.Equals(arg, "--help", StringComparison.Ordinal)
+                || string.Equals(arg, "-h", StringComparison.Ordinal))
+            {
+                showHelp = true;
                 continue;
             }
 
@@ -213,6 +235,6 @@ public static class CommandLine
             return new(useMock, mode,
                 "--sessions prints the list and exits, so it cannot be combined with --resume.");
 
-        return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll, configDir);
+        return new(useMock, mode, null, showVersion, instance, listSessions, resume, listAll, configDir, theme, showHelp);
     }
 }
