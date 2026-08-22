@@ -32,6 +32,24 @@ public sealed class ActionClassifier
     public string? LastFailure { get; private set; }
 
     /// <summary>
+    /// HOW MANY ACTIONS TRIAGE FLAGGED FOR A SECOND OPINION, this process's lifetime. The spec calls
+    /// for this counter explicitly: two stages are only worth having if the flag rate can be watched
+    /// and tuned, and a rate nobody can see is a rate nobody can tell drifted.
+    ///
+    /// <para>PROCESS-LIFETIME, NOT PER-TURN OR PERSISTED. The natural home for a durable count would
+    /// be the same <c>OnDecision</c> → <c>PermissionRecord</c> → <c>/stats</c> pipeline Task 1 built
+    /// (see <see cref="PermissionDecider"/>), but that pipeline's <c>Decision</c> string is a closed
+    /// vocabulary consumed by SQLite storage and rendering across three more files; teaching it a
+    /// "triage flagged, resolved as X" shape is a schema change this task's brief was explicit does
+    /// NOT belong here (no config keys, and by extension no new persisted columns). Exposing the raw
+    /// count here instead — readable by whatever wires up `/stats`, or by a debugger, without asking
+    /// this class to know what a session or a database is — is the smaller, correct move; a future
+    /// task can thread it into the persisted counters if the two-call cost turns out worth watching
+    /// across restarts.</para>
+    /// </summary>
+    public int TriageFlagCount { get; private set; }
+
+    /// <summary>
     /// ONE VERDICT PER TURN, KEYED ON EVERYTHING THE MODEL SAW. An agent editing one file five times
     /// in a turn should not pay five model calls for an unchanged answer — but the cache key MUST be
     /// exactly the text handed to the model, or it generalises a content-specific verdict across
@@ -198,31 +216,80 @@ public sealed class ActionClassifier
         var key = CacheKeyFor(request.Kind, body);
         if (_cache.TryGetValue(key, out var cached)) return cached;
 
+        var messages = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = InstructionFor(request.Kind) },
+            new() { Role = "user", Content = $"<action>{body}</action>" },
+        };
+
+        // STAGE ONE: TRIAGE. Cheap and short — the same single-word prompt this classifier always
+        // used — and it resolves the common case alone. Measured: single-token triage in isolation
+        // had an 8.5% false-positive rate (ordinary, safe actions it over-blocked). Stage two exists
+        // to bring that down, but only for what stage one did NOT clearly allow.
+        var triage = await CallStageAsync(messages, ct);
+        if (triage is null) return new(ClassifierVerdict.Ask, null);   // stage-one failure — see CallStageAsync
+
+        // FLAGGED MEANS "NOT A CLEAN ALLOW". A triage ALLOW that turns out wrong is a false negative —
+        // outside what this task's numbers are about, and stage two's own instruction never asked it
+        // to double-check an allow. ASK and DENY are the consequential verdicts a false positive hides
+        // behind (an over-cautious triage blocking an ordinary edit), so both go to stage two.
+        if (triage.Verdict == ClassifierVerdict.Allow)
+        {
+            // NOT A FAILURE — the classifier answered. CACHED because it is a real verdict for this
+            // exact text; see the timeout/parse-failure paths below for why THEY are never cached.
+            Store(key, triage);
+            return triage;
+        }
+
+        TriageFlagCount++;
+
+        // STAGE TWO: REASONING. Same messages list, extended — the assistant turn carries stage one's
+        // own words back to it, then a user turn asks it to reconsider with reasoning. Appending
+        // rather than starting a fresh exchange is deliberate: it is what keeps the system message
+        // byte-for-byte identical between the two calls, so the provider's prefix cache can serve it
+        // from the first call and stage two prices out to "nearly free" rather than a second full
+        // prompt. A different system prompt for stage two — even a strictly better one — would break
+        // that cache and undo the whole cost argument for having two stages at all.
+        messages.Add(new ChatMessage { Role = "assistant", Content = FormatTriageReply(triage) });
+        messages.Add(new ChatMessage
+        {
+            Role = "user",
+            Content = "Reconsider with reasoning. Reply with exactly one word — ALLOW, DENY or ASK — "
+                + "followed by \": \" and a short reason explaining the verdict.",
+        });
+
+        var reasoned = await CallStageAsync(messages, ct);
+        if (reasoned is null) return new(ClassifierVerdict.Ask, null);   // stage-two failure
+
+        // STAGE TWO IS WHERE A REAL REASON COMES FROM. Its instruction explicitly asks for one, so a
+        // reasoned decision missing a reason is itself an unusual answer worth keeping as-is rather
+        // than papering over — VerdictParser already returns null for "no colon", which is a fine
+        // outcome here too.
+        Store(key, reasoned);
+        return reasoned;
+    }
+
+    /// <summary>
+    /// ONE MODEL CALL, WITH ITS OWN SHORT DEADLINE, RETURNING NULL ON ANY FAILURE. Shared by both
+    /// stages so a stage-one timeout and a stage-two timeout fail exactly the same way — every
+    /// failure here means Ask, and JudgeAsync's null check on the result is what turns that into the
+    /// verdict at each of the two call sites, rather than duplicating this try/catch twice.
+    ///
+    /// <para>A FRESH 10-SECOND DEADLINE PER STAGE, not one budget split across both. Two stages
+    /// paying up to 10s each, worst case, is the same "sits between the model asking and the work
+    /// happening" trade the single-stage version made — a triage call that takes 30s has already cost
+    /// more than the prompt it saved, and that reasoning does not change just because a second call
+    /// might follow it.</para>
+    /// </summary>
+    private async Task<ClassifierDecision?> CallStageAsync(List<ChatMessage> messages, CancellationToken ct)
+    {
         try
         {
-            // A SHORT DEADLINE, because this sits between the model asking and the work happening.
-            // A classifier that takes 30 seconds has cost more than the prompt it saved.
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
 
-            var messages = new List<ChatMessage>
-            {
-                new() { Role = "system", Content = InstructionFor(request.Kind) },
-                new() { Role = "user", Content = $"<action>{body}</action>" },
-            };
-
             var response = await _provider.ChatAsync(messages, null, deadline.Token);
-            var decision = VerdictParser.Parse(response.Text);
-
-            // NOT A FAILURE, EVEN WHEN THE VERDICT IS ASK — the classifier answered, and the answer
-            // was "ask". Leaving LastFailure null keeps the transcript quiet: an ASK verdict working
-            // as designed is not news. LastFailure is reserved for when nothing answered at all.
-            //
-            // CACHED, because it is a real verdict the model returned for this exact text — never a
-            // fallback ASK from a timeout or a parse failure below, which get their own catch blocks
-            // that return without touching the cache at all.
-            Store(key, decision);
-            return decision;
+            return VerdictParser.Parse(response.Text);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -233,18 +300,25 @@ public sealed class ActionClassifier
         catch (OperationCanceledException)
         {
             LastFailure = "classifier timed out";
-            // NOT CACHED. A timeout is a blip, not an answer — caching it would turn one slow
-            // request into a whole turn of ASKs, and could paper over a verdict a retry (or the next
-            // JudgeAsync call for the same action) would have actually resolved.
-            return new(ClassifierVerdict.Ask, null);
+            return null;
         }
         catch (Exception ex)
         {
             LastFailure = ex.Message;
-            // NOT CACHED, same reasoning as the timeout above — a transport error is not a verdict.
-            return new(ClassifierVerdict.Ask, null);
+            return null;
         }
     }
+
+    /// <summary>
+    /// Stage one's own reply, rebuilt as an assistant turn for stage two to see. Rebuilt from the
+    /// PARSED verdict rather than the raw completion text: a real provider may pad its answer with
+    /// whitespace or punctuation VerdictParser tolerates, and echoing the parsed, canonical form back
+    /// is what stage two's own instruction ("Reconsider with reasoning") is written to expect —
+    /// a clean ALLOW/DENY/ASK token, not whatever exact bytes the wire returned.
+    /// </summary>
+    private static string FormatTriageReply(ClassifierDecision triage) =>
+        triage.Reason is { Length: > 0 } reason ? $"{triage.Verdict.ToString().ToUpperInvariant()}: {reason}"
+        : triage.Verdict.ToString().ToUpperInvariant();
 
     /// <summary>
     /// STARTS THE CLASSIFIER CALL AT PARSE TIME, before the gate that actually needs the verdict
