@@ -220,6 +220,18 @@ public sealed partial class Session
         // provider call, or during a turn that never called a tool — which no barrier will reach.
         while (true)
         {
+            // A VERDICT DECIDES ONE ACTION, NOT A TURN, NOT A SESSION. PermissionDecider caches the
+            // auto-mode classifier's verdicts (Task 10) and needs to forget them exactly here, at the
+            // top of a lap, or a cached ALLOW would silently outlive the turn it was computed for and
+            // apply to a later turn with different goal/instructions but a coincidentally identical
+            // action. `is PermissionDecider` rather than adding ResetTurnState to IPermissionGate:
+            // this is state specific to the one real, stateful gate implementation, not a concept
+            // every gate has an opinion on — DenyAll/AllowAll/every test fake (Task 7 counted ~10 of
+            // them) would need a no-op override for a method that means nothing to them. A type test
+            // at the one real call site is honest about that; widening the interface is not required
+            // to make the reset happen and would be churn with no caller ever exercising it on a fake.
+            if (Services?.Gate is Permissions.PermissionDecider decider) decider.ResetTurnState();
+
             // THE TURN'S SCOPE, created here because the turn is this method's. It was the host's,
             // so the host is not a second way to start one.
             var scope = new CancellationTokenSource();

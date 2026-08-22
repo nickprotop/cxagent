@@ -1,6 +1,8 @@
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
+using CxAgent.Core.Sessions;
+using CxAgent.Core.Storage;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -72,6 +74,76 @@ public class ClassifierCacheTests
         await classifier.JudgeAsync(request, default);
 
         Assert.Equal(2, provider.Calls);
+    }
+
+    /// <summary>
+    /// THE ACTUAL TURN BOUNDARY, exercised end to end — not just ActionClassifier.ResetTurnState()
+    /// in isolation (the three tests above), but Session.RunTurnAsync (Session.Turn.cs) actually
+    /// calling it. A verdict must decide ONE action, never a whole session: the same write repeated
+    /// in a SECOND turn is a different decision to make, even though it hashes to the same cache
+    /// key, because a turn boundary is where the goal, requester and project-instructions context
+    /// that also feed the classifier can change. Proven by call count on the CLASSIFIER's own
+    /// provider — a fake that answered "same key, no call" without the reset actually running would
+    /// make this fail with 1, not the 2 asserted.
+    /// </summary>
+    [Fact]
+    public async Task TheSameWriteInTwoTurns_ClassifiesTwice()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-cache-turn-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var rules = new PermissionRulesStore(new AppPaths(dir));
+            // AUTO MODE, TRUSTED FOLDER — the two preconditions for the classifier running at all
+            // (PermissionPolicy consults it only once the silent/boundary/rule paths have all
+            // declined to answer on their own).
+            rules.SetTrust(dir, TrustState.Trusted);
+
+            // THE AGENT'S OWN MODEL — separate from the classifier's, so ChatCallCount on THIS one
+            // says nothing about caching; only the classifier provider's count matters here.
+            var agent = new MockLlmProvider();
+            var target = Path.Combine(dir, "a.txt");
+            var writeArgs = new { path = target, content = "hello" };
+            // TWO IDENTICAL TURNS: same tool call, same content, both times. A cache keyed on
+            // anything narrower than the full rendered action would make the second call free even
+            // across the turn boundary — which is exactly the behaviour under test.
+            agent.EnqueueResponse(LlmResponse.WithToolCall("write_file", writeArgs));
+            agent.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+            agent.EnqueueResponse(LlmResponse.WithToolCall("write_file", writeArgs));
+            agent.EnqueueResponse(new LlmResponse { Text = "done again", StopReason = "end_turn" });
+
+            var judge = new CountingProvider("ALLOW");
+            var decider = PermissionDecider.ForTesting(
+                new PermissionPolicy(dir, rules, EditMode.Auto), rules, notice: null,
+                (_, _, _) => Task.FromResult(PermissionChoice.Deny));
+            decider.Classifier = new ActionClassifier(judge);
+
+            using var manager = SessionManager.Create(new ProcessSetup
+            {
+                Paths = new AppPaths(Path.Combine(dir, "state")),
+                Config = ResolvedConfig.ForTesting(agent),
+                BuildGate = _ => decider,
+            });
+
+            var session = manager.Open(dir, new SessionPorts
+            {
+                Observer = new BufferedChatSink(),
+                ToolObserver = new BufferedJobPanel(),
+                Policy = new PermissionPolicy(dir, rules, EditMode.Auto),
+            });
+
+            await session.SendAndWait("write hello to a.txt");
+            await session.SendAndWait("write hello to a.txt again");
+
+            // TWO TURNS, TWO CALLS. A cache that survived the boundary would show 1 here — that is
+            // the failure this test exists to catch; the within-a-turn case (1 call for a repeat) is
+            // already covered by TheSameActionTwiceInATurn_CallsTheModelOnce above.
+            Assert.Equal(2, judge.Calls);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     // ---- fakes ------------------------------------------------------------------------------

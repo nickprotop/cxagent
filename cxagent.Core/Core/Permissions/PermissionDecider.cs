@@ -68,7 +68,9 @@ public sealed class PermissionDecider : IPermissionGate
 
     // REPORTED ONCE PER TURN, not per action. A provider that is down would otherwise put an
     // identical yellow line beside every gated write in a shell-heavy turn — the same noise that
-    // removing the per-allow echo fixed. Reset by the host at the start of each turn.
+    // removing the per-allow echo fixed. Reset by Session.RunTurnAsync at the top of every lap
+    // (Session.Turn.cs) — a type test against PermissionDecider there, since this reset is state
+    // specific to this one gate implementation, not a concept IPermissionGate itself carries.
     private bool _reportedClassifierFailure;
 
     /// <summary>Lets a new turn report a classifier failure again — the fact is stale once the turn
@@ -79,10 +81,9 @@ public sealed class PermissionDecider : IPermissionGate
         _reportedClassifierFailure = false;
         // KEPT IN LOCKSTEP WITH THE FAILURE FLAG ABOVE, not reset by a second call site — a cached
         // verdict answers for one action, not a standing rule, and must not outlive the turn it was
-        // computed for. NOTHING IN THIS CODEBASE CALLS PermissionDecider.ResetTurnState() YET (it
-        // predates this change, unwired); piggybacking the classifier's reset onto it means that
-        // whichever host loop eventually calls this at the turn boundary gets the verdict cache
-        // cleared for free too, with nothing new to remember to wire up.
+        // computed for. Session.RunTurnAsync calls this exact method at the top of every lap, so the
+        // classifier's cache is cleared on the same beat as the failure flag, with nothing new for
+        // that call site to remember to wire up separately.
         Classifier?.ResetTurnState();
     }
 
