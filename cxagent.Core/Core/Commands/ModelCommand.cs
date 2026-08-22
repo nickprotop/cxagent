@@ -1,3 +1,4 @@
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Llm;
 
 namespace CxAgent.Core.Commands;
@@ -121,7 +122,7 @@ public static class ModelCommand
 
 
     private static string Compact(int tokens) =>
-        tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}k";
+        tokens >= 1_000_000 ? $"{DisplayNumber.Trimmed(tokens / 1_000_000.0)}M" : $"{tokens / 1000}k";
 
     private static string Escape(string text) => Markup.Escape(text);
 }

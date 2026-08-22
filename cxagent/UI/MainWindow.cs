@@ -9,6 +9,7 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Themes;
 using CxAgent.Core.Agents;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.UI;
 
@@ -1619,8 +1620,8 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private static string Compact(int n) => n switch
     {
-        >= 1_000_000 => $"{n / 1_000_000.0:0.#}M",
-        >= 1_000 => $"{n / 1_000.0:0.#}k",
+        >= 1_000_000 => $"{DisplayNumber.Trimmed(n / 1_000_000.0)}M",
+        >= 1_000 => $"{DisplayNumber.Trimmed(n / 1_000.0)}k",
         _ => n.ToString(),
     };
 
@@ -1736,13 +1737,13 @@ public sealed class MainWindow : IDisposable
         => ContextLabel(used, spent, window, stale, delta, input, output);
 
     /// <summary>Status-bar magnitudes: two counts and a label must fit beside the context figures,
-    /// so thousands collapse. Its own helper rather than SessionPanel's — that one is private to a
-    /// control this class does not own, and sharing it would couple the bar to the panel's layout.
+    /// so thousands collapse. Still its own name rather than calling the shared helper at each site
+    /// — "compact tokens" is what the bar means, and the wrapper is where that intent lives — but
+    /// the formatting itself is now shared, because the <c>:0.0</c> it used to carry rendered
+    /// "153,1k" under a comma-decimal culture.
     /// </summary>
     private static string CompactTokens(int n) =>
-        n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
-        : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
-        : n.ToString();
+        DisplayNumber.Compact(n);
 
     private static string ContextLabel(int? used, int spent, int? window, bool stale = false,
         string? delta = null, int input = 0, int output = 0)
@@ -1769,15 +1770,15 @@ public sealed class MainWindow : IDisposable
                 // the old one. The delta says what happened, the fraction says where that leaves us,
                 // and the "~" says the second is arithmetic rather than a measurement.
                 var detail = stale && delta is { Length: > 0 }
-                    ? $"{delta} · ~{u:N0}/{window.Value:N0}"
-                    : $"{u:N0}/{window.Value:N0}";
+                    ? $"{delta} · ~{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}"
+                    : $"{DisplayNumber.Grouped(u)}/{DisplayNumber.Grouped(window.Value)}";
 
-                parts.Add($"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{percent:N0}%[/] "
+                parts.Add($"[{ColorScheme.MutedMarkup}]ctx[/] [{colour}]{tilde}{DisplayNumber.Fixed(percent, 0)}%[/] "
                         + $"[{ColorScheme.MutedMarkup}]· {detail}[/]");
             }
             else
             {
-                parts.Add($"[{ColorScheme.MutedMarkup}]ctx {(stale ? "~" : "")}{u:N0}[/]");
+                parts.Add($"[{ColorScheme.MutedMarkup}]ctx {(stale ? "~" : "")}{DisplayNumber.Grouped(u)}[/]");
             }
         }
 
@@ -1804,7 +1805,7 @@ public sealed class MainWindow : IDisposable
             // THE BAR IS THIS AGENT, THE PANEL IS EVERYTHING. That division already holds for
             // occupancy, and the panel now carries "Tokens by agent" — workers against this agent —
             // so the breakdown has a home and the bar does not need to hedge.
-            parts.Add($"[{ColorScheme.MutedMarkup}]{spent:N0} spent[/]{split}");
+            parts.Add($"[{ColorScheme.MutedMarkup}]{DisplayNumber.Grouped(spent)} spent[/]{split}");
         }
 
         return string.Join($"[{ColorScheme.MutedMarkup}] · [/]", parts);

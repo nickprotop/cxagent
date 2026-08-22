@@ -1,3 +1,4 @@
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Commands;
@@ -51,7 +52,7 @@ public static class StatsCommand
         rows == 0
             ? $"[{Markup.Muted}]There is no usage history to clear.[/]"
             : $"[bold {Markup.Accent}]Clear usage history?[/]\n\n"
-            + $"  This deletes [bold]{rows:N0}[/] records"
+            + $"  This deletes [bold]{DisplayNumber.Grouped(rows)}[/] records"
             + (sessions > 0 ? $" covering [bold]{sessions}[/] session{(sessions == 1 ? "" : "s")}" : "")
             + ".\n"
             + $"  [{Markup.Muted}]Sessions, sub-agent runs, tool calls, compactions and "

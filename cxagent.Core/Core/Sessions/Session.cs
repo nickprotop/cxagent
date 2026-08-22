@@ -3,6 +3,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Agents;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.Core.Sessions;
 
@@ -567,6 +568,6 @@ public sealed partial class Session
     }
 
     private static string Compact(int tokens) =>
-        tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}K";
+        tokens >= 1_000_000 ? $"{DisplayNumber.Trimmed(tokens / 1_000_000.0)}M" : $"{tokens / 1000}K";
 
 }

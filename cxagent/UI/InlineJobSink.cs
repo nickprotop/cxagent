@@ -8,6 +8,7 @@ using SharpConsoleUI.Core;
 using CxAgent.Core.Sessions;
 // Ours, not SharpConsoleUI's — both exist and this file sees both namespaces.
 using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.UI;
 
@@ -710,7 +711,7 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     private static string DurationSuffix(TimeSpan? duration) =>
         duration is not { } d ? ""
-        : d.TotalSeconds < 60 ? $" · {d.TotalSeconds:0.0}s"
+        : d.TotalSeconds < 60 ? $" · {DisplayNumber.Fixed(d.TotalSeconds, 1)}s"
         : $" · {d:hh\\:mm\\:ss}";
 
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
@@ -881,7 +882,7 @@ public sealed class InlineJobSink : IToolObserver
             // came back, and it was silently reporting a constant.
             var raw = RawContent(job) ?? trimmed;
             var lineCount = raw.Count(c => c == '\n') + 1;
-            return $"⎿  {lineCount:N0} lines, {raw.Length:N0} chars";
+            return $"⎿  {DisplayNumber.Grouped(lineCount)} lines, {DisplayNumber.Grouped(raw.Length)} chars";
         }
 
         // A SPAWN HAS NO RESULT LINE. Its body is the envelope — <sub_agent id=… state=…> and the

@@ -1,3 +1,4 @@
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Commands;
@@ -208,7 +209,7 @@ public static class SessionsCommand
     private static string Tokens(SessionInfo s)
     {
         var total = s.InputTokens + s.OutputTokens;
-        return total >= 1_000_000 ? $"{total / 1_000_000.0:0.0}M"
+        return total >= 1_000_000 ? $"{DisplayNumber.Fixed(total / 1_000_000.0, 1)}M"
              : total >= 1_000 ? $"{total / 1_000}k"
              : total.ToString();
     }

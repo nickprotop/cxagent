@@ -1,4 +1,5 @@
 using System.Text;
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Models;
 
@@ -277,7 +278,7 @@ public class PermissionPolicy
         if (!string.IsNullOrWhiteSpace(method)) display.Append(method!.ToUpperInvariant()).Append(' ');
         display.Append(url);
         if (body is { Length: > 0 })
-            display.Append(" (").Append((body.Length / 1024.0).ToString("0.0")).Append(" KB)");
+            display.Append(" (").Append(DisplayNumber.Fixed(body.Length / 1024.0, 1)).Append(" KB)");
 
         // FACTS CARRY METHOD, FULL URL AND BODY SIZE TO THE CLASSIFIER. Subject (and so What, which
         // ActionClassifier prompts from) is deliberately the bare origin — see RuleSubject's comment

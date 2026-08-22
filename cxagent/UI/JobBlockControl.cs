@@ -2,6 +2,7 @@ using CxAgent.Core.Models;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Themes;
 using Ctl = SharpConsoleUI.Builders.Controls;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.UI;
 
@@ -124,7 +125,7 @@ public sealed class JobBlockControl : CollapsiblePanel
     {
         const double Mb = 1024.0 * 1024.0;
         const double Gb = Mb * 1024.0;
-        if (bytes >= Gb) return $"{bytes / Gb:0.0} GB";
+        if (bytes >= Gb) return $"{DisplayNumber.Fixed(bytes / Gb, 1)} GB";
         return $"{bytes / Mb:0} MB";
     }
 
@@ -174,6 +175,6 @@ public sealed class JobBlockControl : CollapsiblePanel
         if (job.StartedAt is not { } start) return "";
         var end = job.CompletedAt ?? DateTimeOffset.UtcNow;
         var secs = (end - start).TotalSeconds;
-        return secs >= 0 ? $" — {secs:0.0}s" : "";
+        return secs >= 0 ? $" — {DisplayNumber.Fixed(secs, 1)}s" : "";
     }
 }

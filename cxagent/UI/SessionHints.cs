@@ -1,4 +1,5 @@
 using CxAgent.Core.Commands;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.UI;
 
@@ -86,15 +87,15 @@ public static class SessionHints
         if (spend is { Total: > 0 } s)
         {
             lines.Add("");
-            lines.Add($"  {s.Total:N0} tokens  ·  {s.Input:N0} in  ·  {s.Output:N0} out");
+            lines.Add($"  {DisplayNumber.Grouped(s.Total)} tokens  ·  {DisplayNumber.Grouped(s.Input)} in  ·  {DisplayNumber.Grouped(s.Output)} out");
 
             // ONLY WHAT IS KNOWN. A cache rate is null on a provider that reports none, and a cost is
             // null when no price is configured — printing "0%" or "$0.00" for either would be a
             // number the user cannot act on and cannot tell from a real zero.
             var extras = new List<string>();
             if (s.CacheHitRate is { } rate) extras.Add($"{StatsDashboard.Percent(rate)} cache");
-            if (s.SubAgentTokens > 0) extras.Add($"{s.SubAgentTokens:N0} in sub-agents");
-            if (s.Cost is { } cost) extras.Add($"${cost:N2}");
+            if (s.SubAgentTokens > 0) extras.Add($"{DisplayNumber.Grouped(s.SubAgentTokens)} in sub-agents");
+            if (s.Cost is { } cost) extras.Add($"${DisplayNumber.Fixed(cost, 2)}");
             if (extras.Count > 0) lines.Add($"  {string.Join("  ·  ", extras)}");
         }
 

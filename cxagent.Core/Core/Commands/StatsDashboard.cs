@@ -1,4 +1,5 @@
 using System.Text;
+using CxAgent.Core.Helpers;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Commands;
@@ -51,12 +52,13 @@ public static class StatsDashboard
         return $"[{colour}]{bar}[/][{Markup.Muted}]{rest}[/]";
     }
 
-    /// <summary>Compact magnitudes — a dashboard is read for scale, never for digits.</summary>
-    public static string Compact(long n) =>
-        n >= 1_000_000_000 ? $"{n / 1_000_000_000.0:0.0}B"
-        : n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
-        : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
-        : n.ToString();
+    /// <summary>Compact magnitudes — a dashboard is read for scale, never for digits.
+    ///
+    /// <para>Delegates rather than formatting here: the <c>:0.0</c> this used to carry took the
+    /// current culture's decimal separator, the same defect <see cref="Percent"/> below was written
+    /// for, sitting one method away from it.</para>
+    /// </summary>
+    public static string Compact(long n) => DisplayNumber.Compact(n);
 
     /// <summary>
     /// A rate as a whole-number percentage — <c>0.94</c> becomes <c>94%</c>.
@@ -147,7 +149,7 @@ public static class StatsDashboard
         sb.AppendLine();
 
         // --- the headline ------------------------------------------------------------------------
-        sb.AppendLine($"  [bold]{totals.TotalTokens:N0}[/] tokens  "
+        sb.AppendLine($"  [bold]{DisplayNumber.Grouped(totals.TotalTokens)}[/] tokens  "
                     + Muted($"↑{Compact(totals.InputTokens)} ↓{Compact(totals.OutputTokens)}"));
         sb.AppendLine($"  [bold]{totals.Sessions}[/] session{(totals.Sessions == 1 ? "" : "s")}  "
                     + Muted($"· {totals.Turns} turns"));
@@ -193,7 +195,7 @@ public static class StatsDashboard
             // FOUR DECIMALS BELOW A DOLLAR, matching SessionPanel.Money exactly. The panel and /stats
             // report the same figure, and a threshold that differs between them renders one $0.45
             // and the other $0.4500 — the reader is left wondering which readout is rounding.
-            sb.AppendLine($"  [bold]{(cost < 1.00m ? $"${cost:0.0000}" : $"${cost:0.00}")}[/] spent  "
+            sb.AppendLine($"  [bold]{(cost < 1.00m ? $"${DisplayNumber.Fixed(cost, 4)}" : $"${DisplayNumber.Fixed(cost, 2)}")}[/] spent  "
                         + Muted($"across {totals.CostReportingSessions} session"
                               + $"{(totals.CostReportingSessions == 1 ? "" : "s")} that reported"));
         }
@@ -258,7 +260,7 @@ public static class StatsDashboard
                 var outcome = flags.Count > 0 ? string.Join(" ", flags) : Muted("all clean");
 
                 sb.AppendLine($"  {Pad(t.Type, 12)}{Pad(t.Runs.ToString(), 6)}"
-                            + $"{Pad(Compact(t.Tokens), 9)}{Pad(t.AvgTurns.ToString("0.0"), 11)}{outcome}");
+                            + $"{Pad(Compact(t.Tokens), 9)}{Pad(DisplayNumber.Fixed(t.AvgTurns, 1), 11)}{outcome}");
                 sb.AppendLine($"  {new string(' ', 12)}{Bar(t.Tokens / max, 18)}");
             }
         }

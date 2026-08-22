@@ -1,3 +1,4 @@
+using CxAgent.Core.Helpers;
 namespace CxAgent.Core.Sessions;
 
 /// <summary>
@@ -60,5 +61,5 @@ public static class ModelSwitchNotice
     private static string Escape(string text) => text.Replace("[", "[[");
 
     private static string Compact(int tokens) =>
-        tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:0.#}M" : $"{tokens / 1000}k";
+        tokens >= 1_000_000 ? $"{DisplayNumber.Trimmed(tokens / 1_000_000.0)}M" : $"{tokens / 1000}k";
 }

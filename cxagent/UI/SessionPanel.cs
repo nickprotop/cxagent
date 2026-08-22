@@ -6,6 +6,7 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using Ctl = SharpConsoleUI.Builders.Controls;
+using CxAgent.Core.Helpers;
 
 namespace CxAgent.UI;
 
@@ -420,7 +421,7 @@ public sealed class SessionPanel
             Section(lines, "Tokens by instance");
             foreach (var (modelId, spent) in byModel)
             {
-                lines.Add(Value($"{Short(modelId)} · {spent:N0}"));
+                lines.Add(Value($"{Short(modelId)} · {DisplayNumber.Grouped(spent)}"));
 
                 // The split, indented under its model. Absent when the provider reported no usage
                 // breakdown — a local llama.cpp build often does not — rather than showing ↑0 ↓0,
@@ -472,7 +473,7 @@ public sealed class SessionPanel
         if (state.SubAgentTokens > 0)
         {
             Section(lines, "Tokens by agent");
-            lines.Add(Value($"workers · {state.SubAgentTokens:N0}"));
+            lines.Add(Value($"workers · {DisplayNumber.Grouped(state.SubAgentTokens)}"));
 
             // THE CACHE RATE BESIDE THE TOKENS THAT PAID FOR IT. A parent and its children hold
             // different conversations against one endpoint, and whether that is cheap depends on the
@@ -483,7 +484,7 @@ public sealed class SessionPanel
             if (state.WorkerCacheHitRate is { } workerRate)
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(workerRate)}"));
 
-            lines.Add(Value($"this agent · {state.OwnTokens:N0}"));
+            lines.Add(Value($"this agent · {DisplayNumber.Grouped(state.OwnTokens)}"));
 
             if (state.OwnCacheHitRate is { } ownRate)
                 lines.Add(Muted($"  cache {StatsDashboard.Percent(ownRate)}"));
@@ -623,9 +624,7 @@ public sealed class SessionPanel
     /// two full counts on one line would not fit — and at these magnitudes the exact digits are
     /// never what the number is read for.</summary>
     private static string Compact(int n) =>
-        n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M"
-        : n >= 1_000 ? $"{n / 1_000.0:0.0}k"
-        : n.ToString();
+        DisplayNumber.Compact(n);
 
     /// <summary>
     /// Money, at the precision the figure deserves.
@@ -638,7 +637,7 @@ public sealed class SessionPanel
     /// engages until the figure has grown past pocket change.</para>
     /// </summary>
     private static string Money(decimal amount) =>
-        amount < 1.00m ? $"${amount:0.0000}" : $"${amount:0.00}";
+        amount < 1.00m ? $"${DisplayNumber.Fixed(amount, 4)}" : $"${DisplayNumber.Fixed(amount, 2)}";
 
     private static void Section(List<string> lines, string title)
     {

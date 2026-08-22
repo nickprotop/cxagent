@@ -1,3 +1,4 @@
+using CxAgent.Core.Helpers;
 using System.Text;
 using CxAgent.Core.Models;
 
@@ -123,7 +124,7 @@ public record JobDigest(
                         + "Its answer is NOT the whole task. Split the remaining work into smaller jobs, "
                         + "or raise orchestrator.maxTurns.");
 
-        if (Duration is { } d) sb.AppendLine($"  duration: {d.TotalSeconds:0.0}s");
+        if (Duration is { } d) sb.AppendLine($"  duration: {DisplayNumber.Fixed(d.TotalSeconds, 1)}s");
         if (ExitCode is { } code && code != 0) sb.AppendLine($"  exit code: {code}");
 
         if (Parameters.Count > 0)
@@ -142,7 +143,7 @@ public record JobDigest(
         // nothing still renders as nothing rather than as "0 chars withheld".
         if (bulkOutputAsPlaceholder && PluginType != "llm_agent" && OutputBytes > 0)
         {
-            sb.AppendLine($"  output: {OutputBytes:N0} chars — withheld here; the job that ran it "
+            sb.AppendLine($"  output: {DisplayNumber.Grouped(OutputBytes)} chars — withheld here; the job that ran it "
                         + "already consumed it.");
             if (!string.IsNullOrWhiteSpace(LogFile))
                 sb.AppendLine($"  (full output: {LogFile})");
@@ -209,6 +210,6 @@ public record JobDigest(
         // A marker longer than what it saves is not a saving.
         if (elided <= 0) return text;
 
-        return text[..half] + $"\n[... {elided:N0} bytes elided ...]\n" + text[^half..];
+        return text[..half] + $"\n[... {DisplayNumber.Grouped(elided)} bytes elided ...]\n" + text[^half..];
     }
 }

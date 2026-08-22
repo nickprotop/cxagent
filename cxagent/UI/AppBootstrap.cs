@@ -1,4 +1,5 @@
 using CxAgent.Core.Commands;
+using CxAgent.Core.Helpers;
 using System.Reflection;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
@@ -1557,7 +1558,7 @@ public static class AppBootstrap
                     try
                     {
                         history.Clear();
-                        ctx.SetStatus($"{rows:N0} records deleted", SharpConsoleUI.Core.NotificationSeverity.Success);
+                        ctx.SetStatus($"{DisplayNumber.Grouped(rows)} records deleted", SharpConsoleUI.Core.NotificationSeverity.Success);
                     }
                     catch (Exception ex)
                     {
