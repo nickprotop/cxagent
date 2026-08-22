@@ -145,6 +145,12 @@ internal static class SessionFactory
             // without this the gate refuses it for want of a policy.
             Policy = ports.Policy,
 
+            // THE SAME CLASSIFIER THE PARENT SPECULATES WITH (see AgentRuntime.Classifier below,
+            // line ~209, for the null story) — a sub-agent's `run_shell` otherwise pays the
+            // classifier's round trip synchronously at the gate, which is the one visible pause a
+            // delegated call has that the parent's own calls do not.
+            Classifier = (shared.Gate as Permissions.PermissionDecider)?.Classifier,
+
             // THE SESSION'S OWN RULE, injected rather than copied. A type on a different instance
             // has a different window, so the threshold must be re-derived from it — and a second
             // copy of "80% of the window" in the factory would desynchronise the moment either

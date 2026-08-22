@@ -157,6 +157,19 @@ public sealed class SubAgentFactory
         public Permissions.PermissionPolicy? Policy { get; init; }
 
         /// <summary>
+        /// TASK 11 FOR CHILDREN: the same classifier the parent's <see cref="Agent"/> speculates
+        /// with, so a sub-agent's tool calls warm Task 10's cache too rather than every delegated
+        /// call paying the classifier's round trip synchronously at the gate — the exact cost the
+        /// parent avoids by starting the call the moment it parses a tool call, not when the gate
+        /// asks for it.
+        ///
+        /// <para>Null wherever no classifier is reachable (headless runs, most tests, a fixed
+        /// AllowAll/DenyAll gate) — <see cref="Agent"/> already treats a null classifier as "never
+        /// speculate", so this is the same graceful fallback the parent gets, not a new one.</para>
+        /// </summary>
+        public Permissions.ActionClassifier? Classifier { get; init; }
+
+        /// <summary>
         /// A CHILD WORKS WHERE ITS PARENT DOES. Inherited rather than read from the process, so a
         /// session's children stay in that session's folder even when another session runs elsewhere.
         /// </summary>
@@ -334,7 +347,10 @@ public sealed class SubAgentFactory
             // composing onto a resolved set instead would make S4 narrowing-only, silently.
             toolSelection: Plugins.ToolSelection.Then(
                 Plugins.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
-            policy: _runtime.Policy);
+            policy: _runtime.Policy,
+            // THE SAME CLASSIFIER THE PARENT SPECULATES WITH. Null passes straight through —
+            // Agent's own null check is what makes this "never speculate" rather than a crash.
+            classifier: _runtime.Classifier);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //
