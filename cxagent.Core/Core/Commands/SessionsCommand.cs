@@ -6,7 +6,7 @@ namespace CxAgent.Core.Commands;
 /// <summary>What <c>/sessions</c> decided to do, and the line to show for it.</summary>
 /// <param name="ResumeUid">The session to restore, or null when nothing is being restored.</param>
 /// <param name="Reply">The message for the transcript. Never empty.</param>
-public readonly record struct SessionsCommandResult(string? ResumeUid, string Reply);
+public readonly record struct SessionsCommandResult(string? ResumeUid, Message Reply);
 
 /// <summary>
 /// <c>/sessions</c> — every conversation recorded in this folder, and a way back into one.
@@ -63,13 +63,14 @@ public static class SessionsCommand
     private static SessionsCommandResult Resume(string? what, IReadOnlyList<SessionInfo> sessions)
     {
         if (string.IsNullOrWhiteSpace(what))
-            return new(null, "[yellow]Which one? /sessions resume <number> or <id>.[/]");
+            return new(null, new("Which one? `/sessions resume <number>` or `<id>`.", Severity.Warning));
 
         // A NUMBER IS A POSITION IN THE LIST THE USER JUST READ.
         if (int.TryParse(what, out var index))
         {
             if (index < 1 || index > sessions.Count)
-                return new(null, $"[yellow]No session {index}. The list has {sessions.Count}.[/]");
+                return new(null, new($"No session {index}. The list has {sessions.Count}.",
+                    Severity.Warning));
 
             return new(sessions[index - 1].Uid, "");
         }
@@ -80,14 +81,14 @@ public static class SessionsCommand
         var matches = sessions.Where(s => MatchesShort(s.Uid, what)).ToList();
 
         if (matches.Count == 0)
-            return new(null, $"[yellow]No session matches '{what}'.[/]");
+            return new(null, new($"No session matches `{what}`.", Severity.Warning));
 
         // AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest silently is how someone restores
         // the wrong conversation and does not find out for ten minutes.
         if (matches.Count > 1)
-            return new(null, $"[yellow]'{what}' matches {matches.Count} sessions: "
+            return new(null, new($"`{what}` matches {matches.Count} sessions: "
                            + $"{string.Join(", ", matches.Take(4).Select(m => Short(m.Uid)))}"
-                           + $"{(matches.Count > 4 ? ", …" : "")}. Use more characters.[/]");
+                           + $"{(matches.Count > 4 ? ", …" : "")}. Use more characters.", Severity.Warning));
 
         return new(matches[0].Uid, "");
     }

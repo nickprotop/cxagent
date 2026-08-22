@@ -29,7 +29,7 @@ public class SessionsCommandTests
     [Fact]
     public void ListingNamesEachSessionBothWaysItCanBeAddressed()
     {
-        var reply = SessionsCommand.Decide("", Two, Week).Reply;
+        var reply = SessionsCommand.Decide("", Two, Week).Reply.Text;
 
         // The number to type, the uid to quote, and the title that says which is which.
         Assert.Contains(" 1", reply);
@@ -40,7 +40,7 @@ public class SessionsCommandTests
     [Fact]
     public void TheRetentionWindowIsStatedRatherThanDiscovered()
     {
-        Assert.Contains("7 days", SessionsCommand.Decide("", Two, Week).Reply);
+        Assert.Contains("7 days", SessionsCommand.Decide("", Two, Week).Reply.Text);
     }
 
     /// <summary>The gate for this step: both spellings reach the same session.</summary>
@@ -98,8 +98,8 @@ public class SessionsCommandTests
         var result = SessionsCommand.Decide("resume ZZZ", both, Week);
 
         Assert.Null(result.ResumeUid);
-        Assert.Contains("ZZZAAA", result.Reply);
-        Assert.Contains("ZZZBBB", result.Reply);
+        Assert.Contains("ZZZAAA", result.Reply.Text);
+        Assert.Contains("ZZZBBB", result.Reply.Text);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class SessionsCommandTests
         var result = SessionsCommand.Decide("resume 9", Two, Week);
 
         Assert.Null(result.ResumeUid);
-        Assert.Contains("2", result.Reply);
+        Assert.Contains("2", result.Reply.Text);
     }
 
     [Fact]
@@ -123,13 +123,13 @@ public class SessionsCommandTests
         var result = SessionsCommand.Decide("resume", Two, Week);
 
         Assert.Null(result.ResumeUid);
-        Assert.Contains("Which one", result.Reply);
+        Assert.Contains("Which one", result.Reply.Text);
     }
 
     [Fact]
     public void AnEmptyListSaysSoRatherThanRenderingAnEmptyTable()
     {
-        Assert.Contains("none", SessionsCommand.Decide("", [], Week).Reply);
+        Assert.Contains("none", SessionsCommand.Decide("", [], Week).Reply.Text);
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public class SessionsCommandTests
     {
         IReadOnlyList<SessionInfo> untitled = [Row("ABC123XX01KZXC", title: null)];
 
-        var reply = SessionsCommand.Decide("", untitled, Week).Reply;
+        var reply = SessionsCommand.Decide("", untitled, Week).Reply.Text;
 
         Assert.Contains("ABC123", reply);
         Assert.Contains("no messages yet", reply);
@@ -147,8 +147,8 @@ public class SessionsCommandTests
     [Fact]
     public void OnlyTheAllListingShowsWhichFolderEachSessionBelongsTo()
     {
-        Assert.DoesNotContain("/w", SessionsCommand.Decide("", Two, Week).Reply);
-        Assert.Contains("/w", SessionsCommand.Decide("all", Two, Week, all: true).Reply);
+        Assert.DoesNotContain("/w", SessionsCommand.Decide("", Two, Week).Reply.Text);
+        Assert.Contains("/w", SessionsCommand.Decide("all", Two, Week, all: true).Reply.Text);
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public class SessionsCommandTests
             .Select(i => Row($"UID{i:0000}01KZXC"))
             .ToList();
 
-        var reply = SessionsCommand.Decide("", many, Week).Reply;
+        var reply = SessionsCommand.Decide("", many, Week).Reply.Text;
 
         Assert.Contains("5 older", reply);
         Assert.DoesNotContain("UID0024", reply);

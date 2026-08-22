@@ -1,4 +1,5 @@
 using CxAgent.Core.Commands;
+using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
 using Xunit;
 
@@ -64,5 +65,21 @@ public class CoreMarkdownTests
         // A WARNING IS NOT A FAULT. A caller checking for failures must not find one here — the same
         // distinction Notices and Errors were kept apart for.
         Assert.DoesNotContain(sink.Errors, e => e.Contains("could not save"));
+    }
+
+    [Fact]
+    public void ACommandRefusalIsAWarning()
+    {
+        // THE 22 COLOURED REPLIES LIVED HERE, not on the sink. A command returns its text and the
+        // session says it; giving severity only to the sink would have left every actual warning in
+        // Core unable to say it was one.
+        var result = ModelCommand.Decide("no-such-provider",
+            ProviderRegistry.FromProviders(
+                new Dictionary<string, ILlmProvider> { ["local"] = new MockLlmProvider("qwen3") },
+                "local", new Dictionary<string, int?> { ["local"] = 1000 }),
+            "local");
+
+        Assert.Equal(Severity.Warning, result.Reply.Severity);
+        Assert.DoesNotContain("[yellow]", result.Reply.Text);
     }
 }

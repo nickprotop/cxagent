@@ -303,7 +303,7 @@ public sealed partial class Session
         if (decision.NewMode is { } next)
             return SetMode(next);
 
-        if (decision.Reply is { Length: > 0 }) Say(decision.Reply);
+        if (decision.Reply.Text.Length > 0) Say(decision.Reply);
         return CommandStatus.Reported;
     }
 
@@ -398,10 +398,10 @@ public sealed partial class Session
     /// handed it in the ports.</summary>
     internal void NoteObserver(ISessionObserver? sink) => _sink = sink;
 
-    /// <summary>Says something to whoever is watching this session. A no-op when nobody is. The
-    /// string converts implicitly to an Info-severity <see cref="Message"/> — <see cref="Say"/>'s
-    /// callers do not yet have a reason to choose a different tone.</summary>
-    private void Say(string markup) => _sink?.Said(markup);
+    // ONE FUNNEL, UNCHANGED IN SHAPE. Command replies and the session's own words both arrive here;
+    // that they already did is why one Message type serves both.
+    /// <summary>Says something to whoever is watching this session. A no-op when nobody is.</summary>
+    private void Say(Message message) => _sink?.Said(message);
 
     /// <summary>
     /// Raised after this session changes something a front end would show.

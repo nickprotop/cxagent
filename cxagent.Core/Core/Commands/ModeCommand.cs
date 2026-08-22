@@ -7,7 +7,7 @@ namespace CxAgent.Core.Commands;
 /// <param name="NewMode">The mode to switch to, or null when nothing changes.</param>
 /// <param name="Reply">The message for the transcript. Never empty — a command that appears to do
 /// nothing is indistinguishable from one that silently failed.</param>
-public readonly record struct ModeCommandResult(WorkingMode? NewMode, string Reply);
+public readonly record struct ModeCommandResult(WorkingMode? NewMode, Message Reply);
 
 /// <summary>
 /// What <c>/mode</c> needs to answer "what mode am I in", and to change it.
@@ -105,8 +105,8 @@ public static class ModeCommand
             var requestedEdits = EditModes.Parse(editValue, query.ClassifierConfigured);
 
             if (requestedEdits is null)
-                return new(null, $"[yellow]unknown edit mode '{editValue.Trim()}'. "
-                               + $"Valid: {EditModes.ValidWith(query.ClassifierConfigured)}.[/]");
+                return new(null, new($"unknown edit mode `{editValue.Trim()}`. "
+                               + $"Valid: {EditModes.ValidWith(query.ClassifierConfigured)}.", Severity.Warning));
 
             if (requestedEdits == current.Edits)
                 return new(null, $"already in {EditModes.Name(current.Edits)} mode.");
@@ -129,14 +129,16 @@ public static class ModeCommand
         // an axis yet, rather than "unknown mode 'work plan'" — which reads as though the VALUE were
         // wrong and sends the user hunting for the right spelling of it.
         if (words.Length >= 2 && !IsAgentAxis(words[0]) && KnownAxes.Contains(words[0].ToLowerInvariant()))
-            return new(null, $"[yellow]'{words[0]}' is not settable yet. Valid axes: agent, edits.[/]");
+            return new(null, new($"`{words[0]}` is not settable yet. Valid axes: agent, edits.",
+                Severity.Warning));
 
         var requested = AgentModes.Parse(value);
 
         // NAME THE VALID VALUES. "unknown mode" alone leaves someone guessing at the spelling, and
         // the guess they usually make — "fanout" — is already accepted by the parser.
         if (requested is null)
-            return new(null, $"[yellow]unknown mode '{value.Trim()}'. Valid: {AgentModes.Valid}.[/]");
+            return new(null, new($"unknown mode `{value.Trim()}`. Valid: {AgentModes.Valid}.",
+                Severity.Warning));
 
         // A NO-OP SAYS SO AND CHANGES NOTHING. Applying it anyway would rewrite index 0 with
         // identical text — harmless, since reconciliation only replaces when the text differs, but

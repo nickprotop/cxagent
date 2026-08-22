@@ -6,7 +6,7 @@ namespace CxAgent.Core.Commands;
 /// <summary>What <c>/model</c> decided, and the line to show for it.</summary>
 /// <param name="SwitchTo">The instance to switch to, or null when nothing is switching.</param>
 /// <param name="Reply">The message for the transcript. Never empty.</param>
-public readonly record struct ModelCommandResult(string? SwitchTo, string Reply);
+public readonly record struct ModelCommandResult(string? SwitchTo, Message Reply);
 
 /// <summary>
 /// <c>/model</c> — which configured instance this session talks to.
@@ -36,8 +36,8 @@ public static class ModelCommand
         string argument, ProviderRegistry? registry, string? current)
     {
         if (registry is null || registry.InstanceNames.Count == 0)
-            return new(null, $"[{Markup.Muted}]No providers configured — edit config.json and restart to set "
-                           + "one up.[/]");
+            return new(null, new("No providers configured — edit `config.json` and restart to set "
+                           + "one up.", Severity.Warning));
 
         var wanted = argument.Trim();
         if (wanted.Length == 0) return new(null, Render(registry, current));
@@ -54,14 +54,14 @@ public static class ModelCommand
             .ToList();
 
         if (matches.Count == 0)
-            return new(null, $"[yellow]No provider called '{Escape(wanted)}'. "
-                           + $"Configured: {Escape(string.Join(", ", names))}.[/]");
+            return new(null, new($"No provider called `{Escape(wanted)}`. "
+                           + $"Configured: {Escape(string.Join(", ", names))}.", Severity.Warning));
 
         // AMBIGUITY IS REPORTED, NEVER RESOLVED — the same rule /sessions follows. Picking one
         // silently is how a user ends up spending a conversation on a model they did not choose.
         if (matches.Count > 1)
-            return new(null, $"[yellow]'{Escape(wanted)}' matches "
-                           + $"{Escape(string.Join(", ", matches))}. Be more specific.[/]");
+            return new(null, new($"`{Escape(wanted)}` matches "
+                           + $"{Escape(string.Join(", ", matches))}. Be more specific.", Severity.Warning));
 
         return Switch(matches[0], current);
     }
@@ -71,7 +71,7 @@ public static class ModelCommand
         // ALREADY THERE IS NOT A SWITCH. Re-wiring would rebuild the agent and reset what a re-wire
         // resets, for no change at all — and the user would have no way to tell that happened.
         if (string.Equals(target, current, StringComparison.OrdinalIgnoreCase))
-            return new(null, $"[{Markup.Muted}]Already using {Escape(target)}.[/]");
+            return new(null, $"Already using `{Escape(target)}`.");
 
         return new(target, "");
     }

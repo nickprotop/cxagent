@@ -300,7 +300,7 @@ public sealed partial class Session
 
         if (decision.SwitchTo is null)
         {
-            if (decision.Reply is { Length: > 0 }) Say(decision.Reply);
+            if (decision.Reply.Text.Length > 0) Say(decision.Reply);
             return CommandStatus.Reported;
         }
 

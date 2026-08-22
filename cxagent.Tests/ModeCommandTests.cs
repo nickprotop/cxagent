@@ -19,7 +19,7 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), true, "/repo"));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("fan-out", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("fan-out", result.Reply.Text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -50,11 +50,11 @@ public class ModeCommandTests
     public void TheReply_SaysWhatTheModeActuallyDoes()
     {
         Assert.Contains("spawn sub-agents",
-            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), true, "/repo")).Reply,
+            ModeCommand.Decide(new ModeQuery("fan-out", new WorkingMode(AgentMode.Single), true, "/repo")).Reply.Text,
             StringComparison.Ordinal);
 
         Assert.Contains("works alone",
-            ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), true, "/repo")).Reply,
+            ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.FanOut), true, "/repo")).Reply.Text,
             StringComparison.Ordinal);
     }
 
@@ -69,8 +69,8 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("sideways", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("single", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("fan-out", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("single", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("fan-out", result.Reply.Text, StringComparison.Ordinal);
     }
 
     /// <summary>Reporting "switched" when nothing switched is a small lie the user will act on.</summary>
@@ -80,7 +80,7 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("single", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("already", result.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("already", result.Reply.Text, StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -94,8 +94,8 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("single", result.Reply, StringComparison.Ordinal);
-        Assert.DoesNotContain("Escape", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("single", result.Reply.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Escape", result.Reply.Text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -144,8 +144,8 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery(argument, new WorkingMode(AgentMode.Single), true, "/repo"));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("not settable yet", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("not settable yet", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("agent", result.Reply.Text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -159,10 +159,10 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("", new WorkingMode(AgentMode.FanOut), true, "/repo"));
 
         Assert.Null(result.NewMode);                       // reporting never changes anything
-        Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("fan-out", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("spawn", result.Reply, StringComparison.Ordinal);   // what it MEANS
-        Assert.Contains("\n", result.Reply, StringComparison.Ordinal);      // a block, not a line
+        Assert.Contains("agent", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("fan-out", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("spawn", result.Reply.Text, StringComparison.Ordinal);   // what it MEANS
+        Assert.Contains("\n", result.Reply.Text, StringComparison.Ordinal);      // a block, not a line
     }
 
     // ---- the edits axis -------------------------------------------------------------------------
@@ -179,9 +179,9 @@ public class ModeCommandTests
     {
         var result = ModeCommand.Decide(Query("", WorkingMode.Default));
 
-        Assert.Contains("agent", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("edits", result.Reply, StringComparison.Ordinal);
-        Assert.Contains("accept-edits", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("agent", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("edits", result.Reply.Text, StringComparison.Ordinal);
+        Assert.Contains("accept-edits", result.Reply.Text, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -194,7 +194,7 @@ public class ModeCommandTests
     {
         var result = ModeCommand.Decide(Query("", WorkingMode.Default, trusted: false));
 
-        Assert.Contains("not trusted", result.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not trusted", result.Reply.Text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -224,7 +224,7 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(Query(argument, WorkingMode.Default));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("always-ask", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("always-ask", result.Reply.Text, StringComparison.Ordinal);
     }
 
     /// <summary>AUTO IS NOT SELECTABLE while no classifier is configured — a mode that claims
@@ -239,7 +239,7 @@ public class ModeCommandTests
         // The reply echoes the rejected value ("unknown edit mode 'auto'"), so what matters is that
         // auto is absent from the VALID list it offers — the user must not be pointed at a mode they
         // cannot reach.
-        var valid = result.Reply[result.Reply.IndexOf("Valid:", StringComparison.Ordinal)..];
+        var valid = result.Reply.Text[result.Reply.Text.IndexOf("Valid:", StringComparison.Ordinal)..];
         Assert.DoesNotContain("auto", valid, StringComparison.Ordinal);
     }
 
@@ -262,7 +262,7 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(new ModeQuery("", WorkingMode.Default, true, "/repo",
             ClassifierConfigured: configured));
 
-        Assert.Equal(expected, result.Reply.Contains("auto", StringComparison.Ordinal));
+        Assert.Equal(expected, result.Reply.Text.Contains("auto", StringComparison.Ordinal));
     }
 
     /// <summary>A no-op says so and changes nothing, on this axis as on the other. The value has to
@@ -274,7 +274,7 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(Query($"edits {current}", WorkingMode.Default));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("already", result.Reply, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("already", result.Reply.Text, StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -286,6 +286,6 @@ public class ModeCommandTests
         var result = ModeCommand.Decide(Query("work plan", WorkingMode.Default));
 
         Assert.Null(result.NewMode);
-        Assert.Contains("not settable yet", result.Reply, StringComparison.Ordinal);
+        Assert.Contains("not settable yet", result.Reply.Text, StringComparison.Ordinal);
     }
 }

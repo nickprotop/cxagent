@@ -30,7 +30,7 @@ public class ModelCommandTests
     public void BareCommand_ListsEveryInstanceWithItsModel()
     {
         var reply = ModelCommand.Decide("",
-            Registry(("local", "qwen3", 213_000), ("claude", "claude-x", 200_000)), "local").Reply;
+            Registry(("local", "qwen3", 213_000), ("claude", "claude-x", 200_000)), "local").Reply.Text;
 
         Assert.Contains("local:qwen3", reply);
         Assert.Contains("claude:claude-x", reply);
@@ -44,7 +44,7 @@ public class ModelCommandTests
     [Fact]
     public void BareCommand_ShowsTheContextWindow()
     {
-        var reply = ModelCommand.Decide("", Registry(("local", "qwen3", 213_000)), "local").Reply;
+        var reply = ModelCommand.Decide("", Registry(("local", "qwen3", 213_000)), "local").Reply.Text;
 
         Assert.Contains("213k", reply);
     }
@@ -53,7 +53,7 @@ public class ModelCommandTests
     public void BareCommand_MarksTheOneInUse()
     {
         var reply = ModelCommand.Decide("",
-            Registry(("local", "qwen3", 1000), ("claude", "claude-x", 1000)), "claude").Reply;
+            Registry(("local", "qwen3", 1000), ("claude", "claude-x", 1000)), "claude").Reply.Text;
 
         Assert.Contains("in use", reply);
     }
@@ -98,8 +98,8 @@ public class ModelCommandTests
             Registry(("local", "a", 1000), ("claude", "b", 1000), ("cloud", "c", 1000)), "local");
 
         Assert.Null(result.SwitchTo);
-        Assert.Contains("claude", result.Reply);
-        Assert.Contains("cloud", result.Reply);
+        Assert.Contains("claude", result.Reply.Text);
+        Assert.Contains("cloud", result.Reply.Text);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class ModelCommandTests
         var result = ModelCommand.Decide("gpt", Registry(("local", "qwen3", 1000)), "local");
 
         Assert.Null(result.SwitchTo);
-        Assert.Contains("local", result.Reply);
+        Assert.Contains("local", result.Reply.Text);
     }
 
     /// <summary>
@@ -121,7 +121,7 @@ public class ModelCommandTests
         var result = ModelCommand.Decide("local", Registry(("local", "qwen3", 1000)), "local");
 
         Assert.Null(result.SwitchTo);
-        Assert.Contains("Already using", result.Reply);
+        Assert.Contains("Already using", result.Reply.Text);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class ModelCommandTests
         var result = ModelCommand.Decide("", registry: null, current: null);
 
         Assert.Null(result.SwitchTo);
-        Assert.Contains("No providers configured", result.Reply);
+        Assert.Contains("No providers configured", result.Reply.Text);
     }
 
     // --- what the switch says afterwards ---
