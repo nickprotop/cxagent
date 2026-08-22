@@ -9,43 +9,23 @@
 
 </div>
 
-<div align="center">
-  <img src="docs/images/cxagent.png" alt="cxagent analysing a repository, with a sub-agent's report and the live session panel" width="900">
-  <br>
-  <sub>A worker agent explored the repo and reported back — 214,073 of the session's tokens spent
-  inside the child, and 4% of the parent's context used.</sub>
-  <br><br>
-  <sub><b><a href="docs/screenshots/">See it working →</a></b> — one session closing three features in
-  another repo, with the mistakes left in.</sub>
-</div>
-
 **A terminal AI coding agent built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
-
-<div align="center">
-
-### If you find CXAgent useful, please consider giving it a star!
-
-It helps others discover the project and motivates continued development.
-
-[![GitHub stars](https://img.shields.io/github/stars/nickprotop/cxagent?style=for-the-badge&logo=github&color=yellow)](https://github.com/nickprotop/cxagent/stargazers)
-
-</div>
 
 Give it a goal in plain language. It reads your files, works out what to change, and changes them —
 in one context, with the real bytes in front of it. Anything outside your working folder asks first.
 
 Bring your own model: Ollama, any OpenAI-compatible endpoint, or Anthropic.
 
-**Say it. Watch it work.**
+<div align="center">
+  <img src="docs/images/cxagent.png" alt="cxagent analysing a repository, with a sub-agent's report and the live session panel" width="900">
+  <br>
+  <sub>A worker agent explored the repo and reported back — 214,073 of the session's tokens spent
+  inside the child, and 4% of the parent's context used.</sub>
+</div>
 
-> **Building your own?** Everything under the terminal ships as
-> [**`CxAgent.Core`**](cxagent.Core/README.md) — sessions, agents, tools, sub-agent delegation,
-> permissions and MCP, with no UI dependency. cxagent is one consumer of it;
-> [a Spectre.Console front end](cxagent.Core/examples/SpectreAgent) is another, in a hundred lines.
->
-> ```
-> dotnet add package CxAgent.Core
-> ```
+## [See it working →](docs/screenshots/)
+
+One session closing three features in another repo, with the mistakes left in.
 
 ## Quick Start
 
@@ -84,6 +64,17 @@ It lands in `~/.config/cxagent/config.json` on Linux (`$XDG_CONFIG_HOME` when se
 `%APPDATA%\cxagent\config.json` on Windows, and
 `~/Library/Application Support/cxagent/config.json` on macOS. The same directory holds your session
 history and logs.
+
+## Building your own?
+
+Everything under the terminal ships as [**`CxAgent.Core`**](cxagent.Core/README.md) — sessions,
+agents, tools, sub-agent delegation, permissions and MCP, with no UI dependency. cxagent is one
+consumer of it; [a Spectre.Console front end](cxagent.Core/examples/SpectreAgent) is another, in a
+hundred lines.
+
+```
+dotnet add package CxAgent.Core
+```
 
 ## What it does
 
@@ -378,6 +369,11 @@ on macOS). Delete that directory to remove them too.
 [cxfiles](https://github.com/nickprotop/cxfiles) · [cxpost](https://github.com/nickprotop/cxpost) ·
 [cxlog](https://github.com/nickprotop/cxlog) · [cxnet](https://github.com/nickprotop/cxnet) ·
 [cxgpu](https://github.com/nickprotop/cxgpu) · [cxshell](https://github.com/nickprotop/cxshell)
+
+## Star it
+
+If cxagent is useful to you, a [star](https://github.com/nickprotop/cxagent/stargazers) helps others
+find it.
 
 ## License
 
