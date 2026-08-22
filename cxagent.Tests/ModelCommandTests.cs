@@ -176,6 +176,11 @@ public class ModelCommandTests
         var text = msg.Text;
 
         Assert.DoesNotContain("summarise", text);
+        // THE MIRROR OF THE WARNING TEST. Severity is a separate local raised in one branch — text
+        // and tone are set independently, so a threshold flip that stops printing "summarise" but
+        // still raises the severity (or vice versa) would pass a text-only assertion in either test.
+        // Pinning both ends catches it from whichever side breaks.
+        Assert.Equal(Severity.Info, msg.Severity);
     }
 
     /// <summary>A smaller window is worth mentioning even when the conversation still fits.</summary>
