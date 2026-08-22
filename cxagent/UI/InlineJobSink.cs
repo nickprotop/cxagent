@@ -840,6 +840,14 @@ public sealed class InlineJobSink : IToolObserver
             // already says "reviewing…", so the row is not silent about why the clock is absent, and
             // the clock appearing at zero is then an honest signal that the work itself has started.
             //
+            // A REVIEW TIMER, IF ONE IS EVER WANTED, NEEDS NOTHING BUILT HERE — noted only so that
+            // nobody closes the door by tidying up. The two stamps are already distinct: CreatedAt is
+            // when the row appeared and StartedAt is when the work began, so the review window is
+            // exactly `StartedAt - CreatedAt` once the gate has ruled, and `UtcNow - CreatedAt` while
+            // it is still deciding. Deliberately not built: it would be timing something the user did
+            // not ask about and cannot act on, next to a badge that already says what is happening.
+            // Collapsing the two stamps back into one would cost that, silently.
+            //
             // StartedAt is also null in the instant between a row being created and its first stamp
             // — guarded so that instant shows no clock rather than a negative or garbage one.
             var elapsed = !job.Reviewing && job.StartedAt is { } started

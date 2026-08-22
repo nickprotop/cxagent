@@ -1986,6 +1986,14 @@ public sealed class Agent
         // Rebasing rather than replacing: a plugin that never reports (no gate, no
         // WorkStarting call) keeps the original stamp and the old behaviour exactly.
         //
+        // WHY THIS WAS EVER TWO SEPARATE BUGS, since it is the shape to recognise rather than the
+        // detail: the two ends of this one feature read two different clocks, on two different
+        // schedules. A JobResult exists ONLY at completion, so the finished row's duration is a
+        // number computed once at the end; StartedAt is stamped at row CREATION and read continuously
+        // by the live header. Nothing connected them, so each was found on its own, fixed on its own,
+        // and neither fix prompted anyone to check the other — the duration was corrected here while
+        // the clock beside it went on counting the same review time for months.
+        //
         // BOTH CONSUMERS, and that is the second half of this fix. `started` feeds JobResult.Duration
         // — the number on the FINISHED row — and rebasing it alone left job.StartedAt still holding
         // the row-creation stamp. That field is what the LIVE clock in the running header reads, so
