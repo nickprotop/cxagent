@@ -177,8 +177,8 @@ public class SubAgentSpawnerTests
     /// <summary>
     /// THE DESCRIPTION IS A UI LABEL AND NEVER REACHES THE MODEL (D9).
     ///
-    /// <para>It used to be passed as the child's briefing, which put a 3-5 word status-row label into
-    /// the highest-authority position in its system message — under a heading saying "this is what you
+    /// <para>Passing it as the child's briefing puts a 3-5 word status-row label into the
+    /// highest-authority position in its system message — under a heading saying "this is what you
     /// were created to do; where it disagrees with anything above, follow this". Contentless, so
     /// harmless, and structurally the wrong thing in the wrong slot.</para>
     /// </summary>
@@ -419,12 +419,12 @@ public class SubAgentSpawnerTests
         };
 
     /// <summary>
-    /// TWO CHILDREN RUN AT ONCE. The point of the whole step, and the thing no other test can see:
-    /// before this, every spawn was awaited inline, so two children were strictly sequential.
+    /// TWO CHILDREN RUN AT ONCE, and no other test can see it: a loop that awaits each spawn inline
+    /// makes two children strictly sequential while every other assertion still passes.
     ///
     /// <para>Asserted by construction rather than by timing — each child's provider blocks until BOTH
-    /// have arrived. Under the old sequential loop the first child would wait forever and the test
-    /// would hang; the timeout is what makes the failure legible rather than a false pass.</para>
+    /// have arrived. Under a sequential loop the first child waits forever and the test hangs; the
+    /// timeout is what makes that failure legible rather than a false pass.</para>
     /// </summary>
     [Fact]
     public async Task TwoSpawnsInOneTurn_RunConcurrently()
@@ -456,9 +456,9 @@ public class SubAgentSpawnerTests
         // and the second is never started. So the assertion is that both arrivals are observed —
         // and it FAILS, rather than hanging, because each wait has its own deadline.
         //
-        // A first draft released on a background task that swallowed its own timeout, so the run
-        // completed anyway and the test passed under a sabotaged (sequential) loop. Verified against
-        // that sabotage now: this version fails.
+        // Release on a background task that swallows its own timeout and the run completes anyway,
+        // passing under a sabotaged (sequential) loop. This shape was verified against that
+        // sabotage: it fails.
         Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)),
             "no child reached its provider");
         Assert.True(await arrived.WaitAsync(TimeSpan.FromSeconds(5)),
@@ -999,15 +999,16 @@ public class SubAgentSpawnerTests
     }
 
     /// <summary>
-    /// THE DESCRIPTION SAYS SEVERAL AGENTS MAY RUN AT ONCE, and no longer says the opposite.
+    /// THE DESCRIPTION SAYS SEVERAL AGENTS MAY RUN AT ONCE, and never says the opposite.
     ///
-    /// <para>Pinned because guidance vanishes silently. Two sentences here contradicted the
-    /// capability the loop now has — "It runs once… and returns one message", and "wait for the
-    /// result" in the singular. Both were TRUE when written; a reader hitting either alongside "you
-    /// may launch several" believes the older, more specific one.</para>
+    /// <para>Pinned because guidance vanishes silently. Two sentences contradict the capability the
+    /// loop has — "It runs once… and returns one message", and "wait for the result" in the singular
+    /// — and a reader hitting either alongside "you may launch several" believes the more specific
+    /// one.</para>
     ///
-    /// <para>This is also the sentence that made the 0-of-118 baseline uninformative about the model:
-    /// it was told not to, in the one place D25 says such instructions belong.</para>
+    /// <para>That is enough to make a measurement of the model meaningless: a 0-of-118 concurrency
+    /// baseline says nothing when the model was told not to, in the one place D25 says such
+    /// instructions belong.</para>
     /// </summary>
     [Fact]
     public void Definition_SaysAgentsCanRunConcurrently_AndNoLongerSaysOtherwise()
@@ -1017,8 +1018,8 @@ public class SubAgentSpawnerTests
         Assert.Contains("LAUNCH SEVERAL AT ONCE", d, StringComparison.Ordinal);
         Assert.Contains("ONE message", d, StringComparison.Ordinal);
 
-        // The two sentences that forbade it. Matched on their distinguishing fragments so a reworded
-        // version of the same claim still trips this.
+        // The two sentences that would forbid it. Matched on their distinguishing fragments so a
+        // reworded version of the same claim still trips this.
         Assert.DoesNotContain("It runs once", d, StringComparison.Ordinal);
         Assert.DoesNotContain("returns\n        one message", d, StringComparison.Ordinal);
     }
@@ -1038,12 +1039,10 @@ public class SubAgentSpawnerTests
     /// CONFIGURED TYPES APPEAR WITH WHAT THEY ARE FOR. A model cannot pick from a catalog it has never
     /// seen (D5).
     ///
-    /// <para>THIS TEST USED TO ASSERT THE OPPOSITE OF WHAT IT NOW DOES, and the change is the point.
-    /// It read "a type's briefing IS its description — nothing extra needs writing in config", and
-    /// checked that the catalog showed the briefing's first sentence with the rest dropped. That
-    /// produced "- scout: You search and report." — text written in the second person for the
-    /// CHILD, which tells a parent nothing about when to reach for it. The briefing is no longer
-    /// consulted here at all.</para>
+    /// <para>THE BRIEFING IS NOT CONSULTED HERE. Treating a type's briefing as its description —
+    /// showing its first sentence and dropping the rest — produces "- scout: You search and report.",
+    /// text written in the second person for the CHILD, which tells a parent nothing about when to
+    /// reach for it. The description is a separate config field for that reason.</para>
     /// </summary>
     [Fact]
     public void Definition_ListsConfiguredTypes_WithTheirDescriptions()
@@ -1054,8 +1053,8 @@ public class SubAgentSpawnerTests
         Assert.Contains("- scout: when answering means reading across several files", d,
             StringComparison.Ordinal);
 
-        // NEITHER HALF of the briefing reaches the catalog now — not the first sentence it used to
-        // show, and not the rest it used to drop.
+        // NEITHER HALF of the briefing reaches the catalog — not the first sentence a
+        // briefing-as-description scheme would show, and not the rest it would drop.
         Assert.DoesNotContain("You search and report", d, StringComparison.Ordinal);
         Assert.DoesNotContain("Never edit files", d, StringComparison.Ordinal);
     }
@@ -1306,9 +1305,9 @@ public class SubAgentSpawnerTests
     /// <summary>
     /// THE SESSION READOUT REPAINTS WHILE A CHILD RUNS.
     ///
-    /// <para>Spend reached the panel only on the parent's TurnCompleted — and a parent completes no
-    /// turns while blocked inside the spawn tool. So a worker could burn a window's worth of tokens
-    /// and the panel showed pre-spawn figures for the whole run: right in memory, stale on screen,
+    /// <para>Report spend only on the parent's TurnCompleted and the readout freezes: a parent
+    /// completes no turns while blocked inside the spawn tool, so a worker burns a window's worth
+    /// while the panel shows pre-spawn figures for the whole run — right in memory, stale on screen,
     /// and worst in exactly the sessions the breakdown exists for.</para>
     /// </summary>
     [Fact]
@@ -1322,8 +1321,8 @@ public class SubAgentSpawnerTests
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         // A CHILD THAT TAKES TWO TURNS — one tool call, then an answer. A one-turn child would make
-        // this assertion `>= 1`, which is the trap ProgressTicks fell into: a single raise proves the
-        // event is wired but not that it fires AS the child works, which is the whole defect.
+        // this assertion `>= 1`, which is the trap: a single raise proves the event is wired but not
+        // that it fires AS the child works, which is the whole defect.
         var childProvider = new MockLlmProvider();
         childProvider.EnqueueResponse(new LlmResponse
         {
@@ -1346,7 +1345,7 @@ public class SubAgentSpawnerTests
         await parent.SendAsync("delegate", CancellationToken.None);
 
         // Both of the child's turns reported, while the parent sat inside one tool call completing
-        // none of its own — which is exactly the window in which the panel used to go stale.
+        // none of its own — exactly the window in which the panel would otherwise go stale.
         Assert.True(raised >= 2,
             $"expected one report per child turn while the parent was blocked, saw {raised}");
     }
@@ -1552,8 +1551,8 @@ public class SubAgentSpawnerTests
     /// A SPAWN CALL IN SINGLE MODE IS REFUSED, not quietly honoured.
     ///
     /// <para>A model that saw <c>task</c> in an earlier fan-out turn can call it by name after
-    /// a switch — the conversation still contains the evidence that the tool once existed. Gating only
-    /// the tool LIST would leave the dispatch branch happily running a child the user had just turned
+    /// a switch — the conversation still carries the evidence that the tool exists. Gating only the
+    /// tool LIST leaves the dispatch branch happily running a child the user has just turned
     /// off.</para>
     /// </summary>
     [Fact]
@@ -1776,7 +1775,7 @@ public class SubAgentSpawnerTests
 
     /// <summary>
     /// EMITTED WHOLE. A description someone wrote long is their config and their tokens; the app does
-    /// not shorten it to fit a number the old summariser happened to need.
+    /// not shorten it to fit some length a summariser found convenient.
     /// </summary>
     [Fact]
     public void ALongDescription_ReachesTheCatalogIntact()

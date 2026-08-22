@@ -96,9 +96,9 @@ public class PermissionPolicyTests
     }
 
     /// <summary>
-    /// `cd &lt;dir&gt; &amp;&amp; &lt;read-only&gt;` IS THE IDIOM THE MODEL WRITES, and it used to prompt for the
-    /// `&amp;&amp;` alone — so `cd /repo &amp;&amp; ls` asked while a bare `ls` did not. Two of three prompts on a
-    /// measured drive were this shape.
+    /// `cd &lt;dir&gt; &amp;&amp; &lt;read-only&gt;` IS THE IDIOM THE MODEL WRITES. Treat the `&amp;&amp;`
+    /// as a chain on its own and `cd /repo &amp;&amp; ls` prompts while a bare `ls` does not — two of
+    /// three prompts on a measured drive were this shape.
     /// </summary>
     [Fact]
     public void ACdIntoTheTrustedFolder_FollowedByAReadOnlyCommand_IsSilent()
@@ -211,14 +211,14 @@ public class PermissionPolicyTests
     [Fact]
     public void APathTheFilesystemRejectsOutright_FailsClosed_RatherThanThrowingOutOfTheProducer()
     {
-        // Finding N2. RequestsFor now RESOLVES (the C1/C2 fix), so it performs filesystem calls and
-        // can throw where the old string-only code could not. Path.GetFullPath raises
-        // ArgumentException — not IOException — for an embedded NUL, and TryResolve's catch list
-        // originally omitted it, so the exception escaped the producer entirely.
+        // Finding N2. RequestsFor RESOLVES, so it performs filesystem calls and can throw where
+        // pure string handling could not. Path.GetFullPath raises ArgumentException — not
+        // IOException — for an embedded NUL, so a TryResolve catch list that omits it lets the
+        // exception escape the producer entirely.
         //
-        // The job executor's blanket catch meant nothing was WRITTEN, so this always failed closed;
-        // but it surfaced as a raw "Null character in path" crash instead of a clean denial, and the
-        // result lost PermissionDenied = true — so the orchestrator could not tell a refusal from a
+        // The job executor's blanket catch means nothing is WRITTEN either way, so it fails closed;
+        // but it surfaces as a raw "Null character in path" crash instead of a clean denial, and the
+        // result loses PermissionDenied = true — so the orchestrator cannot tell a refusal from a
         // malfunction.
         var root = MakeTempDir();
         var policy = new PermissionPolicy(root, EmptyRules());
@@ -238,12 +238,12 @@ public class PermissionPolicyTests
         // NOT test that anything ever PRODUCES a directory rule; see
         // TheProducer_BuildsADirectoryRule_NotAPerFileRule for that.
         //
-        // The distinction is not pedantry. This test used to be named
-        // "ADirectoryRule_TheFormTheAlwaysButtonWRITES_MatchesFilesInsideIt" and claimed exactly
-        // the producer property it never exercised. It passed for weeks while the Always button
-        // wrote per-FILE rules and the promised "Always allow writes under X/" affordance did not
-        // exist at all (finding C1). A test whose name asserts more than its body checks is worse
-        // than no test: it answers the question nobody then re-asks.
+        // The distinction is not pedantry. A name like
+        // "ADirectoryRule_TheFormTheAlwaysButtonWRITES_MatchesFilesInsideIt" claims the producer
+        // property this body never exercises, and passes for weeks while the Always button writes
+        // per-FILE rules and the promised "Always allow writes under X/" affordance does not exist at
+        // all (finding C1). A test whose name asserts more than its body checks is worse than no
+        // test: it answers the question nobody then re-asks.
         var root = MakeTempDir();
         var rules = RulesWith(root, PermissionKind.FileWrite, root + "/");
         rules.SetTrust(root, TrustState.Untrusted);   // no implicit class; the RULE must carry it
@@ -346,7 +346,7 @@ public class PermissionPolicyTests
 
         var expectedDir = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
         Assert.Equal(expectedDir, req.AlwaysRule);
-        Assert.NotEqual(file, req.AlwaysRule);   // the bug: AlwaysRule used to be the exact file
+        Assert.NotEqual(file, req.AlwaysRule);   // the bug it guards: AlwaysRule naming the exact file
     }
 
     [Fact]
@@ -454,9 +454,9 @@ public class PermissionPolicyTests
         TrustedPolicy(root, EditMode.AcceptEdits);
 
     /// <summary>
-    /// AN EXISTING FILE THROUGH A SYMLINKED DIRECTORY IS OUTSIDE. TryResolve used to walk up only to
-    /// the deepest EXISTING entry and resolve that; when the file itself exists the walk stops on the
-    /// file, which is not a link — its PARENT is — so the link was never followed.
+    /// AN EXISTING FILE THROUGH A SYMLINKED DIRECTORY IS OUTSIDE. A TryResolve that walks up only to
+    /// the deepest EXISTING entry stops on the file itself when the file exists — and the file is not
+    /// a link, its PARENT is, so the link never gets followed.
     ///
     /// <para>THE DANGEROUS DIRECTION: this is the OVERWRITE case. A repo with `vendor -> /elsewhere`
     /// — an ordinary layout — let a trusted session rewrite a file outside the folder with no
@@ -582,13 +582,13 @@ public class PermissionPolicyTests
     }
 
     /// <summary>
-    /// THE DEFAULT ASKS, even in a trusted folder, and that is the whole point of the change.
+    /// THE DEFAULT ASKS, even in a trusted folder. Trust says where cxagent may work, not that it
+    /// may write there unannounced.
     ///
-    /// <para>This test used to assert the opposite, under the name
-    /// <c>AcceptEdits_IsTheDefault_AndMatchesTheOldBehaviour</c> — the axis shipped as a pure
-    /// addition, so its default named the pre-axis behaviour. That was right while nothing could
-    /// set the axis. Once it had a CLI flag, Shift+Tab and per-folder memory, a permissive default
-    /// was the one place cxagent widened without an act in it.</para>
+    /// <para>An axis added as a pure addition wants a default that changes nothing, and that is
+    /// defensible only while nothing can set the axis. With a CLI flag, Shift+Tab and per-folder
+    /// memory behind it, a permissive default would be the one place cxagent widens with no act of
+    /// the user's in it.</para>
     ///
     /// <para>TRUST IS DELIBERATELY GRANTED HERE. Without it the write would prompt for a reason
     /// that has nothing to do with the mode, and the test would pass while proving nothing.</para>
@@ -601,17 +601,17 @@ public class PermissionPolicyTests
         rules.SetTrust(root, TrustState.Trusted);
 
         // WorkingMode.Default, not new WorkingMode(): a record struct's parameterless constructor
-        // zero-initialises and ignores the parameter defaults. Both land on AlwaysAsk now, but they
-        // are still different mechanisms and Default is the one that states the session default.
+        // zero-initialises and ignores the parameter defaults. Both land on AlwaysAsk, but they are
+        // different mechanisms and Default is the one that states the session default.
         Assert.Equal(EditMode.AlwaysAsk, WorkingMode.Default.Edits);
         Assert.False(new PermissionPolicy(root, rules)
             .IsSilentlyAllowed(FileWrite(Path.Combine(root, "notes.txt"))));
     }
 
     /// <summary>
-    /// AND ACCEPT-EDITS STILL MEANS WHAT IT MEANT when the user asks for it. The default moved; the
-    /// mode did not. This is the half of the old test that is still a live contract — without it,
-    /// changing the default would be indistinguishable from breaking the permissive mode.
+    /// AND ACCEPT-EDITS MEANS WHAT IT SAYS when the user asks for it — the default and the mode are
+    /// independent. Without this, changing the default is indistinguishable from breaking the
+    /// permissive mode.
     /// </summary>
     [Fact]
     public void AcceptEdits_WhenChosen_StillWritesSilentlyInATrustedFolder()

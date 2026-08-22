@@ -7,8 +7,8 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// The command table is the ONE source: the dispatcher, the unknown-command reply, the help text and
-/// (later) a palette all read it. Each of those used to carry its own copy — the reply hardcoded
-/// "/clear, /compress" and would have gone stale on the next addition.
+/// (later) a palette all read it. Give any of them its own copy — a reply hardcoding
+/// "/clear, /compress" — and it goes stale on the next addition, silently.
 /// </summary>
 public class SessionCommandTableTests
 {
@@ -182,10 +182,10 @@ public class SessionCommandTableTests
     /// <summary>
     /// THE REST OF THE LINE IS AVAILABLE, not discarded.
     ///
-    /// <para>Match splits on the first space and returns the command; everything after it used to be
-    /// dropped on the floor. That was invisible while no command took an argument, and it is exactly
-    /// this codebase's recurring rot pattern — a value that parses and is never read. <c>/mcp login
-    /// &lt;server&gt;</c> needs it.</para>
+    /// <para>Match splits on the first space and returns the command, so everything after it is easy
+    /// to drop on the floor — invisibly, while no command takes an argument. That is this codebase's
+    /// recurring rot pattern: a value that parses and is never read. <c>/mcp login &lt;server&gt;</c>
+    /// needs it.</para>
     /// </summary>
     [Fact]
     public void Arguments_ReturnsTheRestOfTheLine()
@@ -380,12 +380,12 @@ public class SessionCommandTableTests
         Assert.True(mcp.Args.Single(a => a.Name == "reload").Completes);
     }
 
-    // A ROW CARRYING A PLACEHOLDER IS SELECTABLE, and completes to the verb in front of it. These
-    // were display-only: the server list behind `show <name>` worked, but the only way to reach it
-    // was to type "show" by hand — the palette showed the word and refused to insert it. Completing
-    // the whole name would put "<name>" in the composer literally, which is the failure the
-    // non-completing flag existed to prevent; completing the prefix ends in a space, which is what
-    // makes the palette open its next level.
+    // A ROW CARRYING A PLACEHOLDER IS SELECTABLE, and completes to the verb in front of it. Leave it
+    // display-only and the level behind it is unreachable except by typing the verb by hand: the
+    // server list behind `show <name>` works, but the palette shows the word and refuses to insert
+    // it. Completing the whole name would put "<name>" in the composer literally, which is what the
+    // non-completing flag prevents; completing the prefix ends in a space, which is what makes the
+    // palette open its next level.
     [Theory]
     [InlineData("/mcp ", "show <name>", "/mcp show ")]
     [InlineData("/mcp ", "login <name>", "/mcp login ")]
@@ -514,7 +514,8 @@ public class SessionCommandTableTests
         public SuppliedValues(string forSource, IReadOnlyList<CommandArgument> values) =>
             (_source, _values) = (forSource, values);
 
-        /// <summary>The supplier a caller passes in — no longer a static to reset.</summary>
+        /// <summary>The supplier a caller passes in, so nothing static needs resetting between
+        /// tests.</summary>
         public Func<string, IReadOnlyList<CommandArgument>> Supplier =>
             source => source == _source ? _values : [];
 

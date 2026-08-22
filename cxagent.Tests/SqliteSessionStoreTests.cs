@@ -289,8 +289,8 @@ public class SqliteSessionStoreTests : IDisposable
         Assert.Null(store.LoadLatestUnfinished("/projects/beta"));
     }
 
-    /// <summary>The newest session FROM THIS FOLDER wins — not the newest overall, which is the whole
-    /// bug: a more recent session elsewhere used to shadow the one you actually wanted.</summary>
+    /// <summary>The newest session FROM THIS FOLDER wins — not the newest overall. Ordering by
+    /// recency alone lets a session in an unrelated folder shadow the one you actually wanted.</summary>
     [Fact]
     public void TheNewestSessionInThisFolder_Wins_EvenIfAnotherFolderIsMoreRecent()
     {

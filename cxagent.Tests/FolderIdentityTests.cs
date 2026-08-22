@@ -149,7 +149,7 @@ public class FolderIdentityTests : IDisposable
         Directory.CreateDirectory(dir);
 
         // Where the filesystem records no birth time there is nothing to tell the two apart, and
-        // this degrades to the old path-only behaviour rather than failing for an invisible reason.
+        // this degrades to plain path-only matching rather than failing for an invisible reason.
         if (FolderIdentity.ScopeFor(dir) == FolderIdentity.PathOf(FolderIdentity.ScopeFor(dir)))
             return;
 

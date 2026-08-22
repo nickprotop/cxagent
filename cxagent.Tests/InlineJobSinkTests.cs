@@ -11,13 +11,14 @@ namespace CxAgent.Tests;
 /// <summary>
 /// USER-REPORTED: "why jobs aren't updated the text receiving from the model?"
 ///
-/// <para>The answer was that <c>ToolUpdated</c> only ever called <c>SetStatus</c> — the message BODY
-/// stayed whatever <c>Title(job)</c> produced when the job first appeared, i.e. the job's NAME. Every
-/// executor writes its real output to <c>Output["content"]</c> (LlmAgentJobPlugin's worker transcript,
-/// ShellJobExecutor's stdout) and the ONLY reader was IntrospectionTools — the tool the ORCHESTRATOR
-/// uses to read results. The user could not see what their own workers said.</para>
+/// <para>A <c>ToolUpdated</c> that only calls <c>SetStatus</c> leaves the message BODY as whatever
+/// <c>Title(job)</c> produced when the job first appeared, i.e. the job's NAME. Every executor writes
+/// its real output to <c>Output["content"]</c> (LlmAgentJobPlugin's worker transcript,
+/// ShellJobExecutor's stdout), and if the only reader is IntrospectionTools — the tool the
+/// ORCHESTRATOR uses — the user cannot see what their own workers said.</para>
 ///
-/// <para>There were no InlineJobSink tests at all before this file, which is why it shipped.</para>
+/// <para>Every behaviour below is invisible from the executor side, so nothing else in the suite
+/// notices when it breaks; the sink is only observable through these.</para>
 /// </summary>
 public class InlineJobSinkTests
 {
@@ -133,9 +134,8 @@ public class InlineJobSinkTests
     [Fact]
     public void Clip_NoLongerTruncates_TheWholeOutputReachesTheBody()
     {
-        // The body used to cap at 4,000 chars. The row is COLLAPSED by default now, so length costs
-        // nothing until the user opens it -- and a clipped body meant the full text existed only in
-        // the log file, which nobody reads.
+        // The row is COLLAPSED by default, so length costs nothing until the user opens it -- and a
+        // body capped at 4,000 chars leaves the full text only in the log file, which nobody reads.
         var huge = new string('x', 50_000);
 
         var result = InlineJobSink.Clip(huge);
@@ -196,14 +196,13 @@ public class InlineJobSinkTests
     [Fact]
     public void AFAILEDTOOL_IsCompact_HeaderPlusTheReason()
     {
-        // REPLACES AFAILEDJob_IsNEVERCompact_ItHasAnErrorAndButtons, whose own title names the
-        // reason it is obsolete: the Retry/Skip/Diagnose buttons were removed, so the exemption was
-        // reserving a footer for an affordance that no longer exists. What it cost was four lines to
-        // say one thing -- header ending "failed - 0.0s", the error, a full-width rule, then
-        // "failed - 0.0s" AGAIN. Measured live on a missing file.
+        // A failed job gets no block exemption: there are no Retry/Skip/Diagnose buttons to reserve
+        // a footer for, so exempting it spends four lines to say one thing -- header ending
+        // "failed - 0.0s", the error, a full-width rule, then "failed - 0.0s" AGAIN. Measured live on
+        // a missing file.
         //
-        // (The old test passed for an unrelated reason: it used an llm_agent, which is exempt as a
-        // WORKER whatever its state. It never exercised the failure rule it was named for.)
+        // Use a `file` job, not an llm_agent: a worker is exempt as a WORKER whatever its state, so an
+        // llm_agent here would pass without ever exercising the failure rule.
         Assert.True(InlineJobSink.IsCompactRowForTest(
             TypedJob("file", JobState.Failed, new Dictionary<string, object?>())));
     }
@@ -521,9 +520,9 @@ public class InlineJobSinkTests
     public void TheBadgeIsSeparatedFromTheRestOfTheHeaderExactlyOnce()
     {
         // FOUND ON A LIVE DRIVE, not by the test above, which only asks whether the WORD appears.
-        // Badge() used to carry its own leading "  ·  " and CompactHeader appends another after it,
-        // so a badged row rendered "· · auto-approved · done · 25.0s" — a doubled separator on every
-        // auto decision, invisible to an assertion that only greps for the word.
+        // CompactHeader appends a "  ·  " after the badge, so a Badge() that carries its own leading
+        // one renders "· · auto-approved · done · 25.0s" — a doubled separator on every auto
+        // decision, invisible to an assertion that only greps for the word.
         var job = TypedJob("shell", JobState.Succeeded) with
         {
             DecidedBy = "auto",
@@ -533,8 +532,8 @@ public class InlineJobSinkTests
         var header = InlineJobSink.CompactHeaderForTest(job);
 
         // ONE separator before the badge and ONE after it. Asserting only that the WORD appears
-        // (the test above) passed while the row rendered "·  ·  auto-approved", which is what a
-        // live drive actually showed. Counting the separators is what pins the shape.
+        // (the test above) passes on a row rendering "·  ·  auto-approved", which is what a live
+        // drive actually showed. Counting the separators is what pins the shape.
         Assert.Equal(3, header.Split('·').Length - 1);
         Assert.Contains("·  auto-approved  ·", header);
     }
@@ -544,9 +543,9 @@ public class InlineJobSinkTests
     {
         // THE OTHER BRANCH, and it renders from a different expression. A running row has no state or
         // duration after the badge, so it has no "  ·  " chain to slot into and must supply the
-        // separator itself. Fixing the doubled separator on FINISHED rows removed it from Badge(),
-        // which silently left running rows reading "name auto-approved" with no separator at all —
-        // reported from a live drive.
+        // separator itself. Move the separator out of Badge() to fix the doubled one on FINISHED rows
+        // and running rows silently read "name auto-approved" with no separator at all — reported
+        // from a live drive.
         var job = TypedJob("shell", JobState.Running) with { DecidedBy = "auto" };
 
         Assert.Contains("·  auto-approved", InlineJobSink.CompactHeaderForTest(job));

@@ -76,11 +76,11 @@ public class MainWindowTests
     [Fact]
     public void FocusJobs_IsANoOp_SinceJobsMovedInline()
     {
-        // Replaces FocusJobs_And_FocusChat_MoveFocusBetweenPanes. Jobs now render INLINE in the
-        // transcript, so JobPanel is constructed but never placed in the grid. FocusJobs must NOT
-        // move focus to it: the old implementation set Input.IsEditing = false first, which would
-        // leave the composer silently unable to accept typed input with nothing visible to show for
-        // it — exactly D10's failure mode, and unrecoverable without knowing to press F4.
+        // Jobs render INLINE in the transcript, so JobPanel is constructed but never placed in the
+        // grid. FocusJobs must NOT move focus to it: moving focus means clearing Input.IsEditing
+        // first, which leaves the composer silently unable to accept typed input with nothing visible
+        // to show for it — exactly D10's failure mode, and unrecoverable without knowing to press
+        // F4.
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
@@ -209,10 +209,9 @@ public class MainWindowTests
         var mw = new MainWindow(Sys(), res, Logs());
         mw.Build();
 
-        // The PRESENCE half went with the bar's redesign: it no longer lists every dialog key, so
-        // "F5 appears in the bar" now asserts a layout choice rather than a binding. The absence
-        // half is the part that was ever load-bearing — a retired key still advertised is a key the
-        // user presses and gets nothing from.
+        // ABSENCE ONLY. The bar does not list every dialog key, so "F5 appears in the bar" would
+        // assert a layout choice rather than a binding. Absence is the load-bearing half: a retired
+        // key still advertised is a key the user presses and gets nothing from.
         var items = mw.StatusBar.LeftItems.Concat(mw.StatusBar.RightItems).ToList();
         Assert.DoesNotContain(items, i => i.Shortcut == "F7");
         Assert.DoesNotContain(items, i => i.Shortcut == "F8");
@@ -264,11 +263,12 @@ public class MainWindowTests
         return mw;
     }
 
-    // ESCAPE ON A PERMISSION PROMPT ANSWERS IT, and the run survives. It used to do both — deny AND
-    // cancel the turn — because the prompt handles no keys, so Escape fell through to the global
-    // shortcut's CancelTurn branch (a prompt only exists mid-turn), and cancelling fired the gate's
-    // registration, which resolves the prompt as Deny anyway. A live drive lost two million tokens
-    // of work to one keystroke on a denied test-file write.
+    // ESCAPE ON A PERMISSION PROMPT ANSWERS IT, and the run survives — one keystroke must not do
+    // both. The prompt handles no keys of its own, so an unhandled Escape falls through to the global
+    // shortcut's CancelTurn branch (a prompt only exists mid-turn), and cancelling fires the gate's
+    // registration, which resolves the prompt as Deny anyway: the denial lands AND the turn dies. A
+    // live drive lost two million tokens of work that way, to one keystroke on a denied test-file
+    // write.
     [Fact]
     public void TryDenyPermission_AnswersThePromptAndReportsItHandledTheKey()
     {
@@ -287,7 +287,8 @@ public class MainWindowTests
     // RestoreComposer is enqueued onto the UI thread rather than run inline, so a denied prompt
     // whose turn asks again immediately can have its replacement shown first; the idempotence guard
     // then skips the swap. Taking the deny action before that guard is what keeps the visible prompt
-    // answerable. Observed live before the fix: deny once, and the next prompt was dead to Escape.
+    // answerable — behind it, deny once and the next prompt is dead to Escape, as a live drive
+    // showed.
     [Fact]
     public void TryDenyPermission_AnswersTheNewestPromptWhenOneArrivesBeforeTheRestore()
     {
@@ -418,22 +419,23 @@ public class MainWindowTests
     /// swap (leaving the real active prompt in place) rather than throw from the UI thread — while
     /// still leaving the composer typable, since a stray restore must never brick input.
     ///
-    /// This test previously asserted the throw; that was the OLD contract (build twice = crash).
-    /// The new, safer contract is a no-op for a mismatched instance, pinned below.
+    /// Throwing instead would turn a caller's tidy-up `finally` into a crash on the UI thread, which
+    /// is why the contract is a no-op for a mismatched instance.
     /// </summary>
     [Fact]
     public void ShowPermissionPrompt_MovesFocusIntoThePrompt_SoItIsAnswerableByKEYBOARD()
     {
         // USER-REPORTED BUG: "I can't select the allow etc buttons with keyboard... Only mouse works."
         //
-        // ReplaceControl swaps the composer OUT of the grid, but focus stayed on that removed control.
-        // ButtonControl.ProcessKey returns false unless it has focus (ButtonControl.cs:225), so Tab,
-        // Enter and Space reached nothing and clicking was the only way to answer.
+        // ReplaceControl swaps the composer OUT of the grid, and focus does not follow: it stays on
+        // the removed control. ButtonControl.ProcessKey returns false unless it has focus
+        // (ButtonControl.cs:225), so Tab, Enter and Space reach nothing and clicking is the only way
+        // to answer.
         //
         // That is a bad failure for a SECURITY prompt in particular: it blocks goal submission until
-        // answered, so a keyboard-driven user was stuck on a question they could not answer.
-        // RestoreComposer already called FocusComposer() on the way OUT; nothing did the equivalent
-        // on the way IN.
+        // answered, leaving a keyboard-driven user stuck on a question they cannot answer. The way
+        // OUT is symmetric — RestoreComposer calls FocusComposer() — and this is the equivalent on
+        // the way IN.
         var mw = BuiltMainWindow();
         var prompt = new PermissionPromptControl(ShellRequest("git status"));
         var built = prompt.BuildContent();
@@ -457,8 +459,8 @@ public class MainWindowTests
         var ex = Record.Exception(() => mw.RestoreComposer(prompt.BuildContent()));
         Assert.Null(ex);
 
-        // The mismatched call must not have touched the real active prompt: the composer is not
-        // back in the tree yet (a real BuildContent()-once caller must still restore it properly).
+        // The mismatched call must not touch the real active prompt: the composer is not back in the
+        // tree yet (a real BuildContent()-once caller must still restore it properly).
         Assert.False(mw.Input.HasFocus, "the stray restore must not have swapped the real prompt out");
 
         // The correct call — passing the SAME instance Show received — still works afterwards.
@@ -536,13 +538,13 @@ public class MainWindowTests
 
         var style = SharpConsoleUI.Configuration.MarkdownStyle.Default;
 
-        // EVERY heading level is coloured. The old style left H4-H6 null, so deep structure vanished.
+        // EVERY heading level is coloured. Leave H4-H6 null and deep structure vanishes.
         Assert.NotNull(style.H1Color);
         Assert.NotNull(style.H4Color);
         Assert.NotNull(style.H6Color);
 
         // Headings, code, quotes and links are FOUR DIFFERENT colours — the property that makes a
-        // document's structure visible before it is read, and the one the old palette lacked.
+        // document's structure visible before it is read, and the easiest one for a palette to lose.
         var hues = new[]
         {
             style.H1Color!.Value, style.CodeForeground, style.QuoteColor, style.LinkColor,
@@ -631,19 +633,18 @@ public class MainWindowTests
             MaxTurns = 200,
         });
 
-        // PER GOAL, STATED ALONE. This asserted "1/200 turns", pairing the session's lifetime turn
-        // count with a cap that resets on every prompt — two different denominators sharing one
-        // slash, so a long session read "290/300" while the current goal had taken three.
+        // PER GOAL, STATED ALONE. Rendering "1/200 turns" pairs the session's lifetime turn count
+        // with a cap that resets on every prompt — two different denominators sharing one slash, so a
+        // long session reads "290/300" while the current goal has taken three.
         Assert.Contains("200 turns per goal", panel.RenderedText, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// THE PANEL SHOWS THE CEILING THAT BINDS, not the one that was typed.
     ///
-    /// <para>It used to render the raw configured value, so an unconfigured session printed
-    /// "no cap" while a real ceiling was in force — a live drive read "66 turns · no cap" and the
-    /// cap was there the whole time. A limit you are told you do not have is worse than one you
-    /// cannot see.</para>
+    /// <para>Render the raw configured value and an unconfigured session prints "no cap" while a
+    /// real ceiling is in force — a live drive read "66 turns · no cap" with the cap there the whole
+    /// time. A limit you are told you do not have is worse than one you cannot see.</para>
     /// </summary>
     [Fact]
     public void SessionPanel_ShowsTheDefaultCeiling_WhenNothingIsConfigured()
@@ -678,8 +679,8 @@ public class MainWindowTests
     public void SessionPanel_SaysNoCapWhenTheSessionIsUnbounded()
     {
         // Zero reaches the panel only for an EXPLICIT opt-out (orchestrator.maxTurns: 0). An
-        // unconfigured session now resolves to the default before it gets here, so "no cap" means
-        // what it says — it used to print for every unconfigured session while a real ceiling bound.
+        // unconfigured session resolves to the default before it gets here, so "no cap" means what it
+        // says rather than printing wherever nothing was configured.
         var panel = new SessionPanel();
         panel.RecordTurn(toolCalls: 2);
         panel.Refresh(new SessionPanel.SessionPanelState
@@ -758,10 +759,10 @@ public class MainWindowTests
     /// <summary>
     /// THE GAUGE MOVES AFTER A COMPRESSION — the reported "compress, and nothing changes" bug.
     ///
-    /// <para>SetContextUsed once refreshed the status-bar item alone, and compression reaches the UI
-    /// through exactly this method, so the panel kept showing the pre-compression figure. The panel
-    /// no longer carries occupancy at all (it duplicated the status bar), so the assertion follows
-    /// the number: the STATUS BAR must reflect the new reading and not the old one.</para>
+    /// <para>Compression reaches the UI through exactly this method and nowhere else, so whatever
+    /// SetContextUsed skips keeps showing the pre-compression figure. Occupancy lives on the STATUS
+    /// BAR alone — the panel would only duplicate it — so that is where the new reading has to land,
+    /// with no trace of the superseded one.</para>
     /// </summary>
     [Fact]
     public void AfterCompression_TheOccupancyReadoutMoves()
@@ -853,10 +854,10 @@ public class MainWindowTests
 
     /// <summary>
     /// THE WAY BACK TO THE COMPOSER EXISTS AND IS PUBLIC. F4 is bound to this in AppBootstrap, and
-    /// the binding is the kind of one-liner that gets tidied away — this method was removed once
-    /// already, on the reasoning that focus could no longer be lost.
+    /// the binding is the kind of one-liner that gets tidied away on the reasoning that focus cannot
+    /// be lost.
     ///
-    /// <para>It still can: a question moves focus to its first option and the permission prompt moves
+    /// <para>It can: a question moves focus to its first option and the permission prompt moves
     /// it into the prompt panel. Both restore it, but a user who ends up outside the composer has no
     /// way back except guessing at Tab order, and a keyboard that does nothing is not a state anyone
     /// can debug from the outside.</para>
@@ -932,10 +933,10 @@ public class MainWindowTests
     }
 
     /// <summary>
-    /// SetTokenSplit REPAINTS rather than only storing. It used to store and stop, which was correct
-    /// while the session panel was the sole reader and SetTokenTotal refreshed it a moment later on
-    /// the same event. The status bar reads the split now, so a setter that does not repaint leaves
-    /// the always-visible readout stale until something else happens to redraw it.
+    /// SetTokenSplit REPAINTS rather than only storing. Storing and stopping is enough only while the
+    /// session panel is the sole reader and SetTokenTotal refreshes it a moment later on the same
+    /// event. The status bar reads the split too, so a setter that does not repaint leaves the
+    /// always-visible readout stale until something else happens to redraw it.
     ///
     /// <para>Asserted as "does not throw and the numbers reach the label": the status bar's rendered
     /// text is owned by the console control and is not readable from here, so this pins the call
@@ -1041,10 +1042,10 @@ public class MainWindowTests
     /// <summary>
     /// `general` IS ALWAYS SHOWN, whether or not config names a type.
     ///
-    /// <para>The panel used to filter it out and read the raw config keys, so a session with no
-    /// configured types showed no Agent types section at all — and delegation looked unavailable to
-    /// anyone who had not written one. `general` is what a bare spawn uses; it is a capability the
-    /// session has, not a placeholder.</para>
+    /// <para>Read the raw config keys and filter `general` out, and a session with no configured
+    /// types shows no Agent types section at all — delegation looks unavailable to anyone who has not
+    /// written one. `general` is what a bare spawn uses; it is a capability the session has, not a
+    /// placeholder.</para>
     /// </summary>
     [Fact]
     public void SessionPanel_ShowsGeneral_EvenWithNoConfiguredTypes()

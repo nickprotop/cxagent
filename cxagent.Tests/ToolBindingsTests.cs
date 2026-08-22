@@ -15,8 +15,8 @@ public class ToolBindingsTests
     [Fact]
     public void For_GeneratesSchemasFromTheLIVEExecutorSchema()
     {
-        // Never hand-write the tool schema. FileJobExecutor requires "action", and a hand-written example
-        // once said "operation" — the model followed it faithfully and every file job failed validation.
+        // Never hand-write the tool schema. FileJobExecutor requires "action"; a hand-written example
+        // saying "operation" is followed faithfully by the model, and every file job fails validation.
         var tools = ToolBindings.For(new[] { BuiltinTool.WriteFile }, JobRegistry.CreateWithBuiltins());
 
         // Assert on the PARSED structure, not a substring of the serialized blob: "action" would match
@@ -32,9 +32,9 @@ public class ToolBindingsTests
                                                     // the pinning is silently wrong.
         Assert.False(props.TryGetProperty("action", out _));
 
-        // Every param this tool DOES offer must be one the executor really accepts. The rule used to be
-        // "offer all of them", which is why read_file advertised content, dest and replacement; a
-        // tool now SELECTS from the live schema. Selecting is allowed, inventing is not —
+        // Every param this tool DOES offer must be one the executor really accepts. A tool SELECTS
+        // from the live schema rather than offering all of it — offering all of it is how read_file
+        // ends up advertising content, dest and replacement. Selecting is allowed, inventing is not —
         // BuildDefinition throws on a name the executor does not accept, and this pins the direction
         // that matters: nothing reaches the model that the executor would reject.
         foreach (var offered in props.EnumerateObject())
@@ -288,10 +288,11 @@ public class ToolBindingsTests
     [Fact]
     public void ReadFile_ShowsOnlyTheParamsAReadCanUse()
     {
-        // It used to show NINE: the whole FileJobExecutor schema minus the pinned action, so a read
-        // advertised content, dest, replacement, regex and glob. A tool with nine optional-looking
-        // params and one required has no shape the model can read -- a live drive produced nine
-        // consecutive `read_file {}` calls with empty arguments before its first good one.
+        // Offering the whole FileJobExecutor schema minus the pinned action gives read_file NINE
+        // params — content, dest, replacement, regex and glob among them. A tool with nine
+        // optional-looking params and one required has no shape the model can read: a live drive of
+        // that shape produced nine consecutive `read_file {}` calls with empty arguments before its
+        // first good one.
         var json = SchemaFor("read_file");
 
         Assert.Contains("\"path\"", json);
@@ -353,9 +354,9 @@ public class ToolBindingsTests
     }
 
     // ---- ARGUMENT TYPE TOLERANCE -------------------------------------------
-    // Models routinely stringify scalars. Each slip used to become a JsonException whose message
-    // named a JSON path ("Path: $ | LineNumber: 0") rather than the parameter, so the model knew
-    // something was wrong but not which argument to change -- and retried the same shape.
+    // Models routinely stringify scalars. Rejecting the slip yields a JsonException whose message
+    // names a JSON path ("Path: $ | LineNumber: 0") rather than the parameter, so the model knows
+    // something is wrong but not which argument to change -- and retries the same shape.
 
     [Fact]
     public async Task Invoke_AcceptsANumberSentAsAString()

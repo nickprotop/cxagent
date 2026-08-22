@@ -10,11 +10,11 @@ namespace CxAgent.Tests;
 /// <summary>
 /// /model points a session at a different model WITHOUT rebuilding it.
 ///
-/// <para>WHAT IT REPLACED. The command used to arm a handoff, re-wire the whole session and dispose
-/// the outgoing host — rebuilding the agent, its executor registry, its sub-agent factory and its MCP
-/// binding in order to change which endpoint gets called, then carrying the context and the ledger
-/// back across the gap by hand. Everything but the provider was rebuilt identically, because /model
-/// reads the same config file it always did.</para>
+/// <para>WHY NOT A REBUILD. Arming a handoff and re-wiring the session means rebuilding the agent,
+/// its executor registry, its sub-agent factory and its MCP binding just to change which endpoint
+/// gets called — then carrying the context and the ledger back across the gap by hand. Every one of
+/// those comes out identical, since /model reads the same config file; only the provider differs. The
+/// tests below pin the things a rebuild would have to reconstruct and can therefore lose.</para>
 /// </summary>
 public class SwitchModelTests : IDisposable
 {
@@ -49,8 +49,8 @@ public class SwitchModelTests : IDisposable
         Assert.Equal(CommandStatus.Changed, session.Use(ResolvedConfig.ForTesting(new MockLlmProvider("model-two"), "second").Model));
 
         // THE SAME OBJECTS, not merely equal ones. A rebuild would produce a new host over a new
-        // context and copy the messages across — which is what the old path did, and what made
-        // CarryToNextWire necessary. Identity is the assertion that tells the two apart.
+        // context and copy the messages across, which is what makes a CarryToNextWire step necessary
+        // at all. Identity is the assertion that tells the two apart.
         Assert.Same(hostBefore, session.Host);
         Assert.Same(contextBefore, session.Host!.Context);
         Assert.Equal(messagesBefore, session.Host!.Context.Messages.Count);
@@ -104,11 +104,11 @@ public class SwitchModelTests : IDisposable
         Assert.Equal(1, next.ChatCallCount);
     }
 
-    // THE SESSION SAYS SO ITSELF, through the observer every front end already watches. The
-    // composition root used to compose this sentence — reading the context window and usage before
-    // the switch, in that order — so a second front end would have reimplemented both the wording
-    // and the ordering, and the first to get the order wrong reports the new window against the old
-    // usage with nothing to catch it.
+    // THE SESSION SAYS SO ITSELF, through the observer every front end already watches. Compose the
+    // sentence in the composition root instead — reading the context window and usage before the
+    // switch, in that order — and a second front end has to reimplement both the wording and the
+    // ordering; the first to get the order wrong reports the new window against the old usage with
+    // nothing to catch it.
     [Fact]
     public void SwitchModel_AnnouncesItselfThroughTheObserver()
     {
@@ -130,9 +130,9 @@ public class SwitchModelTests : IDisposable
     }
 
     // THE CHILDREN'S DEFAULT MOVES TOO. A sub-agent with no provider of its own inherits from the
-    // spawner, which held the model captured at wire time — so every child kept talking to the model
-    // the session started on. Confirmed in the usage archive before the fix: every explore run after
-    // a /model switch still recorded the old instance, while the switch notice promised "sub-agents
+    // spawner, so a spawner holding the model captured at wire time leaves every child talking to the
+    // model the session started on. That shows up in the usage archive and nowhere else: explore runs
+    // after a /model switch recording the old instance, while the switch notice promises "sub-agents
     // use this too unless their type names another provider".
     [Fact]
     public void SwitchModel_MovesTheDefaultFutureChildrenInherit()
@@ -178,8 +178,8 @@ public class SwitchModelTests : IDisposable
 
     // THE CATALOG SURVIVES A SWITCH, which is what the split makes structural rather than
     // conventional: SwitchModel takes an ActiveModel, so there is no configuration in scope to
-    // replace by accident. Passing a whole ResolvedConfig no longer compiles — verified by hand, and
-    // this pins the behaviour that guarantee protects.
+    // replace by accident — passing a whole ResolvedConfig does not compile. This pins the behaviour
+    // that guarantee protects.
     [Fact]
     public void SwitchModel_KeepsTheCatalog()
     {

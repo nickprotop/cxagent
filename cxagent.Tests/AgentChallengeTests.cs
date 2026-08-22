@@ -266,9 +266,9 @@ public class AgentChallengeTests
     {
         // THE SPINNER. A turn is created with thinking:true and the control clears that flag when
         // body content arrives, so the turn must be OPEN while the model is being called -- that is
-        // the part that takes seconds to minutes locally. It used to be opened and closed together
-        // AFTER the response arrived, so between a tool result and the next response the transcript
-        // sat still, with no way to tell a model that is thinking from one that has died.
+        // the part that takes seconds to minutes locally. Open and close it together AFTER the
+        // response arrives and the transcript sits still between a tool result and the next response,
+        // with no way to tell a model that is thinking from one that has died.
         //
         // Balance is the testable half: every Begin must have its End, or a spinner is left running
         // over a finished goal -- which says "still working" about something already over.
@@ -390,12 +390,11 @@ public class AgentChallengeTests
     [Fact]
     public async Task HittingTheTurnCapAsksForAHandoffSummary()
     {
-        // The cap used to print one line and discard everything the model had learned, leaving the
-        // user with a half-edited tree and no account of it. opencode injects a forced-stop prompt
-        // and takes a summary; SWE-agent auto-submits whatever diff exists. Both salvage.
+        // Printing one line at the cap discards everything the model has learned, leaving the user
+        // with a half-edited tree and no account of it. opencode injects a forced-stop prompt and
+        // takes a summary; SWE-agent auto-submits whatever diff exists. Both salvage.
         // TOOL CALLS, not prose. A prose turn ends the request immediately, so it can never reach a
-        // cap — the fixture used to get there by riding the no-write challenge loop, which is gone.
-        // Work that keeps calling tools is what a turn ceiling is actually for.
+        // cap; work that keeps calling tools is what a turn ceiling is actually for.
         // Two tool-calling turns reach maxTurns:2, then the summary turn is the third call.
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(ShellCall("echo thinking"));
@@ -487,10 +486,10 @@ public class AgentChallengeTests
         var sink = new RecordingSink();
         var answer = await Build(provider, sink).SendAsync("what is 2+2?", CancellationToken.None);
 
-        // SHOWN AS REASONING, which is a KIND, not a colour. The agent used to build the markup
-        // itself; how thinking looks is the sink's decision and is asserted where that decision now
-        // lives (ChatTranscriptSinkTests). What matters here is that the reasoning reached the user
-        // at all, and reached them as thinking rather than as body content.
+        // SHOWN AS REASONING, which is a KIND, not a colour. How thinking LOOKS is the sink's
+        // decision, asserted where that decision lives (ChatTranscriptSinkTests), not the agent's to
+        // mark up. What matters here is that the reasoning reached the user at all, and reached them
+        // as thinking rather than as body content.
         var reasoning = string.Concat(sink.Reasoning);
         Assert.Contains("weighing the options", reasoning, StringComparison.Ordinal);
 
@@ -498,7 +497,7 @@ public class AgentChallengeTests
         // into it reads as commitment.
         Assert.DoesNotContain("weighing", string.Concat(sink.Appended), StringComparison.Ordinal);
 
-        // The reasoning never became a header — the defect this replaced.
+        // And never as a header: reasoning promoted to a header reads as a section of the answer.
         Assert.DoesNotContain(sink.Headers, h => h.Contains("weighing", StringComparison.Ordinal));
 
         // THE RETURNED ANSWER is what the caller puts on the transcript, so it is what must be clean
@@ -512,10 +511,10 @@ public class AgentChallengeTests
     [Fact]
     public async Task TheModelsRawResponseIsLogged()
     {
-        // Only tool RESULTS were ever written, so the model's own output — prose, reasoning,
-        // markdown — existed nowhere once the screen scrolled. A rendering bug reported from a
-        // screenshot was undiagnosable: the input that produced it could not be recovered, and every
-        // hypothesis about it stayed a guess. Measured: three wrong diagnoses before this was added.
+        // Log tool RESULTS alone and the model's own output — prose, reasoning, markdown — exists
+        // nowhere once the screen scrolls. That makes a rendering bug reported from a screenshot
+        // undiagnosable: the input that produced it cannot be recovered, and every hypothesis about
+        // it stays a guess. Measured: three wrong diagnoses came out of exactly that gap.
         var dir = Path.Combine(Path.GetTempPath(), "cxa-log-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
@@ -647,12 +646,10 @@ public class AgentChallengeTests
     /// <summary>
     /// A model repeating one call forever must be STOPPED, not nudged and left running.
     ///
-    /// <para>Stuck detection fired at StuckRepeats and appended a single message. Its own
-    /// documentation promised "twice that many before the goal is failed" — no such code existed, so
-    /// a model that ignored the nudge repeated indefinitely. With no turn ceiling either, that hangs
-    /// the app with the spinner running and nothing to interrupt it. This is the same shape as the
-    /// hang that took two E2E tests down in Plan 1: a stateless provider yielding the same call every
-    /// turn.</para>
+    /// <para>Stuck detection that only appends a message at StuckRepeats leaves a model which
+    /// ignores the nudge repeating indefinitely; with no turn ceiling behind it, that hangs the app
+    /// with the spinner running and nothing to interrupt it. The provider here is the shape that
+    /// produces it — stateless, yielding the same call every turn.</para>
     ///
     /// <para>The test carries its OWN timeout. A regression here does not fail the assertion — it
     /// stalls the whole suite — so the wait is bounded and a timeout is reported as a failure.</para>

@@ -9,11 +9,11 @@ namespace CxAgent.Tests;
 /// <summary>
 /// The agent's context, and the compaction that makes room in it.
 ///
-/// <para>These cover the defect that forced the old design: the compressor split the conversation at
-/// a blind midpoint, so a tool result could survive while the assistant message that called for it
-/// was summarised away. Providers reject that pairing, which is why the loop used to discard its
-/// entire working context at the end of every goal rather than keep tool messages at all. With the
-/// hazard closed the context can persist, which is what makes an agent self-contained.</para>
+/// <para>These cover the hazard that makes a persistent context possible at all. Split the
+/// conversation at a blind midpoint and a tool result survives while the assistant message that
+/// called for it is summarised away; providers reject that pairing, and the only safe response to an
+/// unsplittable context is to discard the whole working set at the end of every goal. Cutting only at
+/// a safe boundary is what lets the context persist, which is what makes an agent self-contained.</para>
 /// </summary>
 public class AgentContextTests
 {
@@ -101,14 +101,14 @@ public class AgentContextTests
     }
 
     /// <summary>
-    /// THE SUMMARISER MUST SEE THE TOOL CALLS. Verified by driving, twice, before this was written.
+    /// THE SUMMARISER MUST SEE THE TOOL CALLS. Verified by driving, twice.
     ///
     /// <para>An assistant message that makes a tool call carries EMPTY Content — the call lives in
-    /// ToolCalls — so rendering the transcript from Content alone handed the model blank lines
-    /// exactly where the work was. Two live compactions produced 100-character "summaries" that were
-    /// a bare tool name and nothing else. With the calls rendered, the same session produced 1,375
-    /// characters of structured notes, and the agent afterwards recalled specific detail from files
-    /// whose contents had been summarised away.</para>
+    /// ToolCalls — so rendering the transcript from Content alone hands the model blank lines exactly
+    /// where the work was. Two live compactions of that shape produced 100-character "summaries" that
+    /// were a bare tool name and nothing else. With the calls rendered, the same session produced
+    /// 1,375 characters of structured notes, and the agent afterwards recalled specific detail from
+    /// files whose contents had been summarised away.</para>
     /// </summary>
     [Fact]
     public void Render_ShowsToolCallsThatCarryNoContent()

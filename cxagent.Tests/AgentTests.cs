@@ -294,8 +294,8 @@ public class AgentTests
     }
 
     /// <summary>
-    /// NO BRIEFING, NO BLOCK. A plain session's prompt — and therefore its cache prefix — is
-    /// byte-identical to what it was before this feature existed.
+    /// NO BRIEFING, NO BLOCK. A plain session's prompt — and therefore its cache prefix — carries no
+    /// trace of the briefing machinery: an empty briefing must emit nothing, not an empty block.
     /// </summary>
     [Fact]
     public async Task NoBriefing_LeavesTheSystemPromptUnchanged()
@@ -342,9 +342,9 @@ public class AgentTests
     /// unchanged environment produces a byte-identical prefix for as many turns as the session
     /// runs.</para>
     ///
-    /// <para>This once was not true. <c>Today</c> read <c>DateTime.Now</c> per turn, which rewrote
-    /// the prefix at every midnight boundary — invisible in any short test and expensive in exactly
-    /// the long sessions where caching matters.</para>
+    /// <para>The failure mode is quiet: a <c>Today</c> that read <c>DateTime.Now</c> per turn would
+    /// rewrite the prefix at every midnight boundary — invisible in any short test and expensive in
+    /// exactly the long sessions where caching matters.</para>
     /// </summary>
     [Fact]
     public async Task TheSystemMessage_IsByteIdenticalAcrossManyTurns()
@@ -393,8 +393,8 @@ public class AgentTests
     /// <summary>
     /// THE FOUR CALLBACKS ARE EVENTS, so a second consumer ADDS itself.
     ///
-    /// <para>They were settable `Action&lt;T&gt;` properties: `TurnCompleted = x` then
-    /// `TurnCompleted = y` silently lost x, with no compiler warning. A sub-agent's telemetry reporter
+    /// <para>As settable `Action&lt;T&gt;` properties they would not be: `TurnCompleted = x` then
+    /// `TurnCompleted = y` silently loses x, with no compiler warning. A sub-agent's telemetry reporter
     /// and a session aggregator are exactly two consumers of the same signal.</para>
     /// </summary>
     [Fact]
@@ -747,13 +747,13 @@ public class AgentTests
     /// <summary>
     /// THE CONTEXT LOG IS NOT TRUNCATED.
     ///
-    /// <para>It used to store a 120-character preview of each message, flattened onto one line. That
-    /// is a fine INDEX and a trap as a record: grepping it for text that IS in the context returns
-    /// nothing, and nothing reads as absence rather than as truncation. It cost a wrong diagnosis —
-    /// a system-prompt line was reported missing from a live run when it had been there throughout,
-    /// and the run was re-driven twice before the log itself turned out to be the liar.</para>
+    /// <para>A 120-character preview of each message, flattened onto one line, is a fine INDEX and a
+    /// trap as a record: grepping it for text that IS in the context returns nothing, and nothing
+    /// reads as absence rather than as truncation. That cost a wrong diagnosis once — a system-prompt
+    /// line was reported missing from a live run when it had been there throughout, and the run was
+    /// re-driven twice before the log turned out to be the liar.</para>
     ///
-    /// <para>The index is still written; the full text now follows it.</para>
+    /// <para>So the index is written AND the full text follows it.</para>
     /// </summary>
     [Fact]
     public async Task TheContextLog_KeepsEveryMessageInFull()
@@ -767,8 +767,8 @@ public class AgentTests
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
-            // Comfortably past the old 120-char cut, and with a newline, since the index also
-            // flattened those.
+            // Comfortably past the 120-char index cut, and with a newline, since the index flattens
+            // those too.
             var prompt = "REMEMBER THIS MARKER: " + new string('x', 300) + "\nand a second line.";
 
             var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
