@@ -136,6 +136,17 @@ grant it.
 Grants are remembered per folder, and a folder is identified by more than its path: delete a folder
 and recreate it, and its old grants do not apply to the new one.
 
+**`auto` lets a model decide some of what would otherwise ask.** In a trusted folder, a shell command
+the static check refused is no longer a guaranteed prompt — it goes to the classifier first, and an
+*allow* runs it silently. This is only for commands already confined: every path in the command
+(including a `cd` target) has to resolve inside the working folder, the command has to be fully
+parseable with no `$(...)` or backticks, and no egress verb like `curl` or `scp` is ever eligible —
+those stay outside what a verdict can silence, no matter what the model says about them. The
+classifier can also **deny** an action outright, with a reason you're shown. Every failure —
+timeout, transport error, an answer it can't parse — means ask, same as if there were no classifier.
+Auto-decided rows are marked `auto-approved` / `auto-denied` so you can tell a model's call from a
+stored rule or a silent boundary pass.
+
 ### Sub-agents
 
 **Fan-out is the default.** The agent can delegate a job to a sub-agent: a second agent with its own
@@ -301,6 +312,14 @@ review step. There is no undo inside cxagent.
 — **Allow once**, **Always allow**, or **Deny**. "Always" is remembered per folder. Read what you are
 approving: the command is shown in full, and *"always allow"* means the next one like it will not
 ask. A model can propose a command that deletes things, and if you approve it, it runs.
+
+**In `auto` mode, a model can run a shell command without asking you first.** This is bounded — the
+folder has to be trusted, the command has to resolve entirely inside it, and things like `$(...)`
+substitution or `curl`/`scp`-style egress are never eligible, whatever the model decides — but the
+decision to skip the prompt is still made by a language model, and language models are wrong
+sometimes. That trade is the point of the mode: fewer interruptions on the commands most likely to be
+fine, at the cost of trusting a model's judgment on the ones it approves without you seeing them
+first. If you want every shell command to ask, don't use `auto`.
 
 **It spends your money.** Every turn is a request to whichever provider you configured, and a
 sub-agent is a whole second run of turns. A single delegated search can cost several hundred thousand

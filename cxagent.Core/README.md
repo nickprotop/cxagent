@@ -358,9 +358,27 @@ A request is judged by layers that only ever *narrow*, before your hook is reach
 | **The boundary** | your working directory, symlinks resolved — a link pointing out is out |
 | **Read-only verbs** | `ls`, `cat`, `grep` and friends run silently in a trusted folder, but only when every path they name is inside the boundary |
 
-`Auto` adds a model that reviews what would otherwise ask. It can only **refuse** — it runs after the
-floor has already said yes, so it adds friction and never removes it. A timeout, a transport error,
-or a verdict it cannot parse all mean ask.
+`Auto` adds a model that reviews what would otherwise ask, and its verdict can now go either way. A
+`ReviewEffect` bounds what a verdict may change, per request kind: `MayApprove` (file writes, and
+shell within its confinement — see below) lets an *allow* silence the prompt and a *deny* refuse the
+action outright, with a reason the caller is told; `MayAnnotate` (`http_request`, MCP calls, and
+injected tools) lets the verdict shape the prompt but never decides the outcome — an *allow* here
+changes nothing; `None` means the classifier isn't consulted at all. Trust is still the floor under
+every case — an untrusted folder gets `ReviewEffect.None` regardless of kind, so an approval can never
+widen past the trust decision your host already made.
+
+For shell, `MayApprove` only applies to a command that is already confined: every path it names,
+including a `cd` target, has to resolve inside the working directory; the whole command has to be
+parseable with no unresolved token; every segment has to name a program that appears in the command
+text — no `$(...)`, no backticks, no `eval`, `sh -c`, `xargs`, or `sudo`; and no egress verb (`curl`,
+`wget`, `scp`, `rsync`, and the rest) is ever eligible, for the same reason `http_request` is
+`MayAnnotate` rather than `MayApprove` — there is no in-boundary version of sending data off the
+machine. A command failing any one of those checks is never shown to the classifier, so a verdict is
+never asked to overrule a check it can't see.
+
+A verdict decides exactly one action. It is never stored as a rule and never widens a trust or
+boundary decision made elsewhere. A timeout, a transport error, or a verdict it cannot parse all mean
+ask, same as if `Auto` weren't configured.
 
 Everything fails toward asking. An unresolvable path is outside the boundary; a command carrying a
 token nothing could classify is refused rather than allowed.
