@@ -53,11 +53,9 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
 
     private List<string> List()
     {
-        var accent = Markup.Accent;
-        var muted = Markup.Muted;
         var lines = new List<string>
         {
-            $"[{accent}]Agent types[/] [{muted}]· {catalog.All.Count} available[/]",
+            $"## Agent types · {catalog.All.Count} available",
             "",
         };
 
@@ -67,8 +65,8 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
         // the same fact reaches a user here who never typed /mode.
         if (!spawnToolOffered)
         {
-            lines.Add($"  [yellow]This agent cannot spawn[/] "
-                    + $"[{muted}]· the agent tool is not offered, so none of these can be reached.[/]");
+            lines.Add("This agent cannot spawn · the agent tool is not offered, so none of these "
+                    + "can be reached.");
             lines.Add("");
         }
 
@@ -92,9 +90,9 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
             // SURFACED HERE OR NOWHERE. WritesAPlanFile decides that the spawner names a path and
             // then contradicts the answer if no file appears — behaviour a user would otherwise meet
             // only as a warning in a transcript.
-            var writes = type.WritesAPlanFile ? $" [{muted}]· writes a plan file[/]" : "";
+            var writes = type.WritesAPlanFile ? " · writes a plan file" : "";
 
-            lines.Add($"  [{accent}]{type.Name}[/] [{muted}]· {runsOn} · {turns}[/]{writes}");
+            lines.Add($"- **{Md.Escape(type.Name)}** · {runsOn} · {turns}{writes}");
 
             // FIRST SENTENCE ONLY. The shipped descriptions run to several hundred characters —
             // planner's is eight lines on an 80-column terminal — because they are written for a
@@ -104,11 +102,11 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
             var described = string.IsNullOrWhiteSpace(type.Description)
                 ? "no description — the catalog says \"runs where you do, no special instructions\""
                 : FirstSentence(type.Description);
-            lines.Add($"    [{muted}]{Md.Escape(described)}[/]");
+            lines.Add($"  {Md.Escape(described)}");
             lines.Add("");
         }
 
-        lines.Add($"  [{muted}]/agents <name> for the full briefing that type is given.[/]");
+        lines.Add("`/agents <name>` for the full briefing that type is given.");
         return lines;
     }
 
@@ -128,26 +126,23 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
 
     private List<string> Detail(string name)
     {
-        var accent = Markup.Accent;
-        var muted = Markup.Muted;
-
         if (catalog.Resolve(name) is not { } type || !string.Equals(type.Name, name, StringComparison.Ordinal))
         {
             // A BLANK NAME RESOLVES TO `general`, which would make "/agents typo" print the default
             // type's briefing and look like an answer. Names are compared exactly for that reason.
             return
             [
-                $"[yellow]No agent type '{Md.Escape(name)}'[/]",
-                $"  [{muted}]available: {catalog.Names}[/]",
+                $"No agent type '{Md.Escape(name)}'",
+                $"available: {catalog.Names}",
             ];
         }
 
-        var lines = new List<string> { $"[{accent}]{type.Name}[/]", "" };
+        var lines = new List<string> { $"## {Md.Escape(type.Name)}", "" };
 
         if (!string.IsNullOrWhiteSpace(type.Description))
         {
-            lines.Add($"  [{muted}]When to choose it — what the parent reads:[/]");
-            lines.Add($"  {Md.Escape(type.Description)}");
+            lines.Add("When to choose it — what the parent reads:");
+            lines.Add(Md.Escape(type.Description));
             lines.Add("");
         }
 
@@ -155,12 +150,12 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
         {
             // `general` has none, deliberately, and saying so is better than printing an empty block:
             // "no briefing" is what makes a bare spawn ordinary rather than special.
-            lines.Add($"  [{muted}]No briefing. A child of this type runs with no special "
-                    + "instructions beyond the session's own.[/]");
+            lines.Add("No briefing. A child of this type runs with no special instructions beyond "
+                    + "the session's own.");
         }
         else
         {
-            lines.Add($"  [{muted}]Its briefing — what the child reads, in full:[/]");
+            lines.Add("Its briefing — what the child reads, in full:");
             lines.Add("");
             lines.Add(Md.Escape(type.Briefing));
         }
@@ -169,12 +164,12 @@ public sealed class AgentsCommand(AgentTypeCatalog catalog, bool spawnToolOffere
         var runsOn = type.Routing.InstanceName is { Length: > 0 } instance
             ? instance
             : "the session's model";
-        lines.Add($"  [{muted}]Runs on {runsOn}.[/]");
+        lines.Add($"Runs on {runsOn}.");
 
         if (BuiltinAgentTypes.IsBuiltin(type.Name))
-            lines.Add($"  [{muted}]Built in: this text ships with cxagent. A 'briefing' or "
+            lines.Add("Built in: this text ships with cxagent. A 'briefing' or "
                     + $"'description' under agents.{type.Name} in config.json is ignored — rename the "
-                    + "type to write your own.[/]");
+                    + "type to write your own.");
 
         return lines;
     }

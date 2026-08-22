@@ -129,7 +129,7 @@ public class CoreMarkdownTests
         // AS EACH TASK LANDS, DELETE ITS FILE FROM THIS LIST. The last deletion turns this back into
         // Assert.Empty(offenders) and deletes Markup.cs alongside it — see Markup.cs's own doc
         // comment, which names the same ten call sites from the other direction.
-        string[] stillOwnedByLaterTasks = ["AgentsCommand.cs", "DiffCommand.cs", "SkillsCommand.cs"];
+        string[] stillOwnedByLaterTasks = ["DiffCommand.cs"];
         Assert.Equal(stillOwnedByLaterTasks.OrderBy(f => f, StringComparer.Ordinal).ToArray(), offenders);
     }
 
@@ -187,6 +187,30 @@ public class CoreMarkdownTests
         // A Say(...) call carrying failure wording with no Severity argument is the failure: the
         // severity has to be stated for these, whichever of the two shapes above it is written in.
         Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void ASessionListIsAMarkdownTable()
+    {
+        // ASSERTED ON THE MARKDOWN, NOT ON SPACING. The whole point is that Core stops padding
+        // columns: a front end lays the table out, and a consumer rendering to HTML gets a real
+        // <table> rather than a monospace assumption that only holds in a terminal.
+        //
+        // Decide, NOT Handle: the brief's sketch named a method this type does not have. Decide is
+        // the real entry point — see SessionsCommand.Decide and every existing SessionsCommandTests
+        // call site.
+        var sessions = new List<CxAgent.Core.Storage.SessionInfo>
+        {
+            new(Uid: "ABCDEF0123456789", Title: "a title", WorkingDir: "/w",
+                InputTokens: 100, OutputTokens: 50, Finished: false,
+                UpdatedAt: DateTimeOffset.UtcNow.AddMinutes(-5)),
+        };
+
+        var reply = SessionsCommand.Decide("", sessions, TimeSpan.FromDays(7)).Reply;
+
+        Assert.StartsWith("## Sessions", reply.Text);
+        Assert.Contains("|", reply.Text);
+        Assert.DoesNotContain("[grey", reply.Text);
     }
 
     /// <summary>The repository root, found by walking up from the test assembly.</summary>

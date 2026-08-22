@@ -41,13 +41,14 @@ public static class SessionHints
     {
         if (here == 0) return null;
 
-        var muted = Core.Commands.Markup.Muted;
-
+        // MARKDOWN, NOT MARKUP: this line goes through the same system-message path as the rest of
+        // Core's text now, and reaching into Core.Commands.Markup for a palette colour was exactly
+        // the coupling this plan exists to sever — a second front end has no [grey50] to render.
         return unfinishedMessages is { } messages
-            ? $"[{muted}]An earlier session here ended without closing ({messages} messages). "
-              + $"/sessions to see it — {here} in this folder.[/]"
-            : $"[{muted}]{here} earlier session{(here == 1 ? "" : "s")} in this folder — "
-              + $"/sessions to see {(here == 1 ? "it" : "them")}.[/]";
+            ? $"An earlier session here ended without closing ({messages} messages). "
+              + $"`/sessions` to see it — {here} in this folder."
+            : $"{here} earlier session{(here == 1 ? "" : "s")} in this folder — "
+              + $"`/sessions` to see {(here == 1 ? "it" : "them")}.";
     }
 
     /// <summary>

@@ -86,15 +86,19 @@ public static class ModelCommand
     /// </summary>
     private static string Render(ProviderRegistry registry, string? current)
     {
-        var accent = Markup.Accent;
-        var muted = Markup.Muted;
         var models = registry.InstanceModels;
         var windows = registry.InstanceWindows;
 
         var lines = new List<string>
         {
-            $"[{accent}]Models[/] [{muted}]· {registry.InstanceNames.Count} configured[/]",
+            "## Models",
+            $"{registry.InstanceNames.Count} configured",
             "",
+            // A TABLE, NOT PADDING. The columns were `,-44` and `,-14` — an alignment that only holds
+            // in a monospace font, at a width Core guessed. Markdown says "these are columns" and
+            // leaves the width to whatever renders it.
+            "| | instance:model | window | |",
+            "|---|---|---|---|",
         };
 
         foreach (var name in registry.InstanceNames)
@@ -108,13 +112,12 @@ public static class ModelCommand
             // the UI names a model — and is the exact string `/model <name>` takes.
             var label = $"{name}:{models.GetValueOrDefault(name, "?")}";
 
-            lines.Add($"  {(here ? $"[{accent}]▸[/]" : " ")} [{accent}]{Escape(label),-44}[/]"
-                    + $" [{muted}]{window,-14}[/]"
-                    + (here ? $"[{muted}]· in use[/]" : ""));
+            lines.Add($"| {(here ? "▸" : "")} | `{Escape(label)}` | {window} "
+                    + $"| {(here ? "in use" : "")} |");
         }
 
         lines.Add("");
-        lines.Add($"  [{muted}]/model <name> to switch · the conversation is kept[/]");
+        lines.Add("`/model <name>` to switch · the conversation is kept");
 
         return string.Join('\n', lines);
     }

@@ -401,28 +401,32 @@ public static class SessionCommands
              + $"Servers: {known}";
     }
 
-    /// <summary>Every server, one line each: the summary <c>/mcp</c> opens with.</summary>
+    /// <summary>Every server, one row each: the summary <c>/mcp</c> opens with.</summary>
     private static string List(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
     {
         if (servers.Count == 0)
             return "No MCP servers configured. Add one in Settings (F5), or in the \"mcp\" block of "
                  + "config.json.";
 
-        var sb = new System.Text.StringBuilder();
+        // A TABLE, NOT A DASH-SEPARATED LINE PER SERVER. Server and status are two columns of data,
+        // not one sentence — the same call this task makes for /sessions and /model.
+        var lines = new List<string> { "| server | status |", "|---|---|" };
         foreach (var server in servers)
         {
-            sb.Append(server.Name).Append(" — ");
-            if (!server.Enabled) sb.Append("disabled");
+            string status;
+            if (!server.Enabled) status = "disabled";
             // NEEDS AUTH IS NOT A FAILURE, and reads differently: nothing is broken, the server is
             // waiting to be logged in to. Saying "failed" would send someone to check their config.
-            else if (server.NeedsAuth) sb.Append("not logged in — run /mcp login ").Append(server.Name);
-            else if (server.Error is { } error) sb.Append("failed: ").Append(error);
-            else if (server.ToolCount == 0) sb.Append("connected, but offers no tools");
-            else sb.Append(server.ToolCount).Append(server.ToolCount == 1 ? " tool" : " tools");
-            sb.Append('\n');
+            else if (server.NeedsAuth) status = $"not logged in — run `/mcp login {server.Name}`";
+            else if (server.Error is { } error) status = $"failed: {Md.Escape(error)}";
+            else if (server.ToolCount == 0) status = "connected, but offers no tools";
+            else status = $"{server.ToolCount} {(server.ToolCount == 1 ? "tool" : "tools")}";
+
+            lines.Add($"| `{Md.Escape(server.Name)}` | {status} |");
         }
-        sb.Append("\n/mcp <server> for its tools · /mcp reload to re-read config");
-        return sb.ToString().TrimEnd('\n');
+        lines.Add("");
+        lines.Add("`/mcp <server>` for its tools · `/mcp reload` to re-read config");
+        return string.Join('\n', lines);
     }
 
     /// <summary>

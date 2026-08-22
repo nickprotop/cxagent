@@ -95,21 +95,28 @@ public static class SessionsCommand
 
     private static string Render(IReadOnlyList<SessionInfo> sessions, TimeSpan retention, bool all)
     {
-        var accent = Markup.Accent;
-        var muted = Markup.Muted;
         var lines = new List<string>();
 
         if (sessions.Count == 0)
         {
-            lines.Add($"[{accent}]Sessions[/]");
-            lines.Add($"  [{muted}]none recorded "
-                    + $"{(all ? "anywhere yet" : "in this folder yet")}.[/]");
+            lines.Add("## Sessions");
+            lines.Add($"none recorded {(all ? "anywhere yet" : "in this folder yet")}.");
             return string.Join('\n', lines);
         }
 
-        lines.Add($"[{accent}]Sessions[/] [{muted}]· {sessions.Count}"
-                + $"{(all ? " across every folder" : " here")}[/]");
+        lines.Add("## Sessions");
+        lines.Add($"{sessions.Count}{(all ? " across every folder" : " here")}");
         lines.Add("");
+
+        // A TABLE, NOT PADDING. The columns were `,-10` and `,8` — an alignment that only works in a
+        // monospace font, in a terminal, at a width Core guessed. Markdown says "these are columns"
+        // and lets whatever renders it decide how wide they are.
+        lines.Add(all
+            ? "| # | id | age | tokens | title | folder |"
+            : "| # | id | age | tokens | title |");
+        lines.Add(all
+            ? "|---|----|-----|--------|-------|--------|"
+            : "|---|----|-----|--------|-------|");
 
         for (var i = 0; i < Math.Min(sessions.Count, MaxRows); i++)
         {
@@ -117,22 +124,26 @@ public static class SessionsCommand
 
             // THE NUMBER, THE UID, AND THEN WHAT IT WAS ABOUT. The first two are how you name it; the
             // title is how you recognise it, and a row without one is a row nobody can act on.
-            lines.Add($"  [{muted}]{i + 1,2}[/]  [{accent}]{Short(s.Uid)}[/]  "
-                    + $"[{muted}]{Age(s.UpdatedAt),-10}{Tokens(s),8}[/]  "
-                    + $"{Escape(s.Title ?? "(no messages yet)")}");
+            var row = $"| {i + 1} | `{Short(s.Uid)}` | {Age(s.UpdatedAt)} | {Tokens(s)} "
+                    + $"| {Escape(s.Title ?? "(no messages yet)")} |";
 
             // THE FOLDER, only when it could be a different one. Repeating the current directory on
-            // every row of a folder-scoped list is noise.
-            if (all && !string.IsNullOrWhiteSpace(s.WorkingDir))
-                lines.Add($"      [{muted}]{Escape(s.WorkingDir!)}[/]");
+            // every row of a folder-scoped list is noise, so it is a whole extra column rather than
+            // an always-present one left blank.
+            if (all)
+                row += !string.IsNullOrWhiteSpace(s.WorkingDir) ? $" {Escape(s.WorkingDir!)} |" : " |";
+
+            lines.Add(row);
         }
 
         if (sessions.Count > MaxRows)
-            lines.Add($"  [{muted}]… {sessions.Count - MaxRows} older[/]");
+        {
+            lines.Add("");
+            lines.Add($"… {sessions.Count - MaxRows} older");
+        }
 
         lines.Add("");
-        lines.Add($"  [{muted}]/sessions resume <number|id>"
-                + $"{(all ? "" : "  ·  /sessions all")}[/]");
+        lines.Add($"`/sessions resume <number|id>`{(all ? "" : "  ·  `/sessions all`")}");
 
         // THE RETENTION WINDOW, SAID OUT LOUD. These rows used to be an invisible buffer, and
         // deleting an invisible thing costs nobody anything. They are visible now.
@@ -140,8 +151,7 @@ public static class SessionsCommand
         // "CLOSED CLEANLY" RATHER THAN "FINISHED", because those are no longer the same set: a
         // session someone resumed is retired too, and is kept. Saying "finished" here would promise
         // deletion of rows that survive, which is the wrong direction to be imprecise in.
-        lines.Add($"  [{muted}]sessions closed cleanly are removed after "
-                + $"{(int)retention.TotalDays} days[/]");
+        lines.Add($"sessions closed cleanly are removed after {(int)retention.TotalDays} days");
 
         return string.Join('\n', lines);
     }

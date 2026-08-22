@@ -5,13 +5,12 @@ namespace CxAgent.Core.Commands;
 ///
 /// <para>TEMPORARY REMNANT — SCHEDULED FOR DELETION. <c>Md</c> replaces this class; its
 /// <c>Escape</c> is gone because it escaped for markup, the format Core is leaving, not markdown, the
-/// one it is arriving at. What survives here is the four colour constants below, because 42 call
-/// sites across ten files still reference them (<c>DiffCommand</c>, <c>StatsDashboard</c>,
-/// <c>Session.Commands</c>, <c>ModelCommand</c>, <c>AgentsCommand</c>, <c>StatsCommand</c>,
-/// <c>SkillsCommand</c>, <c>SessionsCommand</c>, <c>ModeCommand</c>, <c>Session.Turn</c>). Later
-/// tasks rewrite each of those in markdown terms — some are sentences, some are table layouts, some
-/// are bar charts, so no single mechanical replacement covers them — and this file is deleted once
-/// the last one is gone.</para>
+/// one it is arriving at. What survives here is the four colour constants below, because a handful
+/// of call sites still reference them (<c>DiffCommand</c>, <c>StatsDashboard</c>,
+/// <c>Session.Commands</c>, <c>StatsCommand</c>, <c>ModeCommand</c>). <c>ModelCommand</c>,
+/// <c>AgentsCommand</c>, <c>SkillsCommand</c> and <c>SessionsCommand</c> were rewritten in markdown
+/// terms by Task 6 and no longer reference this file at all. Task 7 takes <c>DiffCommand</c> and the
+/// stats pair — Ruling 8 — and this file is deleted once the last consumer is gone.</para>
 ///
 /// <para>MARKUP IS A TEXT FORMAT, NOT A UI DEPENDENCY — the same way markdown is. A reader renders
 /// it, strips it or logs it, and Core has written it for a long time: PermissionDecider's

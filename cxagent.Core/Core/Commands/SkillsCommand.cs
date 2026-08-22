@@ -32,39 +32,31 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, bool skillTo
         var found = catalog();
         var lines = new List<string>();
 
-        var accent = Markup.Accent;
-        var muted = Markup.Muted;
-
         if (found.Skills.Count == 0)
         {
             // NO WINNER IS NOT AN ERROR, and must not be reported as one. It is what a first attempt
             // at writing a skill looks like — and saying "/repo/.cxagent/skills is in use" when
             // nothing in it parsed would be a lie about the one thing the user is debugging.
+            lines.Add(found.Problems.Count > 0 ? "## No skills loaded" : "## Skills");
             lines.Add(found.Problems.Count > 0
-                ? "[yellow]No skills loaded[/]"
-                : $"[{accent}]Skills[/]");
-            lines.Add(found.Problems.Count > 0
-                ? $"  [{muted}]every candidate file was skipped — see below[/]"
-                : $"  [{muted}]none found. Add one at[/] "
-                  + $"[{accent}].cxagent/skills/<name>/SKILL.md[/] "
-                  + $"[{muted}]with a name and a description.[/]");
+                ? "every candidate file was skipped — see below"
+                : "none found. Add one at `.cxagent/skills/<name>/SKILL.md` "
+                  + "with a name and a description.");
         }
         else
         {
-            // SAME SHAPE AS /help: a coloured heading, then two-space indented rows with the detail
-            // muted underneath. A command that invents its own layout makes the app look like
-            // several apps.
-            lines.Add($"[{accent}]Skills[/] [{muted}]· {found.Skills.Count} from {found.SourceDirectory}[/]");
+            // A HEADING AND INDENTED ROWS, NOT A TABLE. A skill's description runs to a sentence or
+            // more — the same reason /agents keeps its listing this shape rather than a table's
+            // cramped cell.
+            lines.Add($"## Skills · {found.Skills.Count} from {Md.Escape(found.SourceDirectory ?? "")}");
             lines.Add("");
-
-
 
             foreach (var skill in found.Skills)
             {
-                lines.Add($"  [{accent}]{skill.Name}[/]");
+                lines.Add($"- **{Md.Escape(skill.Name)}**");
                 // THE DESCRIPTION VERBATIM. It is what the model matches on, so a user debugging
                 // "why was this never loaded?" needs to read exactly what the model read.
-                lines.Add($"    [{muted}]{skill.Description}[/]");
+                lines.Add($"  {Md.Escape(skill.Description)}");
             }
         }
 
@@ -80,14 +72,13 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, bool skillTo
         if (!skillToolOffered)
         {
             lines.Add("");
-            lines.Add($"  [yellow]The skill tool is not offered to this agent[/] "
-                    + $"[{muted}]· nothing here can be loaded.[/]");
+            lines.Add("The skill tool is not offered to this agent · nothing here can be loaded.");
         }
 
         if (found.Problems.Count > 0)
         {
             lines.Add("");
-            lines.Add($"[yellow]Skipped[/] [{muted}]· {found.Problems.Count}[/]");
+            lines.Add($"## Skipped · {found.Problems.Count}");
             lines.Add("");
 
             // EVERY CANDIDATE DIRECTORY, INCLUDING THE ONES THAT LOST. Shadowing decides which
@@ -95,8 +86,8 @@ public sealed class SkillsCommand(Func<SkillCatalogResult> catalog, bool skillTo
             // work — a broken file in a shadowed directory is exactly the one nothing else explains.
             foreach (var problem in found.Problems)
             {
-                lines.Add($"  [yellow]{problem.Path}[/]");
-                lines.Add($"    [{muted}]{problem.Reason}[/]");
+                lines.Add($"- `{problem.Path}`");
+                lines.Add($"  {Md.Escape(problem.Reason)}");
             }
         }
 
