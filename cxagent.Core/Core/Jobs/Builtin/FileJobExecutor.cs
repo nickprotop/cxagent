@@ -518,8 +518,7 @@ public class FileJobExecutor : IJobExecutor
         // (indentation adjusted to match the file)" — success, with a note implying something
         // changed, for an operation that changed nothing. A model reading that has been told its
         // edit landed and will move on; the reason it sent the same text twice (a mis-copied
-        // replacement, a rewrite it thought it had made) goes unexamined. opencode refuses the same
-        // case for the same reason.
+        // replacement, a rewrite it thought it had made) goes unexamined.
         if (string.Equals(pattern, replacement, StringComparison.Ordinal))
             throw new InvalidOperationException(
                 "'pattern' and 'replacement' are identical, so this would change nothing. If you "

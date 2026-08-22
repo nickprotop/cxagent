@@ -54,10 +54,10 @@ public sealed class AgentHost : IDisposable
     /// none to read.
     ///
     /// <para>OUR CONFIG FOLDER ONLY — whatever <c>AppPaths.ConfigDir</c> resolves to on this OS, not a
-    /// hardcoded <c>~/.config</c>. opencode also reads <c>~/.claude/CLAUDE.md</c>, another product's
-    /// user-level file; honouring that would mean silently obeying instructions written for a
-    /// different agent with different tools. A repo's CLAUDE.md is different — it describes the
-    /// PROJECT, so it is read where the project is.</para>
+    /// hardcoded <c>~/.config</c>. Another product's user-level file, such as
+    /// <c>~/.claude/CLAUDE.md</c>, is not read: honouring it would mean silently obeying instructions
+    /// written for a different agent with different tools. A repo's CLAUDE.md is different — it
+    /// describes the PROJECT, so it is read where the project is.</para>
     /// </summary>
 
     /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
@@ -489,8 +489,7 @@ public sealed class AgentHost : IDisposable
     /// <para>NO LOW DEFAULT: a low cap exists to bound a WORKER inside a fan-out — one job among
     /// many, where a runaway costs the whole plan. A session is not that. The user is watching it and
     /// can stop it, and a ceiling in the low hundreds just ends real work at a number that has
-    /// nothing to do with the task. crush ships no step cap at all; opencode's is
-    /// <c>agent.steps ?? Infinity</c>.</para>
+    /// nothing to do with the task.</para>
     ///
     /// <para>WHAT DOES NOT FOLLOW is <c>int.MaxValue</c>. "No arbitrary limit" and "no limit" are
     /// different claims, and the first does not license the second. Stuck detection is not a

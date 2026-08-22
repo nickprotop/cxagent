@@ -8,8 +8,8 @@ public sealed record ProjectInstructionFile(string Path, string Text);
 /// walking up from the working directory, plus <c>CXAGENT.md</c> in cxagent's own config directory.
 ///
 /// <para>WHY A SEPARATE FILE AT ALL. Some instructions are true of a REPO, not of agents in general,
-/// and they cannot live in the universal system prompt. The case that forced this: opencode's prompt
-/// says "DO NOT ADD ***ANY*** COMMENTS unless asked", while this codebase wants the opposite — heavy
+/// and they cannot live in the universal system prompt. The case that forced this: a universal prompt
+/// telling a model not to add comments unless asked, while this codebase wants the opposite — heavy
 /// explanatory comments carrying the reasoning behind a decision. Both are right for their own tree.
 /// Writing either into <see cref="SystemPrompt"/> would be wrong for whoever points the agent
 /// somewhere else, and a prompt that is wrong about the project is worse than one that is silent.</para>
@@ -60,8 +60,7 @@ public static class ProjectInstructions
     /// <para>No CLAUDE.md either, at this level. A project's CLAUDE.md describes the PROJECT and is
     /// honoured wherever the project is; a USER-level one is another product's configuration, written
     /// for a different agent with different tools, and reading it would mean silently obeying
-    /// instructions never addressed to this app. opencode does read <c>~/.claude/CLAUDE.md</c>; this
-    /// deliberately does not.</para>
+    /// instructions never addressed to this app.</para>
     /// </summary>
     private const string GlobalFileName = "CXAGENT.md";
 
@@ -84,10 +83,10 @@ public static class ProjectInstructions
     /// wherever they work, which a per-repo file cannot express and which they should not have to
     /// copy into every checkout.
     ///
-    /// <para>OUR FOLDER ONLY. opencode also reads <c>~/.claude/CLAUDE.md</c> — another product's
-    /// user-level file — which would mean silently obeying instructions written for a different agent
-    /// with different tools. A repo's CLAUDE.md is a different thing: it describes the PROJECT, so it
-    /// is read where the project is.</para>
+    /// <para>OUR FOLDER ONLY. Another product's user-level file, such as <c>~/.claude/CLAUDE.md</c>,
+    /// is not read: it would mean silently obeying instructions written for a different agent with
+    /// different tools. A repo's CLAUDE.md is a different thing: it describes the PROJECT, so it is
+    /// read where the project is.</para>
     /// </param>
     /// <remarks>
     /// <para>GLOBAL FIRST, PROJECT LAST, because later text wins on a conflict: a repo saying "tabs
@@ -109,10 +108,10 @@ public static class ProjectInstructions
 
         try
         {
-            // ONE NAME, EVERY LEVEL THAT HAS IT. opencode does the same: their findUp collects each
-            // directory from here to the worktree root and adds every hit for the first name that
-            // matched anywhere. Their comment about "not stacking from every ancestor" is about not
-            // mixing AGENTS.md with CLAUDE.md, not about taking only one directory.
+            // ONE NAME, EVERY LEVEL THAT HAS IT: every directory from here to the worktree root
+            // contributes its hit for the first name that matched anywhere. "Not stacking from every
+            // ancestor" is about not mixing AGENTS.md with CLAUDE.md, not about taking only one
+            // directory.
             //
             // The monorepo case is why it matters: a root file carries the house style, a package
             // file carries what is specific to that package, and both are true at the same time.

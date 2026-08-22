@@ -178,11 +178,11 @@ public static class ColorScheme
 
     /// <summary>
     /// The session panel's surface — one step off the window background, so the column reads as a
-    /// different KIND of thing rather than as narrow transcript. opencode's backgroundElement.
+    /// different KIND of thing rather than as narrow transcript.
     ///
-    /// <para>DELIBERATELY NOT the same as <see cref="CodeBackground"/>. Both started at #141414 —
-    /// opencode's backgroundPanel — and the collision was visible immediately: inline code spans in
-    /// the transcript painted the identical grey, so the panel stopped reading as a surface and read
+    /// <para>DELIBERATELY NOT the same as <see cref="CodeBackground"/>. Both started at #141414 and
+    /// the collision was visible immediately: inline code spans in the transcript painted the
+    /// identical grey, so the panel stopped reading as a surface and read
     /// as more scattered code. Two different meanings cannot share one colour when they appear side
     /// by side.</para>
     /// </summary>
@@ -191,9 +191,9 @@ public static class ColorScheme
     /// <summary>
     /// The LEFT column's surface — the transcript and the composer cell under it: almost black.
     ///
-    /// <para>opencode's relationship, and the one worth copying: the chat column is the dark field
-    /// you read against, and the side panel is the lighter surface beside it. Ours had it inverted —
-    /// the panel was a shade lighter than a chat that was simply the app background — so the two
+    /// <para>THE CHAT COLUMN IS THE DARK FIELD you read against, and the side panel is the lighter
+    /// surface beside it. Ours had it inverted — the panel was a shade lighter than a chat that was
+    /// simply the app background — so the two
     /// columns did not read as two panes at all.</para>
     /// </summary>
     public static Color ChatSurface { get; private set; } = new(0x0d, 0x0d, 0x0d);
@@ -216,8 +216,8 @@ public static class ColorScheme
     // Values from opencode's default dark theme (packages/tui/src/theme/assets/
     // opencode.json), which is the palette this was compared against.
 
-    /// <summary>Headings. Purple, and the SAME colour at every level — opencode does not step the
-    /// hue down, it distinguishes h1 by underline alone. Ours was three shades of blue for H1-H3
+    /// <summary>Headings. Purple, and the SAME colour at every level — the hue does not step down by
+    /// depth, h1 is distinguished by underline alone. Ours was three shades of blue for H1-H3
     /// and nothing below, which reads as one muddy family rather than a hierarchy.</summary>
     public static readonly Color Heading = new(0x9d, 0x7c, 0xd8);
 
@@ -226,17 +226,18 @@ public static class ColorScheme
     public static readonly Color Code = new(0x7f, 0xd8, 0x8f);
 
     /// <summary>
-    /// Code background. opencode uses the WINDOW background here (no fill at all), letting colour
-    /// alone separate code from prose. A near-black panel tint is kept instead: the transcript is a
-    /// chat, so a fenced block sits inside flowing text rather than on its own screen, and it needs
+    /// Code background. The source palette puts the WINDOW background here (no fill at all), letting
+    /// colour alone separate code from prose. A near-black panel tint is kept instead: the
+    /// transcript is a chat, so a fenced block sits inside flowing text rather than on its own
+    /// screen, and it needs
     /// an edge the eye can find without reading.
     /// </summary>
     public static readonly Color CodeBackground = new(0x14, 0x14, 0x14);
 
-    /// <summary>Blockquotes. Sand, italic in opencode's styling.</summary>
+    /// <summary>Blockquotes. Sand, italic.</summary>
     public static readonly Color Quote = new(0xe5, 0xc0, 0x7b);
 
-    /// <summary>Links. Peach — opencode's primary, the colour it gives whatever the user should
+    /// <summary>Links. Peach — the palette's primary, the colour given to whatever the user should
     /// reach for.</summary>
     public static readonly Color Link = new(0xfa, 0xb2, 0x83);
 
@@ -277,8 +278,8 @@ public static class ColorScheme
     /// <summary>
     /// The user's own turns: a flat block, a step above the transcript field.
     ///
-    /// <para>opencode marks whose turn it is with a SURFACE rather than a border. Ours drew a rounded
-    /// box, which is chrome around the text instead of the text sitting on its own ground — and a box
+    /// <para>A SURFACE RATHER THAN A BORDER marks whose turn it is. Ours drew a rounded box, which
+    /// is chrome around the text instead of the text sitting on its own ground — and a box
     /// competes with the code blocks and tables that appear inside assistant answers, so the loudest
     /// frame on screen belonged to the shortest message.</para>
     ///
@@ -288,8 +289,8 @@ public static class ColorScheme
     /// <summary>
     /// The grip: the vertical rule down the prompt's left edge.
     ///
-    /// <para>opencode marks the two surfaces the USER owns — their turn and the composer — with a
-    /// rule at the left. It is the same idea as <see cref="UserSurface"/> in a different register:
+    /// <para>The two surfaces the USER owns — their turn and the composer — are marked with a rule
+    /// at the left. It is the same idea as <see cref="UserSurface"/> in a different register:
     /// the surface says "this block is yours", the grip says "this is where you type".</para>
     ///
     /// <para>Accent, because it is the one piece of chrome that tracks the app's active colour, and
@@ -313,8 +314,8 @@ public static class ColorScheme
     public static Color AssistantSurface { get; private set; } = PaletteColors.Tint(new Color(0x0d, 0x0d, 0x0d), 0.05);
 
     /// <summary>
-    /// Reasoning and any "thinking" label. Amber — opencode's warning hue, which it reuses for
-    /// exactly this, and the colour in the screenshot that prompted the comparison.
+    /// Reasoning and any "thinking" label. Amber — the palette's warning hue, reused for exactly
+    /// this.
     /// </summary>
     /// <para>THROUGH THE CAUTION ROLE, because amber IS this theme's warning hue and a theme that
     /// picks a different one means it for the same reason. The literal stays as the fallback so a

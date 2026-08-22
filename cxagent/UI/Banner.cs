@@ -6,9 +6,9 @@ namespace CxAgent.UI;
 /// <summary>
 /// The startup wordmark.
 ///
-/// <para>Every serious terminal agent opens with one — Claude Code, Antigravity, opencode — and the
-/// reason is the same in each: the first screen of a session is the one moment with nothing to read,
-/// and a name there tells you which tool you are talking to before you have typed anything. A single
+/// <para>The reason a terminal agent opens with one: the first screen of a session is the one
+/// moment with nothing to read, and a name there tells you which tool you are talking to before you
+/// have typed anything. A single
 /// startup line carrying the provider, the model id and a keybinding hint at once is the least
 /// glanceable arrangement of the three.</para>
 ///

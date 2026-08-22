@@ -17,9 +17,8 @@ namespace CxAgent.Core.Permissions;
 /// <para>FLAGS ARE NEVER PART OF THE NAME. <c>npm --silent install</c> is still <c>npm install</c>,
 /// and a table that counted words positionally would be defeated by moving a flag.</para>
 ///
-/// <para>The shape — a prefix table, longest match wins, arity counts subcommands only — is
-/// opencode's, whose own table is ~95 entries generated and hand-checked. Ours is smaller and
-/// deliberately conservative: an unknown program gets arity 1, which is the SAFEST answer for a
+/// <para>The shape is a prefix table, longest match wins, arity counts subcommands only. The table
+/// is deliberately conservative: an unknown program gets arity 1, which is the SAFEST answer for a
 /// tool nobody has classified, because it grants only that program with no arguments generalised.
 /// </para>
 /// </summary>

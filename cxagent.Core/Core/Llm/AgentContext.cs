@@ -13,12 +13,11 @@ namespace CxAgent.Core.Llm;
 /// "Read X and explain it" followed by "now change it" then re-reads X, and a session at 58,000
 /// tokens mid-goal drops to ~5,000 the moment that goal ends.</para>
 ///
-/// <para>NOBODY ELSE DOES THAT. Claude Code, Codex, opencode, gemini-cli, Cline, Roo and goose all
-/// keep ONE growing list across user prompts, tool results included, and treat compaction as a
-/// pressure valve tripped by token pressure — never as something that happens at a task boundary.
-/// A rebuild also destroys the prompt cache: every one of those agents appends to a stable prefix
-/// precisely so cached reads (~10% of input price) keep hitting, and rebuilding the list guarantees
-/// a miss on a prefix that was nearly free to keep.</para>
+/// <para>ONE GROWING LIST ACROSS USER PROMPTS, tool results included, with compaction as a pressure
+/// valve tripped by token pressure — never as something that happens at a task boundary. A rebuild
+/// also destroys the prompt cache: appending to a stable prefix is what keeps cached reads (~10% of
+/// input price) hitting, and rebuilding the list guarantees a miss on a prefix that was nearly free
+/// to keep.</para>
 ///
 /// <para>AND IT IS WHAT MAKES AN AGENT SELF-CONTAINED. An agent whose context is a local variable
 /// inside one method cannot own anything: not its own occupancy readout, not a compression it can
@@ -220,10 +219,10 @@ public sealed class AgentContext
     /// The share of the window left free, so a compaction happens BEFORE the next call would be
     /// refused rather than after.
     ///
-    /// <para>opencode reserves an absolute buffer instead — <c>min(20_000, maxOutputTokens)</c> —
-    /// which is the more precise rule when the model's output cap is known. A fraction is used here
-    /// because that cap is not modelled: 15% of a 212k window is ~32k, of a 32k window is ~4.8k, and
-    /// both leave room for a reply where one fixed number cannot serve both.</para>
+    /// <para>A FRACTION RATHER THAN AN ABSOLUTE BUFFER. An absolute reserve is the more precise rule
+    /// when the model's output cap is known, and that cap is not modelled here: 15% of a 212k window
+    /// is ~32k, of a 32k window is ~4.8k, and both leave room for a reply where one fixed number
+    /// cannot serve both.</para>
     /// </summary>
     private const double ReserveFraction = 0.15;
 

@@ -13,8 +13,8 @@ using CxAgent.Core.Helpers;
 namespace CxAgent.UI;
 
 /// <summary>
-/// An <see cref="IToolObserver"/> that writes jobs INTO the conversation instead of a side panel — the
-/// Claude Code / opencode shape, one column, jobs interleaved with the turns that caused them.
+/// An <see cref="IToolObserver"/> that writes jobs INTO the conversation instead of a side panel —
+/// one column, jobs interleaved with the turns that caused them.
 ///
 /// <para>Each job becomes one transcript message whose STATUS row is rewritten in place as the job
 /// moves Pending → Running → Succeeded/Failed. <c>ChatTranscriptControl.SetStatus(id, text, severity)</c>
@@ -896,8 +896,8 @@ public sealed class InlineJobSink : IToolObserver
         // FINISHED WORK RECEDES. A completed row is history — it stays legible, and stops competing
         // for attention with the one row still running. Without this a screen of twenty finished
         // tool calls is twenty things all shouting equally, and the live one is lost among them.
-        // opencode does exactly this (its completed rows drop to textMuted while active rows hold
-        // theme.text) and it is the single mechanic that makes a long session readable.
+        // Completed rows drop to textMuted while active rows hold theme.text, and that is the single
+        // mechanic that makes a long session readable.
         //
         // A FAILURE IS RED, not merely un-muted. "Does not recede" was implemented as "is not grey",
         // which left it the same colour as ordinary text — so the one finished row the user still has

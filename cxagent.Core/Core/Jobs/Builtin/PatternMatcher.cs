@@ -25,10 +25,9 @@ public readonly record struct PatternMatch(int Start, int Length, bool WholeLine
 /// build. Two strings in, a list of matches out — a wrong answer has one place to be.</para>
 ///
 /// <para>TOLERANCE IS A SEARCH KEY, NOT A TRANSFORM. Matching may ignore whitespace to LOCATE the
-/// target; what gets written is the model's own text, shifted at most by one uniform prefix. opencode
-/// makes the point most clearly — it runs nine matchers of increasing tolerance and every success
-/// path is the same verbatim splice. Tolerance in the matcher costs nothing; tolerance in the writer
-/// is how a tool silently reshapes code.</para>
+/// target; what gets written is the model's own text, shifted at most by one uniform prefix.
+/// Matchers of increasing tolerance may all feed the same verbatim splice. Tolerance in the matcher
+/// costs nothing; tolerance in the writer is how a tool silently reshapes code.</para>
 /// </summary>
 public static class PatternMatcher
 {

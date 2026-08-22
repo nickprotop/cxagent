@@ -118,17 +118,13 @@ public static class SessionCompressor
         // sits further down. It does reclaim — measured live at −18% instantly, against −24% for a
         // ~25-second provider call — and it is still not worth having here.
         //
-        // Deduplication is not what the field settled on. Cline's HEAD has none; the repo runs on
-        // compaction. opencode ships its pruner OFF by default ("Enable pruning of old tool outputs
-        // (default: false)"). Claude Code and Antigravity prune aggressively but PERSIST TO DISK
-        // FIRST, so nothing they drop is unrecoverable — an option not open to us, which is why any
-        // rule here would have to be conservative.
+        // Dropping a tool result here is unrecoverable — nothing persists it to disk first — so any
+        // rule would have to be conservative.
         //
         // And the conservative rule has a hole. Keying on the file PATH is unsound because read_file
         // takes offset and limit: lines 1-40 and lines 200-240 are not copies of one another, and
         // treating the second as superseding the first discards content nothing else holds. Fixable
-        // — but fixing an unsound optimisation nobody else ships, to save a provider call, is the
-        // wrong order of work.
+        // — but fixing an unsound optimisation, to save a provider call, is the wrong order of work.
         //
         // Summarisation READS what it discards and can carry a detail forward. That is the property
         // worth having while the shape of real usage is still unknown. If sessions turn out to be

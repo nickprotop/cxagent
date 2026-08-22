@@ -39,8 +39,7 @@ public record LlmUsage
     /// than the reads saved.</para>
     ///
     /// <para>REPORTING HITS WITHOUT WRITES IS WORSE THAN REPORTING NEITHER, because the number
-    /// looks trustworthy. opencode carries this exact bug open (anomalyco/opencode#18440): cache
-    /// write tokens unaccounted, costs understated.</para>
+    /// looks trustworthy: cache write tokens unaccounted, costs understated.</para>
     ///
     /// <para>Zero on a provider that never writes, and on every local endpoint — which is why it is
     /// counted separately rather than folded into <see cref="CachedInputTokens"/>.</para>
@@ -84,10 +83,10 @@ public record LlmResponse
 /// The NORMALIZED stop reason, on the final chunk only; null on every other chunk.
 ///
 /// <para>Carried so a caller can tell "the model is done" from "the model emitted tool calls and
-/// this stream happens to have ended". Both opencode and crush AND the tool-call check with this
-/// value rather than trusting either alone, and opencode's source says why: "Some providers return
-/// 'stop' even when the assistant message contains tool calls." A local llama.cpp or vLLM server is
-/// exactly the kind of endpoint that does.</para>
+/// this stream happens to have ended". The stop reason AND the tool-call check are used together
+/// rather than either alone, because some providers return 'stop' even when the assistant message
+/// contains tool calls. A local llama.cpp or vLLM server is exactly the kind of endpoint that
+/// does.</para>
 /// </param>
 /// <param name="TextDelta">Text produced since the last chunk, or null when this chunk carries none.</param>
 /// <param name="ToolCallDelta">A completed tool call, or null. One per chunk — several calls fan out.</param>

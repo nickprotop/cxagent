@@ -1111,9 +1111,8 @@ public class SubAgentSpawnerTests
         // know the file, symbol or value" is checkable up front.
         Assert.Contains("single-fact lookup", definition.Description, StringComparison.Ordinal);
 
-        // DO NOT DUPLICATE DELEGATED WORK — a real failure mode, and one both Claude Code and
-        // opencode call out: the model spawns, grows impatient, does the work anyway, pays twice and
-        // ends up reconciling two answers.
+        // DO NOT DUPLICATE DELEGATED WORK — a real failure mode: the model spawns, grows impatient,
+        // does the work anyway, pays twice and ends up reconciling two answers.
         Assert.Contains("do not also do it yourself", definition.Description, StringComparison.Ordinal);
 
         // AND WHAT GOES IN WHICH CHANNEL. Found on a live drive: asked to spawn WITH context, the

@@ -97,18 +97,16 @@ public readonly record struct SystemPromptContext(
 /// <c>exit_code: 0</c> as proof of success, and reported "all tests build and pass cleanly" over a
 /// file that did not compile. Nothing had ever told it to check what its verification verified.</para>
 ///
-/// <para>NOT COPIED WHOLESALE. opencode's prompt spends most of its length on things this app does
-/// not have — a WebFetch tool, subagent delegation, skills, MCP servers, a /help command — and
-/// carrying that text would be describing capabilities the model cannot use. What is taken is the
+/// <para>NOT COPIED WHOLESALE. Most of the source's length covers capabilities this app does not
+/// have, and carrying that text would be describing tools the model cannot use. What is taken is the
 /// part that applies to any agent that edits files and runs commands: state the environment, follow
 /// the conventions already in the tree, verify with the project's own tooling, and be brief.</para>
 ///
-/// <para>ONE PROMPT, WITH A SEAM FOR MORE. opencode ships nine model-specific variants — kimi is told
-/// to act rather than describe, GPT is told how to parallelise tool calls and not to chain bash with
-/// <c>;</c> — because it faces nine model families with measured quirks. This app targets one
-/// endpoint. <see cref="Build"/> takes the model id so a second variant is a new branch rather than a
-/// refactor, but shipping variants for models nobody has driven would be guessing at quirks instead
-/// of observing them.</para>
+/// <para>ONE PROMPT, WITH A SEAM FOR MORE. Model-specific variants earn their place when a model
+/// family shows a measured quirk — act rather than describe, how to parallelise tool calls, do not
+/// chain bash with <c>;</c>. This app targets one endpoint. <see cref="Build"/> takes the model id so
+/// a second variant is a new branch rather than a refactor, but shipping variants for models nobody
+/// has driven would be guessing at quirks instead of observing them.</para>
 /// </summary>
 public static class SystemPrompt
 {
@@ -123,7 +121,7 @@ public static class SystemPrompt
         sb.AppendLine("You are cxagent, a coding agent working directly in the user's checkout.");
         sb.AppendLine();
 
-        // THE ENVIRONMENT, as facts rather than as instructions. opencode's <env> block.
+        // THE ENVIRONMENT, as facts rather than as instructions.
         sb.AppendLine("<env>");
         sb.AppendLine($"  Working directory: {ctx.WorkingDirectory}");
         sb.AppendLine($"  Is a git repo: {(ctx.IsGitRepo ? "yes" : "no")}");
@@ -152,7 +150,7 @@ public static class SystemPrompt
                     + "trip, not three.");
         sb.AppendLine();
         // A FETCH TOOL PLUS AN INVENTED URL is how an agent confidently reads a page that does not
-        // exist. opencode's first substantive line is this same guardrail.
+        // exist.
         sb.AppendLine("Never invent a URL for a request. Use one the user gave you, or one you "
                     + "read from a file in this project.");
         sb.AppendLine();
@@ -272,10 +270,10 @@ public static class SystemPrompt
                         + "do yourself. If you think it is not worth an agent, say so; do not "
                         + "silently do the work instead.");
             sb.AppendLine();
-            // WORKED EXAMPLES, opencode's shape (<example> blocks with a bracketed action). Two
-            // interventions had already failed to move this — a sharpened tool description and the
-            // rule above — and an example is the one lever opencode has that we did not: it shows
-            // the SHAPE of the decision at the moment of choosing, where a rule only asserts one.
+            // WORKED EXAMPLES (<example> blocks with a bracketed action). Two interventions had
+            // already failed to move this — a sharpened tool description and the rule above — and an
+            // example is the one lever neither of them had: it shows the SHAPE of the decision at
+            // the moment of choosing, where a rule only asserts one.
             //
             // THE THIRD IS A COUNTER-EXAMPLE, deliberately. Two positives alone teach "spawn when
             // asked about code", and a model that over-corrects into delegating a one-file read is
@@ -303,9 +301,9 @@ public static class SystemPrompt
             // finding half was a textbook delegation and only the deciding half needed the
             // conversation. The work was correct; it simply cost nine times what it needed to.
             //
-            // FOUR IS THE CEILING. opencode ships two Task-tool examples; ours carries a
-            // counter-example and this split, which is one distinction more than theirs has to
-            // teach. Past that, examples stop being a pattern and become a list nobody reads.
+            // FOUR IS THE CEILING. Four is what it takes to teach the two distinctions that matter
+            // — the counter-example and this split. Past that, examples stop being a pattern and
+            // become a list nobody reads.
             sb.AppendLine("<example>");
             sb.AppendLine("user: Find every place that hand-rolls this, and fix the ones that are "
                         + "safe to change.");
@@ -363,13 +361,11 @@ public static class SystemPrompt
                         + "yourself.");
             sb.AppendLine();
 
-            // THE MECHANISM, STATED. Both references say it outright rather than trusting a model to
-            // infer that several tool calls in one message may be several agents — Claude Code's
-            // Agent tool ("send them in a single message with multiple tool uses so they run
-            // concurrently") and opencode's task.txt ("Launch multiple agents concurrently whenever
-            // possible"). Here rather than only in the tool description because the description
-            // answers "should I delegate THIS?" at the moment of choosing, while this answers "what
-            // shape does a delegating turn take?", which is a fact about the session.
+            // THE MECHANISM, STATED outright rather than trusting a model to infer that several
+            // tool calls in one message may be several agents. Here rather than only in the tool
+            // description because the description answers "should I delegate THIS?" at the moment of
+            // choosing, while this answers "what shape does a delegating turn take?", which is a
+            // fact about the session.
             sb.AppendLine("Several agents can run at once: put their calls in one message and they "
                         + "work concurrently. Only for genuinely independent work — anything that "
                         + "depends on another agent's answer is a later turn, not a parallel one.");

@@ -38,7 +38,7 @@ public class ContextOverflowTests
     /// <summary>
     /// A RATE LIMIT IS NOT AN OVERFLOW. Compacting in response to one throws away history to solve a
     /// problem that waiting solves — and the message often mentions tokens, which is exactly why
-    /// opencode carries an explicit exclusion list rather than matching on "token" alone.
+    /// there is an explicit exclusion list rather than a match on "token" alone.
     /// </summary>
     [Theory]
     [InlineData("Rate limit reached for gpt-4 in organization org-x on tokens per min")]
@@ -71,7 +71,7 @@ public class ContextOverflowTests
     /// <summary>
     /// The vendor BODY is searched too, not only the exception message. A wire that surfaces
     /// <c>{"error":{"code":"context_length_exceeded"}}</c> with a bland message would otherwise slip
-    /// past — and that is the shape opencode's parseAPICallError checks explicitly.
+    /// past.
     /// </summary>
     [Fact]
     public void IsContextOverflow_ReadsTheVendorBody()

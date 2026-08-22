@@ -75,10 +75,9 @@ public static class SubAgentEnvelope
     /// <summary>
     /// Renders the envelope the parent's model reads.
     ///
-    /// <para>XML-ISH RATHER THAN JSON, following opencode's <c>&lt;task id=… state=…&gt;</c>. The text
-    /// inside is the child's prose, which routinely contains braces, quotes and code — embedding that
-    /// in JSON means escaping it, and a model reading escaped source is reading something other than
-    /// what the child wrote.</para>
+    /// <para>XML-ISH RATHER THAN JSON. The text inside is the child's prose, which routinely
+    /// contains braces, quotes and code — embedding that in JSON means escaping it, and a model
+    /// reading escaped source is reading something other than what the child wrote.</para>
     /// </summary>
     /// <summary>
     /// Reads the <c>state</c> back out of a rendered envelope, or null if this is not one.

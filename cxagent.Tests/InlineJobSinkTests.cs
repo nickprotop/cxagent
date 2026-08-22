@@ -430,8 +430,7 @@ public class InlineJobSinkTests
     {
         // A screen of twenty finished tool calls is twenty things shouting equally, and the one row
         // still running is lost among them. Muting finished work is the single mechanic that makes a
-        // long session readable (opencode drops completed rows to textMuted while active rows hold
-        // theme.text).
+        // long session readable: completed rows drop to textMuted while active rows hold theme.text.
         var done = InlineJobSink.CompactHeaderForTest(TypedJob("file", JobState.Succeeded));
         Assert.Contains(CxAgent.UI.ColorScheme.MutedMarkup, done, StringComparison.Ordinal);
 

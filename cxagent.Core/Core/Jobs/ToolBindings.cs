@@ -129,9 +129,9 @@ public static class ToolBindings
         // AND SHELLING OUT COSTS MORE THAN A NAME. Through run_shell these are commands that raise a
         // permission prompt for an operation reading nothing the agent could not already read — live
         // drives stalled repeatedly on exactly those approvals.
-        // PATTERN FIRST AND REQUIRED, path optional — opencode's shape, and the reason it does not
-        // suffer this bug. The required argument should be the one the model is already thinking
-        // about ("find the .cs files"); making `path` the required one meant a model that wanted
+        // PATTERN FIRST AND REQUIRED, path optional. The required argument should be the one the
+        // model is already thinking about ("find the .cs files"); making `path` the required one
+        // meant a model that wanted
         // exactly that had to fill in a directory it did not care about, and put its pattern in the
         // only required slot it had been given. Order matters too: Params is documented as "the
         // order the model should read them".

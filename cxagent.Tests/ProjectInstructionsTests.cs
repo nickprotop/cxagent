@@ -8,8 +8,8 @@ namespace CxAgent.Tests;
 /// working directory, plus CXAGENT.md in cxagent's own config directory.
 ///
 /// <para>WHY THIS EXISTS. Some instructions are true of a REPO, not of agents in general, and cannot
-/// live in the universal system prompt. The example that forced it: opencode's prompt says "DO NOT
-/// ADD ***ANY*** COMMENTS unless asked", while this codebase wants the opposite — heavy explanatory
+/// live in the universal system prompt. The example that forced it: a universal prompt telling a
+/// model not to add comments unless asked, while this codebase wants the opposite — heavy explanatory
 /// comments carrying the reasoning behind a decision. Both are correct, for their own tree. Putting
 /// either in the universal prompt is wrong for whoever points the agent somewhere else.</para>
 ///
@@ -304,10 +304,9 @@ public class ProjectInstructionsTests : IDisposable
     }
 
     /// <summary>
-    /// A GLOBAL FILE TOO, matching opencode: they read <c>~/.config/opencode/AGENTS.md</c> alongside
-    /// the project's. It carries what is true of the USER wherever they work — house style, a
-    /// preferred test runner — which a per-repo file cannot express and which they should not have to
-    /// copy into every checkout.
+    /// A GLOBAL FILE TOO, read alongside the project's. It carries what is true of the USER wherever
+    /// they work — house style, a preferred test runner — which a per-repo file cannot express and
+    /// which they should not have to copy into every checkout.
     /// </summary>
     [Fact]
     public void Find_ReadsTheGlobalFile_WhenThereIsNoProjectOne()
@@ -351,8 +350,7 @@ public class ProjectInstructionsTests : IDisposable
     /// names are honoured.</para>
     ///
     /// <para>And no CLAUDE.md at this level: a USER-level one is another product's configuration,
-    /// written for a different agent with different tools. opencode reads <c>~/.claude/CLAUDE.md</c>;
-    /// this deliberately does not.</para>
+    /// written for a different agent with different tools.</para>
     /// </summary>
     [Theory]
     [InlineData("AGENTS.md")]

@@ -391,8 +391,9 @@ public class AgentChallengeTests
     public async Task HittingTheTurnCapAsksForAHandoffSummary()
     {
         // Printing one line at the cap discards everything the model has learned, leaving the user
-        // with a half-edited tree and no account of it. opencode injects a forced-stop prompt and
-        // takes a summary; SWE-agent auto-submits whatever diff exists. Both salvage.
+        // with a half-edited tree and no account of it. So the cap injects a forced-stop prompt and
+        // takes a summary: an interrupted run should still yield its artifact.
+        //
         // TOOL CALLS, not prose. A prose turn ends the request immediately, so it can never reach a
         // cap; work that keeps calling tools is what a turn ceiling is actually for.
         // Two tool-calling turns reach maxTurns:2, then the summary turn is the third call.

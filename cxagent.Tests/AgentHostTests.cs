@@ -398,8 +398,8 @@ public class AgentHostTests
     }
 
     /// <summary>
-    /// ZERO MEANS NO CAP — an explicit opt-out, the way opencode's <c>agent.steps ?? Infinity</c>
-    /// leaves a session unbounded when nobody asked for a ceiling.
+    /// ZERO MEANS NO CAP — an explicit opt-out, leaving a session unbounded when nobody asked for a
+    /// ceiling.
     ///
     /// <para>Taken literally, 0 would be a ceiling of zero turns: the agent would stop before its
     /// first call and do nothing at all. Nobody configures that on purpose, so the number is free to

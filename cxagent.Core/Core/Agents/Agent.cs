@@ -124,8 +124,8 @@ public sealed class Agent
     /// <summary>
     /// Where the user's own instruction file lives, or null when there is none to read.
     ///
-    /// <para>opencode reads <c>~/.config/opencode/AGENTS.md</c> alongside the project's. It carries
-    /// what is true of the USER wherever they work, which a per-repo file cannot express.</para>
+    /// <para>Read alongside the project's. It carries what is true of the USER wherever they work,
+    /// which a per-repo file cannot express.</para>
     /// </summary>
     private readonly string? _globalInstructionsDir;
 
@@ -746,9 +746,9 @@ public sealed class Agent
         _sink = sink;
         _jobs = jobs;
         _logs = logs;
-        // ZERO MEANS NO CAP, the same meaning AgentHost.CeilingFor gives a configured 0
-        // and opencode's `agent.steps ?? Infinity`. Taken literally 0 is a ceiling of zero turns: the
-        // agent stops before its first call — and NOT harmlessly, because the cap path makes a real
+        // ZERO MEANS NO CAP, the same meaning AgentHost.CeilingFor gives a configured 0. Taken
+        // literally 0 is a ceiling of zero turns: the agent stops before its first call — and NOT
+        // harmlessly, because the cap path makes a real
         // provider call to salvage a summary, so it costs a request and returns a plausible-sounding
         // summary of a run that never happened. Nobody configures that on purpose, so the number is
         // free to carry the meaning someone actually intends by it.
@@ -801,10 +801,9 @@ public sealed class Agent
         // the goal ended). "Read X and explain it" followed by "now change it" re-reads X, because
         // nothing of the first goal remains.
         //
-        // Nobody else works that way: Claude Code, Codex, opencode, gemini-cli, Cline and goose all
-        // keep ONE growing list across prompts and compact on TOKEN pressure rather than at a task
-        // boundary. Rebuilding also guarantees a prompt-cache miss — those agents append to a stable
-        // prefix precisely so cached reads keep hitting, and discarding cached context saves far less
+        // So there is ONE growing list across prompts, compacted on TOKEN pressure rather than at a
+        // task boundary. Rebuilding also guarantees a prompt-cache miss — appending to a stable
+        // prefix is what keeps cached reads hitting, and discarding cached context saves far less
         // than it costs to rebuild.
         var messages = _context.Messages;
 
@@ -1069,11 +1068,9 @@ public sealed class Agent
             // print one line and throw away everything the model had learned — the user was left
             // with a half-edited tree and no account of what happened or what remains.
             //
-            // opencode does the inverse of a keep-going nudge here: it injects a forced-stop prompt
-            // ("Tools are disabled until next user input… MUST provide a text response summarizing
-            // work done so far") and takes a summary. SWE-agent auto-submits whatever diff exists,
-            // on the same principle — an interrupted run should still yield its artifact. Both
-            // salvage; neither discards.
+            // So the cap injects a forced-stop prompt ("Tools are disabled until next user input…
+            // MUST provide a text response summarizing work done so far") and takes a summary: an
+            // interrupted run should still yield its artifact rather than discard it.
             //
             // The summary turn runs WITHOUT tools, so it cannot start new work, and it is the last
             // thing the loop does either way.
@@ -1203,11 +1200,11 @@ public sealed class Agent
             // the accumulator dropped — and ending the goal there discards a turn the model believed
             // it was mid-way through.
             //
-            // The mirror case is the one opencode documents: "Some providers return 'stop' even when
-            // the assistant message contains tool calls." Both it and crush therefore AND the stop
-            // reason with a real scan for tool calls rather than trusting either alone, and a local
-            // llama.cpp or vLLM endpoint is exactly the kind that gets this wrong. Trusting the
-            // PARSED CALLS as the primary signal covers that half; this covers the other.
+            // The mirror case is a provider returning 'stop' even when the assistant message
+            // contains tool calls. So the stop reason is ANDed with a real scan for tool calls
+            // rather than either being trusted alone, and a local llama.cpp or vLLM endpoint is
+            // exactly the kind that gets this wrong. Trusting the PARSED CALLS as the primary signal
+            // covers that half; this covers the other.
             if (response.ToolCalls.Count == 0
                 && response.StopReason == "tool_use"
                 && toolUseMismatches < MaxToolUseMismatches)
@@ -1281,9 +1278,9 @@ public sealed class Agent
                 // Each cost up to three wasted turns and then an error on screen telling the user
                 // their question had failed.
                 //
-                // No other agent CLI does this — opencode has nothing like it. The failure it was
-                // built for (describing an edit instead of making one) is addressed where it belongs,
-                // in the system prompt: "USE THEM ... Text in a message changes nothing."
+                // The failure it was built for (describing an edit instead of making one) is
+                // addressed where it belongs, in the system prompt: "USE THEM ... Text in a message
+                // changes nothing."
                 //
                 // The BROKEN BUILD check below is deliberately kept. It is not a guess about intent:
                 // a build actually ran and actually failed, and that is a fact about the tree rather
@@ -1538,7 +1535,7 @@ public sealed class Agent
 
                     // THE BUDGET GOES BACK. A correction arriving at turn 90 of a 100-turn cap would
                     // otherwise get ten turns to act on instructions it had never seen. The turn is
-                    // doing different work now, which is what opencode's currentStep = 1 encodes.
+                    // doing different work now, so its budget starts again.
                     turn = 0;
                 }
             }

@@ -46,7 +46,8 @@ public class SystemPromptTests
         Assert.Contains("exits 0", p, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Never guess the test command — opencode's "NEVER assume specific test framework".</summary>
+    /// <summary>Never guess the test command: assuming a framework is how a run reports success over
+    /// a filter that matched nothing.</summary>
     [Fact]
     public void Build_ForbidsGuessingTheTestCommand()
     {
@@ -54,9 +55,9 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// The environment block. opencode states the cwd, whether it is a git repo, the platform and the
-    /// date; ours stated only the cwd. Each is a fact the model would otherwise guess at, and a wrong
-    /// guess about the platform is how `find -printf` ends up on a mac.
+    /// The environment block: the cwd, whether it is a git repo, the platform and the date. Ours
+    /// stated only the cwd. Each is a fact the model would otherwise guess at, and a wrong guess
+    /// about the platform is how `find -printf` ends up on a mac.
     /// </summary>
     [Fact]
     public void Build_StatesTheEnvironment()
@@ -103,8 +104,8 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// Conventions before code. opencode's "NEVER assume that a given library is available… look at
-    /// neighbouring files". The model did this unprompted on the drive; that is not a guarantee.
+    /// Conventions before code: never assume a library is available, look at neighbouring files.
+    /// The model did this unprompted on the drive; that is not a guarantee.
     /// </summary>
     [Fact]
     public void Build_TellsTheModelToFollowExistingConventions()
@@ -113,8 +114,8 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// Terse by default. opencode caps answers at four lines with worked examples, because every
-    /// word of preamble is paid for on a local model and re-sent on every subsequent turn.
+    /// Terse by default, because every word of preamble is paid for on a local model and re-sent on
+    /// every subsequent turn.
     /// </summary>
     [Fact]
     public void Build_AsksForShortAnswers()
@@ -124,8 +125,7 @@ public class SystemPromptTests
 
     /// <summary>
     /// We ship an http_request tool and said nothing about it. A fetch tool plus an invented URL is
-    /// how an agent confidently reads a page that does not exist — which is why opencode's first
-    /// substantive line is this same guardrail.
+    /// how an agent confidently reads a page that does not exist.
     /// </summary>
     [Fact]
     public void Build_ForbidsInventingAUrlForTheFetchTool()
@@ -154,7 +154,7 @@ public class SystemPromptTests
     }
 
     /// <summary>Every turn is a round trip to a local model, so three serial reads cost three
-    /// waits. opencode says this twice — once in the default prompt and again for GPT.</summary>
+    /// waits.</summary>
     [Fact]
     public void Build_AsksForIndependentToolCallsInOneTurn()
     {
@@ -162,10 +162,9 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// EXPLAIN A SHELL COMMAND BEFORE RUNNING IT. This matters more here than it does for opencode:
-    /// run_shell goes through a permission prompt, which shows the command TRUNCATED and carries no
-    /// reason. Observed on the ConsoleEx drive — two commands approved on their visible prefix
-    /// alone, one of which turned out to match zero tests.
+    /// EXPLAIN A SHELL COMMAND BEFORE RUNNING IT. run_shell goes through a permission prompt, which
+    /// shows the command TRUNCATED and carries no reason. Observed on the ConsoleEx drive — two
+    /// commands approved on their visible prefix alone, one of which turned out to match zero tests.
     /// </summary>
     [Fact]
     public void Build_AsksTheModelToExplainAShellCommandBeforeRunningIt()
@@ -223,9 +222,9 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// ONE PROMPT, WITH A SEAM. opencode ships nine variants because it faces nine model families
-    /// with real quirks; this app has one endpoint. The selector exists so a second prompt is a file
-    /// rather than a refactor — but adding variants nobody has measured a need for is guessing.
+    /// ONE PROMPT, WITH A SEAM. Variants earn their place when a model family shows a real quirk;
+    /// this app has one endpoint. The selector exists so a second prompt is a file rather than a
+    /// refactor — but adding variants nobody has measured a need for is guessing.
     /// </summary>
     [Fact]
     public void Build_IsTheSamePromptForEveryModel_ForNow()
@@ -238,10 +237,10 @@ public class SystemPromptTests
     ///
     /// <para>The system message sits at position 0 and is re-sent verbatim on every turn, so it is
     /// the prompt-cache prefix: cached reads are around a tenth of the input price, and a prefix that
-    /// changes throws that away for the whole conversation. opencode DOES put the model name in
-    /// theirs ("You are powered by the model named…"), which is fine when a session cannot switch
-    /// model — but it is content that varies for no benefit to the model's reasoning, so it stays
-    /// out of ours. <c>Build</c> takes the id only to choose a variant later.</para>
+    /// changes throws that away for the whole conversation. Naming the model in the prompt is safe
+    /// only when a session cannot switch model — and it is content that varies for no benefit to the
+    /// model's reasoning, so it stays out. <c>Build</c> takes the id only to choose a variant
+    /// later.</para>
     /// </summary>
     [Fact]
     public void Build_NeverPutsTheModelIdInThePrompt()
@@ -477,9 +476,9 @@ public class SystemPromptTests
     /// read_file calls and spawned nothing, on the exact shape of task its tool description says to
     /// delegate. The description alone does not move it.</para>
     ///
-    /// <para>opencode carries FOUR such nudges in its system prompt for the same reason. This is one,
-    /// phrased as a rule about where the reading LANDS rather than as a preference for a tool: a model
-    /// can check "am I about to read files I will not need afterwards" against what it is doing.</para>
+    /// <para>ONE NUDGE, phrased as a rule about where the reading LANDS rather than as a preference
+    /// for a tool: a model can check "am I about to read files I will not need afterwards" against
+    /// what it is doing.</para>
     /// </summary>
     /// <summary>
     /// THE CONTEXT RULE, and it is here because three statements of it elsewhere did not land.
@@ -520,9 +519,9 @@ public class SystemPromptTests
         Assert.Contains("send a sub-agent rather", fanOut, StringComparison.Ordinal);
         Assert.Contains("only when you already know the file", fanOut, StringComparison.Ordinal);
 
-        // WORKED EXAMPLES, in opencode's shape. Two interventions had already failed to move this
-        // model — a sharpened tool description and the rule above — and an example is the lever they
-        // have that we did not: it shows the SHAPE of the decision rather than asserting it.
+        // WORKED EXAMPLES. Two interventions had already failed to move this model — a sharpened
+        // tool description and the rule above — and an example is the lever neither of them had: it
+        // shows the SHAPE of the decision rather than asserting it.
         Assert.Contains("<example>", fanOut, StringComparison.Ordinal);
 
         // AND A COUNTER-EXAMPLE. Positives alone teach "spawn when asked about code", and a model
@@ -541,9 +540,9 @@ public class SystemPromptTests
         // choosing (D25), and this is the judgement rule that sits beside the others.
         Assert.Contains("If one of the agent types you are offered fits", fanOut, StringComparison.Ordinal);
 
-        // FOUR IS THE CEILING, asserted so it stays one. opencode ships two Task-tool examples; ours
-        // carries a counter-example and a split, one distinction more than theirs. Past four they
-        // stop being a pattern and become a list nobody reads.
+        // FOUR IS THE CEILING, asserted so it stays one. Four is what the two distinctions take —
+        // a counter-example and the split — and past four they stop being a pattern and become a
+        // list nobody reads.
         Assert.Equal(4, CountOf(fanOut, "<example>"));
     }
 

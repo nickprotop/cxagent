@@ -259,9 +259,9 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// The line under the composer: which MODE is running, then the model it runs on.
     ///
-    /// <para>opencode puts its agent mode here ("Build"), and the slot is worth copying because the
-    /// answer changes what the app does. Ours is single-agent or fan-out — the one piece of state
-    /// that decides whether a goal becomes a plan of jobs or one agent with tools, and it has no
+    /// <para>THE SLOT EARNS ITS PLACE because the answer changes what the app does. Ours is
+    /// single-agent or fan-out — the one piece of state that decides whether a goal becomes a plan
+    /// of jobs or one agent with tools, and it has no
     /// other home in the UI. The model beside it needs one too: a startup line scrolls away.</para>
     /// </summary>
     private MarkupControl _modeLine = null!;
@@ -467,9 +467,9 @@ public sealed class MainWindow : IDisposable
     /// transcript that is mostly model-authored Markdown. H1-H3 were three shades of the same blue
     /// and H4-H6 had no colour at all, so a document read as one flat wash.
     ///
-    /// <para>The replacement is opencode's default dark palette, adapted: purple headings, green
-    /// code, sand quotes, peach links. Distinct HUES rather than one family, which is what makes the
-    /// structure of a document visible before it is read.</para>
+    /// <para>The replacement is the adapted dark palette recorded on <see cref="ColorScheme"/>:
+    /// purple headings, green code, sand quotes, peach links. Distinct HUES rather than one family,
+    /// which is what makes the structure of a document visible before it is read.</para>
     ///
     /// <para>Set on the static Default, so it reaches every Markdown surface (transcript, job
     /// output, help) without each one being wired. This is cxagent's choice alone — the framework
@@ -477,8 +477,8 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private static void InstallMarkdownStyle() => MarkdownStyle.Default = MarkdownStyle.Default with
     {
-        // ONE colour at every level. opencode does not step the hue down by depth; it distinguishes
-        // h1 by underline alone, and stepping it produced exactly the muddiness being fixed.
+        // ONE colour at every level. The hue does not step down by depth — h1 is distinguished by
+        // underline alone — and stepping it produced exactly the muddiness being fixed.
         H1Color = ColorScheme.Heading,
         H2Color = ColorScheme.Heading,
         H3Color = ColorScheme.Heading,
@@ -529,9 +529,9 @@ public sealed class MainWindow : IDisposable
 
         // AND THE GRIP'S COLOUR, not a dimmed role colour. Left to itself the control blends the
         // message's role colour 50% toward the background, which is right for a rail that marks
-        // every role and wrong for one that marks only the user: these two rails are one idea —
-        // opencode's, recorded on ColorScheme.Grip — and a mark that means "yours" should not change
-        // shade between the thing you typed and the box you type into.
+        // every role and wrong for one that marks only the user: these two rails are one idea,
+        // recorded on ColorScheme.Grip — and a mark that means "yours" should not change shade
+        // between the thing you typed and the box you type into.
         Chat.MessageRailColor = ColorScheme.Grip;
 
         Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
@@ -552,14 +552,14 @@ public sealed class MainWindow : IDisposable
             StartCollapsed = false,
             Header = static (_, author) => author ?? "System",
         });
-        // A FLAT BLOCK, NOT A BOX. opencode marks whose turn it is with a surface; ours drew a
-        // rounded border, which is chrome around the text rather than the text on its own ground —
-        // and it competed with the code blocks and tables inside assistant answers, so the loudest
+        // A FLAT BLOCK, NOT A BOX. A surface marks whose turn it is; ours drew a rounded border,
+        // which is chrome around the text rather than the text on its own ground — and it competed
+        // with the code blocks and tables inside assistant answers, so the loudest
         // frame on screen belonged to the shortest message.
         //
         // NO HEADER EITHER. Stripping the border leaves a bare "You" label captioning a block that
-        // already reads as the user's by its colour; opencode has no such label. The surface says
-        // whose turn it is, which is all the label ever said.
+        // already reads as the user's by its colour. The surface says whose turn it is, which is
+        // all the label ever said.
         ApplyRoleStyles();
 
         if (_resolution.HasProvider)
@@ -602,7 +602,7 @@ public sealed class MainWindow : IDisposable
         // to never completing. Tried while chasing D10; it was not the cause and it is not safe.
 
         // ONE column: transcript over composer. Jobs render INSIDE the transcript (InlineJobSink),
-        // interleaved with the turns that caused them — the Claude Code / opencode shape.
+        // interleaved with the turns that caused them.
         //
         // This replaced a 50/50 split with a permanent job panel on the left. The panel held the full
         // width of half the screen whether or not a goal was running, and the conversation — the part
@@ -689,8 +689,8 @@ public sealed class MainWindow : IDisposable
                 //
                 // HEAVIER THAN THE MESSAGE RAIL'S ┃, AND THAT IS THE POINT rather than an
                 // inconsistency. The two marks share a colour and a meaning — Grip's own comment
-                // records it, opencode's idea that the user owns two surfaces — but not a job. A
-                // message rail is transient: it scrolls past, in a column shared with tool rows and
+                // records it: the user owns two surfaces, but not a job. A message rail is
+                // transient: it scrolls past, in a column shared with tool rows and
                 // worker reports, so it stays a drawn line. The grip is chrome that never leaves the
                 // screen and has nothing to compete with, so it can afford to be solid.
                 Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",

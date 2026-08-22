@@ -53,9 +53,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// spend prefix on every turn of every session, including the ones that never spawn, to describe
     /// a capability the model can already see in its tool list.</para>
     ///
-    /// <para>MOST OF IT IS WHEN NOT TO, following opencode. That is the part that stops a model
-    /// delegating work it should simply do: a child begins with no knowledge of this conversation, so
-    /// a task the parent could finish in two calls costs a full briefing and a full run instead.</para>
+    /// <para>MOST OF IT IS WHEN NOT TO. That is the part that stops a model delegating work it
+    /// should simply do: a child begins with no knowledge of this conversation, so a task the parent
+    /// could finish in two calls costs a full briefing and a full run instead.</para>
     /// </summary>
     private const string Description =
         """

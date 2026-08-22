@@ -46,8 +46,8 @@ public class McpToolsetTests
     private static ToolCall Call(string name) =>
         new() { Id = "1", Name = name, Arguments = JsonDocument.Parse("{}").RootElement.Clone() };
 
-    /// <summary>Names are prefixed by server, so two servers offering "read" cannot collide.
-    /// opencode's rule: sanitize(server) + "_" + sanitize(tool).</summary>
+    /// <summary>Names are prefixed by server, so two servers offering "read" cannot collide:
+    /// sanitize(server) + "_" + sanitize(tool).</summary>
     [Fact]
     public void Definitions_PrefixEachToolWithItsServerName()
     {

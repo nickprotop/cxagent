@@ -447,8 +447,7 @@ subdirectory gets the `AGENTS.md`.
 **The global file is `CXAGENT.md` and only that.** No `AGENTS.md` at that path — no other agent reads
 cxagent's config directory, so the shared name buys nothing and invites confusion. No global
 `CLAUDE.md` either: a `CLAUDE.md` describes a *project*, and reading one from a home directory
-applies project instructions to every project. opencode does read `~/.claude/CLAUDE.md`; this
-deliberately does not.
+applies project instructions to every project.
 
 **Capped at 8,000 characters, and the cut is marked in the text.** This rides in the prompt-cache
 prefix that is re-sent on every turn, so a large instruction file is not a one-off cost but a

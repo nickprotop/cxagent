@@ -77,8 +77,7 @@ public static class ContextOverflow
     /// <param name="httpStatus">The status, when there was one. 413 is the refusal in status form.</param>
     /// <param name="vendorBody">
     /// The raw response body, when captured. Searched as well as the message because a wire can
-    /// surface a bland message over a body naming <c>context_length_exceeded</c> — the case
-    /// opencode's own parseAPICallError checks for explicitly.
+    /// surface a bland message over a body naming <c>context_length_exceeded</c>.
     /// </param>
     public static bool IsOverflow(string? message, int? httpStatus, string? vendorBody = null)
     {

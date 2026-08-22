@@ -33,9 +33,9 @@ public sealed record TodoItem(string Text, TodoStatus Status)
 /// the system prompt, it survives compaction the way the briefing does, because it is not history —
 /// it is current intent.</para>
 ///
-/// <para>REPLACED WHOLE, never patched. opencode and Claude Code both take the entire list on every
-/// write, and the reason is worth stating: a partial update needs stable ids, ids need the model to
-/// track them across turns, and a model that mis-numbers an id silently marks the wrong item done.
+/// <para>REPLACED WHOLE, never patched, and the reason is worth stating: a partial update needs
+/// stable ids, ids need the model to track them across turns, and a model that mis-numbers an id
+/// silently marks the wrong item done.
 /// Sending the list back entire is more tokens and no ambiguity.</para>
 /// </summary>
 public sealed class TodoList

@@ -53,9 +53,9 @@ public static class SkillCatalog
     /// matches the plural, vendor-neutral <c>AGENTS.md</c> this app already reads, and is what a repo
     /// carrying skills for several agents would plausibly use.</para>
     ///
-    /// <para>HIDDEN, because both references hide theirs (<c>.claude/skills</c>, <c>.opencode/skill</c>).
-    /// A skills directory is a tool-loading path rather than a document meant to be read, which is the
-    /// opposite of AGENTS.md and the reason the unhidden analogy does not carry.</para>
+    /// <para>HIDDEN. A skills directory is a tool-loading path rather than a document meant to be
+    /// read, which is the opposite of AGENTS.md and the reason the unhidden analogy does not
+    /// carry.</para>
     ///
     /// <para><c>.claude/skills</c> is deliberately NOT read: those files carry <c>allowed-tools</c>,
     /// a tool grant written for a different application with different tools. A user who wants them

@@ -287,9 +287,9 @@ public sealed class SessionPanel
             lines.Add(Muted($"window {Compact(state.ContextWindow.Value)}"));
         }
 
-        // NO MODEL BLOCK. It moved to the line under the composer, where opencode puts it and
-        // where it sits beside the mode it belongs to. Two places showing one value is how they
-        // drift, and the panel is the one that can be hidden.
+        // NO MODEL BLOCK. It moved to the line under the composer, where it sits beside the mode it
+        // belongs to. Two places showing one value is how they drift, and the panel is the one that
+        // can be hidden.
 
         Section(lines, "Session");
         lines.Add(Value($"{Elapsed()} · {_turns} turn{(_turns == 1 ? "" : "s")}"));
