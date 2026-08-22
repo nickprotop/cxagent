@@ -249,8 +249,8 @@ public record McpServerConfig(
 /// catalog already exists and a name that is not in it is caught at load rather than at spawn.
 /// </param>
 /// <param name="MaxTurns">
-/// Turns before this type stops and summarises what it has. Null inherits the session ceiling, which
-/// is what every child got before this existed. Zero means unbounded, matching
+/// Turns before this type stops and summarises what it has. Null inherits the session ceiling, so an
+/// unconfigured type behaves exactly like a plain child. Zero means unbounded, matching
 /// <c>AgentHost.TurnCeiling</c> and <c>Agent</c>'s own <c>maxTurns &lt;= 0</c> translation.
 ///
 /// <para>A CAP THAT FIRES MID-WORK DOES NOT FAIL LOUDLY — it returns a salvage summary of unfinished
@@ -263,17 +263,17 @@ public record McpServerConfig(
 ///
 /// <para>SEPARATE FROM THE BRIEFING BECAUSE THE READERS ARE. A briefing is written in the second
 /// person for the child and opens with what it must do first. A catalog line needs what a chooser
-/// should notice first, and what it will get back. The catalog used to DERIVE one from the other —
-/// the briefing's first sentence — and produced lines like "You search and report.": accurate,
-/// grammatically about the agent, and useless to anyone deciding whether to reach for it.</para>
+/// should notice first, and what it will get back. DERIVING one from the other — taking the
+/// briefing's first sentence — yields lines like "You search and report.": accurate, grammatically
+/// about the agent, and useless to anyone deciding whether to reach for it.</para>
 ///
-/// <para>NO LENGTH LIMIT. The old derivation capped at 140 characters, which was right for a
-/// SCAVENGED sentence that might run away; this is text a human wrote for this slot, and truncating
-/// it would be the app rewriting its author. The pressure it guarded against is real — this ships in
-/// every request — but that argues for writing short descriptions, not for mangling long ones.</para>
+/// <para>NO LENGTH LIMIT. A cap (140 characters, say) is right for a SCAVENGED sentence that might
+/// run away; this is text a human wrote for this slot, and truncating it would be the app rewriting
+/// its author. The pressure a cap guards against is real — this ships in every request — but that
+/// argues for writing short descriptions, not for mangling long ones.</para>
 ///
-/// <para>Null means absent, which is every config written before this key existed. The catalog then
-/// says nothing was configured rather than inventing a line.</para>
+/// <para>Null means absent, which is what a config that omits the key yields. The catalog then says
+/// nothing was configured rather than inventing a line.</para>
 /// </param>
 public record AgentTypeConfig(string? Briefing = null, string? Provider = null, int? MaxTurns = null,
     string? Description = null)
@@ -549,7 +549,8 @@ public static class ProviderConfigLoader
             if (root.TryGetProperty("orchestrator", out var orch) && orch.ValueKind == JsonValueKind.Object)
             {
                 // ABSENT STAYS NULL, for both. "Nobody said" and "somebody said the default" are
-                // different states, and collapsing them is what forced the old raw-JSON re-read.
+                // different states; collapsing them leaves the only way to tell them apart a
+                // re-read of the raw JSON further downstream.
                 int? maxTurns = null;
                 if (orch.TryGetProperty("maxTurns", out var mt) && mt.ValueKind == JsonValueKind.Number)
                 {

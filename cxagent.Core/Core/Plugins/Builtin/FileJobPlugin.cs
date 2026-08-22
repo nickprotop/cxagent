@@ -26,12 +26,12 @@ public class FileJobPlugin : IJobPlugin
             "The file to act on. For list and search it is the DIRECTORY to search under, optional "
             + "and defaulting to the working directory — the glob or search text goes in `pattern`, "
             + "never here."),
-        // Says where content comes from, not just what it is. "Content for write/append" left the
-        // model to infer that it must author the text, so with an upstream job to write it reached
-        // for the reference syntax that no longer exists — rejected at compile time, costing a whole
-        // repair round on a plan that was one omitted param away from correct. The param's OWN
-        // description is the text closest to that decision; a rule stated only in the shared
-        // guidance block loses to it.
+        // Says where content comes from, not just what it is. A bare "Content for write/append"
+        // leaves the model to infer that it must author the text, so with an upstream job to write
+        // it reaches for a reference syntax the plan language does not have — rejected at compile
+        // time, costing a whole repair round on a plan that was one omitted param away from
+        // correct. The param's OWN description is the text closest to that decision; a rule stated
+        // only in the shared guidance block loses to it.
         new JobParamSpec("content", "string", Required: false,
             "Text to write. Calling this as a TOOL: always supply it. In a PLANNED `file` job you "
             + "may omit it when the job has exactly one `depends_on` entry, and that dependency's "
@@ -826,9 +826,9 @@ public class FileJobPlugin : IJobPlugin
     /// and normalising it is still worth doing so `/tmp/x/../y` and `/tmp/y` are one path to every
     /// layer that compares them, the permission gate included.</para>
     ///
-    /// <para>NO ROOT MEANS THE PROCESS'S, which is what happened everywhere before this existed —
-    /// so a caller without an opinion (a test, a headless job) keeps the old behaviour rather than
-    /// being handed an empty base.</para>
+    /// <para>NO ROOT MEANS THE PROCESS'S. A caller without an opinion (a test, a headless job) gets
+    /// ordinary GetFullPath behaviour rather than being handed an empty base, which would resolve
+    /// every relative path against nothing.</para>
     /// </summary>
     private static string Resolve(string path, IJobContext context)
     {
@@ -1003,9 +1003,9 @@ public class FileJobPlugin : IJobPlugin
                     {
                         var existed = await WritePreservingBomAsync(
                             path, parameters.Get<string>("content"), append: false, ct);
-                        // CREATED OR OVERWROTE, said out loud. The result used to carry neither, so an
-                        // agent that meant to create a file and silently replaced one had nothing in the
-                        // tool result to notice it by.
+                        // CREATED OR OVERWROTE, said out loud. Without both, an agent that meant to
+                        // create a file and silently replaced one has nothing in the tool result to
+                        // notice it by.
                         output["created"] = !existed;
                         output["content"] = existed ? $"overwrote {path}" : $"created {path}";
                         break;

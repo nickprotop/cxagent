@@ -471,8 +471,8 @@ public sealed partial class Session
     ///
     /// <para>KEPT SO THE SESSION CAN ANSWER FOR ITSELF. <c>/model</c> offering the configured
     /// instances and <c>/mode edits</c> offering the valid modes are both questions about THIS
-    /// session, and they used to be answered by the composition root reaching into a resolution and
-    /// a policy it happened to have in scope.</para>
+    /// session; answering them from the composition root means reaching into whichever resolution
+    /// and policy it happens to have in scope, which is not necessarily this session's.</para>
     /// </summary>
     /// <summary>The resolution this session is running on — its provider, window, agent types.
     /// Kept so a watcher reacting to <see cref="Changed"/> can read what it needs off the session

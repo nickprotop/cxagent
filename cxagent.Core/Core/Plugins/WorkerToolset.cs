@@ -30,9 +30,8 @@ public static class WorkerToolset
     /// to look through.</para>
     ///
     /// <para>64 KB holds that file whole. A modern context is 128k tokens and up, where a 64 KB read
-    /// is a few percent — the old number was sized for a budget nobody runs any more. Paging still
-    /// exists for genuinely huge files; it is no longer the common case for an ordinary source
-    /// file.</para>
+    /// is a few percent, so sizing this cap for a tighter budget buys nothing. Paging still exists
+    /// for genuinely huge files; it is not the common case for an ordinary source file.</para>
     /// </summary>
     public const int MaxToolResultChars = 65536;
 
@@ -40,12 +39,12 @@ public static class WorkerToolset
     /// The params THIS tool takes, in the order the model should read them. Selected from the
     /// plugin's real schema, never invented — a name absent from the plugin throws at build time.
     ///
-    /// <para>Selecting rather than dumping is the whole point. The schema used to be the plugin's
-    /// entire param list minus the pinned action, so <c>read_file</c> advertised nine parameters,
-    /// five of them meaningless for reading (content, dest, replacement, regex, glob). A tool with
-    /// nine optional-looking params and one required has no shape the model can read reliably; a
-    /// live drive produced NINE consecutive <c>read_file {}</c> calls with empty arguments before
-    /// its first good one.</para>
+    /// <para>Selecting rather than dumping is the whole point. Exposing the plugin's entire param
+    /// list minus the pinned action makes <c>read_file</c> advertise nine parameters, five of them
+    /// meaningless for reading (content, dest, replacement, regex, glob). A tool with nine
+    /// optional-looking params and one required has no shape the model can read reliably; a live
+    /// drive of that schema produced NINE consecutive <c>read_file {}</c> calls with empty
+    /// arguments before its first good one.</para>
     /// </param>
     /// <param name="Required">
     /// The params without which the call cannot work. NOT taken from the plugin: FileJobPlugin
@@ -431,7 +430,7 @@ public static class WorkerToolset
         // tool run. Removing it because the current caller happens to pass everything would delete a
         // guard on the grounds that nothing is currently exercising it.
         //
-        // The WORDING no longer says "role": that mechanism is gone, and the phrase would send
+        // The WORDING avoids "role": there is no role mechanism here, and the phrase would send
         // whoever read it hunting for a system that does not exist.
         if (!allowed.Contains(entry.Tool))
             return $"tool '{call.Name}' is not available. Available: "
@@ -584,8 +583,8 @@ public static class WorkerToolset
     /// <summary>
     /// How to get the part that was cut, PER TOOL.
     ///
-    /// <para>This advice used to be gated on <c>read_file</c>, leaving every other tool to show a
-    /// hole with no way out — the exact re-issue loop the advice exists to prevent, unfixed for the
+    /// <para>Gating this advice on <c>read_file</c> alone leaves every other tool showing a hole
+    /// with no way out — the exact re-issue loop the advice exists to prevent, unaddressed for the
     /// tools that need it most. The distinction that matters is whether the tool can page at all:
     /// <c>grep</c> and <c>glob</c> take a <c>limit</c>, while <c>run_shell</c> and
     /// <c>http_request</c> expose nothing, so telling those two to "narrow the parameters" would be
@@ -598,9 +597,9 @@ public static class WorkerToolset
             + "(1-based line) and 'limit' (line count) parameters — see 'total_lines' above for how "
             + "far it goes. Do NOT repeat this call unchanged; it returns the same elision.",
 
-        // THE ADVERTISED NAMES. These read "search_files" or "list_files" — the pre-rename spellings
-        // — so after 2026-08-13 neither branch could ever match and a truncated glob or grep got no
-        // advice at all. Found by deleting the aliases: the old names had one live reader left.
+        // THE ADVERTISED NAMES, which is what arrives here. Spelling these "search_files" or
+        // "list_files" makes neither branch match, and a truncated glob or grep then gets no advice
+        // at all — a silent miss, since a switch that falls through still returns generic text.
         "grep" or "glob" =>
             "\n\nToo many results to return whole. Narrow the search — a more specific 'pattern', a "
             + "'glob' that restricts the file types, or a path further down the tree — or set a "

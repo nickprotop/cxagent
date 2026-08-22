@@ -71,9 +71,9 @@ public sealed class SqliteSessionStore
             cmd.ExecuteNonQuery();
 
             // THE COLUMN ON AN EXISTING DATABASE. `CREATE TABLE IF NOT EXISTS` does exactly nothing
-            // when the table is already there, so a user upgrading in place would keep the old shape
-            // and every INSERT naming working_dir would fail — silently, since every operation here
-            // is best-effort. Their resume would simply stop working with no message.
+            // when the table is already there, so a database created against a narrower schema keeps
+            // that shape and every INSERT naming working_dir fails — silently, since every operation
+            // here is best-effort. That user's resume simply stops working with no message.
             AddColumnIfMissing(conn, "agent_sessions", "working_dir", "TEXT");
 
             // THE TITLE, for the listing. Derivable from context_json — the first user message is in
@@ -81,15 +81,17 @@ public sealed class SqliteSessionStore
             // render one line each, which is the wrong cost for a list. Written once, read directly.
             AddColumnIfMissing(conn, "agent_sessions", "title", "TEXT");
 
-            // THE EDIT MODE, so resume does not silently widen it. Nullable: a row written before
-            // this column has no mode, and absent must stay distinguishable from a recorded choice.
+            // THE EDIT MODE, so resume does not silently widen it. Nullable: a row from a database
+            // predating the column has no mode, and absent must stay distinguishable from a
+            // recorded choice.
             AddColumnIfMissing(conn, "agent_sessions", "edit_mode", "TEXT");
             BackfillTitles(conn);
 
             using var index = conn.CreateCommand();
-            // KEYED BY FOLDER FIRST, because that is now the leading predicate of every read. The old
-            // index on (finished, updated_at) is left alone rather than dropped: it costs one page of
-            // a table that holds a handful of rows, and dropping it is a migration that can fail.
+            // KEYED BY FOLDER FIRST, because that is the leading predicate of every read. Any
+            // narrower index on (finished, updated_at) is left in place rather than dropped: it
+            // costs one page of a table that holds a handful of rows, and dropping it is a
+            // migration that can fail.
             index.CommandText = """
                 CREATE INDEX IF NOT EXISTS idx_sessions_by_dir
                     ON agent_sessions(working_dir, finished, updated_at);
@@ -258,13 +260,13 @@ public sealed class SqliteSessionStore
     /// dialog said only "an earlier session ended without closing (N messages, last active 5m ago)",
     /// never WHERE.</para>
     ///
-    /// <para>Permission rules were scoped this way from the start — "a grant made in one project must
-    /// never silently cover another" (PermissionRulesStore) — and the same argument always applied
-    /// here. Only one of the two stores got it.</para>
+    /// <para>Permission rules are scoped the same way — "a grant made in one project must never
+    /// silently cover another" (PermissionRulesStore) — and the argument is identical here.</para>
     ///
-    /// <para>A NULL working_dir IS NEVER OFFERED. Those are rows written before this column existed;
-    /// they could be from anywhere, which is precisely the condition being fixed. Prune drops them in
-    /// time, and the cost of ignoring them is one lost resume for a session that predates the fix.</para>
+    /// <para>A NULL working_dir IS NEVER OFFERED. Such a row comes from a database predating the
+    /// column, so it could be from anywhere, which is precisely the condition this scoping rules
+    /// out. Prune drops them in time, and the cost of ignoring them is one lost resume for a session
+    /// stored under the older schema.</para>
     /// </param>
     public SessionSnapshot? LoadLatestUnfinished(string? workingDir = null)
     {
@@ -620,9 +622,9 @@ public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> A
 }
 
 /// <param name="Edits">
-    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row written
-    /// before this column existed genuinely has no mode, and that absence must stay distinguishable
-    /// from a recorded choice — see <c>LoadLatestUnfinished</c> for which way it resolves.
+    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row from a
+    /// database predating the column genuinely has no mode, and that absence must stay
+    /// distinguishable from a recorded choice — see <c>LoadLatestUnfinished</c> for how it resolves.
     /// </param>
 /// <param name="AgentId">The session's own id.</param>
 /// <param name="Context">The restored conversation.</param>

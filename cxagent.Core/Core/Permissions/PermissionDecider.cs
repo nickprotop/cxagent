@@ -167,8 +167,8 @@ public sealed class PermissionDecider : IPermissionGate
     /// <param name="policy">
     /// Stamped onto every request this gate receives, standing in for
     /// <see cref="PermissionGatedPlugin"/>, which does it in production. The gate itself holds no
-    /// policy — that is the point of the split — so a test that built one and expected the gate to
-    /// remember it would be testing a shape that no longer exists.
+    /// policy — that is the point of the split — so a test that builds one and expects the gate to
+    /// remember it is testing a shape this type does not have.
     /// </param>
     /// <param name="store">Where an "always" answer is remembered.</param>
     /// <param name="notice">Where a one-line explanation goes, or null to say nothing.</param>
@@ -349,10 +349,10 @@ public sealed class PermissionDecider : IPermissionGate
             // disagreed, and the user learns nothing — worse, they conclude auto is simply strict.
             // Plain text is this file's vocabulary for "did not work, nothing was denied", the same
             // shape as a rule that could not be saved — a caller receiving the string decides how
-            // that tone renders; the gate itself no longer picks a colour for it.
+            // that tone renders; the gate itself picks no colour for it.
             //
             // ONCE PER TURN, not per action: a shell-heavy turn would otherwise bury the transcript
-            // in identical warnings, which is exactly what removing the per-allow echo fixed.
+            // in identical warnings — the same flooding the suppressed per-allow echo below avoids.
             if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
@@ -414,14 +414,13 @@ public sealed class PermissionDecider : IPermissionGate
                 && request.Policy!.IsInBoundary(request.Display);
 
             // `ct` is handed straight to the prompt hook rather than raced against it with a
-            // second, gate-local TaskCompletionSource: an earlier version resolved a LOCAL tcs to
-            // Deny on cancellation and returned, while the real UI prompt (awaiting its OWN
-            // Completion, unrelated to that local tcs) kept sitting there forever waiting for a
-            // click that would never come — the composer never got restored and every later
-            // permission prompt silently no-opped (MainWindow's idempotence guard). The real
-            // prompt hook now registers cancellation directly on the control's Completion (see
-            // AwaitAndRestore), so awaiting it here is both correct AND still resolves promptly on
-            // cancellation — there is no longer a separate path to race.
+            // second, gate-local TaskCompletionSource. Racing a LOCAL tcs resolves it to Deny on
+            // cancellation and returns, while the real UI prompt — awaiting its OWN Completion,
+            // unrelated to that local tcs — sits there forever waiting for a click that will never
+            // come: the composer never gets restored and every later permission prompt silently
+            // no-ops (MainWindow's idempotence guard). The prompt hook registers cancellation
+            // directly on the control's Completion (see AwaitAndRestore), so awaiting it here is
+            // both correct AND resolves promptly on cancellation, with no second path to race.
             PermissionChoice choice;
             try
             {
@@ -449,9 +448,8 @@ public sealed class PermissionDecider : IPermissionGate
             case PermissionChoice.Once:
                 // NO echo. The user just pressed "Allow once" on a prompt showing this exact
                 // command — telling them what they chose, one line later, is the transcript
-                // narrating them back to themselves. Every allow used to print a line, which on a
-                // shell-heavy goal buried the conversation under confirmations of things the user
-                // had personally just authorised.
+                // narrating them back to themselves. Printing a line per allow buries a shell-heavy
+                // goal under confirmations of things the user had personally just authorised.
                 //
                 // DENIALS and SAVE FAILURES still speak (below), because those report something the
                 // user did NOT already know: work that did not happen, or a grant that will not

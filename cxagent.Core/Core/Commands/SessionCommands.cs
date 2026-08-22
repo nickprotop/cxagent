@@ -25,9 +25,10 @@ public static class SessionCommands
     /// Every command, in the order help and a palette should list them.
     ///
     /// <para>THE ONE SOURCE. The dispatcher, the unknown-command reply and the help text all read
-    /// this; each used to carry its own copy, and the reply's hardcoded "/clear, /compress" would
-    /// have gone stale on the next addition. A command palette is a filter over this list plus the
-    /// dispatch below — no new mechanism, which is why the data lives here rather than in a switch.</para>
+    /// this. Any of them carrying its own copy — a reply hardcoding "/clear, /compress", say — goes
+    /// stale on the next addition, silently, since nothing checks the copies against each other. A
+    /// command palette is a filter over this list plus the dispatch below — no new mechanism, which
+    /// is why the data lives here rather than in a switch.</para>
     /// </summary>
     public static readonly IReadOnlyList<SessionCommand> All =
     [
@@ -45,10 +46,9 @@ public static class SessionCommands
             // that is not a command.
             new("login <name>", "authorise a server that needs OAuth", Completes: false,
                 Values: ValueSources.McpServers),
-            // COMPLETABLE NOW. This said listing servers "would couple this static table to session
-            // state" — true when the composition root resolved every value by hand, and no longer
-            // true: the table names a SET and the manager, which owns the toolset, answers for it.
-            // The table still holds no state.
+            // COMPLETABLE, and it does not couple this static table to session state: the table
+            // names a SET, and the manager, which owns the toolset, answers for it. The table holds
+            // no state.
             //
             // THE LIVE SERVERS, not the names in config: one that failed to connect offers no tools,
             // and completing to it would send the user somewhere empty.
@@ -63,16 +63,15 @@ public static class SessionCommands
         // NeedsWindow like /mcp and /skills: it answers from the catalog the session already built,
         // so it costs no turn and no tokens.
         //
-        // IT EXISTS BECAUSE THE BRIEFINGS LEFT config.json. Reading what a type is told used to mean
-        // opening your own config file; the shipped five are code now, and CONFIG.md is a poor
-        // substitute when a drive has just gone wrong in front of you.
+        // IT EXISTS BECAUSE THE BRIEFINGS ARE NOT IN config.json. The shipped five live in code, so
+        // there is no file to open to read what a type is told, and CONFIG.md is a poor substitute
+        // when a drive has just gone wrong in front of you.
         new("/agents", "the sub-agent types this session can spawn, and what each one is told",
             CommandOutcome.NeedsWindow,
         [
-            // COMPLETABLE NOW, for the reason /mcp's row is: this said the names "are session state,
-            // and listing them in this static table would couple the two" — true when the
-            // composition root resolved every value by hand, and no longer true. The table names a
-            // SET; the session, which holds the catalog it was wired against, answers for it.
+            // COMPLETABLE, for the reason /mcp's row is: naming the type names a SET, not session
+            // state, and the session — which holds the catalog it was wired against — answers for
+            // it. Nothing about the names is stored here.
             new("show <name>", "the full briefing that type is given", Completes: false,
                 Values: ValueSources.AgentTypes),
         ]),
@@ -325,9 +324,9 @@ public static class SessionCommands
         switch (command.Name)
         {
             case "/clear":
-                // THE CALLER CLEARS THE CONTEXT. This type deliberately holds no session state — it
-                // used to be handed a List<ChatMessage> to empty here, but nothing ever read that
-                // list, so the clear was a no-op dressed as the command's whole purpose.
+                // THE CALLER CLEARS THE CONTEXT. This type deliberately holds no session state, so
+                // emptying a List<ChatMessage> here would be a no-op dressed as the command's whole
+                // purpose — nothing downstream reads a list this type owns.
                 reply = "Conversation cleared.";
                 return true;
 
