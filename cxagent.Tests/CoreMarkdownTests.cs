@@ -403,4 +403,24 @@ public class CoreMarkdownTests
         Assert.DoesNotContain(@"\|", row);
         Assert.Contains("<number|id>", row);
     }
+
+    /// <summary>The startup notices resolve their colour through the theme, like everything else.</summary>
+    [Fact]
+    public void AppBootstrapNamesNoColourOfItsOwn()
+    {
+        // A LITERAL [yellow] IS LEGIBLE ON THIS THEME AND WRONG ON THE NEXT ONE. These lines are the
+        // first a session prints, so a hardcoded green or amber is also the first thing that looks
+        // wrong on a light ground. ColorScheme's *Markup bridges resolve the role against the live
+        // theme; naming a colour here bypasses them.
+        var file = Path.Combine(RepoRoot(), "cxagent", "UI", "AppBootstrap.cs");
+        var offenders = File.ReadAllLines(file)
+            .Select((line, i) => (Line: line, Number: i + 1))
+            .Where(x => !x.Line.TrimStart().StartsWith("//"))
+            .Where(x => System.Text.RegularExpressions.Regex.IsMatch(
+                x.Line, @"\[(red|yellow|green|grey\d*|cyan\d*)\]"))
+            .Select(x => $"{x.Number}: {x.Line.Trim()}")
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
 }

@@ -615,7 +615,7 @@ public static class AppBootstrap
             // anything else (the next grant backs the unreadable file up to permissions.json.bad).
             if (!permissionLoadErrorReported && permissionRules.LoadError is { } loadError)
             {
-                transcript.Write($"[yellow]{loadError}[/]");
+                transcript.Write(new Message(loadError, Severity.Warning));
                 permissionLoadErrorReported = true;
             }
             // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
@@ -672,7 +672,7 @@ public static class AppBootstrap
             // because a skipped server the user never hears about is indistinguishable from one
             // that is merely slow to connect.
             foreach (var warning in res.Warnings ?? [])
-                transcript.Write($"[yellow]{warning}[/]");
+                transcript.Write(new Message(warning, Severity.Warning));
 
             // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
             // because the session id does not exist until the host does — and reassigned on every
@@ -783,7 +783,7 @@ public static class AppBootstrap
             // Each failure named once, plus any tool dropped for colliding — both are things the
             // user configured and would otherwise watch silently not happen.
             foreach (var message in mcp.Messages.Concat(mcp.Toolset.Warnings))
-                transcript.Write($"[yellow]{message}[/]");
+                transcript.Write(new Message(message, Severity.Warning));
         }
 
         // The panel shows what is live, including servers that failed.
@@ -794,7 +794,7 @@ public static class AppBootstrap
         // the session starts restored — no second wire, and no window that is briefly empty before
         // a context appears in it. The startup OFFER cannot do this (it needs a rendered window to
         // put a dialog in) and re-wires for that reason; asking on the command line does not.
-        string? resumeNotice = null;
+        Message? resumeNotice = null;
         if (options.Resume.Wanted)
         {
             var (snapshot, problem) = FindResumeTarget(sessions, session.WorkingDirectory, options.Resume.Uid);
@@ -824,16 +824,16 @@ public static class AppBootstrap
                 // launch. SUPERSEDED, not finished — it is a live conversation someone continued,
                 // and pruning it would delete the history behind work that is still going.
                 sessions.MarkSuperseded(snapshot.AgentId);
-                resumeNotice = $"[yellow]Resumed an earlier session: {snapshot.Context.Count} "
-                             + "messages restored. They are not shown above, but the agent "
-                             + "remembers them.[/]";
+                resumeNotice = new Message($"Resumed an earlier session: {snapshot.Context.Count} "
+                                         + "messages restored. They are not shown above, but the "
+                                         + "agent remembers them.", Severity.Warning);
             }
             else
             {
                 // NOT FATAL. The user asked to continue something and gets a new session instead —
                 // which is fine as long as it SAYS SO, since an unnoticed fresh start is how someone
                 // spends a turn wondering why the agent forgot everything.
-                resumeNotice = $"[yellow]{problem} Starting a new session.[/]";
+                resumeNotice = new Message($"{problem} Starting a new session.", Severity.Warning);
             }
         }
 
@@ -850,8 +850,8 @@ public static class AppBootstrap
         // AFTER THE WIRE, because the sink it writes to is created inside it.
         if (migrationNotice is not null)
             transcript.Write(migrationNotice);
-        if (resumeNotice is not null)
-            transcript.Write(resumeNotice);
+        if (resumeNotice is { } notice)
+            transcript.Write(notice);
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
         // next one — the shell's own convention, and Claude Code's.
@@ -1369,11 +1369,15 @@ public static class AppBootstrap
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    transcript.Write($"[yellow]could not save folder trust: {ex.Message}[/]");
+                    transcript.Write(new Message($"could not save folder trust: {ex.Message}", Severity.Warning));
                 }
+                // AFFIRMATIVE AND CAUTION THROUGH THE THEME, not two literal colours: this pair is
+                // the first thing a session prints, so it is also the first thing that looks wrong on
+                // a light ground if the green and amber are hardcoded.
                 transcript.Write(trusted
-                    ? "[green]trusted this folder[/]"
-                    : "[yellow]not trusted — file operations in this folder will ask every time[/]");
+                    ? $"[{ColorScheme.AffirmativeMarkup}]trusted this folder[/]"
+                    : $"[{ColorScheme.CautionMarkup}]not trusted — file operations in this folder "
+                      + "will ask every time[/]");
             }
             finally
             {

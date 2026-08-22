@@ -145,6 +145,16 @@ public static class ColorScheme
     public static string CautionMarkup => Markup(Caution, "yellow");
 
     /// <summary>
+    /// Affirmative, as markup — for text inside a string, where <see cref="Affirmative"/> cannot
+    /// reach.
+    ///
+    /// <para>The third of the severity-shaped bridges, beside <see cref="DangerMarkup"/> and
+    /// <see cref="CautionMarkup"/>: a startup line reporting that something WORKED resolves its
+    /// green through the theme rather than naming one, so it stays legible on a light ground.</para>
+    /// </summary>
+    public static string AffirmativeMarkup => Markup(Affirmative, "green");
+
+    /// <summary>
     /// The accent as an RGB value — cyan1 is #00ffff — for the places a markup NAME cannot go.
     ///
     /// <para>Interpolation needs channels. The banner fades its wordmark from this to
