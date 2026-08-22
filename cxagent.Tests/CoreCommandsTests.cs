@@ -73,12 +73,12 @@ public class CoreCommandsTests : IDisposable
 }
 
 /// <summary>
-/// Setting a mode REMEMBERS it for the folder — the half that used to be a second call at every
-/// call site, and the half whose absence is silent.
+/// Setting a mode REMEMBERS it for the folder — the half whose absence is silent, and the half a
+/// call site is free to forget when persisting takes a second call.
 ///
-/// <para>Both callers reach this: <c>/mode edits X</c> and Shift+Tab. The comment at the Shift+Tab
-/// site named the hazard exactly — "the pair of lines this replaced is the pair that gets copied
-/// with the policy half missing" — so the pair is now one call, and this is what pins it.</para>
+/// <para>Both callers reach this: <c>/mode edits X</c> and Shift+Tab. A pair of lines at each site
+/// is the pair that gets copied with the policy half missing, so the pair is one call, and this is
+/// what pins it.</para>
 /// </summary>
 public class ModePersistenceTests : IDisposable
 {

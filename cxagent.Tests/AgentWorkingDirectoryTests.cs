@@ -42,9 +42,9 @@ public class AgentWorkingDirectoryTests : IDisposable
             workingDir: workingDir);
 
     /// <summary>
-    /// THE SYSTEM PROMPT NAMES THE GIVEN DIRECTORY. It used to read the process cwd, so an agent
-    /// constructed for one folder told the model it was working in another — silently, and only
-    /// when something else had moved the process.
+    /// THE SYSTEM PROMPT NAMES THE GIVEN DIRECTORY, not the process cwd. Reading the cwd lets an
+    /// agent constructed for one folder tell the model it is working in another — silently, and
+    /// only when something else has moved the process.
     /// </summary>
     [Fact]
     public async Task TheSystemPrompt_NamesTheDirectoryTheAgentWasGiven()

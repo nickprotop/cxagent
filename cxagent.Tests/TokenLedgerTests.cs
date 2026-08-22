@@ -152,13 +152,14 @@ public class TokenLedgerTests
     /// <summary>
     /// EVERY SPEND IS COUNTED WHEN AGENTS RECORD CONCURRENTLY.
     ///
-    /// <para>The counters were plain <c>+=</c> — a read-modify-write — so two writers could read the
-    /// same value, add to it, and store, losing one spend entirely. The failure is invisible: nothing
-    /// throws, the total is just quietly too low, and a budget stops binding without anyone noticing.
-    /// It was already multi-writer before sub-agents; they make it likely rather than theoretical.</para>
+    /// <para>Plain <c>+=</c> counters — a read-modify-write — let two writers read the same value,
+    /// add to it, and store, losing one spend entirely. The failure is invisible: nothing throws, the
+    /// total is just quietly too low, and a budget stops binding without anyone noticing. The ledger
+    /// is multi-writer even without sub-agents; they make it likely rather than theoretical.</para>
     ///
-    /// <para>Eight threads × 500 records is enough to lose updates reliably on the old code, and the
-    /// arithmetic is exact — an off-by-a-few assertion would pass on a race that dropped a handful.</para>
+    /// <para>Eight threads × 500 records is enough to lose updates reliably against an unsynchronised
+    /// counter, and the arithmetic is exact — an off-by-a-few assertion would pass on a race that
+    /// dropped a handful.</para>
     /// </summary>
     [Fact]
     public void Record_FromManyThreads_LosesNothing()

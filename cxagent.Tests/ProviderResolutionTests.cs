@@ -25,11 +25,11 @@ public class ResolvedConfigTests : IDisposable
     /// <summary>
     /// Regression (P5b live-drive): --mock must be a WORKING demo path, not a bare test double.
     /// MockLlmProvider is queue-driven — ChatAsync/ChatStreamAsync call Queue.Dequeue(), which
-    /// throws InvalidOperationException("Queue empty.") when nothing was enqueued. The resolver
-    /// previously returned `new MockLlmProvider()` unseeded, so every --mock goal submission failed
-    /// with a red "✗ Queue empty." in the chat and NO jobs were ever created (ToolsChanged runs only
-    /// after PlanCompiler.BuildDag, which needs a plan). Seed a canned create_plan so --mock
-    /// actually decomposes and runs a DAG.
+    /// throws InvalidOperationException("Queue empty.") when nothing was enqueued. A resolver
+    /// returning `new MockLlmProvider()` unseeded fails every --mock goal submission with a red
+    /// "✗ Queue empty." in the chat and creates NO jobs at all (ToolsChanged runs only after
+    /// PlanCompiler.BuildDag, which needs a plan). Seed a canned create_plan so --mock actually
+    /// decomposes and runs a DAG.
     /// </summary>
     [Fact]
     public async Task Mock_IsSeeded_WithARunnablePlan()

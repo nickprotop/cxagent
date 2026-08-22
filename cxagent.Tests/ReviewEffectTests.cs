@@ -68,8 +68,8 @@ public class ReviewEffectTests
     [Fact]
     public void AnUntrustedFolder_IsNotReviewedAtAll()
     {
-        // TRUST IS THE FLOOR AND IS CHECKED HERE. This is the guard the old AllowsSilentWrites call
-        // provided; losing it would let a classifier ALLOW widen past a decision the user made.
+        // TRUST IS THE FLOOR AND IS CHECKED HERE. Without this guard a classifier ALLOW would widen
+        // past a decision the user made.
         var root = MakeTempDir();
         var policy = new PermissionPolicy(root, EmptyRules(), EditMode.Auto);
 

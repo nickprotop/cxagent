@@ -10,14 +10,14 @@ namespace CxAgent.Tests;
 /// <summary>
 /// THE TASK LIST MUST NOT SIT IN THE CACHE PREFIX.
 ///
-/// <para>It used to be appended to the system message, so flipping one marker from <c>- [ ]</c> to
-/// <c>- [&gt;]</c> rewrote that message and invalidated the provider's prompt cache from token zero.
-/// Measured on a 116-turn drive: a 134-character change re-processed a 67,367-token context, on an
-/// endpoint where an identical prompt costs 43ms warm against 1,420ms cold.</para>
+/// <para>Appended to the system message, flipping one marker from <c>- [ ]</c> to <c>- [&gt;]</c>
+/// rewrites that message and invalidates the provider's prompt cache from token zero. Measured on a
+/// 116-turn drive: a 134-character change re-processed a 67,367-token context, on an endpoint where
+/// an identical prompt costs 43ms warm against 1,420ms cold.</para>
 ///
-/// <para>The compaction argument that justified the old placement did not hold — the system message
-/// is rebuilt from the TodoList every turn, so the plan was always RE-INJECTED rather than
-/// preserved. Moving it to the newest end keeps that mechanism and costs the cache nothing.</para>
+/// <para>The compaction argument for the system message does not hold — that message is rebuilt from
+/// the TodoList every turn, so the plan is RE-INJECTED rather than preserved. The newest end keeps
+/// that mechanism and costs the cache nothing.</para>
 /// </summary>
 public class TaskListPlacementTests : IDisposable
 {

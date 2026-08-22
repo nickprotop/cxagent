@@ -155,14 +155,13 @@ public class ActionClassifierTests
     /// <summary>
     /// THE SAME ACTION WITHIN A TURN IS CACHED — see <c>ClassifierCacheTests</c> for the cache's
     /// full contract (the key, the poisoning defence, the turn-scoped lifetime, and why failures are
-    /// never cached). This test used to assert the OPPOSITE — that repeating an identical action
-    /// always re-classified — under the reasoning that a cache replays one poisoned allow for every
-    /// action that hashes to it. That reasoning holds for a cache keyed on (kind, subject); it does
-    /// not hold for one keyed on the full rendered action text, which is what was built: a DIFFERENT
-    /// action (different diff, different content) can never collide with this one, so there is
-    /// nothing here for a poisoned file to amplify. Updated deliberately, not deleted — the intent
-    /// this test protected (no coarse-keyed replay) is now exercised by
-    /// ClassifierCacheTests.DIFFERENT_CONTENT_TO_THE_SAME_PATH_IS_A_DIFFERENT_ACTION.
+    /// never cached). The opposite rule — always re-classify an identical action — is the tempting
+    /// one, on the reasoning that a cache replays one poisoned allow for every action that hashes to
+    /// it. That reasoning holds for a cache keyed on (kind, subject); it does not hold for one keyed
+    /// on the full rendered action text, which is what this cache is: a DIFFERENT action (different
+    /// diff, different content) can never collide with this one, so there is nothing here for a
+    /// poisoned file to amplify. The intent that argument protects (no coarse-keyed replay) is
+    /// exercised by ClassifierCacheTests.DIFFERENT_CONTENT_TO_THE_SAME_PATH_IS_A_DIFFERENT_ACTION.
     /// </summary>
     [Fact]
     public async Task TheSameActionTwice_IsClassifiedOnce()

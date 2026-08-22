@@ -184,10 +184,10 @@ public class TwoSessionsTests : IDisposable
     // ---- One gate, two policies -------------------------------------------------------------------
 
     // THE QUESTION IS PER-SESSION; THE ANSWER IS NOT. The gate has to be shared — stored rules and
-    // the prompt queue both must be — but it used to CAPTURE a policy, and a policy holds a working
-    // directory and an edit mode that belong to one conversation. A second session was therefore
-    // judged against the first's root: a write inside its own folder read as outside, and a write
-    // inside the OTHER session's folder read as inside.
+    // the prompt queue both must be — but it must not CAPTURE a policy, because a policy holds a
+    // working directory and an edit mode that belong to one conversation. A captured one judges the
+    // second session against the first's root: a write inside its own folder reads as outside, and a
+    // write inside the OTHER session's folder reads as inside.
     [Fact]
     public async Task TwoSessions_AreJudgedAgainstTheirOwnFolder()
     {

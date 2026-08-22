@@ -126,8 +126,8 @@ public class CompletionValuesTests : IDisposable
         Assert.Empty(manager.Values(CompletionSets.Sessions, workingDirectory: "\0invalid"));
     }
 
-    // BOTH AXES MOVE TOGETHER. The composition root used to set the agent's mode and the policy's
-    // edit mode on adjacent lines — two places to forget, and forgetting the second is a session
+    // BOTH AXES MOVE TOGETHER. Setting the agent's mode and the policy's edit mode on adjacent lines
+    // in the composition root leaves two places to forget, and forgetting the second is a session
     // that reports accept-edits and asks anyway.
     [Fact]
     public void Session_SetMode_MovesTheAgentAndThePolicyTogether()

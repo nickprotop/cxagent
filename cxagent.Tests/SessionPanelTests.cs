@@ -340,11 +340,11 @@ public class SessionPanelTests
 
             // WHAT PRODUCTION ACTUALLY FEEDS. SpentTokens is the PARENT'S OWN spend — the status bar
             // is this agent's readout and is fed OwnSpend — while SubAgentTokens is the session-wide
-            // worker total. This test used to set SpentTokens to the session total (895) and assert
-            // "this agent · 165", i.e. 895 - 730. That encoded a subtraction the app never performs
-            // on comparable numbers: in the real wiring both terms came from different scopes, so
-            // "this agent" clamped to 0 the moment any worker spent anything, and the test passed
-            // while the panel was wrong.
+            // worker total. Setting SpentTokens to the session total (895) and asserting "this agent
+            // · 165", i.e. 895 - 730, would encode a subtraction the app never performs on comparable
+            // numbers: in the real wiring the two terms come from different scopes, so "this agent"
+            // clamps to 0 the moment any worker spends anything — and such a test passes while the
+            // panel is wrong.
             OwnTokens = 165,
         });
 
@@ -376,7 +376,7 @@ public class SessionPanelTests
             Rules = 0,
 
             // The shape of a real fan-out: workers dominate, and the parent's own spend is smaller
-            // than theirs — exactly the case the old subtraction rendered as 0.
+            // than theirs — exactly the case a session-total-minus-workers subtraction renders as 0.
             SubAgentTokens = 9_000,
             SpentTokens = 1_200,
             OwnTokens = 1_200,
@@ -460,10 +460,10 @@ public class SessionPanelTests
             SpendByModel = new Dictionary<string, int> { ["used.gguf"] = 4_000, ["unused.gguf"] = 0 },
         });
 
-        // The FILTER is the invariant, not the section hiding. This used to also assert the heading
-        // was absent — true only as a side effect, since filtering left a single model and a lone
-        // model then suppressed the block. The block now earns its place with the ↑/↓ split, so what
-        // matters is that a model which spent nothing is not listed at all.
+        // The FILTER is the invariant, not the section hiding. Asserting the heading is absent would
+        // hold only as a side effect of filtering down to a single model, and the block earns its
+        // place with the ↑/↓ split, so what matters is that a model which spent nothing is not listed
+        // at all.
         // "used", not "used.gguf" — Short() strips the extension every local model carries.
         Assert.DoesNotContain("unused", panel.RenderedText, StringComparison.Ordinal);
         Assert.Contains("used · 4,000", panel.RenderedText, StringComparison.Ordinal);

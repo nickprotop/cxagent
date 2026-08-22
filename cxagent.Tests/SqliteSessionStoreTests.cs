@@ -325,11 +325,11 @@ public class SqliteSessionStoreTests : IDisposable
     /// <summary>
     /// THE MIGRATION RUNS AGAINST AN EXISTING DATABASE WITHOUT LOSING ROWS.
     ///
-    /// <para>`CREATE TABLE IF NOT EXISTS` does nothing when the table is already there, so a user
-    /// upgrading in place would keep the old shape and every INSERT naming working_dir would fail —
-    /// silently, since this store swallows everything. Their resume would simply stop working with no
-    /// message. This opens a second store over the same directory, which is what a second launch
-    /// does.</para>
+    /// <para>`CREATE TABLE IF NOT EXISTS` does nothing when the table is already there, so without
+    /// a migration a user upgrading in place keeps the older shape and every INSERT naming
+    /// working_dir fails — silently, since this store swallows everything. Their resume would simply
+    /// stop working with no message. This opens a second store over the same directory, which is
+    /// what a second launch does.</para>
     /// </summary>
     [Fact]
     public void ASecondStoreOverTheSameDatabase_KeepsWorking()

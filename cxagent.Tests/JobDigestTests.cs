@@ -97,8 +97,8 @@ public class JobDigestTests
     [Fact]
     public void From_ReadsTheTruncatedFlagFromTheOutputBag()
     {
-        // A worker that hit its turn cap sets Output["truncated"] = true. Nothing read it before this:
-        // it reached the orchestrator only as a "truncated: True" line among the other output keys.
+        // A worker that hit its turn cap sets Output["truncated"] = true. Unread, it reaches the
+        // orchestrator only as a "truncated: True" line among the other output keys.
         var job = JobWithOutput(new Dictionary<string, object?>
         {
             ["content"] = "partial work",
@@ -222,8 +222,8 @@ public class JobDigestTests
     [Fact]
     public void From_AnExplicitOutputCapStillApplies()
     {
-        // The knob remains for a caller that genuinely needs a bound; it is simply no longer the
-        // default that silently truncated everything.
+        // The knob is for a caller that genuinely needs a bound; it is not the default, which would
+        // silently truncate everything.
         var digest = JobDigest.From(Done(new string('w', 20_000)), outputCap: 500);
         Assert.True(digest.OutputExcerpt.Length < 20_000);
     }

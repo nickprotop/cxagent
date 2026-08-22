@@ -62,11 +62,11 @@ public class McpHttpClientTests : IDisposable
 
         public FakeServer()
         {
-            // THROUGH THE SHARED BINDER, which is what TestPorts exists for. This used to probe a
-            // free port and bind it with NO RETRY, leaving the classic window between releasing the
-            // probe and starting the listener — and because it bypassed TestPorts entirely, fixing
-            // that helper did nothing for this class. It was still failing "Address already in use"
-            // at roughly one full-suite run in six afterwards.
+            // THROUGH THE SHARED BINDER, which is what TestPorts exists for. Probing a free port
+            // here and binding it with NO RETRY leaves the classic window between releasing the probe
+            // and starting the listener, and bypassing TestPorts means fixes to that helper do
+            // nothing for this class: measured at "Address already in use" roughly one full-suite
+            // run in six.
             var prefix = TestPorts.BindLoopback(ref _listener);
             Url = prefix.TrimEnd('/') + "/mcp";
             _ = Task.Run(LoopAsync);

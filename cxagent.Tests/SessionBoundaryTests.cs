@@ -8,8 +8,8 @@ namespace CxAgent.Tests;
 
 /// <summary>
 /// THE BOUNDARY, ASSERTED RATHER THAN INTENDED. A session reports facts; presentation lives one layer
-/// up. Both properties below held by convention before this test existed, which is exactly how a
-/// boundary erodes — one reasonable-looking call at a time.
+/// up. Both properties below are the kind that hold by convention until something asserts them,
+/// which is exactly how a boundary erodes — one reasonable-looking call at a time.
 /// </summary>
 public class SessionBoundaryTests
 {

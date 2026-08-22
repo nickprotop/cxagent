@@ -10,9 +10,8 @@ namespace CxAgent.Tests;
 /// The session as an OBJECT rather than as six locals in a 1,400-line method.
 ///
 /// <para>Every field it holds already existed, captured by the composition root's wiring closure. A
-/// local is one slot, so a second session would have needed a second copy of that method — naming
-/// the state is what makes a second one possible. These tests pin the behaviour that used to live in
-/// comments beside those locals.</para>
+/// local is one slot, so a second session would need a second copy of that method — naming the
+/// state is what makes a second one possible. These tests pin the behaviour those locals carry.</para>
 /// </summary>
 public class SessionTests
 {

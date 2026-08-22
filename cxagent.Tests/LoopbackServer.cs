@@ -63,15 +63,15 @@ public sealed class LoopbackServer : IDisposable
     /// <summary>
     /// Stops the listener and WAITS for the request loop to exit before closing.
     ///
-    /// <para>This used to be `{ _listener.Stop(); _listener.Close(); }` with the loop running
-    /// fire-and-forget. Nothing waited for it, so `Close()` raced a loop still touching `_listener`
-    /// (its `while (_listener.IsListening)` condition, and the whole response body after an
-    /// already-accepted request). The visible symptoms were an `ObjectDisposedException` in one test
-    /// and — because `HttpEndPointManager` is a process-global map keyed by port — an
-    /// `HttpListenerException: "Address already in use"` thrown from `Close` -> `RemoveListener` in a
-    /// COMPLETELY DIFFERENT test class. That is why this presented for weeks as a random ~2-3-in-8
-    /// "flaky LlmHttpRetryTests" that moved between classes every run, and why two separate
-    /// port-allocation fixes did nothing: the ports were never the problem.</para>
+    /// <para>A bare `{ _listener.Stop(); _listener.Close(); }` with the loop running fire-and-forget
+    /// does not work: nothing waits for it, so `Close()` races a loop still touching `_listener` (its
+    /// `while (_listener.IsListening)` condition, and the whole response body after an already-accepted
+    /// request). The visible symptoms are an `ObjectDisposedException` in one test and — because
+    /// `HttpEndPointManager` is a process-global map keyed by port — an `HttpListenerException:
+    /// "Address already in use"` thrown from `Close` -> `RemoveListener` in a COMPLETELY DIFFERENT
+    /// test class. That is how this presents: a random ~2-3-in-8 "flaky LlmHttpRetryTests" that moves
+    /// between classes every run, immune to port-allocation fixes because the ports are not the
+    /// problem.</para>
     ///
     /// <para>`Stop()` before the wait so `GetContextAsync` throws and the loop returns; the timeout
     /// means a wedged loop fails this test rather than hanging the whole suite.</para>

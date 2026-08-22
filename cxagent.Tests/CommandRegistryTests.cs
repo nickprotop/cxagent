@@ -9,11 +9,11 @@ namespace CxAgent.Tests;
 /// <summary>
 /// One table, contributed to by both layers.
 ///
-/// <para>WHAT IT REPLACES. Dispatch was a switch on CommandOutcome wrapping chains of
-/// <c>if (command.Name == "/x")</c> — about 170 lines in a composition root, so adding a command
-/// meant editing the largest method in the codebase. The outcome enum existed to remove that
-/// name-matching and could not: nine of thirteen commands declared NeedsWindow, which means "not a
-/// prompt" rather than any precondition.</para>
+/// <para>WHAT IT REPLACES. Dispatch by a switch on an outcome enum wrapping chains of
+/// <c>if (command.Name == "/x")</c> runs to about 170 lines in a composition root, so adding a
+/// command means editing the largest method in the codebase. An outcome enum cannot remove that
+/// name-matching: nine of thirteen commands declare NeedsWindow, which means "not a prompt" rather
+/// than any precondition.</para>
 /// </summary>
 public class CommandRegistryTests : IDisposable
 {

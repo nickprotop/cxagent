@@ -51,10 +51,10 @@ public class AppShellE2ETests
         // the tmux smoke-drive (Step 3) on the real Run() loop.
         await runner.RunAsync(mw.Input.Input, CancellationToken.None);
 
-        // THE PROMPT REACHED THE AGENT'S CONTEXT — the observable outcome now that there is no status
-        // enum to assert on. This used to assert an "assistant" entry on a session-side list that
-        // nothing ever read; the agent's context is the real thing, and what lands in it is the user
-        // turn plus whatever the provider produced (here a stub that streams no text).
+        // THE PROMPT REACHED THE AGENT'S CONTEXT — the observable outcome, there being no status
+        // enum to assert on. An "assistant" entry on a session-side list nothing reads would prove
+        // nothing; the agent's context is the real thing, and what lands in it is the user turn plus
+        // whatever the provider produced (here a stub that streams no text).
         Assert.Contains(runner.Context.Messages, m => m.Role == "user");
         Assert.Equal("system", runner.Context.Messages[0].Role);
 

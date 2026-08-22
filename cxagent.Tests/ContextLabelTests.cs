@@ -22,8 +22,8 @@ public class ContextLabelTests
     [Fact]
     public void PercentageIsOccupancyNotCumulativeSpend()
     {
-        // 40k of a 208k window is 19%, while the session has spent 223k in total — which is what
-        // used to be divided by the window to produce "107%".
+        // 40k of a 208k window is 19%, while the session has spent 223k in total — and it is the
+        // total, divided by the window, that produces the reported "107%".
         var label = MainWindow.ContextLabelForTest(used: 40_000, spent: 223_000, window: 208_000);
 
         Assert.Contains("19%", label);
@@ -55,10 +55,10 @@ public class ContextLabelTests
     }
 
     /// <summary>
-    /// A compression must say something MEANINGFUL, not just cast doubt on the old number — and now
-    /// it can say both what happened AND where that leaves the context, because AgentContext scales
-    /// its own reading by the character ratio compaction measured. The fraction is marked approximate,
-    /// since it is arithmetic on a ratio rather than a measurement.
+    /// A compression must say something MEANINGFUL, not just cast doubt on the last reading: both
+    /// what happened AND where that leaves the context. AgentContext can supply the second because it
+    /// scales its own reading by the character ratio compaction measured. The fraction is marked
+    /// approximate, since it is arithmetic on a ratio rather than a measurement.
     /// </summary>
     [Fact]
     public void StaleReadingShowsWhatTheCompressionDidAndAnEstimate()

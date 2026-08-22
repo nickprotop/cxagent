@@ -6,9 +6,9 @@ namespace CxAgent.Tests;
 /// <summary>
 /// What "Always allow" writes down.
 ///
-/// <para>The rule used to be the whole command string, so 111 accumulated grants could essentially
-/// never match again. The obvious fix — grant the first word — is the dangerous one, and the tests
-/// that matter here are the ones proving it was not taken.</para>
+/// <para>A rule holding the whole command string essentially never matches again — that is how 111
+/// grants accumulate. The obvious fix — grant the first word — is the dangerous one, and the tests
+/// that matter here are the ones proving it is not taken.</para>
 /// </summary>
 public class CommandArityTests
 {

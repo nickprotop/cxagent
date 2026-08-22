@@ -71,9 +71,9 @@ public class CommandSubjectsTests
     // ---- the five holes, each as its own regression ----------------------------------------------
 
     // BUG 5, found by writing CommandSubjects. `--file=/etc/shadow` is a path wearing a flag's
-    // clothes: it starts with a dash, so the old collector skipped it, and the policy then confined
-    // the one path it could see and returned true. The `-f` spelling was refused correctly, because
-    // the path happened to land in a token of its own — the same read, opposite answers.
+    // clothes: it starts with a dash, so a collector that skips dashed tokens misses it, and the
+    // policy then confines the one path it can see and returns true. The `-f` spelling is refused
+    // correctly, because the path lands in a token of its own — the same read, opposite answers.
     [Fact]
     public void AFlagCarryingItsValue_IsExaminedLikeASeparateArgument()
     {

@@ -14,9 +14,9 @@ public class SessionCommandsTests
     public void Clear_IsHandled_AndSaysSo()
     {
         // WHAT /clear ACTUALLY CLEARS is the agent's context, and the CALLER does that — this type
-        // holds no session state. It used to be handed a List<ChatMessage> to empty here, and this
-        // test asserted the list came back empty; nothing ever read that list, so both the clear and
-        // the assertion were theatre. AgentTests covers the context, which is the real thing.
+        // holds no session state. Handing it a List<ChatMessage> to empty here and asserting the
+        // list comes back empty would be theatre: nothing reads that list. AgentTests covers the
+        // context, which is the real thing.
         Assert.True(SessionCommands.TryHandle("/clear", out var reply));
 
         Assert.Contains("cleared", reply, StringComparison.OrdinalIgnoreCase);

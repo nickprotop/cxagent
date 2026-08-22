@@ -104,8 +104,8 @@ public class SessionManagerTests : IDisposable
     // A ROOT WHOSE ORDERING IS FIXED BY ITS UI still gets an owned session — WIRED, not merely
     // listed. cxagent builds its session before the window (the startup banner needs its edit mode)
     // and its gate after (a gate needs a window), so the folder overload's ordering is impossible
-    // there. This used to be Adopt(), which added the session but wired nothing: the root called
-    // SessionFactory itself, and nothing checked the two agreed. Taking the Session here means one
+    // there. An Adopt() that merely added the session without wiring it would leave the root calling
+    // SessionFactory itself with nothing checking the two agreed. Taking the Session here means one
     // routine wires every session however it was constructed.
     [Fact]
     public void Open_WiresASessionBuiltBeforeTheManager()
@@ -144,9 +144,9 @@ public class SessionManagerTests : IDisposable
     }
 
     // THE HOOK IS THE WHOLE UI DEPENDENCY. Create owns the rules store, so it can hand it to a
-    // caller that knows how to ask a human — which is the only part Core cannot supply. Before the
-    // gate stopped holding a session's policy this was impossible: there was no session yet to give
-    // it one.
+    // caller that knows how to ask a human — which is the only part Core cannot supply. This works
+    // only because the gate holds no session's policy: at Create time there is no session yet to
+    // give it one.
     [Fact]
     public void Create_BuildsTheGateFromTheStoreItOwns()
     {

@@ -143,10 +143,10 @@ public class McpClientTests : IDisposable
     /// ONE CALL'S ERROR DOES NOT COLOUR ANOTHER'S. The failure text belongs to the call that
     /// failed, and to no other.
     ///
-    /// <para>It used to live on a shared <c>Error</c> field: written by whichever call failed last,
+    /// <para>A shared <c>Error</c> field cannot do this: written by whichever call failed last,
     /// read into every later failure's message, and made sticky by <c>??=</c>. With one agent that
-    /// was merely untidy — the last failure usually WAS yours. With two children on one server it
-    /// became a wrong diagnosis: A times out, B's unrelated failure reports A's message, and the
+    /// is merely untidy — the last failure usually IS yours. With two children on one server it
+    /// becomes a wrong diagnosis: A times out, B's unrelated failure reports A's message, and the
     /// model reasons from an error belonging to another agent's call.</para>
     ///
     /// <para>CONCURRENTLY, which is the only way to see it. Run sequentially, the shared field is
@@ -441,9 +441,9 @@ public class McpClientTests : IDisposable
     /// WE ASK FOR THE LATEST WE SUPPORT, not the oldest that exists. The spec: "the client MUST send
     /// a protocol version it supports. This SHOULD be the LATEST version supported by the client."
     ///
-    /// <para>It used to send 2024-11-05 — the very first revision, which pairs with the deprecated
-    /// HTTP+SSE transport. Asking low costs real capability and gains nothing, since a server that
-    /// cannot meet us counter-offers anyway.</para>
+    /// <para>Sending 2024-11-05 — the very first revision — pairs us with the deprecated HTTP+SSE
+    /// transport. Asking low costs real capability and gains nothing, since a server that cannot
+    /// meet us counter-offers anyway.</para>
     /// </summary>
     [Fact]
     public async Task StartAsync_AsksForTheLatestVersionWeSupport()

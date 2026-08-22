@@ -55,8 +55,8 @@ public class LogFileManagerTests : IDisposable
         Assert.Equal("an error\n", await mgr.ReadAsync("g1", "j1", "stderr"));
     }
 
-    /// <summary>One agent, one directory. Turn logs from a whole session must land together — they
-    /// used to scatter across a directory per user message, with turn numbering restarting in each.</summary>
+    /// <summary>One agent, one directory. Turn logs from a whole session must land together, not
+    /// scatter across a directory per user message with turn numbering restarting in each.</summary>
     [Fact]
     public async Task AppendAsync_PutsOneAgentsTurnsInOneDirectory()
     {

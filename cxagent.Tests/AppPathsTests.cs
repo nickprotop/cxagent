@@ -38,8 +38,8 @@ public class AppPathsTests
 
     /// <summary>
     /// EnsureCreated is called on every startup, so it must also REPAIR a directory that already
-    /// exists with loose permissions — otherwise every install created before this fix stays 775
-    /// forever.
+    /// exists with loose permissions — otherwise an install whose directory was created 775 stays
+    /// 775 forever.
     /// </summary>
     [Fact]
     public void EnsureCreated_TightensAnExistingLooseDir()

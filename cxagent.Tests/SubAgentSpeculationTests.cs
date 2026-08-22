@@ -87,7 +87,7 @@ public class SubAgentSpeculationTests
 
     /// <summary>THE NULL PATH — the graceful fallback the parent already has. A child built with no
     /// classifier (headless, most tests, a fixed AllowAll/DenyAll gate upstream) must still run to
-    /// completion; it just never speculates, exactly as before this wiring existed.</summary>
+    /// completion; it just never speculates.</summary>
     [Fact]
     public async Task AChildWithNoClassifier_StillRuns()
     {

@@ -130,10 +130,10 @@ public class ProviderConfigTests : IDisposable
     /// <summary>
     /// ABSENT STAYS NULL, and that is the whole reason this field is nullable.
     ///
-    /// <para>It used to default to a real 200, which made "the user chose 200" and "the user chose
-    /// nothing" the same value — and the app worked around it by opening config.json a second time,
-    /// by hand, to recover the distinction. What absence MEANS is decided by the reader
-    /// (AgentHost.CeilingFor), not smuggled into the parse.</para>
+    /// <para>Defaulting it to a real 200 would make "the user chose 200" and "the user chose nothing"
+    /// the same value, leaving the app to recover the distinction by opening config.json a second
+    /// time by hand. What absence MEANS is decided by the reader (AgentHost.CeilingFor), not smuggled
+    /// into the parse.</para>
     /// </summary>
     [Fact]
     public void Orchestrator_MaxTurnsAbsent_StaysNull()

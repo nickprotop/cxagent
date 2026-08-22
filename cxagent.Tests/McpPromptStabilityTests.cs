@@ -17,7 +17,7 @@ namespace CxAgent.Tests;
 /// identical prompt costs 43ms warm against 1,420ms cold.</para>
 ///
 /// <para>A user editing AGENTS.md asked for that and can see why they paid. Nobody asks for an MCP
-/// server's handshake to land on turn 82, which is exactly what used to happen.</para>
+/// server's handshake to land on turn 82, so a handshake must never rewrite the prompt.</para>
 /// </summary>
 public class McpPromptStabilityTests : IDisposable
 {
@@ -44,9 +44,9 @@ public class McpPromptStabilityTests : IDisposable
         p.LastMessages!.First(m => m.Role == "system").Content;
 
     /// <summary>
-    /// A SERVER THAT CONNECTS MID-SESSION DOES NOT REWRITE THE PROMPT. This is the regression: the
-    /// instructions used to be re-read every turn, so a late handshake invalidated the cache prefix
-    /// for the rest of the conversation.
+    /// A SERVER THAT CONNECTS MID-SESSION DOES NOT REWRITE THE PROMPT. The regression it guards:
+    /// instructions re-read every turn, so that a late handshake invalidates the cache prefix for
+    /// the rest of the conversation.
     /// </summary>
     [Fact]
     public async Task AServerConnectingMidSession_DoesNotChangeTheSystemPrompt()

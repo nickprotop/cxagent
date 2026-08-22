@@ -36,10 +36,10 @@ public class ShellJobExecutorTests
     [Fact]
     public async Task Execute_CapturesStdout_SoTheNextJobCanReferenceIt()
     {
-        // The bag used to hold ONLY exit_code, so {{some_shell_job.stdout}} could never resolve and
-        // any goal that shelled out and fed the result onward failed. Measured on a live drive of
-        // "list ~/bin. what it does?": the job succeeded, the reference produced nothing, and the
-        // model reported the directory EMPTY — it had six scripts.
+        // A bag holding ONLY exit_code leaves {{some_shell_job.stdout}} unresolvable, so any goal
+        // that shells out and feeds the result onward fails. Measured on a live drive of "list ~/bin.
+        // what it does?": the job succeeded, the reference produced nothing, and the model reported
+        // the directory EMPTY — it had six scripts.
         var result = await new ShellJobExecutor().ExecuteAsync(
             P(("command", "echo hello-from-stdout")), new CollectingContext(), CancellationToken.None);
 

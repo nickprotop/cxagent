@@ -22,7 +22,7 @@ public class SessionHintsTests
 
     /// <summary>
     /// THE UNFINISHED ONE IS NAMED, because "ended without closing" is the case where someone lost
-    /// work and is looking for it — the case the old dialog existed to catch.
+    /// work and is looking for it.
     /// </summary>
     [Fact]
     public void StartupHintNamesAnUnfinishedSessionAndItsSize()

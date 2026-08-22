@@ -472,10 +472,10 @@ public class SystemPromptTests
     /// <summary>
     /// FAN-OUT MODE PUSHES THE MODEL TO DELEGATE WIDE READING.
     ///
-    /// <para>Measured before this line existed: asked "across this whole repository, which controls
+    /// <para>Measured without this line: asked "across this whole repository, which controls
     /// implement their own keyboard handling — I don't know where they are", the model made TWELVE
     /// read_file calls and spawned nothing, on the exact shape of task its tool description says to
-    /// delegate. The description alone did not move it.</para>
+    /// delegate. The description alone does not move it.</para>
     ///
     /// <para>opencode carries FOUR such nudges in its system prompt for the same reason. This is one,
     /// phrased as a rule about where the reading LANDS rather than as a preference for a tool: a model
@@ -561,10 +561,9 @@ public class SystemPromptTests
     /// <summary>
     /// The prompt does not restate the tool's own description.
     ///
-    /// <para>ASSERTED ON A PHRASE, NOT THE TOOL NAME. It used to check for "spawn_agent", which was a
-    /// distinctive token; the tool is now called <c>task</c>, and "task" is an ordinary English word
-    /// the prompt uses in its own sentences ("fits the task at hand"). A bare-word check would fail
-    /// on prose that has nothing to do with the tool.</para>
+    /// <para>ASSERTED ON A PHRASE, NOT THE TOOL NAME. The tool is called <c>task</c>, and "task" is
+    /// an ordinary English word the prompt uses in its own sentences ("fits the task at hand"), so a
+    /// bare-word check would fail on prose that has nothing to do with the tool.</para>
     /// </summary>
     [Fact]
     public void Parent_IsNotToldWhenToSpawn()

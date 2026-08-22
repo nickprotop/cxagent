@@ -23,19 +23,16 @@ public class SettingsEntryTests
     [Fact]
     public void Escape_GoesToTheDialogWhileOpen_ThenToARunningTurn_ThenNowhere()
     {
-        // The P14 drive reported "Escape no longer discards a draft" as a defect and blamed a missing
-        // `finally`. Both halves were wrong, and this note stays so the next reader does not repeat
-        // the diagnosis: the routing is a pure function of its inputs, and AppBootstrap DOES clear
-        // the dialog flag in a finally (verified). What the drive actually observed is that Escape
-        // does not clear typed COMPOSER TEXT -- which it never has, in any version.
+        // A MISDIAGNOSIS WORTH NOT REPEATING. "Escape does not discard a draft" reads as a routing
+        // defect with a missing `finally` behind it. Both halves are wrong: the routing is a pure
+        // function of its inputs, and AppBootstrap DOES clear the dialog flag in a finally
+        // (verified). What that symptom actually is: Escape does not clear typed COMPOSER TEXT.
         //
-        // The old third state, DiscardPendingApproval, had been a NO-OP since the copilot draft gate
-        // was deleted: Escape did nothing whenever no dialog was open, and nothing said so. It is now
-        // "cancel the running turn", which is what a user pressing Escape actually wants.
-        // ONE INPUT NOW. The dialog branch went with the Settings dialog itself; what Escape can
-        // find in front of it is a running turn, or nothing. A permission prompt and a question are
-        // both answered before this is reached — see the handler, which checks them first, so their
-        // absence here is the routing staying a pure function rather than a gap.
+        // ONE INPUT. What Escape can find in front of it is a running turn, or nothing — and with no
+        // turn running it means "cancel nothing", not some third discard state, which would be a
+        // no-op nothing tells the user about. A permission prompt and a question are both answered
+        // before this is reached — see the handler, which checks them first, so their absence here
+        // is the routing staying a pure function rather than a gap.
         Assert.Equal(EscapeTarget.CancelTurn, EscapeRouting.For(turnIsRunning: true));
         Assert.Equal(EscapeTarget.Nothing,    EscapeRouting.For(turnIsRunning: false));
     }

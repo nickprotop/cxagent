@@ -18,8 +18,8 @@ public class SessionCompressorTests
         new() { Role = role, Content = content };
 
     /// <summary>A plausible model reply. These tests are about WHERE the cut lands, not about
-    /// summary quality — but a 7-character placeholder is no longer a reply the compressor accepts,
-    /// and a fixture that trips the quality gate would be testing the wrong thing.</summary>
+    /// summary quality — but a 7-character placeholder is not a reply the compressor accepts, and a
+    /// fixture that trips the quality gate would be testing the wrong thing.</summary>
     private const string SummaryText = "Earlier: read three files and changed the parser guard.";
 
     private static LlmResponse Usage(LlmResponse r) =>

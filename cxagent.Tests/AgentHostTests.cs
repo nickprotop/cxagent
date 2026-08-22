@@ -60,12 +60,11 @@ public class AgentHostTests
     }
 
     /// <summary>
-    /// A BARE HOST LETS THE FAILURE THROUGH, because reporting is the session's now.
+    /// A BARE HOST LETS THE FAILURE THROUGH, because reporting belongs to the session.
     ///
-    /// <para>This used to assert that the host caught a provider failure and called
-    /// <c>_sink.Failed</c>. That moved with the rest of turn ownership: RunAsync is a delegation to
-    /// the agent, and a caller without a session — every test in this file — gets the exception.
-    /// The behaviour it protected is still pinned, one layer up, by
+    /// <para>So there is nothing to assert here about <c>_sink.Failed</c>: RunAsync is a delegation
+    /// to the agent, and a caller without a session — every test in this file — gets the exception.
+    /// Sink reporting is pinned one layer up, by
     /// <c>ErrorOnceTests.AFailingTurn_ReportsExactlyOnce</c> and the vendor-body assertion below.</para>
     /// </summary>
     [Fact]
@@ -469,10 +468,10 @@ public class AgentHostTests
     /// <summary>
     /// ONE RESOLUTION FOR PARENT AND CHILDREN, which is the bug this static exists to prevent.
     ///
-    /// <para>The ceiling used to be computed twice — here for the session agent, and again by a
-    /// separate expression in the composition root for sub-agents. They disagreed on the one value
-    /// that has a documented meaning: a configured 0 left the parent unbounded while children
-    /// silently fell back to the default.</para>
+    /// <para>Computing the ceiling twice — here for the session agent, and again by a separate
+    /// expression in the composition root for sub-agents — makes the two disagree on the one value
+    /// that has a documented meaning: a configured 0 leaves the parent unbounded while children
+    /// silently fall back to the default.</para>
     /// </summary>
     [Fact]
     public void CeilingFor_GivesOneAnswer_ForEveryCaller()

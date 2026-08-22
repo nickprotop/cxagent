@@ -85,7 +85,7 @@ public class ChatTranscriptSinkTests
     [InlineData("plain [abc] with no backticks")]
     public void AssistantBody_RendersModelTextVerbatim_EvenInsideCodeSpans(string modelText)
     {
-        // What AssistantTextAppended now does: hand the token over untouched.
+        // What AssistantTextAppended does: hand the token over untouched.
         var rendered = AsAssistantBody(modelText);
 
         Assert.DoesNotContain("[[", rendered, StringComparison.Ordinal);
@@ -93,8 +93,8 @@ public class ChatTranscriptSinkTests
     }
 
     /// <summary>
-    /// The assertion that makes the one above mean something: pre-escaping — what the sink used to do
-    /// — leaves the doubled bracket ON SCREEN inside a code span.
+    /// The assertion that makes the one above mean something: pre-escaping the body text leaves the
+    /// doubled bracket ON SCREEN inside a code span.
     /// </summary>
     [Fact]
     public void PreEscapingBodyText_LeavesADoubledBracketOnScreen()

@@ -131,9 +131,9 @@ public class FolderIdentityTests : IDisposable
     /// THE BEHAVIOUR THIS ALL EXISTS FOR, through the store rather than the helper: a grant made in
     /// a folder does not survive that folder being deleted and remade.
     ///
-    /// <para>Measured before this existed: 111 rules across seven scopes, 61 of them pinned to a
-    /// <c>/tmp</c> directory that no longer existed — every one of which would have applied again
-    /// the moment something recreated the path.</para>
+    /// <para>Measured in this app's own store: 111 rules across seven scopes, 61 of them pinned to
+    /// a <c>/tmp</c> directory that no longer exists — every one of which would apply again the
+    /// moment something recreated the path.</para>
     /// </summary>
     [Fact]
     public async Task ARuleGrantedBeforeAFolderWasRecreated_DoesNotApplyAfterwards()

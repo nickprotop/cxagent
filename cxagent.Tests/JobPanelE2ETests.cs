@@ -49,8 +49,8 @@ public class JobPanelE2ETests : IDisposable
 
         await runner.RunAsync("do two steps", CancellationToken.None);
 
-        // The prompt reached the agent's context. This used to assert an "assistant" entry on a
-        // session-side list nothing read — which passed whether or not the run happened at all.
+        // The prompt reached the agent's context. An "assistant" entry on a session-side list nothing
+        // reads would pass whether or not the run happened at all.
         Assert.Contains(runner.Context.Messages, m => m.Role == "user");
 
         // Drive nothing else — the render landing is the tmux drive. We can't assert BlockCount

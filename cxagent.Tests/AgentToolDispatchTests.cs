@@ -60,12 +60,12 @@ public class AgentToolDispatchTests : IDisposable
     /// "summary" is the short text the MODEL is told instead — handing it a blob of colour tags
     /// costs a turn of it describing them.
     ///
-    /// <para>THE REGRESSION THIS GUARDS. The row's copy used to travel by a side channel
-    /// (AgentToolset.LastDisplay), because Agent rebuilt job.Result from the returned STRING and
-    /// discarded a tool's own output dictionary — so a show_diff row displayed "README.md, +5 -1,
-    /// shown above", the model's confirmation, where the diff belonged. The dispatch now carries
-    /// the tool's JobResult itself and the channel is gone; if the object stopped surviving, the
-    /// row would silently show the summary again.</para>
+    /// <para>THE REGRESSION THIS GUARDS: the row's copy travelling by a side channel
+    /// (AgentToolset.LastDisplay), which is what an Agent that rebuilds job.Result from the returned
+    /// STRING and discards a tool's own output dictionary forces — a show_diff row then displays
+    /// "README.md, +5 -1, shown above", the model's confirmation, where the diff belongs. The
+    /// dispatch carries the tool's JobResult itself; if the object stopped surviving, the row would
+    /// silently show the summary again.</para>
     /// </summary>
     private sealed class TwoAudienceTool : IAgentTool
     {

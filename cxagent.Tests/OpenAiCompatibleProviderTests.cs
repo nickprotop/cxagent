@@ -303,8 +303,8 @@ public class OpenAiCompatibleProviderTests : IDisposable
         Assert.Equal("create_plan", assembled!.Name);
         Assert.Equal("call_1", assembled.Id);
 
-        // The whole argument payload must be reassembled and parseable — this is what the old code
-        // could never produce.
+        // The whole argument payload must be reassembled and parseable: a stream handled chunk by
+        // chunk, without accumulation, never produces this.
         var jobs = assembled.Arguments.GetProperty("jobs");
         Assert.Equal(1, jobs.GetArrayLength());
         Assert.Equal("w", jobs[0].GetProperty("id").GetString());

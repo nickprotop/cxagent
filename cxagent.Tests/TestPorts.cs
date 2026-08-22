@@ -6,14 +6,13 @@ namespace CxAgent.Tests;
 /// <summary>
 /// Binds an <see cref="HttpListener"/> to a free loopback port, retrying on collision.
 ///
-/// Why this exists: <see cref="LoopbackServer"/> and <c>HttpJobExecutorTests</c> each used to pick a
-/// port as <c>20000 + Random.Shared.Next(1, 9000)</c> with NO retry, from the SAME range. Five test
-/// classes spin listeners up in parallel, so two occasionally drew the same port and one threw
-/// <see cref="HttpListenerException"/> ("Address already in use") at construction — surfacing as an
-/// intermittent failure in whichever class lost the race. Three consecutive full-suite runs during the
-/// P5c work produced one such failure and two clean, in DIFFERENT test methods each time; the
-/// long-standing "known flaky LlmHttpRetryTests" was almost certainly the same root cause rather than a
-/// separate issue.
+/// Why this exists: callers picking a port as <c>20000 + Random.Shared.Next(1, 9000)</c> with NO
+/// retry, from the SAME range, collide. Five test classes spin listeners up in parallel, so two
+/// occasionally draw the same port and one throws <see cref="HttpListenerException"/> ("Address
+/// already in use") at construction — surfacing as an intermittent failure in whichever class lost
+/// the race. Measured that way: three consecutive full-suite runs produced one such failure and two
+/// clean, in DIFFERENT test methods each time, and the "known flaky LlmHttpRetryTests" was almost
+/// certainly the same root cause rather than a separate issue.
 ///
 /// <see cref="HttpListener"/> cannot bind port 0 (it needs a concrete prefix string), so an
 /// OS-assigned port isn't available; retrying on a fresh random port is the workable fix. The window
@@ -22,7 +21,7 @@ namespace CxAgent.Tests;
 internal static class TestPorts
 {
     private const int MinPort = 20000;
-    private const int MaxPort = 45000;   // wider than the old 9000-port span => fewer collisions
+    private const int MaxPort = 45000;   // a 25000-port span, far wider than 9000 => fewer collisions
     private const int MaxAttempts = 25;
 
     /// <summary>

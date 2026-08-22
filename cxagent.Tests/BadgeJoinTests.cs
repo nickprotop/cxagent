@@ -23,11 +23,11 @@ namespace CxAgent.Tests;
 /// on the gate's own return value, because what the sink actually reads is exactly the thing that
 /// was severed.</para>
 ///
-/// <para>AND NOW ON WHEN, not only whether. The badge used to be read off job.Result, and a
-/// JobResult exists ONLY once the call has finished — so the word appeared at the wrong moment: a
-/// classifier-approved `dotnet build` showed nothing for the minutes it ran, and an auto-DENIED
-/// call, which never executes, had no result to be badged from. The gate decides BEFORE the tool
-/// runs; these tests pin the badge to that moment and to its survival onto the finished row.</para>
+/// <para>AND ON WHEN, not only whether. Reading the badge off job.Result puts it at the wrong
+/// moment, because a JobResult exists ONLY once the call has finished: a classifier-approved
+/// `dotnet build` shows nothing for the minutes it runs, and an auto-DENIED call, which never
+/// executes, has no result to be badged from. The gate decides BEFORE the tool runs; these tests
+/// pin the badge to that moment and to its survival onto the finished row.</para>
 /// </summary>
 public class BadgeJoinTests : IDisposable
 {

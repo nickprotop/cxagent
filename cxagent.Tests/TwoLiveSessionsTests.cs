@@ -44,8 +44,8 @@ public class TwoLiveSessionsTests : IDisposable
 
     /// <summary>A session rooted in one folder, assembled the way the app assembles one — through
     /// SessionFactory, so this test exercises the real assembly path rather than a hand-rolled
-    /// subset of it. It used to build an AgentHost directly and silently skipped the type catalog,
-    /// the spawner and the ask-user hook.</summary>
+    /// subset of it. Building an AgentHost directly here would silently skip the type catalog, the
+    /// spawner and the ask-user hook.</summary>
     private (AgentHost Host, BufferedChatSink Sink, BufferedJobPanel Jobs) Build(
         string workingDir, string instance, MockLlmProvider provider, AppPaths paths)
     {

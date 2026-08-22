@@ -32,8 +32,7 @@ public class WorkingModeTests
         Assert.True(mode.CanDelegate);
 
         // The widening carries the STRICT edit mode, which is the point: a call site that says only
-        // "fan out" is not also asking for silent writes. It never was asking for them — it just
-        // used to get them.
+        // "fan out" is not also asking for silent writes, so widening must not hand them over.
         Assert.Equal(EditMode.AlwaysAsk, mode.Edits);
     }
 
@@ -59,11 +58,11 @@ public class WorkingModeTests
     /// is ask too often, never write silently. Reordering EditMode would silently invert that, which
     /// is why it is pinned here rather than left to the comment.</para>
     ///
-    /// <para>THE ZERO VALUE AND THE EXPLICIT DEFAULT NOW AGREE, and that is worth pinning too. They
-    /// used to differ — the struct zeroed to AlwaysAsk while WorkingMode.Default said AcceptEdits —
-    /// so which one a session got depended on whether the code path went through the property or
-    /// the constructor. That is exactly the kind of difference nobody notices until it decides
-    /// whether a write asked.</para>
+    /// <para>THE ZERO VALUE AND THE EXPLICIT DEFAULT AGREE, and that is worth pinning too. If they
+    /// differed — the struct zeroing to AlwaysAsk while WorkingMode.Default said AcceptEdits — which
+    /// one a session got would depend on whether the code path went through the property or the
+    /// constructor. That is exactly the kind of difference nobody notices until it decides whether a
+    /// write asked.</para>
     /// </summary>
     [Fact]
     public void ADefaultConstructedMode_FallsToTheStrictEditMode()
