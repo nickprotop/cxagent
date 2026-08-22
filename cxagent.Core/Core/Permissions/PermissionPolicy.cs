@@ -259,7 +259,21 @@ public class PermissionPolicy
         if (body is { Length: > 0 })
             display.Append(" (").Append((body.Length / 1024.0).ToString("0.0")).Append(" KB)");
 
-        return new PermissionRequest(PermissionKind.Http, display.ToString(), origin, origin);
+        // FACTS CARRY METHOD, FULL URL AND BODY SIZE TO THE CLASSIFIER. Subject (and so What, which
+        // ActionClassifier prompts from) is deliberately the bare origin — see RuleSubject's comment
+        // on Http — so without this the classifier never sees the method, the path, or the size, and
+        // "a 40MB POST to an unfamiliar host" degrades to "a request to that host", which is a
+        // materially weaker fact to reason from. BodySize only, never body content — same reasoning
+        // as Display just above: the classifier reasons about shape, not attacker-authored bytes.
+        var facts = new ActionFacts
+        {
+            Http = new ActionFacts.HttpFacts(method, url, body?.Length),
+        };
+
+        return new PermissionRequest(PermissionKind.Http, display.ToString(), origin, origin)
+        {
+            Facts = facts,
+        };
     }
 
     /// <summary>True when this request needs no prompt: an in-boundary file read/write, or a
