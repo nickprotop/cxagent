@@ -676,9 +676,17 @@ public sealed class InlineJobSink : IToolObserver
     /// because a denial does not run: it fails immediately and the row is terminal by the time
     /// anyone sees it.</para>
     /// </summary>
+    /// <summary>
+    /// The word for a decision the USER did not make, or "" for every ordinary one.
+    ///
+    /// <para>NO SEPARATOR OF ITS OWN. It used to return "  ·  auto-approved", and CompactHeader
+    /// appends its own "  ·  " after it — so a badged row rendered "· · auto-approved · done",
+    /// doubled. Seen on a live drive. The separators belong to the chain that assembles the header,
+    /// not to the pieces it joins.</para>
+    /// </summary>
     private static string Badge(Job job) =>
         job.DecidedBy == "auto"
-            ? "  ·  " + (job.State == JobState.Failed ? "auto-denied" : "auto-approved")
+            ? (job.State == JobState.Failed ? "auto-denied" : "auto-approved")
             : "";
 
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
@@ -714,7 +722,11 @@ public sealed class InlineJobSink : IToolObserver
             // then runs for minutes, and learning afterwards that a model waved it through is
             // strictly worse than seeing it while it happens. Same word, same slot as the finished
             // row below, so the row does not change shape when it settles.
-            var deciding = Badge(job);
+            // ITS OWN SEPARATOR, because this branch has no "  ·  " chain to slot into — the running
+            // row is "author  name" with no state or duration after it yet. The terminal branches
+            // below build that chain themselves, so Badge() carries no separator of its own and each
+            // caller adds exactly the one its shape needs.
+            var deciding = Badge(job) is { Length: > 0 } word ? "  ·  " + word : "";
 
             // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick. Single-cell like Arc, so the text after it does
             // not shift as it animates (Dots is three columns wide and does exactly that).
@@ -743,7 +755,7 @@ public sealed class InlineJobSink : IToolObserver
         // BEFORE THE STATE, slotting into the same "· x · y" chain CompactHeader already builds —
         // "done · 0.0s" becomes "auto-approved · done · 0.0s" rather than a second, differently
         // shaped suffix.
-        var decidedBy = Badge(job) is { Length: > 0 } b ? b.TrimStart() + "  ·  " : "";
+        var decidedBy = Badge(job) is { Length: > 0 } b ? b + "  ·  " : "";
 
         // A GLYPH where the spinner was, not nothing. Replacing the spinner with an empty string
         // shifts the whole row one cell left the instant a step finishes, so a column of steps

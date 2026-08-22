@@ -518,6 +518,41 @@ public class InlineJobSinkTests
     }
 
     [Fact]
+    public void TheBadgeIsSeparatedFromTheRestOfTheHeaderExactlyOnce()
+    {
+        // FOUND ON A LIVE DRIVE, not by the test above, which only asks whether the WORD appears.
+        // Badge() used to carry its own leading "  ·  " and CompactHeader appends another after it,
+        // so a badged row rendered "· · auto-approved · done · 25.0s" — a doubled separator on every
+        // auto decision, invisible to an assertion that only greps for the word.
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            DecidedBy = "auto",
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero },
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        // ONE separator before the badge and ONE after it. Asserting only that the WORD appears
+        // (the test above) passed while the row rendered "·  ·  auto-approved", which is what a
+        // live drive actually showed. Counting the separators is what pins the shape.
+        Assert.Equal(3, header.Split('·').Length - 1);
+        Assert.Contains("·  auto-approved  ·", header);
+    }
+
+    [Fact]
+    public void ARunningRowSeparatesItsBadgeToo()
+    {
+        // THE OTHER BRANCH, and it renders from a different expression. A running row has no state or
+        // duration after the badge, so it has no "  ·  " chain to slot into and must supply the
+        // separator itself. Fixing the doubled separator on FINISHED rows removed it from Badge(),
+        // which silently left running rows reading "name auto-approved" with no separator at all —
+        // reported from a live drive.
+        var job = TypedJob("shell", JobState.Running) with { DecidedBy = "auto" };
+
+        Assert.Contains("·  auto-approved", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
     public void AnAutoDeniedTool_BadgesTheRow()
     {
         var job = TypedJob("shell", JobState.Failed) with
