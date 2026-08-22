@@ -51,9 +51,12 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         // plugin will. Still a pure function of its arguments — the root is passed in, not read —
         // which keeps RequestsFor ignorant of which agent is running, as below.
         // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
-        // row can badge "auto-approved" / "auto-denied" — see JobResult.DecidedBy. The last request
-        // in the loop that got a classifier verdict wins, which is right: it is the most recent word
-        // on this call.
+        // row can badge "auto-approved" / "auto-denied" — see JobResult.DecidedBy. The LAST REQUEST
+        // IN THE LOOP THAT GOT A CLASSIFIER VERDICT wins, which is right: it is the most recent word
+        // on this call. A single call can raise several requests (`copy` asks about source AND
+        // dest), and a later request that clears silently is a plain Allow with DeniedBy null — that
+        // must not overwrite an "auto" an earlier request already recorded, or the badge silently
+        // disappears even though the classifier decided this call. See the `??` below.
         string? decidedBy = null;
 
         var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters, context.WorkingDirectory);
@@ -78,7 +81,15 @@ public sealed class PermissionGatedPlugin : IJobPlugin
                 context.ReportPermissionWait(false);
             }
 
-            decidedBy = outcome.DeniedBy;
+            // `??`, NOT a plain assignment. A single call — `copy` is the case that showed this —
+            // raises SEVERAL requests, and a later one that clears silently (a stored rule, an
+            // in-boundary read) is a plain Allow with DeniedBy null. Assigning that over an
+            // earlier "auto" erased the classifier's verdict: a live drive auto-approved a shell
+            // command and the row rendered plain "done", no badge, even though DecidedBy="auto"
+            // reached the DB and /stats correctly. A null outcome never carries news — it means
+            // "nothing to report from this request" — so it must never overwrite whatever the
+            // last request that DID name a decider said.
+            decidedBy = outcome.DeniedBy ?? decidedBy;
 
             if (!outcome.Allowed)
             {

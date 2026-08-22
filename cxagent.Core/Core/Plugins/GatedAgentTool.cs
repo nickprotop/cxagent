@@ -67,8 +67,10 @@ public sealed class GatedAgentTool : IAgentTool
         // can tell what they actually answered.
         // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
         // row can badge "auto-approved" / "auto-denied" — the two gates below both write it, and
-        // the last one that ran wins, which is right: the classifier's most recent word on this
-        // call is the one worth showing.
+        // the last one that NAMED A DECIDER wins, which is right: the classifier's most recent word
+        // on this call is the one worth showing. Gate 2 can clear silently (DeniedBy null) after
+        // gate 1 was auto-approved, and that null must not erase gate 1's "auto" — see the `??`
+        // at each assignment below.
         string? decidedBy = null;
 
         {
@@ -92,7 +94,10 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
-            decidedBy = outcome.DeniedBy;
+            // `??`, NOT a plain assignment — see the identical fix and comment on gate 2 below,
+            // and PermissionGatedPlugin's sibling comment: a null DeniedBy never carries news and
+            // must not overwrite a verdict a request already named.
+            decidedBy = outcome.DeniedBy ?? decidedBy;
 
             if (!outcome.Allowed)
                 return new JobResult
@@ -130,7 +135,15 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
-            decidedBy = outcome.DeniedBy;
+            // `??`, NOT a plain assignment. GATE 1 CAN BE auto-approved (a classifier verdict,
+            // DeniedBy "auto") and this call still HAS an argument-level request to make — the
+            // tool declared one via Gate(call) — that clears silently, e.g. a stored rule, and
+            // comes back as a plain Allow with DeniedBy null. Assigning that over gate 1's "auto"
+            // erased the classifier's verdict from the badge on the way out, the same bug
+            // PermissionGatedPlugin had for its multi-request loop. A null outcome never carries
+            // news, so it must never overwrite whatever the last request that DID name a decider
+            // said.
+            decidedBy = outcome.DeniedBy ?? decidedBy;
 
             if (!outcome.Allowed)
             {

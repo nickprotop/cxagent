@@ -76,6 +76,34 @@ public class GatedAgentToolTests
     private static JobParameters Call(string value) =>
         new(new Dictionary<string, object?> { ["arg"] = value });
 
+    /// <summary>Returns one scripted outcome per call, in order — so a test can put gate 1's
+    /// AutoAllow ahead of gate 2's plain Allow and prove which one the wrapper keeps.</summary>
+    private sealed class ScriptedGate : IPermissionGate
+    {
+        private readonly Queue<PermissionOutcome> _outcomes;
+        public ScriptedGate(params PermissionOutcome[] outcomes) => _outcomes = new(outcomes);
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct) =>
+            Task.FromResult(_outcomes.Dequeue());
+    }
+
+    [Fact]
+    public async Task AnAutoApprovedAdmission_SurvivesTheToolsOwnSilentAllow()
+    {
+        // Same bug PermissionGatedPlugin had, in this type's own two-gate shape: gate 1 (tool
+        // admission) can be an AutoAllow — the classifier said yes to running this tool here at
+        // all — while gate 2 (the tool's own check on THIS call's arguments) clears silently and
+        // comes back as a plain Allow, DeniedBy null. `decidedBy = outcome.DeniedBy` let that null
+        // overwrite gate 1's "auto", so a tool row that was in fact auto-approved rendered with no
+        // badge at all.
+        var gate = new ScriptedGate(PermissionOutcome.AutoAllow, PermissionOutcome.Allow);
+        var tool = new GatedAgentTool(new RecordingTool(gatesEveryCall: true), gate);
+
+        var result = await tool.ExecuteAsync(Call("a"), new TestJobContext(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("auto", result.DecidedBy);
+    }
+
     [Fact]
     public async Task TheToolItselfIsAdmittedOnceBeforeTheFirstCall()
     {

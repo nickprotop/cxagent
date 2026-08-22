@@ -74,6 +74,44 @@ public class PermissionGatedPluginTests
         Assert.Equal("hello", result.Output["content"]);
     }
 
+    /// <summary>Returns one scripted outcome per call, in order — so a test can put an AutoAllow
+    /// ahead of a plain Allow and prove which one the wrapper keeps.</summary>
+    private sealed class ScriptedGate : IPermissionGate
+    {
+        private readonly Queue<PermissionOutcome> _outcomes;
+        public ScriptedGate(params PermissionOutcome[] outcomes) => _outcomes = new(outcomes);
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct) =>
+            Task.FromResult(_outcomes.Dequeue());
+    }
+
+    [Fact]
+    public async Task AnEarlierAutoApproval_SurvivesALaterSilentAllow()
+    {
+        // Reported from a live drive: auto mode auto-approved a shell command, the decision was
+        // recorded correctly in the history DB and /stats, but the tool row rendered plain
+        // "· done · 0.0s" with no "auto-approved" badge. Root cause was `decidedBy =
+        // outcome.DeniedBy` in the loop over RequestsFor: `copy` raises TWO requests (read the
+        // source, then write the dest), and the dest request — cleared silently, no classifier
+        // involved — is a plain Allow whose DeniedBy is null. That null overwrote the "auto" the
+        // source request had just recorded, so the badge was gone by the time ExecuteAsync
+        // returned, even though the decision itself was never wrong.
+        var srcDir = TempDir();
+        var src = Path.Combine(srcDir, "in.txt");
+        File.WriteAllText(src, "hello");
+        var dest = Path.Combine(srcDir, "out.txt");
+
+        var gate = new ScriptedGate(PermissionOutcome.AutoAllow, PermissionOutcome.Allow);
+        var registry = PluginRegistry.CreateWithBuiltins(null, gate);
+        registry.TryGet("file", out var plugin);
+
+        var result = await plugin!.ExecuteAsync(
+            Params(("action", "copy"), ("path", src), ("dest", dest)),
+            new TestJobContext(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("auto", result.DecidedBy);
+    }
+
     [Fact]
     public void OnlyTheThreeRiskyPlugins_AreWrapped()
     {
