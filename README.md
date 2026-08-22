@@ -264,8 +264,10 @@ cxagent --sessions [all]         # list earlier sessions and exit
 cxagent --model <instance>       # open on a specific entry from `providers`
 cxagent --mode <single|fan-out>  # start in that mode
 cxagent --config-dir <dir>       # use this directory instead of the usual one
+cxagent --theme <name>           # start in a named theme
 cxagent --mock                   # a fake provider, to try the UI
 cxagent --version
+cxagent --help                   # the options, also shown when an argument is wrong
 ```
 
 **`--config-dir`** points cxagent at a different config directory — the one holding `config.json`,
@@ -276,6 +278,11 @@ without touching your own:
 ```bash
 cxagent --config-dir /tmp/scratch
 ```
+
+**`--theme`** starts in a named theme. Names are case-insensitive, and one that matches nothing falls
+back to cxagent's own rather than refusing to start — a colour scheme is not worth failing over.
+`--help` lists what is installed. A `theme` key in `config.json` does the same thing for every run;
+the argument wins when both are present.
 
 ## Keys
 

@@ -66,6 +66,17 @@
     "verdict all ask; only an explicit allow is silent."
   ],
   "classifier": "local",
+  "//theme": [
+    "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
+    "ABSENT MEANS `cxagent` — its own palette, a near-black ground with a warm amber accent.",
+    "Names match case-insensitively, so \"ocean\" finds \"Ocean\".",
+    "A NAME THAT MATCHES NOTHING FALLS BACK rather than failing. Which themes exist is a",
+    "question only the window system can answer and it does not exist when this file is read,",
+    "so an unknown name is resolved at startup and quietly replaced. A misspelt colour scheme",
+    "is not worth refusing to start over.",
+    "`cxagent --help` lists what is installed; `--theme <name>` overrides this for one run."
+  ],
+  "theme": "cxagent",
   "//agents": [
     "SUB-AGENT TYPES. The five cxagent ships — explore, planner, builder, review, test — are",
     "  BUILT IN as of this version: their briefings and descriptions live in the program, not",

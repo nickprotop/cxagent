@@ -381,6 +381,22 @@ never in the config file.
 
 ---
 
+## `theme` — colours
+
+```json
+"theme": "Ocean"
+```
+
+The theme cxagent starts in. **Absent means `cxagent`** — its own palette, a near-black ground with a
+warm amber accent. Names are matched case-insensitively, so `ocean` finds `Ocean`.
+
+**A name that matches nothing falls back rather than failing.** Which themes exist is a question only
+the window system can answer, and it does not exist when this file is read — so an unknown name is
+resolved at startup and quietly replaced with the default. A misspelt colour scheme is not worth
+refusing to start over.
+
+Run `cxagent --help` to see what is installed; `--theme <name>` overrides this key for one run.
+
 ## `orchestrator` — caps
 
 ```json
