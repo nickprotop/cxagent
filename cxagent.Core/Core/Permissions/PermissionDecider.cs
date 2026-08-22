@@ -260,7 +260,10 @@ public sealed class PermissionDecider : IPermissionGate
                 // trusted write, and a reader deciding whether auto is worth its latency needs the
                 // count.
                 OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What));
-                return PermissionOutcome.Allow;
+                // AutoAllow, not Allow — same effect (the action runs) but the outcome now says WHO
+                // decided, which is what lets the tool row badge "auto-approved" (Task 8) rather than
+                // looking identical to a silent rule/boundary allow.
+                return PermissionOutcome.AutoAllow;
             }
 
             // AND A DENY REFUSES OUTRIGHT, under the same effect and for the symmetric reason. If a

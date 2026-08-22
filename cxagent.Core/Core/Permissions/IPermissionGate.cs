@@ -13,6 +13,19 @@ public sealed record PermissionOutcome(bool Allowed, string? DeniedBy = null, st
     public static PermissionOutcome Allow => new(true);
     public static PermissionOutcome ByUser => new(false, "user");
     public static PermissionOutcome ByClassifier(string? reason) => new(false, "auto", reason);
+
+    /// <summary>
+    /// An ALLOW the classifier gave rather than the boundary/rule silent path — same effect as
+    /// <see cref="Allow"/> (the action runs), but a caller downstream of the gate (Task 8: the tool
+    /// row) needs to tell "let through because a stored rule already covers this" from "a model was
+    /// asked and said yes", and <see cref="Allow"/> alone cannot say which.
+    ///
+    /// <para>REUSES <see cref="DeniedBy"/>'S VOCABULARY ("auto") rather than adding a new field for
+    /// one boolean: <c>Allowed</c> is already true here, so <c>DeniedBy</c> carries no other meaning
+    /// on this branch and repurposing it keeps PermissionOutcome a two-fact record (who decided, and
+    /// why) instead of growing a field that means something different per Allowed value.</para>
+    /// </summary>
+    public static PermissionOutcome AutoAllow => new(true, "auto");
 }
 
 /// <summary>The text a MODEL reads when an action was refused.</summary>

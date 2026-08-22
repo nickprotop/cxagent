@@ -65,6 +65,12 @@ public sealed class GatedAgentTool : IAgentTool
         // so a granted tool never reaches the prompt again. Asking every time is therefore not a
         // second prompt for the user — it is the one question, routed through the one layer that
         // can tell what they actually answered.
+        // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
+        // row can badge "auto-approved" / "auto-denied" — the two gates below both write it, and
+        // the last one that ran wins, which is right: the classifier's most recent word on this
+        // call is the one worth showing.
+        string? decidedBy = null;
+
         {
             var admission = new PermissionRequest(
                 PermissionKind.Tool,
@@ -86,6 +92,8 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
+            decidedBy = outcome.DeniedBy;
+
             if (!outcome.Allowed)
                 return new JobResult
                 {
@@ -93,6 +101,7 @@ public sealed class GatedAgentTool : IAgentTool
                     ExitCode = -1,
                     PermissionDenied = true,
                     ErrorMessage = DenialMessage.For(outcome, admission.Display),
+                    DecidedBy = decidedBy,
                 };
         }
 
@@ -121,6 +130,8 @@ public sealed class GatedAgentTool : IAgentTool
                 context.ReportPermissionWait(false);
             }
 
+            decidedBy = outcome.DeniedBy;
+
             if (!outcome.Allowed)
             {
                 return new JobResult
@@ -133,6 +144,7 @@ public sealed class GatedAgentTool : IAgentTool
                     // and without the flag every refusal bills the user for diagnosing their own no.
                     PermissionDenied = true,
                     ErrorMessage = DenialMessage.For(outcome, request.Display),
+                    DecidedBy = decidedBy,
                 };
             }
         }
@@ -141,6 +153,13 @@ public sealed class GatedAgentTool : IAgentTool
         // user reading a prompt, which belongs to nobody's stopwatch.
         context.WorkStarting();
 
-        return await _inner.ExecuteAsync(call, context, ct);
+        var result = await _inner.ExecuteAsync(call, context, ct);
+
+        // STAMPED ON THE WAY OUT, not threaded into the inner call — the inner tool has no idea a
+        // gate exists and must not need to. Only overwrites when a gate actually ran (decidedBy is
+        // null on the ordinary path, where nothing should change), and never overwrites a DecidedBy
+        // the inner tool itself set — none does today, but a future one composing its own gated
+        // calls should not have this silently clobber a decision it recorded.
+        return decidedBy is null || result.DecidedBy is not null ? result : result with { DecidedBy = decidedBy };
     }
 }

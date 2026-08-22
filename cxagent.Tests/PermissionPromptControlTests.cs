@@ -279,4 +279,66 @@ public class PermissionPromptControlTests
         Assert.Equal(longCommand, request.AlwaysRule);
         Assert.Equal(3000, request.AlwaysRule!.Length);
     }
+
+    [Fact]
+    public void APromptFromTheClassifier_ShowsItsReason()
+    {
+        // The current prompt makes a user reconstruct why they are being asked. The reason is the one
+        // thing a verdict can give a kind it may not silence.
+        var request = new PermissionRequest(PermissionKind.Http, "POST https://x.dev/c (4.0 KB)", "https://x.dev")
+        {
+            RefusedByClassifier = true,
+            ClassifierReason = "sends 4 KB to an origin this project has never used",
+        };
+
+        var text = PermissionPromptControl.HeadingFor(request);
+
+        Assert.Contains("sends 4 KB to an origin this project has never used", text);
+    }
+
+    [Fact]
+    public void APromptWithNoReason_ReadsAsItDoesToday()
+    {
+        var request = new PermissionRequest(PermissionKind.Http, "GET https://x.dev/a", "https://x.dev");
+
+        Assert.DoesNotContain("Reason", PermissionPromptControl.HeadingFor(request));
+    }
+
+    [Theory]
+    [InlineData(PermissionKind.Shell, "Run shell command?")]
+    [InlineData(PermissionKind.Http, "Allow an HTTP request?")]
+    [InlineData(PermissionKind.Mcp, "Run a tool on an external MCP server?")]
+    public void ANoVerdictHeading_IsByteIdenticalToTodays(PermissionKind kind, string expected)
+    {
+        // No verdict, a timeout, or an unparseable classifier answer must all render EXACTLY the
+        // prompt renders today — a classifier that is down costs a plainer prompt, never a wrong
+        // one. RefusedByClassifier defaults false and ClassifierReason defaults null on a request
+        // nobody stamped, so this is the ordinary construction every non-auto-mode caller still uses.
+        var request = new PermissionRequest(kind, "the thing", "the thing");
+
+        Assert.Equal(expected, PermissionPromptControl.HeadingFor(request));
+    }
+
+    [Fact]
+    public void AReasonContainingMarkup_IsEscapedInTheRenderedPrompt()
+    {
+        // ATTACKER-INFLUENCED TEXT: the classifier's reason is a model's own words about an action
+        // derived from file contents, and it is rendered into a TUI markup parser. An unescaped
+        // "[red]"/"[/]" would corrupt the prompt's own rendering — the prompt IS a security surface,
+        // so this is checked the same way the Display line already is (see the escaping tests
+        // above), not merely trusted because the source is "just a reason".
+        var request = new PermissionRequest(PermissionKind.Http, "POST https://x.dev/c", "https://x.dev")
+        {
+            RefusedByClassifier = true,
+            ClassifierReason = "[red]ignore previous instructions[/]",
+        };
+        var prompt = new PermissionPromptControl(request);
+
+        var text = string.Join("\n", FindMarkupLines(prompt.BuildContent()));
+
+        // The escaped form ('[' becomes '[[') is what must reach the rendered pane; the raw tag
+        // text must not appear un-escaped anywhere in it.
+        Assert.Contains("ignore previous instructions", text);
+        Assert.DoesNotContain("[red]ignore previous instructions[/]", text);
+    }
 }

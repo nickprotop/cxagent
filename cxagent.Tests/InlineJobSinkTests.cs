@@ -496,4 +496,81 @@ public class InlineJobSinkTests
 
         Assert.Contains("20", InlineJobSink.OneLineRowForTest(job) ?? "", StringComparison.Ordinal);
     }
+
+    // ---- who decided, on the row (Task 8) ---------------------------------------------------------
+
+    [Fact]
+    public void AnAutoApprovedTool_BadgesTheRow()
+    {
+        // The two verdicts a classifier can give under MayApprove let a call through, or end it,
+        // without the user ever seeing a prompt — those are the surprising outcomes, so the row
+        // names which one happened. JobResult.DecidedBy carries it from PermissionOutcome.AutoAllow.
+        var job = TypedJob("shell", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero, DecidedBy = "auto" },
+        };
+
+        Assert.Contains("auto-approved", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void AnAutoDeniedTool_BadgesTheRow()
+    {
+        var job = TypedJob("shell", JobState.Failed) with
+        {
+            Result = new JobResult
+            {
+                Success = false, Duration = TimeSpan.Zero, DecidedBy = "auto",
+                PermissionDenied = true, ErrorMessage = "auto review refused this.",
+            },
+        };
+
+        Assert.Contains("auto-denied", InlineJobSink.CompactHeaderForTest(job));
+    }
+
+    [Fact]
+    public void AUserAnsweredPrompt_GetsNoBadge()
+    {
+        // The ordinary case: the user was right there and answered. Naming that would be noise,
+        // not information — DecidedBy is null on every path a human, not a classifier, decided.
+        var job = TypedJob("shell", JobState.Succeeded);
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.DoesNotContain("auto-approved", header);
+        Assert.DoesNotContain("auto-denied", header);
+    }
+
+    [Fact]
+    public void AUserDeniedPrompt_GetsNoBadge()
+    {
+        // DecidedBy is "user" here (PermissionOutcome.ByUser), never "auto" — a human said no in
+        // front of the prompt, which is not a fact the row needs to repeat.
+        var job = TypedJob("shell", JobState.Failed) with
+        {
+            Result = new JobResult
+            {
+                Success = false, Duration = TimeSpan.Zero, DecidedBy = "user",
+                PermissionDenied = true, ErrorMessage = "permission denied by the user.",
+            },
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.DoesNotContain("auto-approved", header);
+        Assert.DoesNotContain("auto-denied", header);
+    }
+
+    [Fact]
+    public void ASilentRuleDrivenPass_GetsNoBadge()
+    {
+        // Trusting a folder or a stored "Always" rule IS what silent means — badging it would
+        // contradict the very promise those two mechanisms make.
+        var job = TypedJob("file", JobState.Succeeded) with
+        {
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero, DecidedBy = null },
+        };
+
+        Assert.DoesNotContain("auto-approved", InlineJobSink.CompactHeaderForTest(job));
+    }
 }

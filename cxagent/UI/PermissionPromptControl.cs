@@ -66,7 +66,7 @@ public sealed class PermissionPromptControl
     /// Found by the live drive: an in-tree `notes.txt` in an untrusted folder was announced as
     /// "Write a file outside the working folder?", which is simply false.
     /// </summary>
-    private static string HeadingFor(PermissionKind kind, bool inBoundary, bool refusedByClassifier) => kind switch
+    private static string HeadingTextFor(PermissionKind kind, bool inBoundary, bool refusedByClassifier) => kind switch
     {
         PermissionKind.Shell => "Run shell command?",
 
@@ -93,6 +93,47 @@ public sealed class PermissionPromptControl
         _ => "Allow this action?",
     };
 
+    // Past this many characters the classifier's reason is elided in the heading. The reason is
+    // MODEL-AUTHORED TEXT about attacker-influenced content (see PermissionRequest.ClassifierReason)
+    // — nothing stops a compromised or merely verbose model from writing paragraphs. Unbounded, a
+    // long reason would push the actual subject (the command/path/origin the user is being asked
+    // about) off the visible prompt, which is a security regression: the reason is a hint, the
+    // subject is what they are approving. 160 chars is a long clause, not a paragraph — enough for
+    // "sends 4.2 KB to an origin this project has never used" with room to spare, short enough that
+    // the heading stays one wrapped line rather than competing with the subject below it.
+    private const int MaxReasonChars = 160;
+
+    /// <summary>
+    /// The full heading text for a request, INCLUDING the classifier's reason when it gave one —
+    /// this is the public, request-shaped seam a test (or any other reader) uses instead of the
+    /// kind/bool triple above. The decision stays the user's; this only tells them what the model
+    /// that flagged the request said about it.
+    ///
+    /// <para>NOT MARKUP-ESCAPED HERE. Callers that render this into a markup pane (BuildContent
+    /// below) must escape the whole returned string themselves, the same as they already do for
+    /// the kind-only heading — escaping twice would turn a literal "[red]" in a reason into
+    /// visible "\[red\]" rather than plain text. A caller that only wants the plain text (tests)
+    /// gets it unescaped, which is what "Contains" assertions need.</para>
+    ///
+    /// <para>FAILS TO THE PLAIN HEADING. No verdict, RefusedByClassifier false, or a null/blank
+    /// reason — all read as "nothing to add", and the return is byte-identical to
+    /// <see cref="HeadingTextFor"/> alone. A classifier that is down must cost a plainer prompt,
+    /// never a wrong one.</para>
+    /// </summary>
+    public static string HeadingFor(PermissionRequest request, bool offerTrust = false)
+    {
+        var heading = HeadingTextFor(request.Kind, offerTrust, request.RefusedByClassifier);
+
+        if (!request.RefusedByClassifier || request.ClassifierReason is not { Length: > 0 } reason)
+            return heading;
+
+        var clipped = reason.Length > MaxReasonChars
+            ? reason[..MaxReasonChars] + "…"
+            : reason;
+
+        return $"{heading}  — {clipped}";
+    }
+
     /// <summary>
     /// Builds the panel: bolded heading, the escaped (and possibly elided) Display, then one
     /// button per offered choice. No Esc handling — a verified global-shortcut conflict
@@ -116,7 +157,7 @@ public sealed class PermissionPromptControl
             : _request.Display;
 
         var markup = Ctl.Markup();
-        markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request.Kind, _offerTrust, _request.RefusedByClassifier))}[/]");
+        markup.AddLine($"[bold]{SharpConsoleUI.Parsing.MarkupParser.Escape(HeadingFor(_request, _offerTrust))}[/]");
 
         // WHO IS ASKING, when it is not the session's own agent.
         //

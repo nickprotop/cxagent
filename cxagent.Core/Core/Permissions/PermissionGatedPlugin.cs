@@ -50,6 +50,12 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         // THE CONTEXT'S ROOT, so the gate resolves a relative path against the SAME folder the
         // plugin will. Still a pure function of its arguments — the root is passed in, not read —
         // which keeps RequestsFor ignorant of which agent is running, as below.
+        // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
+        // row can badge "auto-approved" / "auto-denied" — see JobResult.DecidedBy. The last request
+        // in the loop that got a classifier verdict wins, which is right: it is the most recent word
+        // on this call.
+        string? decidedBy = null;
+
         var requests = PermissionPolicy.RequestsFor(_inner.TypeName, parameters, context.WorkingDirectory);
         foreach (var request in requests)
         {
@@ -72,6 +78,8 @@ public sealed class PermissionGatedPlugin : IJobPlugin
                 context.ReportPermissionWait(false);
             }
 
+            decidedBy = outcome.DeniedBy;
+
             if (!outcome.Allowed)
             {
                 return new JobResult
@@ -80,6 +88,7 @@ public sealed class PermissionGatedPlugin : IJobPlugin
                     ExitCode = -1,
                     PermissionDenied = true,
                     ErrorMessage = DenialMessage.For(outcome, request.Display),
+                    DecidedBy = decidedBy,
                 };
             }
         }
@@ -88,6 +97,10 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         // user reading a prompt, which belongs to nobody's stopwatch.
         context.WorkStarting();
 
-        return await _inner.ExecuteAsync(parameters, context, ct);
+        var result = await _inner.ExecuteAsync(parameters, context, ct);
+
+        // STAMPED ON THE WAY OUT — see GatedAgentTool's identical comment. Only when a gate actually
+        // ran, and never clobbering a DecidedBy the inner plugin set itself.
+        return decidedBy is null || result.DecidedBy is not null ? result : result with { DecidedBy = decidedBy };
     }
 }

@@ -705,6 +705,21 @@ public sealed class InlineJobSink : IToolObserver
             _ => job.State.ToString().ToLowerInvariant(),
         };
 
+        // WHO DECIDED, when it was not the user and not a silent rule. JobResult.DecidedBy is "auto"
+        // only on the two paths a classifier actually ruled on (PermissionOutcome.AutoAllow /
+        // ByClassifier) — never on a stored-rule or in-boundary silent pass, and never on a prompt
+        // the user answered. Those two are the ordinary cases and stay unbadged, same as today: a
+        // prompt the user just answered needs no badge (they were there), and trusting a folder is
+        // what "silent" means. Only the surprising ones — the user was NOT asked and it was not a
+        // rule either — earn a word.
+        //
+        // BEFORE THE STATE, slotting into the same "· x · y" chain CompactHeader already builds —
+        // "done · 0.0s" becomes "auto-approved · done · 0.0s" rather than a second, differently
+        // shaped suffix.
+        var decidedBy = job.Result?.DecidedBy == "auto"
+            ? (job.State == JobState.Failed ? "auto-denied" : "auto-approved") + "  ·  "
+            : "";
+
         // A GLYPH where the spinner was, not nothing. Replacing the spinner with an empty string
         // shifts the whole row one cell left the instant a step finishes, so a column of steps
         // jitters as each completes. A static mark holds the column and reads as "settled".
@@ -725,9 +740,9 @@ public sealed class InlineJobSink : IToolObserver
         // easier to spot. The two ends carry it.
         if (job.State == JobState.Failed)
             return $"[{ColorScheme.DangerMarkup}]{mark}[/] {author}  {name}  ·  "
-                 + $"[{ColorScheme.DangerMarkup}]{state}{duration}[/]";
+                 + $"[{ColorScheme.DangerMarkup}]{decidedBy}{state}{duration}[/]";
 
-        return $"[{ColorScheme.MutedMarkup}]{mark} {author}  {name}  ·  {state}{duration}[/]";
+        return $"[{ColorScheme.MutedMarkup}]{mark} {author}  {name}  ·  {decidedBy}{state}{duration}[/]";
     }
 
     /// <summary>Test seam: the folded row is a pure projection of the job.</summary>
