@@ -423,4 +423,22 @@ public class CoreMarkdownTests
 
         Assert.Empty(offenders);
     }
+
+    /// <summary>A code span escapes only what can break OUT of a code span.</summary>
+    [Fact]
+    public void ACodeSpanEscapesTheDelimiterAndNothingElse()
+    {
+        // Markdown processes no emphasis and no backslash escapes inside a span, so Escape's
+        // backslash buys nothing there and does not disappear: `read\_file` renders WITH the
+        // backslash on screen. Tool names are nearly all underscored, so that is every row.
+        Assert.Equal("`read_file`", Md.CodeSpan("read_file"));
+
+        // The delimiter is the one real hazard, and the fix is Fence's: outrun the longest run
+        // inside rather than escape it, which a span cannot do.
+        Assert.Equal("``a`b``", Md.CodeSpan("a`b"));
+
+        // A padding space when the value's own edge is a backtick — markdown strips it, and without
+        // it the delimiters and the content run together.
+        Assert.Equal("`` `x ``", Md.CodeSpan("`x"));
+    }
 }

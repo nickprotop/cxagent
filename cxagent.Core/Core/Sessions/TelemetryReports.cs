@@ -27,7 +27,26 @@ public sealed record ToolCallReport(
     string Outcome,
     long DurationMs,
     int ResultChars,
-    DateTimeOffset StartedAt);
+    DateTimeOffset StartedAt)
+{
+    /// <summary>
+    /// WHAT the call acted on — <c>Agent.cs</c>, <c>dotnet build</c>, <c>"PluginType"</c> — or null
+    /// for a tool that acts on nothing nameable.
+    ///
+    /// <para>THE TOOL NAME ALONE DOES NOT DISTINGUISH TWO CALLS. A worker that ran nine
+    /// <c>read_file</c>s produces nine identical rows without this, which is a count rather than a
+    /// record of the work; the file names are the whole reason anyone reads the list.</para>
+    ///
+    /// <para>The job's <c>DisplayName</c>, which is already the human label the UI puts on rows —
+    /// so this reports a label that exists rather than composing a second one that could disagree
+    /// with what the row shows.</para>
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, not a positional field, for the reason
+    /// <see cref="ChildRunReport.Skills"/> gives: every construction site would otherwise have to
+    /// name it, including the persistence layer, which stores measurements and not labels.</para>
+    /// </summary>
+    public string? Target { get; init; }
+}
 
 /// <summary>
 /// One finished sub-agent run, reported by its parent.

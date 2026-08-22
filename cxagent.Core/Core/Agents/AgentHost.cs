@@ -275,6 +275,24 @@ public sealed class AgentHost : IDisposable
     }
 
     /// <summary>
+    /// Every finished tool call, this agent's and its children's alike.
+    ///
+    /// <para>A FORWARDING ACCESSOR ONTO THE AGENT, like <see cref="TodosChanged"/> above, rather
+    /// than an event this host raises: the kernel is what knows a call finished, and a copy raised
+    /// here would be a second thing that can fall out of step with the one history already
+    /// subscribes to.</para>
+    ///
+    /// <para>A CHILD'S CALLS ARRIVE UNDER THE CHILD'S OWN AGENT ID. The parent forwards them
+    /// unchanged (Agent.OnChildSpawned) so that a subscriber can attribute work to the agent that
+    /// actually did it — which is what lets one subscription here serve every worker at once.</para>
+    /// </summary>
+    public event Action<ToolCallReport>? ToolCallFinished
+    {
+        add => _agent.ToolCallFinished += value;
+        remove => _agent.ToolCallFinished -= value;
+    }
+
+    /// <summary>
     /// Records that this session ended normally, so it is never offered for resume.
     ///
     /// <para>THE DISTINCTION THE WHOLE STORE TURNS ON. A row left unfinished means the process did

@@ -60,6 +60,47 @@ public static class Md
         string.IsNullOrEmpty(text) ? text : Escape(text).Replace("|", @"\|");
 
     /// <summary>
+    /// Wraps a value in a CODE SPAN, escaping only what can break out of one.
+    /// </summary>
+    /// <remarks>
+    /// A THIRD ESCAPE BECAUSE A CODE SPAN HAS A THIRD CONTRACT, and it is the loosest of the three:
+    /// markdown processes no emphasis, no links and no backslash escapes inside one, so every
+    /// character <see cref="Escape"/> guards against is already inert. Its backslash therefore buys
+    /// nothing and does not disappear — <c>`read\_file`</c> renders with the backslash ON SCREEN.
+    ///
+    /// <para>NOT A CORNER CASE. Tool names are the values that land here and nearly all of them
+    /// carry an underscore (<c>read_file</c>, <c>run_shell</c>, <c>write_file</c>), so escaping for
+    /// prose would put a stray backslash on almost every row of a table built from them.</para>
+    ///
+    /// <para>THE BACKTICK IS THE ONE REAL HAZARD, and the fix is the same one <see cref="Fence"/>
+    /// uses for the same reason: a span cannot escape its own delimiter, so the delimiter must
+    /// OUTRUN the longest run inside it. A pipe needs nothing — a span hides one from the table
+    /// parser on its own, which is the finding <c>CoreMarkdownTests</c> pins.</para>
+    /// </remarks>
+    /// <param name="text">A tool name, a command, or anything else shown as literal code.</param>
+    /// <returns>The value wrapped in backticks, safe in a sentence or in a cell.</returns>
+    public static string CodeSpan(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "``";
+
+        var longest = 0;
+        var run = 0;
+        foreach (var c in text)
+        {
+            run = c == '`' ? run + 1 : 0;
+            if (run > longest) longest = run;
+        }
+
+        var ticks = new string('`', longest + 1);
+
+        // A SPACE WHEN THE VALUE'S OWN EDGE IS A BACKTICK, which markdown then strips: without it
+        // the delimiters and the content run together and the span's boundaries are unreadable.
+        var pad = text.StartsWith('`') || text.EndsWith('`') ? " " : "";
+
+        return $"{ticks}{pad}{text}{pad}{ticks}";
+    }
+
+    /// <summary>
     /// Wraps drawn output in a fence long enough that its own content cannot close it.
     /// </summary>
     /// <remarks>

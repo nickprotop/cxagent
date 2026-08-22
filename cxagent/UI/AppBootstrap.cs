@@ -685,6 +685,16 @@ public static class AppBootstrap
                     report.Kind.ToString(), report.Decision, report.Requester,
                     session.WorkingDirectory, report.Subject, report.Flagged));
 
+            // WHAT EACH WORKER DID, for the timetable its finished row renders instead of its prose.
+            // One subscription serves every worker in the session: a parent forwards its children's
+            // reports unchanged and each one carries the id of the agent that made the call, so the
+            // sink files them by that and joins them to a row when the row closes.
+            //
+            // NOT MARSHALLED ONTO THE UI THREAD. This only appends to a concurrent accumulator and
+            // touches no control — the enqueue every other handler here needs is for the controls,
+            // and paying for one per tool call would put a UI-thread hop on the loop's hot path.
+            session.ToolCallFinished += jobPanelSink.RecordToolCall;
+
             session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
             {
                 // THE PARENT'S OWN SPEND, not `total`. The event carries Ledger.TotalTokens, which is

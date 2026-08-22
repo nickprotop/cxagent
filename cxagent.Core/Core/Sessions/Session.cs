@@ -151,6 +151,14 @@ public sealed partial class Session
         remove { if (Host is { } h) h.TurnCompleted -= value; }
     }
 
+    /// <summary>A tool call finished — this agent's, or one of its children's, keyed by whose it
+    /// was.</summary>
+    public event Action<ToolCallReport>? ToolCallFinished
+    {
+        add { if (Host is { } h) h.ToolCallFinished += value; }
+        remove { if (Host is { } h) h.ToolCallFinished -= value; }
+    }
+
     /// <summary>The provider currently in use, tracked alongside <see cref="Host"/> so a diagnose
     /// action calls the CURRENT provider rather than whichever was resolved at startup.</summary>
     public ILlmProvider? Provider { get; private set; }

@@ -2190,7 +2190,10 @@ public sealed class Agent
                 Outcome: "cancelled",
                 DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
                 ResultChars: 0,
-                StartedAt: started));
+                StartedAt: started)
+            {
+                Target = job.DisplayName,
+            });
 
             // RETHROWN, NOT SWALLOWED. The turn is over: the loop is unwinding and there is no next
             // request, so there is nobody to hand a tool result to. Returning a string here would
@@ -2330,10 +2333,24 @@ public sealed class Agent
             AgentId: Id,
             ToolName: call.Name,
             JobType: job.JobType,
-            Outcome: failed ? "failed" : "succeeded",
+            // DENIED IS NOT FAILED. A refusal never RAN, and a reader looking at a list of calls
+            // needs the two apart: a run full of denials means the worker was fighting the user's
+            // permission settings, a run full of failures means its commands were broken. Reported
+            // as one word, they send someone debugging the wrong thing.
+            //
+            // Read off outcome.Result, which is the executor's own verdict and the same object
+            // job.Result is built from a few lines above — so the word here and the row on screen
+            // cannot disagree.
+            Outcome: outcome.Result?.PermissionDenied == true ? "denied"
+                : failed ? "failed" : "succeeded",
             DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
             ResultChars: result.Length,
-            StartedAt: started));
+            StartedAt: started)
+        {
+            // The row's own label, so the list of calls names what each one acted on rather than
+            // repeating a tool name nine times.
+            Target = job.DisplayName,
+        });
 
         return result;
     }

@@ -107,6 +107,35 @@ public static class SubAgentEnvelope
         return end > start ? envelope[start..end] : null;
     }
 
+    /// <summary>
+    /// Reads the child's <c>id</c> back out of a rendered envelope, or null if this is not one.
+    ///
+    /// <para>PARSED RATHER THAN THREADED, for the reason <see cref="StateOf"/> gives at length: the
+    /// envelope is the one artefact that always carries the id, so a caller holding the string holds
+    /// the truth. A second copy carried alongside it would be a second thing that can disagree, and
+    /// both would be plausible strings.</para>
+    ///
+    /// <para>This is what lets a UI join a finished spawn ROW to the CHILD's own tool calls, which
+    /// are reported under the child's agent id and under no other key.</para>
+    /// </summary>
+    public static string? IdOf(string? envelope)
+    {
+        if (string.IsNullOrEmpty(envelope)) return null;
+
+        const string marker = "id=\"";
+        var i = envelope.IndexOf(marker, StringComparison.Ordinal);
+        if (i < 0) return null;
+
+        // Only in the opening tag, exactly as StateOf guards: an id= appearing later belongs to the
+        // CHILD's own text — it routinely writes HTML and XML — and is not ours to read.
+        var close = envelope.IndexOf('>', 0);
+        if (close >= 0 && i > close) return null;
+
+        var start = i + marker.Length;
+        var end = envelope.IndexOf('"', start);
+        return end > start ? envelope[start..end] : null;
+    }
+
     public static string Render(string childId, SendOutcome outcome, string text)
     {
         var state = outcome switch

@@ -1,4 +1,7 @@
+using System.Globalization;
+using CxAgent.Core.Agents;
 using CxAgent.Core.Models;
+using CxAgent.Core.Sessions;
 using CxAgent.UI;
 using SharpConsoleUI;
 using SharpConsoleUI.Configuration;
@@ -844,4 +847,317 @@ public class InlineJobSinkTests
         Assert.Contains("auto-approved", header);
         Assert.Contains("00:00:0", header);
     }
+
+    // ---- the worker timetable --------------------------------------------------------------------
+
+    /// <summary>
+    /// A finished worker's body is WHAT IT DID, not what it said about doing it.
+    ///
+    /// <para>The prose an executor writes into <c>Output["content"]</c> is a narration, and on a
+    /// long run it is enormous — the expanded row became a wall of text nobody reads. The tool calls
+    /// are the record of the work: the same run in twenty lines, each one a fact.</para>
+    /// </summary>
+    private static ToolCallReport Call(string tool, string? target, string outcome,
+        long ms = 10, int chars = 0) =>
+        new(CallId: Guid.NewGuid().ToString(), AgentId: "child-1", ToolName: tool, JobType: null,
+            Outcome: outcome, DurationMs: ms, ResultChars: chars,
+            StartedAt: DateTimeOffset.UnixEpoch)
+        { Target = target };
+
+    [Fact]
+    public void AWorkerThatMadeNoCalls_RendersTheSummaryLineAlone()
+    {
+        // NOT AN EMPTY BODY. A worker that called nothing still ran, and "0 calls · 1.2s" says so;
+        // an empty block behind an `expand…` says only that the affordance lied.
+        var body = InlineJobSink.TimetableForTest([], TimeSpan.FromSeconds(1.2));
+
+        Assert.Equal("0 calls · 1.2s", body);
+    }
+
+    [Fact]
+    public void TheTimetable_CountsEachOutcomeCategorySeparately()
+    {
+        // DENIED IS NOT FAILED, and the distinction is the point of the whole summary: a wall of
+        // denials means the worker was fighting the user's permission settings, a wall of failures
+        // means its commands were broken. Conflating them sends someone debugging the wrong thing.
+        var body = InlineJobSink.TimetableForTest(
+        [
+            Call("read_file", "Agent.cs", "succeeded"),
+            Call("grep", "PluginType", "succeeded"),
+            Call("run_shell", "dotnet build", "failed"),
+            Call("write_file", "ToolBindings.cs", "denied"),
+            Call("write_file", "Md.cs", "denied"),
+            Call("run_shell", "sleep 10", "cancelled"),
+        ], TimeSpan.FromSeconds(6.2));
+
+        var summary = body.Split('\n')[0];
+
+        Assert.Equal("6 calls · 4 tools · 6.2s · 1 failed · 2 denied · 1 cancelled", summary);
+    }
+
+    [Fact]
+    public void TheSummaryLine_OmitsCategoriesWithNoCalls()
+    {
+        // A clean run must not read "16 calls · 4 tools · 6.2s · 0 failed · 0 denied" — a zero is a
+        // word the reader has to check before discarding, on every row that went fine.
+        var body = InlineJobSink.TimetableForTest(
+        [
+            Call("read_file", "Agent.cs", "succeeded"),
+            Call("read_file", "Md.cs", "succeeded"),
+        ], TimeSpan.FromSeconds(0.4));
+
+        Assert.Equal("2 calls · 1 tool · 0.4s", body.Split('\n')[0]);
+    }
+
+    [Fact]
+    public void TheTimetable_MarksEachOutcomeWithItsOwnGlyph()
+    {
+        var body = InlineJobSink.TimetableForTest(
+        [
+            Call("read_file", "Agent.cs", "succeeded"),
+            Call("run_shell", "dotnet build", "failed"),
+            Call("write_file", "Md.cs", "denied"),
+            Call("run_shell", "sleep 10", "cancelled"),
+        ], TimeSpan.FromSeconds(1));
+
+        // The header row starts "| " too; the separator starts "|-" and is excluded by it.
+        var rows = body.Split('\n').Where(l => l.StartsWith("| ", StringComparison.Ordinal)).ToList();
+
+        // The header, then one row per call — CHRONOLOGICAL, and every one of them.
+        Assert.Equal(5, rows.Count);
+        Assert.Contains("| ✓ |", rows[1], StringComparison.Ordinal);
+        Assert.Contains("| ✗ |", rows[2], StringComparison.Ordinal);
+        Assert.Contains("| ⊘ |", rows[3], StringComparison.Ordinal);
+        Assert.Contains("| – |", rows[4], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheTimetable_KeepsEveryCall_WithNoTruncation()
+    {
+        // THE ROW IS ALREADY COLLAPSED. Someone who expands it has asked for the detail, and there
+        // is no second level to expand into — a "… 34 more" line would put the rest nowhere.
+        var calls = Enumerable.Range(0, 40)
+            .Select(i => Call("read_file", $"File{i}.cs", "succeeded"))
+            .ToList();
+
+        var body = InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(9));
+
+        Assert.Contains("File0.cs", body, StringComparison.Ordinal);
+        Assert.Contains("File39.cs", body, StringComparison.Ordinal);
+        Assert.Equal(40, body.Split('\n').Count(l => l.Contains("read_file", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AToolNameIsACodeSpan_SoTheThemeStylesIt()
+    {
+        // Worker rows render with Markdown = true, so the renderer styles a code span through the
+        // live theme. A colour constant here would hardcode what the theme already decides.
+        var body = InlineJobSink.TimetableForTest(
+            [Call("read_file", "Agent.cs", "succeeded")], TimeSpan.FromSeconds(1));
+
+        Assert.Contains("`read_file`", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATargetContainingAPipe_StaysInsideItsOwnCell()
+    {
+        // A pipe is the column delimiter: an unescaped one splits the row into more cells than the
+        // header declares and Markdig drops the overflow silently — the command disappears.
+        var body = InlineJobSink.TimetableForTest(
+            [Call("run_shell", "du -sh . | tail -1", "succeeded")], TimeSpan.FromSeconds(1));
+
+        Assert.Contains(@"du -sh . \| tail -1", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnUnderscoreInATarget_IsEscaped_ButNotInsideTheCodeSpan()
+    {
+        // Md.Escape for the code span, Md.EscapeCell for the bare cell. A code span already hides a
+        // pipe from the table parser, so EscapeCell's backslash there would SHOW on screen.
+        var body = InlineJobSink.TimetableForTest(
+            [Call("read_file", "my_file.cs", "succeeded")], TimeSpan.FromSeconds(1));
+
+        // No backslash in the span: markdown processes no escapes there, so one would SHOW.
+        Assert.Contains("`read_file`", body, StringComparison.Ordinal);
+        Assert.Contains(@"my\_file.cs", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AMissingTarget_LeavesTheCellEmptyRatherThanPrintingNull()
+    {
+        var body = InlineJobSink.TimetableForTest(
+            [Call("todowrite", null, "succeeded")], TimeSpan.FromSeconds(1));
+
+        Assert.DoesNotContain("null", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TheTimetable_FormatsBytesAndDurationsTheSameInEveryCulture()
+    {
+        // THIS REPO HAS SHIPPED A CULTURE BUG BEFORE (:P0 rendering "25 %"). Under fr-FR a bare
+        // ":0.0" takes a comma for the decimal point, so "6.2s" becomes "6,2s" — and a comma reads
+        // as a GROUP separator to anyone expecting the other.
+        var calls = new List<ToolCallReport>
+        {
+            Call("read_file", "Agent.cs", "succeeded", ms: 4210, chars: 41_000),
+        };
+
+        var invariant = WithCulture(CultureInfo.InvariantCulture,
+            () => InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(6.2)));
+        var french = WithCulture(new CultureInfo("fr-FR"),
+            () => InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(6.2)));
+
+        Assert.Equal(invariant, french);
+        Assert.Contains("6.2s", invariant, StringComparison.Ordinal);
+    }
+
+    private static T WithCulture<T>(CultureInfo culture, Func<T> work)
+    {
+        var was = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = culture;
+        try { return work(); }
+        finally { CultureInfo.CurrentCulture = was; }
+    }
+
+    /// <summary>
+    /// The accumulator is keyed by the CHILD's agent id, which the envelope is the one artefact
+    /// always carrying — the same reasoning <see cref="SubAgentEnvelope.StateOf"/> documents for the
+    /// state.
+    /// </summary>
+    [Fact]
+    public void TheChildsId_IsReadBackOutOfItsEnvelope()
+    {
+        Assert.Equal("01KZ", SubAgentEnvelope.IdOf(
+            "<sub_agent id=\"01KZ\" state=\"completed\">\nthe answer\n</sub_agent>"));
+        Assert.Null(SubAgentEnvelope.IdOf("an ordinary tool result"));
+        Assert.Null(SubAgentEnvelope.IdOf(null));
+    }
+
+    [Fact]
+    public void AFinishedWorkersBody_IsItsTimetable_NotItsProse()
+    {
+        var sink = HeadlessSink();
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded"));
+
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"completed\">\nI read the file and thought hard.\n</sub_agent>",
+        });
+
+        var body = sink.WorkerBodyForTest(job);
+
+        Assert.NotNull(body);
+        Assert.Contains("`read_file`", body!, StringComparison.Ordinal);
+        Assert.DoesNotContain("thought hard", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheProseSurvivesOnTheJob_EvenThoughItIsNoLongerRendered()
+    {
+        // IntrospectionTools reads Output["content"] — that is how the ORCHESTRATOR consumes a
+        // worker's result. Not rendering it must not mean deleting it.
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+
+        HeadlessSink().WorkerBodyForTest(job);
+
+        Assert.Contains("the answer", job.Result!.Output!["content"]!.ToString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AFinishedWorkersCalls_AreDroppedFromTheAccumulator()
+    {
+        // Or a long session grows a dictionary of every call ever made.
+        var sink = HeadlessSink();
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded"));
+
+        var job = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+
+        sink.WorkerBodyForTest(job);
+        var second = sink.WorkerBodyForTest(job);
+
+        // The calls are gone, so the second read renders a timetable with none in it.
+        Assert.StartsWith("0 calls", second!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ANonWorkerRow_IsUntouchedByTheTimetable()
+    {
+        // The timetable replaces a WORKER's prose. A shell job's stdout is not prose and not a
+        // narration — it is the result, and it keeps its body.
+        var job = TypedJob("shell", JobState.Succeeded,
+            new Dictionary<string, object?> { ["content"] = "hello" });
+
+        Assert.Null(HeadlessSink().WorkerBodyForTest(job));
+    }
+
+    [Fact]
+    public void AFailedWorker_KeepsItsReason_RatherThanShowingATimetable()
+    {
+        // The timetable replaces a NARRATION. A failed worker's body is not one: it is the error the
+        // user's next action depends on, and a list of the calls that ran before it broke answers a
+        // question nobody is asking yet. Seen while writing this: the row rendered "0 calls · 3.0s"
+        // and the reason was simply gone.
+        var sink = HeadlessSink();
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded"));
+
+        var job = JobWith(JobState.Failed, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"error\">\nboom\n</sub_agent>",
+        }, error: "the child blew up");
+
+        Assert.Null(sink.WorkerBodyForTest(job));
+    }
+
+    [Fact]
+    public void ACappedWorker_KeepsTheEnvelopesWarningNote()
+    {
+        // "This agent hit its turn limit… NOT a completed answer" rides between the tag and the
+        // text, and StripEnvelope keeps it on purpose. A table in its place would drop the one line
+        // saying the answer above it is unfinished — the worst line to lose.
+        var job = JobWith(JobState.Cancelled, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"capped\">\n"
+                + "This agent hit its turn limit before finishing.\nhalf an answer\n</sub_agent>",
+        });
+
+        Assert.Null(HeadlessSink().WorkerBodyForTest(job));
+    }
+
+    [Fact]
+    public void AFailedWorkersCalls_AreDroppedFromTheAccumulatorToo()
+    {
+        // The body is one question and the accumulator is another. A failed child's calls are no
+        // less finished for its having failed, and a session leaks exactly the runs it has most of
+        // if only the successes are swept.
+        var sink = HeadlessSink();
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded"));
+
+        var failed = JobWith(JobState.Failed, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"error\">\nboom\n</sub_agent>",
+        }, error: "the child blew up");
+
+        sink.WorkerBodyForTest(failed);
+
+        // Nothing is left under that id — a later succeeded row for it renders an empty timetable
+        // rather than the dead run's calls.
+        var succeeded = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = "<sub_agent id=\"child-1\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+
+        Assert.StartsWith("0 calls", sink.WorkerBodyForTest(succeeded)!, StringComparison.Ordinal);
+    }
+
+    private static InlineJobSink HeadlessSink() => new(
+        new ConsoleWindowSystem(new HeadlessConsoleDriver(80, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
+        new ChatTranscriptControl());
+
 }

@@ -9,6 +9,8 @@ using CxAgent.Core.Sessions;
 // Ours, not SharpConsoleUI's — both exist and this file sees both namespaces.
 using ChatMessageId = CxAgent.Core.Sessions.ChatMessageId;
 using CxAgent.Core.Helpers;
+using CxAgent.Core.Agents;
+using CxAgent.Core.Commands;
 
 namespace CxAgent.UI;
 
@@ -331,7 +333,18 @@ public sealed class InlineJobSink : IToolObserver
                 // What a person wants behind that expand is the CHILD'S REPORT. The state is not lost:
                 // it is in the header (done / failed) and, for a capped or stuck run, in the note the
                 // envelope carries above the text — which survives because only the tags are removed.
-                _chat.UpdateMessage(id, StripEnvelope(BodyFor(job)) ?? string.Empty);
+                //
+                // A FINISHED WORKER IS THE EXCEPTION, and it gets its TIMETABLE instead of its prose.
+                // The narration a worker composes is the wrong artefact for a run that is over: the
+                // question at the finish line is what it DID, and the prose answers a different one
+                // at unbounded length. WorkerBody renders the calls; every other row falls through
+                // to the line below unchanged.
+                //
+                // THE PROSE IS NOT DELETED. It stays in Output["content"], which IntrospectionTools
+                // reads — that is how the orchestrator consumes a worker's result — so a later
+                // opt-in (a second expand level, or a `/worker <id>` command) can surface it with no
+                // new plumbing.
+                _chat.UpdateMessage(id, WorkerBody(job) ?? StripEnvelope(BodyFor(job)) ?? string.Empty);
 
                 // A SUCCEEDED job collapses (the user's call): a five-job fan-out each returning
                 // paragraphs would push the conversation off screen, and its outcome is readable
@@ -1205,4 +1218,200 @@ public sealed class InlineJobSink : IToolObserver
 
     private static bool IsTerminal(JobState state) =>
         state is JobState.Succeeded or JobState.Failed or JobState.Cancelled or JobState.Skipped;
+
+    // ---- the worker timetable ---------------------------------------------------------------------
+
+    /// <summary>
+    /// A child agent's finished tool calls, in the order they ran, keyed by the CHILD's agent id.
+    ///
+    /// <para>THE CHILD'S ID IS THE ONLY KEY THAT WORKS. A parent forwards its children's reports
+    /// unchanged (Agent.cs, OnChildSpawned) precisely so a call is attributed rather than absorbed,
+    /// so every report already carries the id of whoever made it. The parent's spawn JOB has a
+    /// different id entirely — it identifies the call, not the agent that the call started.</para>
+    ///
+    /// <para>Concurrent because reports arrive on whatever thread the finishing call resumed on,
+    /// which is the same reason <see cref="_lines"/> is; and it is READ from the UI thread when a
+    /// worker's row closes.</para>
+    ///
+    /// <para>EMPTIED WHEN A WORKER FINISHES. Without that, a session that spawns thirty workers
+    /// keeps every call any of them ever made for as long as the process lives.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, List<ToolCallReport>> _workerCalls = new();
+
+    /// <summary>
+    /// Records one finished tool call. Wired to <c>Agent.ToolCallFinished</c>, which a parent raises
+    /// for its own calls AND for every one of its children's.
+    ///
+    /// <para>The parent's own calls accumulate here too and are never read: this is keyed by agent
+    /// id and only a child's id is ever looked up. Filtering them out would need this to know which
+    /// ids are children, which is exactly the knowledge the forwarding design refuses to centralise
+    /// — and the parent's own list is bounded by the session, not by the number of workers.</para>
+    /// </summary>
+    public void RecordToolCall(ToolCallReport report)
+    {
+        var calls = _workerCalls.GetOrAdd(report.AgentId, _ => new List<ToolCallReport>());
+        lock (calls) calls.Add(report);
+    }
+
+    /// <summary>Test seam: the table is a pure projection of the calls and the run's length.</summary>
+    public static string TimetableForTest(IReadOnlyList<ToolCallReport> calls, TimeSpan ran) =>
+        Timetable(calls, ran);
+
+    /// <summary>Test seam for <see cref="WorkerBody"/>, which needs the sink's accumulator and so
+    /// cannot be static.</summary>
+    public string? WorkerBodyForTest(Job job) => WorkerBody(job);
+
+    /// <summary>
+    /// A finished WORKER's body: what it DID, as a table of its tool calls.
+    ///
+    /// <para>Returns null for every other row, which is what leaves a shell job's stdout and a
+    /// tool's error message exactly as they were — this replaces a narration, not a result.</para>
+    ///
+    /// <para>THE PROSE IS STILL ON THE JOB. It is not rendered here, but <c>Output["content"]</c> is
+    /// untouched and is what IntrospectionTools reads, which is how the ORCHESTRATOR consumes a
+    /// worker's answer. A later opt-in — a second expand level, or a <c>/worker &lt;id&gt;</c>
+    /// command — needs no new plumbing to surface it, only somewhere to put it.</para>
+    ///
+    /// <para>WHY THE PROSE IS NOT THE BODY. It is the transcript the worker narrated, and on a long
+    /// run it is enormous: expanding a finished row put a wall of text on screen at the moment the
+    /// user wanted to know what happened. The calls answer that question in the space the narration
+    /// spent introducing itself, and the row is collapsed until someone asks — so a long table costs
+    /// nothing that the unbounded prose it replaces did not cost more of.</para>
+    /// </summary>
+    private string? WorkerBody(Job job)
+    {
+        if (job.JobType != "llm_agent") return null;
+
+        // THE ENVELOPE IS THE JOIN. A spawn's row is the PARENT's job, and its child's calls are
+        // filed under the CHILD's agent id — which the envelope carries and nothing else on this
+        // job does.
+        if (SubAgentEnvelope.IdOf(RawContent(job)) is not { } childId) return null;
+
+        // A WORKER THAT DID NOT SUCCEED KEEPS ITS REASON, and this is the one case where the prose
+        // is not a narration. BodyText's failure branch composes the error and whatever partial
+        // output there was, and that is what the user's next action depends on — a timetable of the
+        // calls that ran before it broke answers a question nobody is asking yet.
+        //
+        // THE ENVELOPE'S NOTE IS PART OF WHAT SURVIVES BY RETURNING NULL HERE. A capped or stuck run
+        // carries "hit its turn limit… NOT a completed answer" between the tag and the text, and
+        // StripEnvelope keeps it deliberately. A table in its place would drop the one line saying
+        // the answer above it is unfinished.
+        //
+        // THE CALLS ARE STILL DROPPED. The body is one question and the accumulator is another: a
+        // failed child's calls are no less finished for its having failed, and forgetting them here
+        // leaks exactly the runs a long session has most of.
+        if (job.State != JobState.Succeeded)
+        {
+            _workerCalls.TryRemove(childId, out _);
+            return null;
+        }
+
+        // REMOVED, NOT READ. This is the terminal transition, so nothing more will be filed under
+        // this id; leaving it would grow a dictionary of every call the session ever made.
+        var calls = _workerCalls.TryRemove(childId, out var recorded) ? recorded : [];
+
+        lock (calls) return Timetable(calls.ToList(), job.Result?.Duration ?? TimeSpan.Zero);
+    }
+
+    /// <summary>
+    /// The table itself: a summary line, then every call in the order it ran.
+    ///
+    /// <para>NO TRUNCATION, and that is a decision rather than an omission. The row is collapsed
+    /// until someone opens it, and there is no second level to expand into — so a "… and 34 more"
+    /// line would put the rest of the run nowhere at all. A long table is strictly better than the
+    /// unbounded narration it replaces.</para>
+    ///
+    /// <para>A WORKER THAT CALLED NOTHING GETS THE SUMMARY LINE ALONE. An empty table under a header
+    /// row says only that the <c>expand…</c> lied; "0 calls · 1.2s" is a fact about the run.</para>
+    /// </summary>
+    private static string Timetable(IReadOnlyList<ToolCallReport> calls, TimeSpan ran)
+    {
+        // EVERY NUMBER THROUGH DisplayNumber, and the duration especially. A bare ":0.0" takes the
+        // CURRENT CULTURE's decimal separator, so the same run reads "6.2s" or "6,2s" depending on
+        // the machine — and a comma reads as a GROUP separator to a reader expecting the other.
+        var parts = new List<string>
+        {
+            $"{DisplayNumber.Grouped(calls.Count)} call{(calls.Count == 1 ? "" : "s")}",
+        };
+
+        if (calls.Count > 0)
+        {
+            var tools = calls.Select(c => c.ToolName).Distinct(StringComparer.Ordinal).Count();
+            parts.Add($"{DisplayNumber.Grouped(tools)} tool{(tools == 1 ? "" : "s")}");
+        }
+
+        parts.Add($"{DisplayNumber.Fixed(ran.TotalSeconds, 1)}s");
+
+        // ZERO COUNTS ARE OMITTED. "16 calls · 4 tools · 6.2s · 0 failed · 0 denied" makes the
+        // reader check two words before discarding them, on every row that went fine — and the
+        // whole point of the line is that a bad run announces itself.
+        AddCount(parts, calls, "failed", "failed");
+        AddCount(parts, calls, "denied", "denied");
+        AddCount(parts, calls, "cancelled", "cancelled");
+
+        var summary = string.Join(" · ", parts);
+        if (calls.Count == 0) return summary;
+
+        var rows = new List<string>
+        {
+            summary,
+            "",
+            "|   | tool | target | ms | out |",
+            "|---|------|--------|---:|----:|",
+        };
+
+        foreach (var call in calls)
+        {
+            // Md.CodeSpan INSIDE THE SPAN, Md.EscapeCell OUTSIDE IT. A span processes no escapes at
+            // all, so a backslash there SHOWS rather than protects — and tool names are almost all
+            // underscored (read_file, run_shell, write_file), which would put a stray backslash on
+            // nearly every row. A bare cell has no such shelter: a raw pipe splits the row into more
+            // cells than the header declares and Markdig drops the overflow silently.
+            var tool = Md.CodeSpan(call.ToolName);
+            var target = string.IsNullOrWhiteSpace(call.Target) ? "" : Md.EscapeCell(call.Target!);
+
+            rows.Add($"| {Mark(call.Outcome)} | {tool} | {target} "
+                   + $"| {DisplayNumber.Grouped(call.DurationMs)} | {Bytes(call.ResultChars)} |");
+        }
+
+        return string.Join("\n", rows);
+    }
+
+    /// <summary>Appends "<c>2 denied</c>" when there are any, and nothing when there are none.</summary>
+    private static void AddCount(List<string> parts, IReadOnlyList<ToolCallReport> calls,
+        string outcome, string word)
+    {
+        var n = calls.Count(c => string.Equals(c.Outcome, outcome, StringComparison.Ordinal));
+        if (n > 0) parts.Add($"{DisplayNumber.Grouped(n)} {word}");
+    }
+
+    /// <summary>
+    /// The outcome glyph, and FOUR of them rather than two.
+    ///
+    /// <para>✗ ran and broke; ⊘ never ran, because permission was refused; – never finished, because
+    /// the user stopped it. Those are three different problems with three different fixes, and a
+    /// column that renders them all as "failed" tells a reader to go and debug the wrong one.</para>
+    /// </summary>
+    private static string Mark(string outcome) => outcome switch
+    {
+        "succeeded" => "✓",
+        "denied" => "⊘",
+        "cancelled" => "–",
+        _ => "✗",
+    };
+
+    /// <summary>
+    /// How much the result put into the child's context, at the scale a reader compares by.
+    ///
+    /// <para>CHARACTERS COUNTED AS BYTES, which the column header says by naming kB. ResultChars is
+    /// what the loop measures — the figure that says whether a tool is cheap or is quietly filling
+    /// the window — and re-encoding it here to be exact about multi-byte runes would spend real work
+    /// on a digit nobody reads at this scale.</para>
+    /// </summary>
+    private static string Bytes(int chars) =>
+        chars <= 0 ? "0"
+        : chars < 1024 ? $"{DisplayNumber.Grouped(chars)} B"
+        : chars < 1024 * 1024 ? $"{DisplayNumber.Fixed(chars / 1024.0, 1)} kB"
+        : $"{DisplayNumber.Fixed(chars / (1024.0 * 1024.0), 1)} MB";
+
 }
