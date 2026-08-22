@@ -42,7 +42,7 @@ public class DiffCommandTests
     {
         DiffCommand.Runner notARepo = (_, _) => new(128, "", "fatal: not a git repository");
 
-        var output = DiffCommand.Render("", Here, notARepo);
+        var output = DiffCommand.Render("", Here, notARepo).Text;
 
         Assert.Contains("Not a git repository", output);
         Assert.DoesNotContain("fatal", output);
@@ -54,66 +54,71 @@ public class DiffCommandTests
     {
         DiffCommand.Runner noGit = (_, _) => new(-1, "", "No such file or directory");
 
-        var output = DiffCommand.Render("", Here, noGit);
+        var output = DiffCommand.Render("", Here, noGit).Text;
 
         Assert.Contains("Could not run git", output);
         Assert.Contains("No such file", output);
     }
 
     /// <summary>
-    /// COLOURED A LINE AT A TIME, not by a ```diff fence.
+    /// A ```diff FENCE, not a plain one.
     ///
-    /// <para>The System role renders as MARKUP rather than markdown, deliberately: every other
-    /// System line is written in the library's [red]/[cyan] markup. A message can override its
-    /// role's markdown setting, so a fence is reachable — this does not use one because colouring
-    /// here is exact about which lines are content, and a generic highlighter paints the +++/---
-    /// headers as additions and removals.</para>
+    /// <para>The language tag is load-bearing rather than decoration: a plain fence renders a diff
+    /// as undifferentiated grey text, while MarkdownToMarkup reads the fence's info string and
+    /// SyntaxHighlighters resolves DiffSyntaxHighlighter for "diff" — so +/- lines, file headers
+    /// and @@ hunks arrive themed by the renderer rather than hardcoded in Core.</para>
     /// </summary>
     [Fact]
-    public void AdditionsAndRemovalsAreColouredForScanning()
+    public void TheBodyIsADiffFenceRatherThanHandPaintedLines()
     {
-        var output = DiffCommand.Render("", Here, Git(OneFile));
+        var output = DiffCommand.Render("", Here, Git(OneFile)).Text;
 
-        Assert.Contains("[green]+added one[/]", output);
-        Assert.Contains("[red]-removed[/]", output);
-        Assert.Contains($"[{ColorScheme.AccentMarkup}]@@ -1,2 +1,3 @@[/]", output);
+        Assert.Contains("```diff", output);
+        Assert.Contains("+added one", output);
+        Assert.Contains("-removed", output);
+        Assert.Contains("@@ -1,2 +1,3 @@", output);
+
+        Assert.DoesNotContain("[green]", output);
+        Assert.DoesNotContain("[red]", output);
+        Assert.DoesNotContain($"[{ColorScheme.AccentMarkup}]", output);
     }
 
     /// <summary>
-    /// The +++/--- headers start with the same characters as additions and removals. Colouring them
-    /// green and red is a small lie told on every single diff.
+    /// THE FENCE IS CLOSED, and closed after the body rather than around the whole reply. An
+    /// unterminated fence swallows everything the transcript renders after it.
     /// </summary>
     [Fact]
-    public void FileHeadersAreNotColouredAsChanges()
+    public void TheFenceIsOpenedAndClosedExactlyOnce()
     {
-        var output = DiffCommand.Render("", Here, Git(OneFile));
+        var output = DiffCommand.Render("", Here, Git(OneFile)).Text;
 
-        Assert.DoesNotContain("[green]+++", output);
-        Assert.DoesNotContain("[red]---", output);
-        Assert.Contains($"[{ColorScheme.MutedMarkup}]+++ b/a.txt[/]", output);
+        Assert.Equal(2, output.Split("```").Length - 1);
+
+        // The header is prose about the diff, so it sits before the fence opens.
+        Assert.StartsWith("**Diff**", output);
     }
 
     /// <summary>
-    /// DIFF CONTENT IS ARBITRARY FILE TEXT. A source line containing a bracketed token would be
-    /// parsed as markup and swallowed — so the line vanishes from a review whose entire purpose is
-    /// showing what changed.
+    /// FENCED CONTENT IS LITERAL, so a source line containing a bracketed token reaches the
+    /// transcript intact without being escaped — and escaping it anyway would paste backslashes
+    /// into the user's own code.
     /// </summary>
     [Fact]
-    public void MarkupInTheSourceIsEscapedRatherThanInterpreted()
+    public void SourceTextIsNotEscapedInsideTheFence()
     {
         var withMarkup = "diff --git a/x.cs b/x.cs\n+var s = \"[red]danger[/]\";";
 
-        var output = DiffCommand.Render("", Here, Git(withMarkup));
+        var output = DiffCommand.Render("", Here, Git(withMarkup)).Text;
 
-        Assert.Contains("danger", output);
-        Assert.DoesNotContain("\"[red]danger", output);   // not left as live markup
+        Assert.Contains("+var s = \"[red]danger[/]\";", output);
+        Assert.DoesNotContain(@"\[red\]", output);
     }
 
     /// <summary>The shape of the change, before the change itself.</summary>
     [Fact]
     public void TheHeaderCountsFilesAndLines()
     {
-        var output = DiffCommand.Render("", Here, Git(OneFile));
+        var output = DiffCommand.Render("", Here, Git(OneFile)).Text;
 
         Assert.Contains("1 file", output);
         Assert.Contains("+2", output);
@@ -126,7 +131,7 @@ public class DiffCommandTests
     {
         var twoFiles = OneFile + "\n" + OneFile.Replace("a.txt", "b.txt");
 
-        var output = DiffCommand.Render("", Here, Git(twoFiles));
+        var output = DiffCommand.Render("", Here, Git(twoFiles)).Text;
 
         Assert.Contains("2 files", output);
         Assert.Contains("+4", output);      // not +8, which is what counting +++ would give
@@ -136,7 +141,7 @@ public class DiffCommandTests
     [Fact]
     public void NoChangesSaysSoRatherThanShowingAnEmptyBlock()
     {
-        var output = DiffCommand.Render("", Here, Git(""));
+        var output = DiffCommand.Render("", Here, Git("")).Text;
 
         Assert.Contains("no uncommitted changes", output);
     }
@@ -151,7 +156,7 @@ public class DiffCommandTests
         var long_ = string.Join('\n',
             Enumerable.Range(0, DiffCommand.MaxLines + 25).Select(i => $"+line {i}"));
 
-        var output = DiffCommand.Render("", Here, Git(long_));
+        var output = DiffCommand.Render("", Here, Git(long_)).Text;
 
         Assert.Contains("25 more lines", output);
         Assert.Contains("git diff", output);                 // how to see the rest
@@ -162,7 +167,7 @@ public class DiffCommandTests
     [Fact]
     public void AShortDiffSaysNothingAboutElision()
     {
-        Assert.DoesNotContain("more lines", DiffCommand.Render("", Here, Git(OneFile)));
+        Assert.DoesNotContain("more lines", DiffCommand.Render("", Here, Git(OneFile)).Text);
     }
 
     // --- what git is actually asked ---
@@ -195,7 +200,7 @@ public class DiffCommandTests
             return new(0, args[0] == "rev-parse" ? "true\n" : OneFile, "");
         };
 
-        var output = DiffCommand.Render("--staged", Here, capture);
+        var output = DiffCommand.Render("--staged", Here, capture).Text;
 
         Assert.Contains("--staged", seen);
         Assert.Contains("staged", output);
@@ -228,7 +233,7 @@ public class DiffCommandTests
             return new(0, args[0] == "rev-parse" ? "true\n" : OneFile, "");
         };
 
-        var output = DiffCommand.Render("src/main.cs", Here, capture);
+        var output = DiffCommand.Render("src/main.cs", Here, capture).Text;
 
         Assert.Equal("--", seen[^2]);
         Assert.Equal("src/main.cs", seen[^1]);
@@ -243,7 +248,7 @@ public class DiffCommandTests
     public void GitsOwnErrorIsShownForABadPath()
     {
         var output = DiffCommand.Render("nope.txt", Here,
-            Git("", exitCode: 128, error: "fatal: nope.txt: no such path in the working tree"));
+            Git("", exitCode: 128, error: "fatal: nope.txt: no such path in the working tree")).Text;
 
         Assert.Contains("no such path", output);
     }
@@ -266,7 +271,7 @@ public class DiffCommandTests
             _ => new(0, "", ""),
         };
 
-        var output = DiffCommand.Render("", Here, git);
+        var output = DiffCommand.Render("", Here, git).Text;
 
         Assert.Contains("2 untracked files", output);
         Assert.Contains("new.cs", output);
@@ -284,7 +289,7 @@ public class DiffCommandTests
         DiffCommand.Runner git = (_, args) =>
             new(0, args[0] == "rev-parse" ? "true\n" : "", "");
 
-        var output = DiffCommand.Render("definitely-not-here.txt", Here, git);
+        var output = DiffCommand.Render("definitely-not-here.txt", Here, git).Text;
 
         Assert.Contains("No such path", output);
         Assert.Contains("definitely-not-here.txt", output);
@@ -297,7 +302,7 @@ public class DiffCommandTests
         DiffCommand.Runner git = (_, args) =>
             new(0, args[0] == "rev-parse" ? "true\n" : "", "");
 
-        Assert.Contains("no uncommitted changes", DiffCommand.Render("", Here, git));
+        Assert.Contains("no uncommitted changes", DiffCommand.Render("", Here, git).Text);
     }
 
     /// <summary>
@@ -314,7 +319,7 @@ public class DiffCommandTests
             return new(0, args[0] == "rev-parse" ? "true\n" : "", "");
         };
 
-        var output = DiffCommand.Render("--staged", Here, git);
+        var output = DiffCommand.Render("--staged", Here, git).Text;
 
         Assert.DoesNotContain("ls-files", asked);
         Assert.Contains("no staged changes", output);

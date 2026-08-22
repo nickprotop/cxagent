@@ -94,20 +94,18 @@ public class CoreMarkdownTests
         // that notices, because a stray tag renders as literal text a reader shrugs at.
         //
         // ROOTED AT cxagent.Core/Core, NOT cxagent.Core. The examples under cxagent.Core/examples
-        // (SpectreAgent, ReadOnlyAgent, ToolAgent) still write real markup on purpose — they render
-        // through SharpConsoleUI/Spectre, which is the one place a colour tag is still the right
-        // format — and a later task owns converting them. Rooting the sweep at the library itself
-        // would fail on files this task has no reason to touch and no way to fix without doing that
-        // task's work first.
+        // (SpectreAgent, ReadOnlyAgent, ToolAgent) write real markup on purpose — they render
+        // through SharpConsoleUI/Spectre, which is the one place a colour tag is the right format.
+        // Rooting the sweep at the library itself fails on those.
         //
         // DOC-COMMENT LINES ARE SKIPPED, not scanned. Two files quote a colour tag on purpose inside
-        // `///` prose: ISessionObserver.cs (Ruling 6 — "a model writing \"[red]\" as ordinary prose
-        // must not open a style scope", the documentation of this very feature) and Message.cs
-        // (Severity's own doc, quoting what Core "used to write" before this change). Both are
-        // examples ABOUT markup, in a sentence, never rendered; every real offender this task fixed
-        // was a live `Say("[yellow]...[/]")` call outside a `///` line. Filtering by line prefix
-        // catches that distinction without hard-coding either filename — a THIRD file doing the same
-        // thing later would be exempted for the same reason, not because it dodged a filename list.
+        // `///` prose: ISessionObserver.cs ("a model writing \"[red]\" as ordinary prose must not
+        // open a style scope", the documentation of this very feature) and Message.cs, where
+        // Severity's doc quotes the format Core writes instead. Both are examples ABOUT markup, in a
+        // sentence, never rendered; a real offender is a live `Say("[yellow]...[/]")` call outside a
+        // `///` line. Filtering by line prefix catches that distinction without hard-coding either
+        // filename — a THIRD file doing the same thing is exempted for the same reason, not because
+        // it dodged a filename list.
         var core = Path.Combine(RepoRoot(), "cxagent.Core", "Core");
         var tagPattern = new System.Text.RegularExpressions.Regex(@"\[(red|yellow|green|grey\d*|cyan\d*)\]");
         var offenders = Directory.EnumerateFiles(core, "*.cs", SearchOption.AllDirectories)
@@ -118,19 +116,7 @@ public class CoreMarkdownTests
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToArray();
 
-        // RULING 10 — A SHRINKING ALLOWLIST, NOT Assert.Empty, and DELIBERATELY TEMPORARY: these
-        // three still hold real colour tags because Markup.cs stays alive until its last consumer
-        // is gone (Task 6 takes Skills/Agents, Task 7 takes Diff and the stats pair — Ruling 8).
-        // Assert.Empty here would have to be skipped or ignored until Task 7 lands, and a guard test
-        // nobody trusts guards nothing. Asserting the exact set keeps the suite green today AND still
-        // fails the moment a FOURTH file grows a tag, or one of these three loses its tag without
-        // this list being updated — both are real regressions this construction catches.
-        //
-        // AS EACH TASK LANDS, DELETE ITS FILE FROM THIS LIST. The last deletion turns this back into
-        // Assert.Empty(offenders) and deletes Markup.cs alongside it — see Markup.cs's own doc
-        // comment, which names the same ten call sites from the other direction.
-        string[] stillOwnedByLaterTasks = ["DiffCommand.cs"];
-        Assert.Equal(stillOwnedByLaterTasks.OrderBy(f => f, StringComparer.Ordinal).ToArray(), offenders);
+        Assert.Empty(offenders);
     }
 
     [Fact]
@@ -250,6 +236,117 @@ public class CoreMarkdownTests
 
         Assert.Equal(Delimiters(headerLine), Delimiters(rowLine));
     }
+
+    [Fact]
+    public void ABarChartSurvivesInsideItsFence()
+    {
+        // THE CHARACTERS THAT COME OUT ARE THE CHARACTERS THAT WENT IN. That is what a fence buys and
+        // what prose formatting cannot promise — a proportional font or a reflow turns a bar into
+        // noise, and nothing in the text would say it had happened.
+        var text = StatsDashboard.Render(SomeStatsView());
+
+        Assert.Contains("```", text);
+
+        var fenced = text.Split("```")[1];
+        Assert.Contains("█", fenced);          // the bar is inside the fence, not beside it
+        Assert.DoesNotContain("[", text);      // and no colour tags survive anywhere
+    }
+
+    [Fact]
+    public void TheDashboardsHeadingsStayOutsideTheFence()
+    {
+        // A HEADING IS A SENTENCE, NOT A DRAWING. Fencing the whole dashboard is the easy way to
+        // satisfy the test above, and it throws away every structural cue a reader navigates by —
+        // the fence is for the picture, and only for the picture.
+        var text = StatsDashboard.Render(SomeStatsView());
+
+        Assert.Contains("## Usage", text);
+        Assert.DoesNotContain("```", text.Split('\n')[0]);
+    }
+
+    [Fact]
+    public void ADiffBodySitsInADiffFence()
+    {
+        // ```diff RATHER THAN A PLAIN FENCE. A plain ```text fence renders a diff as grey text; the
+        // language tag hands +/- lines, file headers and @@ hunks to the renderer's diff
+        // highlighter, themed rather than hardcoded in Core.
+        var diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+                 + "@@ -1,2 +1,3 @@\n context\n+added one\n-removed\n";
+
+        var reply = DiffCommand.Render("", "/w", (_, args) =>
+            new(0, args[0] == "rev-parse" ? "true\n" : diff, ""));
+
+        Assert.Contains("```diff", reply.Text);
+        Assert.Contains("+added one", reply.Text);
+        Assert.DoesNotContain("[green]", reply.Text);
+        Assert.Equal(Severity.Info, reply.Severity);
+    }
+
+    [Fact]
+    public void DiffContentIsNotEscapedInsideItsFence()
+    {
+        // FENCED CONTENT IS LITERAL BY DEFINITION, so nothing inside needs escaping — and escaping
+        // it anyway would put a backslash into the user's own code.
+        var diff = "diff --git a/x.cs b/x.cs\n+var s = \"a_b[c]\";\n";
+
+        var reply = DiffCommand.Render("", "/w", (_, args) =>
+            new(0, args[0] == "rev-parse" ? "true\n" : diff, ""));
+
+        Assert.Contains("+var s = \"a_b[c]\";", reply.Text);
+        Assert.DoesNotContain(@"a\_b", reply.Text);
+    }
+
+    [Fact]
+    public void ADiffOfAMarkdownFileDoesNotBreakOutOfItsFence()
+    {
+        // NOT A CORNER CASE: this app edits markdown constantly — CLAUDE.md, briefs, reports — so a
+        // diff line reading `+``` ` is an ordinary Tuesday. A three-backtick fence around it closes
+        // at that line, and everything after it spills out as prose. Fenced content cannot be
+        // escaped (that is the point of a fence), so the fence must be LONGER than the longest run
+        // inside it — markdown's own rule for exactly this.
+        var diff = "diff --git a/README.md b/README.md\n+```csharp\n+var x = 1;\n+```\n";
+
+        var reply = DiffCommand.Render("", "/w", (_, args) =>
+            new(0, args[0] == "rev-parse" ? "true\n" : diff, ""));
+
+        var lines = reply.Text.Split('\n');
+        var opening = lines.First(l => l.StartsWith("```"));
+
+        // The opening fence outruns the longest backtick run in the body, so it is the only thing
+        // that can close it.
+        Assert.True(opening.TrimEnd().Length - "diff".Length > 3,
+            $"fence must outrun the content's own backticks, got: {opening}");
+        Assert.EndsWith(opening.TrimEnd()[..^"diff".Length], reply.Text.TrimEnd());
+
+        // And the content survives intact — the run inside is still three backticks.
+        Assert.Contains("+```csharp", reply.Text);
+    }
+
+    [Fact]
+    public void DiffFailuresCarryTheirSeverity()
+    {
+        // THE SENTENCES ARE NOT DRAWN OUTPUT. "Could not run git" is prose about a failure, and a
+        // sink can only act on that tone if Severity states it.
+        var broken = DiffCommand.Render("", "/w", (_, _) => new(-1, "", "No such file"));
+        Assert.Equal(Severity.Error, broken.Severity);
+        Assert.Contains("Could not run git", broken.Text);
+
+        // NOT A REPOSITORY IS NOT A FAULT — nothing was asked of git that it failed to do.
+        var noRepo = DiffCommand.Render("", "/w", (_, _) => new(128, "", "fatal: not a git repo"));
+        Assert.Equal(Severity.Warning, noRepo.Severity);
+        Assert.Contains("Not a git repository", noRepo.Text);
+    }
+
+    /// <summary>The smallest view that draws a bar: one session with a worker share, which is the
+    /// first bar <see cref="StatsDashboard.Render"/> emits.</summary>
+    private static StatsDashboard.StatsView SomeStatsView() => new()
+    {
+        Days = 7,
+        Totals = new CxAgent.Core.Storage.StatsTotals(
+            Sessions: 1, InputTokens: 900_000, OutputTokens: 20_000,
+            SubAgentTokens: 800_000, Turns: 40),
+        Projects = [], Models = [], Types = [], Tools = [], Daily = [],
+    };
 
     /// <summary>The repository root, found by walking up from the test assembly.</summary>
     private static string RepoRoot()

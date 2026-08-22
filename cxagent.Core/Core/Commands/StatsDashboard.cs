@@ -5,12 +5,20 @@ using CxAgent.Core.Storage;
 namespace CxAgent.Core.Commands;
 
 /// <summary>
-/// Renders usage history as a dashboard, in markup, for the chat transcript.
+/// Renders usage history as a dashboard, in markdown, for the chat transcript.
 ///
-/// <para>MARKUP RATHER THAN A TABLE OF NUMBERS. The transcript renders the framework's markup, so a
-/// bar can be a bar and a gradient can carry magnitude — a column of digits makes the reader do the
-/// comparison that a bar does for them. Everything here is a pure function of records: no store, no
-/// terminal, no session, so the whole dashboard is testable as a string.</para>
+/// <para>A DRAWING RATHER THAN A TABLE OF NUMBERS. A bar is a bar because a column of digits makes
+/// the reader do the comparison that a bar does for them. Everything here is a pure function of
+/// records: no store, no terminal, no session, so the whole dashboard is testable as a string.</para>
+///
+/// <para>THE BARS LIVE IN FENCES, THE HEADINGS DO NOT. `█████───` is a PICTURE made of characters,
+/// and markdown has no way to say "22 cells wide, 60% filled" — a renderer treating it as prose may
+/// reflow it or set it proportionally, and either destroys it without saying so. A fence promises
+/// "preformatted, leave it alone", which is the only guarantee a drawing needs. Headings and
+/// sentences stay outside it, where a reader gets them as text.</para>
+///
+/// <para>NO COLOUR, AND IT COSTS NOTHING. A fence carries none, and a bar does not need any: its
+/// meaning is its length, so a gradient keyed to the same fraction encodes one number twice.</para>
 ///
 /// <para>PROPORTION, NOT PRECISION. Bars are scaled to the largest row rather than to any absolute
 /// ceiling: what a reader wants from "by project" is which one dominates, and an absolute scale makes
@@ -18,16 +26,14 @@ namespace CxAgent.Core.Commands;
 /// </summary>
 public static class StatsDashboard
 {
-    // A GRADIENT ACROSS THE BAR, cool where a value is small and hot where it is large. The steps are
-    // deliberately few: a smooth ramp over 24 columns is invisible, while four bands read as a scale.
-    private static readonly string[] Ramp = ["deepskyblue1", "cyan1", "springgreen1", "yellow1", "orange1", "red1"];
-
     private const char Full = '█';
     private const char Half = '▌';
 
     /// <summary>
-    /// One proportional bar. <paramref name="fraction"/> is clamped to 0..1; the colour comes from
-    /// the same fraction, so a long bar is also a hot one and the two encodings agree.
+    /// One proportional bar. <paramref name="fraction"/> is clamped to 0..1.
+    ///
+    /// <para>PLAIN CHARACTERS, NO COLOUR. The bar sits inside a fence, which carries none — and
+    /// length is the whole of the message anyway.</para>
     /// </summary>
     public static string Bar(double fraction, int width = 22)
     {
@@ -41,15 +47,14 @@ public static class StatsDashboard
         // project that ran, a model that was used, a tool that was called. Only a true zero is blank.
         if (!half && full == 0 && fraction > 0) half = true;
 
-        var colour = Ramp[Math.Clamp((int)(fraction * Ramp.Length), 0, Ramp.Length - 1)];
         var bar = new string(Full, full) + (half ? Half.ToString() : "");
 
-        // The empty remainder is drawn, muted, rather than left blank: a row of ragged-right bars
-        // reads as missing data, while a visible track reads as a scale.
+        // The empty remainder is drawn rather than left blank: a row of ragged-right bars reads as
+        // missing data, while a visible track reads as a scale.
         var restWidth = width - full - (half ? 1 : 0);
         var rest = restWidth > 0 ? new string('─', restWidth) : "";
 
-        return $"[{colour}]{bar}[/][{Markup.Muted}]{rest}[/]";
+        return bar + rest;
     }
 
     /// <summary>Compact magnitudes — a dashboard is read for scale, never for digits.
@@ -79,11 +84,28 @@ public static class StatsDashboard
     public static string Percent(double rate) =>
         $"{rate * 100:0}%";
 
+    /// <summary>A section heading. <c>##</c> rather than bold: these ARE the dashboard's sections,
+    /// and a reader (or a renderer building an outline) should be able to tell them from emphasis.
+    /// </summary>
     private static string Head(string text) =>
-        $"[bold {Markup.Accent}]{text}[/]";
+        $"## {text}";
 
-    private static string Muted(string text) =>
-        $"[{Markup.Muted}]{text}[/]";
+    /// <summary>
+    /// Appends a drawn block, fenced.
+    /// </summary>
+    /// <remarks>
+    /// THROUGH <see cref="Md.Fence"/> RATHER THAN A LITERAL <c>```</c>, because the rows carry text
+    /// this library did not author — project paths, model ids and tool names all reach a fence
+    /// verbatim, and a backtick in any of them closes a fixed three-backtick fence early, spilling
+    /// the rest of the dashboard into the transcript as prose.
+    ///
+    /// <para>The block is BUILT then fenced, rather than written open-fence-first, so the fence can
+    /// be sized against content that does not exist while the fence is being opened.</para>
+    /// </remarks>
+    /// <param name="sb">The dashboard being built.</param>
+    /// <param name="drawing">The block's lines, already laid out. Trailing blank lines are dropped.</param>
+    private static void AppendDrawn(StringBuilder sb, StringBuilder drawing) =>
+        sb.AppendLine(Md.Fence(drawing.ToString().TrimEnd('\n')));
 
     /// <summary>Right-pads to a column width, for the label gutter every section shares.</summary>
     private static string Pad(string s, int w) =>
@@ -136,12 +158,16 @@ public static class StatsDashboard
 
         // NOTHING RECORDED IS ITS OWN ANSWER, not an empty dashboard. Empty sections would read as
         // "you did nothing"; this says the history is new, which is the actual state.
+        //
+        // NO FENCE ON THIS ONE. There is nothing drawn here — two sentences, which want to be
+        // sentences. Fencing the method uniformly is simpler and sets an apology in a monospace box.
         if (totals.Sessions == 0)
         {
             sb.AppendLine(Head("Usage"));
             sb.AppendLine();
-            sb.AppendLine(Muted($"No sessions recorded in the last {days} days."));
-            sb.AppendLine(Muted("History starts recording from this version — earlier sessions were not kept."));
+            sb.AppendLine($"No sessions recorded in the last {days} days.");
+            sb.AppendLine();
+            sb.AppendLine("History starts recording from this version — earlier sessions were not kept.");
             return sb.ToString().TrimEnd();
         }
 
@@ -149,18 +175,23 @@ public static class StatsDashboard
         sb.AppendLine();
 
         // --- the headline ------------------------------------------------------------------------
-        sb.AppendLine($"  [bold]{DisplayNumber.Grouped(totals.TotalTokens)}[/] tokens  "
-                    + Muted($"↑{Compact(totals.InputTokens)} ↓{Compact(totals.OutputTokens)}"));
-        sb.AppendLine($"  [bold]{totals.Sessions}[/] session{(totals.Sessions == 1 ? "" : "s")}  "
-                    + Muted($"· {totals.Turns} turns"));
+        //
+        // ONE FENCE FOR THE WHOLE HEADLINE BLOCK, not one per line. The token count, the session
+        // count and the two bars below them are read as a column — separate fences would put a gap
+        // between lines that belong to one reading, and would break the left alignment they share.
+        var headline = new StringBuilder();
+        headline.AppendLine($"  {DisplayNumber.Grouped(totals.TotalTokens)} tokens  "
+                    + $"↑{Compact(totals.InputTokens)} ↓{Compact(totals.OutputTokens)}");
+        headline.AppendLine($"  {totals.Sessions} session{(totals.Sessions == 1 ? "" : "s")}  "
+                    + $"· {totals.Turns} turns");
 
         // THE WORKER SHARE, on its own line with a bar. It is the single most informative ratio a
         // fan-out user has, and it was invisible before this feature existed.
         if (totals.WorkerShare is { } share && totals.SubAgentTokens > 0)
         {
-            sb.AppendLine();
-            sb.AppendLine($"  {Bar(share)} [bold]{Percent(share)}[/] to workers  "
-                        + Muted($"({Compact(totals.SubAgentTokens)} of {Compact(totals.TotalTokens)})"));
+            headline.AppendLine();
+            headline.AppendLine($"  {Bar(share)} {Percent(share)} to workers  "
+                        + $"({Compact(totals.SubAgentTokens)} of {Compact(totals.TotalTokens)})");
         }
 
         // THE CACHE HIT RATE, which decides what that ↑ actually COST. Input dominates every tool
@@ -173,56 +204,69 @@ public static class StatsDashboard
         // cache problem they do not have.
         if (totals.CacheHitRate is { } hit)
         {
-            sb.AppendLine();
-            sb.AppendLine($"  {Bar(hit)} [bold]{Percent(hit)}[/] input cached  "
-                        + Muted($"({Compact(totals.CachedInputTokens)} of "
-                              + $"{Compact(totals.CacheReportingInputTokens)} sent)"));
+            headline.AppendLine();
+            headline.AppendLine($"  {Bar(hit)} {Percent(hit)} input cached  "
+                        + $"({Compact(totals.CachedInputTokens)} of "
+                        + $"{Compact(totals.CacheReportingInputTokens)} sent)");
 
             // WHAT THE WARMING COST, where it cost anything. A local endpoint fills its own RAM for
             // free and reports no writes, so this line never appears there. On a provider that bills
             // for them — OpenAI 1.25x normal input, Anthropic up to 2x — a hit rate on its own reads
             // as pure saving, and that is the number someone would plan against.
             if (totals.CacheWrittenTokens > 0)
-                sb.AppendLine(Muted($"      {Compact(totals.CacheWrittenTokens)} written to cache "
-                                  + "— billed above normal input by most paid providers"));
+                headline.AppendLine($"      {Compact(totals.CacheWrittenTokens)} written to cache "
+                            + "— billed above normal input by most paid providers");
         }
 
         // WHAT IT COST, when anyone said. Omitted entirely otherwise — local-only history has no
         // cost to report, and "$0.00" would claim a measurement never made.
         if (totals.Cost is { } cost)
         {
-            sb.AppendLine();
+            headline.AppendLine();
             // FOUR DECIMALS BELOW A DOLLAR, matching SessionPanel.Money exactly. The panel and /stats
             // report the same figure, and a threshold that differs between them renders one $0.45
             // and the other $0.4500 — the reader is left wondering which readout is rounding.
-            sb.AppendLine($"  [bold]{(cost < 1.00m ? $"${DisplayNumber.Fixed(cost, 4)}" : $"${DisplayNumber.Fixed(cost, 2)}")}[/] spent  "
-                        + Muted($"across {totals.CostReportingSessions} session"
-                              + $"{(totals.CostReportingSessions == 1 ? "" : "s")} that reported"));
+            headline.AppendLine($"  {(cost < 1.00m ? $"${DisplayNumber.Fixed(cost, 4)}" : $"${DisplayNumber.Fixed(cost, 2)}")} spent  "
+                        + $"across {totals.CostReportingSessions} session"
+                        + $"{(totals.CostReportingSessions == 1 ? "" : "s")} that reported");
         }
+        AppendDrawn(sb, headline);
 
         // --- daily sparkline ---------------------------------------------------------------------
+        //
+        // THE DATE RULE UNDER THE SPARKLINE IS PART OF THE DRAWING. Its whole content is a run of
+        // spaces sized to put the last date under the last column — reflowed, it lands under an
+        // arbitrary day and lies about the window.
         if (daily.Count > 1 && daily.Any(d => d.Tokens > 0))
         {
             sb.AppendLine();
             sb.AppendLine(Head("Daily"));
             sb.AppendLine();
-            sb.AppendLine("  " + Sparkline(daily));
-            sb.AppendLine("  " + Muted($"{daily[0].Day:MMM d}"
+            var spark = new StringBuilder();
+            spark.AppendLine("  " + Sparkline(daily));
+            spark.AppendLine("  " + $"{daily[0].Day:MMM d}"
                         + new string(' ', Math.Max(1, daily.Count - 12))
-                        + $"{daily[^1].Day:MMM d}"));
+                        + $"{daily[^1].Day:MMM d}");
+            AppendDrawn(sb, spark);
         }
 
         // --- by project --------------------------------------------------------------------------
+        //
+        // A FENCE RATHER THAN A TABLE, EVEN THOUGH THESE ROWS HAVE COLUMNS. The bar IS one of the
+        // columns, and it only means anything at a fixed cell width — a table cell that a renderer
+        // is free to size makes "18 cells, 12 filled" unreadable against the row above it.
         if (projects.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine(Head("By project"));
             sb.AppendLine();
+            var rows = new StringBuilder();
             var max = (double)projects.Max(p => p.Tokens);
             foreach (var p in projects.Take(8))
-                sb.AppendLine($"  {Pad(ShortProject(p.Project), 22)} {Bar(p.Tokens / max, 18)} "
+                rows.AppendLine($"  {Pad(ShortProject(p.Project), 22)} {Bar(p.Tokens / max, 18)} "
                             + $"{Pad(Compact(p.Tokens), 7)}"
-                            + Muted($"{p.Sessions} session{(p.Sessions == 1 ? "" : "s")}"));
+                            + $"{p.Sessions} session{(p.Sessions == 1 ? "" : "s")}");
+            AppendDrawn(sb, rows);
         }
 
         // --- by instance:model ---------------------------------------------------------------------
@@ -231,11 +275,13 @@ public static class StatsDashboard
             sb.AppendLine();
             sb.AppendLine(Head("By instance"));
             sb.AppendLine();
+            var rows = new StringBuilder();
             var max = (double)models.Max(m => m.TotalTokens);
             foreach (var m in models.Take(6))
-                sb.AppendLine($"  {Pad(Short(m.Model), 22)} {Bar(m.TotalTokens / max, 18)} "
+                rows.AppendLine($"  {Pad(Short(m.Model), 22)} {Bar(m.TotalTokens / max, 18)} "
                             + $"{Pad(Compact(m.TotalTokens), 7)}"
-                            + Muted($"↑{Compact(m.InputTokens)} ↓{Compact(m.OutputTokens)}"));
+                            + $"↑{Compact(m.InputTokens)} ↓{Compact(m.OutputTokens)}");
+            AppendDrawn(sb, rows);
         }
 
         // --- by agent type -----------------------------------------------------------------------
@@ -247,22 +293,27 @@ public static class StatsDashboard
             sb.AppendLine();
             sb.AppendLine(Head("By agent type"));
             sb.AppendLine();
-            sb.AppendLine("  " + Muted(Pad("type", 12) + Pad("runs", 6) + Pad("tokens", 9)
-                                     + Pad("avg turns", 11) + "outcome"));
+            var rows = new StringBuilder();
+            rows.AppendLine("  " + Pad("type", 12) + Pad("runs", 6) + Pad("tokens", 9)
+                               + Pad("avg turns", 11) + "outcome");
             var max = (double)types.Max(t => t.Tokens);
             foreach (var t in types)
             {
                 // CAPPED IS NAMED, not folded into failures. A capped run did not fail — it ran out
                 // of room, which is a fact about the briefing rather than about the work.
+                //
+                // THE WORDS CARRY THE DISTINCTION, not colour — a fence has none to give. Nor is
+                // any needed: "2 failed" and "2 capped" are already different sentences.
                 var flags = new List<string>();
-                if (t.Failed > 0) flags.Add($"[{Markup.Danger}]{t.Failed} failed[/]");
-                if (t.Capped > 0) flags.Add($"[yellow1]{t.Capped} capped[/]");
-                var outcome = flags.Count > 0 ? string.Join(" ", flags) : Muted("all clean");
+                if (t.Failed > 0) flags.Add($"{t.Failed} failed");
+                if (t.Capped > 0) flags.Add($"{t.Capped} capped");
+                var outcome = flags.Count > 0 ? string.Join(" ", flags) : "all clean";
 
-                sb.AppendLine($"  {Pad(t.Type, 12)}{Pad(t.Runs.ToString(), 6)}"
+                rows.AppendLine($"  {Pad(t.Type, 12)}{Pad(t.Runs.ToString(), 6)}"
                             + $"{Pad(Compact(t.Tokens), 9)}{Pad(DisplayNumber.Fixed(t.AvgTurns, 1), 11)}{outcome}");
-                sb.AppendLine($"  {new string(' ', 12)}{Bar(t.Tokens / max, 18)}");
+                rows.AppendLine($"  {new string(' ', 12)}{Bar(t.Tokens / max, 18)}");
             }
+            AppendDrawn(sb, rows);
         }
 
         // --- what fills the context --------------------------------------------------------------
@@ -275,30 +326,35 @@ public static class StatsDashboard
             sb.AppendLine();
             sb.AppendLine(Head("What fills the context"));
             sb.AppendLine();
+            var rows = new StringBuilder();
             var max = (double)tools.Max(t => t.ResultChars);
             foreach (var t in tools.Take(8))
             {
-                var failed = t.Failed > 0 ? $"[{Markup.Danger}]{t.Failed} failed[/]" : "";
-                sb.AppendLine($"  {Pad(t.Tool, 16)} {Bar(t.ResultChars / max, 18)} "
+                var failed = t.Failed > 0 ? $"{t.Failed} failed" : "";
+                rows.AppendLine($"  {Pad(t.Tool, 16)} {Bar(t.ResultChars / max, 18)} "
                             + $"{Pad(Compact(t.ResultChars) + "ch", 9)}"
-                            + Muted($"{t.Calls} call{(t.Calls == 1 ? "" : "s")}")
+                            + $"{t.Calls} call{(t.Calls == 1 ? "" : "s")}"
                             + (failed.Length > 0 ? "  " + failed : ""));
             }
+            AppendDrawn(sb, rows);
         }
 
         // --- housekeeping ------------------------------------------------------------------------
+        //
+        // FENCED TOO, for its label gutter: "compaction", "permission" and "auto review" are padded
+        // into a column so the counts line up under one another.
         var lines = new List<string>();
         if (compaction.Runs > 0)
             lines.Add($"  compaction  {compaction.Runs} run{(compaction.Runs == 1 ? "" : "s")}, "
                     + $"{Compact(compaction.Reclaimed)} tokens reclaimed"
-                    + (compaction.Manual > 0 ? Muted($" ({compaction.Manual} manual)") : ""));
+                    + (compaction.Manual > 0 ? $" ({compaction.Manual} manual)" : ""));
 
         if (permissions.Asked + permissions.Silent + permissions.AutoAllowed
             + permissions.AutoRefused + permissions.AutoDenied > 0)
         {
             lines.Add($"  permission  {permissions.Asked} asked "
-                    + Muted($"({permissions.Allowed} allowed, {permissions.Denied} denied)")
-                    + (permissions.Silent > 0 ? Muted($" · {permissions.Silent} by rule") : ""));
+                    + $"({permissions.Allowed} allowed, {permissions.Denied} denied)"
+                    + (permissions.Silent > 0 ? $" · {permissions.Silent} by rule" : ""));
 
             // AUTO ON ITS OWN LINE. The question a reader has is "how much did the model decide,
             // and how often did I disagree with it" — which is unanswerable if its counts are
@@ -325,9 +381,9 @@ public static class StatsDashboard
                     ? $" · {Percent((double)permissions.Flagged / permissions.Classified)} triage-flagged"
                     : "";
                 lines.Add($"  auto review {auto} decided "
-                        + Muted($"({permissions.AutoAllowed} allowed, "
-                              + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied)"
-                              + suffix)); // suffix rides inside the same Muted() clause, matching style
+                        + $"({permissions.AutoAllowed} allowed, "
+                        + $"{permissions.AutoRefused} asked, {permissions.AutoDenied} denied)"
+                        + suffix);
             }
         }
 
@@ -336,14 +392,19 @@ public static class StatsDashboard
             sb.AppendLine();
             sb.AppendLine(Head("Housekeeping"));
             sb.AppendLine();
-            foreach (var l in lines) sb.AppendLine(l);
+            var rows = new StringBuilder();
+            foreach (var l in lines) rows.AppendLine(l);
+            AppendDrawn(sb, rows);
         }
 
         return sb.ToString().TrimEnd();
     }
 
     /// <summary>
-    /// A block sparkline of daily totals, coloured by magnitude.
+    /// A block sparkline of daily totals.
+    ///
+    /// <para>HEIGHT, NOT COLOUR. The line sits inside a fence, and its shape is the whole of what
+    /// it says — a gradient keyed to the same fraction that picks each block adds nothing.</para>
     ///
     /// <para>Scaled to the busiest day in the window, so the shape shows RHYTHM — which days were
     /// heavy — rather than absolute size, which the headline already gives.</para>
@@ -352,14 +413,14 @@ public static class StatsDashboard
     {
         const string blocks = " ▁▂▃▄▅▆▇█";
         var max = daily.Max(d => d.Tokens);
-        if (max <= 0) return Muted(new string('─', daily.Count));
+        if (max <= 0) return new string('─', daily.Count);
 
         var sb = new StringBuilder();
         foreach (var (_, tokens) in daily)
         {
             // A day with NO activity is a muted rule rather than a blank: an empty column and a
             // missing column look identical, and one of them is a fact.
-            if (tokens == 0) { sb.Append($"[{Markup.Muted}]─[/]"); continue; }
+            if (tokens == 0) { sb.Append('─'); continue; }
 
             var f = (double)tokens / max;
 
@@ -367,9 +428,7 @@ public static class StatsDashboard
             // thousandth of the busiest day still HAPPENED, and rounding it to a blank makes it
             // indistinguishable from a day that did not — the very distinction the line above draws.
             var step = Math.Clamp((int)Math.Round(f * (blocks.Length - 1)), 1, blocks.Length - 1);
-            var ch = blocks[step];
-            var colour = Ramp[Math.Clamp((int)(f * Ramp.Length), 0, Ramp.Length - 1)];
-            sb.Append($"[{colour}]{ch}[/]");
+            sb.Append(blocks[step]);
         }
         return sb.ToString();
     }

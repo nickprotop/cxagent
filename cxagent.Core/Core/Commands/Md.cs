@@ -59,4 +59,38 @@ public static class Md
     /// <returns>The text, safe to interpolate into a `|`-delimited row.</returns>
     public static string EscapeCell(string text) =>
         string.IsNullOrEmpty(text) ? text : Escape(text).Replace("|", @"\|");
+
+    /// <summary>
+    /// Wraps drawn output in a fence long enough that its own content cannot close it.
+    /// </summary>
+    /// <remarks>
+    /// FENCED CONTENT CANNOT BE ESCAPED — that is the entire guarantee a fence offers, and the
+    /// reason drawn output goes in one. So the only lever is fence LENGTH, which is markdown's own
+    /// answer: a fence is closed by a run of at least as many backticks, so a longer opener cannot
+    /// be closed by anything inside it.
+    ///
+    /// <para>NOT A CORNER CASE, WHICH IS WHY A HARDCODED <c>```</c> WILL NOT DO. This app edits
+    /// markdown constantly — instruction files, briefs, reports — so a <c>/diff</c> line reading
+    /// <c>+```csharp</c> is ordinary, and a three-backtick fence around it closes at that line and
+    /// spills the rest of the diff into the transcript as prose.</para>
+    /// </remarks>
+    /// <param name="body">The drawn text, verbatim. No trailing newline needed.</param>
+    /// <param name="language">The fence's info string — <c>diff</c> to get a highlighter,
+    /// <c>text</c> for a picture that only wants the "do not reflow" promise.</param>
+    /// <returns>The body between an opening and closing fence.</returns>
+    public static string Fence(string body, string language = "text")
+    {
+        // The longest run of backticks anywhere in the body, so the fence can outrun it. Three is
+        // the floor because a shorter fence is not a fence.
+        var longest = 0;
+        var run = 0;
+        foreach (var c in body)
+        {
+            run = c == '`' ? run + 1 : 0;
+            if (run > longest) longest = run;
+        }
+
+        var fence = new string('`', Math.Max(3, longest + 1));
+        return $"{fence}{language}\n{body}\n{fence}";
+    }
 }

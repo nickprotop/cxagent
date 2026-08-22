@@ -54,7 +54,7 @@ public static class DiffCommand
     /// <param name="argument">Everything after the command word.</param>
     /// <param name="workingDir">The folder to ask git about.</param>
     /// <param name="run">How to run git. Injected so this is testable without a repository.</param>
-    public static string Render(string argument, string workingDir, Runner? run = null)
+    public static Message Render(string argument, string workingDir, Runner? run = null)
     {
         run ??= RunGit;
 
@@ -64,17 +64,21 @@ public static class DiffCommand
         var inside = run(workingDir, ["rev-parse", "--is-inside-work-tree"]);
         if (inside.ExitCode != 0)
         {
+            // NOT A REPOSITORY IS A WARNING, NOT AN ERROR. Nothing failed — the user asked a
+            // question that has no answer here. Git being absent or unrunnable IS a fault, and a
+            // sink that cannot tell the two apart reports a missing binary as an idle remark.
             return inside.ExitCode < 0
-                ? $"[{Markup.Danger}]Could not run git: {Escape(inside.Error.Trim())}[/]"
-                : $"[{Markup.Muted}]Not a git repository — nothing to diff.[/]";
+                ? new Message($"Could not run git: {Escape(inside.Error.Trim())}", Severity.Error)
+                : new Message("Not a git repository — nothing to diff.", Severity.Warning);
         }
 
         var words = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var staged = words.Any(w => w is "--staged" or "--cached");
         var paths = words.Where(w => !w.StartsWith('-')).ToList();
 
-        // NO COLOUR FROM GIT. Colour is applied below, per line; git's own ANSI escapes would arrive
-        // as literal bytes in the transcript — visible garbage rather than colour.
+        // NO COLOUR FROM GIT. The renderer's diff highlighter colours the fence below; git's own
+        // ANSI escapes arrive as literal bytes inside it — visible garbage rather than colour, and
+        // a fence cannot strip them.
         var args = new List<string> { "--no-pager", "diff", "--no-color" };
         if (staged) args.Add("--staged");
         if (paths.Count > 0)
@@ -87,12 +91,12 @@ public static class DiffCommand
         var result = run(workingDir, args);
 
         if (result.ExitCode < 0)
-            return $"[{Markup.Danger}]Could not run git: {Escape(result.Error.Trim())}[/]";
+            return new Message($"Could not run git: {Escape(result.Error.Trim())}", Severity.Error);
 
         // A BAD PATH IS GIT'S MESSAGE, NOT OURS. It already says which path it could not find, and
         // rewording it would only make it less precise than the tool the user will check it against.
         if (result.ExitCode != 0)
-            return $"[{Markup.Danger}]{Escape(result.Error.Trim())}[/]";
+            return new Message(Escape(result.Error.Trim()), Severity.Error);
 
         var scope = staged ? "staged" : "uncommitted";
         var what = paths.Count > 0 ? $" · {Escape(string.Join(" ", paths))}" : "";
@@ -107,46 +111,50 @@ public static class DiffCommand
             var untracked = staged ? [] : Untracked(run, workingDir, paths);
 
             if (untracked.Count > 0)
-                return $"[{Markup.Accent}]Diff[/] "
-                     + $"[{Markup.Muted}]· no tracked changes{what} · "
+                return $"**Diff** · no tracked changes{what} · "
                      + $"{untracked.Count} untracked file{(untracked.Count == 1 ? "" : "s")}: "
                      + $"{Escape(string.Join(", ", untracked.Take(5)))}"
-                     + $"{(untracked.Count > 5 ? ", …" : "")} — `git add` to see them here[/]";
+                     + $"{(untracked.Count > 5 ? ", …" : "")} — `git add` to see them here";
 
             // A NAMED PATH THAT IS NOT THERE. Git says nothing about it, so this has to.
             if (paths.Count > 0 && paths.All(p => !PathExists(workingDir, p)))
-                return $"[yellow]No such path: "
-                     + $"{Escape(string.Join(", ", paths))}[/]";
+                return new Message($"No such path: {Escape(string.Join(", ", paths))}",
+                                   Severity.Warning);
 
-            return $"[{Markup.Accent}]Diff[/] "
-                 + $"[{Markup.Muted}]· no {scope} changes{what}[/]";
+            return $"**Diff** · no {scope} changes{what}";
         }
 
         var lines = result.Output.TrimEnd('\n').Split('\n');
         var shown = lines.Length > MaxLines ? lines[..MaxLines] : lines;
 
-        var head = $"[{Markup.Accent}]Diff[/] "
-                 + $"[{Markup.Muted}]· {scope} · {Summarise(lines)}{what}[/]";
+        // THE HEADER IS A SENTENCE, NOT PART OF THE DRAWING, so it stays outside the fence where a
+        // reader gets it as prose. Bold rather than a heading: it labels the block that follows it,
+        // and a `##` would put /diff into the document's outline beside real sections.
+        var head = $"**Diff** · {scope} · {Summarise(lines)}{what}";
 
-        // COLOURED HERE, A LINE AT A TIME, rather than by a ```diff fence.
+        // A ```diff FENCE, NOT A PLAIN ONE. A plain fence renders a diff as undifferentiated grey
+        // text; the language tag makes the renderer's diff highlighter colour +/- lines, file
+        // headers and @@ hunks instead — themed rather than hardcoded here. MarkdownToMarkup reads
+        // the fence's info string and SyntaxHighlighters registers DiffSyntaxHighlighter under
+        // "diff". The +++/--- headers, which begin with the same characters as additions and
+        // removals, are that highlighter's problem — where a diff-specific rule belongs.
         //
-        // The role cannot do it: System renders as MARKUP, not markdown, and deliberately — every
-        // other System line is written in the library's [red]/[cyan] markup, so turning markdown on
-        // for the role would make all of those render literally. (A MESSAGE can override its role's
-        // markdown setting, so a fence IS reachable; this does not take that route because the
-        // per-line colouring is already here and already exact about which lines are content.)
+        // NO ESCAPING INSIDE THE FENCE. Fenced content is literal, so escaping would paste
+        // backslashes into the user's own code.
         //
-        // Doing it here also fixes something a fence would not: +++/--- headers start with the same
-        // characters as additions and removals, and a generic diff highlighter paints them green and
-        // red — a small lie told on every single diff.
-        var body = string.Join('\n', shown.Select(Colour));
+        // Md.Fence sizes the fence to the content: a diff of a markdown file carries `+``` ` lines,
+        // and a fixed three-backtick fence closes on the first of them.
+        var body = Md.Fence(string.Join('\n', shown), "diff");
 
+        // OUTSIDE THE FENCE, because it is our sentence about the diff rather than part of it.
+        // Inside, the diff highlighter reads the leading "…" as a context line and it renders as
+        // though git had said it.
         var elided = lines.Length > MaxLines
-            ? $"\n[{Markup.Muted}]… {lines.Length - MaxLines} more lines — "
-              + $"`git diff{(staged ? " --staged" : "")}` for the rest[/]"
+            ? $"\n\n… {lines.Length - MaxLines} more lines — "
+              + $"`git diff{(staged ? " --staged" : "")}` for the rest"
             : "";
 
-        return $"{head}\n{body}{elided}";
+        return $"{head}\n\n{body}{elided}";
     }
 
     /// <summary>
@@ -184,40 +192,6 @@ public static class DiffCommand
             // An unreadable or malformed path is not something to claim exists.
             return false;
         }
-    }
-
-    /// <summary>
-    /// One diff line, coloured by what it is.
-    ///
-    /// <para>THE FOUR THINGS A READER SCANS FOR: which file, which hunk, what arrived, what left.
-    /// Everything else is context and stays plain, so the eye lands on the changes rather than on
-    /// the surrounding lines.</para>
-    ///
-    /// <para>ESCAPED FIRST. Diff content is arbitrary file text, and a source line containing
-    /// <c>[red]</c> — or any bracketed token — would otherwise be parsed as markup and swallowed.
-    /// </para>
-    /// </summary>
-    private static string Colour(string line)
-    {
-        var text = Escape(line);
-
-        // File headers before the +++/--- check: those lines start with the same characters as
-        // additions and removals, and colouring them green and red is a small daily lie.
-        if (line.StartsWith("diff --git ", StringComparison.Ordinal)
-         || line.StartsWith("index ", StringComparison.Ordinal)
-         || line.StartsWith("+++", StringComparison.Ordinal)
-         || line.StartsWith("---", StringComparison.Ordinal)
-         || line.StartsWith("new file", StringComparison.Ordinal)
-         || line.StartsWith("deleted file", StringComparison.Ordinal))
-            return $"[{Markup.Muted}]{text}[/]";
-
-        if (line.StartsWith("@@", StringComparison.Ordinal))
-            return $"[{Markup.Accent}]{text}[/]";
-
-        if (line.StartsWith('+')) return $"[green]{text}[/]";
-        if (line.StartsWith('-')) return $"[red]{text}[/]";
-
-        return text;
     }
 
     /// <summary>

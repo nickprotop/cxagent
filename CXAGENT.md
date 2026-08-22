@@ -3,9 +3,20 @@
 ## Comments
 
 Write them, and write the WHY. This is the opposite of the usual advice, and it is deliberate: most
-of the hard-won knowledge in this codebase is about decisions that look arbitrary until you know what
-was tried and measured. A comment here should say what failed, or what number came off a real run —
-not restate the line below it.
+of the hard-won knowledge in this codebase is about decisions that look arbitrary until you know the
+constraint behind them. A comment here should say what would go wrong otherwise — not restate the
+line below it.
+
+**Write about the code as it is now.** Never what it used to do, what a previous attempt tried, or
+which change introduced it. "Escaping here would paste backslashes into the user's own code" earns
+its place; "this method used to paint every line itself" does not. The reasoning survives, stated as
+a present-tense constraint rather than a story:
+
+    // A ```diff fence, not per-line colour: a plain fence renders a diff as grey text, and the
+    // language tag lets the renderer's highlighter theme it instead of hardcoding colours here.
+
+If a note only makes sense as an account of the past, it belongs in the commit message, where git
+keeps it attached to the change that needed it.
 
 Match the density already in the file you are editing. If the surrounding code carries paragraphs of
 reasoning, yours should too.

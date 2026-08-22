@@ -60,31 +60,32 @@ public static class ModeCommand
 
         // A BARE /mode REPORTS EVERY AXIS. Asking what mode you are in must never change it — and
         // once there is more than one axis, "what mode am I in" has more than one answer, so this is
-        // a BLOCK rather than a line. It reads like /skills and /mcp: a coloured heading, then one
-        // indented row per thing, with the detail muted underneath.
+        // a BLOCK rather than a line. It reads like /skills and /mcp: a heading, then one row per
+        // axis, with the detail underneath.
         //
         // WRITTEN AS A LIST OF AXES while there was one of them, so adding the second was a row
         // rather than a rewrite of a sentence that assumed there was only ever one. It was.
         if (string.IsNullOrWhiteSpace(argument))
         {
-            var accent = Markup.Accent;
-            var muted = Markup.Muted;
-
+            // A LIST, NOT A FENCE. Nothing here is drawn, so the nesting is a markdown list's job
+            // rather than hand-laid indentation that depends on a monospace assumption.
+            //
+            // THE USAGE FOOTER KEEPS ITS PIPES IN A CODE SPAN. `fan-out | plan | ...` is a literal
+            // command form: outside a span a table parser claims the pipes and emphasis claims the
+            // hyphens.
             return new(null, string.Join('\n',
             [
-                $"[{accent}]Working mode[/]",
+                "## Working mode",
                 "",
-                $"  [{accent}]agent[/]  {AgentModes.Name(current.Agent)}",
-                $"    [{muted}]{(current.CanDelegate
-                    ? "can spawn sub-agents"
-                    : "works alone; the spawn tool is withdrawn")}[/]",
+                $"- **agent** — {AgentModes.Name(current.Agent)}. "
+              + (current.CanDelegate
+                    ? "Can spawn sub-agents."
+                    : "Works alone; the spawn tool is withdrawn."),
+                $"- **edits** — {EditModes.Name(current.Edits)}. "
+              + $"{ModeNotice.Effect(current.Edits, query.FolderTrusted, query.Root)}",
                 "",
-                $"  [{accent}]edits[/]  {EditModes.Name(current.Edits)}",
-                $"    [{muted}]{ModeNotice.Effect(current.Edits, query.FolderTrusted, query.Root)}[/]",
-                "",
-                $"  [{muted}]set with /mode agent {AgentModes.Valid.Replace(", ", " | ")}[/]",
-                $"  [{muted}]         /mode edits "
-              + $"{EditModes.ValidWith(query.ClassifierConfigured).Replace(", ", " | ")}[/]",
+                $"Set with `/mode agent {AgentModes.Valid.Replace(", ", " | ")}` "
+              + $"or `/mode edits {EditModes.ValidWith(query.ClassifierConfigured).Replace(", ", " | ")}`.",
             ]));
         }
 

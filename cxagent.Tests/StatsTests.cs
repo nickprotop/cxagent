@@ -339,10 +339,13 @@ public class StatsTests
         Assert.Contains("87%", text, StringComparison.Ordinal);
     }
 
-    /// <summary>The dashboard is markup, and every tag it opens it closes — an unbalanced tag leaks
-    /// its colour into the rest of the transcript.</summary>
+    /// <summary>
+    /// EVERY FENCE THE DASHBOARD OPENS IT CLOSES. An unterminated ``` does not merely tint what
+    /// follows the way an unclosed markup tag would — it swallows it, and the whole transcript below
+    /// the dashboard disappears into a code block.
+    /// </summary>
     [Fact]
-    public void Render_ProducesBalancedMarkup()
+    public void Render_ClosesEveryFenceItOpens()
     {
         var sessions = new[] { S("a", 900, 100, sub: 400) };
         var text = StatsDashboard.Render(new StatsDashboard.StatsView
@@ -359,11 +362,16 @@ public class StatsTests
             Permissions = new(2, 1, 1, 3, 0, 0, 0, 0, 0),
         });
 
-        var opens = text.Split('[').Length - 1;
-        var closes = text.Split("[/]").Length - 1;
+        var fences = text.Split("```").Length - 1;
 
-        // Every opening tag has a matching [/]; the closers are themselves counted as opens above.
-        Assert.Equal(closes * 2, opens);
+        // Sections are drawn only when they have data, so the count varies with the view — what
+        // cannot vary is that it is EVEN, and that a fence is actually present to check.
+        Assert.True(fences > 0, "the dashboard draws bars, so it must fence them");
+        Assert.Equal(0, fences % 2);
+
+        // And no colour tag reaches the output. The guard test sweeps Core's SOURCE for these; this
+        // one checks the RENDERED text, which is where a tag assembled from parts would show up.
+        Assert.DoesNotContain("[/]", text, StringComparison.Ordinal);
     }
 
     /// <summary>

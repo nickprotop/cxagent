@@ -7,7 +7,7 @@ namespace CxAgent.Core.Commands;
 /// <c>/stats</c> — reads the window, queries history, renders the dashboard.
 ///
 /// <para>THE SEAM BETWEEN THREE PURE PIECES. <see cref="UsageHistoryStore"/> does SQL,
-/// <see cref="StatsQuery"/> does arithmetic, <see cref="StatsDashboard"/> does markup; this decides
+/// <see cref="StatsQuery"/> does arithmetic, <see cref="StatsDashboard"/> does markdown; this decides
 /// how far back to look and joins them. Split that way because only the first touches a database, so
 /// everything downstream of it is testable without one.</para>
 /// </summary>
@@ -48,15 +48,22 @@ public static class StatsCommand
     /// deletes 1,284 records covering 11 sessions" is. A confirmation that does not say what will be
     /// lost is a speed bump, not a safeguard.</para>
     /// </summary>
+    /// <remarks>
+    /// NOT FENCED, unlike the dashboard this file's other half renders. Nothing here is drawn — it
+    /// is a question and the two facts needed to answer it, and a confirmation set in a monospace
+    /// box reads as output rather than as something being asked of the reader.
+    ///
+    /// <para>The pipes in a code span keep a table parser off them.</para>
+    /// </remarks>
     public static string ConfirmText(int rows, int sessions) =>
         rows == 0
-            ? $"[{Markup.Muted}]There is no usage history to clear.[/]"
-            : $"[bold {Markup.Accent}]Clear usage history?[/]\n\n"
-            + $"  This deletes [bold]{DisplayNumber.Grouped(rows)}[/] records"
-            + (sessions > 0 ? $" covering [bold]{sessions}[/] session{(sessions == 1 ? "" : "s")}" : "")
-            + ".\n"
-            + $"  [{Markup.Muted}]Sessions, sub-agent runs, tool calls, compactions and "
-            + "permission decisions. This cannot be undone.[/]";
+            ? "There is no usage history to clear."
+            : "## Clear usage history?\n\n"
+            + $"This deletes **{DisplayNumber.Grouped(rows)}** records"
+            + (sessions > 0 ? $" covering **{sessions}** session{(sessions == 1 ? "" : "s")}" : "")
+            + ".\n\n"
+            + "Sessions, sub-agent runs, tool calls, compactions and "
+            + "permission decisions. This cannot be undone.";
 
     public static string Render(UsageHistoryStore history, string? argument)
     {

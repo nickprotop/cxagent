@@ -69,7 +69,7 @@ public sealed partial class Session
         // session what it already knows.
         if (Services?.Resume is not { } store || Manager is not { } manager)
         {
-            Say($"[{Commands.Markup.Muted}]No session history is available here.[/]");
+            Say(new Message("No session history is available here.", Severity.Warning));
             return CommandStatus.Reported;
         }
 
@@ -95,11 +95,13 @@ public sealed partial class Session
         }
         catch (Exception ex)
         {
-            // SEVERITY STATED HERE EVEN THOUGH THE MARKUP WRAPPER STAYS: Markup.Danger is text, not
-            // tone, so leaving Say to its default made this arrive as Info despite reading as a
-            // failure — the exact bug FailureVocabularyIsNeverInfo exists to catch. The [{markup}]
-            // tag itself is Task 6/7's cleanup, not this task's; only the missing severity is.
-            Say(new Message($"[{Commands.Markup.Danger}]Could not read sessions: {ex.Message}[/]", Severity.Error));
+            // THE SEVERITY IS THE TONE, and stating it is not optional here: Say defaults to Info,
+            // so a forgotten argument files a failure as an aside. A front end maps Error to
+            // whatever red it actually uses, which a colour baked into the text cannot.
+            //
+            // ESCAPED, because exception text is arbitrary — a path with an underscore in it
+            // renders as italics otherwise.
+            Say(new Message($"Could not read sessions: {Commands.Md.Escape(ex.Message)}", Severity.Error));
         }
 
         return CommandStatus.Reported;
@@ -116,7 +118,7 @@ public sealed partial class Session
     {
         if (Services?.History is not { } history)
         {
-            Say($"[{Commands.Markup.Muted}]No usage history is available here.[/]");
+            Say(new Message("No usage history is available here.", Severity.Warning));
             return CommandStatus.Reported;
         }
 
@@ -127,10 +129,9 @@ public sealed partial class Session
         catch (Exception ex)
         {
             // REPORTED, like every other read of this store: an empty dashboard would say "you have
-            // spent nothing", which is a lie a user cannot detect. Severity stated explicitly for the
-            // same reason as ListSessions above — the markup wrapper is Task 6/7's, the missing
-            // severity is this task's.
-            Say(new Message($"[{Commands.Markup.Danger}]Could not read usage history: {ex.Message}[/]", Severity.Error));
+            // spent nothing", which is a lie a user cannot detect. Severity and the escaping are
+            // stated here for the same reasons as ListSessions above.
+            Say(new Message($"Could not read usage history: {Commands.Md.Escape(ex.Message)}", Severity.Error));
         }
 
         return CommandStatus.Reported;
@@ -164,7 +165,7 @@ public sealed partial class Session
         if (Host is null || RefusedWhileBusy()) return null;
 
         var target = Commands.InitCommand.Resolve(WorkingDirectory);
-        if (target.Note is { } note) Say($"[{Commands.Markup.Muted}]{note}[/]");
+        if (target.Note is { } note) Say(note);
 
         return Commands.InitCommand.Prompt(target);
     }
