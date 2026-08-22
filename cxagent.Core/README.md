@@ -196,7 +196,7 @@ internal sealed class ToolSink : IToolObserver
     {
         foreach (var job in jobs)
             if (job.State is JobState.Running && _announced.Add(job.Id))
-                Console.WriteLine($"  · {job.PluginType}");
+                Console.WriteLine($"  · {job.JobType}");
     }
 
     public void ToolUpdated(Job job) { }

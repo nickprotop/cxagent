@@ -25,7 +25,7 @@ public class InlineJobSinkDiffTests
         {
             Id = "d1",
             AgentId = "g1",
-            PluginType = "show_diff",
+            JobType = "show_diff",
             DisplayName = "show_diff",
             State = state,
             Result = new JobResult
@@ -41,7 +41,7 @@ public class InlineJobSinkDiffTests
         {
             Id = "t1",
             AgentId = "g1",
-            PluginType = type,
+            JobType = type,
             DisplayName = "read",
             State = JobState.Succeeded,
             Result = new JobResult
@@ -107,7 +107,7 @@ public class InlineJobSinkDiffTests
         // screen the user did not ask for and pushes the parent's own answer down behind it.
         var worker = new Job
         {
-            Id = "w1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "explore",
+            Id = "w1", AgentId = "g1", JobType = "llm_agent", DisplayName = "explore",
             State = JobState.Succeeded,
             Result = new JobResult { Success = true, Output = new() { ["content"] = "a long report" }, Duration = TimeSpan.Zero },
         };
@@ -134,7 +134,7 @@ public class InlineJobSinkDiffBodyTests
         var markup = "[cyan1]f.cs[/]\n\n  41 [#7ee787 on #0d3a1a]+ [/]added\n  42 [#f85149 on #3a0d0d]- [/]gone";
         var job = new Job
         {
-            Id = "d9", AgentId = "g1", PluginType = "show_diff", DisplayName = "show_diff",
+            Id = "d9", AgentId = "g1", JobType = "show_diff", DisplayName = "show_diff",
             State = JobState.Succeeded,
             Result = new JobResult { Success = true, Output = new() { ["content"] = markup }, Duration = TimeSpan.Zero },
         };

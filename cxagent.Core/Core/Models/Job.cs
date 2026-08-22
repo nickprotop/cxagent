@@ -45,7 +45,7 @@ public record Job
     /// key honest: what it holds is an agent's id, stable for the session, not a per-message goal.</para>
     /// </summary>
     public required string AgentId { get; init; }
-    public required string PluginType { get; init; }   // "shell", "docker", etc.
+    public required string JobType { get; init; }   // "shell", "docker", etc.
     public required string DisplayName { get; init; }
     public JobParameters Parameters { get; init; } = new();
     public List<string> DependsOn { get; init; } = new(); // Job IDs (ULIDs), not names

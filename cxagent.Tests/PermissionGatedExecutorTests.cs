@@ -29,7 +29,7 @@ public class PermissionGatedExecutorTests
     {
         Id = id,
         AgentId = "g",
-        PluginType = type,
+        JobType = type,
         DisplayName = id,
         Parameters = p,
         CreatedAt = DateTimeOffset.UtcNow,

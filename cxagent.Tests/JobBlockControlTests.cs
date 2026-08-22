@@ -9,7 +9,7 @@ public class JobBlockControlTests
 {
     private static Job J(JobState state) => new()
     {
-        Id = "j1", AgentId = "g", PluginType = "shell", DisplayName = "Step 1",
+        Id = "j1", AgentId = "g", JobType = "shell", DisplayName = "Step 1",
         State = state, CreatedAt = DateTimeOffset.UtcNow
     };
 

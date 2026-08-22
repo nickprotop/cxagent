@@ -23,7 +23,7 @@ public class JobPanelSinkTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, true); }
 
     private static Job J(string id) => new()
-    { Id = id, AgentId = "g", PluginType = "shell", DisplayName = id, State = JobState.Queued, CreatedAt = DateTimeOffset.UtcNow };
+    { Id = id, AgentId = "g", JobType = "shell", DisplayName = id, State = JobState.Queued, CreatedAt = DateTimeOffset.UtcNow };
 
     [Fact]
     public async Task SetJobs_FromBackgroundThread_IsDeferred_NotAppliedSynchronously()

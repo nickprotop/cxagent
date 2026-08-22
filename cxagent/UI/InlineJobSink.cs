@@ -80,7 +80,7 @@ public sealed class InlineJobSink : IToolObserver
                 // literally instead of colouring anything. Per message, so every other tool keeps
                 // markdown, and set at creation because MarkdownOverride is a field on the entry
                 // that survives every later UpdateMessage.
-                if (job.PluginType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
+                if (job.JobType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
                 var compactRow = IsCompactRow(job) || !IsTerminal(job.State);
 
             // A COMPACT step carries its state in the HEADER and has NO status row: "Tool  Read
@@ -110,7 +110,7 @@ public sealed class InlineJobSink : IToolObserver
                 // reader for minutes, pushing the conversation away — and the user never asked for
                 // it. The affordance is the point: `expand…` says there is something, and they
                 // choose.
-                if (job.PluginType != "llm_agent")
+                if (job.JobType != "llm_agent")
                     _chat.SetExpanded(id, true);
             }
             else
@@ -172,7 +172,7 @@ public sealed class InlineJobSink : IToolObserver
                 // Same reason as the creation site above — an adopted row needs the override too,
                 // and this branch is the one a job takes when it transitions before any
                 // ToolsChanged mentioned it.
-                if (job.PluginType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
+                if (job.JobType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
             }
             var compactRow = IsCompactRow(job) || !IsTerminal(job.State);
 
@@ -247,8 +247,8 @@ public sealed class InlineJobSink : IToolObserver
             // produced and hiding it behind `expand…` defeats the whole row. Unlike a worker's it
             // does not grow under the reader: it is a handful of short lines, written once, and it
             // is the answer rather than the working.
-            if ((compactRow && job.PluginType != "llm_agent") || job.PluginType == "todo"
-                || job.PluginType == ShowDiffType)
+            if ((compactRow && job.JobType != "llm_agent") || job.JobType == "todo"
+                || job.JobType == ShowDiffType)
                 _chat.SetExpanded(id, true);
 
             // THE BODY. Until now this method only touched the status row, so a job's message stayed
@@ -499,7 +499,7 @@ public sealed class InlineJobSink : IToolObserver
         // Shell only. A read_file's path fits the header and repeating it would be noise; a worker's
         // body is prose it composed, and prefixing that with its own invocation reads as machinery.
         if (forDisplay
-            && job.PluginType == "shell"
+            && job.JobType == "shell"
             && job.Parameters.Get<string>("command", "") is { Length: > 0 } command)
         {
             var ran = $"$ {command.TrimEnd()}";
@@ -669,9 +669,9 @@ public sealed class InlineJobSink : IToolObserver
         // Compression is not a tool the model called — it is housekeeping the app did to its own
         // context, and labelling it "Tool" would put it among the model's actions as though it had
         // chosen to run it.
-        if (job.PluginType == "compress") return "Context";
+        if (job.JobType == "compress") return "Context";
 
-        if (job.PluginType != "llm_agent") return "Tool";
+        if (job.JobType != "llm_agent") return "Tool";
 
         // Name the ROLE when the plan specified one — "Worker · reviewer" says which of the four
         // built-ins (planner/implementer/reviewer/debugger) actually ran, which is the difference
@@ -930,7 +930,7 @@ public sealed class InlineJobSink : IToolObserver
         // BEFORE the length checks rather than inside them, because the short case is exactly the one
         // that slips through: a single changed line under the inline limit reaches neither branch
         // below, so an exemption placed there would fire only for the diffs that were already safe.
-        if (job.PluginType == ShowDiffType) return null;
+        if (job.JobType == ShowDiffType) return null;
 
         // The header carries the NAME and the state (CompactHeader), so the body carries only the
         // RESULT — repeating the name here printed it twice, once per mechanism. Seen live:
@@ -982,7 +982,7 @@ public sealed class InlineJobSink : IToolObserver
         // line, so the row read the id and `state="completed"` back at a user whose header already
         // said `done · 144.6s`. Two lines, one fact, and the noisier of the two was the machine's.
         //
-        // KEYED ON THE ENVELOPE, NOT ON PluginType. llm_agent is the row TYPE and covers every
+        // KEYED ON THE ENVELOPE, NOT ON JobType. llm_agent is the row TYPE and covers every
         // worker; suppressing all of them broke short tool results, which legitimately fold their
         // whole output into this line ("20", "MIT License"). What has nothing to say here is
         // specifically a machine-readable envelope addressed to the parent's model.
@@ -1022,7 +1022,7 @@ public sealed class InlineJobSink : IToolObserver
     }
 
     private static string Title(Job job) =>
-        string.IsNullOrWhiteSpace(job.DisplayName) ? job.PluginType : job.DisplayName;
+        string.IsNullOrWhiteSpace(job.DisplayName) ? job.JobType : job.DisplayName;
 
     /// <summary>
     /// The status line: state, plus duration once there is one and the error when it failed. The
@@ -1053,7 +1053,7 @@ public sealed class InlineJobSink : IToolObserver
         var blockers = job.DependsOn
             .Select(id => _known.TryGetValue(id, out var d) ? d : null)
             .Where(d => d is { State: JobState.Failed or JobState.Cancelled })
-            .Select(d => string.IsNullOrWhiteSpace(d!.DisplayName) ? d.PluginType : d.DisplayName)
+            .Select(d => string.IsNullOrWhiteSpace(d!.DisplayName) ? d.JobType : d.DisplayName)
             .ToList();
 
         return blockers.Count == 0 ? null : string.Join(", ", blockers);
@@ -1132,7 +1132,7 @@ public sealed class InlineJobSink : IToolObserver
     /// at once at the finish line: opening it puts a wall of text on screen the user did not ask
     /// for, and pushes the parent's own answer down behind it.</para>
     /// </summary>
-    private static bool ExpandOnFinish(Job job) => IsTheAnswer(job) && job.PluginType != "llm_agent";
+    private static bool ExpandOnFinish(Job job) => IsTheAnswer(job) && job.JobType != "llm_agent";
 
     /// <summary>
     /// Rows whose body is the ANSWER rather than the working. They open when they finish, they are
@@ -1156,7 +1156,7 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>llm_agent is NOT part of this at the auto-expand site above: a worker's body grows under
     /// the reader for minutes, so it must not open by itself. That site keeps its own test.</para>
     /// </summary>
-    private static bool IsTheAnswer(Job job) => job.PluginType is "llm_agent" or "todo" or ShowDiffType;
+    private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo" or ShowDiffType;
 
     /// <summary>The injected tool's executor type. Named because this file matches on it in six
     /// places and a typo in a string literal is not a compile error.</summary>

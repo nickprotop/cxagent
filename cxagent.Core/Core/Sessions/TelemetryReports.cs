@@ -15,7 +15,7 @@ namespace CxAgent.Core.Sessions;
 /// </param>
 /// <param name="CallId">The call's id, as the model issued it.</param>
 /// <param name="ToolName">The tool name the model used.</param>
-/// <param name="PluginType">Which executor serviced it, or null for a tool with none.</param>
+/// <param name="JobType">Which executor serviced it, or null for a tool with none.</param>
 /// <param name="Outcome">How the call ended.</param>
 /// <param name="DurationMs">How long it took, in milliseconds.</param>
 /// <param name="StartedAt">When it ran.</param>
@@ -23,7 +23,7 @@ public sealed record ToolCallReport(
     string CallId,
     string AgentId,
     string ToolName,
-    string? PluginType,
+    string? JobType,
     string Outcome,
     long DurationMs,
     int ResultChars,

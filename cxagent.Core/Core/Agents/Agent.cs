@@ -1813,7 +1813,7 @@ public sealed class Agent
             Id = jobId,
             PlanLocalId = call.Name,
             AgentId = agentId,
-            PluginType = ToolPluginType(call.Name),
+            JobType = ToolJobType(call.Name),
             DisplayName = DescribeCall(call),
             State = JobState.Running,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -2189,7 +2189,7 @@ public sealed class Agent
                 CallId: jobId,
                 AgentId: Id,
                 ToolName: call.Name,
-                PluginType: job.PluginType,
+                JobType: job.JobType,
                 Outcome: "cancelled",
                 DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
                 ResultChars: 0,
@@ -2332,7 +2332,7 @@ public sealed class Agent
             CallId: jobId,
             AgentId: Id,
             ToolName: call.Name,
-            PluginType: job.PluginType,
+            JobType: job.JobType,
             Outcome: failed ? "failed" : "succeeded",
             DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
             ResultChars: result.Length,
@@ -2745,7 +2745,7 @@ public sealed class Agent
 
 
     /// <summary>The executor a tool dispatches to, for the transcript row's author label only.</summary>
-    private string ToolPluginType(string toolName) => toolName switch
+    private string ToolJobType(string toolName) => toolName switch
     {
         "run_shell" => "shell",
         "http_request" => "http",
@@ -2775,7 +2775,7 @@ public sealed class Agent
 
         // AN INJECTED TOOL IS ITS OWN TYPE, named after itself. Falling through to "file" would be
         // the spawn bug above, one layer out: a front end that special-cases its own tool's rows —
-        // as cxagent does for show_diff, to keep the rendered diff expanded — matches on PluginType,
+        // as cxagent does for show_diff, to keep the rendered diff expanded — matches on JobType,
         // and every injected tool arriving as "file" makes that impossible to write. Naming it after
         // the tool means the front end that supplied the tool already knows the string.
         _ when _agentTools is not null && _agentTools.Knows(toolName) => toolName,

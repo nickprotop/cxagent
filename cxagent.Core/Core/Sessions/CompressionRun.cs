@@ -89,7 +89,7 @@ public static class CompressionRun
             Id = Helpers.UlidGenerator.NewId(),
             PlanLocalId = "compress",
             AgentId = report.AgentId,
-            PluginType = "compress",
+            JobType = "compress",
             DisplayName = report.Title,
             State = JobState.Running,
             CreatedAt = DateTimeOffset.UtcNow,

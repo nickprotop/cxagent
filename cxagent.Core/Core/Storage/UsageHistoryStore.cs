@@ -61,7 +61,7 @@ public sealed record RunRecord(
 /// <param name="CallId">This call's id, as the model issued it.</param>
 /// <param name="AgentId">Which agent made the call — parent or child.</param>
 /// <param name="ToolName">The tool name the model used.</param>
-/// <param name="PluginType">Which executor serviced it, or null for a tool with none.</param>
+/// <param name="JobType">Which executor serviced it, or null for a tool with none.</param>
 /// <param name="Outcome">How the call ended.</param>
 /// <param name="DurationMs">How long it took, in milliseconds.</param>
 /// <param name="ResultChars">How much text it returned — what fills a context.</param>
@@ -73,7 +73,7 @@ public sealed record RunRecord(
 /// nothing to join them to.
 /// </param>
 public sealed record ToolCallRecord(
-    string CallId, string AgentId, string ToolName, string? PluginType,
+    string CallId, string AgentId, string ToolName, string? JobType,
     string Outcome, long DurationMs, int ResultChars, DateTimeOffset StartedAt,
     string? WorkingDir = null);
 
@@ -197,6 +197,10 @@ public sealed class UsageHistoryStore
                     call_id      TEXT PRIMARY KEY,
                     agent_id     TEXT NOT NULL,
                     tool_name    TEXT NOT NULL,
+                    -- Holds ToolCallRecord.JobType. The column name is a storage contract and the
+                    -- C# name is not: schema setup is CREATE TABLE IF NOT EXISTS plus additive
+                    -- ADD COLUMN, with no rename path, so renaming this orphans the usage history
+                    -- in every database that already exists.
                     plugin_type  TEXT,
                     outcome      TEXT NOT NULL,
                     duration_ms  INTEGER NOT NULL DEFAULT 0,
@@ -375,7 +379,7 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$id", r.CallId);
             cmd.Parameters.AddWithValue("$agent", r.AgentId);
             cmd.Parameters.AddWithValue("$tool", r.ToolName);
-            cmd.Parameters.AddWithValue("$executor", (object?)r.PluginType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$executor", (object?)r.JobType ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$outcome", r.Outcome);
             cmd.Parameters.AddWithValue("$dur", r.DurationMs);
             cmd.Parameters.AddWithValue("$chars", r.ResultChars);

@@ -747,7 +747,7 @@ public class AgentChallengeTests
         // other piece of work. Asserting on the JOB rather than on transcript text also pins the
         // thing that matters: silent memory loss is the failure, and a row the user can expand to
         // read the summary is what makes a lossy step auditable.
-        var row = Assert.Single(panel.Jobs, j => j.PluginType == "compress"
+        var row = Assert.Single(panel.Jobs, j => j.JobType == "compress"
                                                    && j.State == JobState.Succeeded);
 
         Assert.Contains("over", row.DisplayName, StringComparison.OrdinalIgnoreCase);
@@ -775,7 +775,7 @@ public class AgentChallengeTests
             .SendAsync("summarise the file I gave you", CancellationToken.None);
 
         // It compacted...
-        Assert.Contains(panel.Jobs, j => j.PluginType == "compress");
+        Assert.Contains(panel.Jobs, j => j.JobType == "compress");
         // ...and the request went on to succeed rather than dying on the refusal.
         Assert.Contains("recovered", answer, StringComparison.OrdinalIgnoreCase);
     }
@@ -880,7 +880,7 @@ public class AgentChallengeTests
         await Build(provider, sink, compressAbove: 1_000, panel: panel)
             .SendAsync("short prompt", CancellationToken.None);
 
-        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+        Assert.DoesNotContain(panel.Jobs, j => j.JobType == "compress");
     }
 
     [Fact]
@@ -896,7 +896,7 @@ public class AgentChallengeTests
         await Build(provider, sink, compressAbove: 50_000, panel: panel)
             .SendAsync("do something short", CancellationToken.None);
 
-        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+        Assert.DoesNotContain(panel.Jobs, j => j.JobType == "compress");
     }
 
     [Fact]
@@ -913,7 +913,7 @@ public class AgentChallengeTests
         await Build(provider, sink, compressAbove: null, panel: panel)
             .SendAsync("do something", CancellationToken.None);
 
-        Assert.DoesNotContain(panel.Jobs, j => j.PluginType == "compress");
+        Assert.DoesNotContain(panel.Jobs, j => j.JobType == "compress");
     }
 
     /// <summary>A response reporting a given input-token count, which is what the trigger reads.</summary>

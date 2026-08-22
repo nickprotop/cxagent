@@ -672,7 +672,7 @@ public sealed class AgentHost : IDisposable
         // know a database exists; this is the one place that turns them into rows. Both writers
         // swallow their own failures, so a locked file costs statistics and nothing else.
         agent.ToolCallFinished += r => _stores.History?.SaveToolCall(new ToolCallRecord(
-            r.CallId, r.AgentId, r.ToolName, r.PluginType, r.Outcome, r.DurationMs,
+            r.CallId, r.AgentId, r.ToolName, r.JobType, r.Outcome, r.DurationMs,
             r.ResultChars, r.StartedAt, _runtime.WorkingDir));
 
         agent.ChildFinished += r => _stores.History?.SaveRun(new RunRecord(

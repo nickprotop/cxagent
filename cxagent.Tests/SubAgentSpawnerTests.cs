@@ -1352,7 +1352,7 @@ public class SubAgentSpawnerTests
     }
 
     /// <summary>
-    /// THE ROW IS A WORKER, NOT A FILE OPERATION. ToolPluginType maps unknown names to "file", and
+    /// THE ROW IS A WORKER, NOT A FILE OPERATION. ToolJobType maps unknown names to "file", and
     /// InlineJobSink.IsCompactRow treats anything that is not "llm_agent" as compact — so without this
     /// the row COLLAPSES the moment the child finishes, hiding the answer behind an "expand…".
     /// </summary>
@@ -1380,7 +1380,7 @@ public class SubAgentSpawnerTests
 
         await parent.SendAsync("delegate", CancellationToken.None);
 
-        Assert.Equal("llm_agent", Assert.Single(jobs.Jobs).PluginType);
+        Assert.Equal("llm_agent", Assert.Single(jobs.Jobs).JobType);
     }
 
     // ---- the permission prompt names the child --------------------------------------------------

@@ -27,7 +27,7 @@ public class InlineJobSinkTests
         {
             Id = "j1",
             AgentId = "g1",
-            PluginType = "llm_agent",
+            JobType = "llm_agent",
             DisplayName = "read the RFC files",
             State = state,
             Result = new JobResult
@@ -156,7 +156,7 @@ public class InlineJobSinkTests
         Dictionary<string, object?>? output = null) =>
         new()
         {
-            Id = "j1", AgentId = "g1", PluginType = jobType, DisplayName = "step", State = state,
+            Id = "j1", AgentId = "g1", JobType = jobType, DisplayName = "step", State = state,
             Result = new JobResult
             {
                 Success = state == JobState.Succeeded, Output = output ?? new(), Duration = TimeSpan.Zero,
@@ -320,7 +320,7 @@ public class InlineJobSinkTests
         // missing key, and a header must never kill a render.
         var withRole = new Job
         {
-            Id = "j1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "review it",
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "review it",
             State = JobState.Succeeded,
             Parameters = new JobParameters(new Dictionary<string, object?> { ["role"] = "reviewer" }),
         };
@@ -333,7 +333,7 @@ public class InlineJobSinkTests
     {
         var noRole = new Job
         {
-            Id = "j1", AgentId = "g1", PluginType = "llm_agent", DisplayName = "do it",
+            Id = "j1", AgentId = "g1", JobType = "llm_agent", DisplayName = "do it",
             State = JobState.Succeeded,
         };
 
@@ -473,7 +473,7 @@ public class InlineJobSinkTests
     /// row, so the user read an id and <c>state="completed"</c> back at a header that already said
     /// <c>done · 144.6s</c>. Two lines, one fact, and the noisier of the two was the machine's.</para>
     ///
-    /// <para>Keyed on the ENVELOPE rather than on PluginType: llm_agent is the row type and covers
+    /// <para>Keyed on the ENVELOPE rather than on JobType: llm_agent is the row type and covers
     /// every worker, and suppressing all of them broke short tool results, which legitimately fold
     /// their whole output into this line.</para>
     /// </summary>
@@ -714,7 +714,7 @@ public class InlineJobSinkTests
 
     private static Job RunningRow(string id, DateTimeOffset startedAt) => new()
     {
-        Id = id, AgentId = "g1", PluginType = "shell", DisplayName = "run_shell",
+        Id = id, AgentId = "g1", JobType = "shell", DisplayName = "run_shell",
         State = JobState.Running, CreatedAt = startedAt, StartedAt = startedAt,
     };
 

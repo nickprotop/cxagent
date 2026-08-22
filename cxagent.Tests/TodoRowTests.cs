@@ -10,7 +10,7 @@ namespace CxAgent.Tests;
 /// <para>The sink marshals every mutation through <c>EnqueueOnUIThread</c>, which only the real
 /// <c>Run()</c> pump drains — so a headless test cannot observe the landed transcript. What it CAN
 /// pin are the decisions the sink makes about a row, which is where every mistake in this feature
-/// was: four separate branches keyed on <c>PluginType == "llm_agent"</c>, each of which had to learn
+/// was: four separate branches keyed on <c>JobType == "llm_agent"</c>, each of which had to learn
 /// about "todo" and none of which the suite covered.</para>
 /// </summary>
 public class TodoRowTests
@@ -20,7 +20,7 @@ public class TodoRowTests
         Id = "job-1",
         PlanLocalId = "todowrite",
         AgentId = "agent-1",
-        PluginType = "todo",
+        JobType = "todo",
         DisplayName = name,
         State = state,
         CreatedAt = DateTimeOffset.UtcNow,
@@ -54,9 +54,9 @@ public class TodoRowTests
     [Fact]
     public void OnlyPlansAndWorkers_AreNonCompact()
     {
-        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { PluginType = "file" }));
-        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { PluginType = "shell" }));
-        Assert.False(InlineJobSink.IsCompactRowForTest(TodoJob() with { PluginType = "llm_agent" }));
+        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "file" }));
+        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "shell" }));
+        Assert.False(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "llm_agent" }));
     }
 
     /// <summary>

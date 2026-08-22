@@ -23,7 +23,7 @@ public class JobPanelControlTests : IDisposable
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, true); }
 
     private static Job J(string id, JobState s) => new()
-    { Id = id, AgentId = "g", PluginType = "shell", DisplayName = id, State = s, CreatedAt = DateTimeOffset.UtcNow };
+    { Id = id, AgentId = "g", JobType = "shell", DisplayName = id, State = s, CreatedAt = DateTimeOffset.UtcNow };
 
     [Fact]
     public void SetJobs_CreatesOneBlockPerJob_KeyedById()

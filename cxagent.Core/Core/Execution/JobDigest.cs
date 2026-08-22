@@ -25,7 +25,7 @@ public record JobDigest(
     string Id,
     string PlanLocalId,
     string DisplayName,
-    string PluginType,
+    string JobType,
     JobState State,
     TimeSpan? Duration,
     int? ExitCode,
@@ -71,7 +71,7 @@ public record JobDigest(
             Id: job.Id,
             PlanLocalId: job.PlanLocalId ?? "",
             DisplayName: job.DisplayName,
-            PluginType: job.PluginType,
+            JobType: job.JobType,
             State: job.State,
             Duration: result?.Duration,
             ExitCode: result?.ExitCode,
@@ -114,7 +114,7 @@ public record JobDigest(
     {
         var sb = new StringBuilder();
         var label = string.IsNullOrEmpty(PlanLocalId) ? Id : PlanLocalId;
-        sb.Append($"[{label}] {DisplayName} ({PluginType}");
+        sb.Append($"[{label}] {DisplayName} ({JobType}");
         sb.AppendLine($") — {State}");
 
         // Immediately after the state line, before params/output — a "truncated: True" line buried
@@ -141,7 +141,7 @@ public record JobDigest(
         // A WORKER's output is the answer and is never elided here; anything else is an echo of
         // something a job already consumed. Gated on OutputBytes so a job that genuinely produced
         // nothing still renders as nothing rather than as "0 chars withheld".
-        if (bulkOutputAsPlaceholder && PluginType != "llm_agent" && OutputBytes > 0)
+        if (bulkOutputAsPlaceholder && JobType != "llm_agent" && OutputBytes > 0)
         {
             sb.AppendLine($"  output: {DisplayNumber.Grouped(OutputBytes)} chars — withheld here; the job that ran it "
                         + "already consumed it.");

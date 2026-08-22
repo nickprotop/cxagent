@@ -126,7 +126,7 @@ public class BadgeJoinTests : IDisposable
 
         await session.SendAndWait("run something");
 
-        var shellJob = Assert.Single(jobs.Jobs, j => j.PluginType == "shell");
+        var shellJob = Assert.Single(jobs.Jobs, j => j.JobType == "shell");
 
         // WHAT THE SINK ACTUALLY READS (InlineJobSink.Badge: job.DecidedBy == "auto") — not the
         // gate's own outcome, which was never in question. The bug lived entirely in whether this
@@ -162,7 +162,7 @@ public class BadgeJoinTests : IDisposable
 
         await session.SendAndWait("run something");
 
-        var shellJob = Assert.Single(jobs.Jobs, j => j.PluginType == "shell");
+        var shellJob = Assert.Single(jobs.Jobs, j => j.JobType == "shell");
         Assert.Null(shellJob.DecidedBy);
     }
 
@@ -204,7 +204,7 @@ public class BadgeJoinTests : IDisposable
     {
         var jobs = await DriveShellCall(PermissionOutcome.AutoAllow);
 
-        var shellJob = Assert.Single(jobs.Jobs, j => j.PluginType == "shell");
+        var shellJob = Assert.Single(jobs.Jobs, j => j.JobType == "shell");
 
         Assert.Equal("auto", shellJob.DecidedBy);
 
@@ -222,7 +222,7 @@ public class BadgeJoinTests : IDisposable
     {
         var jobs = await DriveShellCall(PermissionOutcome.ByClassifier("auto review refused this"));
 
-        var shellJob = Assert.Single(jobs.Jobs, j => j.PluginType == "shell");
+        var shellJob = Assert.Single(jobs.Jobs, j => j.JobType == "shell");
 
         Assert.Equal("auto", shellJob.DecidedBy);
 
@@ -244,7 +244,7 @@ public class BadgeJoinTests : IDisposable
         var jobs = await DriveShellCall(PermissionOutcome.Allow);
 
         Assert.DoesNotContain(jobs.Progress, p => p.DecidedBy is not null);
-        Assert.Single(jobs.Jobs, j => j.PluginType == "shell" && j.DecidedBy is null);
+        Assert.Single(jobs.Jobs, j => j.JobType == "shell" && j.DecidedBy is null);
     }
 
     /// <summary>One run_shell call through the real Session/Agent under a fixed gate verdict,

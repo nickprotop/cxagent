@@ -190,7 +190,7 @@ internal sealed class ToolSink : IToolObserver
         foreach (var job in jobs)
         {
             if (job.State is not JobState.Running || !_announced.Add(job.Id)) continue;
-            AnsiConsole.MarkupLine($"[grey]  · {job.PluginType.EscapeMarkup()}[/]");
+            AnsiConsole.MarkupLine($"[grey]  · {job.JobType.EscapeMarkup()}[/]");
         }
     }
 
