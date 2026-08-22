@@ -23,8 +23,23 @@ namespace CxAgent.Core.Permissions;
 public sealed class ActionClassifier
 {
     private readonly ILlmProvider _provider;
+    private readonly TimeSpan _stageDeadline;
 
-    public ActionClassifier(ILlmProvider provider) => _provider = provider;
+    /// <summary>
+    /// DEFAULTS TO 10 SECONDS SO NO PRODUCTION CALL SITE CHANGES. The parameter exists only for
+    /// tests: two stages means a worst-case classifier run can now wait out TWO real deadlines back
+    /// to back, and a unit test that actually sits out 10 real seconds per stage cannot be told apart
+    /// from a hang by anyone reading the suite's duration — this repo's whole "20s is a hang, not a
+    /// slow test" convention depends on the suite staying in single digits. Injecting a short deadline
+    /// in <see cref="TwoStageClassifierTests"/>'s timeout cases keeps those tests proving the same
+    /// thing (a stage that never answers still yields Ask) without paying the wall-clock cost of the
+    /// real 10s production value.
+    /// </summary>
+    public ActionClassifier(ILlmProvider provider, TimeSpan? stageDeadline = null)
+    {
+        _provider = provider;
+        _stageDeadline = stageDeadline ?? TimeSpan.FromSeconds(10);
+    }
 
     /// <summary>Why the last call could not answer, or null when it did. The caller reports this once
     /// per turn rather than per action — a shell-heavy turn would otherwise bury the transcript in
@@ -275,18 +290,18 @@ public sealed class ActionClassifier
     /// failure here means Ask, and JudgeAsync's null check on the result is what turns that into the
     /// verdict at each of the two call sites, rather than duplicating this try/catch twice.
     ///
-    /// <para>A FRESH 10-SECOND DEADLINE PER STAGE, not one budget split across both. Two stages
-    /// paying up to 10s each, worst case, is the same "sits between the model asking and the work
-    /// happening" trade the single-stage version made — a triage call that takes 30s has already cost
-    /// more than the prompt it saved, and that reasoning does not change just because a second call
-    /// might follow it.</para>
+    /// <para>A FRESH DEADLINE PER STAGE (<see cref="_stageDeadline"/>, 10s in production), not one
+    /// budget split across both. Two stages paying up to a full deadline each, worst case, is the
+    /// same "sits between the model asking and the work happening" trade the single-stage version
+    /// made — a triage call that takes 30s has already cost more than the prompt it saved, and that
+    /// reasoning does not change just because a second call might follow it.</para>
     /// </summary>
     private async Task<ClassifierDecision?> CallStageAsync(List<ChatMessage> messages, CancellationToken ct)
     {
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            deadline.CancelAfter(_stageDeadline);
 
             var response = await _provider.ChatAsync(messages, null, deadline.Token);
             return VerdictParser.Parse(response.Text);

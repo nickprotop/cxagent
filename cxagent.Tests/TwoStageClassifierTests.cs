@@ -84,12 +84,20 @@ public class TwoStageClassifierTests
         Assert.Equal("writes outside the project", decision.Reason);
     }
 
+    // A SHORT INJECTED DEADLINE, NOT THE REAL 10s. These two tests exist to prove a hung stage still
+    // yields Ask — that property does not need a real 10-second wait to demonstrate, and the suite
+    // paying it twice (once per stage under test) was what pushed the whole run from ~7s to ~20s,
+    // erasing the headroom between "normal" and this repo's 20s "that's a hang" convention. The
+    // constructor's stageDeadline parameter exists for exactly this.
+    private static readonly TimeSpan ShortDeadline = TimeSpan.FromMilliseconds(50);
+
     [Fact]
     public async Task AStageOneTimeoutMeansAsk()
     {
         var provider = new TimeoutOnFirstCallProvider();
 
-        var decision = await new ActionClassifier(provider).JudgeAsync(FileWrite("/tmp/a.txt"), default);
+        var decision = await new ActionClassifier(provider, ShortDeadline)
+            .JudgeAsync(FileWrite("/tmp/a.txt"), default);
 
         Assert.Equal(ClassifierVerdict.Ask, decision.Verdict);
         Assert.Equal(1, provider.Calls);
@@ -100,7 +108,8 @@ public class TwoStageClassifierTests
     {
         var provider = new TimeoutOnSecondCallProvider();
 
-        var decision = await new ActionClassifier(provider).JudgeAsync(FileWrite("/tmp/a.txt"), default);
+        var decision = await new ActionClassifier(provider, ShortDeadline)
+            .JudgeAsync(FileWrite("/tmp/a.txt"), default);
 
         Assert.Equal(ClassifierVerdict.Ask, decision.Verdict);
         Assert.Equal(2, provider.Calls);
