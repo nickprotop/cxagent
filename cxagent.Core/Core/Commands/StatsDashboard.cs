@@ -320,7 +320,7 @@ public static class StatsDashboard
                 // never flags anything, when the true answer is "not measured yet" — a different
                 // fact a silent number cannot distinguish itself from.
                 var suffix = permissions.Classified > 0
-                    ? $" · {(double)permissions.Flagged / permissions.Classified:P0} triage-flagged"
+                    ? $" · {Percent((double)permissions.Flagged / permissions.Classified)} triage-flagged"
                     : "";
                 lines.Add($"  auto review {auto} decided "
                         + Muted($"({permissions.AutoAllowed} allowed, "
