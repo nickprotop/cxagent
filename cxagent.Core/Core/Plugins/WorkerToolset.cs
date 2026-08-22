@@ -397,14 +397,23 @@ public static class WorkerToolset
     /// model that used <c>fs_read</c> last session will call it again, and if that server was since
     /// removed it gets a list omitting the servers still running.</para>
     /// </param>
-    public static async Task<string> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
+    /// <returns>
+    /// The model-facing text plus the plugin's own JobResult, when a plugin ran. Never null — this
+    /// method ENDS Agent's dispatch chain, answering "no such tool" as text rather than declining.
+    /// The early returns below are dispatch failures with no plugin behind them, so they carry text
+    /// only.
+    /// </returns>
+    public static async Task<ToolOutcome> InvokeAsync(ToolCall call, IReadOnlyList<WorkerTool> allowed,
         PluginRegistry plugins, IJobContext ctx, CancellationToken ct,
         IEnumerable<string>? alsoAvailable = null)
     {
-        // RESET UP FRONT, same reason AgentToolset.TryInvokeAsync resets LastDisplay/DecidedBy: ctx
-        // is fresh per call at today's one call site, but every early return below (unknown tool,
-        // not offered, no plugin, bad arguments) skips the stamp near the bottom, and a caller must
-        // never read a PRIOR call's verdict off a context that never reached a gate this time.
+        // RESET UP FRONT, same reason AgentToolset.TryInvokeAsync resets it: ctx is fresh per call
+        // at today's one call site, but every early return below (unknown tool, not offered, no
+        // plugin, bad arguments) never reaches a gate at all, and a caller must never read a PRIOR
+        // call's verdict off a context this one never had decided.
+        //
+        // NULL DOES NOT RAISE the context's report — see JobContext.DecidedBy. If it did, this
+        // reset would clear a badge the gate had just earned rather than merely arming the slot.
         ctx.DecidedBy = null;
 
         // Three DIFFERENT conditions, three different messages. The text goes back to the model as a
@@ -501,13 +510,6 @@ public static class WorkerToolset
             return Truncate($"error: {ex.Message}", MaxToolResultChars);
         }
 
-        // STAMPED HERE, IMMEDIATELY AFTER THE AWAIT — the one point that still holds the plugin's
-        // real JobResult. Everything below this line renders `result` down to a body STRING, which
-        // is the object Agent.cs rebuilds job.Result from; a decider left on `result` past this
-        // point is gone. See IJobContext.DecidedBy for why the value rides the context rather than
-        // a changed return type.
-        ctx.DecidedBy = result.DecidedBy;
-
         var body = result.Success
             ? JobDigest.RenderOutput(result.Output)
             : $"error: {result.ErrorMessage}\n{JobDigest.RenderOutput(result.Output)}".TrimEnd();
@@ -519,7 +521,12 @@ public static class WorkerToolset
         // staring at a hole. Appended AFTER truncation so the advice itself is never elided.
         var truncated = Truncate(body, MaxToolResultChars);
         if (truncated.Length != body.Length) truncated += RecoveryAdviceFor(call.Name);
-        return truncated;
+
+        // THE PLUGIN'S RESULT RIDES ALONG. The text above is the model's copy — rendered, and
+        // ELIDED when it is long — while the row and the record want the object it came from, with
+        // its own Output, LogFile and decider intact. Returning only the string is what forced two
+        // side channels; see ToolOutcome.
+        return new ToolOutcome(truncated, result);
     }
 
     /// <summary>Head+tail truncation with a visible elision marker — same convention as

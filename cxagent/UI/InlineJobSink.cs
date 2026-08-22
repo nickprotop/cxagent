@@ -653,6 +653,34 @@ public sealed class InlineJobSink : IToolObserver
     /// markdown pipeline, so a [spinner] tag renders as a spinner rather than as the literal text
     /// "[spinner]" — the trap that caught the ⎿ separator earlier.</para>
     /// </summary>
+    /// <summary>
+    /// The decision badge for a row — <c>"  ·  auto-approved"</c>, <c>"  ·  auto-denied"</c>, or
+    /// empty. Leading separator, so a caller can append it without testing for emptiness.
+    ///
+    /// <para>WHO DECIDED, when it was not the user and not a silent rule. DecidedBy is "auto" only
+    /// on the two paths a classifier actually ruled on (PermissionOutcome.AutoAllow /
+    /// ByClassifier) — never on a stored-rule or in-boundary silent pass, and never on a prompt the
+    /// user answered. Those two are the ordinary cases and stay unbadged: a prompt the user just
+    /// answered needs no badge (they were there), and trusting a folder is what "silent" means.
+    /// Only the surprising ones — the user was NOT asked and it was not a rule either — earn a
+    /// word.</para>
+    ///
+    /// <para>READ FROM THE JOB, NOT FROM ITS RESULT, and that is the timing fix rather than a
+    /// tidy-up. A JobResult exists only once the call has FINISHED, so a badge sourced there could
+    /// not appear before then — while the fact it reports is settled at the permission gate,
+    /// BEFORE the tool runs. An auto-DENIED tool never executes at all, so its refusal had no
+    /// result to be read off.</para>
+    ///
+    /// <para>DENIED IS READ FROM THE STATE, which is why this takes the whole job: "auto" names the
+    /// decider, not the verdict. A running row has not failed yet and reads as approved — correct,
+    /// because a denial does not run: it fails immediately and the row is terminal by the time
+    /// anyone sees it.</para>
+    /// </summary>
+    private static string Badge(Job job) =>
+        job.DecidedBy == "auto"
+            ? "  ·  " + (job.State == JobState.Failed ? "auto-denied" : "auto-approved")
+            : "";
+
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
     public static string CompactHeaderForTest(Job job) => CompactHeader(job);
 
@@ -681,6 +709,13 @@ public sealed class InlineJobSink : IToolObserver
                 ? ""
                 : "  ·  " + SharpConsoleUI.Parsing.MarkupParser.Escape(job.ProgressMessage);
 
+            // ON THE RUNNING ROW, which is the whole reason the badge moved onto the Job. The
+            // classifier rules at the gate, before the tool starts; a `dotnet build` it approved
+            // then runs for minutes, and learning afterwards that a model waved it through is
+            // strictly worse than seeing it while it happens. Same word, same slot as the finished
+            // row below, so the row does not change shape when it settles.
+            var deciding = Badge(job);
+
             // Braille (⣷⣯⣟⡿⢿⣻⣽⣾) — the user's pick. Single-cell like Arc, so the text after it does
             // not shift as it animates (Dots is three columns wide and does exactly that).
             //
@@ -693,7 +728,7 @@ public sealed class InlineJobSink : IToolObserver
             // Stated here anyway because the clock ticks at the SHORTEST interval any parsed tag
             // reports, so this is the app declaring the repaint cadence it wants rather than
             // inheriting whatever else is on screen.
-            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{progress}";
+            return $"[spinner braille {SpinnerIntervalMs}] {author}  {name}{deciding}{progress}";
         }
 
         var duration = job.Result?.Duration is { } d ? $" · {d.TotalSeconds:0.0}s" : "";
@@ -705,20 +740,10 @@ public sealed class InlineJobSink : IToolObserver
             _ => job.State.ToString().ToLowerInvariant(),
         };
 
-        // WHO DECIDED, when it was not the user and not a silent rule. JobResult.DecidedBy is "auto"
-        // only on the two paths a classifier actually ruled on (PermissionOutcome.AutoAllow /
-        // ByClassifier) — never on a stored-rule or in-boundary silent pass, and never on a prompt
-        // the user answered. Those two are the ordinary cases and stay unbadged, same as today: a
-        // prompt the user just answered needs no badge (they were there), and trusting a folder is
-        // what "silent" means. Only the surprising ones — the user was NOT asked and it was not a
-        // rule either — earn a word.
-        //
         // BEFORE THE STATE, slotting into the same "· x · y" chain CompactHeader already builds —
         // "done · 0.0s" becomes "auto-approved · done · 0.0s" rather than a second, differently
         // shaped suffix.
-        var decidedBy = job.Result?.DecidedBy == "auto"
-            ? (job.State == JobState.Failed ? "auto-denied" : "auto-approved") + "  ·  "
-            : "";
+        var decidedBy = Badge(job) is { Length: > 0 } b ? b.TrimStart() + "  ·  " : "";
 
         // A GLYPH where the spinner was, not nothing. Replacing the spinner with an empty string
         // shifts the whole row one cell left the instant a step finishes, so a column of steps

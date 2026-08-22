@@ -504,10 +504,14 @@ public class InlineJobSinkTests
     {
         // The two verdicts a classifier can give under MayApprove let a call through, or end it,
         // without the user ever seeing a prompt — those are the surprising outcomes, so the row
-        // names which one happened. JobResult.DecidedBy carries it from PermissionOutcome.AutoAllow.
+        // names which one happened. Job.DecidedBy carries it from PermissionOutcome.AutoAllow.
+        //
+        // ON THE JOB, NOT ON ITS RESULT, and that is not a spelling change: a JobResult exists only
+        // once the call has FINISHED, so a badge sourced there cannot appear while the tool runs.
         var job = TypedJob("shell", JobState.Succeeded) with
         {
-            Result = new JobResult { Success = true, Duration = TimeSpan.Zero, DecidedBy = "auto" },
+            DecidedBy = "auto",
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero },
         };
 
         Assert.Contains("auto-approved", InlineJobSink.CompactHeaderForTest(job));
@@ -518,9 +522,10 @@ public class InlineJobSinkTests
     {
         var job = TypedJob("shell", JobState.Failed) with
         {
+            DecidedBy = "auto",
             Result = new JobResult
             {
-                Success = false, Duration = TimeSpan.Zero, DecidedBy = "auto",
+                Success = false, Duration = TimeSpan.Zero,
                 PermissionDenied = true, ErrorMessage = "auto review refused this.",
             },
         };
@@ -548,9 +553,10 @@ public class InlineJobSinkTests
         // front of the prompt, which is not a fact the row needs to repeat.
         var job = TypedJob("shell", JobState.Failed) with
         {
+            DecidedBy = "user",
             Result = new JobResult
             {
-                Success = false, Duration = TimeSpan.Zero, DecidedBy = "user",
+                Success = false, Duration = TimeSpan.Zero,
                 PermissionDenied = true, ErrorMessage = "permission denied by the user.",
             },
         };
@@ -568,7 +574,8 @@ public class InlineJobSinkTests
         // contradict the very promise those two mechanisms make.
         var job = TypedJob("file", JobState.Succeeded) with
         {
-            Result = new JobResult { Success = true, Duration = TimeSpan.Zero, DecidedBy = null },
+            DecidedBy = null,
+            Result = new JobResult { Success = true, Duration = TimeSpan.Zero },
         };
 
         Assert.DoesNotContain("auto-approved", InlineJobSink.CompactHeaderForTest(job));

@@ -51,8 +51,8 @@ public class PermissionGatedPluginTests
         var registry = PluginRegistry.CreateWithBuiltins(null, PermissionGate.DenyAll);
         var call = ToolCall("write_file", $$"""{"path": "{{target}}", "content": "x"}""");
 
-        var text = await WorkerToolset.InvokeAsync(call,
-            new[] { WorkerTool.WriteFile }, registry, new TestJobContext(), CancellationToken.None);
+        var text = (await WorkerToolset.InvokeAsync(call,
+            new[] { WorkerTool.WriteFile }, registry, new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.False(File.Exists(target));
         Assert.Contains("denied by the user", text);     // routable refusal, not an opaque crash

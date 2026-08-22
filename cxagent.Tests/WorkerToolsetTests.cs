@@ -99,10 +99,10 @@ public class WorkerToolsetTests
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, "HELLO");
 
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { action = "read", path }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("HELLO", result);
         File.Delete(path);
@@ -114,10 +114,10 @@ public class WorkerToolsetTests
         // THE ENFORCEMENT POINT, and it outlives roles. Nothing withholds tools today — every agent
         // is offered all of them — but a model can emit a call for a tool it was never shown, and
         // being un-offered is not the same as being refused. This is what refuses it.
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("write_file", new { action = "write", path = "/tmp/nope.txt", content = "x" }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("not available", result, StringComparison.OrdinalIgnoreCase);
         Assert.False(File.Exists("/tmp/nope.txt"));
@@ -141,9 +141,9 @@ public class WorkerToolsetTests
 
         Assert.DoesNotContain("llm_agent", WorkerToolset.NamesFor(all));
 
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("llm_agent", new { prompt = "spawn a helper", role = "implementer" }),
-            all, PluginRegistry.CreateWithBuiltins(), new TestJobContext(), CancellationToken.None);
+            all, PluginRegistry.CreateWithBuiltins(), new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("no such tool", result, StringComparison.OrdinalIgnoreCase);
     }
@@ -153,15 +153,15 @@ public class WorkerToolsetTests
     {
         // Two different conditions the model must respond to differently: "no such tool" means pick a
         // real one; a role refusal means STOP asking. One shared string invites a retry loop.
-        var unknown = await WorkerToolset.InvokeAsync(
+        var unknown = (await WorkerToolset.InvokeAsync(
             Call("delete_everything", new { }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
-        var refused = await WorkerToolset.InvokeAsync(
+        var refused = (await WorkerToolset.InvokeAsync(
             Call("write_file", new { action = "write", path = "/tmp/nope2.txt", content = "x" }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("no such tool", unknown, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("no such tool", refused, StringComparison.OrdinalIgnoreCase);
@@ -173,10 +173,10 @@ public class WorkerToolsetTests
     {
         // The result is fed back to the model as a tool message. A throw here would kill the job over a
         // bad path, when the worker could have read the error and tried something else.
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { action = "read", path = "/definitely/not/here.txt" }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.False(string.IsNullOrWhiteSpace(result));
     }
@@ -188,10 +188,10 @@ public class WorkerToolsetTests
         // Get<string>("path") ABOVE its try/catch (FileJobPlugin.cs:36-37), and JobParameters.Get<T>
         // indexes Values[key] (JobParameters.cs:16) — so a model that emits read_file with no `path`
         // throws KeyNotFoundException straight out of the plugin and kills the job. Validate first.
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         // The model must be told WHICH param it omitted, or it retries the same malformed call.
         Assert.Contains("path", result, StringComparison.OrdinalIgnoreCase);
@@ -205,10 +205,10 @@ public class WorkerToolsetTests
         var path = Path.Combine(Path.GetTempPath(), $"wt-big-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, new string('x', WorkerToolset.MaxToolResultChars * 4));
 
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { action = "read", path }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.True(result.Length < WorkerToolset.MaxToolResultChars * 2);
         Assert.Contains("elided", result, StringComparison.OrdinalIgnoreCase);  // the cut must be VISIBLE
@@ -225,10 +225,10 @@ public class WorkerToolsetTests
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, new string('x', WorkerToolset.MaxToolResultChars * 2));
 
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { action = "read", path }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.Contains("offset", result);
         Assert.Contains("limit", result);
@@ -242,10 +242,10 @@ public class WorkerToolsetTests
         var path = Path.Combine(Path.GetTempPath(), $"wt-{Guid.NewGuid():N}.txt");
         File.WriteAllText(path, "small");
 
-        var result = await WorkerToolset.InvokeAsync(
+        var result = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { action = "read", path }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None);
+            new TestJobContext(), CancellationToken.None)).Text;
 
         Assert.DoesNotContain("too large", result);
         File.Delete(path);
@@ -367,10 +367,10 @@ public class WorkerToolsetTests
             var f = Path.Combine(dir, "f.txt");
             File.WriteAllText(f, "one\ntwo\nthree\nfour\n");
 
-            var r = await WorkerToolset.InvokeAsync(
+            var r = (await WorkerToolset.InvokeAsync(
                 Call("read_file", new { path = f, offset = "2", limit = "1" }),
                 new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-                new CollectingContext(), CancellationToken.None);
+                new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("two", r);
             Assert.DoesNotContain("LineNumber", r);   // no raw JsonException text
@@ -387,10 +387,10 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "a.txt"), "alpha\n");
 
-            var r = await WorkerToolset.InvokeAsync(
+            var r = (await WorkerToolset.InvokeAsync(
                 Call("grep", new { path = dir, pattern = "al.ha", regex = "true" }),
                 new[] { WorkerTool.SearchFiles }, PluginRegistry.CreateWithBuiltins(),
-                new CollectingContext(), CancellationToken.None);
+                new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("alpha", r);   // regex actually took effect
         }
@@ -410,10 +410,10 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "a.txt"), "x");
 
-            var r = await WorkerToolset.InvokeAsync(
+            var r = (await WorkerToolset.InvokeAsync(
                 Call("glob", new { path = dir, pattern = (string?)null }),
                 new[] { WorkerTool.ListFiles }, PluginRegistry.CreateWithBuiltins(),
-                new CollectingContext(), CancellationToken.None);
+                new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("a.txt", r);
             Assert.DoesNotContain("Object reference", r);
@@ -426,10 +426,10 @@ public class WorkerToolsetTests
     {
         // Argv-array form is natural -- many shell tools take one. This threw a JsonException out of
         // Validate, which sits OUTSIDE the try/catch, past both call sites and killed the turn.
-        var r = await WorkerToolset.InvokeAsync(
+        var r = (await WorkerToolset.InvokeAsync(
             Call("run_shell", new { command = new[] { "ls", "-l" } }),
             new[] { WorkerTool.RunShell }, PluginRegistry.CreateWithBuiltins(),
-            new CollectingContext(), CancellationToken.None);
+            new CollectingContext(), CancellationToken.None)).Text;
 
         Assert.Contains("command", r);        // names the offending argument
         Assert.DoesNotContain("LineNumber", r);
@@ -441,10 +441,10 @@ public class WorkerToolsetTests
         // "'path' is required" contradicts what the model just sent: it DID supply a path, under the
         // wrong name. Faced with a message asserting an absence it can see is untrue, its cheapest
         // move is to resend the same shape.
-        var r = await WorkerToolset.InvokeAsync(
+        var r = (await WorkerToolset.InvokeAsync(
             Call("read_file", new { file_path = "/tmp/x.txt" }),
             new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-            new CollectingContext(), CancellationToken.None);
+            new CollectingContext(), CancellationToken.None)).Text;
 
         Assert.Contains("file_path", r);
         Assert.Contains("did you mean 'path'", r);
@@ -462,10 +462,10 @@ public class WorkerToolsetTests
             var f = Path.Combine(dir, "f.txt");
             File.WriteAllText(f, "hello\n");
 
-            var r = await WorkerToolset.InvokeAsync(
+            var r = (await WorkerToolset.InvokeAsync(
                 Call("read_file", new { path = f, encoding = "utf8" }),
                 new[] { WorkerTool.ReadFile }, PluginRegistry.CreateWithBuiltins(),
-                new CollectingContext(), CancellationToken.None);
+                new CollectingContext(), CancellationToken.None)).Text;
 
             Assert.Contains("hello", r);
             Assert.DoesNotContain("Unrecognised", r);
@@ -498,10 +498,10 @@ public class WorkerToolsetTests
         {
             File.WriteAllText(Path.Combine(dir, "found.txt"), "needle\n");
 
-            var r = await WorkerToolset.InvokeAsync(
+            var r = (await WorkerToolset.InvokeAsync(
                 Call("list_files", new { path = dir }),
                 Enum.GetValues<WorkerTool>(), PluginRegistry.CreateWithBuiltins(),
-                new CollectingContext(), CancellationToken.None);
+                new CollectingContext(), CancellationToken.None)).Text;
 
             // The honest answer, and the one that makes the model pick the real name.
             Assert.Contains("no such tool 'list_files'", r);

@@ -65,8 +65,8 @@ public sealed class GatedAgentTool : IAgentTool
         // so a granted tool never reaches the prompt again. Asking every time is therefore not a
         // second prompt for the user — it is the one question, routed through the one layer that
         // can tell what they actually answered.
-        // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
-        // row can badge "auto-approved" / "auto-denied" — the two gates below both write it, and
+        // REPORTED ON THE CONTEXT as soon as each gate answers, so the tool row can badge
+        // "auto-approved" / "auto-denied" while the call runs — the two gates below both write it, and
         // the last one that NAMED A DECIDER wins, which is right: the classifier's most recent word
         // on this call is the one worth showing. Gate 2 can clear silently (DeniedBy null) after
         // gate 1 was auto-approved, and that null must not erase gate 1's "auto" — see the `??`
@@ -98,6 +98,11 @@ public sealed class GatedAgentTool : IAgentTool
             // and PermissionGatedPlugin's sibling comment: a null DeniedBy never carries news and
             // must not overwrite a verdict a request already named.
             decidedBy = outcome.DeniedBy ?? decidedBy;
+
+            // REPORTED AT DECISION TIME — see PermissionGatedPlugin's sibling comment. A JobResult
+            // exists only at completion, so the badge could not appear until then; the gate knows
+            // now, while the row is still running, and a denied call never runs to produce one.
+            context.DecidedBy = decidedBy;
 
             if (!outcome.Allowed)
                 return new JobResult
@@ -144,6 +149,9 @@ public sealed class GatedAgentTool : IAgentTool
             // news, so it must never overwrite whatever the last request that DID name a decider
             // said.
             decidedBy = outcome.DeniedBy ?? decidedBy;
+
+            // As gate 1 above: announced now, so the row carries it while the tool works.
+            context.DecidedBy = decidedBy;
 
             if (!outcome.Allowed)
             {

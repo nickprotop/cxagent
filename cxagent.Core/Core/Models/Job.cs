@@ -57,6 +57,24 @@ public record Job
     public int RetryCount { get; set; }
     public int MaxRetries { get; init; } = 3;
 
+    /// <summary>
+    /// The classifier's verdict on the permission gate this call passed — "auto" when auto mode's
+    /// classifier ruled, null on every ordinary path (a stored rule, a silent in-boundary pass, a
+    /// prompt the user answered). The tool row reads it to badge "auto-approved"/"auto-denied".
+    ///
+    /// <para>ON THE JOB RATHER THAN ON <see cref="Result"/>, WHICH IS THE WHOLE POINT. A JobResult
+    /// exists only once the call has FINISHED, so a badge read from there could not appear until
+    /// then — and the fact it reports is known much earlier, at the permission gate, before the
+    /// tool has run at all. A `dotnet build` can run for minutes; learning after the fact that a
+    /// model approved it is strictly worse than seeing it while it runs. An auto-DENIED call never
+    /// executes, so a result-borne badge is the one case that would render at the wrong moment
+    /// entirely.</para>
+    ///
+    /// <para>Settable like <see cref="State"/> and <see cref="Result"/>: the value arrives mid-flight,
+    /// from the gate, on a job the row is already showing.</para>
+    /// </summary>
+    public string? DecidedBy { get; set; }
+
     public double? Progress { get; set; }
     public string? ProgressMessage { get; set; }
 

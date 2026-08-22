@@ -55,7 +55,38 @@ public class AgentToolDispatchTests : IDisposable
         }
     }
 
-    private Session Build(MockLlmProvider provider, IReadOnlyList<IAgentTool> tools, BufferedChatSink sink)
+    /// <summary>
+    /// TWO AUDIENCES, which is what show_diff is: "content" is the markup a PERSON looks at, and
+    /// "summary" is the short text the MODEL is told instead — handing it a blob of colour tags
+    /// costs a turn of it describing them.
+    ///
+    /// <para>THE REGRESSION THIS GUARDS. The row's copy used to travel by a side channel
+    /// (AgentToolset.LastDisplay), because Agent rebuilt job.Result from the returned STRING and
+    /// discarded a tool's own output dictionary — so a show_diff row displayed "README.md, +5 -1,
+    /// shown above", the model's confirmation, where the diff belonged. The dispatch now carries
+    /// the tool's JobResult itself and the channel is gone; if the object stopped surviving, the
+    /// row would silently show the summary again.</para>
+    /// </summary>
+    private sealed class TwoAudienceTool : IAgentTool
+    {
+        public const string Markup = "diff-markup-a-person-reads";
+        public const string Summary = "README.md, shown above";
+
+        public ToolDefinition Definition { get; } = new(
+            "show_two", "renders", JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult
+            {
+                Success = true,
+                Output = { ["content"] = Markup, ["summary"] = Summary },
+            });
+    }
+
+    private Session Build(MockLlmProvider provider, IReadOnlyList<IAgentTool> tools, BufferedChatSink sink,
+        IToolObserver? jobs = null)
     {
         var session = new Session(_dir);
         var paths = new AppPaths(Path.Combine(_dir, "config"));
@@ -68,7 +99,7 @@ public class AgentToolDispatchTests : IDisposable
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
             },
-            new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel(), Tools = tools },
+            new SessionPorts { Observer = sink, ToolObserver = jobs ?? new BufferedJobPanel(), Tools = tools },
             AgentMode.Single);
 
         return session;
@@ -204,4 +235,31 @@ public class AgentToolDispatchTests : IDisposable
 
         Assert.True(parent.KnowsInjectedToolForTest("echo_tool"));
     }
+
+    [Fact]
+    public async Task ARenderingToolsRowKeepsItsMarkup_WhileTheModelGetsTheSummary()
+    {
+        // Both halves in one assertion pair, because either alone passes for the wrong reason: a
+        // row showing the summary is the bug, and a model shown the markup is the bug the split
+        // exists to prevent.
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("show_two", new { }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var jobs = new BufferedJobPanel();
+        var session = Build(provider, [new TwoAudienceTool()], new BufferedChatSink(), jobs);
+        await session.Host!.RunAsync("go", CancellationToken.None);
+
+        // THE ROW: the tool's own Output, carried through the dispatch rather than smuggled.
+        var job = Assert.Single(jobs.Jobs, j => j.DisplayName.Contains("show_two", StringComparison.Ordinal));
+        var content = job.Result?.Output.TryGetValue("content", out var c) == true ? c?.ToString() : null;
+        Assert.Equal(TwoAudienceTool.Markup, content);
+
+        // THE MODEL: the summary, never the markup.
+        var toolResults = (provider.LastMessages ?? [])
+            .Where(m => m.Role == "tool").Select(m => m.Content).ToList();
+        Assert.Contains(toolResults, r => r is not null && r.Contains(TwoAudienceTool.Summary, StringComparison.Ordinal));
+        Assert.DoesNotContain(toolResults, r => r is not null && r.Contains(TwoAudienceTool.Markup, StringComparison.Ordinal));
+    }
+
 }

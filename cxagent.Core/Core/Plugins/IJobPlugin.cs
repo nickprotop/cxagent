@@ -85,23 +85,29 @@ public interface IJobContext
     /// classifier itself wrote allowed or denied it, null on every ordinary path (a stored rule
     /// from a user's own "always", a silent in-boundary pass, a prompt the user answered).
     ///
-    /// <para>THE SAME SEVERED-MIDDLE PROBLEM <see cref="AgentToolset.LastDisplay"/> exists to
-    /// solve, for a value instead of a display string. PermissionGatedPlugin and GatedAgentTool
-    /// both stamp <c>JobResult.DecidedBy</c> correctly, but WorkerToolset.InvokeAsync and
-    /// AgentToolset.TryInvokeAsync both discard that JobResult down to a bare string before Agent
-    /// ever sees it — Agent.cs rebuilds job.Result from the returned STRING, so a decider stamped
-    /// on the object that got thrown away never reaches the row. Reported live: a classifier
-    /// auto-approved `du -sh . 2>&amp;1 | tail -1`, and the DB/`/stats` recorded it correctly while
-    /// the row rendered plain "done", no badge.</para>
+    /// <para>THIS OUTLIVED THE PROBLEM IT WAS ADDED FOR, and is kept for a different one. It began
+    /// as a side channel: the dispatch paths reduced a gate's JobResult to a bare string before
+    /// Agent saw it, so a stamped decider never reached the row (reported live — a classifier
+    /// auto-approved <c>du -sh . 2>&amp;1 | tail -1</c>, the DB and <c>/stats</c> recorded it, the row
+    /// rendered plain "done"). <see cref="ToolOutcome"/> ended that severing; what this now carries
+    /// is the TIMING, which the result never could.</para>
     ///
     /// <para>ON THE CONTEXT rather than a new dictionary or a tuple, for the reason
     /// <see cref="Requester"/> already gives: JobContext is built per tool call, which is the
     /// granularity a decider needs — one gate outcome per call, read once, by the one caller
     /// (Agent.InvokeAndShowAsync) that closes the row right after the dispatch chain returns.</para>
     ///
-    /// <para>NOT THREAD-SAFE, and for the same reason LastDisplay is not: tool calls within one
-    /// turn run sequentially through this chain, so nothing else can write it between the
-    /// dispatch call that sets it and the read on the next line.</para>
+    /// <para>WRITTEN AT DECISION TIME, BY THE GATE WRAPPER, and that timing is the point rather
+    /// than an implementation detail. The classifier rules at the gate, BEFORE the tool runs; the
+    /// row that shows the badge is already on screen by then. Setting this is therefore a REPORT,
+    /// not a stash — <c>JobContext</c> raises an event from the setter and the agent stamps the
+    /// live Job — which is what lets a badge appear while a minutes-long command is still running,
+    /// and lets an auto-DENIED call be badged at all, since it never executes to produce a result.
+    /// See <see cref="Models.Job.DecidedBy"/>.</para>
+    ///
+    /// <para>NOT THREAD-SAFE, and does not need to be: tool calls within one turn run sequentially
+    /// through the dispatch chain, so nothing else can write it between the gate that reports it
+    /// and the agent that stamps the row.</para>
     /// </summary>
     string? DecidedBy { get; set; }
 

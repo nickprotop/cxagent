@@ -242,10 +242,10 @@ public class McpToolsetTests
     {
         var toolset = new McpToolset([new FakeServer("files", Tool("read"))]);
 
-        var result = await CxAgent.Core.Plugins.WorkerToolset.InvokeAsync(
+        var result = (await CxAgent.Core.Plugins.WorkerToolset.InvokeAsync(
             Call("totally_made_up"), Enum.GetValues<CxAgent.Core.Llm.WorkerTool>(),
             CxAgent.Core.Plugins.PluginRegistry.CreateWithBuiltins(),
-            new TestJobContext(), CancellationToken.None, toolset.Names());
+            new TestJobContext(), CancellationToken.None, toolset.Names())).Text;
 
         Assert.Contains("no such tool", result, StringComparison.Ordinal);
         Assert.Contains("files_read", result, StringComparison.Ordinal);   // the MCP tool is offered

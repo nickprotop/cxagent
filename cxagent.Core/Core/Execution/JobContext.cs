@@ -60,10 +60,37 @@ public sealed class JobContext : IJobContext
     /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
     public string? WorkingDirectory { get; set; }
 
-    /// <summary>The classifier's verdict on this call, stamped by whichever dispatch path
-    /// (WorkerToolset, AgentToolset) unwraps the gate wrapper's JobResult down to a string — see
-    /// the interface doc for why this exists at all. Null until a dispatch path sets it.</summary>
-    public string? DecidedBy { get; set; }
+    private string? _decidedBy;
+
+    /// <summary>
+    /// The classifier's verdict on this call — set by the gate wrapper the moment it has one, and
+    /// re-stamped by whichever dispatch path (WorkerToolset, AgentToolset) unwraps the gate's
+    /// JobResult down to a string. See the interface doc for why it rides the context at all.
+    ///
+    /// <para>THE SETTER RAISES <see cref="DeciderReported"/>, which is what makes the badge a
+    /// live report rather than a value collected at the end. The agent subscribes and stamps the
+    /// running Job, so the word appears while the tool is still working — the gate decides before
+    /// the tool runs, and an auto-denied tool never runs at all.</para>
+    ///
+    /// <para>SILENT ON A NULL, deliberately. Both toolsets reset this to null up front so a prior
+    /// call's verdict cannot be read as this one's, and the dispatch paths re-stamp it after the
+    /// await with the same value the gate already reported. Raising on null would fire a "no
+    /// decider" report on every ungated call and, worse, would let the reset clear a badge the
+    /// gate had just earned.</para>
+    /// </summary>
+    public string? DecidedBy
+    {
+        get => _decidedBy;
+        set
+        {
+            _decidedBy = value;
+            if (value is not null) DeciderReported?.Invoke(value);
+        }
+    }
+
+    /// <summary>Raised when a gate names the decider for this call, at the moment it does. Same
+    /// contract as <see cref="ResourceReported"/>: the subscriber marshals to its own thread.</summary>
+    public event Action<string>? DeciderReported;
 
     /// <summary>
     /// Raised true when this job stops at a permission prompt, false when it stops waiting.

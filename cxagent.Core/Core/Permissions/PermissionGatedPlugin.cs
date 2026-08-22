@@ -50,8 +50,8 @@ public sealed class PermissionGatedPlugin : IJobPlugin
         // THE CONTEXT'S ROOT, so the gate resolves a relative path against the SAME folder the
         // plugin will. Still a pure function of its arguments — the root is passed in, not read —
         // which keeps RequestsFor ignorant of which agent is running, as below.
-        // CARRIES FORWARD to whichever JobResult this call eventually returns (Task 8), so the tool
-        // row can badge "auto-approved" / "auto-denied" — see JobResult.DecidedBy. The LAST REQUEST
+        // REPORTED ON THE CONTEXT the moment each request answers, so the tool row can badge
+        // "auto-approved" / "auto-denied" WHILE THE CALL RUNS — see Job.DecidedBy. The LAST REQUEST
         // IN THE LOOP THAT GOT A CLASSIFIER VERDICT wins, which is right: it is the most recent word
         // on this call. A single call can raise several requests (`copy` asks about source AND
         // dest), and a later request that clears silently is a plain Allow with DeniedBy null — that
@@ -90,6 +90,14 @@ public sealed class PermissionGatedPlugin : IJobPlugin
             // "nothing to report from this request" — so it must never overwrite whatever the
             // last request that DID name a decider said.
             decidedBy = outcome.DeniedBy ?? decidedBy;
+
+            // REPORTED THE MOMENT IT IS KNOWN, not carried to the return. The JobResult below only
+            // exists once the call has finished, and a shell command can run for minutes — so a
+            // badge read from the result appears long after the fact it reports. Announcing here
+            // puts the word on a row that is still spinning, and is the only way an auto-DENIED
+            // call gets badged at all: it returns immediately below without ever executing.
+            // Null-guarded by the setter, so an ordinary silent allow reports nothing.
+            context.DecidedBy = decidedBy;
 
             if (!outcome.Allowed)
             {

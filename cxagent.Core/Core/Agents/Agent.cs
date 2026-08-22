@@ -1986,6 +1986,26 @@ public sealed class Agent
         // Rebasing rather than replacing: a plugin that never reports (no gate, no
         // WorkStarting call) keeps the original stamp and the old behaviour exactly.
         ctx.WorkStarted += () => started = DateTimeOffset.UtcNow;
+
+        // THE BADGE, THE MOMENT THE CLASSIFIER RULES — not when the tool finishes. The row already
+        // exists by here (it was drawn when the model emitted the call); the gate decides next, and
+        // only then does the tool run. Reading the decider off job.Result meant waiting for all
+        // three, and a JobResult exists ONLY at completion — so a `dotnet build` the classifier
+        // approved showed nothing for the minutes it ran, and an auto-DENIED call, which never
+        // executes, had no result to badge from at all.
+        //
+        // ToolProgressed, NEVER ToolUpdated. That method force-expands the row and blanks its body
+        // on every call — right for a real state transition, ruinous for a header-only stamp on a
+        // row a user may have collapsed, and it would erase a ProgressBody a later step streams in.
+        // See IToolObserver.ToolProgressed.
+        //
+        // The stamp lives on the Job, so it survives onto the finished row below without the
+        // completion path having to re-derive it.
+        ctx.DeciderReported += decidedBy =>
+        {
+            job.DecidedBy = decidedBy;
+            _jobs.ToolProgressed(job);
+        };
         // MCP FIRST, then the built-ins. TryInvokeAsync returns null for a name no server owns, so
         // WorkerToolset's "no such tool" text stays the single message for a name nobody owns — two
         // sources each producing their own version is how a model gets told a tool does not exist by
@@ -1994,7 +2014,11 @@ public sealed class Agent
         // Inside the job wrapper deliberately: an MCP call gets the same transcript row, the same
         // result rendering and the same ct as a built-in. Composed around it, a slow server would
         // show a frozen spinner with no indication of what was being waited on.
-        string result;
+        // THE OUTCOME, NOT JUST ITS TEXT. `job.Result` below starts FROM the plugin's own result
+        // rather than being rebuilt from this string — see ToolOutcome for why that rebuild was a
+        // defect rather than a shortcut. Text-only sources (spawn, skills, todos, ask_user, MCP)
+        // carry a null Result and lose nothing: their text is the whole answer they ever had.
+        ToolOutcome outcome;
         try
         {
             // SPAWN FIRST, then MCP, then the built-ins — each returning null for a name it does not
@@ -2018,28 +2042,34 @@ public sealed class Agent
             //
             // MCP IS NOT IN _offeredNames' EXCLUSION because it does not need to be: MCP tools
             // bypass selection entirely, so they are always in the offered set and never match this.
-            if (Withheld(call.Name) is { } refusal) result = refusal;
+            // Text(...) ON THE STRING-ONLY LINKS, because `??` needs one type across the chain and
+            // `string?` does not implicitly become `ToolOutcome?` — a user-defined conversion is not
+            // considered when lifting a nullable operand. It is a wrapper, not a decision: these
+            // sources genuinely have no JobResult, and null still means "not my name, try the next".
+            if (Withheld(call.Name) is { } refusal) outcome = refusal;
             else
-            result = (CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
+            outcome = Text(CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
                 // any name, and a skill load answered by an MCP server would be silently wrong.
                 // Reads _context.Messages — the agent's own conversation, which is what lets it
                 // answer "already loaded" without keeping state that could drift from the window.
-                ?? _skills.TryInvoke(call, _context.Messages)
+                ?? Text(_skills.TryInvoke(call, _context.Messages))
                 // The plan is this agent's own state, so it resolves here rather than in a plugin —
                 // and the event fires only on a real write, not on every call that missed.
-                ?? TryUpdateTodos(call)
+                ?? Text(TryUpdateTodos(call))
                 // Null when there is no user — the call then falls through to "no such tool", which
                 // is the honest answer for a tool this agent was never offered.
-                ?? (_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
+                ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the plugin path a few lines below.
-                ?? (_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy))
+                ?? Text(_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. WorkerToolset.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
                 ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
                 ?? await WorkerToolset.InvokeAsync(call, AllowedBuiltins(_turnTools), _plugins, ctx, ct, _mcp?.Names());
+            // No Text() on the last two: they return the plugin's own ToolOutcome, which is the
+            // whole point of the chain's type — everything below builds job.Result from it.
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -2063,7 +2093,7 @@ public sealed class Agent
             // A FAILED SPAWN KEEPS THE ENVELOPE SHAPE. The parent's model was told to expect
             // <sub_agent id state>; handing it a bare "error:" string for the one case that matters
             // most means the failure arrives in a shape it was never told about.
-            result = childId is null
+            outcome = childId is null
                 ? $"error: {ex.Message}"
                 : SubAgentEnvelope.Render(childId, SendOutcome.Failed, ex.Message);
         }
@@ -2117,6 +2147,9 @@ public sealed class Agent
             tick?.Dispose();
         }
 
+        // THE STRING, once, for everything below that reasons about the text the model was told —
+        // failure sniffing, the error message, the envelope's state, the recorded length.
+        var result = outcome.Text;
         var failed = LooksLikeFailure(result);
         job.State = failed ? JobState.Failed : JobState.Succeeded;
         job.CompletedAt = DateTimeOffset.UtcNow;
@@ -2198,33 +2231,34 @@ public sealed class Agent
                 });
             }
         }
-        job.Result = new JobResult
+        // FROM THE PLUGIN'S OWN RESULT, overriding only what this method genuinely owns. Building a
+        // NEW JobResult from the returned string — which is what this did — split every field in
+        // two: the ones Agent can re-derive survived, and the ones only the plugin knows (Output,
+        // DecidedBy, LogFile) were silently dropped. That is not a hypothetical: TWO side channels
+        // existed solely to smuggle values back past it. Seen live, a show_diff row displayed
+        // "README.md, +5 -1, shown above" — the model's confirmation — where the diff itself
+        // belonged, and a classifier-approved `du -sh . 2>&1 | tail -1` reached the DB and /stats
+        // correctly while its row rendered plain "done". Starting from the object ends the category
+        // rather than adding a third channel for the next field.
+        //
+        // THE OVERRIDES ARE THE FIELDS AGENT REALLY DOES OWN. Success/ExitCode come from
+        // LooksLikeFailure over the model-facing TEXT, which is broader than a plugin's own verdict —
+        // a spawn envelope or an MCP refusal is a failure with no JobResult behind it at all. And
+        // Duration is Agent's stopwatch, rebased by ctx.WorkStarted so it measures the WORK rather
+        // than how long a user took to approve it; ShellJobPlugin's own copy would not be.
+        //
+        // The null branch is the text-only sources — spawn, skills, todos, ask_user, MCP — which
+        // never had a result to start from. Output stays the returned text there, exactly as before.
+        job.Result = (outcome.Result ?? new JobResult
+        {
+            Success = !failed,
+            Output = new Dictionary<string, object?> { ["content"] = result },
+        }) with
         {
             Success = !failed,
             ExitCode = failed ? -1 : 0,
             Duration = DateTimeOffset.UtcNow - started,
             ErrorMessage = failed ? result : null,
-
-            // THE ROW SHOWS WHAT THE TOOL DREW, when that differs from what the model was told.
-            // This method rebuilds the result from the returned STRING, which discards a tool's own
-            // output dictionary — fine for every built-in, where the two are the same text, and
-            // wrong for an injected tool whose whole purpose is to render something. Seen live: a
-            // show_diff row displaying "README.md, +5 -1, shown above" — the model's confirmation —
-            // where the diff itself should have been.
-            Output = new Dictionary<string, object?>
-            {
-                ["content"] = _agentTools?.LastDisplay ?? result,
-            },
-            // THE SAME REBUILD-FROM-A-STRING PROBLEM, one field over. PermissionGatedPlugin and
-            // GatedAgentTool both stamp DecidedBy="auto" on their JobResult when the classifier
-            // decided a call, correctly, but this method never sees that object — only the string
-            // WorkerToolset/AgentToolset reduced it to. ctx.DecidedBy is the side channel that
-            // survives the reduction (see IJobContext.DecidedBy); read here, immediately after the
-            // dispatch chain above returns, which is the same "read right after the await" rule
-            // LastDisplay follows. Reported live: `du -sh . 2>&1 | tail -1` auto-approved and
-            // recorded correctly in the DB/`/stats`, while the row rendered plain "done", no badge —
-            // because this constructor discarded the decider along with the rest of the JobResult.
-            DecidedBy = ctx.DecidedBy,
         };
         _jobs.ToolUpdated(job);
 
@@ -2244,6 +2278,15 @@ public sealed class Agent
 
         return result;
     }
+
+    /// <summary>
+    /// A text-only dispatch answer as a <see cref="ToolOutcome"/>, preserving null.
+    ///
+    /// <para>NULL IN, NULL OUT, and that is the whole contract: the dispatch chain reads null as
+    /// "this source does not own the name, try the next link". An empty string is a source that
+    /// answered with nothing, which is a different fact.</para>
+    /// </summary>
+    private static ToolOutcome? Text(string? text) => text is null ? null : new ToolOutcome(text);
 
     private async Task<LlmResponse> StreamTurnAsync(List<ChatMessage> messages,
         List<ToolDefinition> tools, CancellationToken ct, ChatMessageId turnId)

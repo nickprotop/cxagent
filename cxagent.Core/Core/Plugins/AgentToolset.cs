@@ -42,59 +42,42 @@ public sealed class AgentToolset
         _byName.Values.Select(t => t.Definition).ToList();
 
     /// <summary>
-    /// What the last dispatched call wants the TRANSCRIPT to show, when that differs from what the
-    /// model was told. Null when they are the same, which is the normal case.
+    /// Null when no injected tool owns this name, so the caller's <c>??</c> chain continues to the
+    /// built-ins' terminator.
     ///
-    /// <para>WHY A SIDE CHANNEL RATHER THAN A RETURN VALUE. Agent rebuilds job.Result from the
-    /// returned STRING — <c>Output = { ["content"] = result }</c> — so a tool's own output dictionary
-    /// is discarded before the sink ever sees it. Returning a tuple would change a signature four
-    /// call sites deep for one tool's benefit; this is read immediately after the await, by the one
-    /// caller that closes the row.</para>
-    ///
-    /// <para>NOT THREAD-SAFE, AND IT DOES NOT NEED TO BE: tool calls within a turn run sequentially
-    /// through this chain, and it is consumed on the next line after the call that set it.</para>
+    /// <para>RETURNS THE TOOL'S OWN RESULT ALONGSIDE THE TEXT. This used to return a bare string and
+    /// hand the row's display back through a <c>LastDisplay</c> property, because Agent rebuilt
+    /// job.Result from the returned string and discarded a tool's output dictionary on the way. The
+    /// object now survives the dispatch, so the side channel is gone — see <see cref="ToolOutcome"/>.</para>
     /// </summary>
-    public string? LastDisplay { get; private set; }
-
-    /// <summary>Null when no injected tool owns this name, so the caller's <c>??</c> chain
-    /// continues to the built-ins' terminator.</summary>
-    public async Task<string?> TryInvokeAsync(ToolCall call, IJobContext context, CancellationToken ct)
+    public async Task<ToolOutcome?> TryInvokeAsync(ToolCall call, IJobContext context, CancellationToken ct)
     {
-        LastDisplay = null;
-        // RESET FOR THE SAME REASON LastDisplay IS: a name that doesn't match falls through without
-        // touching context.DecidedBy at all, and a prior call's leftover value must not survive to
-        // be read as this one's verdict.
+        // RESET UP FRONT: a name that doesn't match falls through without touching
+        // context.DecidedBy at all, and a prior call's leftover value must not survive to be read
+        // as this one's verdict.
         context.DecidedBy = null;
         if (!_byName.TryGetValue(call.Name, out var tool)) return null;
 
         var result = await tool.ExecuteAsync(JobParametersFrom(call), context, ct);
-
-        // STAMPED HERE, before any of the branches below reduce `result` to a string — see
-        // IJobContext.DecidedBy. GatedAgentTool (the wrapper an injected tool is given when a gate
-        // is configured) sets DecidedBy on its returned JobResult exactly as PermissionGatedPlugin
-        // does; an ungated tool's result carries null and this is a no-op.
-        context.DecidedBy = result.DecidedBy;
 
         // THE ERROR BECOMES THE RESULT, never an exception. Agent.RunAsync appends the assistant
         // message carrying the tool calls BEFORE running them, so an exception unwinding the loop
         // leaves tool calls with no matching results — an orphan the provider rejects with a 400
         // that no recovery path matches. WorkerToolset.InvokeAsync holds the same contract.
         if (!result.Success)
-            return result.ErrorMessage ?? "error: the tool failed without saying why";
+            return new ToolOutcome(result.ErrorMessage ?? "error: the tool failed without saying why", result);
 
         var content = result.Output.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "";
 
         // TWO AUDIENCES. "content" is what the TRANSCRIPT shows; "summary", when present, is what
         // the MODEL is told instead. show_diff is the case that forced the split: its content is
         // native markup for a person to look at, and handing the model a blob of colour tags costs a
-        // turn of it describing them.
+        // turn of it describing them. The split now needs no smuggling: the Text member is the
+        // model's copy and the row reads the tool's own Output for the markup.
         if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
-        {
-            LastDisplay = content;   // the markup, which Agent would otherwise never see
-            return s;
-        }
+            return new ToolOutcome(s, result);
 
-        return content;
+        return new ToolOutcome(content, result);
     }
 
     /// <summary>
