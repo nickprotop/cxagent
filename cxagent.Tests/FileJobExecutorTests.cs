@@ -216,8 +216,8 @@ public class FileJobExecutorTests : IDisposable
         Assert.Equal("class A\n{\n}\n", await File.ReadAllTextAsync(path));
     }
 
-    // IDENTICAL IS NOT AN EDIT. This used to report "replaced 1 occurrence (indentation adjusted to
-    // match the file)" — success, with a note implying a change, for an operation that made none.
+    // IDENTICAL IS NOT AN EDIT. Reporting "replaced 1 occurrence (indentation adjusted to match
+    // the file)" claims success, with a note implying a change, for an operation that made none.
     [Fact]
     public async Task Replace_WithAnIdenticalReplacement_IsRefused()
     {

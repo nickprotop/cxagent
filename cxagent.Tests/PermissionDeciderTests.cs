@@ -37,9 +37,9 @@ public class PermissionDeciderTests
     /// <para>Mirrors the real UI prompt hook's shape exactly (fix round 1): a cancellation must
     /// resolve the SAME completion source the "control" awaits, not a side channel, and the
     /// "restore" step must be observable — RestoredCount — so a test can tell the difference
-    /// between "RequestAsync returned" and "the control was actually torn down." The gate that
-    /// only did the former (an earlier version) soft-locked the app; this seam is built so that
-    /// class of bug is visible to a test, not just to a live run.</para></summary>
+    /// between "RequestAsync returned" and "the control was actually torn down." A gate that does
+    /// only the former soft-locks the app, and this seam exists so that class of bug is visible to
+    /// a test rather than only to a live run.</para></summary>
     private sealed class PromptScript
     {
         private readonly object _lock = new();
