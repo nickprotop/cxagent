@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Commands;
 using CxAgent.Core.Mcp;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
@@ -395,7 +396,7 @@ public class McpToolsetTests
         var rules = new PermissionRulesStore(new AppPaths(dir));
         // WithPrompt, NOT ForTesting: ForTesting sets StampForTesting, which patches the missing
         // policy and hides the exact production defect this test is for.
-        var notices = new List<string>();
+        var notices = new List<Message>();
         var gate = PermissionDecider.WithPrompt(rules, notices.Add,
             (_, _, _) => Task.FromResult(PermissionChoice.Once));
 
@@ -408,7 +409,7 @@ public class McpToolsetTests
             policy: new PermissionPolicy(dir, rules, EditMode.AcceptEdits));
 
         // THE PROMPT HOOK SAID YES, so the only thing that can deny is the missing policy.
-        Assert.DoesNotContain(notices, n => n.Contains("carried no session policy"));
+        Assert.DoesNotContain(notices, n => n.Text.Contains("carried no session policy"));
         Assert.DoesNotContain("permission denied", result ?? "");
     }
 }

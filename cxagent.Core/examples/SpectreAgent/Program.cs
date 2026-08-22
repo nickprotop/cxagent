@@ -46,9 +46,10 @@ if (!resolution.HasProvider)
 // is put the question to a human.
 using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: store =>
     PermissionDecider.WithPrompt(store,
-        // STRIPPED, like Said: Core speaks its own markup dialect and this front end renders
-        // plain text. Escaping alone would print the tags literally.
-        notice: line => AnsiConsole.MarkupLine($"[grey]{StripMarkup(line)}[/]"),
+        // THE SAME SINK THE OBSERVER USES, because a gate notice and a session notice are the same
+        // kind of line: Core's own words, with a severity attached. Routing them through one writer
+        // is what keeps "denied: ..." from arriving in a different voice than "Stopped."
+        notice: ConsoleSink.Say,
         promptHook: (request, offerTrust, ct) =>
         {
             AnsiConsole.WriteLine();
@@ -117,14 +118,10 @@ if (session.Ledger is { TotalTokens: > 0 } ledger)
 
 return 0;
 
-/// <summary>Core speaks its own markup dialect; this front end renders plain text.</summary>
-static string StripMarkup(string s) =>
-    System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[^\]]*\]", "").EscapeMarkup();
-
 /// <summary>
 /// Where the session's words go. This is the ONLY thing a front end must supply, and it is why Core
 /// never writes to a console itself: a log writer, a web socket and this all implement the same
-/// eight methods differently.
+/// seven methods differently.
 /// </summary>
 internal sealed class ConsoleSink : ISessionObserver
 {
@@ -152,17 +149,27 @@ internal sealed class ConsoleSink : ISessionObserver
 
     public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    /// <summary>The session's own notices — a mode change, a model switch, "Stopped.", and now a
-    /// fault too: the colour follows severity instead of a second method.</summary>
-    public void Said(Message message) => AnsiConsole.MarkupLine(message.Severity switch
-    {
-        Severity.Error => $"[red]{Strip(message.Text)}[/]",
-        _ => $"[grey]{Strip(message.Text)}[/]",
-    });
+    /// <summary>The session's own notices — a mode change, a model switch, "Stopped." and a fault
+    /// too. One method for all of them; the colour follows the severity.</summary>
+    public void Said(Message message) => Say(message);
 
-    /// <summary>Core speaks in its own markup dialect; this front end renders plain text instead.</summary>
-    private static string Strip(string s) =>
-        System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[^\]]*\]", "").EscapeMarkup();
+    /// <summary>
+    /// One writer for everything Core says — this observer and the gate's notice hook both land here.
+    ///
+    /// <para>STATIC, AND ON THE SINK RATHER THAN BESIDE THE TOP-LEVEL CODE, because a local function
+    /// in a top-level program cannot be reached from a class body (CS8801) and the notice hook is
+    /// wired before this type is constructed.</para>
+    ///
+    /// <para>EscapeMarkup, NOT a strip. Core writes markdown, so there are no colour tags to remove;
+    /// what is left is a literal bracket in a path or an error message, which Spectre would
+    /// otherwise read as a tag of its own.</para>
+    /// </summary>
+    public static void Say(Message message) => AnsiConsole.MarkupLine(message.Severity switch
+    {
+        Severity.Error => $"[red]{message.Text.EscapeMarkup()}[/]",
+        Severity.Warning => $"[yellow]{message.Text.EscapeMarkup()}[/]",
+        _ => $"[grey]{message.Text.EscapeMarkup()}[/]",
+    });
 }
 
 /// <summary>

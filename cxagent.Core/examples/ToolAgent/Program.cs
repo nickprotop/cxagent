@@ -37,7 +37,10 @@ if (!resolution.HasProvider)
 // know which of the two gates produced the question.
 using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: store =>
     PermissionDecider.WithPrompt(store,
-        notice: Console.WriteLine,
+        // THE SAME ROUTING AS THE OBSERVER BELOW: a gate notice carries a severity like any other
+        // line Core says, and an error belongs on stderr whichever of the two produced it.
+        notice: message =>
+            (message.Severity == Severity.Error ? Console.Error : Console.Out).WriteLine(message.Text),
         promptHook: (request, offerTrust, ct) =>
         {
             Console.WriteLine();

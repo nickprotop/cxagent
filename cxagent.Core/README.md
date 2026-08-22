@@ -144,7 +144,7 @@ they are three different things for a caller to do:
 
 ## Where words go
 
-`ISessionObserver` is the only thing you *must* implement. Eight methods:
+`ISessionObserver` is the only thing you *must* implement. Seven methods:
 
 ```csharp
 internal sealed class ConsoleSink : ISessionObserver
@@ -160,15 +160,25 @@ internal sealed class ConsoleSink : ISessionObserver
     public void AssistantTurnEnded(ChatMessageId id) => Console.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
 
-    // The SESSION's own words — "Stopped.", a mode change, a model switch — in Core's markup
-    // dialect. Render the tags or strip them; never print them raw beside model output.
-    public void Said(string message) => Console.WriteLine(Strip(message));
-    public void Failed(string message) => Console.Error.WriteLine(message);
-
-    private static string Strip(string s) =>
-        System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[^\]]*\]", "");
+    // The SESSION's own words — "Stopped.", a mode change, a model switch, a failure. Markdown,
+    // with the tone beside it: one method, and the severity says how to show it.
+    public void Said(Message message) =>
+        (message.Severity == Severity.Error ? Console.Error : Console.Out).WriteLine(message.Text);
 }
 ```
+
+`Message` is `(string Text, Severity Severity)`, and a plain string converts to one implicitly — so
+`Said` receives `Severity.Info` unless Core said otherwise. The three severities are `Info`,
+`Warning` and `Error`; a fault is a severity rather than a channel, so there is no second method to
+implement. If you collect failures, filter on `Severity.Error` — which is exactly what
+`BufferedChatSink.Errors` does.
+
+**The text is markdown**, and it is yours to render however your surface renders. Core escapes what
+it interpolates (`Md.Escape` for inline values, `Md.EscapeCell` inside a table, `Md.Fence` around a
+block), so a path like `my_test_file.cs` arrives with its underscores intact rather than as
+*my* `test` *file*. A console front end can print `message.Text` as-is; a Spectre one should call
+`EscapeMarkup` on it, since a literal bracket in a path is not a colour tag; a TUI renders it as
+markdown. Nothing needs stripping — Core writes no colour tags for you to remove.
 
 `ChatMessageId` identifies a turn so you can stream into the right row. Ids are minted by the
 session, so a parent and its children never collide.

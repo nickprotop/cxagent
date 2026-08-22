@@ -126,9 +126,13 @@ internal sealed class ConsoleSink : ISessionObserver
     public void AssistantReasoningAppended(ChatMessageId id, string text) { }
     public void AssistantTurnEnded(ChatMessageId id) => AnsiConsole.WriteLine();
     public void AssistantLabelled(ChatMessageId id, string header) { }
+    // ESCAPED, NOT STRIPPED. Core writes markdown, so there are no colour tags to remove — but a
+    // path or an error message can still carry a literal bracket, and Spectre would read that as a
+    // tag of its own. The colour comes from severity, which is the only styling Core asks for.
     public void Said(Message message) => AnsiConsole.MarkupLine(message.Severity switch
     {
         Severity.Error => $"[red]{message.Text.EscapeMarkup()}[/]",
+        Severity.Warning => $"[yellow]{message.Text.EscapeMarkup()}[/]",
         _ => $"[grey]{message.Text.EscapeMarkup()}[/]",
     });
 }

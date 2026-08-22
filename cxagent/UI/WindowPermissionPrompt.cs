@@ -18,7 +18,10 @@ public static class WindowPermissionPrompt
     /// <summary>A gate that asks through this window.</summary>
     public static PermissionDecider Gate(ConsoleWindowSystem system, MainWindow mw,
         PermissionRulesStore store, ITranscriptWriter? transcript) =>
-        PermissionDecider.WithPrompt(store, transcript is null ? null : transcript.Write,
+        // THE Message OVERLOAD, so the gate's own notices arrive with their severity intact rather
+        // than as a pre-coloured sentence Core had to compose.
+        PermissionDecider.WithPrompt(store,
+            transcript is null ? null : transcript.Write,
             (request, offerTrust, ct) =>
             {
                 var prompt = new PermissionPromptControl(request, offerTrust);

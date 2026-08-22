@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Models;
@@ -401,7 +402,7 @@ public class ReviewEffectTests
         var root = MakeTempDir();
         var rules = EmptyRules();
         rules.SetTrust(root, TrustState.Trusted);
-        var notices = new List<string>();
+        var notices = new List<Message>();
         var script = new PromptScript();
         var policy = new PermissionPolicy(root, rules, EditMode.Auto);
         var gate = PermissionDecider.ForTesting(policy, rules, notices.Add, script.Show);
@@ -410,7 +411,12 @@ public class ReviewEffectTests
 
         Assert.True((await gate.RequestAsync(FileWrite(Path.Combine(root, "a.cs")), CancellationToken.None)).Allowed);
         Assert.Equal(1, script.ShownCount);
-        Assert.Contains(notices, n => n.Contains("auto review unavailable"));
+        Assert.Contains(notices, n => n.Text.Contains("auto review unavailable"));
+
+        // A WARNING, NOT AN ASIDE. The gate fell back to asking, which is it working — but a
+        // classifier that is silently unreachable is how auto mode degrades into always-ask without
+        // anyone noticing, so the tone has to carry that.
+        Assert.All(notices, n => Assert.Equal(Severity.Warning, n.Severity));
     }
 
     // ---- fakes ---------------------------------------------------------------------------------------

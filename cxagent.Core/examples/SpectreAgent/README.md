@@ -83,6 +83,8 @@ every request is refused with "no session policy" — which this example did at 
 second when one finishes. A front end that announces starts from `ToolUpdated` prints nothing at all,
 because a finished job is never `Running`. This example got that wrong first.
 
-**Strip Core's markup, or render it.** `Said` carries the session's own notices in a markup dialect —
-`[yellow]Stopped.[/]`. A TUI renders it; this example strips it. What you must not do is print it
-raw beside model output, which may itself contain brackets.
+**Let severity pick the colour.** `Said` carries the session's own notices as a `Message` — markdown
+text plus an `Info`/`Warning`/`Error` tone. Core writes no colour tags, so there is nothing to strip;
+this example switches on the severity and wraps the text in a Spectre colour of its own choosing.
+Do call `EscapeMarkup` on the text first, as `ConsoleSink.Say` does: a path or an error message can
+carry a literal bracket, and Spectre would otherwise read it as a tag.

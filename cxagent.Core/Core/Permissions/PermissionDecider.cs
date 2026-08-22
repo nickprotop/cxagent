@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Permissions;
 
@@ -47,7 +48,7 @@ public sealed record PermissionDecisionReport(
 public sealed class PermissionDecider : IPermissionGate
 {
     private readonly PermissionRulesStore _store;
-    private readonly Action<string>? _notice;
+    private readonly Action<Message>? _notice;
 
     /// <summary>
     /// The reviewer for <c>/mode edits auto</c>, or null when none is configured — in which case auto
@@ -139,15 +140,19 @@ public sealed class PermissionDecider : IPermissionGate
     /// </summary>
     /// <param name="notice">Where a save failure or an unavailable classifier is reported, or null
     /// to say nothing. Deliberately not an interface: this is one line of text going somewhere, and
-    /// a Core type should not know what a transcript is.</param>
+    /// a Core type should not know what a transcript is.
+    ///
+    /// <para>A <see cref="Message"/> rather than a string, so the gate states its own tone and the
+    /// front end picks the colour. A gate that pre-styled its text would be the one place Core still
+    /// decided how something looked, and every consumer would have had to undo it.</para></param>
     /// <param name="store">Where an "always" answer is remembered.</param>
     /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
-    public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<string>? notice,
+    public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<Message>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(store, notice, promptHook);
 
     private PermissionDecider(PermissionRulesStore store,
-        Action<string>? notice, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
+        Action<Message>? notice, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
     {
         _store = store;
         _notice = notice;
@@ -169,7 +174,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// <param name="notice">Where a one-line explanation goes, or null to say nothing.</param>
     /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
     public static PermissionDecider ForTesting(PermissionPolicy policy, PermissionRulesStore store,
-        Action<string>? notice,
+        Action<Message>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(store, notice, promptHook) { StampForTesting = policy };
 
@@ -231,8 +236,8 @@ public sealed class PermissionDecider : IPermissionGate
         if (request.Policy is not { } policy)
         {
             OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What));
-            _notice?.Invoke("refused: this request carried no session policy, so there "
-                             + "was nothing to judge it against.");
+            _notice?.Invoke(new("refused: this request carried no session policy, so there "
+                             + "was nothing to judge it against.", Severity.Warning));
             // NOBODY DECIDED THIS — there was no session to ask and no classifier consulted. Still
             // reported as a user denial (DeniedBy left at its "user" default) because that is this
             // gate's existing fail-closed vocabulary for "nothing else fits"; the alternative would
@@ -351,7 +356,7 @@ public sealed class PermissionDecider : IPermissionGate
             if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
-                _notice?.Invoke($"auto review unavailable ({failure}) — asking instead");
+                _notice?.Invoke(new($"auto review unavailable ({failure}) — asking instead", Severity.Warning));
             }
         }
 
@@ -473,7 +478,7 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke($"could not save this rule for next time: {ex.Message}");
+                    _notice?.Invoke(new($"could not save this rule for next time: {ex.Message}", Severity.Warning));
                 }
                 // Silent on success. The rule IS visible — Settings → Permissions lists every stored
                 // rule for this folder — so this is discoverable rather than invisible, without a line
@@ -487,13 +492,13 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke($"could not save folder trust for next time: {ex.Message}");
+                    _notice?.Invoke(new($"could not save folder trust for next time: {ex.Message}", Severity.Warning));
                 }
                 return true;   // silent; the trust state is shown on Settings → Permissions
 
             case PermissionChoice.Deny:
             default:
-                _notice?.Invoke($"denied: {request.Display}");
+                _notice?.Invoke(new($"denied: {request.Display}", Severity.Warning));
                 return false;
         }
     }

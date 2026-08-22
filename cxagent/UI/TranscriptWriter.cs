@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 
@@ -28,4 +29,18 @@ public sealed class TranscriptWriter(ConsoleWindowSystem system, ChatTranscriptC
     public void WriteError(string message) =>
         system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(chat,
             new ChatTranscriptSink.SystemRow($"[{ColorScheme.DangerMarkup}]{message}[/]", false)));
+
+    // SEVERITY BECOMES A COLOUR HERE, and nowhere earlier. Core says what a line MEANS; only the UI
+    // knows what the transcript renders and which palette is live, so the gate's "denied: ..." picks
+    // up caution and a fault picks up danger without Core having named either.
+    //
+    // Info goes through the markdown path unstyled — it is the common case, and wrapping every
+    // ordinary notice in a colour scope would put a literal tag on screen for the System role.
+    public void Write(Message message) => system.EnqueueOnUIThread(() =>
+        ChatTranscriptSink.Post(chat, new ChatTranscriptSink.SystemRow(message.Severity switch
+        {
+            Severity.Error => $"[{ColorScheme.DangerMarkup}]{message.Text}[/]",
+            Severity.Warning => $"[{ColorScheme.CautionMarkup}]{message.Text}[/]",
+            _ => message.Text,
+        }, false)));
 }

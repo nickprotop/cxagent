@@ -93,10 +93,20 @@ public class CoreMarkdownTests
         // the nearest example, and the example is still coloured. A grep in a test is the only thing
         // that notices, because a stray tag renders as literal text a reader shrugs at.
         //
-        // ROOTED AT cxagent.Core/Core, NOT cxagent.Core. The examples under cxagent.Core/examples
-        // (SpectreAgent, ReadOnlyAgent, ToolAgent) write real markup on purpose — they render
-        // through SharpConsoleUI/Spectre, which is the one place a colour tag is the right format.
-        // Rooting the sweep at the library itself fails on those.
+        // ROOTED AT cxagent.Core, EXAMPLES INCLUDED. The sweep covers the library and the three
+        // examples under cxagent.Core/examples, because an example is the first thing a consumer
+        // copies — a stripping helper left in one outlives every doc sentence saying not to strip.
+        //
+        // THE EXAMPLES ARE SCANNED FOR STRIPPING ONLY, and that is the whole point of including
+        // them. SpectreAgent and ReadOnlyAgent are Spectre front ends: their Figlet header, their
+        // offered/withheld panel, and the severity colour they wrap Core's text in are all a front
+        // end styling its own surface, which is exactly what a front end is for and what severity
+        // was put on Message to enable. Choosing a colour FROM a severity is the correct ending;
+        // removing tags Core supposedly wrote is the shape that must never come back, because it
+        // only makes sense if Core is still emitting markup.
+        //
+        // So: no colour tags at all inside the library, and no strip helper anywhere under
+        // cxagent.Core, examples included.
         //
         // DOC-COMMENT LINES ARE SKIPPED, not scanned. Two files quote a colour tag on purpose inside
         // `///` prose: ISessionObserver.cs ("a model writing \"[red]\" as ordinary prose must not
@@ -106,12 +116,34 @@ public class CoreMarkdownTests
         // `///` line. Filtering by line prefix catches that distinction without hard-coding either
         // filename — a THIRD file doing the same thing is exempted for the same reason, not because
         // it dodged a filename list.
-        var core = Path.Combine(RepoRoot(), "cxagent.Core", "Core");
+        var root = Path.Combine(RepoRoot(), "cxagent.Core");
+        var examples = $"{Path.DirectorySeparatorChar}examples{Path.DirectorySeparatorChar}";
         var tagPattern = new System.Text.RegularExpressions.Regex(@"\[(red|yellow|green|grey\d*|cyan\d*)\]");
-        var offenders = Directory.EnumerateFiles(core, "*.cs", SearchOption.AllDirectories)
+
+        // A REGEX OVER MARKUP TAGS — the strip helper this whole shape exists to retire. Matched on
+        // the tag-shaped pattern rather than the word "Strip", so a helper that renames itself is
+        // still caught, and over the whole file rather than line by line: the helper is commonly
+        // written with its pattern on a continuation line.
+        var stripPattern = new System.Text.RegularExpressions.Regex(
+            @"Regex\.Replace\((.|\n)*?\\\[", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
-            .Where(f => File.ReadAllLines(f)
-                .Any(line => !line.TrimStart().StartsWith("///") && tagPattern.IsMatch(line)))
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .Where(f =>
+            {
+                var lines = File.ReadAllLines(f)
+                    .Where(line => !line.TrimStart().StartsWith("///"))
+                    .ToArray();
+
+                // Nobody, anywhere under cxagent.Core, strips markup back out of text. Joined back
+                // up so a call split across lines is still one string to match against.
+                if (stripPattern.IsMatch(string.Join("\n", lines))) return true;
+
+                // Inside the library a colour tag is an offence wherever it appears; in an example
+                // it is the front end doing its job.
+                return !f.Contains(examples) && lines.Any(tagPattern.IsMatch);
+            })
             .Select(Path.GetFileName)
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToArray();
