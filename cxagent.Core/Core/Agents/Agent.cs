@@ -357,9 +357,10 @@ public sealed class Agent
     /// <summary>
     /// Points this agent at a different model, keeping everything else.
     ///
-    /// <para>THE CONVERSATION NEVER MOVES, which is the whole reason this exists. /model used to
-    /// rebuild the agent and the host, then carry the context and the ledger across the gap by hand —
-    /// apparatus for changing one field. Nothing is carried here because nothing is left behind.</para>
+    /// <para>THE CONVERSATION NEVER MOVES, which is the whole reason this exists. The alternative —
+    /// /model rebuilding the agent and the host, then carrying the context and the ledger across the
+    /// gap by hand — is apparatus for changing one field. Nothing is carried here because nothing is
+    /// left behind.</para>
     ///
     /// <para>THE WINDOW COMES TOO, and it is the only part with behaviour attached. A session moving
     /// to a smaller-context model keeps every message it had, so it must start measuring against the
@@ -631,8 +632,7 @@ public sealed class Agent
     /// Which tools this agent is offered, or null for all of them. See <see cref="Plugins.ToolSelection"/>.
     /// </param>
     /// <param name="policy">
-    /// The session's permission policy, passed to MCP calls. Null refuses every MCP call, which is
-    /// what shipped before this parameter existed.
+    /// The session's permission policy, passed to MCP calls. Null refuses every MCP call.
     /// </param>
     /// <param name="classifier">
     /// TASK 11: the same classifier <see cref="Permissions.PermissionDecider"/> consults when a
@@ -640,8 +640,7 @@ public sealed class Agent
     /// <see cref="Permissions.ActionClassifier.Speculate"/> the moment a tool call is PARSED,
     /// before <see cref="Permissions.PermissionGatedPlugin"/> asks for one synchronously. Null
     /// wherever no classifier is reachable (headless runs, most tests) — the agent simply never
-    /// speculates, and every gated call falls back to paying its own synchronous cost, exactly as
-    /// it did before this parameter existed.
+    /// speculates, and every gated call falls back to paying its own synchronous cost.
     /// </param>
     public Agent(ILlmProvider provider, PluginRegistry plugins, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
@@ -678,13 +677,13 @@ public sealed class Agent
 
         // THE DIRECTORY THIS AGENT WORKS IN, as data.
         //
-        // It used to read Directory.GetCurrentDirectory() at every use, which is PROCESS-global —
-        // so the skills it discovered, the AGENTS.md it read and the path it told the model came
-        // from wherever the process happened to be pointing, while its OWN host recorded sessions
-        // against the directory it was constructed for. Two sources for one fact, identical only
-        // because nothing ever moved the process.
+        // Reading Directory.GetCurrentDirectory() at every use instead would be PROCESS-global — the
+        // skills discovered, the AGENTS.md read and the path told to the model would come from
+        // wherever the process happens to be pointing, while this agent's OWN host records sessions
+        // against the directory it was constructed for. Two sources for one fact, identical only for
+        // as long as nothing moves the process.
         //
-        // Null still falls back to the process, so a caller that has no opinion behaves as before.
+        // Null falls back to the process, for a caller that has no opinion.
         _workingDir = workingDir;
         // NAMED callerContext, NOT context: `context` on this constructor is already the
         // AgentContext — the conversation itself. Two different things called the same word at one
@@ -762,26 +761,26 @@ public sealed class Agent
         _globalInstructionsDir = globalInstructionsDir;
     }
 
-    /// <summary>Every tool, always. Roles used to slice this per worker name; that mechanism is gone
-    /// and safety lives in the permission gate, not in withholding capability.</summary>
+    /// <summary>Every tool, always. Safety lives in the permission gate, not in withholding
+    /// capability from a worker by name.</summary>
     private static readonly IReadOnlyList<WorkerTool> AllTools = Enum.GetValues<WorkerTool>();
 
     /// <summary>
     /// One exchange on the linear path: prompt → tools → answer.
     /// </summary>
     /// <remarks>
-    /// TAKES A PROMPT, RETURNS AN ANSWER. It used to take the caller's transcript list and mutate it,
-    /// which coupled the agent's context to the UI's record of the conversation. The transcript is the
-    /// UI's; <see cref="Context"/> is what the model sees. The caller appends both.
+    /// TAKES A PROMPT, RETURNS AN ANSWER. Taking the caller's transcript list and mutating it would
+    /// couple the agent's context to the UI's record of the conversation. The transcript is the UI's;
+    /// <see cref="Context"/> is what the model sees. The caller appends both.
     ///
     /// <para>The <c>ToolCallId</c> hazard that justified rebuilding the context per prompt — a tool
     /// result outliving the call it belongs to, which providers reject — is handled where it belongs:
     /// the compressor snaps its split so a kept result always keeps its call.</para>
     ///
-    /// <para>NO COMPRESSION CHECK AROUND THIS CALL. One used to run in a <c>finally</c> here, on the
-    /// reasoning that a single-turn exchange has no "next turn" for the in-loop check to catch. It was
-    /// a task-boundary trigger in a mode that no longer has task boundaries, it ran on
-    /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it, and the pre-send
+    /// <para>NO COMPRESSION CHECK AROUND THIS CALL, despite the tempting argument that a single-turn
+    /// exchange has no "next turn" for the in-loop check to catch. Such a check is a task-boundary
+    /// trigger in a mode that has no task boundaries; a <c>finally</c> here would run on
+    /// <see cref="CancellationToken.None"/> so a cancelled session still paid for it; and the pre-send
     /// check at the top of the turn loop already guarantees nothing over the threshold is ever sent.</para>
     /// </remarks>
     public async Task<SendResult> SendAsync(string prompt, CancellationToken ct,
@@ -795,24 +794,23 @@ public sealed class Agent
         // Session.Submit — two concurrent sends would corrupt Context.Messages long before a stale
         // selection mattered.
         _turnTools = turnTools;
-        // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. This used to be
-        // `new List<ChatMessage>(conversation)` — a fresh working list built from the session history
-        // at the start of every goal and dropped at the end, so goal N's tool calls, file reads and
-        // reasoning were gone before goal N+1 began (measured on a real run: 33 turns discarded, a
-        // session falling from 58,000 tokens to ~5,000 the moment the goal ended). "Read X and explain
-        // it" followed by "now change it" re-read X, because nothing of the first goal remained.
+        // THE AGENT'S OWN CONTEXT, CARRIED ACROSS GOALS. A per-goal working list —
+        // `new List<ChatMessage>(conversation)` built at the start of every goal and dropped at the
+        // end — loses goal N's tool calls, file reads and reasoning before goal N+1 begins (measured
+        // on a real run: 33 turns discarded, a session falling from 58,000 tokens to ~5,000 the moment
+        // the goal ended). "Read X and explain it" followed by "now change it" re-reads X, because
+        // nothing of the first goal remains.
         //
         // Nobody else works that way: Claude Code, Codex, opencode, gemini-cli, Cline and goose all
         // keep ONE growing list across prompts and compact on TOKEN pressure rather than at a task
-        // boundary. The rebuild also guaranteed a prompt-cache miss — those agents append to a stable
+        // boundary. Rebuilding also guarantees a prompt-cache miss — those agents append to a stable
         // prefix precisely so cached reads keep hitting, and discarding cached context saves far less
         // than it costs to rebuild.
         var messages = _context.Messages;
 
         // The user's prompt joins the agent's context. The caller puts its own copy on the session
-        // transcript; this is the one the MODEL sees. A plain append either way — the old branch on
-        // `messages.Count > 0` existed only because an empty context was seeded from the caller's
-        // list, and there is no caller list any more.
+        // transcript; this is the one the MODEL sees. A plain append unconditionally: nothing seeds
+        // an empty context from a caller's list, so there is no first-message case to branch on.
         messages.Add(new ChatMessage
         {
             Role = "user",
@@ -852,12 +850,12 @@ public sealed class Agent
                     // PINNED ON FIRST USE, unlike the instruction files above — and the difference is
                     // who asked for the change.
                     //
-                    // This used to be read fresh every prompt, so a server finishing its handshake
-                    // mid-session rewrote the system message and invalidated the cache prefix from
+                    // Reading this fresh every prompt lets a server finishing its handshake
+                    // mid-session rewrite the system message and invalidate the cache prefix from
                     // token ZERO. Measured on a 116-turn drive: a 134-character change at turn 82
-                    // forced a full reprocess of 67,367 tokens. On the same endpoint an identical
-                    // prompt costs 43ms cached against 1,420ms cold, so that one late connection
-                    // bought about 21 seconds of prompt-eval and changed nothing the model did.
+                    // forces a full reprocess of 67,367 tokens. On the same endpoint an identical
+                    // prompt costs 43ms cached against 1,420ms cold, so one late connection buys
+                    // about 21 seconds of prompt-eval and changes nothing the model does.
                     //
                     // A user who edits AGENTS.md ASKED for the next prompt to differ and can see why
                     // they paid. Nobody asks for an MCP handshake to land on turn 82. Tool
@@ -907,15 +905,14 @@ public sealed class Agent
                 // config-written one.
                 + RenderContext(_callerContext);
 
-            // THE PLAN IS NOT HERE ANY MORE — see PlaceTaskList. It used to be appended above, on
-            // the reasoning that a rewrite "invalidates only the tail of the cached prefix". A
+            // THE PLAN DOES NOT BELONG HERE — see PlaceTaskList. Appending it above looks safe on
+            // the reasoning that a rewrite "invalidates only the tail of the cached prefix", but a
             // prefix cache has no tail: it matches the longest common prefix and stops at the first
             // differing byte, so a change at the END of this message invalidates the whole
-            // conversation after it. Measured, a 134-character plan edit re-processed 67,367 tokens.
+            // conversation after it. Measured, a 134-character plan edit re-processes 67,367 tokens.
             //
-            // The other half of the old argument — that the system message is how the plan outlives
-            // compaction — described a property this code never relied on. The system message is
-            // rebuilt from _todos every turn, so the plan was always RE-INJECTED, never preserved.
+            // Nor does the system message make the plan outlive compaction. It is rebuilt from
+            // _todos every turn, so the plan is RE-INJECTED, never preserved.
 
             var existing = messages.FirstOrDefault(m => m.Role == "system");
             if (existing is null)
@@ -1097,10 +1094,10 @@ public sealed class Agent
             // spinner on screen for the whole wait — which is exactly the part that takes seconds to
             // minutes on a local model.
             //
-            // It used to be opened and closed together, AFTER the response had fully arrived: the
-            // one moment nothing needed indicating. Between a tool result and the next response the
-            // transcript sat completely still, with no way to tell a model that is thinking from one
-            // that has died somewhere in the silicon.
+            // Opening and closing the turn together, AFTER the response has fully arrived, indicates
+            // the one moment nothing needs indicating: between a tool result and the next response
+            // the transcript sits completely still, with no way to tell a model that is thinking from
+            // one that has died somewhere in the silicon.
             var turnId = NextTurnId();
             _sink.AssistantTurnBegan(turnId);
 
@@ -1230,16 +1227,16 @@ public sealed class Agent
             {
                 // THE MODEL'S OWN ANSWER GOES INTO THE CONVERSATION, and this line is the whole
                 // difference between a chat and a series of unrelated questions. The tool-call path
-                // below appends its assistant message; THIS path used to return without one, so a
-                // plain conversational reply was rendered to the user, streamed into the transcript,
-                // counted in the token totals — and never added to `messages`.
+                // below appends its assistant message; without this line THIS path returns without
+                // one, so a plain conversational reply is rendered to the user, streamed into the
+                // transcript, counted in the token totals — and never added to `messages`.
                 //
-                // WHAT IT LOOKED LIKE: ask "say something", get "Hello! How can I help you today?",
+                // WHAT THAT LOOKS LIKE: ask "say something", get "Hello! How can I help you today?",
                 // then ask "what have you replied before?" and be told "This is the first message in
-                // our conversation, so I haven't replied to you before." The model was telling the
-                // truth about what it could see. Reported from a live session, with the token counter
-                // showing history WAS being sent — which is what made it confusing: the user's turns
-                // were all there, and only the assistant's were missing.
+                // our conversation, so I haven't replied to you before." The model is telling the
+                // truth about what it can see. Seen in a live session, with the token counter showing
+                // history WAS being sent — which is what makes it confusing: the user's turns are all
+                // there, and only the assistant's are missing.
                 //
                 // BEFORE THE CHALLENGE BLOCK BELOW, not after: that block appends a USER message and
                 // `continue`s, so an assistant reply added later would arrive out of order — the model
@@ -2017,15 +2014,14 @@ public sealed class Agent
         // reads it hunting for a slow command that never existed.
         //
         // Rebasing rather than replacing: a plugin that never reports (no gate, no
-        // WorkStarting call) keeps the original stamp and the old behaviour exactly.
+        // WorkStarting call) keeps the original stamp.
         //
-        // WHY THIS WAS EVER TWO SEPARATE BUGS, since it is the shape to recognise rather than the
-        // detail: the two ends of this one feature read two different clocks, on two different
-        // schedules. A JobResult exists ONLY at completion, so the finished row's duration is a
-        // number computed once at the end; StartedAt is stamped at row CREATION and read continuously
-        // by the live header. Nothing connected them, so each was found on its own, fixed on its own,
-        // and neither fix prompted anyone to check the other — the duration was corrected here while
-        // the clock beside it went on counting the same review time for months.
+        // THE SHAPE TO RECOGNISE, because it splits into two independent bugs that each look whole:
+        // the two ends of this one feature read two different clocks, on two different schedules. A
+        // JobResult exists ONLY at completion, so the finished row's duration is a number computed
+        // once at the end; StartedAt is stamped at row CREATION and read continuously by the live
+        // header. Nothing connects them, so fixing the duration here leaves the clock beside it
+        // counting the same review time — which is why both consumers are handled below.
         //
         // BOTH CONSUMERS, and that is the second half of this fix. `started` feeds JobResult.Duration
         // — the number on the FINISHED row — and rebasing it alone left job.StartedAt still holding
@@ -2399,10 +2395,10 @@ public sealed class Agent
                 //
                 // The body can hold all of it, in order, where it scrolls with everything else.
                 //
-                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks. This
-                // used to build the markup here — a colour decision inside the turn loop — and the
-                // sink could not then tell styled reasoning from unstyled body text on the same
-                // method, so only one of the two was ever escaped.
+                // THE AGENT SAYS WHAT KIND OF TEXT THIS IS; the sink decides how it looks. Building
+                // the markup here would put a colour decision inside the turn loop, and would leave
+                // the sink unable to tell styled reasoning from unstyled body text arriving on the
+                // same method — so only one of the two would ever get escaped.
                 //
                 // The semantic decision that DOES belong here: reasoning is worth showing at all.
                 // ChatTranscriptControl clears a message's thinking flag as soon as body content
@@ -2443,7 +2439,7 @@ public sealed class Agent
     /// back.</para>
     ///
     /// <para>EMPTY REMOVES IT. A cleared list must not leave a stale plan behind, and a session that
-    /// never plans keeps a context byte-identical to one from before this existed.</para>
+    /// never plans keeps a context with no task-list message in it at all.</para>
     /// </summary>
     private void PlaceTaskList()
     {
@@ -2454,7 +2450,7 @@ public sealed class Agent
         // everything up to the first changed byte from cache and reprocesses the rest, so rewriting
         // the tail costs real time even when the new tail is identical to the old one. This method is
         // called on every turn that ends without tool calls, not only when a todo changes, so without
-        // this guard an unchanged plan re-wrote the newest message every single turn.
+        // this guard an unchanged plan re-writes the newest message every single turn.
         //
         // ALREADY LAST AND ALREADY EQUAL is the only case worth skipping: a list that is present but
         // NOT last still has to move, which is the whole point of the method.

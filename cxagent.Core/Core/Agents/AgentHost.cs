@@ -171,9 +171,9 @@ public sealed class AgentHost : IDisposable
     ///
     /// <para>Distinct from <see cref="TokensUpdated"/>, which carries the cumulative session total.
     /// Only this figure answers "will the next turn fit": it is one turn's measurement rather than a
-    /// sum, so it rises and FALLS, and in particular it falls after compression. The status bar drove
-    /// its context percentage off the cumulative total and so could show 107% of a window that was
-    /// half empty, and could not move at all when compression freed space.</para>
+    /// sum, so it rises and FALLS, and in particular it falls after compression. Driving the status
+    /// bar's context percentage off the cumulative total instead shows 107% of a window that is half
+    /// empty, and cannot move at all when compression frees space.</para>
     /// </summary>
     public event EventHandler<int>? ContextUsedUpdated;
 
@@ -182,8 +182,8 @@ public sealed class AgentHost : IDisposable
     ///
     /// <para>The true new occupancy is not knowable until the next turn — it is only ever read from
     /// what a provider reports it received — so this says "the last reading no longer describes the
-    /// conversation" rather than carrying a number. The alternative was to keep displaying the
-    /// pre-compression figure, which is the reported bug: compress, and the gauge does not move.</para>
+    /// conversation" rather than carrying a number. The alternative, holding the pre-compression
+    /// figure on screen, is the visible bug: compress, and the gauge does not move.</para>
     /// </summary>
     public event EventHandler<(int Before, int After)>? ContextCompressed;
 
@@ -486,16 +486,16 @@ public sealed class AgentHost : IDisposable
     /// A backstop, not a budget. The user's configured value when they set one, otherwise
     /// <see cref="DefaultTurnCeiling"/>.
     ///
-    /// <para>NO LOW DEFAULT, and that reasoning is unchanged: the cap exists to bound a
-    /// WORKER inside a fan-out — one job among many, where a runaway cost the whole plan. A session
-    /// is not that. The user is watching it and can stop it, and a ceiling in the low hundreds just
-    /// ends real work at a number that has nothing to do with the task. crush ships no step cap at
-    /// all; opencode's is <c>agent.steps ?? Infinity</c>. The invented 200 deserved to go.</para>
+    /// <para>NO LOW DEFAULT: a low cap exists to bound a WORKER inside a fan-out — one job among
+    /// many, where a runaway costs the whole plan. A session is not that. The user is watching it and
+    /// can stop it, and a ceiling in the low hundreds just ends real work at a number that has
+    /// nothing to do with the task. crush ships no step cap at all; opencode's is
+    /// <c>agent.steps ?? Infinity</c>.</para>
     ///
-    /// <para>WHAT DID NOT FOLLOW is <c>int.MaxValue</c>. "No arbitrary limit" and "no limit" are
-    /// different claims, and the argument for the first was used to justify the second. The stated
-    /// replacement was stuck detection — which, until the change alongside this one, only ever
-    /// nudged. So the common case, an unconfigured session, had nothing bounding it at all.</para>
+    /// <para>WHAT DOES NOT FOLLOW is <c>int.MaxValue</c>. "No arbitrary limit" and "no limit" are
+    /// different claims, and the first does not license the second. Stuck detection is not a
+    /// substitute either unless it can actually END a run rather than nudge — without a real ceiling
+    /// the common case, an unconfigured session, has nothing bounding it at all.</para>
     /// </summary>
     /// <para>ZERO MEANS UNBOUNDED, an explicit opt-out. Read literally it would be a ceiling of zero
     /// turns — the agent stopping before its first call and doing nothing — which nobody configures
@@ -505,11 +505,10 @@ public sealed class AgentHost : IDisposable
     /// <summary>
     /// Turns one request may take before it is stopped — this agent's, and every child's.
     ///
-    /// <para>ONE RESOLUTION, SHARED. It used to be computed here for the session agent and again, by
-    /// a separate expression, for sub-agents — and the two disagreed: a configured <c>0</c> made the
-    /// parent unbounded while children silently fell back to the default. A static so the
-    /// composition root can resolve it once, before the host exists, and hand the same number to the
-    /// factory.</para>
+    /// <para>ONE RESOLUTION, SHARED. Resolving it here for the session agent and again, by a
+    /// separate expression, for sub-agents lets the two disagree: a configured <c>0</c> makes the
+    /// parent unbounded while children fall back to the default. A static so the composition root can
+    /// resolve it once, before the host exists, and hand the same number to the factory.</para>
     /// </summary>
     public int TurnCeiling => CeilingFor(ConfiguredMaxTurns);
 
@@ -555,8 +554,8 @@ public sealed class AgentHost : IDisposable
     /// Points this session at a different model — see <see cref="Agent.SwapProvider"/>.
     ///
     /// <para>THE RUNTIME FOLLOWS TOO, not just the agent. <see cref="SpendLabel"/> reads it, so a
-    /// swap that moved only the agent would keep attributing this session's spend to the model it
-    /// used to run on — the figure in /stats and the name in the panel would disagree, which is
+    /// swap that moved only the agent would keep attributing this session's spend to the model it was
+    /// pointed at before — the figure in /stats and the name in the panel would disagree, which is
     /// exactly what SpendLabel's own doc says must never happen.</para>
     /// </summary>
     public void SwapProvider(ActiveModel model)
@@ -625,10 +624,10 @@ public sealed class AgentHost : IDisposable
         agent.TurnCompleted += calls =>
         {
             OnTurnCompleted(calls);
-            // TOKENS TOO. Single-agent records to the Ledger itself and never raised TokensUpdated —
-            // that event fires only inside the fan-out driver's stream loop. So the ctx readout and
-            // the panel both sat at 0 for an entire single-agent session no matter how many tokens it
-            // burned, which is the mode that is the default.
+            // TOKENS TOO. Single-agent records to the Ledger itself, and TokensUpdated otherwise
+            // fires only inside the fan-out driver's stream loop. Without this raise the ctx readout
+            // and the panel sit at 0 for an entire single-agent session no matter how many tokens it
+            // burns — and single-agent is the default mode.
             TokensUpdated?.Invoke(this, Ledger.TotalTokens);
 
             // AND THE TURN IS RECORDED, here rather than at exit: a crash is exactly when exit does
@@ -708,16 +707,16 @@ public sealed class AgentHost : IDisposable
     ///
     /// <para>Lives here rather than in the command dispatcher because everything it needs — the
     /// provider, the job panel to draw the row on, and the ledger to meter the call — is already held
-    /// by this type. The dispatcher previously reached for all three separately and, having no job
+    /// by this type. A dispatcher would have to reach for all three separately and, having no job
     /// panel, could only print a line of prose after the fact.</para>
     /// </summary>
     public Task<SessionCompressor.CompressResult> CompressNowAsync(CancellationToken ct) =>
         // THE AGENT'S CONTEXT, not the session conversation. That distinction is the whole bug: the
         // conversation holds only prompts and final answers, so compressing it freed nothing while
         // the list that was actually full went untouched.
-        // THE AGENT'S ID. This used to be the id of whichever goal last ran, falling back to the
-        // literal "session" before the first one — so a /compress issued before any prompt filed its
-        // row under a name no log directory had. The agent has one id for its whole life.
+        // THE AGENT'S ID, which is stable for the agent's whole life. Naming the row after whichever
+        // goal last ran would leave a /compress issued before any prompt with no goal to name, filing
+        // its row under a name no log directory has.
         CompressionRun.RunAsync(
             new CompressionRun.CompressionWork(Context, _runtime.Provider, _agent.SkillToolOffered),
             new CompressionRun.CompressionReport(_jobPanel, _agent.Id, "compress context · requested",
@@ -739,8 +738,8 @@ public sealed class AgentHost : IDisposable
 
 
     /// <summary>
-    /// Nothing to release: the schedulers this used to own died with the dag. Kept because the
-    /// composition root disposes the outgoing runner on every F5 rewire.
+    /// Nothing to release — this type owns no schedulers. Kept because the composition root disposes
+    /// the outgoing runner on every F5 rewire.
     /// </summary>
     /// <summary>
     /// Releases the MCP subprocesses.

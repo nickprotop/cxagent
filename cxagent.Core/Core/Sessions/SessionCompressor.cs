@@ -102,10 +102,10 @@ public static class SessionCompressor
     {
         var conversation = context.Messages;
 
-        // NO MESSAGE-COUNT FLOOR — see Truncate for why. This ran only on an explicit
+        // NO MESSAGE-COUNT FLOOR — see Truncate for why. This runs only on an explicit
         // /compress or on measured TOKEN pressure, and neither is answered by counting messages: eight
         // messages carrying four large file reads is precisely the case that needs compressing, and
-        // the old floor of eight declined it silently.
+        // any floor in that range would decline it silently.
         //
         // Two is arithmetic, not policy: below that there is no older half to summarise.
         if (conversation.Count < 2)
@@ -113,29 +113,28 @@ public static class SessionCompressor
 
         // SUMMARISING IS THE ONLY TIER, deliberately.
         //
-        // A cheaper one lived here: it emptied tool results whose file had since been read or written
-        // again, on the reasoning that a fresher copy of the same thing existed further down. It
-        // worked — measured live at −18% reclaimed instantly, against −24% for a ~25-second provider
-        // call — and it was removed anyway, because the evidence for it is thinner than the
-        // measurement suggests.
+        // The cheaper tier on offer is content deduplication: empty the tool results whose file has
+        // since been read or written again, on the reasoning that a fresher copy of the same thing
+        // sits further down. It does reclaim — measured live at −18% instantly, against −24% for a
+        // ~25-second provider call — and it is still not worth having here.
         //
-        // Only Cline ever shipped content deduplication, and it is GONE from Cline's HEAD; the repo
-        // moved to compaction-based management. opencode has a pruner and ships it OFF by default
-        // ("Enable pruning of old tool outputs (default: false)"). Claude Code and Antigravity prune
-        // aggressively but PERSIST TO DISK FIRST, so nothing they drop is unrecoverable — an option
-        // not open to us, which is what made our rule have to be conservative in the first place.
+        // Deduplication is not what the field settled on. Cline's HEAD has none; the repo runs on
+        // compaction. opencode ships its pruner OFF by default ("Enable pruning of old tool outputs
+        // (default: false)"). Claude Code and Antigravity prune aggressively but PERSIST TO DISK
+        // FIRST, so nothing they drop is unrecoverable — an option not open to us, which is why any
+        // rule here would have to be conservative.
         //
-        // And the conservative rule had a hole. It keyed on the file PATH, but read_file takes offset
-        // and limit: reading lines 1-40 and later lines 200-240 are not copies of one another, and
-        // treating the second as superseding the first would have discarded content nothing else
-        // held. Fixable — but fixing an unsound optimisation nobody else ships, to save a provider
-        // call, is the wrong order of work.
+        // And the conservative rule has a hole. Keying on the file PATH is unsound because read_file
+        // takes offset and limit: lines 1-40 and lines 200-240 are not copies of one another, and
+        // treating the second as superseding the first discards content nothing else holds. Fixable
+        // — but fixing an unsound optimisation nobody else ships, to save a provider call, is the
+        // wrong order of work.
         //
         // Summarisation READS what it discards and can carry a detail forward. That is the property
         // worth having while the shape of real usage is still unknown. If sessions turn out to be
         // dominated by re-read file content, this is the first thing to revisit — with persistence
         // underneath it, or as Claude Code's forward-looking suppression, which declines the
-        // redundant read instead of erasing the old one.
+        // redundant read instead of erasing the earlier one.
         // BELOW THE PINNED HEAD. The system preamble leads the conversation and is not history:
         // summarising it away deletes the instructions that keep the model on real paths, and the
         // agent then re-inserts it above the summary on the next turn. Everything here is offset by

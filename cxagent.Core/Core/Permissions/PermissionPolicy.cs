@@ -100,8 +100,8 @@ public class PermissionPolicy
     /// source and a write of the dest, checked independently); http → one Http request for the
     /// URL's origin.</summary>
     /// <param name="root">
-    /// What a RELATIVE path is relative to — the agent's folder. Null means the process's, which is
-    /// what every caller got before this parameter existed.
+    /// What a RELATIVE path is relative to — the agent's folder. Null falls back to the process's
+    /// current directory.
     ///
     /// <para>IT MUST MATCH THE PLUGIN'S BASE. The file plugin resolves `src/foo.cs` against the
     /// agent's directory; a gate that resolved the same string against a different one would decide
@@ -191,13 +191,14 @@ public class PermissionPolicy
     {
         var action = parameters.Get<string>("action");
 
-        // TOLERANT OF AN ABSENT PATH, because `list` and `search` no longer require one — the glob
-        // and grep tools take a pattern and default the directory. Neither action appears in the
-        // switch below (they are read-only and raise no request at all), but this line ran BEFORE
-        // the switch, and the one-argument Get is Values[key]: it threw "The given key 'path' was
-        // not present in the dictionary" out of the permission gate, before the plugin that knows
-        // the default was ever reached. Fixing the plugin alone left this in place, and a live
-        // session failed 18 times on `grep {"pattern": ...}` — the exact call the tool advertises.
+        // TOLERANT OF AN ABSENT PATH, because `list` and `search` do not require one — the glob and
+        // grep tools take a pattern and default the directory. Neither action appears in the switch
+        // below (they are read-only and raise no request at all), but this line runs BEFORE the
+        // switch, and the one-argument Get is Values[key]: demanding "path" here throws "The given
+        // key 'path' was not present in the dictionary" out of the permission gate, before the
+        // plugin that knows the default is ever reached. A default in the plugin does not save it —
+        // a live session failed 18 times on `grep {"pattern": ...}`, the exact call the tool
+        // advertises.
         var path = parameters.Get<string?>("path", null);
         var dest = parameters.Get<string?>("dest", null);
 
@@ -434,10 +435,9 @@ public class PermissionPolicy
         // Path-bearing: resolve before matching, and fail toward asking if it cannot be resolved.
         PermissionKind.FileRead or PermissionKind.FileWrite => TryResolve(request.Display, _root),
 
-        // SHELL MATCHES THE COMMAND, NOT THE RULE. This read AlwaysRule, which was the same string
-        // as the command back when a rule WAS the whole command. It no longer is — a rule is now
-        // `git status *` — so comparing AlwaysRule against a stored pattern would compare a pattern
-        // to a pattern, and `git status *` would only ever match a command literally called
+        // SHELL MATCHES THE COMMAND, NOT THE RULE. A shell rule is a PATTERN — `git status *` — not
+        // the whole command, so reading AlwaysRule here would compare a pattern against a stored
+        // pattern, and `git status *` would only ever match a command literally called
         // "git status *". The subject is what the model actually asked to run.
         //
         // Display, not the raw parameter, because ShellRequest already assembled it and it carries
@@ -971,24 +971,23 @@ public class PermissionPolicy
         {
             var full = root is { Length: > 0 } ? Path.GetFullPath(path, root) : Path.GetFullPath(path);
 
-            // COMPONENT BY COMPONENT, NOT JUST THE DEEPEST EXISTING ENTRY. This used to walk up to the
-            // first entry that exists and resolve THAT, which silently skipped a symlinked DIRECTORY
-            // whenever anything below it existed: the entry we landed on was a plain file, and
-            // ResolveLinkTarget on a plain file is null — the link is the PARENT, and nothing looked
-            // at it.
+            // COMPONENT BY COMPONENT, NOT JUST THE DEEPEST EXISTING ENTRY. Walking up to the first
+            // entry that exists and resolving THAT lets a symlinked DIRECTORY through whenever
+            // anything below it exists: the entry landed on is a plain file, ResolveLinkTarget on a
+            // plain file is null — the link is the PARENT, and nothing looks at it.
             //
-            // MEASURED against a real fixture with `root/link -> outside`, on a trusted folder:
+            // MEASURED against a real fixture with `root/link -> outside`, on a trusted folder, the
+            // deepest-entry walk gives:
             //     link/x.txt       (existing)          silently allowed   WRONG
             //     link/sub/new.txt (nested, new)       silently allowed   WRONG
             //     link/x.txt       (not existing)      asked              correct
-            // The only shape the old walk caught was the narrow one where the link itself was the
-            // deepest existing entry — which is exactly what the existing symlink test constructs, so
-            // it passed while the escape sat underneath it.
+            // The only shape it catches is the narrow one where the link itself is the deepest
+            // existing entry — which is exactly what a naive symlink test constructs, so such a test
+            // passes with the escape sitting underneath it.
             //
-            // The check was therefore INVERTED RELATIVE TO RISK: creating a new file outside the
-            // boundary was caught, overwriting an existing one was not. No attacker needed —
-            // node_modules links, vendor/, monorepo package links and a docs -> ../shared-docs
-            // convention are ordinary layouts.
+            // That is INVERTED RELATIVE TO RISK: creating a new file outside the boundary is caught,
+            // overwriting an existing one is not. No attacker needed — node_modules links, vendor/,
+            // monorepo package links and a docs -> ../shared-docs convention are ordinary layouts.
             //
             // Components below the deepest existing entry cannot be links (they do not exist), so
             // walking the whole path costs nothing extra for them and follows a link at any depth.
@@ -1024,11 +1023,11 @@ public class PermissionPolicy
 
             return Path.TrimEndingDirectorySeparator(Path.GetFullPath(resolved));
         }
-        // ArgumentException is in this list because RequestsFor now RESOLVES (the C1/C2 fix), so a
-        // path that Path.GetFullPath rejects outright — an embedded NUL, an empty string — reaches
-        // here where the old string-only code could not throw at all. Without it the exception
-        // escapes RequestsFor and surfaces as a raw "Null character in path" crash caught by the
-        // job executor, losing PermissionDenied = true. Fail toward asking, as everything else here does.
+        // ArgumentException is in this list because RequestsFor RESOLVES rather than matching raw
+        // strings, so a path that Path.GetFullPath rejects outright — an embedded NUL, an empty
+        // string — reaches here and throws. Without it the exception escapes RequestsFor and
+        // surfaces as a raw "Null character in path" crash caught by the job executor, losing
+        // PermissionDenied = true. Fail toward asking, as everything else here does.
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
                                       or NotSupportedException or ArgumentException)
         {
