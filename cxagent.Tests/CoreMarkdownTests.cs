@@ -144,20 +144,48 @@ public class CoreMarkdownTests
         // Say(, NOT Said(. The observer method is Said(Message message); Core's own call sites never
         // call that directly — they go through Session.Say, which forwards to the sink. A pattern
         // written against "Said(" would match nothing under cxagent.Core/Core and pass vacuously,
-        // guarding nothing. This was checked by deliberately breaking a line back to a bare string
-        // literal carrying failure wording and confirming the test caught it before restoring it.
+        // guarding nothing.
+        //
+        // RULING 12 — TWO SHAPES, ONE BUG, CHECKED PER-CALL RATHER THAN BY A SINGLE ANCHORED REGEX.
+        // This test originally required the failure word to sit immediately after `Say(` — which
+        // matched the bare `Say($"could not…")` idiom this task REMOVED from Core, but could not see
+        // `Say(new Message($"could not…"))`, the shape this task INTRODUCED and the one every later
+        // task now writes. Message's severity parameter defaults to Info, so a forgotten second
+        // argument compiles clean and reads as an aside — exactly the bug this test exists to catch,
+        // now in the one shape the old regex was blind to.
+        //
+        // EACH `Say(...)` CALL IS EXTRACTED WHOLE (non-greedy up to its closing `);`) rather than
+        // matched by one monolithic pattern, because "does this call mention a failure word AND omit
+        // Severity." is a property of the whole call, not of a fixed-position prefix — the severity
+        // argument can be many characters, and lines, after the failure wording once the message is
+        // built with `new Message(...)`. WHOLE-LINE `//` COMMENTS ARE STRIPPED FIRST: a multi-line
+        // `Say(new Commands.SkillsCommand(...))` call in Session.Commands.cs carries an explanatory
+        // comment between its arguments that happens to contain the word "cannot" as ordinary prose
+        // — without stripping it, extracting the call's full text flags a call that never says
+        // anything is a failure.
         var core = Path.Combine(RepoRoot(), "cxagent.Core", "Core");
-        var pattern = new System.Text.RegularExpressions.Regex(
-            @"Say\(\s*\$?""[^""]*(could not|failed|refused|unavailable|cannot)",
+        var commentLine = new System.Text.RegularExpressions.Regex(@"^\s*//.*$",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        var callPattern = new System.Text.RegularExpressions.Regex(@"Say\(.*?\);",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+        var failureWord = new System.Text.RegularExpressions.Regex(
+            @"(could not|failed|refused|unavailable|cannot)",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var severityWord = new System.Text.RegularExpressions.Regex(@"Severity\.");
 
         var offenders = Directory.EnumerateFiles(core, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
-            .Where(f => pattern.IsMatch(File.ReadAllText(f)))
+            .Where(f =>
+            {
+                var stripped = commentLine.Replace(File.ReadAllText(f), "");
+                return callPattern.Matches(stripped)
+                    .Any(m => failureWord.IsMatch(m.Value) && !severityWord.IsMatch(m.Value));
+            })
             .Select(Path.GetFileName)
             .ToList();
 
-        // A bare Say("could not …") is the failure: the severity has to be stated for these.
+        // A Say(...) call carrying failure wording with no Severity argument is the failure: the
+        // severity has to be stated for these, whichever of the two shapes above it is written in.
         Assert.Empty(offenders);
     }
 
