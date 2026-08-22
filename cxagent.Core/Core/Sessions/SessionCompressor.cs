@@ -453,13 +453,12 @@ public static class SessionCompressor
     /// <summary>
     /// Whether anything came back at all.
     ///
-    /// <para>EMPTINESS ONLY. This checked three things: empty, shorter than twelve characters, and
-    /// starting with a refusal ("I cannot", "I'm sorry", "As an AI"). The last two are gone — they
-    /// were guesses about the QUALITY of a reply, made by matching English, and the length floor had
-    /// already been wrong twice: forty rejected "read Foo.cs, changed the parser" (31 chars), then
-    /// twenty rejected "earlier: a summary." (19). Both were real summaries of short exchanges, and
-    /// both were caught by existing tests rather than by reasoning. A rule that needs correcting
-    /// every time it meets a real reply is not measuring what it claims to.</para>
+    /// <para>EMPTINESS ONLY — no length floor, and no refusal-phrase match ("I cannot", "I'm sorry",
+    /// "As an AI"). Both are guesses about the QUALITY of a reply made by matching English, and a
+    /// length floor is wrong at every value tried: forty rejects "read Foo.cs, changed the parser"
+    /// (31 chars), twenty rejects "earlier: a summary." (19). Both are real summaries of short
+    /// exchanges, and both were caught by existing tests rather than by reasoning. A rule that needs
+    /// correcting every time it meets a real reply is not measuring what it claims to.</para>
     ///
     /// <para>What is left is not a judgement. The model returned nothing, so there is nothing to put
     /// in place of what would be discarded — splicing <c>""</c> in would delete half the conversation

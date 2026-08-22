@@ -48,8 +48,9 @@ public class AppPaths
     /// separately forces config.json itself to 0600, but a readable directory still exposes the file
     /// listing and anything a future writer forgets to chmod.
     ///
-    /// The chmod is applied unconditionally rather than only on creation, so an install made before this
-    /// was enforced is repaired on the next startup instead of staying loose forever.
+    /// The chmod is applied unconditionally rather than only on creation, so a directory left loose by
+    /// any other means — an older install, a manual mkdir, a restore — is repaired on the next startup
+    /// instead of staying that way forever.
     /// </summary>
     public void EnsureCreated()
     {

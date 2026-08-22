@@ -57,7 +57,8 @@ public interface ISessionObserver
     void AssistantTurnEnded(ChatMessageId id);
 
     /// <summary>
-    /// Replaces a message's HEADER — used to show live state on a turn whose body is still empty.
+    /// Replaces a message's HEADER, which is how live state is shown on a turn whose body is still
+    /// empty.
     ///
     /// <para>The body cannot carry it: the transcript control clears a message's spinner as soon as
     /// body content arrives, so streaming a reasoning model's thinking into the body would kill the

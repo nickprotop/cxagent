@@ -153,9 +153,9 @@ public static class OpenAiWire
     /// and the rest single tokens like `"\"jobs\":"`, `"["`, … `"}"`.
     ///
     /// Parsing any single fragment as JSON therefore always fails ("Expected depth to be zero at the
-    /// end of the JSON payload"), which is exactly what shipped before this type existed: no goal could
-    /// be planned against a real streaming provider at all. `--mock` hid it by returning one complete
-    /// response.
+    /// end of the JSON payload"), which is why the fragments must be joined before parsing rather than
+    /// handled one at a time: without that, no goal can be planned against a real streaming provider
+    /// at all — and `--mock` hides it, because it returns one complete response.
     ///
     /// Usage: feed every chunk to <see cref="Accept"/>; when it returns a non-null ToolCall the call is
     /// complete and its arguments are parsed once, from the joined buffer.

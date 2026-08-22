@@ -186,7 +186,7 @@ public static class StatsDashboard
                     + $"· {totals.Turns} turns");
 
         // THE WORKER SHARE, on its own line with a bar. It is the single most informative ratio a
-        // fan-out user has, and it was invisible before this feature existed.
+        // fan-out user has, and nothing else on the dashboard reveals it.
         if (totals.WorkerShare is { } share && totals.SubAgentTokens > 0)
         {
             headline.AppendLine();

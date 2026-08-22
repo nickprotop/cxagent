@@ -1261,11 +1261,10 @@ public sealed class Agent
                 // asked for a change and nothing was written — the failure this mode exists to fix
                 // ends exactly here, with a confident summary of work that never happened.
                 //
-                // NO "CANNOT:" ESCAPE HATCH. One lived here — a reply containing that literal
-                // suppressed the challenge, so a model could end the loop by saying the right word.
-                // It only ever guarded the no-write challenge, which is gone, and it was the same
-                // string-matching mistake: an invented protocol token the model was never told about,
-                // which a real refusal ("I can't do that because…") would not have used anyway.
+                // NO "CANNOT:" ESCAPE HATCH, and none should be added. Suppressing the challenge on a
+                // literal token lets a model end the loop by saying the right word, and the token is
+                // one it was never told about — a real refusal ("I can't do that because…") would not
+                // use it, so the string match catches only the model that guessed.
                 //
                 // Two ways a change request can finish badly, and they need different words: nothing
                 // was written at all, or something was written that does not build.

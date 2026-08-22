@@ -91,11 +91,10 @@ public sealed record ResolvedConfig(
     /// <summary>
     /// The same configuration over a different model — what <c>/model</c> produces.
     ///
-    /// <para>NAMED RATHER THAN LEFT TO <c>with</c>, because <c>with { ContextWindow = … }</c> was how
-    /// a caller used to change the model: reach into the flat record and set one field. That reads as
-    /// a small edit and is the shape that let SwapProvider update some of the model and not the rest.
-    /// Saying "the catalog is the same, the model is this" makes the boundary the type's rather than
-    /// the caller's.</para>
+    /// <para>NAMED RATHER THAN LEFT TO <c>with</c>. Changing the model by reaching into the record and
+    /// setting one field — <c>with { ContextWindow = … }</c> — reads as a small edit, and is the shape
+    /// that lets a swap update some of the model and not the rest. Saying "the catalog is the same,
+    /// the model is this" makes the boundary the type's rather than the caller's.</para>
     /// </summary>
     public ResolvedConfig WithModel(ActiveModel model) => this with { Model = model };
 

@@ -51,7 +51,8 @@ public class PluginRegistry
     /// <para>The registry is built per session and the gate is one per process, so this is the seam
     /// where "which session is asking" is known. Without it the gate judges every session against
     /// whichever root and edit mode it happened to capture — invisible with one session, wrong with
-    /// two. Null keeps the old behaviour for callers that have no policy.</para>
+    /// two. Null leaves the request unstamped and the gate falls back to that capture, which is all a
+    /// caller with no policy of its own can offer.</para>
     /// </param>
     /// <param name="providers">The configured models, for plugins that need one.</param>
     public static PluginRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers,

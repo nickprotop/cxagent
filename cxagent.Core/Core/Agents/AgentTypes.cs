@@ -135,11 +135,11 @@ public sealed class AgentTypeCatalog
         // other type.
         _types[DefaultTypeName] = new AgentType(DefaultTypeName, "", TypeRouting.Inherited);
 
-        // THE SHIPPED TYPES, PRESENT WITHOUT CONFIG. They used to exist only if the user had copied
-        // them out of config.sample.json, so a fresh install had `general` and nothing else while
-        // the docs described five types — and every briefing fix reached only whoever re-copied the
-        // sample. Seeded before config's loop so a configured entry of the same name refines this
-        // one (provider, maxTurns) rather than replacing it.
+        // THE SHIPPED TYPES, PRESENT WITHOUT CONFIG. Sourcing them from config.sample.json instead
+        // would leave a fresh install with `general` and nothing else while the docs describe five
+        // types, and every briefing fix would reach only whoever re-copied the sample. Seeded before
+        // config's loop so a configured entry of the same name refines this one (provider, maxTurns)
+        // rather than replacing it.
         foreach (var t in BuiltinAgentTypes.All)
             _types[t.Name] = new AgentType(t.Name, t.Briefing, TypeRouting.Inherited,
                 t.DefaultMaxTurns, t.Description, t.WritesAPlanFile);

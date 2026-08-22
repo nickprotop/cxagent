@@ -101,11 +101,10 @@ public static class WorkerToolset
     /// <summary>
     /// Whether a spec answers to this name.
     ///
-    /// <para>NO ALIASES. These tools carried former names (<c>list_files</c>, <c>search_files</c>)
-    /// and answered to them for six days after the 2026-08-13 rename, so a conversation resumed
-    /// across the change would not fail on a name it had seen. That window is closed and the
-    /// acceptance is gone — one name per tool, which is what the "no such tool" message can then
-    /// state without qualification.</para>
+    /// <para>NO ALIASES: one name per tool, which is what lets the "no such tool" message state the
+    /// available set without qualification. A rename needs a temporary acceptance window — the 2026-08-13
+    /// rename off <c>list_files</c>/<c>search_files</c> kept one for six days — so that a conversation
+    /// resumed across the change does not fail on a name it had seen. No such window is open.</para>
     ///
     /// <para>THIS IS ONLY CHEAP BECAUSE NOTHING IS PUBLISHED. Once CxAgent.Core is on nuget.org a
     /// rename needs the acceptance window again, for the same reason it needed one here: a resumed
@@ -424,11 +423,11 @@ public static class WorkerToolset
             return $"no such tool '{call.Name}'. Available: "
                 + $"{string.Join(", ", NamesFor(allowed).Concat(alsoAvailable ?? []))}";
 
-        // THE ENFORCEMENT POINT, and it stays even though roles are gone. `allowed` is every tool at
-        // today's only call site, so this cannot fire in production — but a model can emit a call for
-        // a tool it was never shown, and this is what refuses it rather than letting an un-offered
-        // tool run. Removing it because the current caller happens to pass everything would delete a
-        // guard on the grounds that nothing is currently exercising it.
+        // THE ENFORCEMENT POINT. `allowed` is every tool at today's only call site, so this cannot
+        // fire in production — but a model can emit a call for a tool it was never shown, and this is
+        // what refuses it rather than letting an un-offered tool run. Removing it because the current
+        // caller happens to pass everything would delete a guard on the grounds that nothing is
+        // currently exercising it.
         //
         // The WORDING avoids "role": there is no role mechanism here, and the phrase would send
         // whoever read it hunting for a system that does not exist.

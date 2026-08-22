@@ -13,17 +13,17 @@ namespace CxAgent.Core.Plugins;
 ///
 /// <para>NULLABLE AT THE CALL SITES, AND THAT NULL IS LOAD-BEARING. Agent's dispatch chain is one
 /// <c>??</c> per source, where null means "I do not own this name, try the next link" — never "ran
-/// and returned nothing". Returning <c>ToolOutcome?</c> keeps that distinction exactly as the old
-/// <c>string?</c> did; an empty <c>Text</c> is a tool that answered with nothing, which is a
-/// different fact and must stay one.</para>
+/// and returned nothing". Returning <c>ToolOutcome?</c> keeps that distinction; an empty <c>Text</c>
+/// is a tool that answered with nothing, which is a different fact and must stay one.</para>
 ///
-/// <para>WHY IT EXISTS AT ALL. Agent used to rebuild <c>job.Result</c> from the returned STRING,
-/// which split every field in two: the ones it can re-derive (Duration, Success, ExitCode) survived,
-/// and the ones only the plugin knows (Output, DecidedBy, LogFile) were silently dropped. Two
-/// side channels had already been added to smuggle values past that rebuild — AgentToolset's
-/// LastDisplay, for a show_diff row that rendered the model's text confirmation instead of the diff,
-/// and IJobContext.DecidedBy, for a classifier verdict the row never showed. A third field in that
-/// category would have meant a third channel; carrying the object instead ends the category.</para>
+/// <para>WHY IT EXISTS AT ALL: the plugin's <see cref="JobResult"/> must travel WITH the text rather
+/// than be rebuilt from it. Reconstructing <c>job.Result</c> from the returned STRING splits every
+/// field in two — the ones a caller can re-derive (Duration, Success, ExitCode) survive, and the ones
+/// only the plugin knows (Output, DecidedBy, LogFile) are silently dropped. Each dropped field then
+/// wants its own side channel to smuggle it past the rebuild: a LastDisplay on AgentToolset so a
+/// show_diff row renders the diff rather than the model's text confirmation, a DecidedBy on
+/// IJobContext so a classifier verdict reaches the row at all. Carrying the object ends that
+/// category instead of adding to it.</para>
 /// </summary>
 /// <param name="Text">What goes back to the model as this call's tool result. Never null.</param>
 /// <param name="Result">

@@ -19,11 +19,12 @@ public readonly record struct CompletionValue(string Name, string Summary);
 /// silently — a typo on either side offers nothing, which is the failure that reads as "the palette
 /// is broken".</para>
 ///
-/// <para>WHY THE OWNER ANSWERS, and not the composition root. These used to be resolved in a
-/// 1,700-line UI method that reached into a resume store, a provider catalog and a session's own
-/// state to build them. That put the internals of three layers in the one place least equipped to
-/// own any of them — and it discouraged use: adding a popup meant editing the composition root, so
-/// two commands that wanted one (<c>/mode edits</c>, <c>/mcp</c>) simply never got it.</para>
+/// <para>WHY THE OWNER ANSWERS, and not the composition root. Resolving these centrally means one UI
+/// method reaching into a resume store, a provider catalog and a session's own state to build them —
+/// the internals of three layers in the one place least equipped to own any of them. It also
+/// discourages use: when adding a popup means editing the composition root, commands that want one
+/// (<c>/mode edits</c>, <c>/mcp</c>) simply never get it. Asking the owner keeps each set beside the
+/// state it is derived from.</para>
 /// </summary>
 public static class CompletionSets
 {

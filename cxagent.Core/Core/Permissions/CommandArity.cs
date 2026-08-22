@@ -3,11 +3,11 @@ namespace CxAgent.Core.Permissions;
 /// <summary>
 /// How many words name a command, as opposed to naming its arguments.
 ///
-/// <para>WHY THIS EXISTS. A shell rule used to be the whole command string, so
-/// <c>find Services -type f</c> and <c>find . -type f</c> were unrelated grants — and an agent
-/// exploring a codebase never repeats a command verbatim. Measured: 111 stored rules, essentially
-/// none of which could ever match again. They were not a permission system, they were a log of what
-/// had once been approved.</para>
+/// <para>WHY THIS EXISTS. If a shell rule is the whole command string, then
+/// <c>find Services -type f</c> and <c>find . -type f</c> are unrelated grants — and an agent
+/// exploring a codebase never repeats a command verbatim. Measured on a store built that way: 111
+/// rules, essentially none of which could ever match again. That is not a permission system, it is a
+/// log of what has once been approved.</para>
 ///
 /// <para>THE OBVIOUS FIX IS THE DANGEROUS ONE. Granting the first word turns "allow <c>git
 /// status</c>" into "allow <c>git push --force</c>", which is the exact hole that makes

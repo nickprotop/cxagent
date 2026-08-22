@@ -461,8 +461,8 @@ public class PermissionRulesStore
 
     private sealed record StoredRule(string Scope, PermissionKind Kind, string Pattern);
 
-    // EditModes is nullable so a permissions.json written before this column existed still loads —
-    // absent means "no folder has a remembered mode", not a parse failure.
+    // EditModes is nullable so a permissions.json that predates the field still loads — absent means
+    // "no folder has a remembered mode", not a parse failure.
     private sealed record StoredFile(List<StoredRule>? Rules, Dictionary<string, TrustState>? Trust,
         Dictionary<string, EditMode>? EditModes);
 }

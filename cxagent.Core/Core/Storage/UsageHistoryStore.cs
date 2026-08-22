@@ -236,12 +236,12 @@ public sealed class UsageHistoryStore
             AddColumnIfMissing(conn, "sessions", "cache_written_tokens", "INTEGER NOT NULL DEFAULT 0");
             // NULLABLE, because null means "not reported" and 0 would mean "free" — different facts.
             AddColumnIfMissing(conn, "sessions", "cost", "REAL");
-            // NULLABLE for the same reason: a row written before this column existed has no subject
-            // to report, and that must read back as "unknown", never as an empty string.
+            // NULLABLE for the same reason: a row that predates the column has no subject to report,
+            // and that must read back as "unknown", never as an empty string.
             AddColumnIfMissing(conn, "permissions", "subject", "TEXT");
-            // NULLABLE INTEGER (0/1), same reasoning again: SQLite has no boolean type, and a row
-            // written before triage-flag telemetry existed has no answer to "did triage flag this" —
-            // defaulting to 0 would claim "not flagged" for rows that predate the question entirely.
+            // NULLABLE INTEGER (0/1), same reasoning again: SQLite has no boolean type, and a row that
+            // predates the column has no answer to "did triage flag this" — defaulting to 0 would claim
+            // "not flagged" for rows that predate the question entirely.
             AddColumnIfMissing(conn, "permissions", "flagged", "INTEGER");
         }
         catch (Exception)

@@ -50,11 +50,10 @@ public class MockLlmProvider : ILlmProvider
         var resp = _responses.Dequeue();
 
         // ONE CHUNK PER TOOL CALL, which is how the real providers stream them — a chunk carries at
-        // most one ToolCallDelta (LlmTypes.cs:38). This used to yield `ToolCalls.FirstOrDefault()`
-        // in a single chunk, so every call after the first was SILENTLY DROPPED and no test in the
-        // suite could exercise a multi-call turn at all. Found while testing cancellation backfill:
-        // a test enqueued three calls, the agent saw one, and the assertion failed against correct
-        // code.
+        // most one ToolCallDelta (LlmTypes.cs:38). Collapsing the queue into a single chunk (yielding
+        // `ToolCalls.FirstOrDefault()`) SILENTLY DROPS every call after the first, so no test in the
+        // suite can exercise a multi-call turn: a test enqueues three calls, the agent sees one, and
+        // the assertion fails against correct code.
         //
         // The non-final chunks carry no StopReason and no Usage; both ride the last one, as the real
         // providers emit them — without that a test cannot exercise the "server said tool_use but no

@@ -96,10 +96,9 @@ public static class ModeCommand
         //
         // `/mode fan-out` STILL WORKS unqualified, because agent's values remain unambiguous.
         //
-        // THE EDITS AXIS MUST BE NAMED, and that is the prediction landing rather than an exception:
-        // "ask" and "edits" say nothing about which axis they belong to. The comment here used to say
-        // the day a value collides across axes is the day to demand the axis word. This is that day,
-        // for this axis only.
+        // THE EDITS AXIS MUST BE NAMED, because its values do not identify it: "ask" and "edits" say
+        // nothing about which axis they belong to. The rule is that a value which collides across axes
+        // costs its axis the unqualified form — which applies to this axis and, so far, only this one.
         if (words.Length >= 2 && IsEditsAxis(words[0]))
         {
             var editValue = string.Join(' ', words.Skip(1));

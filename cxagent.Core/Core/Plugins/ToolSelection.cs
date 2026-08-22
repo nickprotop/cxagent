@@ -105,10 +105,11 @@ public sealed record ToolSelection(IReadOnlyList<string> Terms)
     /// Whether a selection would offer one named tool — the question every gate outside the tool
     /// list actually asks.
     ///
-    /// <para>WRITTEN TWICE BEFORE IT LIVED HERE: SessionFactory's fan-out guard and the system
-    /// prompt's spawn gate each built a one-element list and called Apply, which is the same
-    /// divergence this feature keeps finding in the skills catalog (Agent.cs `:696` and `:777`).
-    /// A static on the type both already depend on is the one place neither can drift from.</para>
+    /// <para>ONE PLACE, BECAUSE TWO CALLERS ASK IT: SessionFactory's fan-out guard and the system
+    /// prompt's spawn gate. Each can express the question by building a one-element list and calling
+    /// Apply, which is the divergence this feature keeps finding in the skills catalog (Agent.cs
+    /// `:696` and `:777`). A static on the type both already depend on is the one place neither can
+    /// drift from.</para>
     ///
     /// <para>NULL MEANS NO OPINION, hence true: an agent with no selection is offered everything,
     /// and callers rely on that to leave the default untouched.</para>

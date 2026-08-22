@@ -45,10 +45,10 @@ public sealed class AgentToolset
     /// Null when no injected tool owns this name, so the caller's <c>??</c> chain continues to the
     /// built-ins' terminator.
     ///
-    /// <para>RETURNS THE TOOL'S OWN RESULT ALONGSIDE THE TEXT. This used to return a bare string and
-    /// hand the row's display back through a <c>LastDisplay</c> property, because Agent rebuilt
-    /// job.Result from the returned string and discarded a tool's output dictionary on the way. The
-    /// object now survives the dispatch, so the side channel is gone — see <see cref="ToolOutcome"/>.</para>
+    /// <para>RETURNS THE TOOL'S OWN RESULT ALONGSIDE THE TEXT, rather than a bare string. A string
+    /// alone forces the caller to rebuild job.Result from it, which discards a tool's output
+    /// dictionary and leaves the row's display to reach Agent through a side-channel property. Letting
+    /// the object survive the dispatch removes the need for one — see <see cref="ToolOutcome"/>.</para>
     /// </summary>
     public async Task<ToolOutcome?> TryInvokeAsync(ToolCall call, IJobContext context, CancellationToken ct)
     {

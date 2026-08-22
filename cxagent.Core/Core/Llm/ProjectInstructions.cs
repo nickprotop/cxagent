@@ -94,7 +94,9 @@ public static class ProjectInstructions
     /// here" must override a global "spaces everywhere", the repo being the more specific claim.</para>
     ///
     /// <para>Never throws. An unreadable directory, a permission error or a file that vanishes
-    /// mid-walk means the agent runs without instructions — exactly as it did before this existed.</para>
+    /// mid-walk means the agent runs without instructions, which is a degraded run rather than a
+    /// failed one — instructions are an enhancement, and no caller has a better answer than
+    /// continuing.</para>
     /// </remarks>
     /// <param name="startDirectory">Where the search for instruction files begins, walking upward.</param>
     public static IReadOnlyList<ProjectInstructionFile> Find(

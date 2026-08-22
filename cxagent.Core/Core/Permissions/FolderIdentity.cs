@@ -30,8 +30,8 @@ public static class FolderIdentity
     /// still be able to see which project a rule belongs to without decoding anything.</para>
     /// </summary>
     /// <remarks>
-    /// Never throws. A folder that cannot be stat'd gets its bare path, which means an old rule may
-    /// still match — the same behaviour as before this existed, and a miss here costs one prompt
+    /// Never throws. A folder that cannot be stat'd gets its bare path, so a rule stored without an
+    /// identity may still match it. That is the safe direction to fail: a miss here costs one prompt,
     /// while a spurious match costs a grant nobody gave.
     /// </remarks>
     public static string ScopeFor(string folder)

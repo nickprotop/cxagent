@@ -66,8 +66,9 @@ public sealed class McpClient : IMcpConnection
     /// the text is parked here and collected by that call's own <c>SendAsync</c> as it unwinds, then
     /// removed. Concurrent by construction, because several children may be waiting at once.</para>
     ///
-    /// <para>This replaces writing to the shared <c>Error</c> field, which made one child's failure
-    /// the text reported for another's.</para>
+    /// <para>NOT the shared <c>Error</c> field: that is one slot for a client many children call at
+    /// once, so writing a per-call failure there makes one child's failure the text reported for
+    /// another's.</para>
     /// </summary>
     private readonly ConcurrentDictionary<int, string> _callErrors = new();
 
@@ -450,12 +451,12 @@ public sealed class McpClient : IMcpConnection
                     if (root.TryGetProperty("error", out var error))
                     {
                         // THE ERROR BELONGS TO THIS CALL, and this is the one place that knows
-                        // WHICH call — the id was just matched a line above. It used to go onto the
-                        // shared Error field, so a server rejecting one child's arguments became the
-                        // text reported for the next child's unrelated timeout.
+                        // WHICH call — the id was just matched a line above. Parking it on the shared
+                        // Error field instead would let a server rejecting one child's arguments
+                        // become the text reported for the next child's unrelated timeout.
                         //
-                        // The waiter is cancelled rather than faulted, as before; the text reaches
-                        // the caller through the callError channel its SendAsync passed in.
+                        // The waiter is cancelled rather than faulted; the text reaches the caller
+                        // through the callError channel its SendAsync passed in.
                         var message = error.TryGetProperty("message", out var m)
                             ? m.GetString() ?? "server error"
                             : "server error";

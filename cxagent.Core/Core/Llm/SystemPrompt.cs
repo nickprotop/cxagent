@@ -137,10 +137,10 @@ public static class SystemPrompt
 
         sb.AppendLine("# Doing the work");
         sb.AppendLine();
-        // NAMES NO TOOL, DELIBERATELY. This said "make changes with write_file or replace_in_file"
-        // and was UNCONDITIONAL — so a read-only agent was ordered by its own prompt to use tools it
-        // did not have. The advice is true whatever the agent was offered; only the names could go
-        // stale, so they are gone rather than gated.
+        // NAMES NO TOOL, DELIBERATELY. This block is UNCONDITIONAL, so naming one ("make changes with
+        // write_file or replace_in_file") would order a read-only agent to use tools it does not have.
+        // The advice is true whatever the agent was offered; only the names could go stale, so it
+        // carries none rather than being gated.
         sb.AppendLine("You have tools. USE THEM: read a file before editing it, and make changes "
                     + "with the tools you have rather than describing them. Text in a message "
                     + "changes nothing.");

@@ -9,11 +9,10 @@ namespace CxAgent.Core.Agents;
 /// <param name="WritesAPlanFile">
 /// This type's deliverable is a file, and the spawner names the path.
 ///
-/// <para>A DECLARED PROPERTY, not a string sniffed out of the briefing. Detection used to be
-/// <c>Briefing.Contains("PLAN WRITTEN:")</c> — which meant the mechanism broke the moment the
-/// briefing stopped saying that, and any type whose briefing merely MENTIONED the marker (the
-/// builder's does, to describe what it refuses) was one careless edit from being handed a plan
-/// path it was never meant to write.</para>
+/// <para>A DECLARED PROPERTY, not a string sniffed out of the briefing. Detecting by
+/// <c>Briefing.Contains("PLAN WRITTEN:")</c> breaks the moment a briefing is reworded, and misfires
+/// on any type whose briefing merely MENTIONS the marker — the builder's does, to describe what it
+/// refuses — handing it a plan path it was never meant to write.</para>
 /// </param>
 public sealed record AgentTypeDefinition(
     string Name, string Description, string Briefing, int? DefaultMaxTurns,

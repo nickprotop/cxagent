@@ -5,14 +5,13 @@ namespace CxAgent.Core.Commands;
 /// <summary>
 /// Markdown helpers for text Core writes.
 ///
-/// <para>REPLACES <c>Markup</c>, WHICH ESCAPED FOR THE WRONG FORMAT. That class turned <c>[</c> into
-/// <c>[[</c> because Core wrote SharpConsoleUI markup; Core writes markdown now, where the character
-/// that ruins a sentence is an underscore in a filename.</para>
+/// <para>ESCAPES FOR MARKDOWN, WHICH IS THE FORMAT CORE WRITES. Escaping for console markup instead —
+/// doubling <c>[</c> into <c>[[</c> — is the wrong format for this text, where the character that
+/// ruins a sentence is an underscore in a filename.</para>
 ///
-/// <para>ITS COLOUR CONSTANTS ARE GONE RATHER THAN TRANSLATED. <c>Muted</c>, <c>Accent</c>,
-/// <c>Danger</c> and <c>Caution</c> existed to name tones, and tone now rides in
-/// <see cref="Severity"/>. A constant called <c>Caution</c> holding a markdown emphasis marker would
-/// be the same mistake in a new spelling.</para>
+/// <para>NO COLOUR OR TONE CONSTANTS BELONG HERE. Tone rides in <see cref="Severity"/>, which a front
+/// end maps to its own emphasis. A constant named for a tone but holding a markdown emphasis marker
+/// would put the naming of tones back in the layer that cannot know how it renders.</para>
 /// </summary>
 public static class Md
 {

@@ -3,10 +3,11 @@ namespace CxAgent.Core.Commands;
 /// <summary>
 /// How loudly Core is saying something.
 ///
-/// <para>SEPARATE FROM THE TEXT, WHICH IS THE WHOLE POINT. Core used to write "[yellow]could not
-/// save this rule[/]" — a colour, chosen by a library with no idea what theme it is rendering into,
-/// in a dialect it could not itself parse. A front end can map these three onto whatever it uses for
-/// emphasis; it could not map a colour onto anything but that colour.</para>
+/// <para>SEPARATE FROM THE TEXT, WHICH IS THE WHOLE POINT. Baking the emphasis into the words —
+/// "[yellow]could not save this rule[/]" — commits Core to a colour, chosen by a library with no idea
+/// what theme it is rendering into, in a dialect it cannot itself parse. A front end can map these
+/// three levels onto whatever it uses for emphasis; it cannot map a colour onto anything but that
+/// colour.</para>
 /// </summary>
 public enum Severity
 {

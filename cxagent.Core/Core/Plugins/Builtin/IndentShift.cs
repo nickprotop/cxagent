@@ -19,16 +19,15 @@ namespace CxAgent.Core.Plugins.Builtin;
 ///   <item>PREPEND that one string to every non-blank replacement line.</item>
 /// </list>
 ///
-/// <para>PREPEND, NEVER REBUILD. The engine this replaces stripped each line's indentation and
-/// reconstructed it from a computed base, which is how a non-uniform block got silently reshaped and
-/// an "anchored" replacement turned three tabs into eight. Prepending cannot do either: whatever
-/// structure the model wrote survives because nothing touches it. Roo Code rebuilds the same way and
-/// carries unfixed issues for exactly that symptom.</para>
+/// <para>PREPEND, NEVER REBUILD. Stripping each line's indentation and reconstructing it from a
+/// computed base silently reshapes a non-uniform block, and turns an "anchored" replacement's three
+/// tabs into eight. Prepending cannot do either: whatever structure the model wrote survives because
+/// nothing touches it. Roo Code rebuilds and carries unfixed issues for exactly that symptom.</para>
 ///
 /// <para>REFUSES rather than guesses. When the lines disagree there is no single answer, and
-/// inventing one is what caused the original failure. The replacement is then written exactly as the
-/// model sent it — visibly wrong beats silently wrong, and the result is echoed back so the model
-/// can see it.</para>
+/// inventing one is the reshaping failure above. The replacement is then written exactly as the model
+/// sent it — visibly wrong beats silently wrong, and the result is echoed back so the model can see
+/// it.</para>
 /// </summary>
 public static class IndentShift
 {
@@ -96,11 +95,12 @@ public static class IndentShift
     /// <summary>
     /// What to write when no single shift describes the edit.
     ///
-    /// <para>Refusal used to mean writing the model's text exactly as sent, which for a replacement
-    /// sent at the wrong depth means a line landing at the wrong column in an indented file —
-    /// visibly wrong, which was the point, but measured on two live drives it is wrong in a way that
-    /// also LOOKS like a deliberate edit: one line at one tab among neighbours at three, inside an
-    /// otherwise plausible diff, with nothing flagging it.</para>
+    /// <para>REFUSING TO PLACE IT IS NOT THE SAFE ANSWER. Refusal means writing the model's text
+    /// exactly as sent, which for a replacement sent at the wrong depth lands a line at the wrong
+    /// column in an indented file. That is visibly wrong — the appeal of refusing — but measured on
+    /// two live drives it is wrong in a way that also LOOKS like a deliberate edit: one line at one
+    /// tab among neighbours at three, inside an otherwise plausible diff, with nothing flagging
+    /// it.</para>
     ///
     /// <para>Two cases can be placed without guessing, and both take their answer from the file
     /// rather than inventing one:</para>

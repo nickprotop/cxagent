@@ -3,11 +3,11 @@ namespace CxAgent.Core.Storage;
 /// <summary>
 /// Manages per-job log files under logs/&lt;agent_id&gt;/&lt;job_id&gt;.{log,stdout,stderr}.
 ///
-/// <para>ONE DIRECTORY PER AGENT, FOR ITS WHOLE LIFE. The key used to be a goal id, minted afresh on
-/// every user message, so a single linear session scattered its diagnostics across a directory per
-/// prompt with turn numbering restarting at 000 in each — the run you wanted to read was split
-/// across several directories with no way to tell which came first. The agent's id is stable, so
-/// everything one agent ever logged lands together and its turns number straight through.</para>
+/// <para>ONE DIRECTORY PER AGENT, FOR ITS WHOLE LIFE. The key is the agent's id, which is stable,
+/// so everything one agent ever logged lands together and its turns number straight through. Keying
+/// on anything minted per user message — a goal id, say — would scatter a single linear session's
+/// diagnostics across a directory per prompt with turn numbering restarting at 000 in each, splitting
+/// the run you want to read across several directories with no way to tell which came first.</para>
 ///
 /// <para>Log I/O is diagnostic and best-effort — write failures are surfaced to the caller but must
 /// not be treated as job failures by callers (see spec).</para>
@@ -20,11 +20,11 @@ public class LogFileManager
     /// <summary>
     /// Ids of the agents this one was spawned under, outermost first. Empty for a session.
     ///
-    /// <para>A SUB-AGENT NESTS UNDER ITS PARENT. Children mint their own <c>Agent.Id</c> and logged
-    /// through the same flat <c>logs/&lt;id&gt;/</c> scheme, so every spawn produced a TOP-LEVEL
-    /// directory indistinguishable from a real session — `ls -t` put a child above the parent that
-    /// created it, and the newest directory was routinely not the newest session. The work is
-    /// hierarchical; the record of it should be too.</para>
+    /// <para>A SUB-AGENT NESTS UNDER ITS PARENT. Children mint their own <c>Agent.Id</c>, so logging
+    /// them through a flat <c>logs/&lt;id&gt;/</c> scheme would give every spawn a TOP-LEVEL directory
+    /// indistinguishable from a real session — `ls -t` would put a child above the parent that created
+    /// it, and the newest directory would routinely not be the newest session. The work is
+    /// hierarchical; the record of it should be too, so the ancestry prefixes the path.</para>
     /// </summary>
     private readonly string[] _ancestry;
 
