@@ -540,6 +540,10 @@ public static class AppBootstrap
         // is why they are contributed here rather than declared as a category. The session parameter
         // is ignored today and will not be once a process has tabs — a key map describing a session
         // other than the one on screen is worse than none.
+        // THE SAME REGISTRY THE PALETTE AND DISPATCH READ, so F1's key map and /help's table
+        // cannot list different commands: a verb registered here appears in both or neither.
+        mainWindow.Registry = manager.Commands;
+
         foreach (var declared in SessionCommands.All)
         {
             // OVER CORE'S. Core's /help has no keys of its own to list; this window's has two

@@ -1681,12 +1681,13 @@ public sealed class MainWindow : IDisposable
     /// approves every write that is not already covered by trust or a stored rule; in auto a MODEL
     /// does, and a user glancing at this line should be able to tell those apart without reading.
     ///
-    /// <para>Yellow rather than red: nothing is wrong, and a red mode line would read as an error
-    /// for a state the user deliberately chose. It is the same yellow the gate uses for "you should
-    /// know this" without "something failed".</para>
+    /// <para>CAUTION RATHER THAN DESTRUCTIVE: nothing is wrong, and a red mode line would read as an
+    /// error for a state the user deliberately chose. Through the role rather than a literal colour,
+    /// because the permission gate says "you should know this" with the same role — and a hardcoded
+    /// yellow is the one that goes illegible on a light ground.</para>
     /// </summary>
     private static string EditModeMarkup(EditMode edits) =>
-        edits == EditMode.Auto ? "yellow" : ColorScheme.MutedMarkup;
+        edits == EditMode.Auto ? ColorScheme.CautionMarkup : ColorScheme.MutedMarkup;
 
     public void SetContextUsed(int inputTokens, bool estimated = false)
     {
@@ -1960,6 +1961,12 @@ public sealed class MainWindow : IDisposable
     /// modal: it needs no new window plumbing, is scrollable/re-readable, and can't trap focus.
     /// (A dedicated help window is a P5c concern, alongside the wizard and settings surfaces.)
     /// </summary>
+    /// <summary>
+    /// The registry this window's help should describe — the same lookup dispatch uses, so F1 and
+    /// <c>/help</c> cannot list different commands. Null falls back to the table's own arguments.
+    /// </summary>
+    public CxAgent.Core.Commands.CommandRegistry? Registry { get; set; }
+
     public void ShowHelp()
     {
         // MARKDOWN, LIKE EVERY OTHER SYSTEM ROW. A colour tag here would reach the screen as its
@@ -1982,7 +1989,7 @@ public sealed class MainWindow : IDisposable
             + "\n"
             // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand
             // drifts from the dispatcher the first time one is added.
-            + SessionCommands.HelpLines());
+            + SessionCommands.HelpLines(Registry));
         FocusComposer();
     }
 }
