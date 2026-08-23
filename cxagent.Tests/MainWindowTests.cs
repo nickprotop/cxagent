@@ -527,12 +527,22 @@ public class MainWindowTests
     }
 
     [Fact]
-    public void MarkdownStyle_UsesDistinctHues_NotOneFamily()
+    public void MarkdownStyle_FollowsTheThemeAccent_WithHeadingAndCodeSeparatedByLuminance()
     {
         // The framework default is deliberately restrained — its own comment calls it "one cool
         // blue-grey family... without competing hues" — which is right for a log viewer and wrong
         // for a transcript that is mostly model-authored Markdown. H1-H3 were three shades of the
         // same blue and H4-H6 had no colour at all, so a document read as one flat wash.
+        //
+        // MarkdownStyle.Default is now installed by ColorScheme.DeriveFrom (see AppBootstrap, which
+        // calls it once at startup and again on every theme change), NOT by MainWindow.Build() — so
+        // this test derives explicitly rather than relying on Build() as a side channel.
+        var theme = SharpConsoleUI.Themes.Theme.From(new SharpConsoleUI.Themes.ModernGrayTheme())
+            .WithName("mwt-test")
+            .With(t => t.WindowBackgroundColor = new SharpConsoleUI.Color(0x0d, 0x0d, 0x0d))
+            .Build();
+        ColorScheme.DeriveFrom(theme);
+
         var res = ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock");
         new MainWindow(Sys(), res, Logs()).Build();
 
@@ -543,13 +553,17 @@ public class MainWindowTests
         Assert.NotNull(style.H4Color);
         Assert.NotNull(style.H6Color);
 
-        // Headings, code, quotes and links are FOUR DIFFERENT colours — the property that makes a
-        // document's structure visible before it is read, and the easiest one for a palette to lose.
-        var hues = new[]
-        {
-            style.H1Color!.Value, style.CodeForeground, style.QuoteColor, style.LinkColor,
-        };
-        Assert.Equal(hues.Length, hues.Distinct().Count());
+        // HEADINGS AND CODE come from the same accent now, so the property that makes a document's
+        // structure visible before it is read is no longer "four distinct hues" — it is luminance
+        // separation within the accent's own family (see ColorScheme.BuildMarkdownStyle).
+        double gap = System.Math.Abs(
+            SharpConsoleUI.Helpers.PaletteColors.Luminance(style.H1Color!.Value) -
+            SharpConsoleUI.Helpers.PaletteColors.Luminance(style.CodeForeground));
+        Assert.True(gap >= 30.0, $"heading/code luminance gap was {gap:0.0}, wanted >= 30");
+
+        // LINKS ARE THE ACCENT TOO — "the thing to reach for" is exactly what an accent means, so a
+        // link matching the heading (both the theme's accent) is the design, not a collision.
+        Assert.Equal(style.H1Color, style.LinkColor);
     }
 
     [Fact]

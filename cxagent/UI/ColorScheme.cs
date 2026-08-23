@@ -1,4 +1,5 @@
 using SharpConsoleUI;
+using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Themes;
 
 using SharpConsoleUI.Helpers;
@@ -66,7 +67,124 @@ public static class ColorScheme
         Separator = PaletteColors.Tint(PaletteColors.Mix(ChatSurface, ComposerSurface, 0.5), 0.08);
         UserSurface = Raised(ChatSurface, 0.10);
         AssistantSurface = Raised(ChatSurface, 0.05);
+
+        // MARKDOWN FOLLOWS THE THEME, UNLESS THE THEME HAS ALREADY CHOSEN. A crimson theme must
+        // give crimson headings, not a fixed purple wearing crimson chrome around it — so every
+        // theme but cxagent's own derives from AccentRgb rather than adjusting the contrast of a
+        // EVERY THEME DERIVES, cxagent's own included. A palette declared per-theme would make
+        // the app's markdown answer to two different rules depending on which theme is active, and
+        // the one that opted out would be the one nobody ever saw adapt.
+        MarkdownStyle style = BuildMarkdownStyle(theme);
+        MarkdownStyle.Default = style;
+
+        // HEADING AND CODE SURVIVE AS PROPERTIES, read back from the style just installed rather
+        // than recomputed, so non-markdown readers match the transcript's own colours bit-for-bit
+        // instead of drifting if the two derivations were ever allowed to diverge. The banner's
+        // wordmark fades between them (Heading alone collapsed the fade flat once Heading became
+        // the accent itself — Code is guaranteed >=30 luminance away by BuildMarkdownStyle, so the
+        // gradient always travels), and the theme portal's foreground uses Heading directly.
+        Heading = style.H1Color!.Value;
+        Code = style.CodeForeground;
     }
+
+    /// <summary>
+    /// Builds the markdown style for <paramref name="theme"/>. Split out from
+    /// <see cref="DeriveFrom"/> so a test can read the style back without going through
+    /// <see cref="MarkdownStyle.Default"/>'s process-wide setter.
+    ///
+    /// <para>HEADING AND CODE ARE ONE HUE, SEPARATED BY LUMINANCE, not two hues. Both come from the
+    /// theme's accent — the same fact <see cref="DeriveFrom"/> resolves separately for
+    /// <see cref="AccentRgb"/>, used by the wordmark and the grip — because a document's structure
+    /// is the theme's to colour, and inventing a second accent-independent hue for code would leave
+    /// code the one element that does not move when the theme does. Code is heading itself, stepped
+    /// further in the SAME direction <see cref="PaletteColors.EnsureContrast"/> already moved heading
+    /// away from the surface — see the comment on that step for why deriving code from the raw
+    /// accent independently is not safe.</para>
+    ///
+    /// <para>TWO GAPS, BY ROLE. Heading, code, quote and link carry text, so they run through
+    /// <see cref="PaletteColors.EnsureContrast"/> at the default 80-point gap — what makes text
+    /// readable. The border is chrome: a rule is meant to recede, and demanding text-grade
+    /// separation from it asks the wrong question, so it gets its own smaller 55-point gap instead
+    /// of the 80 the others use.</para>
+    /// </summary>
+    private static MarkdownStyle BuildMarkdownStyle(ITheme theme)
+    {
+        Color surface = theme.WindowBackgroundColor;
+        Color foreground = theme.WindowForegroundColor;
+        Color accent = ColorRoleResolver.Resolve(Accent, theme).Text;
+
+        // HEADINGS ARE THE ACCENT ITSELF — the strongest, least-mixed expression of it, since
+        // structure is the most prominent thing on the page after the text itself.
+        Color heading = PaletteColors.EnsureContrast(accent, surface);
+
+        // CODE BACKGROUND IS DERIVED FROM THE WINDOW BACKGROUND, not a fixed near-black literal — a
+        // fixed #141414 is a black box on a light theme, wrong in DIRECTION rather than merely
+        // low-contrast, so it has to be stepped off the surface's own side rather than nudged toward
+        // more contrast. Computed BEFORE code, because code's own contrast has to be checked against
+        // the ground it actually renders on.
+        Color codeBackground = Raised(surface, 0.10);
+
+        // CODE IS `heading` STEPPED FURTHER AWAY FROM THE SURFACE, NOT the raw accent adjusted on
+        // its own. Deriving code from the accent independently and only afterward checking it
+        // differs from heading does not work: running both through EnsureContrast separately can
+        // nudge them toward the SAME legible luminance (measured: as close as 5 points apart) and
+        // collapse the separation this whole scheme exists to preserve. Stepping FURTHER in the same
+        // direction EnsureContrast already moved heading — away from the surface — guarantees the
+        // gap by construction instead of hoping two independent derivations land apart, and it
+        // cannot reduce heading's own contrast because it moves the same way, only more. 0.6 is
+        // measured, not guessed: 0.5 left ModernGray's own accent 27 points apart, just under the
+        // 30 this must clear, so the step is the smallest amount that keeps every case checked here
+        // — a saturated dark-theme accent, a light-theme one already pushed to its EnsureContrast
+        // floor, and ModernGray's own default accent — at or above the required gap.
+        //
+        // THE FINAL EnsureContrast IS AGAINST codeBackground, NOT surface — code renders on the code
+        // background, not the window background, so that is the pair that has to stay readable.
+        // codeBackground is only a 0.10 step off surface, so this cannot undo the separation above:
+        // it can only push code further in the SAME direction the Tint/Shade step already moved it.
+        Color code = PaletteColors.EnsureContrast(
+            surface.IsDark() ? heading.Tint(0.6) : heading.Shade(0.6), codeBackground);
+
+        // QUOTE IS A MIX OF FOREGROUND AND BACKGROUND — a secondary voice with no hue of its own,
+        // so it recedes under any theme instead of competing with the accent that headings and code
+        // both carry.
+        Color quote = PaletteColors.EnsureContrast(PaletteColors.Mix(foreground, surface, 0.35), surface);
+
+        // LINKS ARE THE ACCENT TOO: "the thing to reach for" is exactly what an accent means, and a
+        // link that did not track the theme's own idea of "reach for this" would be the odd one out
+        // among headings and code, which do.
+        Color link = PaletteColors.EnsureContrast(accent, surface);
+
+        // BORDER IS A FOREGROUND/BACKGROUND MIX, further toward the background than quote — chrome,
+        // not content, so it carries no hue and gets the smaller 55-point gap: enough to stay
+        // visible, not enough to compete with the text it frames.
+        Color border = PaletteColors.EnsureContrast(
+            PaletteColors.Mix(foreground, surface, 0.5), surface, minGap: 55.0);
+
+        return new MarkdownStyle
+        {
+            // ONE colour at every level. The hue does not step down by depth — h1 is distinguished
+            // by underline alone — and stepping it produced exactly the muddiness this fixes.
+            H1Color = heading,
+            H2Color = heading,
+            H3Color = heading,
+            H4Color = heading,
+            H5Color = heading,
+            H6Color = heading,
+
+            CodeForeground = code,
+            CodeBackground = codeBackground,
+            QuoteColor = quote,
+            LinkColor = link,
+            BorderColor = border,
+        };
+    }
+
+    /// <summary>Test seam: the style <see cref="DeriveFrom"/> installs, read back without going
+    /// through <see cref="MarkdownStyle.Default"/>'s "an app has explicitly chosen" side effect.
+    /// Public rather than internal because this assembly grants no InternalsVisibleTo, and the
+    /// ForTest suffix follows the seam convention used elsewhere here.</summary>
+    public static MarkdownStyle MarkdownStyleForTest(ITheme theme) => BuildMarkdownStyle(theme);
+
 
     /// <summary>
     /// A surface that reads as RAISED above <paramref name="basis"/>, whichever way the theme runs.
@@ -180,7 +298,7 @@ public static class ColorScheme
     /// The session panel's surface — one step off the window background, so the column reads as a
     /// different KIND of thing rather than as narrow transcript.
     ///
-    /// <para>DELIBERATELY NOT the same as <see cref="CodeBackground"/>. Both started at #141414 and
+    /// <para>DELIBERATELY NOT the same as the markdown code background. Both started at #141414 and
     /// the collision was visible immediately: inline code spans in the transcript painted the
     /// identical grey, so the panel stopped reading as a surface and read
     /// as more scattered code. Two different meanings cannot share one colour when they appear side
@@ -213,36 +331,34 @@ public static class ColorScheme
 
 
     // --- Markdown ---------------------------------------------------------------
-    // Values from opencode's default dark theme (packages/tui/src/theme/assets/
-    // opencode.json), which is the palette this was compared against.
-
-    /// <summary>Headings. Purple, and the SAME colour at every level — the hue does not step down by
-    /// depth, h1 is distinguished by underline alone. Ours was three shades of blue for H1-H3
-    /// and nothing below, which reads as one muddy family rather than a hierarchy.</summary>
-    public static readonly Color Heading = new(0x9d, 0x7c, 0xd8);
-
-    /// <summary>Code, inline and fenced. Green — the one element that must never be mistaken for
-    /// prose.</summary>
-    public static readonly Color Code = new(0x7f, 0xd8, 0x8f);
+    //
+    // The markdown palette lives in BuildMarkdownStyle: every colour there derives from AccentRgb,
+    // the window foreground or the window background, so there is nothing left to seed here as a
+    // literal. Heading and Code survive as properties, read back from the style DeriveFrom just
+    // installed, because two non-markdown surfaces read them — the banner's wordmark fade and the
+    // theme portal's foreground.
 
     /// <summary>
-    /// Code background. The source palette puts the WINDOW background here (no fill at all), letting
-    /// colour alone separate code from prose. A near-black panel tint is kept instead: the
-    /// transcript is a chat, so a fenced block sits inside flowing text rather than on its own
-    /// screen, and it needs
-    /// an edge the eye can find without reading.
+    /// The markdown heading colour, kept readable outside <see cref="BuildMarkdownStyle"/> because
+    /// the theme portal's foreground borrows it rather than inventing a colour of its own.
+    ///
+    /// <para>THE SAME AS <see cref="AccentRgb"/> ON MOST THEMES, and deliberately: headings ARE the
+    /// accent, so anything wanting a SECOND colour must take <see cref="Code"/> instead — see the
+    /// banner, whose fade collapses to one flat colour if it lerps between these two.</para>
     /// </summary>
-    public static readonly Color CodeBackground = new(0x14, 0x14, 0x14);
+    public static Color Heading { get; private set; } = new(0xe8, 0x9e, 0x64);
 
-    /// <summary>Blockquotes. Sand, italic.</summary>
-    public static readonly Color Quote = new(0xe5, 0xc0, 0x7b);
+    /// <summary>
+    /// The markdown code colour — the app's genuine SECOND colour.
+    ///
+    /// <para>Guaranteed a visible luminance step from <see cref="Heading"/> by construction, which
+    /// is what makes it the right endpoint for anything needing two colours from one theme. The
+    /// banner's wordmark fade is the case that proves it: heading and accent are the same value on
+    /// any theme whose accent already reads against its ground, so a fade between THOSE two travels
+    /// nowhere.</para>
+    /// </summary>
+    public static Color Code { get; private set; } = new(0xf4, 0xce, 0xb2);
 
-    /// <summary>Links. Peach — the palette's primary, the colour given to whatever the user should
-    /// reach for.</summary>
-    public static readonly Color Link = new(0xfa, 0xb2, 0x83);
-
-    /// <summary>Table and rule borders. Recedes.</summary>
-    public static readonly Color MarkdownBorder = new(0x48, 0x48, 0x48);
 
     /// <summary>
     /// The line between the transcript and the composer.

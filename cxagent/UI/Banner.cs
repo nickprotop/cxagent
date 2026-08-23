@@ -65,7 +65,7 @@ public static class Banner
     }
 
     /// <summary>
-    /// One row of the wordmark, faded ACROSS its width from the accent to the heading colour.
+    /// One row of the wordmark, faded ACROSS its width from the accent to the code colour.
     ///
     /// <para>Horizontal, not vertical, and that is the whole reason this is per-column rather than
     /// per-row. A vertical fade darkens the bottom row — which is where a letterform's base sits —
@@ -73,9 +73,13 @@ public static class Banner
     /// stays equally legible and the fade reads as one object rather than six stacked strips.</para>
     ///
     /// <para>Both endpoints are colours the app already uses: the accent it marks everything active
-    /// with, and the heading purple from the markdown palette. A decorative pair invented here would
-    /// be one more thing to keep in step, and borrowing a SEMANTIC colour (Link's peach, say) for
-    /// ornament is how a palette stops meaning anything.</para>
+    /// with, and the markdown code colour. A decorative pair invented here would be one more thing
+    /// to keep in step.</para>
+    ///
+    /// <para>CODE RATHER THAN HEADING, and the difference is the whole fade: headings ARE the accent
+    /// on any theme whose accent already reads against its ground, so fading accent-to-heading
+    /// travels nowhere and the wordmark comes out one flat colour. Code is guaranteed a visible
+    /// luminance step from the accent by construction, which is exactly what a fade needs.</para>
     /// </summary>
     private static string Gradient(string row)
     {
@@ -88,7 +92,7 @@ public static class Banner
             // tag per cell that is most of the string for a wordmark this sparse.
             if (row[i] == ' ') { sb.Append(' '); continue; }
 
-            var c = Lerp(ColorScheme.AccentRgb, ColorScheme.Heading, (double)i / span);
+            var c = Lerp(ColorScheme.AccentRgb, ColorScheme.Code, (double)i / span);
             sb.Append($"[#{c.R:x2}{c.G:x2}{c.B:x2}]{MarkupParser.Escape(row[i].ToString())}[/]");
         }
 
