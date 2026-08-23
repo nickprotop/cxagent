@@ -534,13 +534,16 @@ public static class AppBootstrap
             },
             permissionRules);
 
-        // THE TWO ONLY A FRONT END CAN SERVICE. Everything else acts on a session or on the
-        // manager's own stores and is seeded in Core; these need a window and a message loop, which
+        // WHAT THIS FRONT END OVERRIDES OR ADDS TO CORE'S SEEDING. Everything else acts on a
+        // session or on the manager's own stores and is fully serviced in Core; these need a window
+        // and a message loop, or Core's answer needs a confirmation only a window can ask for — which
         // is why they are contributed here rather than declared as a category. The session parameter
         // is ignored today and will not be once a process has tabs — a key map describing a session
         // other than the one on screen is worse than none.
         foreach (var declared in SessionCommands.All)
         {
+            // OVER CORE'S. Core's /help has no keys of its own to list; this window's has two
+            // sections, F1 among them, that Core cannot know about.
             if (declared.Name == "/help")
                 manager.Commands.Register(declared, (_, _) => { mainWindow.ShowHelp(); return true; });
 
@@ -578,6 +581,17 @@ public static class AppBootstrap
                 {
                     cts.Cancel();
                     system.Shutdown();
+                    return true;
+                });
+
+            // OVER CORE'S. The turn itself is the session's; what this adds is the front end's
+            // reaction to it — the running-turn continuation and retiring the composer hint.
+            if (declared.Name == "/init")
+                manager.Commands.Register(declared, (session, _) =>
+                {
+                    if (session.Initialise() is not Session.SubmitOutcome.Started init) return true;
+                    WhenTurnEnds(init.Turn);
+                    mainWindow.RetireComposerHint();
                     return true;
                 });
         }
@@ -1057,8 +1071,6 @@ public static class AppBootstrap
             // would ever reach the history and the feature would be silently dead.
             mainWindow.Input.RecordHistory(goalText);
 
-            // WHAT TO SHOW, when it differs from what is sent — see the NeedsTurn case below.
-
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
 
@@ -1066,28 +1078,6 @@ public static class AppBootstrap
             // summarises through the model exactly as auto-compression does — and a command that
             // has finished moving here never reaches the goal path below.
             if (manager.Commands.TryRun(session, goalText)) return;
-
-            // TEMPORARY: /init HAS NOT MOVED INTO THE REGISTRY YET. It becomes a TURN — the
-            // briefing is rewritten into a prompt and sent to the model like anything the user
-            // could have typed — which is why it is handled here rather than by TryRun above.
-            //
-            // DECLINED WHILE A TURN RUNS — the session refuses and says so. Queued prompts are
-            // JOINED into one message, so an /init waiting behind two other instructions would
-            // reach the model as a paragraph of its briefing glued to unrelated work, attributed
-            // to the user besides.
-            //
-            // THE SESSION SENDS IT AND SAYS WHAT TO SHOW. The prompt and its echo used to be two
-            // locals threaded down separately — the briefing in goalText, the word "/init" in a
-            // turnEcho set here and read a hundred lines below — and splitting them is how a
-            // briefing ends up on the transcript as the user's own words. Session.Initialise
-            // carries the pair.
-            if (SessionCommands.Match(goalText) is { Name: "/init" })
-            {
-                if (session.Initialise() is not Session.SubmitOutcome.Started init) return;
-                WhenTurnEnds(init.Turn);
-                mainWindow.RetireComposerHint();
-                return;
-            }
 
             var disposition = session.Submit(goalText);
             if (disposition is not Session.SubmitOutcome.Started started) return;

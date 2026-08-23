@@ -70,6 +70,53 @@ public class CoreCommandsTests : IDisposable
         Assert.True(manager.Commands.TryRun(session, "/mode"));
         Assert.NotEmpty(said.Transcript);
     }
+
+    /// <summary>
+    /// CORE ANSWERS /help, so a front end with no keys to declare needs no help command of its
+    /// own — and one that has keys registers over this and prepends them.
+    /// </summary>
+    [Fact]
+    public void Help_IsServicedByCore_AndListsTheCommands()
+    {
+        var (manager, session, said) = Wired();
+        using var _ = manager;
+
+        Assert.True(manager.Commands.TryRun(session, "/help"));
+        Assert.Contains("/trust", said.Transcript);
+    }
+
+    [Fact]
+    public void Init_IsServicedByCore()
+    {
+        var (manager, session, _) = Wired();
+        using var _2 = manager;
+
+        // /init REACHES THE MODEL, so this asserts it was DISPATCHED rather than that a turn ran —
+        // a mock provider makes no promise about how quickly a turn completes.
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/init"));
+    }
+
+    /// <summary>
+    /// THE FRONT END'S OWN COMMANDS, and only those. /exit needs a process to end and /mcp needs
+    /// the manager, token store and HTTP client a composition root owns — neither is reachable
+    /// from a session. Every other command must have a Core handler, or a headless consumer
+    /// silently loses it: the registry answers NoHandler and the text never reaches a model.
+    /// </summary>
+    [Fact]
+    public void OnlyTheFrontEndsOwnCommandsAreUnhandled()
+    {
+        var (manager, session, _) = Wired();
+        using var _2 = manager;
+
+        var unhandled = SessionCommands.All
+            .Where(c => manager.Commands.Run(session, c.Name)
+                        == CommandRegistry.Dispatch.NoHandler)
+            .Select(c => c.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(new[] { "/exit", "/mcp" }, unhandled);
+    }
 }
 
 /// <summary>

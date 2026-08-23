@@ -37,6 +37,19 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Says what commands this process has.
+    ///
+    /// <para>THE TABLE IS CORE'S, so this needs nothing a front end holds. A front end with keys
+    /// of its own registers over the command and prepends them; one with nothing to add gets a
+    /// working /help for free.</para>
+    /// </summary>
+    public CommandStatus ShowHelp()
+    {
+        Say(Commands.SessionCommands.HelpLines());
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
     /// Says what this process has spent, over the window <paramref name="arguments"/> asks for.
     ///
     /// <para>THE STORE IS THE MANAGER'S, so it is passed rather than held: usage outlives any one

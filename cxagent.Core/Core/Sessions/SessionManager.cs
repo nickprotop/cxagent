@@ -107,6 +107,18 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, _) => { session.ClearContext(); return true; });
                     break;
 
+                // THE COMMANDS TABLE, WHICH IS CORE'S. A front end with keys of its own registers
+                // over this and prepends them — last registration wins — but one with nothing to
+                // add needs no help command at all.
+                case "/help":
+                    Commands.Register(command, (session, _) => session.ShowHelp().Handled());
+                    break;
+
+                case "/init":
+                    Commands.Register(command, (session, _) =>
+                        session.Initialise() is not Session.SubmitOutcome.NoAgent);
+                    break;
+
                 // REPORTING ONLY. Clearing needs a confirmation and a confirmation needs somebody to
                 // ask, so a front end registers over this one — last registration wins.
                 case "/stats":
