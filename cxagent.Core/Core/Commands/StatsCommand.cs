@@ -23,8 +23,12 @@ public static class StatsCommand
     /// <para>OUT OF RANGE IS CLAMPED, NOT REJECTED. "/stats 9999" is a user asking for everything,
     /// and answering with a usage message rather than their history would be pedantry — the window
     /// is an appetite, not a constraint the app has to defend.</para>
+    ///
+    /// <para>NULL FOR WHAT IT CANNOT READ, rather than the default window. A silent fallback
+    /// answers a question the user did not ask, and the caller is what knows whether an
+    /// unreadable word is a verb this process services or simply a mistake.</para>
     /// </summary>
-    public static int ParseDays(string? argument)
+    public static int? ParseDays(string? argument)
     {
         if (string.IsNullOrWhiteSpace(argument)) return DefaultDays;
 
@@ -34,12 +38,12 @@ public static class StatsCommand
         // "30d" is what someone types who has used any other tool with a time window.
         if (text.EndsWith("d", StringComparison.OrdinalIgnoreCase)) text = text[..^1];
 
-        return int.TryParse(text, out var days) ? Math.Clamp(days, 1, 3650) : DefaultDays;
-    }
+        // A negative count is not a small window, it is nonsense with a minus sign in front of it —
+        // clamping it to 1 would answer "yesterday" to someone who typed a mistake, not a request.
+        if (!int.TryParse(text, out var days) || days < 0) return null;
 
-    /// <summary>Is this argument asking to wipe history rather than show it?</summary>
-    public static bool IsClear(string? argument) =>
-        string.Equals(argument?.Trim(), "clear", StringComparison.OrdinalIgnoreCase);
+        return Math.Clamp(days, 1, 3650);
+    }
 
     /// <summary>
     /// The confirmation text for <c>/stats clear</c>, naming what is at stake.
@@ -65,9 +69,15 @@ public static class StatsCommand
             + "Sessions, sub-agent runs, tool calls, compactions and "
             + "permission decisions. This cannot be undone.";
 
-    public static string Render(UsageHistoryStore history, string? argument)
+    public static Message Render(UsageHistoryStore history, string? argument)
     {
-        var days = ParseDays(argument);
+        if (ParseDays(argument) is not { } days)
+            // NAMED, like the unknown-command reply: "bogus" and "clear" are the same failure to
+            // Core, and a user who cannot see what was accepted cannot fix what they typed.
+            return new Message(
+                $"'{Md.Escape(argument ?? "")}' is not a window /stats understands. "
+                + "Use a day count, \"Nd\", or \"all\".", Severity.Warning);
+
         var since = DateTimeOffset.UtcNow.AddDays(-days);
 
         var sessions = history.SessionsSince(since);

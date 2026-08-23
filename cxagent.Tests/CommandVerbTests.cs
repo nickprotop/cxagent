@@ -59,8 +59,31 @@ public class CommandVerbTests : IDisposable
         using var _ = manager;
 
         Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/stats clear"));
-        Assert.Contains("confirmation", said.Transcript);
         Assert.DoesNotContain("## Usage", said.Transcript);
+    }
+
+    /// <summary>
+    /// AN UNSERVICED ARGUMENT READS THE SAME WHATEVER IT SAYS. A consumer that registers no clear
+    /// verb has no more idea what "clear" means than what "bogus" means, and telling a user that
+    /// one of them is a real feature it happens to lack is Core naming something it cannot do.
+    /// </summary>
+    [Fact]
+    public void AnUnservicedArgument_IsRefusedLikeAnyOther()
+    {
+        var (manager, session, saidClear) = Wired();
+        using var _ = manager;
+        var (_, sessionBogus, saidBogus) = Wired();
+
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/stats clear"));
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(sessionBogus, "/stats bogus"));
+
+        Assert.DoesNotContain("## Usage", saidClear.Transcript);
+        Assert.DoesNotContain("## Usage", saidBogus.Transcript);
+
+        // SAME SHAPE, not the same word: "clear" is echoed back only because it is the argument
+        // typed, exactly as "bogus" is — neither reply treats "clear" as a feature Core recognises.
+        var clearReply = saidClear.Transcript.Replace("clear", "bogus", StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(saidBogus.Transcript, clearReply);
     }
 
     [Fact]

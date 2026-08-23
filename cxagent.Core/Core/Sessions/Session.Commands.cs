@@ -148,17 +148,6 @@ public sealed partial class Session
 
     public CommandStatus SayUsage(string arguments)
     {
-        // NOT A DASHBOARD. Rendering usage for "/stats clear" answers a request to DELETE with the
-        // thing the user asked to be rid of, and nothing says the deletion did not happen —
-        // ParseDays simply fails to read "clear" as a number and falls back to the default window.
-        // A front end that can confirm registers this verb and takes it before this runs.
-        if (Commands.StatsCommand.IsClear(arguments))
-        {
-            Say(new Message("Clearing usage history needs a confirmation this application does "
-                + "not provide.", Severity.Warning));
-            return CommandStatus.Reported;
-        }
-
         if (Services?.History is not { } history)
         {
             Say(new Message("No usage history is available here.", Severity.Warning));

@@ -520,8 +520,19 @@ public class StatsTests
     {
         Assert.Equal(3650, StatsCommand.ParseDays("99999"));
         Assert.Equal(1, StatsCommand.ParseDays("0"));
-        Assert.Equal(7, StatsCommand.ParseDays("nonsense"));
     }
+
+    /// <summary>
+    /// AN ARGUMENT NOBODY CAN READ IS NOT A WINDOW. Falling back to the default silently answers a
+    /// question the user did not ask: "/stats clear" renders seven days of history to someone who
+    /// asked to delete it, and nothing on screen says the deletion did not happen.
+    /// </summary>
+    [Theory]
+    [InlineData("nonsense")]
+    [InlineData("clear")]
+    [InlineData("-3")]
+    public void ParseDays_RefusesWhatItCannotRead(string argument) =>
+        Assert.Null(StatsCommand.ParseDays(argument));
 
     [Fact]
     public void ParseDays_UnderstandsAll() =>
