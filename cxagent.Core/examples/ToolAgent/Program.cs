@@ -90,7 +90,15 @@ while (true)
     var prompt = Console.ReadLine();
     if (string.IsNullOrWhiteSpace(prompt)) break;
 
-    if (session.Submit(prompt) is not Session.SubmitOutcome.Started started)
+    // Submit RUNS A COMMAND when the text names one and sends it to the model otherwise. Handled
+    // means the command already reported through the observer above, so there is nothing to await
+    // and nothing to say — announcing "busy" here would label a command that worked as a refusal.
+    var outcome = session.Submit(prompt);
+    if (outcome is Session.SubmitOutcome.Handled) continue;
+
+    // THE WHOLE API, in three lines. Submit returns a receipt rather than a task: Started carries the
+    // turn, Queued means one was already running, NoAgent means nothing is wired.
+    if (outcome is not Session.SubmitOutcome.Started started)
     {
         Console.WriteLine("busy");
         continue;
