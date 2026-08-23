@@ -398,7 +398,31 @@ token nothing could classify is refused rather than allowed.
 
 ## Commands
 
-A session services the same commands cxagent exposes, headlessly:
+**`Submit` dispatches.** Text starting with `/` runs a command when one matches; anything else, and
+plain text always, goes to the model:
+
+```csharp
+switch (session.Submit(input))
+{
+    case Session.SubmitOutcome.Started started: await started.Turn; break;
+    case Session.SubmitOutcome.Handled:         break;   // it already said its result
+    case Session.SubmitOutcome.Queued:          break;   // joined a running turn
+    case Session.SubmitOutcome.NoAgent:         break;   // nothing wired
+}
+```
+
+**Handle `Handled`, or a working command reads as busy.** No turn starts and nothing reaches the
+model — that half is safe to ignore — but a loop written as `if (outcome is Started) …
+else ShowBusy()` will call every successful command "busy", because a command that ran is also
+`is not Started`. Switch on all four cases, as above, rather than testing for one and assuming the
+rest.
+
+`SubmitRaw` is the escape hatch: it sends text verbatim, queue-or-start, with no dispatch check —
+for a caller that wants the model to see a leading slash, or that already decided this input is not
+a command.
+
+**Core services every command it ships.** A session run without a front end at all still answers
+`/clear`, `/model`, `/stats` and the rest — a consumer wires nothing to get them:
 
 ```csharp
 session.SetMode("edits auto");        // or SetMode(WorkingMode)
@@ -414,8 +438,49 @@ Each does the work, **says its own result through your observer**, and returns a
 not run now, and said why), `Unknown` (nothing services this). `.Handled()` collapses that to a bool
 if you are routing input.
 
-`manager.Commands` is the registry they are seeded into. Register your own on top — last
-registration wins — for anything only your front end can service.
+**A command exists where a handler is registered.** `manager.Commands` is the registry `Submit`
+reads. Core's own table holds only what Core itself can run — ending a process is not in it, because
+a library cannot call `Environment.Exit` on your behalf. Register the ones only your front end can
+service:
+
+```csharp
+// Only your front end can end your process — Core does not declare /exit at all.
+manager.Commands.Register(
+    new SessionCommand("/exit", "quit cxagent"),
+    (_, _) => { myApp.Shutdown(); return true; });
+```
+
+**Registering over a name already in Core's table replaces it — last registration wins.** Delegate
+back to keep Core's half and add your own:
+
+```csharp
+// Extend a Core command rather than replace it: call Core's handler and add to what it said.
+manager.Commands.Register(
+    SessionCommands.All.First(c => c.Name == "/help"),
+    (session, args) =>
+    {
+        myApp.ShowKeyBindings();
+        return session.ShowHelp().Handled();
+    });
+```
+
+`Session.ShowHelp()` is the public way to render the commands table — `Say` itself is private, so
+this is how a handler that wants Core's listing gets it.
+
+**`RegisterVerb` adds an argument, not a command** — for a case Core's table declares but cannot
+finish servicing, because the reply is not synchronous. `/stats clear` deletes a usage archive and
+has to be confirmed first; a `CommandHandler` returns `bool` and cannot ask a question and wait for
+the click, so the verb belongs to whichever front end can ask:
+
+```csharp
+manager.Commands.RegisterVerb("/stats",
+    new CommandArgument("clear", "delete all usage history, after confirming"),
+    (session, _) => { ConfirmThenClear(session); return true; });
+```
+
+A verb appears in `/help` and the palette **only where it was registered** — a consumer that
+registers nothing sees `/stats` without `clear`, because offering an argument nobody can service is
+worse than not listing it.
 
 ---
 
