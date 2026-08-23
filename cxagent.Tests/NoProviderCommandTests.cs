@@ -8,9 +8,9 @@ namespace CxAgent.Tests;
 ///
 /// <para>THE BUG THIS PINS: the composer's submit handler opened with
 /// `if (!session.HasAgent || ...) return;`, which swallowed the keystroke before anything looked at
-/// what was typed. A session that opened without a working provider could not run /exit, /help,
-/// /stats, /sessions — or /model, the one command that FIXES having no provider. The window was
-/// unusable except by killing it.</para>
+/// what was typed. A session that opened without a working provider could not run /help, /stats,
+/// /sessions — or /model, the one command that FIXES having no provider. The window was unusable
+/// except by killing it.</para>
 ///
 /// <para>THE CLASSIFICATION IS IN THE TABLE, and these tests hold it to its word.
 /// <see cref="SessionCommand.NeedsModel"/> is the guard's whole input: everything it marks false
@@ -40,7 +40,6 @@ public class NoProviderCommandTests
     }
 
     [Theory]
-    [InlineData("/exit")]
     [InlineData("/model")]
     [InlineData("/help")]
     [InlineData("/stats")]
@@ -56,7 +55,9 @@ public class NoProviderCommandTests
     public void SubmissionEnabledAloneDoesNotBlockACommand()
     {
         // The exact shape of the shipped bug: an agent exists but the composer flag is off.
-        Assert.True(KeystrokeReachesTheCommand("/exit", hasAgent: true, submissionEnabled: false));
+        // /help, NOT /exit — /exit is not in Core's table at all now, so NeedsAModel's null-command
+        // branch would read it as blocked and pass for the wrong reason.
+        Assert.True(KeystrokeReachesTheCommand("/help", hasAgent: true, submissionEnabled: false));
     }
 
     [Fact]
@@ -68,7 +69,6 @@ public class NoProviderCommandTests
     }
 
     [Theory]
-    [InlineData("/exit")]        // leaving must never require a model
     [InlineData("/help")]
     [InlineData("/stats")]       // reads the usage archive, not the model
     [InlineData("/sessions")]
@@ -101,13 +101,13 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A FIFTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // A FOURTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as "not a command" — so a command added to the table but forgotten in
         // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(14, commands.Count);
+        Assert.Equal(13, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

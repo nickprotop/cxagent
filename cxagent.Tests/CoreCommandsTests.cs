@@ -97,10 +97,14 @@ public class CoreCommandsTests : IDisposable
     }
 
     /// <summary>
-    /// THE FRONT END'S OWN COMMANDS, and only those. /exit needs a process to end and /mcp needs
-    /// the manager, token store and HTTP client a composition root owns — neither is reachable
-    /// from a session. Every other command must have a Core handler, or a headless consumer
-    /// silently loses it: the registry answers NoHandler and the text never reaches a model.
+    /// THE FRONT END'S OWN COMMANDS, and only those. /mcp needs the manager, token store and HTTP
+    /// client a composition root owns, which is not reachable from a session. Every other command
+    /// in Core's table must have a Core handler, or a headless consumer silently loses it: the
+    /// registry answers NoHandler and the text never reaches a model.
+    ///
+    /// <para>/exit IS NOT HERE, deliberately: it left Core's table entirely, so a process that
+    /// never registers it has no third state to report for it — SessionCommands.All simply does
+    /// not name it.</para>
     /// </summary>
     [Fact]
     public void OnlyTheFrontEndsOwnCommandsAreUnhandled()
@@ -115,7 +119,7 @@ public class CoreCommandsTests : IDisposable
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(new[] { "/exit", "/mcp" }, unhandled);
+        Assert.Equal(new[] { "/mcp" }, unhandled);
     }
 }
 

@@ -174,7 +174,7 @@ public sealed class CommandMenu
             // THE HINT RIDES WITH THE SUMMARY, so a command that takes arguments does not look
             // identical to one that does not. Without it `/stats` and `/clear` were the same row to
             // a reader, and nothing on screen suggested one of them had more to offer.
-            matches = [.. SessionCommands.Matching(text).Select(c => new Row(
+            matches = [.. SessionCommands.Matching(text, Registry).Select(c => new Row(
                 c.Name,
                 c.TakesArguments ? $"{c.Summary}  {c.Hint}" : c.Summary,
                 c.Name))];

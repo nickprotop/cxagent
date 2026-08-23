@@ -575,14 +575,6 @@ public static class AppBootstrap
                     return true;
                 });
 
-            if (declared.Name == "/exit")
-                manager.Commands.Register(declared, (_, _) =>
-                {
-                    cts.Cancel();
-                    system.Shutdown();
-                    return true;
-                });
-
             // OVER CORE'S. The turn itself is the session's; what this adds is the front end's
             // reaction to it — the running-turn continuation and retiring the composer hint.
             if (declared.Name == "/init")
@@ -594,6 +586,13 @@ public static class AppBootstrap
                     return true;
                 });
         }
+
+        // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
+        // command Core ships but can never service is one every consumer advertises and none can
+        // run. Declaring it beside the handler keeps the two from drifting.
+        manager.Commands.Register(
+            new SessionCommand("/exit", "quit cxagent"),
+            (_, _) => { cts.Cancel(); system.Shutdown(); return true; });
 
         void WireRunner(ResolvedConfig res)
         {
@@ -1059,7 +1058,7 @@ public static class AppBootstrap
             // only other use is choosing the placeholder text.
             if (!session.HasAgent || !mainWindow.SubmissionEnabled)
             {
-                var command = SessionCommands.Match(goalText);
+                var command = SessionCommands.Match(goalText, manager.Commands);
                 if (command is null or { NeedsModel: true })
                 {
                     // SAY WHY, rather than dropping the keystroke. Silence here is what made this

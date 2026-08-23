@@ -139,16 +139,24 @@ public static class SessionCommands
             new("no", "do not trust it — ask before every file operation"),
         ]),
         new("/help", "show keys and commands"),
-        new("/exit", "quit cxagent"),
     ];
 
     /// <summary>The command matching this input's first token, or null.</summary>
-    public static SessionCommand? Match(string input)
+    /// <param name="input">The text typed, command name and arguments together.</param>
+    /// <param name="registry">
+    /// What THIS process can run, or null for the commands Core ships.
+    ///
+    /// <para>A COMMAND EXISTS WHERE A HANDLER IS REGISTERED. The table is a vocabulary; a front end
+    /// contributes what only it can service and Core seeds the rest, so the registry is the only
+    /// honest answer to "is this a command here". Reading the table instead offers a user rows that
+    /// answer "not available in this application" when typed.</para>
+    /// </param>
+    public static SessionCommand? Match(string input, CommandRegistry? registry = null)
     {
         var token = FirstToken(input);
         if (token.Length == 0) return null;
 
-        foreach (var c in All)
+        foreach (var c in registry?.All ?? All)
             if (token.Equals(c.Name, StringComparison.OrdinalIgnoreCase))
                 return c;
 
@@ -159,12 +167,13 @@ public static class SessionCommands
     /// Commands whose name starts with <paramref name="prefix"/> — for tab completion and, later, a
     /// palette. An empty or bare-slash prefix offers everything.
     /// </summary>
-    public static IReadOnlyList<SessionCommand> Matching(string prefix)
+    public static IReadOnlyList<SessionCommand> Matching(string prefix, CommandRegistry? registry = null)
     {
-        if (string.IsNullOrEmpty(prefix) || prefix == "/") return All;
+        var universe = registry?.All ?? All;
+        if (string.IsNullOrEmpty(prefix) || prefix == "/") return universe;
 
         var hits = new List<SessionCommand>();
-        foreach (var c in All)
+        foreach (var c in universe)
             if (c.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 hits.Add(c);
 
@@ -450,7 +459,7 @@ public static class SessionCommands
         // THE REGISTRY'S VIEW OF ARGUMENTS, same as the palette reads — a null registry falls back
         // to the table's own Args, which is every caller that has not wired verbs.
         var rows = new List<(string Name, string Summary, bool IsArg)>();
-        foreach (var c in All)
+        foreach (var c in registry?.All ?? All)
         {
             rows.Add((c.Name, c.Summary, false));
             foreach (var a in registry?.ArgumentsOf(c) ?? c.Args)

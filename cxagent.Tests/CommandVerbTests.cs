@@ -119,4 +119,59 @@ public class CommandVerbTests : IDisposable
 
         Assert.Contains("/stats clear", SessionCommands.HelpLines(manager.Commands));
     }
+
+    /// <summary>
+    /// A COMMAND EXISTS WHERE IT IS REGISTERED. Core ships the vocabulary; a process advertises
+    /// only what it can actually do. Listing a command nobody registered means a user finds it in
+    /// help, types it, and is told it does not exist here.
+    /// </summary>
+    [Fact]
+    public void HelpListsOnlyRegisteredCommands()
+    {
+        using var manager = Manager();
+
+        var help = SessionCommands.HelpLines(manager.Commands);
+
+        Assert.Contains("/clear", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("/exit", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("/mcp", help, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ARegisteredCommand_AppearsInHelp()
+    {
+        using var manager = Manager();
+        manager.Commands.Register(new SessionCommand("/quit", "leave"), (_, _) => true);
+
+        Assert.Contains("/quit", SessionCommands.HelpLines(manager.Commands),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE PALETTE AGREES WITH HELP, because both read the registry. A palette offering a row
+    /// that completes to "not available in this application" is worse than one that omits it.
+    /// </summary>
+    [Fact]
+    public void MatchingOffersOnlyRegisteredCommands()
+    {
+        using var manager = Manager();
+
+        var offered = SessionCommands.Matching("/", manager.Commands).Select(c => c.Name);
+
+        Assert.DoesNotContain("/exit", offered);
+    }
+
+    /// <summary>
+    /// A COMMAND THIS PROCESS DOES NOT HAVE IS UNKNOWN, not "declared but unhandled". With /exit
+    /// out of Core's table there is no third state left to report.
+    /// </summary>
+    [Fact]
+    public void AnUnregisteredCommand_ReadsAsUnknown()
+    {
+        var (manager, session, _) = Wired();
+        using var _1 = manager;
+
+        Assert.Equal(CommandRegistry.Dispatch.NotACommand,
+            manager.Commands.Run(session, "/exit"));
+    }
 }

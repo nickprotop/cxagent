@@ -75,12 +75,13 @@ public class SubmitDispatchTests : IDisposable
     [Fact]
     public void ADeclaredCommandWithNoHandler_IsHandled_AndSaysSo()
     {
-        // /exit is declared and only a front end can service it. Saying so beats asking a model
-        // to end the process.
+        // /mcp is declared in Core's table, but servicing it needs a token store and an HTTP
+        // client only a composition root owns — a bare manager registers nothing for it. Saying so
+        // beats asking a model to reload MCP servers it has no way to reach.
         var (manager, session, observer) = Wired();
         using var _1 = manager;
 
-        Assert.IsType<Session.SubmitOutcome.Handled>(session.Submit("/exit"));
+        Assert.IsType<Session.SubmitOutcome.Handled>(session.Submit("/mcp"));
         Assert.Contains(observer.Notices, n => n.Contains("not available"));
     }
 

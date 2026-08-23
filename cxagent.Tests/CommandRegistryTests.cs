@@ -135,10 +135,10 @@ public class CommandRegistryTests : IDisposable
     }
 
     /// <summary>
-    /// A DECLARED COMMAND NOBODY REGISTERED IS NOT "NOT A COMMAND". /exit is declared in the
-    /// table so it appears in /help and the palette, and only a front end with a message loop can
-    /// service it — so a headless consumer must be able to say so rather than send "/exit" to a
-    /// model, which is the one outcome that is worse than silence.
+    /// A DECLARED COMMAND NOBODY REGISTERED IS NOT "NOT A COMMAND". /mcp is declared in the table
+    /// so it appears in /help and the palette, and only a front end holding a token store and an
+    /// HTTP client can service it — so a headless consumer must be able to say so rather than send
+    /// "/mcp" to a model, which is the one outcome that is worse than silence.
     /// </summary>
     [Fact]
     public void Run_SaysNoHandler_ForADeclaredCommandNobodyRegistered()
@@ -147,7 +147,7 @@ public class CommandRegistryTests : IDisposable
         var session = Wired(manager);
 
         Assert.Equal(CommandRegistry.Dispatch.NoHandler,
-            manager.Commands.Run(session, "/exit"));
+            manager.Commands.Run(session, "/mcp"));
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public class CommandRegistryTests : IDisposable
         var session = Wired(manager);
 
         Assert.True(manager.Commands.TryRun(session, "/clear"));
-        Assert.False(manager.Commands.TryRun(session, "/exit"));
+        Assert.False(manager.Commands.TryRun(session, "/mcp"));
         Assert.False(manager.Commands.TryRun(session, "ordinary text"));
     }
 }

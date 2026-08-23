@@ -171,6 +171,9 @@ public sealed partial class Session
                     return new SubmitOutcome.Handled(CommandStatus.Reported);
 
                 case CommandRegistry.Dispatch.NoHandler:
+                    // NoHandler ONLY FIRES FOR A TABLE COMMAND (Run's own fallback), so the table
+                    // match — not the registry's, which by definition has nothing for this name —
+                    // is what names it here.
                     Say(new Message($"{SessionCommands.Match(text)?.Name} is not "
                         + "available in this application.", Severity.Warning));
                     return new SubmitOutcome.Handled(CommandStatus.Unknown);
@@ -178,10 +181,14 @@ public sealed partial class Session
 
             // AN UNRECOGNISED SLASH IS STILL A COMMAND ATTEMPT, never a goal: sending "/celar" to
             // the model as a task is worse than saying it does not exist.
-            if (SessionCommands.Match(text) is null)
+            //
+            // THIS SESSION'S REGISTRY, NOT CORE'S TABLE. A command only a front end registered —
+            // /exit — is absent from SessionCommands.All, so matching against the table here would
+            // call a registered command "unknown" right after Run above dispatched it correctly.
+            if (SessionCommands.Match(text, manager.Commands) is null)
             {
                 Say(new Message($"Unknown command '{text.TrimStart().Split(' ')[0]}'. Available: "
-                    + string.Join(", ", SessionCommands.All.Select(c => c.Name)) + ".",
+                    + string.Join(", ", manager.Commands.All.Select(c => c.Name)) + ".",
                     Severity.Warning));
                 return new SubmitOutcome.Handled(CommandStatus.Unknown);
             }

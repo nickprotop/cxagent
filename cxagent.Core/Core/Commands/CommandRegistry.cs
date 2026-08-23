@@ -115,7 +115,15 @@ public sealed class CommandRegistry
     /// </summary>
     public Dispatch Run(Session session, string input)
     {
-        if (SessionCommands.Match(input) is not { } command) return Dispatch.NotACommand;
+        // THE REGISTRY FIRST, THE TABLE SECOND. A command a front end declared and registered
+        // itself — /exit — is not in SessionCommands.All at all, so matching against the table
+        // alone would read it as NotACommand and hand "/exit" to the model as a goal. A command
+        // the table declares but nobody registered — /mcp on a bare manager — is absent from the
+        // registry's own view, so falling back to the table is what lets NoHandler below still
+        // fire instead of this returning NotACommand for a command that plainly exists.
+        if ((SessionCommands.Match(input, this) ?? SessionCommands.Match(input))
+            is not { } command)
+            return Dispatch.NotACommand;
 
         var arguments = SessionCommands.Arguments(input);
 
