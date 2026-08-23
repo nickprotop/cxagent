@@ -7,8 +7,8 @@ namespace CxAgent.Core.Permissions;
 ///
 /// <para><c>Tool</c> is a consumer-injected <see cref="Jobs.IAgentTool"/>: may this embedder's
 /// own tool run in this folder at all. It is deliberately NOT reused from the kinds above — "may
-/// show_diff run here" is not a shell, file or http question, and a rule stored under one of those
-/// names would misdescribe itself to anyone reading permissions.json. Note that answering it yes
+/// the deploy tool run here" is not a shell, file or http question, and a rule stored under one of
+/// those names would misdescribe itself to anyone reading permissions.json. Note that answering it yes
 /// never exempts the tool from its own <see cref="Jobs.IAgentTool.Gate"/>, which runs on every
 /// call; the two are different questions and this kind only answers the first.</para>
 ///

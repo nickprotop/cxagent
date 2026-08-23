@@ -655,11 +655,12 @@ public static class AppBootstrap
                     Observer = sink,
                     ToolObserver = jobPanelSink,
 
-                    // OUR OWN TOOL, and the reason this extension point exists. Core cannot render a
-                    // diff — it has no transcript and no markup dialect — but this layer does, so
-                    // the tool is supplied from here and Core stays ignorant of what a diff is.
-                    // SessionFactory wraps it in GatedAgentTool on the way through.
-                    Tools = [new Tools.ShowDiffTool(session.WorkingDirectory)],
+                    // THE SEAM FOR EMBEDDER TOOLS, passed explicitly even while empty. This layer is
+                    // where a tool that needs a transcript, colour or folding would be supplied,
+                    // because Core has none of the three and must stay ignorant of presentation.
+                    // SessionFactory wraps whatever lands here in GatedAgentTool on the way through,
+                    // so a tool added later is gated without the caller remembering to ask.
+                    Tools = [],
                     Ask = mainWindow.AskQuestionAsync,
 
                     // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the

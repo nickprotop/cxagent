@@ -77,12 +77,6 @@ public sealed class InlineJobSink : IToolObserver
                 var id = _chat.AddMessage(ChatRole.Tool, Title(job), author: AuthorFor(job));
                 _lines[job.Id] = id;
 
-                // NATIVE MARKUP FOR THIS ONE TYPE. The Tool role is markdown by default, which wraps
-                // the body in [markdown]…[/] and escapes '[' — so a diff's [#7ee787] would render
-                // literally instead of colouring anything. Per message, so every other tool keeps
-                // markdown, and set at creation because MarkdownOverride is a field on the entry
-                // that survives every later UpdateMessage.
-                if (job.JobType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
                 var compactRow = IsCompactRow(job) || !IsTerminal(job.State);
 
             // A COMPACT step carries its state in the HEADER and has NO status row: "Tool  Read
@@ -171,11 +165,6 @@ public sealed class InlineJobSink : IToolObserver
             {
                 id = _chat.AddMessage(ChatRole.Tool, Title(job), author: AuthorFor(job));
                 _lines[job.Id] = id;
-
-                // Same reason as the creation site above — an adopted row needs the override too,
-                // and this branch is the one a job takes when it transitions before any
-                // ToolsChanged mentioned it.
-                if (job.JobType == ShowDiffType) _chat.SetMarkdownMode(id, markdown: false);
             }
             var compactRow = IsCompactRow(job) || !IsTerminal(job.State);
 
@@ -251,8 +240,7 @@ public sealed class InlineJobSink : IToolObserver
             // produced and hiding it behind `expand…` defeats the whole row. Unlike a worker's it
             // does not grow under the reader: it is a handful of short lines, written once, and it
             // is the answer rather than the working.
-            if ((compactRow && job.JobType != "llm_agent") || job.JobType == "todo"
-                || job.JobType == ShowDiffType)
+            if ((compactRow && job.JobType != "llm_agent") || job.JobType == "todo")
                 _chat.SetExpanded(id, true);
 
             // THE BODY, not only the status row. Touch the status row alone and a job's message
@@ -397,11 +385,11 @@ public sealed class InlineJobSink : IToolObserver
                 // Claude Code pins its list to the bottom of the screen instead. This transcript has
                 // no pinned region, so an expanded row in place is the nearest thing: the plan is
                 // visible where it changed, and every revision stays in the scrollback in order.
-                // OPENED, NOT MERELY LEFT ALONE — and this is the half the first attempt missed.
-                // A row is created COLLAPSED, so "do not collapse it" is not the same instruction as
-                // "open it": the diff rendered correctly and still showed only its header, because
-                // nothing on this path ever called SetExpanded(true). The compact branch above does
-                // the opening for ordinary rows, and show_diff no longer takes that branch.
+                // OPENED, NOT MERELY LEFT ALONE. A row is created COLLAPSED, so "do not collapse
+                // it" is not the same instruction as "open it" — a body can be rendered correctly
+                // and still show only its header, because nothing on the path ever called
+                // SetExpanded(true). The compact branch above does the opening for ordinary rows,
+                // and a row exempted from being compact does not take that branch.
                 //
                 // llm_agent is excluded for the reason stated at the auto-expand site: a worker's
                 // body grows under the reader, so it must stay one keypress away even though it is
@@ -958,17 +946,6 @@ public sealed class InlineJobSink : IToolObserver
 
         var trimmed = body.Trim();
 
-        // A RENDERED DIFF IS NEVER A ONE-LINE ROW, however short it is. The checks below fold a
-        // brief result into the header — right for "20" or "README.md exists", and wrong here for a
-        // reason no length test can see: this body is MARKUP, so folding it into the header line
-        // would print the colour tags as text. And a one-line diff is still a diff the user asked
-        // to look at, not a value they asked for.
-        //
-        // BEFORE the length checks rather than inside them, because the short case is exactly the one
-        // that slips through: a single changed line under the inline limit reaches neither branch
-        // below, so an exemption placed there would fire only for the diffs that were already safe.
-        if (job.JobType == ShowDiffType) return null;
-
         // The header carries the NAME and the state (CompactHeader), so the body carries only the
         // RESULT — repeating the name here printed it twice, once per mechanism. Seen live:
         //     Tool  Read Base64Decoder.cs  ·  done · 0.0s
@@ -1179,24 +1156,15 @@ public sealed class InlineJobSink : IToolObserver
     /// point of the row", and a worker keeps its block because its output is "prose the model
     /// composed, not an echo of something already on disk".</para>
     ///
-    /// <para>A rendered diff is the same case and arrives by the same route: the user asked to SEE
-    /// it, so collapsing it to "show_diff · expand…" hides the thing at the exact moment it lands,
-    /// and "40 lines, 2,100 chars" measures it instead of showing it.</para>
-    ///
-    /// <para>A PREDICATE, NOT A SEVENTH LITERAL. The set <c>("llm_agent" or "todo")</c> was spelled
-    /// out at six separate decision points. Adding a third member to six literals by hand is how one
-    /// gets MISSED — which is exactly what happened while planning this: the collapse at line 354 was
-    /// found and the one guarded by IsCompactRow was not, so the diff would have rendered and then
-    /// collapsed itself with every test still green.</para>
+    /// <para>A PREDICATE, NOT A REPEATED LITERAL. The set was spelled out at several separate
+    /// decision points, and adding a member to each of them by hand is how one gets MISSED: the
+    /// obvious collapse site is easy to find, the one guarded by IsCompactRow is not, and a row that
+    /// renders and then collapses itself does so with every test still green.</para>
     ///
     /// <para>llm_agent is NOT part of this at the auto-expand site above: a worker's body grows under
     /// the reader for minutes, so it must not open by itself. That site keeps its own test.</para>
     /// </summary>
-    private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo" or ShowDiffType;
-
-    /// <summary>The injected tool's executor type. Named because this file matches on it in six
-    /// places and a typo in a string literal is not a compile error.</summary>
-    internal const string ShowDiffType = "show_diff";
+    private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo";
 
     /// <summary>
     /// Whether this row collapses to one line. Two ways to qualify, and the SECOND is the one the

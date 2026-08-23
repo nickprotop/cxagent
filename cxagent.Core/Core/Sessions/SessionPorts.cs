@@ -36,9 +36,10 @@ public sealed record SessionPorts
     /// Tools this embedder supplies, offered to the model alongside the built-ins. Empty by default.
     ///
     /// <para>PER SESSION, like everything else here, and for the sharpest version of the reason:
-    /// a tool that renders into ONE session's transcript must never be handed to another. That is
-    /// not a hypothetical — it is exactly what <c>show_diff</c> does, holding a chat control in its
-    /// closure.</para>
+    /// a tool that renders into ONE session's transcript must never be handed to another. An
+    /// injected tool routinely captures the surface it draws on — a chat control, a panel, a window
+    /// handle — in its closure, so sharing one instance across sessions would write one session's
+    /// output into another's screen.</para>
     ///
     /// <para>Wrap each in <see cref="Jobs.GatedAgentTool"/> before it reaches an agent. Passing a
     /// bare tool here is not a compile error and produces a tool that runs UNGATED, which is why

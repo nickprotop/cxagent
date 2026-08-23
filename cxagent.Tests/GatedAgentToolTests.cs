@@ -108,8 +108,8 @@ public class GatedAgentToolTests
     public async Task TheToolItselfIsAdmittedOnceBeforeTheFirstCall()
     {
         // GATE 1: may this tool run in this folder at all. Without it an injected tool was silently
-        // ungated on first use — seen on a live drive, where show_diff's own FileRead request was
-        // answered silently by a trusted folder and no prompt appeared at any point.
+        // ungated on first use — seen on a live drive, where the tool's own gate returned a FileRead
+        // request, a trusted folder answered that one silently, and no prompt appeared at any point.
         var gate = new RecordingGate(allow: true);
         var tool = new GatedAgentTool(new RecordingTool(gatesEveryCall: false), gate);
 

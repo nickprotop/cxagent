@@ -454,7 +454,7 @@ public class PermissionPolicy
         // inventing a guarantee — so a rule covers "this tool on this server" and nothing narrower.
         PermissionKind.Mcp => request.AlwaysRule,
 
-        // AN INJECTED TOOL'S SUBJECT IS ITS NAME ("tool show_diff"), for the same reason as Mcp: the
+        // AN INJECTED TOOL'S SUBJECT IS ITS NAME ("tool deploy"), for the same reason as Mcp: the
         // rule is about admitting the TOOL to this folder, never about its arguments. Whatever the
         // tool asks about those is its own gate's question, asked on every call, which a stored
         // admission does not and must not answer.

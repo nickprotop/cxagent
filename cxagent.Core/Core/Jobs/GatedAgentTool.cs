@@ -47,12 +47,15 @@ public sealed class GatedAgentTool : IAgentTool
     public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
     {
         // GATE 1: MAY THIS TOOL RUN HERE AT ALL. A PermissionKind.Tool question, distinct from
-        // anything the tool itself asks — "may show_diff run in /tmp/cxdiff" is not a file question,
-        // and answering "always" to it grants the TOOL, never a bypass of its own checks below.
+        // anything the tool itself asks — "may this tool run in /tmp/scratch" is not a file
+        // question, and answering "always" to it grants the TOOL, never a bypass of its own checks
+        // below.
         //
-        // WITHOUT THIS the tool was silently ungated on first use: show_diff's own gate returns a
-        // FileRead request, and a trusted folder answers that one silently, so a live drive ran an
-        // injected tool with no prompt at any point. Reported from that drive.
+        // WITHOUT THIS AN INJECTED TOOL IS SILENTLY UNGATED ON FIRST USE, and it was: a tool whose
+        // own gate returns a FileRead request asks a question a TRUSTED folder answers silently, so
+        // the only prompt in the chain never fires and the tool runs with no prompt at any point.
+        // Reported from a live drive. A tool's own gate cannot stand in for this one, because what
+        // that gate asks is chosen by the tool and may be a question the folder already allows.
         //
         // ASKED ON EVERY CALL, AND NO LOCAL "ALREADY ALLOWED" FLAG. The first version cached a bool
         // after the first yes, which turned "Allow once" into "always, for this session" — reported

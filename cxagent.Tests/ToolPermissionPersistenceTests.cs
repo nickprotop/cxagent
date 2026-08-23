@@ -27,7 +27,7 @@ public class ToolPermissionPersistenceTests : IDisposable
     public ToolPermissionPersistenceTests() => Directory.CreateDirectory(_dir);
     public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
 
-    private static PermissionRequest Admission(string tool = "show_diff") =>
+    private static PermissionRequest Admission(string tool = "deploy") =>
         new(PermissionKind.Tool, $"use the {tool} tool in this folder", AlwaysRule: $"tool {tool}");
 
     private (PermissionPolicy Policy, PermissionRulesStore Rules) Setup()
@@ -48,7 +48,7 @@ public class ToolPermissionPersistenceTests : IDisposable
 
         Assert.False(policy.IsSilentlyAllowed(request));   // nothing stored yet
 
-        rules.Add(_dir, PermissionKind.Tool, "tool show_diff");
+        rules.Add(_dir, PermissionKind.Tool, "tool deploy");
 
         Assert.True(policy.IsSilentlyAllowed(request));
     }
@@ -56,12 +56,12 @@ public class ToolPermissionPersistenceTests : IDisposable
     [Fact]
     public void ARuleForOneToolDoesNotAdmitAnother()
     {
-        // The rule names the tool exactly. A grant for show_diff must not admit a deploy tool that
+        // The rule names the tool exactly. A grant for one tool must not admit another that
         // happens to be injected by the same embedder.
         var (policy, rules) = Setup();
-        rules.Add(_dir, PermissionKind.Tool, "tool show_diff");
+        rules.Add(_dir, PermissionKind.Tool, "tool deploy");
 
-        Assert.False(policy.IsSilentlyAllowed(Admission("deploy") with { Policy = policy }));
+        Assert.False(policy.IsSilentlyAllowed(Admission("notify") with { Policy = policy }));
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class ToolPermissionPersistenceTests : IDisposable
         Directory.CreateDirectory(other);
 
         var (_, rules) = Setup();
-        rules.Add(_dir, PermissionKind.Tool, "tool show_diff");
+        rules.Add(_dir, PermissionKind.Tool, "tool deploy");
 
         var elsewhere = new PermissionPolicy(other, rules, EditMode.AlwaysAsk);
 
@@ -87,7 +87,7 @@ public class ToolPermissionPersistenceTests : IDisposable
         // proves the enum reaches permissions.json and comes back as itself rather than throwing —
         // which, per the enum's own summary, would take every rule and all folder trust with it.
         var (_, rules) = Setup();
-        rules.Add(_dir, PermissionKind.Tool, "tool show_diff");
+        rules.Add(_dir, PermissionKind.Tool, "tool deploy");
 
         var reloaded = new PermissionRulesStore(new AppPaths(_dir));
         var policy = new PermissionPolicy(_dir, reloaded, EditMode.AlwaysAsk);
@@ -102,7 +102,7 @@ public class ToolPermissionPersistenceTests : IDisposable
         // silently lose that grant because the folder itself is untrusted — the user answered THIS
         // question, and nothing about folder trust revokes it.
         var rules = new PermissionRulesStore(new AppPaths(_dir));
-        rules.Add(_dir, PermissionKind.Tool, "tool show_diff");
+        rules.Add(_dir, PermissionKind.Tool, "tool deploy");
 
         var policy = new PermissionPolicy(_dir, rules, EditMode.AlwaysAsk);
 

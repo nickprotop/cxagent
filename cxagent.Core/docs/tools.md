@@ -139,8 +139,13 @@ Output =
 },
 ```
 
-cxagent's own `show_diff` needs this: its content is terminal markup for a person to look at, and
-handing the model a blob of colour tags costs a turn of it describing them.
+Split them whenever your content is **for a person to look at** rather than to read back: rendered
+markup, a colourised table, a chart. Handing that to the model verbatim costs a turn of it
+describing something already on the user's screen. Keep `"summary"` short and factual — enough to
+confirm the call worked, not enough to invite a paraphrase of what the user is already looking at.
+
+If your tool draws for a person, it almost certainly also wants `OfferToSubAgents => false`; see
+[Sub-agents](#sub-agents) below.
 
 **Never throw.** An exception unwinding the tool loop leaves tool calls with no matching results — an
 orphan the provider rejects with a 400 that no recovery path matches, and every later prompt in the

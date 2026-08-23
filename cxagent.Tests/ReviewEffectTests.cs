@@ -175,7 +175,7 @@ public class ReviewEffectTests
         var policy = TrustedAuto(root, EmptyRules());
 
         Assert.Equal(ReviewEffect.MayAnnotate,
-            policy.EffectFor(new PermissionRequest(PermissionKind.Tool, "tool show_diff", "tool show_diff")));
+            policy.EffectFor(new PermissionRequest(PermissionKind.Tool, "tool deploy", "tool deploy")));
     }
 
     // ---- Shell ----------------------------------------------------------------------------------------

@@ -70,10 +70,11 @@ public sealed class AgentToolset
         var content = result.Output.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "";
 
         // TWO AUDIENCES. "content" is what the TRANSCRIPT shows; "summary", when present, is what
-        // the MODEL is told instead. show_diff is the case that forced the split: its content is
-        // native markup for a person to look at, and handing the model a blob of colour tags costs a
-        // turn of it describing them. The split now needs no smuggling: the Text member is the
-        // model's copy and the row reads the tool's own Output for the markup.
+        // the MODEL is told instead. A tool whose content is FOR A PERSON TO LOOK AT — rendered
+        // markup, a table, anything whose value is in how it is displayed — is what forces the
+        // split: hand that to the model verbatim and it spends a turn describing something already
+        // on the user's screen. The split needs no smuggling: the Text member is the model's copy
+        // and the row reads the tool's own Output for what to display.
         if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
             return new ToolOutcome(s, result);
 

@@ -17,13 +17,8 @@ namespace CxAgent.Core.Commands;
 /// explain rather than ours to get subtly wrong.</para>
 ///
 /// <para>FOR THE USER, NOT THE MODEL. This is a command someone types, and its output goes to the
-/// transcript rather than into the conversation.</para>
-///
-/// <para>THE AGENT HAS ITS OWN, AND IT IS NOT THIS. That "separate and larger question" was
-/// answered by cxagent's injected <c>show_diff</c> tool: one file, rendered as markup, called by the
-/// model when it chooses. The two deliberately share NO code — this lives in Core and answers "what
-/// have I changed", the tool lives in the front end and answers "let me show you" — and coupling
-/// them would make every change to one a risk to the other across an assembly boundary.</para>
+/// transcript rather than into the conversation. It answers "what have I changed" for the whole
+/// working tree, which is the question a person asks before they trust a session's work.</para>
 /// </summary>
 public static class DiffCommand
 {

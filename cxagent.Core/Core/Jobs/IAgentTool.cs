@@ -9,9 +9,9 @@ namespace CxAgent.Core.Jobs;
 ///
 /// <para>WHY THIS EXISTS AT ALL: Core has no transcript, no colour and no markup dialect. A front
 /// end has all three. Rather than teach Core about presentation, it accepts a tool the front end
-/// implements — which is how <c>show_diff</c> can render into a TUI that Core cannot see. The
-/// alternative was a callback on every tool result, which would have made every built-in pay for a
-/// hook only one caller wanted.</para>
+/// implements — which is how an embedder's tool can render into a surface Core cannot see, or reach
+/// a system Core has never heard of. The alternative was a callback on every tool result, which
+/// would have made every built-in pay for a hook only one caller wanted.</para>
 ///
 /// <para>TWO GATES, AND THEY ARE NOT THE SAME GATE. The permission engine asks ONCE PER FOLDER
 /// whether this tool may run here at all. <see cref="Gate"/> then runs on EVERY CALL, for the life

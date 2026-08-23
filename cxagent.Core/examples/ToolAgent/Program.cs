@@ -32,7 +32,7 @@ if (!resolution.HasProvider)
 }
 
 // THE GATE ASKS BOTH QUESTIONS THROUGH ONE HOOK, and the prompt cannot tell them apart — nor
-// should it. "May show_diff run in this folder" and "may it run THIS call" arrive here identically,
+// should it. "May the deploy tool run in this folder" and "may it run THIS call" arrive here alike,
 // which is the point: the tool decides what it is asking, the human answers, and neither has to
 // know which of the two gates produced the question.
 using var manager = SessionManager.Create(new AppPaths(configDir), buildGate: store =>

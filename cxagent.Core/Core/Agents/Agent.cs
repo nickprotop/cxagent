@@ -187,8 +187,9 @@ public sealed class Agent
     private readonly AskUserTool? _askUser;
 
     /// <summary>The embedder's own tools, or null when nothing was injected. Offered to a child as
-    /// well as a parent: a sub-agent that cannot call show_diff would do the work and skip the
-    /// showing, which is the one thing the tool exists for.</summary>
+    /// well as a parent by default: a child edits and acts exactly as its parent does, so a
+    /// sub-agent denied the embedder's tools would do the work and skip whatever those tools are
+    /// for. A tool that must not go to a child says so itself, via OfferToSubAgents.</summary>
     private readonly Jobs.AgentToolset? _agentTools;
     private readonly Permissions.PermissionPolicy? _policy;
 
@@ -2325,11 +2326,11 @@ public sealed class Agent
         // NEW JobResult from the returned string — which is what this did — split every field in
         // two: the ones Agent can re-derive survived, and the ones only the executor knows (Output,
         // DecidedBy, LogFile) were silently dropped. That is not a hypothetical: TWO side channels
-        // existed solely to smuggle values back past it. Seen live, a show_diff row displayed
-        // "README.md, +5 -1, shown above" — the model's confirmation — where the diff itself
-        // belonged, and a classifier-approved `du -sh . 2>&1 | tail -1` reached the DB and /stats
-        // correctly while its row rendered plain "done". Starting from the object ends the category
-        // rather than adding a third channel for the next field.
+        // existed solely to smuggle values back past it. Seen live: a tool row displayed the
+        // model's one-line confirmation where the tool's own rendered output belonged, and a
+        // classifier-approved `du -sh . 2>&1 | tail -1` reached the DB and /stats correctly while
+        // its row rendered plain "done". Starting from the object ends the category rather than
+        // adding a third channel for the next field.
         //
         // THE OVERRIDES ARE THE FIELDS AGENT REALLY DOES OWN. Success/ExitCode come from
         // LooksLikeFailure over the model-facing TEXT, which is broader than an executor's own verdict —
@@ -2817,9 +2818,9 @@ public sealed class Agent
 
         // AN INJECTED TOOL IS ITS OWN TYPE, named after itself. Falling through to "file" would be
         // the spawn bug above, one layer out: a front end that special-cases its own tool's rows —
-        // as cxagent does for show_diff, to keep the rendered diff expanded — matches on JobType,
-        // and every injected tool arriving as "file" makes that impossible to write. Naming it after
-        // the tool means the front end that supplied the tool already knows the string.
+        // to style them, to keep one expanded — matches on JobType, and every injected tool arriving
+        // as "file" makes that impossible to write. Naming it after the tool means the front end
+        // that supplied the tool already knows the string.
         _ when _agentTools is not null && _agentTools.Knows(toolName) => toolName,
 
         _ => "file",

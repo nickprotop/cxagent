@@ -21,7 +21,7 @@ namespace CxAgent.Core.Jobs;
 /// field in two — the ones a caller can re-derive (Duration, Success, ExitCode) survive, and the ones
 /// only the executor knows (Output, DecidedBy, LogFile) are silently dropped. Each dropped field then
 /// wants its own side channel to smuggle it past the rebuild: a LastDisplay on AgentToolset so a
-/// show_diff row renders the diff rather than the model's text confirmation, a DecidedBy on
+/// tool row renders the tool's own output rather than the model's text confirmation, a DecidedBy on
 /// IJobContext so a classifier verdict reaches the row at all. Carrying the object ends that
 /// category instead of adding to it.</para>
 /// </summary>
