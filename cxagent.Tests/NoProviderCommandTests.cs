@@ -11,6 +11,11 @@ namespace CxAgent.Tests;
 /// what was typed. A session that opened without a working provider could not run /exit, /help,
 /// /stats, /sessions — or /model, the one command that FIXES having no provider. The window was
 /// unusable except by killing it.</para>
+///
+/// <para>THE CLASSIFICATION IS IN THE TABLE, and these tests hold it to its word.
+/// <see cref="SessionCommand.NeedsModel"/> is the guard's whole input: everything it marks false
+/// answers from state the process already holds, costing no tokens and no time. A command added
+/// later with the wrong flag fails here rather than in someone's unusable window.</para>
 /// </summary>
 public class NoProviderCommandTests
 {
