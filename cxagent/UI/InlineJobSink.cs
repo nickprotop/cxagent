@@ -561,8 +561,11 @@ public sealed class InlineJobSink : IToolObserver
             // UpdateMessage alone changes what is BEHIND the expand without touching whether it is
             // open. A user who opened the row watches it fill; a user who left it shut sees nothing
             // move, which is the whole point of the distinction.
-            if (!string.IsNullOrEmpty(job.ProgressBody))
-                _chat.UpdateMessage(id, job.ProgressBody);
+            //
+            // THROUGH LiveBody, so this cannot overwrite the timetable the tick renders. Both writers
+            // target the same message id at roughly 1 Hz, so whichever fired last was what the user
+            // saw — the table and the progress prose alternating once a second.
+            if (LiveBody(job) is { } body) _chat.UpdateMessage(id, body);
         });
 
     /// <summary>
@@ -1274,6 +1277,36 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
     /// so cannot be static.</summary>
     public string? RunningWorkerBodyForTest(Job job) => RunningWorkerBody(job);
+
+    /// <summary>
+    /// What a RUNNING row's body should say right now, or null when it should keep whatever it has.
+    ///
+    /// <para>THE PRECEDENCE RULE, IN ONE PLACE, because three sites write this body and a
+    /// disagreement between any two of them is invisible in the code and glaring on screen. A live
+    /// worker's table and <see cref="Job.ProgressBody"/> are two renderings of the same run, and
+    /// both had a driver: the one-second window tick pushes the table, and Core's own report pushes
+    /// the prose through <c>ToolProgressed</c>. Same message id, comparable rates, no ordering
+    /// between them — so the row alternated between the two once a second.</para>
+    ///
+    /// <para>THE TABLE WINS WHENEVER THERE IS ONE. It is strictly richer, and it is the shape the row
+    /// settles into, so preferring it is also what keeps the finish line from reflowing.</para>
+    ///
+    /// <para>AND CORE KEEPS EMITTING THE PROSE, which is not redundancy. <c>ProgressBody</c> is the
+    /// only account of a spawn available to a consumer of this library with no timetable of its own,
+    /// and it is what THIS front end shows too until the child's first call lands — <see
+    /// cref="RunningWorkerBody"/> is null before then, and blanking instead would mean expanding a
+    /// fresh spawn reveals an empty block.</para>
+    ///
+    /// <para>NULL RATHER THAN EMPTY when neither has anything: a job with no progress body of its own
+    /// keeps what is already behind its expand. Blanking here would be a third writer racing the
+    /// other two.</para>
+    /// </summary>
+    private string? LiveBody(Job job) =>
+        RunningWorkerBody(job) ?? (string.IsNullOrEmpty(job.ProgressBody) ? null : job.ProgressBody);
+
+    /// <summary>Test seam for <see cref="LiveBody"/> — the precedence rule is the thing under test,
+    /// and it reads the sink's own maps.</summary>
+    public string? LiveBodyForTest(Job job) => LiveBody(job);
 
     /// <summary>
     /// A RUNNING worker's body: the same timetable its finished row will show, growing as calls land,

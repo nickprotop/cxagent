@@ -1371,6 +1371,58 @@ public class InlineJobSinkTests
         Assert.DoesNotContain("b | wc", row, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A LIVE WORKER'S TABLE SURVIVES CORE'S OWN PROGRESS REPORT.
+    ///
+    /// <para>USER-REPORTED: an expanded sub-agent row flickered between two different views. Two
+    /// writers target the same message body at comparable rates and neither knew of the other — the
+    /// one-second window tick pushes the timetable, and Core's report pushes ProgressBody prose
+    /// through ToolProgressed. Whichever fired last was what the row showed.</para>
+    ///
+    /// <para>The progress body here is the real shape Core builds: the facts block from
+    /// Agent.Report. It is non-empty, which is why the old guard — a bare IsNullOrEmpty — always
+    /// let it through.</para>
+    /// </summary>
+    [Fact]
+    public void ARunningWorkersTable_OutranksTheProgressBody()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var body = sink.LiveBodyForTest(RunningWorker("  type: general\n  1 turn"))!;
+
+        Assert.Contains("`read_file`", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("type: general", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND BEFORE THE FIRST CALL, THE PROSE IS ALL THERE IS. RunningWorkerBody is null until the
+    /// child calls something, and expanding a fresh spawn must not reveal an empty block — so the
+    /// precedence rule falls through rather than blanking.
+    /// </summary>
+    [Fact]
+    public void AWorkerWithNoCallsYet_KeepsItsProgressBody()
+    {
+        var sink = HeadlessSink();
+        sink.NoteChild("j1", Child());
+
+        Assert.Equal("  type: general", sink.LiveBodyForTest(RunningWorker("  type: general")));
+    }
+
+    /// <summary>
+    /// NULL, NOT EMPTY, when a job has nothing to say. Returning "" would make this a third writer
+    /// racing the other two — it would blank whatever is already behind the expand.
+    /// </summary>
+    [Fact]
+    public void AJobWithNothingToSay_LeavesTheBodyAlone()
+    {
+        var sink = HeadlessSink();
+
+        Assert.Null(sink.LiveBodyForTest(RunningRow("j1", DateTimeOffset.UtcNow)));
+    }
+
     private static InlineJobSink HeadlessSink() => new(
         new ConsoleWindowSystem(new HeadlessConsoleDriver(80, 24),
             new ConsoleWindowSystemOptions(InstallSynchronizationContext: true)),
