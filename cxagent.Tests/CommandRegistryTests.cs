@@ -80,15 +80,16 @@ public class CommandRegistryTests : IDisposable
         Assert.False(manager.Commands.TryRun(session, "clear the build output"));
     }
 
-    // A DECLARED COMMAND WITH NO HANDLER YET FALLS THROUGH, which is what lets the migration proceed
-    // one command at a time without any of them vanishing from the palette.
+    // A DECLARED COMMAND WITH NO HANDLER FALLS THROUGH, rather than being sent to the model as
+    // text — /mcp needs the token store and HTTP client a composition root owns, which a bare
+    // SessionManager has none of.
     [Fact]
     public void TryRun_IsFalseForACommandNobodyRegistered()
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = Wired(manager);
 
-        Assert.False(manager.Commands.TryRun(session, "/init"));
+        Assert.False(manager.Commands.TryRun(session, "/mcp"));
     }
 
     // SEEDED BY CORE. /clear acts on a session, so the manager can service it without a front end.
