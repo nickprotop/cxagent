@@ -122,4 +122,52 @@ public class CommandRegistryTests : IDisposable
 
         Assert.True(overridden);
     }
+
+    [Fact]
+    public void Run_SaysNotACommand_ForOrdinaryText()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = Wired(manager);
+
+        Assert.Equal(CommandRegistry.Dispatch.NotACommand,
+            manager.Commands.Run(session, "clear the build output"));
+    }
+
+    /// <summary>
+    /// A DECLARED COMMAND NOBODY REGISTERED IS NOT "NOT A COMMAND". /exit is declared in the
+    /// table so it appears in /help and the palette, and only a front end with a message loop can
+    /// service it — so a headless consumer must be able to say so rather than send "/exit" to a
+    /// model, which is the one outcome that is worse than silence.
+    /// </summary>
+    [Fact]
+    public void Run_SaysNoHandler_ForADeclaredCommandNobodyRegistered()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = Wired(manager);
+
+        Assert.Equal(CommandRegistry.Dispatch.NoHandler,
+            manager.Commands.Run(session, "/exit"));
+    }
+
+    [Fact]
+    public void Run_SaysRan_WhenAHandlerTakesIt()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = Wired(manager);
+
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/clear"));
+    }
+
+    /// <summary>TryRun keeps its meaning: only Ran is true. A NoHandler that returned true would
+    /// tell a caller the command was serviced when nothing happened.</summary>
+    [Fact]
+    public void TryRun_IsTrueOnlyForRan()
+    {
+        using var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = Wired(manager);
+
+        Assert.True(manager.Commands.TryRun(session, "/clear"));
+        Assert.False(manager.Commands.TryRun(session, "/exit"));
+        Assert.False(manager.Commands.TryRun(session, "ordinary text"));
+    }
 }

@@ -54,17 +54,42 @@ public sealed class CommandRegistry
     public IReadOnlyList<SessionCommand> All => [.. _byName.Values.Select(e => e.Command)];
 
     /// <summary>
+    /// What a dispatch attempt found.
+    ///
+    /// <para>THREE ANSWERS, NOT TWO. A bool folded "not a command" together with "a declared
+    /// command nobody registered", and they call for opposite behaviour: the first is a goal and
+    /// belongs to the model, the second must never reach a model — a front end that cannot
+    /// service /exit should say so, not ask an LLM to end its process.</para>
+    /// </summary>
+    public enum Dispatch
+    {
+        /// <summary>Not a command at all. The input is a goal.</summary>
+        NotACommand,
+
+        /// <summary>A handler took it.</summary>
+        Ran,
+
+        /// <summary>Declared in the table, but this process registered nothing for it.</summary>
+        NoHandler,
+    }
+
+    /// <summary>
     /// Runs the command in <paramref name="input"/>, if it names one.
     ///
-    /// <para>FALSE MEANS "NOT A COMMAND" — the input is a goal and belongs to the model. A handler
-    /// returning false means the same thing from one level down: it recognised its own name and
-    /// decided this was not for it, so the caller keeps looking rather than swallowing the line.</para>
+    /// <para>A HANDLER RETURNING FALSE IS <see cref="Dispatch.NotACommand"/>: it recognised its
+    /// own name and decided this was not for it, so the caller keeps looking rather than
+    /// swallowing the line.</para>
     /// </summary>
-    public bool TryRun(Session session, string input)
+    public Dispatch Run(Session session, string input)
     {
-        if (SessionCommands.Match(input) is not { } command) return false;
-        if (!_byName.TryGetValue(command.Name, out var entry)) return false;
+        if (SessionCommands.Match(input) is not { } command) return Dispatch.NotACommand;
+        if (!_byName.TryGetValue(command.Name, out var entry)) return Dispatch.NoHandler;
 
-        return entry.Handle(session, SessionCommands.Arguments(input));
+        return entry.Handle(session, SessionCommands.Arguments(input))
+            ? Dispatch.Ran
+            : Dispatch.NotACommand;
     }
+
+    /// <summary>Whether a handler took this input. See <see cref="Run"/> for the fuller answer.</summary>
+    public bool TryRun(Session session, string input) => Run(session, input) == Dispatch.Ran;
 }
