@@ -176,7 +176,10 @@ public sealed partial class Session
     /// </summary>
     public SubmitOutcome Initialise() =>
         InitialisePrompt() is { } briefing
-            ? Submit(briefing, echo: "/init")
+            // SUBMITRAW, NOT SUBMIT. The briefing is already-resolved prose and the echo is the
+            // literal text "/init" — routing it back through dispatch would re-enter the command
+            // that produced it.
+            ? SubmitRaw(briefing, echo: "/init")
             : new SubmitOutcome.NoAgent();
 
     /// <summary>

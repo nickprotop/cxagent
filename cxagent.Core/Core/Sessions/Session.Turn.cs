@@ -123,6 +123,17 @@ public sealed partial class Session
         /// first of those impossible.</para>
         /// </summary>
         public sealed record Started(Task Turn) : SubmitOutcome;
+
+        /// <summary>
+        /// The text named a command, which has run. Nothing was sent to the model.
+        ///
+        /// <para>A CONSUMER THAT IGNORES THIS CASE STILL BEHAVES CORRECTLY: the command ran and
+        /// said its own result through the observer, and no turn started, so an input loop that
+        /// only looks for <see cref="Started"/> simply moves on to the next prompt. That is the
+        /// point — the cost of not knowing this exists is nothing.</para>
+        /// </summary>
+        /// <param name="Status">What the command reported. <c>Unknown</c> when nothing serviced it.</param>
+        public sealed record Handled(CommandStatus Status) : SubmitOutcome;
     }
 
     /// <summary>
@@ -133,6 +144,51 @@ public sealed partial class Session
     /// never wrote and would compare unequal to an identical re-pass.</para>
     /// </summary>
     private Jobs.ToolSelection? _turnTools;
+
+    /// <summary>
+    /// Runs this text as a command if it names one, and otherwise sends it to the model.
+    ///
+    /// <para>ONE ENTRY POINT. A front end that only calls this gets every command the process
+    /// registered, with no dispatch wiring of its own — and one that has never heard of commands
+    /// gets them anyway, which is the failure mode worth designing for: the alternative silently
+    /// sends "/trust" to a model, which answers something plausible and teaches nobody.</para>
+    ///
+    /// <para>BEFORE THE BUSY CHECK, deliberately. A command is not a prompt: /trust typed during
+    /// a running turn should classify a folder, not join the turn as text. Commands that cannot
+    /// run mid-turn refuse for their own reasons and say why, which is more accurate than a
+    /// queue.</para>
+    ///
+    /// <para>NO MANAGER, NO DISPATCH. A session built outside SessionManager.Open has no registry
+    /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
+    /// </summary>
+    public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null)
+    {
+        if (Manager is { } manager && text.TrimStart().StartsWith('/'))
+        {
+            switch (manager.Commands.Run(this, text))
+            {
+                case CommandRegistry.Dispatch.Ran:
+                    return new SubmitOutcome.Handled(CommandStatus.Reported);
+
+                case CommandRegistry.Dispatch.NoHandler:
+                    Say(new Message($"{SessionCommands.Match(text)?.Name} is not "
+                        + "available in this application.", Severity.Warning));
+                    return new SubmitOutcome.Handled(CommandStatus.Unknown);
+            }
+
+            // AN UNRECOGNISED SLASH IS STILL A COMMAND ATTEMPT, never a goal: sending "/celar" to
+            // the model as a task is worse than saying it does not exist.
+            if (SessionCommands.Match(text) is null)
+            {
+                Say(new Message($"Unknown command '{text.TrimStart().Split(' ')[0]}'. Available: "
+                    + string.Join(", ", SessionCommands.All.Select(c => c.Name)) + ".",
+                    Severity.Warning));
+                return new SubmitOutcome.Handled(CommandStatus.Unknown);
+            }
+        }
+
+        return SubmitRaw(text, echo, tools);
+    }
 
     /// <summary>
     /// Sends this text, or queues it when a turn is already running.
@@ -161,7 +217,7 @@ public sealed partial class Session
     /// Which tools this ONE request may use, composed onto the session's selection. Null keeps
     /// whatever the session already has. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
-    public SubmitOutcome Submit(string text, string? echo = null,
+    public SubmitOutcome SubmitRaw(string text, string? echo = null,
         Jobs.ToolSelection? tools = null)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
