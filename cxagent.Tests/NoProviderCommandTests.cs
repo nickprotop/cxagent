@@ -12,10 +12,10 @@ namespace CxAgent.Tests;
 /// /stats, /sessions — or /model, the one command that FIXES having no provider. The window was
 /// unusable except by killing it.</para>
 ///
-/// <para>THE CLASSIFICATION ALREADY EXISTED and the guard was not asking. CommandOutcome's own
-/// documentation says every command except NeedsProvider and NeedsTurn "answers from state the app
-/// already holds, costing no tokens and no time". These tests hold that claim to its word, so a
-/// command added later with the wrong outcome fails here rather than in someone's broken session.</para>
+/// <para>THE CLASSIFICATION ALREADY EXISTS. SessionCommand.NeedsModel's own documentation says
+/// every other command "answers from state the app already holds, costing no tokens and no time".
+/// These tests hold that claim to its word, so a command added later with the wrong flag fails
+/// here rather than in someone's broken session.</para>
 /// </summary>
 public class NoProviderCommandTests
 {

@@ -25,13 +25,6 @@ public delegate bool CommandHandler(Session session, string arguments);
 /// on the manager's own stores; a front end adds the ones only it can service — a key map needs a
 /// window, quitting needs a message loop. Neither layer needs to know the split exists: dispatch is
 /// a lookup, and where a handler came from stops being a question the caller asks.</para>
-///
-/// <para>WHAT IT REPLACES. Dispatch was a switch on an outcome enum wrapping chains of
-/// <c>if (command.Name == "/x")</c> — about 170 lines in a composition root, where adding a command
-/// meant editing the largest method in the codebase. The outcome enum was meant to remove exactly
-/// that name-matching and could not: nine of thirteen commands declared the same "serviced by the UI
-/// rather than by the conversation" outcome — not a precondition, and not true of the eight that
-/// merely printed a string they had already computed.</para>
 /// </summary>
 public sealed class CommandRegistry
 {
