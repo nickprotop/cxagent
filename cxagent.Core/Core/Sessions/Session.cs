@@ -368,7 +368,7 @@ public sealed partial class Session
     /// otherwise answerable only at startup or from a file prompt's button.
     /// </summary>
     /// <remarks>
-    /// <para>THE SESSION SAYS IT, like <see cref="SetMode"/>: trust is reached two ways and the
+    /// <para>THE SESSION SAYS IT, like <see cref="SetMode(string)"/>: trust is reached two ways and the
     /// wording belongs with the state, not with whoever asked.</para>
     ///
     /// <para>A FAILED WRITE IS REPORTED, never swallowed. RememberEdits can afford to lose a
