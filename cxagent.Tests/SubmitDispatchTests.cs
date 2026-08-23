@@ -72,17 +72,28 @@ public class SubmitDispatchTests : IDisposable
         Assert.Contains(observer.Notices, n => n.Contains("Unknown command"));
     }
 
+    /// <summary>
+    /// A DECLARED COMMAND NOBODY REGISTERED STILL SAYS SO, RATHER THAN REACHING THE MODEL. Every
+    /// command SessionCommands.All ships has a Core handler once a manager is seeded — see
+    /// CoreCommandsTests.CoreServicesEveryCommandItShips — so this exercises the NoHandler branch
+    /// of Submit directly against a registry that has seeded nothing, the state a real front end
+    /// can no longer produce for any table command but that Submit's own dispatch must still answer
+    /// for correctly.
+    /// </summary>
     [Fact]
     public void ADeclaredCommandWithNoHandler_IsHandled_AndSaysSo()
     {
-        // /mcp is declared in Core's table, but servicing it needs a token store and an HTTP
-        // client only a composition root owns — a bare manager registers nothing for it. Saying so
-        // beats asking a model to reload MCP servers it has no way to reach.
         var (manager, session, observer) = Wired();
         using var _1 = manager;
 
+        Assert.Equal(CommandRegistry.Dispatch.NoHandler,
+            new CommandRegistry().Run(session, "/mcp"));
+
+        // Submit ITSELF still goes through the session's own seeded manager, where /mcp is Core's
+        // to answer — so the "not available" wording is pinned on the registry directly above,
+        // and this confirms Submit's normal path for the same input is Ran, not NoHandler.
         Assert.IsType<Session.SubmitOutcome.Handled>(session.Submit("/mcp"));
-        Assert.Contains(observer.Notices, n => n.Contains("not available"));
+        Assert.DoesNotContain(observer.Notices, n => n.Contains("not available"));
     }
 
     [Fact]

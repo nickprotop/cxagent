@@ -134,7 +134,6 @@ public class CommandVerbTests : IDisposable
 
         Assert.Contains("/clear", help, StringComparison.Ordinal);
         Assert.DoesNotContain("/exit", help, StringComparison.Ordinal);
-        Assert.DoesNotContain("/mcp", help, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -173,5 +172,73 @@ public class CommandVerbTests : IDisposable
 
         Assert.Equal(CommandRegistry.Dispatch.NotACommand,
             manager.Commands.Run(session, "/exit"));
+    }
+
+    /// <summary>
+    /// CORE LISTS THE SERVERS IT HOLDS. A consumer with no OAuth browser and no config loader still
+    /// gets the half of this command that only reads.
+    /// </summary>
+    [Fact]
+    public void Mcp_IsServicedByCore()
+    {
+        var (manager, session, _) = Wired();
+        using var _ = manager;
+
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/mcp"));
+    }
+
+    /// <summary>
+    /// AND ITS HOST-ONLY VERBS ARE NOT OFFERED WHERE NOBODY REGISTERS THEM. Reloading re-reads the
+    /// config the host supplied, and logging in opens a browser; a consumer that does neither must
+    /// not be shown either row.
+    /// </summary>
+    [Fact]
+    public void McpsHostVerbs_AreAbsentUntilRegistered()
+    {
+        using var manager = Manager();
+
+        var help = SessionCommands.HelpLines(manager.Commands);
+
+        Assert.Contains("/mcp", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("/mcp reload", help, StringComparison.Ordinal);
+        Assert.DoesNotContain("/mcp login", help, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ARegisteredMcpVerb_IsOfferedAndDispatched()
+    {
+        var (manager, session, _) = Wired();
+        using var _ = manager;
+        var ran = false;
+
+        manager.Commands.RegisterVerb("/mcp",
+            new CommandArgument("reload", "re-read config.json and reconnect"),
+            (_, _) => { ran = true; return true; });
+
+        Assert.Contains("/mcp reload", SessionCommands.HelpLines(manager.Commands),
+            StringComparison.Ordinal);
+        Assert.Equal(CommandRegistry.Dispatch.Ran, manager.Commands.Run(session, "/mcp reload"));
+        Assert.True(ran);
+    }
+
+    /// <summary>
+    /// A VERB WHOSE NAME CARRIES A PLACEHOLDER MATCHES ON ITS VERB. The stored row is
+    /// "login &lt;name&gt;" because that is what a palette shows; what a user types is
+    /// "login context7". Comparing the whole name would never match.
+    /// </summary>
+    [Fact]
+    public void AVerbWithAPlaceholder_MatchesOnItsFirstWord()
+    {
+        var (manager, session, _) = Wired();
+        using var _ = manager;
+        var target = "";
+
+        manager.Commands.RegisterVerb("/mcp",
+            new CommandArgument("login <name>", "authorise a server", Completes: false),
+            (_, arguments) => { target = arguments; return true; });
+
+        Assert.Equal(CommandRegistry.Dispatch.Ran,
+            manager.Commands.Run(session, "/mcp login context7"));
+        Assert.Contains("context7", target, StringComparison.Ordinal);
     }
 }

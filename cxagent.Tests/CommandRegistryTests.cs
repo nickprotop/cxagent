@@ -81,15 +81,16 @@ public class CommandRegistryTests : IDisposable
     }
 
     // A DECLARED COMMAND WITH NO HANDLER FALLS THROUGH, rather than being sent to the model as
-    // text — /mcp needs the token store and HTTP client a composition root owns, which a bare
-    // SessionManager has none of.
+    // text. A bare registry — nothing seeded, nothing registered — still finds "/mcp" in Core's
+    // table, so this is the NoHandler path rather than NotACommand.
     [Fact]
     public void TryRun_IsFalseForACommandNobodyRegistered()
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = Wired(manager);
+        var bare = new CommandRegistry();
 
-        Assert.False(manager.Commands.TryRun(session, "/mcp"));
+        Assert.False(bare.TryRun(session, "/mcp"));
     }
 
     // SEEDED BY CORE. /clear acts on a session, so the manager can service it without a front end.
@@ -135,19 +136,19 @@ public class CommandRegistryTests : IDisposable
     }
 
     /// <summary>
-    /// A DECLARED COMMAND NOBODY REGISTERED IS NOT "NOT A COMMAND". /mcp is declared in the table
-    /// so it appears in /help and the palette, and only a front end holding a token store and an
-    /// HTTP client can service it — so a headless consumer must be able to say so rather than send
-    /// "/mcp" to a model, which is the one outcome that is worse than silence.
+    /// A DECLARED COMMAND NOBODY REGISTERED IS NOT "NOT A COMMAND". "/mcp" is declared in Core's
+    /// table so it appears in /help and the palette; a registry that seeded nothing must say so
+    /// rather than send "/mcp" to a model as a goal, which is the one outcome worse than silence.
     /// </summary>
     [Fact]
     public void Run_SaysNoHandler_ForADeclaredCommandNobodyRegistered()
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = Wired(manager);
+        var bare = new CommandRegistry();
 
         Assert.Equal(CommandRegistry.Dispatch.NoHandler,
-            manager.Commands.Run(session, "/mcp"));
+            bare.Run(session, "/mcp"));
     }
 
     [Fact]
@@ -166,9 +167,10 @@ public class CommandRegistryTests : IDisposable
     {
         using var manager = SessionManager.Create(new AppPaths(_dir));
         var session = Wired(manager);
+        var bare = new CommandRegistry();
 
         Assert.True(manager.Commands.TryRun(session, "/clear"));
-        Assert.False(manager.Commands.TryRun(session, "/mcp"));
+        Assert.False(bare.TryRun(session, "/mcp"));
         Assert.False(manager.Commands.TryRun(session, "ordinary text"));
     }
 }

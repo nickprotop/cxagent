@@ -129,11 +129,17 @@ public sealed class CommandRegistry
 
         // A VERB FIRST, and matched on the FIRST WORD so "/stats clear" reaches it while
         // "/stats 30" does not. A verb intercepts one argument, never the command.
+        //
+        // THE STORED NAME'S FIRST WORD, not the whole name: a placeholder-carrying row like
+        // "login <name>" reads as one phrase in help and the palette, but what a user types after
+        // the verb is the argument, not more of the name — "login" typed against "login <name>"
+        // must match the same way "clear" matches "clear".
         if (_verbs.TryGetValue(command.Name, out var verbs))
         {
             var first = arguments.Split(' ', 2)[0];
             foreach (var verb in verbs)
-                if (string.Equals(verb.Argument.Name, first, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(verb.Argument.Name.Split(' ', 2)[0], first,
+                    StringComparison.OrdinalIgnoreCase))
                     return verb.Handle(session, arguments) ? Dispatch.Ran : Dispatch.NotACommand;
         }
 

@@ -137,6 +137,12 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.ShowDiff(arguments).Handled());
                     break;
 
+                // LIST AND SHOW ONLY. reload and login are the host's — see SharedServices.McpStatuses
+                // — and a process that registers neither still gets this half for free.
+                case "/mcp":
+                    Commands.Register(command, (session, arguments) => session.DescribeMcp(arguments).Handled());
+                    break;
+
                 // THE RESUME STORE IS THIS MANAGER'S, which is the whole argument for registering
                 // here. A front end listing rows and restoring one through Shared.Resume does the
                 // manager's job from outside it, with SessionsCommand already sitting in

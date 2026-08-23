@@ -97,17 +97,12 @@ public class CoreCommandsTests : IDisposable
     }
 
     /// <summary>
-    /// THE FRONT END'S OWN COMMANDS, and only those. /mcp needs the manager, token store and HTTP
-    /// client a composition root owns, which is not reachable from a session. Every other command
-    /// in Core's table must have a Core handler, or a headless consumer silently loses it: the
-    /// registry answers NoHandler and the text never reaches a model.
-    ///
-    /// <para>/exit IS NOT HERE, deliberately: it left Core's table entirely, so a process that
-    /// never registers it has no third state to report for it — SessionCommands.All simply does
-    /// not name it.</para>
+    /// EVERY COMMAND CORE SHIPS, CORE CAN RUN. A table entry with no handler is a name every
+    /// consumer advertises and none can service; a front end contributes its own commands by
+    /// registering them, so there is nothing left for this list to hold.
     /// </summary>
     [Fact]
-    public void OnlyTheFrontEndsOwnCommandsAreUnhandled()
+    public void CoreServicesEveryCommandItShips()
     {
         var (manager, session, _) = Wired();
         using var _2 = manager;
@@ -119,7 +114,7 @@ public class CoreCommandsTests : IDisposable
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
 
-        Assert.Equal(new[] { "/mcp" }, unhandled);
+        Assert.Empty(unhandled);
     }
 }
 

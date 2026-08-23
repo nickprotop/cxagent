@@ -36,13 +36,6 @@ public static class SessionCommands
         new("/compress", "summarise the conversation to free up room") { NeedsModel = true },
         new("/mcp", "list MCP servers, inspect one, or reload config",
         [
-            new("reload", "re-read config.json and reconnect"),
-            // VERB AND PLACEHOLDER IN ONE NAME, the same shape as `/sessions resume <number|id>`:
-            // the row reads as the whole phrase, and the live server list fills the blank. Not
-            // completable, because filling the composer with the literal "<name>" puts text there
-            // that is not a command.
-            new("login <name>", "authorise a server that needs OAuth", Completes: false,
-                Values: ValueSources.McpServers),
             // COMPLETABLE, and it does not couple this static table to session state: the table
             // names a SET, and the manager, which owns the toolset, answers for it. The table holds
             // no state.

@@ -47,6 +47,20 @@ public sealed record SharedServices
     /// <summary>Connected MCP servers, or null when none are configured — the common case.</summary>
     public Mcp.McpToolset? Mcp { get; init; }
 
+    /// <summary>
+    /// What the MCP servers are doing right now, or null when this host has none.
+    ///
+    /// <para>A SUPPLIER RATHER THAN THE MANAGER. Listing needs connection state and per-server
+    /// errors, which only the thing that opened the connections knows — but reconnection, OAuth and
+    /// the token store are the host's, and handing those to Core to render a table would couple it
+    /// to a lifecycle it has no part in. A function returning the current statuses is the whole of
+    /// what listing needs.</para>
+    ///
+    /// <para>READ EACH TIME, never cached: servers reconnect and fail between one /mcp and the next,
+    /// and a snapshot taken at startup would describe a world that has moved.</para>
+    /// </summary>
+    public Func<IReadOnlyList<Mcp.McpServerStatus>>? McpStatuses { get; init; }
+
     /// <summary>The permission gate. ONE per process: a fresh gate per session would forget every
     /// rule and trust decision the user has already made.</summary>
     public IPermissionGate? Gate { get; init; }

@@ -529,6 +529,7 @@ public static class AppBootstrap
                 Resume = sessions,
                 History = history,
                 Mcp = mcp.Toolset,
+                McpStatuses = mcp.Statuses,
                 Gate = permissionGate,
                 GlobalInstructionsDir = paths.ConfigDir,
             },
@@ -559,22 +560,6 @@ public static class AppBootstrap
                     new CommandArgument("clear", "delete all usage history, after confirming"),
                     (_, _) => { ConfirmClearHistory(mainWindow, history); return true; });
 
-            // THE LAST FOUR. Each needs something this process owns rather than any session — the
-            // config paths /model resolves against, the rules store and classifier /mode reads, the
-            // toolset /mcp reloads, the resume store /sessions lists. They are registered here for
-            // that reason, not because they are UI: the work they do is already a session's or the
-            // manager's, and what stays is the lookup of collaborators only a composition root has.
-            if (declared.Name == "/mcp")
-                manager.Commands.Register(declared, (session, arguments) =>
-                {
-                    // FIRE AND FORGET: a reload connects servers and the caller does not wait.
-                    // The session parameter is NAMED rather than discarded, because `_ = …` on the
-                    // next line would then assign to it instead of discarding the Task.
-                    _ = session;
-                    _ = mcpCommand.HandleAsync(arguments);
-                    return true;
-                });
-
             // OVER CORE'S. The turn itself is the session's; what this adds is the front end's
             // reaction to it — the running-turn continuation and retiring the composer hint.
             if (declared.Name == "/init")
@@ -586,6 +571,19 @@ public static class AppBootstrap
                     return true;
                 });
         }
+
+        // THE VERBS, NOT THE COMMAND. Core lists the servers it holds. These two are this process's
+        // because this process is what hands config to the manager in the first place — re-reading
+        // it is the same job — and because authorising a server opens a browser and writes a token
+        // store, which no library should do on its host's behalf.
+        manager.Commands.RegisterVerb("/mcp",
+            new CommandArgument("reload", "re-read config.json and reconnect"),
+            (session, arguments) => { _ = session; _ = mcpCommand.HandleAsync(arguments); return true; });
+
+        manager.Commands.RegisterVerb("/mcp",
+            new CommandArgument("login <name>", "authorise a server that needs OAuth",
+                Completes: false, Values: ValueSources.McpServers),
+            (session, arguments) => { _ = session; _ = mcpCommand.HandleAsync(arguments); return true; });
 
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
         // command Core ships but can never service is one every consumer advertises and none can

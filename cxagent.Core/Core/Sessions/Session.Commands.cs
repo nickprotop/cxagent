@@ -37,6 +37,25 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Says what MCP servers this session has, or the detail of one.
+    ///
+    /// <para>READ-ONLY BY CONSTRUCTION. Reloading re-reads config the host supplied and logging in
+    /// opens a browser; both are the host's and arrive as verbs. What is left needs only the
+    /// toolset and the statuses, which are here.</para>
+    /// </summary>
+    public CommandStatus DescribeMcp(string arguments)
+    {
+        if (Services?.Mcp is not { } toolset || Services?.McpStatuses is not { } statuses)
+        {
+            Say(new Message("No MCP servers are configured here.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        Say(Commands.SessionCommands.DescribeMcp(statuses(), arguments, [.. toolset.Names()]));
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
     /// Says what commands this process has.
     ///
     /// <para>THE TABLE IS CORE'S, so this needs nothing a front end holds. A front end with keys

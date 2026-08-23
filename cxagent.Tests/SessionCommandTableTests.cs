@@ -274,8 +274,6 @@ public class SessionCommandTableTests
     /// to a handler and not to the table is a subcommand nobody will discover.
     /// </summary>
     [Theory]
-    [InlineData("/mcp", "reload")]
-    [InlineData("/mcp", "login")]
     [InlineData("/mcp", "show")]
     [InlineData("/mode", "agent")]
     [InlineData("/mode", "edits")]
@@ -326,7 +324,6 @@ public class SessionCommandTableTests
         // `/sessions resume <number|id>` — the row reads as the whole phrase and the live server
         // list fills the blank, so completing it would put "<name>" in the composer literally.
         Assert.False(mcp.Args.Single(a => a.Name == "show <name>").Completes);
-        Assert.True(mcp.Args.Single(a => a.Name == "reload").Completes);
     }
 
     // A ROW CARRYING A PLACEHOLDER IS SELECTABLE, and completes to the verb in front of it. Leave it
@@ -337,7 +334,6 @@ public class SessionCommandTableTests
     // palette open its next level.
     [Theory]
     [InlineData("/mcp ", "show <name>", "/mcp show ")]
-    [InlineData("/mcp ", "login <name>", "/mcp login ")]
     [InlineData("/sessions ", "resume <number|id>", "/sessions resume ")]
     public void PlaceholderRows_CompleteToTheVerbBeforeThePlaceholder(
         string typed, string rowName, string expected)
@@ -381,7 +377,16 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_AfterASpace_OffersTheCommandsArguments()
     {
-        var args = SessionCommands.ArgumentsFor("/mcp ");
+        // reload AND login ARE REGISTRY VERBS, not table rows — see CommandVerbTests — so this
+        // reads them the way a front end's palette actually does, through the registry it registered
+        // them in.
+        var registry = new CommandRegistry();
+        registry.RegisterVerb("/mcp",
+            new CommandArgument("reload", "re-read config.json and reconnect"), (_, _) => true);
+        registry.RegisterVerb("/mcp",
+            new CommandArgument("login <name>", "authorise a server", Completes: false), (_, _) => true);
+
+        var args = SessionCommands.ArgumentsFor("/mcp ", registry: registry);
 
         Assert.Contains(args, a => a.Name == "reload");
         Assert.Contains(args, a => a.Name == "login <name>");
@@ -390,7 +395,11 @@ public class SessionCommandTableTests
     [Fact]
     public void ArgumentsFor_NarrowsAsTheUserTypes()
     {
-        var args = SessionCommands.ArgumentsFor("/mcp re");
+        var registry = new CommandRegistry();
+        registry.RegisterVerb("/mcp",
+            new CommandArgument("reload", "re-read config.json and reconnect"), (_, _) => true);
+
+        var args = SessionCommands.ArgumentsFor("/mcp re", registry: registry);
 
         Assert.Equal("reload", Assert.Single(args).Name);
     }
@@ -495,7 +504,7 @@ public class SessionCommandTableTests
     {
         var help = SessionCommands.HelpLines();
 
-        Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
+        Assert.Contains("/mcp show <name>", help, StringComparison.Ordinal);
         Assert.Contains("/mode agent <mode>", help, StringComparison.Ordinal);
     }
 
@@ -506,7 +515,7 @@ public class SessionCommandTableTests
     {
         var help = SessionCommands.HelpLines();
 
-        Assert.Contains("re-read config.json", help, StringComparison.Ordinal);
+        Assert.Contains("inspect one server", help, StringComparison.Ordinal);
     }
 
     /// <summary>
