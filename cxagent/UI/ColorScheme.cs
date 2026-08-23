@@ -173,7 +173,7 @@ public static class ColorScheme
     /// they resolve through the same roles rather than through three more literals.</para>
     public static string ThresholdMarkup(double percent) =>
         percent < 60 ? AccentMarkup
-        : percent < 85 ? Markup(Caution, "yellow")
+        : percent < 85 ? CautionMarkup
         : DangerMarkup;
 
     /// <summary>
