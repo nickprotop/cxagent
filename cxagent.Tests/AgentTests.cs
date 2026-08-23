@@ -97,8 +97,7 @@ public class AgentTests
     }
 
     /// <summary>
-    /// THE TURN CAP IS PER REQUEST, NOT PER SESSION — matching opencode, whose <c>let step = 0</c>
-    /// lives inside the per-prompt <c>runLoop</c> (<c>session/prompt.ts:1085</c>).
+    /// THE TURN CAP IS PER REQUEST, NOT PER SESSION.
     ///
     /// <para>A session-wide counter would tighten the ceiling with every message: the second prompt
     /// would start with the first prompt's turns already spent against it, and a long conversation

@@ -7,11 +7,10 @@ namespace CxAgent.Tests;
 /// <summary>
 /// What the agent is told before it starts.
 ///
-/// <para>Adapted from opencode's <c>session/prompt/default.txt</c> and its runtime <c>&lt;env&gt;</c>
-/// block. Our own was three sentences; the live drive showed exactly what that costs — the model ran
-/// a test command that matched nothing, read <c>exit_code: 0</c> as proof, and reported success over
-/// a file that did not compile. It had never been told to check what its verification actually
-/// verified.</para>
+/// <para>WHY THE PROMPT IS THIS LONG. A terse, three-sentence prompt is not enough: the live drive
+/// showed exactly what that costs — the model ran a test command that matched nothing, read
+/// <c>exit_code: 0</c> as proof, and reported success over a file that did not compile. It had never
+/// been told to check what its verification actually verified.</para>
 /// </summary>
 public class SystemPromptTests
 {
@@ -535,9 +534,9 @@ public class SystemPromptTests
         Assert.Contains("the finding is a search, the deciding needs this conversation",
             fanOut, StringComparison.Ordinal);
 
-        // TYPE-MATCHING AS A REASON TO DELEGATE — opencode's one line on types (anthropic.txt:80).
-        // It names no type: the catalog belongs in the tool description, read at the moment of
-        // choosing (D25), and this is the judgement rule that sits beside the others.
+        // TYPE-MATCHING AS A REASON TO DELEGATE. It names no type: the catalog belongs in the tool
+        // description, read at the moment of choosing (D25), and this is the judgement rule that
+        // sits beside the others.
         Assert.Contains("If one of the agent types you are offered fits", fanOut, StringComparison.Ordinal);
 
         // FOUR IS THE CEILING, asserted so it stays one. Four is what the two distinctions take —

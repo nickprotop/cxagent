@@ -262,10 +262,9 @@ public class AgentContextTests
     }
 
     /// <summary>
-    /// THE TRIGGER IS THE REAL WINDOW, less a reserve — the rule opencode uses
-    /// (<c>session/overflow.ts</c>: <c>count >= model.limit.input - reserved</c>). We know the window
-    /// (it is configured, and shown in the panel) and we know occupancy, so a threshold derived from
-    /// the actual limit beats any number picked by hand.
+    /// THE TRIGGER IS THE REAL WINDOW, less a reserve. We know the window (it is configured, and
+    /// shown in the panel) and we know occupancy, so a threshold derived from the actual limit beats
+    /// any number picked by hand.
     /// </summary>
     [Fact]
     public void IsUnderPressure_IsTrue_WhenOccupancyReachesTheWindowLessTheReserve()

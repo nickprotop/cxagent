@@ -13,9 +13,9 @@ namespace CxAgent.Tests;
 /// comments carrying the reasoning behind a decision. Both are correct, for their own tree. Putting
 /// either in the universal prompt is wrong for whoever points the agent somewhere else.</para>
 ///
-/// <para>Shape copied from opencode (<c>session/instruction.ts</c>): a global file, then findUp from
-/// the working directory, FIRST MATCH WINS — their comment says "so we don't stack AGENTS.md/CLAUDE.md
-/// from every ancestor", which is how a context fills with stale advice from three levels up.</para>
+/// <para>THE SHAPE: a global file, then findUp from the working directory, FIRST MATCH WINS — one
+/// project-level file, not a stack of AGENTS.md/CLAUDE.md from every ancestor, which is how a context
+/// fills with stale advice from three levels up.</para>
 /// </summary>
 public class ProjectInstructionsTests : IDisposable
 {
@@ -132,13 +132,14 @@ public class ProjectInstructionsTests : IDisposable
     }
 
     /// <summary>
-    /// ONE NAME, BUT EVERY LEVEL THAT HAS IT — matching opencode exactly.
+    /// ONE NAME, BUT EVERY LEVEL THAT HAS IT.
     ///
-    /// <para>Their comment "the first project-level match wins so we don't stack AGENTS.md/CLAUDE.md
-    /// from every ancestor" is about not stacking the two NAMES; their <c>findUp</c> collects every
-    /// directory from the start to the worktree root, and <c>matches.forEach</c> adds them all. The
-    /// monorepo case is why: a root file carries the house style and a package file carries what is
-    /// specific to that package, and both are true at once.</para>
+    /// <para>"First match wins" (above) is about not stacking the two NAMES — AGENTS.md and
+    /// CLAUDE.md are not both loaded when both exist at the same level. It says nothing about
+    /// stacking one name across LEVELS: every directory from the start to the worktree root is
+    /// walked, and each match along the way is kept. The monorepo case is why: a root file carries
+    /// the house style and a package file carries what is specific to that package, and both are
+    /// true at once.</para>
     ///
     /// <para>ROOT FIRST, so the nearest file is rendered last and wins on a conflict — the more
     /// specific claim.</para>

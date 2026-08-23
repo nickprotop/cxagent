@@ -6,21 +6,20 @@ namespace CxAgent.Tests;
 /// <summary>
 /// Recognising the provider's own "your context is too big" refusal.
 ///
-/// <para>THE SECOND FIRING MOMENT, copied from opencode. Its trigger is not only the predictive one
-/// (occupancy against the window) — it also compacts REACTIVELY, when a call comes back refused for
-/// length (<c>session/processor.ts</c>, the ContextOverflowError branch of <c>halt</c>). The
-/// predictive check can be wrong in both directions: a window that is misconfigured, an endpoint
-/// serving less than it advertises, or a provider that reports no usage at all. The refusal itself
-/// cannot be wrong — it is the endpoint saying so.</para>
+/// <para>THE SECOND FIRING MOMENT. Its trigger is not only the predictive one (occupancy against the
+/// window) — it also compacts REACTIVELY, when a call comes back refused for length. The predictive
+/// check can be wrong in both directions: a window that is misconfigured, an endpoint serving less
+/// than it advertises, or a provider that reports no usage at all. The refusal itself cannot be
+/// wrong — it is the endpoint saying so.</para>
 ///
-/// <para>Patterns taken from opencode's <c>packages/llm/src/provider-error.ts</c>, which collects
-/// them across the vendors it supports. Rate limits are excluded there and here: "too many requests"
-/// is a wait, not a compaction.</para>
+/// <para>The patterns below collect refusal wordings across the vendors this needs to recognise.
+/// Rate limits are excluded: "too many requests" is a wait, not a compaction.</para>
 /// </summary>
 public class ContextOverflowTests
 {
     [Theory]
-    // Verbatim from opencode's pattern list — these are real vendor strings, not invented ones.
+    // Real vendor strings, collected from live provider errors — not invented, which is what makes
+    // matching them worth testing.
     [InlineData("prompt is too long")]
     [InlineData("This model's maximum context length is 8192 tokens")]
     [InlineData("Input is too long for requested model")]

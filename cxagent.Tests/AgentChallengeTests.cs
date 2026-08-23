@@ -410,10 +410,10 @@ public class AgentChallengeTests
 
         Assert.Contains(sink.Errors, e => e.Contains("stopped after 2 turns", StringComparison.OrdinalIgnoreCase));
 
-        // TOOLS STAY BOUND, and the instruction carries the constraint instead — matching opencode
-        // (core/session/runner/max-steps.ts). Withholding them mid-task hands the model a second
-        // puzzle at the worst moment; "any attempt to use tools is a critical violation" is explicit
-        // enough, and the reply comes back in the shape the session was already speaking in.
+        // TOOLS STAY BOUND, and the instruction carries the constraint instead. Withholding them
+        // mid-task hands the model a second puzzle at the worst moment; "any attempt to use tools is
+        // a critical violation" is explicit enough, and the reply comes back in the shape the session
+        // was already speaking in.
         Assert.NotEmpty(provider.LastTools!);
 
         // AN ASSISTANT TURN, not a user one: it reads as the model's own constraint rather than one
@@ -753,14 +753,13 @@ public class AgentChallengeTests
     }
 
     /// <summary>
-    /// THE REACTIVE FIRING MOMENT, copied from opencode: when the provider REFUSES a call for being
-    /// too long, compact and retry rather than surfacing the error.
+    /// THE REACTIVE FIRING MOMENT: when the provider REFUSES a call for being too long, compact and
+    /// retry rather than surfacing the error.
     ///
     /// <para>The predictive check can be wrong — a misconfigured window, an endpoint serving less
     /// than it advertises (a local llama.cpp splits n_ctx across slots), or a provider reporting no
-    /// usage at all. The refusal cannot be: it is the endpoint saying so directly. opencode treats
-    /// this as a second trigger (processor.ts, the ContextOverflowError branch of halt) and so does
-    /// this — otherwise the one case we KNOW the context is too big is the one we give up on.</para>
+    /// usage at all. The refusal cannot be: it is the endpoint saying so directly — otherwise the one
+    /// case we KNOW the context is too big is the one we give up on.</para>
     /// </summary>
     [Fact]
     public async Task AContextOverflowRefusal_CompactsAndRetries_RatherThanFailing()

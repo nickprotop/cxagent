@@ -60,10 +60,8 @@ public class McpToolsetTests
     /// Non-identifier characters are sanitised — a server named "my server" must not produce a tool
     /// name the provider will reject.
     ///
-    /// <para>HYPHENS SURVIVE. Providers accept <c>[a-zA-Z0-9_-]</c>, and opencode's rule is exactly
-    /// <c>value.replace(/[^a-zA-Z0-9_-]/g, "_")</c> (<c>mcp/catalog.ts:117</c>) — so "read-file" stays
-    /// "read-file". Replacing them anyway would mangle the many real tool names that use them, for no
-    /// gain.</para>
+    /// <para>HYPHENS SURVIVE. Providers accept <c>[a-zA-Z0-9_-]</c>, so "read-file" stays "read-file".
+    /// Replacing them anyway would mangle the many real tool names that use them, for no gain.</para>
     /// </summary>
     [Fact]
     public void Definitions_SanitiseNamesTheProviderWouldReject()

@@ -22,7 +22,7 @@ public class LogFileManagerTests : IDisposable
         // a chatty job issues many OVERLAPPING appends to the same path. File.AppendAllTextAsync
         // opens/writes/closes with no coordination, and those races LOST BYTES.
         //
-        // Measured on a live drive: `ls ~/bin` logged "ncode-remote" where "opencode-remote" should
+        // Measured on a live drive: `ls ~/bin` logged a truncated filename where the real one should
         // have been, and dropped lines outright. The orchestrator is shown that captured output, so a
         // corrupted log becomes a wrong ANSWER — the same run concluded "the ~/bin directory is
         // empty" about a directory holding six scripts.

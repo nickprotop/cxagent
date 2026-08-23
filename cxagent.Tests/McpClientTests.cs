@@ -287,7 +287,6 @@ public class McpClientTests : IDisposable
     /// <summary>
     /// isError comes back as the error TEXT, not as a thrown exception. The model reads a tool result
     /// and can correct itself; an exception would end the turn over something it could have fixed.
-    /// Matches opencode's convertTool.
     /// </summary>
     [Fact]
     public async Task CallToolAsync_OnAnErrorResult_ReturnsTheErrorText()
