@@ -75,7 +75,9 @@ public sealed class JobBlockControl : CollapsiblePanel
         ColorRole = RoleFor(job.State);
 
         var oneLiner = job.ProgressMessage ?? StateWord(job.State);
-        _header.SetContent(new List<string> { $"[grey]{oneLiner}[/]" });
+        // THROUGH THE ROLE, like ColorRole above it: a literal grey is the same value in every
+        // theme, and the one-liner sits under a header whose colour the theme does choose.
+        _header.SetContent(new List<string> { $"[{ColorScheme.MutedMarkup}]{oneLiner}[/]" });
 
         if (job.Progress is { } p)
         {
