@@ -16,6 +16,8 @@ namespace CxAgent.Tests;
 /// the process (F5 restarts rather than reconfiguring in place), so a config.json edited since
 /// startup gave <c>/model</c> a different answer than every other part of the session.</para>
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class UseModelTests : IDisposable
 {
     private readonly string _dir =

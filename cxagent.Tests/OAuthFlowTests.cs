@@ -17,6 +17,8 @@ namespace CxAgent.Tests;
 /// token exchange is driven against a real loopback listener, since a mocked HttpClient would model
 /// our assumptions about the form encoding rather than the wire.</para>
 /// </summary>
+// Binds an HttpListener — see HttpListenerCollection for why every such class must join.
+[Collection("http-listeners")]
 public class OAuthFlowTests : IDisposable
 {
     private readonly List<FakeTokenServer> _servers = [];
