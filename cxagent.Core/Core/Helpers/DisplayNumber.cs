@@ -61,4 +61,19 @@ public static class DisplayNumber
     /// <inheritdoc cref="Fixed(double, int)"/>
     public static string Fixed(decimal value, int decimals) =>
         value.ToString("F" + decimals.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A duration as <c>00h00m00s</c> — hours, minutes, seconds, each two digits.
+    ///
+    /// <para>ONE SHAPE FOR EVERY DURATION IN THE APP, not a threshold that switches formats. A run
+    /// under a minute and one over it are the same kind of fact, and a reader comparing two rows
+    /// should not have to notice which format either one happens to be in before comparing them.</para>
+    ///
+    /// <para><c>hh\:mm\:ss</c>-STYLE CUSTOM FORMATS ARE SAFE HERE, unlike <see cref="Fixed(double, int)"/>'s
+    /// bare decimals: a custom TimeSpan format string with escaped literal separators reads no
+    /// culture-sensitive symbol, so <c>InvariantCulture</c> is passed for consistency rather than to
+    /// fix a leak the way it does above.</para>
+    /// </summary>
+    public static string Duration(TimeSpan d) =>
+        d.ToString(@"hh\hmm\mss\s", CultureInfo.InvariantCulture);
 }

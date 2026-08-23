@@ -173,8 +173,8 @@ public class InlineJobSinkTests
         // each offering to expand into nothing. The FIRST attempt at this compacted by executor type
         // and could not see them -- the orchestrator plans an llm_agent for EVERYTHING, so "Read
         // HeuristicEngine.cs" is a WORKER that calls read_file internally, not a `file` job.
-        Assert.True(InlineJobSink.IsCompactRowForTest(TypedJob("llm_agent", JobState.Succeeded)));
-        Assert.True(InlineJobSink.IsCompactRowForTest(TypedJob("file", JobState.Succeeded)));
+        Assert.True(HeadlessSink().IsCompactRowForTest(TypedJob("llm_agent", JobState.Succeeded)));
+        Assert.True(HeadlessSink().IsCompactRowForTest(TypedJob("file", JobState.Succeeded)));
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class InlineJobSinkTests
                             + "// plus enough more text that folding it into a row would be unreadable",
             });
 
-        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+        Assert.False(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -206,7 +206,7 @@ public class InlineJobSinkTests
         //
         // Use a `file` job, not an llm_agent: a worker is exempt as a WORKER whatever its state, so an
         // llm_agent here would pass without ever exercising the failure rule.
-        Assert.True(InlineJobSink.IsCompactRowForTest(
+        Assert.True(HeadlessSink().IsCompactRowForTest(
             TypedJob("file", JobState.Failed, new Dictionary<string, object?>())));
     }
 
@@ -223,7 +223,7 @@ public class InlineJobSinkTests
                             + "Here is what I learned before stopping, at length.",
             });
 
-        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+        Assert.False(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public class InlineJobSinkTests
         // block on a file read.
         var job = JobWith(JobState.Succeeded, new Dictionary<string, object?> { ["content"] = content });
 
-        Assert.True(InlineJobSink.IsCompactRowForTest(job));
+        Assert.True(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -297,7 +297,7 @@ public class InlineJobSinkTests
             ["content"] = new string('x', 400),
         });
 
-        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+        Assert.False(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -310,7 +310,7 @@ public class InlineJobSinkTests
             ["content"] = "a.cs\nb.cs\nc.cs",
         });
 
-        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+        Assert.False(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public class InlineJobSinkTests
         var job = TypedJob("file", JobState.Succeeded,
             new Dictionary<string, object?> { ["content"] = wholeFile });
 
-        Assert.True(InlineJobSink.IsCompactRowForTest(job));
+        Assert.True(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -376,7 +376,7 @@ public class InlineJobSinkTests
         var job = TypedJob("llm_agent", JobState.Succeeded,
             new Dictionary<string, object?> { ["content"] = review });
 
-        Assert.False(InlineJobSink.IsCompactRowForTest(job));
+        Assert.False(HeadlessSink().IsCompactRowForTest(job));
     }
 
     [Fact]
@@ -636,7 +636,7 @@ public class InlineJobSinkTests
     public void ALongFinishedDuration_RendersAsAClock()
     {
         // The defect this replaces: an eleven-minute build rendered "660.0s", unreadable without
-        // doing the division in your head. Past a minute the row switches to hh:mm:ss instead.
+        // doing the division in your head. Past a minute the row switches to 00h00m00s instead.
         var job = TypedJob("shell", JobState.Succeeded) with
         {
             Result = new JobResult { Success = true, Duration = TimeSpan.FromMinutes(11) },
@@ -644,7 +644,7 @@ public class InlineJobSinkTests
 
         var header = InlineJobSink.CompactHeaderForTest(job);
 
-        Assert.Contains("00:11:00", header);
+        Assert.Contains("00h11m00s", header);
         Assert.DoesNotContain("660.0s", header);
     }
 
@@ -867,11 +867,11 @@ public class InlineJobSinkTests
     [Fact]
     public void AWorkerThatMadeNoCalls_RendersTheSummaryLineAlone()
     {
-        // NOT AN EMPTY BODY. A worker that called nothing still ran, and "0 calls · 1.2s" says so;
+        // NOT AN EMPTY BODY. A worker that called nothing still ran, and "0 calls" says so;
         // an empty block behind an `expand…` says only that the affordance lied.
-        var body = InlineJobSink.TimetableForTest([], TimeSpan.FromSeconds(1.2));
+        var body = InlineJobSink.TimetableForTest([]);
 
-        Assert.Equal("0 calls · 1.2s", body);
+        Assert.Equal("0 calls", body);
     }
 
     [Fact]
@@ -888,11 +888,11 @@ public class InlineJobSinkTests
             Call("write_file", "ToolBindings.cs", "denied"),
             Call("write_file", "Md.cs", "denied"),
             Call("run_shell", "sleep 10", "cancelled"),
-        ], TimeSpan.FromSeconds(6.2));
+        ]);
 
         var summary = body.Split('\n')[0];
 
-        Assert.Equal("6 calls · 4 tools · 6.2s · 1 failed · 2 denied · 1 cancelled", summary);
+        Assert.Equal("6 calls · across 4 tools · 0.1s in tools · 1 failed · 2 denied · 1 cancelled", summary);
     }
 
     [Fact]
@@ -904,9 +904,9 @@ public class InlineJobSinkTests
         [
             Call("read_file", "Agent.cs", "succeeded"),
             Call("read_file", "Md.cs", "succeeded"),
-        ], TimeSpan.FromSeconds(0.4));
+        ]);
 
-        Assert.Equal("2 calls · 1 tool · 0.4s", body.Split('\n')[0]);
+        Assert.Equal("2 calls · across 1 tool · 0.0s in tools", body.Split('\n')[0]);
     }
 
     [Fact]
@@ -918,7 +918,7 @@ public class InlineJobSinkTests
             Call("run_shell", "dotnet build", "failed"),
             Call("write_file", "Md.cs", "denied"),
             Call("run_shell", "sleep 10", "cancelled"),
-        ], TimeSpan.FromSeconds(1));
+        ]);
 
         // The header row starts "| " too; the separator starts "|-" and is excluded by it.
         var rows = body.Split('\n').Where(l => l.StartsWith("| ", StringComparison.Ordinal)).ToList();
@@ -940,7 +940,7 @@ public class InlineJobSinkTests
             .Select(i => Call("read_file", $"File{i}.cs", "succeeded"))
             .ToList();
 
-        var body = InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(9));
+        var body = InlineJobSink.TimetableForTest(calls);
 
         Assert.Contains("File0.cs", body, StringComparison.Ordinal);
         Assert.Contains("File39.cs", body, StringComparison.Ordinal);
@@ -953,7 +953,7 @@ public class InlineJobSinkTests
         // Worker rows render with Markdown = true, so the renderer styles a code span through the
         // live theme. A colour constant here would hardcode what the theme already decides.
         var body = InlineJobSink.TimetableForTest(
-            [Call("read_file", "Agent.cs", "succeeded")], TimeSpan.FromSeconds(1));
+            [Call("read_file", "Agent.cs", "succeeded")]);
 
         Assert.Contains("`read_file`", body, StringComparison.Ordinal);
     }
@@ -964,7 +964,7 @@ public class InlineJobSinkTests
         // A pipe is the column delimiter: an unescaped one splits the row into more cells than the
         // header declares and Markdig drops the overflow silently — the command disappears.
         var body = InlineJobSink.TimetableForTest(
-            [Call("run_shell", "du -sh . | tail -1", "succeeded")], TimeSpan.FromSeconds(1));
+            [Call("run_shell", "du -sh . | tail -1", "succeeded")]);
 
         Assert.Contains(@"du -sh . \| tail -1", body, StringComparison.Ordinal);
     }
@@ -975,7 +975,7 @@ public class InlineJobSinkTests
         // Md.Escape for the code span, Md.EscapeCell for the bare cell. A code span already hides a
         // pipe from the table parser, so EscapeCell's backslash there would SHOW on screen.
         var body = InlineJobSink.TimetableForTest(
-            [Call("read_file", "my_file.cs", "succeeded")], TimeSpan.FromSeconds(1));
+            [Call("read_file", "my_file.cs", "succeeded")]);
 
         // No backslash in the span: markdown processes no escapes there, so one would SHOW.
         Assert.Contains("`read_file`", body, StringComparison.Ordinal);
@@ -986,7 +986,7 @@ public class InlineJobSinkTests
     public void AMissingTarget_LeavesTheCellEmptyRatherThanPrintingNull()
     {
         var body = InlineJobSink.TimetableForTest(
-            [Call("todowrite", null, "succeeded")], TimeSpan.FromSeconds(1));
+            [Call("todowrite", null, "succeeded")]);
 
         Assert.DoesNotContain("null", body, StringComparison.OrdinalIgnoreCase);
     }
@@ -1003,12 +1003,12 @@ public class InlineJobSinkTests
         };
 
         var invariant = WithCulture(CultureInfo.InvariantCulture,
-            () => InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(6.2)));
+            () => InlineJobSink.TimetableForTest(calls));
         var french = WithCulture(new CultureInfo("fr-FR"),
-            () => InlineJobSink.TimetableForTest(calls, TimeSpan.FromSeconds(6.2)));
+            () => InlineJobSink.TimetableForTest(calls));
 
         Assert.Equal(invariant, french);
-        Assert.Contains("6.2s", invariant, StringComparison.Ordinal);
+        Assert.Contains("4.2s in tools", invariant, StringComparison.Ordinal);
     }
 
     private static T WithCulture<T>(CultureInfo culture, Func<T> work)
@@ -1112,6 +1112,66 @@ public class InlineJobSinkTests
         }, error: "the child blew up");
 
         Assert.Null(sink.WorkerBodyForTest(job));
+    }
+
+    /// <summary>
+    /// A STOPPED WORKER WITH CALLS IS NOT A COMPACT ROW. OneLineRow returns an EMPTY STRING rather
+    /// than null for a job with no output, and empty is not null — so the compact branch claimed the
+    /// row and rendered a bare `expand…` with nothing behind it, while the timetable sat unread.
+    /// Seen live: "cancelled · 8.6s" over an empty block.
+    /// </summary>
+    [Fact]
+    public void AStoppedWorkerWithCalls_IsNotACompactRow()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Explore --gpu-usage code", State = JobState.Cancelled,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = false, ExitCode = -1, ErrorMessage = "cancelled" },
+        };
+
+        Assert.False(sink.IsCompactRowForTest(job));
+    }
+
+    /// <summary>
+    /// A RUN THE USER STOPPED STILL SHOWS WHAT IT DID. It wrote no envelope, so there is no reason
+    /// text to preserve and no error to read — the only question left is how far it got, and an
+    /// empty block behind the expand answers nothing.
+    /// </summary>
+    [Fact]
+    public void AWorkerStoppedByHand_KeepsItsTimetable()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        // NO RESULT AT ALL, which is what a run stopped part-way leaves behind — not an empty
+        // output dictionary. A cancelled job never reaches the code that composes one.
+        // THE SHAPE Agent.cs ACTUALLY WRITES on cancellation: a Result with no Output at all and
+        // ErrorMessage "cancelled". Not an empty output dictionary, and not a null Result.
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "read the RFC files", State = JobState.Cancelled,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult
+            {
+                Success = false, ExitCode = -1,
+                Duration = TimeSpan.FromSeconds(8.6), ErrorMessage = "cancelled",
+            },
+        };
+
+        var body = sink.WorkerBodyForTest(job);
+
+        Assert.NotNull(body);
+        Assert.Contains("`read_file`", body!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1269,15 +1329,123 @@ public class InlineJobSinkTests
         Assert.DoesNotContain("dotnet build", body, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A WORKER'S BODY IS A TABLE FROM THE FIRST EXPAND. Falling back to prose until the first call
+    /// lands means the body changes artefact mid-run, at the moment a user is watching it — and the
+    /// timetable exists precisely so a row keeps one shape from start to finish.
+    /// </summary>
     [Fact]
-    public void AWorkerWithNoCallsYet_FallsBackToItsProgressBody()
+    public void AWorkerWithNoCallsYet_ShowsTheTableAlready()
     {
-        // Expanding a running spawn must never reveal an empty block — that is the worst moment to
-        // show nothing, and the progress body is what the row has to say until the first call lands.
         var sink = HeadlessSink();
         sink.NoteChild("j1", Child());
 
-        Assert.Null(sink.RunningWorkerBodyForTest(RunningWorker("  type: general")));
+        var body = sink.RunningWorkerBodyForTest(RunningWorker("  type: general"));
+
+        Assert.NotNull(body);
+        Assert.Contains("- type: general", body!, StringComparison.Ordinal);
+        Assert.Contains("0 calls", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE CAPTION SURVIVES THE FIRST CALL. The facts say WHICH worker this is — type, model,
+    /// task — which the table does not and cannot; in a fan-out with several rows open that is the
+    /// only thing telling them apart.
+    /// </summary>
+    [Fact]
+    public void TheCaption_StaysOnceCallsArrive()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker("  type: general\n  task: read the RFC"))!;
+
+        Assert.Contains("- type: general", body, StringComparison.Ordinal);
+        Assert.Contains("- task: read the RFC", body, StringComparison.Ordinal);
+        Assert.Contains("`read_file`", body, StringComparison.Ordinal);
+        Assert.Contains("Agent.cs", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// ONE ARTEFACT ACROSS THE WHOLE RUN: what the body gains at the finish is the `out` column and
+    /// the final counts, and nothing else moves.
+    /// </summary>
+    [Fact]
+    public void TheBodyKeepsItsShape_FromFirstExpandToFinish()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", chars: 4_000,
+            agentId: child.Agent.Id));
+
+        var running = sink.RunningWorkerBodyForTest(RunningWorker("  type: general"))!;
+
+        // THE CHILD'S OWN AGENT ID IN THE ENVELOPE, so WorkerBodyForTest's lookup (keyed by the
+        // envelope's id) finds the very call RecordToolCall just filed above — otherwise the
+        // finished body would show "0 calls" for a run that made one, and the "keeps its shape"
+        // comparison below would be comparing a table with a row against one without.
+        var finished = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = $"<sub_agent id=\"{child.Agent.Id}\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+        finished.ProgressBody = "  type: general\n  3 turns";
+        var settled = sink.WorkerBodyForTest(finished)!;
+
+        Assert.Contains("- type: general", running, StringComparison.Ordinal);
+        Assert.Contains("| target |", running, StringComparison.Ordinal);
+        Assert.Contains("1 call", running, StringComparison.Ordinal);
+        Assert.DoesNotContain(" out ", running, StringComparison.Ordinal);
+
+        Assert.Contains("- type: general", settled, StringComparison.Ordinal);
+        Assert.Contains("| target |", settled, StringComparison.Ordinal);
+        Assert.Contains(" out ", settled, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A MARKDOWN RULE SEPARATES THE TWO HALVES. The caption answers "which worker"; the table
+    /// answers "what has it done" — different questions, and the rule is what tells a reader they
+    /// have crossed from one to the other rather than reading one run-on block.
+    /// </summary>
+    [Fact]
+    public void ARuleSeparatesTheCaptionFromTheTable()
+    {
+        var sink = HeadlessSink();
+        sink.NoteChild("j1", Child());
+
+        var body = sink.RunningWorkerBodyForTest(RunningWorker("  type: general"))!;
+
+        Assert.Contains("- type: general\n\n---\n\n0 calls", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE TABLE'S DURATION IS A DIFFERENT MEASUREMENT FROM THE HEADER'S, not a second copy of it.
+    /// The header's clock is WALL TIME — how long the worker has been alive, thinking and waiting on
+    /// the provider included. This is time spent IN TOOLS, summed from the calls themselves, so a
+    /// child that thinks for four minutes and calls for three seconds shows the two apart and the
+    /// gap says where the time went. Summed rather than passed in, so it cannot disagree with the
+    /// rows beneath it.
+    /// </summary>
+    [Fact]
+    public void TheTable_ShowsTheRunsDuration_RunningAndFinished()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+        sink.RecordToolCall(Call("read_file", "Agent.cs", "succeeded", agentId: child.Agent.Id));
+
+        var running = sink.RunningWorkerBodyForTest(RunningWorker())!;
+
+        var finished = JobWith(JobState.Succeeded, new Dictionary<string, object?>
+        {
+            ["content"] = $"<sub_agent id=\"{child.Agent.Id}\" state=\"completed\">\nthe answer\n</sub_agent>",
+        });
+        var settled = sink.WorkerBodyForTest(finished)!;
+
+        Assert.Matches(@"^1 call · across 1 tool · \d+\.\ds in tools$", running.Split('\n')[0]);
+        Assert.Matches(@"^1 call · across 1 tool · \d+\.\ds in tools$", settled.Split('\n')[0]);
     }
 
     [Fact]
@@ -1379,12 +1547,11 @@ public class InlineJobSinkTests
     /// one-second window tick pushes the timetable, and Core's report pushes ProgressBody prose
     /// through ToolProgressed. Whichever fired last was what the row showed.</para>
     ///
-    /// <para>The progress body here is the real shape Core builds: the facts block from
-    /// Agent.Report. It is non-empty, which is why the old guard — a bare IsNullOrEmpty — always
-    /// let it through.</para>
+    /// <para>THE TABLE WINS, but the facts are not discarded — they are now the table's own caption,
+    /// so this is no longer a race between two competing bodies but one body that carries both.</para>
     /// </summary>
     [Fact]
-    public void ARunningWorkersTable_OutranksTheProgressBody()
+    public void ARunningWorkersTable_CarriesTheProgressBodyAsItsCaption()
     {
         var sink = HeadlessSink();
         var child = Child();
@@ -1394,21 +1561,24 @@ public class InlineJobSinkTests
         var body = sink.LiveBodyForTest(RunningWorker("  type: general\n  1 turn"))!;
 
         Assert.Contains("`read_file`", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("type: general", body, StringComparison.Ordinal);
+        Assert.Contains("type: general", body, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// AND BEFORE THE FIRST CALL, THE PROSE IS ALL THERE IS. RunningWorkerBody is null until the
-    /// child calls something, and expanding a fresh spawn must not reveal an empty block — so the
-    /// precedence rule falls through rather than blanking.
+    /// AND BEFORE THE FIRST CALL, THE TABLE IS ALREADY THERE — a caption over an empty header, not
+    /// the prose alone. RunningWorkerBody stops returning null the moment NoteChild fires, so the
+    /// precedence rule never falls through to the bare ProgressBody for a noted worker.
     /// </summary>
     [Fact]
-    public void AWorkerWithNoCallsYet_KeepsItsProgressBody()
+    public void AWorkerWithNoCallsYet_ShowsTheCaptionOverAnEmptyTable()
     {
         var sink = HeadlessSink();
         sink.NoteChild("j1", Child());
 
-        Assert.Equal("  type: general", sink.LiveBodyForTest(RunningWorker("  type: general")));
+        var body = sink.LiveBodyForTest(RunningWorker("  type: general"))!;
+
+        Assert.Contains("- type: general", body, StringComparison.Ordinal);
+        Assert.Contains("0 calls", body, StringComparison.Ordinal);
     }
 
     /// <summary>

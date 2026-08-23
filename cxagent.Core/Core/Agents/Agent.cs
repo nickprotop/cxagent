@@ -1989,13 +1989,15 @@ public sealed class Agent
             if (childSkills.Count > 0)
                 facts.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
 
-            // ITS TASK, clipped. The prompt is the parent's own words and is often a page long — the
-            // first line is what the parent MEANT; the rest is detail the row cannot hold. Shown only
-            // when it says something the row's name does not already.
+            // ITS TASK, the first line in full. The prompt is the parent's own words and is often a
+            // page long — the first line is what the parent MEANT, and the rest is detail the row
+            // cannot hold, but that first line is shown whole rather than clipped: cutting it short
+            // can drop the very word that distinguishes this run from a sibling's. Shown only when it
+            // says something the row's name does not already.
             if (!string.IsNullOrWhiteSpace(childPrompt))
             {
                 var first = childPrompt!.Split('\n', 2)[0].Trim();
-                if (first.Length > 0) facts.Add($"  task: {Clip(first, 60)}");
+                if (first.Length > 0) facts.Add($"  task: {first}");
             }
 
             // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
@@ -2276,7 +2278,10 @@ public sealed class Agent
                 if (!string.IsNullOrWhiteSpace(childPrompt))
                 {
                     var first = childPrompt!.Split('\n', 2)[0].Trim();
-                    if (first.Length > 0) account.Add($"  task: {Clip(first, 60)}");
+                    // UNCLIPPED, so the finished account matches what the live caption already
+                    // showed — see the facts block above for why a shortened task line is the wrong
+                    // trade.
+                    if (first.Length > 0) account.Add($"  task: {first}");
                 }
                 // THE SKILLS IT LOADED, from the captured copy rather than a live read: by here the
                 // child has finished and this section's own argument is that its context is gone.
@@ -2288,7 +2293,12 @@ public sealed class Agent
                 if (childSkills.Count > 0)
                     account.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
 
-                account.Add($"  {childTurns} turn{(childTurns == 1 ? "" : "s")} · {duration}");
+                // NO DURATION HERE. The row's own header already states it (ProgressMessage above,
+                // and the UI header's own DurationSuffix reading the same JobResult.Duration) — a
+                // second copy in the caption agreed with it only until the two were touched by
+                // different code, which is exactly the defect a caption sitting beside a header is
+                // supposed to avoid repeating.
+                account.Add($"  {childTurns} turn{(childTurns == 1 ? "" : "s")}");
                 if (spentIn + spentOut > 0)
                     account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
 

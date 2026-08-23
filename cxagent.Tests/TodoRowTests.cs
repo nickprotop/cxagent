@@ -44,7 +44,7 @@ public class TodoRowTests
     [Fact]
     public void APlanRow_IsNotCompact()
     {
-        Assert.False(InlineJobSink.IsCompactRowForTest(TodoJob()));
+        Assert.False(InlineJobSink.IsCompactRowNoCallsForTest(TodoJob()));
     }
 
     /// <summary>
@@ -54,9 +54,9 @@ public class TodoRowTests
     [Fact]
     public void OnlyPlansAndWorkers_AreNonCompact()
     {
-        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "file" }));
-        Assert.True(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "shell" }));
-        Assert.False(InlineJobSink.IsCompactRowForTest(TodoJob() with { JobType = "llm_agent" }));
+        Assert.True(InlineJobSink.IsCompactRowNoCallsForTest(TodoJob() with { JobType = "file" }));
+        Assert.True(InlineJobSink.IsCompactRowNoCallsForTest(TodoJob() with { JobType = "shell" }));
+        Assert.False(InlineJobSink.IsCompactRowNoCallsForTest(TodoJob() with { JobType = "llm_agent" }));
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ public class TodoRowTests
     public void IsCompactRow_JudgesTheKindOfRow_NotItsState()
     {
         Assert.Equal(
-            InlineJobSink.IsCompactRowForTest(TodoJob(state: JobState.Succeeded)),
-            InlineJobSink.IsCompactRowForTest(TodoJob(state: JobState.Running)));
+            InlineJobSink.IsCompactRowNoCallsForTest(TodoJob(state: JobState.Succeeded)),
+            InlineJobSink.IsCompactRowNoCallsForTest(TodoJob(state: JobState.Running)));
     }
 }

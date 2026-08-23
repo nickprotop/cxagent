@@ -273,14 +273,11 @@ public sealed class InlineJobSink : IToolObserver
             // body, so a running tool would otherwise offer to expand into a copy of its own header,
             // and a RETRIED job would show the previous attempt's stderr under a live "running…".
             //
-            // But a sub-agent does have something: its child's recent tool calls. Blank it too and
-            // expanding a running spawn reveals an empty block, which is the worst moment to show
-            // nothing.
-            //
-            // AND WHEN THE CHILD HAS CALLED SOMETHING, that something is the better answer: the same
-            // timetable the row will settle into, so a reader watching it grow is not handed a
-            // different artefact at the finish line. ProgressBody is what a spawn shows until its
-            // first call lands, and what every other running row shows always.
+            // But a sub-agent does have something: Core's facts as a caption, above the same table
+            // the row will settle into — from the first expand, before any call has landed, so a
+            // reader watching it grow is never handed a different artefact at the finish line.
+            // ProgressBody is what a spawn shows only before NoteChild fires, and what every other
+            // running row shows always.
             if (!IsTerminal(job.State))
                 _chat.UpdateMessage(id, RunningWorkerBody(job) ?? job.ProgressBody ?? string.Empty);
 
@@ -790,7 +787,7 @@ public sealed class InlineJobSink : IToolObserver
                 : "";
 
     /// <summary>
-    /// " · 2.0s" for anything under a minute, " · hh:mm:ss" at or past one — or "" when the job has
+    /// " · 2.0s" for anything under a minute, " · 00h01m30s" at or past one — or "" when the job has
     /// no duration yet. Shared by CompactHeader's finished branch and StatusText, both of which
     /// showed the same defect: rendering `{TotalSeconds:0.0}s` unconditionally reads "660.0s" for an
     /// eleven-minute build, a number nobody can parse at a glance without doing the division
@@ -799,11 +796,33 @@ public sealed class InlineJobSink : IToolObserver
     /// habit should not change just because a few of them are now formatted differently — the switch
     /// only needs to happen once tenths-of-a-second precision has stopped being the useful unit,
     /// which is exactly at a minute.
+    ///
+    /// <para>THROUGH <see cref="DisplayNumber.Duration"/>, because this branch reports a TOTAL, read
+    /// once, after the row has settled — the letters read as a duration rather than a clock, which
+    /// is the right shape for a number nobody is watching tick. The running row's own elapsed field
+    /// keeps the colon-separated <c>hh:mm:ss</c> instead, because that one DOES tick once a second
+    /// and a ticking number reads as a clock, not a duration; the two fields report the same kind of
+    /// fact at two different moments in a run's life and are right to look different.</para>
     /// </summary>
     private static string DurationSuffix(TimeSpan? duration) =>
         duration is not { } d ? ""
         : d.TotalSeconds < 60 ? $" · {DisplayNumber.Fixed(d.TotalSeconds, 1)}s"
-        : $" · {d:hh\\:mm\\:ss}";
+        : $" · {DisplayNumber.Duration(d)}";
+
+    /// <summary>
+    /// Whether this job's progress text already ends in an elapsed time of its own.
+    ///
+    /// <para>A WORKER DOES: <c>Agent.Report</c> composes "3 turns · 9% ctx · 14s", and its last
+    /// field is the same span this header would otherwise append. Matching the SHAPE rather than
+    /// the job type keeps the two in step — a row that stops reporting an age gets its clock back
+    /// without anything here being told.</para>
+    /// </summary>
+    private static bool ReportsItsOwnAge(Job job) =>
+        job.ProgressMessage is { } text && AgeSuffix.IsMatch(text);
+
+    /// <summary>The trailing " · 14s" or " · 2m05s" a worker's report ends with.</summary>
+    private static readonly System.Text.RegularExpressions.Regex AgeSuffix =
+        new(@" · (\d+m)?\d+s$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
     public static string CompactHeaderForTest(Job job) => CompactHeader(job);
@@ -878,7 +897,18 @@ public sealed class InlineJobSink : IToolObserver
             //
             // StartedAt is also null in the instant between a row being created and its first stamp
             // — guarded so that instant shows no clock rather than a negative or garbage one.
-            var elapsed = !job.Reviewing && job.StartedAt is { } started
+            //
+            // hh:mm:ss, NOT DisplayNumber.Duration's "00h00m00s" — this field TICKS, once a second,
+            // for as long as the row runs, and a running timer reads as a clock: compact, colon-
+            // separated, the shape a stopwatch or a video's scrubber already uses. The letters
+            // DisplayNumber.Duration adds are right for a TOTAL read once at the end of a run (see
+            // DurationSuffix below) but are noise on a number the eye is tracking tick by tick.
+            //
+            // AND NOT AT ALL WHEN THE PROGRESS TEXT ALREADY CARRIES ONE. A worker's report ends in
+            // its own elapsed field, so a clock appended after it puts the same number on the line
+            // twice — "3 turns · 9% ctx · 14s  ·  00:00:14". A job that reports no age of its own,
+            // a shell call being the common one, still needs this: it is that row's only clock.
+            var elapsed = !job.Reviewing && job.StartedAt is { } started && !ReportsItsOwnAge(job)
                 ? "  ·  " + (DateTimeOffset.UtcNow - started).ToString(@"hh\:mm\:ss")
                 : "";
 
@@ -1129,7 +1159,18 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     /// <summary>Test seam for <see cref="IsCompactRow"/> — a pure decision worth pinning, whose
     /// rendering is only observable through a UI queue the tests cannot drain.</summary>
-    public static bool IsCompactRowForTest(Job job) => IsCompactRow(job);
+    public bool IsCompactRowForTest(Job job) => IsCompactRow(job);
+
+    /// <summary>Test seam for callers with no sink: a job whose worker filed no calls, which is
+    /// every non-worker row and a worker that called nothing.</summary>
+    public static bool IsCompactRowNoCallsForTest(Job job) =>
+        OneLineRow(job) is not null || !IsTheAnswer(job);
+
+    /// <summary>Whether this worker's child filed any finished call — the timetable's content.</summary>
+    private bool HasRecordedCalls(Job job) =>
+        _workerChildren.TryGetValue(job.Id, out var child)
+        && _workerCalls.TryGetValue(child.Agent.Id, out var calls)
+        && Snapshot(calls).Count > 0;
 
     /// <summary>Test seam for <see cref="ExpandOnFinish"/> — the decision is pure, its effect is
     /// only observable through a UI queue the tests cannot drain.</summary>
@@ -1197,8 +1238,19 @@ public sealed class InlineJobSink : IToolObserver
     /// and one line carries the reason. Nothing is hidden — the error is the body, and it is what
     /// the model reads on the next consult either way.</para>
     /// </summary>
-    private static bool IsCompactRow(Job job)
+    private bool IsCompactRow(Job job)
     {
+        // A WORKER WITH RECORDED CALLS IS NEVER COMPACT, and this is checked before OneLineRow —
+        // which returns an EMPTY STRING, not null, for a job with no body at all. Empty is not null,
+        // so the test below reads it as "folds to one line" and the compact branch claims the row
+        // before the worker branch is reached. A spawn the user STOPPED has no output at all, so it
+        // rendered as a bare `expand…` with nothing behind it while its timetable sat unread.
+        //
+        // GATED ON HAVING CALLS, not on being a worker: a worker that produced nothing AND called
+        // nothing genuinely has one line to say, and exempting every worker brings back the five
+        // rows of "expand…" into nothing that AJobThatProducedNOTHING pins.
+        if (job.JobType == "llm_agent" && HasRecordedCalls(job)) return false;
+
         if (OneLineRow(job) is not null) return true;
 
         // A tool's bulky output is an echo; a worker's is the answer. So is a plan: the list IS the
@@ -1293,9 +1345,9 @@ public sealed class InlineJobSink : IToolObserver
     ///
     /// <para>AND CORE KEEPS EMITTING THE PROSE, which is not redundancy. <c>ProgressBody</c> is the
     /// only account of a spawn available to a consumer of this library with no timetable of its own,
-    /// and it is what THIS front end shows too until the child's first call lands — <see
-    /// cref="RunningWorkerBody"/> is null before then, and blanking instead would mean expanding a
-    /// fresh spawn reveals an empty block.</para>
+    /// and its facts half is what THIS front end folds into the table's own caption — see <see
+    /// cref="Caption"/>. <see cref="RunningWorkerBody"/> is null only before <c>NoteChild</c> fires,
+    /// which is the one moment nothing worker-shaped exists to draw yet.</para>
     ///
     /// <para>NULL RATHER THAN EMPTY when neither has anything: a job with no progress body of its own
     /// keeps what is already behind its expand. Blanking here would be a third writer racing the
@@ -1309,18 +1361,30 @@ public sealed class InlineJobSink : IToolObserver
     public string? LiveBodyForTest(Job job) => LiveBody(job);
 
     /// <summary>
-    /// A RUNNING worker's body: the same timetable its finished row will show, growing as calls land,
-    /// with whatever the child is doing right now as the last line.
+    /// A RUNNING worker's body: Core's own facts as a caption, then the same timetable its finished
+    /// row will show, growing as calls land, with whatever the child is doing right now as the last
+    /// line.
     ///
-    /// <para>Returns null when there is nothing to draw — not a worker, no child noted yet, or a
-    /// child that has called nothing — and the caller then falls back to <c>ProgressBody</c>. Blanking
-    /// it instead would mean expanding a running spawn reveals an empty block, which is the worst
-    /// moment to show nothing.</para>
+    /// <para>Returns null only when there is no worker to draw for — not a worker row, or no child
+    /// noted yet — and the caller then falls back to <c>ProgressBody</c>, which is what a spawn shows
+    /// before <c>NoteChild</c> fires. Once a child is noted this always has something: the table with
+    /// no rows is a real answer, not an empty block.</para>
     ///
-    /// <para>THE SAME RENDERER AS THE FINISHED ROW, so the row does not change SHAPE when it settles:
-    /// what it gains at the finish line is the <c>out</c> column and the final counts, and nothing
-    /// else moves. Two renderers would drift, and the drift would show up as the table visibly
-    /// reflowing at the exact moment the user stops watching it.</para>
+    /// <para>THE TABLE FROM THE FIRST EXPAND, not just once a call lands. A child that has called
+    /// nothing yet still gets the table — a header with no rows — because the alternative is
+    /// swapping the body's ARTEFACT out from under the user the moment the first call lands: prose,
+    /// then a table, at the exact moment they are watching it. One shape, from the first expand to
+    /// the finish.</para>
+    ///
+    /// <para>THE CAPTION ANSWERS "WHICH WORKER", the table answers "what has it done" — different
+    /// questions, so both stay: in a fan-out with several rows open, the table alone cannot tell two
+    /// workers apart. See <see cref="Caption"/> for why it takes only the facts half of
+    /// <c>ProgressBody</c> and not the whole value.</para>
+    ///
+    /// <para>THE SAME TABLE RENDERER AS THE FINISHED ROW, so the row does not change SHAPE when it
+    /// settles: what it gains at the finish line is the <c>out</c> column and the final counts, and
+    /// nothing else moves. Two renderers would drift, and the drift would show up as the table
+    /// visibly reflowing at the exact moment the user stops watching it.</para>
     /// </summary>
     private string? RunningWorkerBody(Job job)
     {
@@ -1342,9 +1406,42 @@ public sealed class InlineJobSink : IToolObserver
         var inFlight = child.Jobs.Jobs.FirstOrDefault(j => !IsTerminal(j.State));
 
         var snapshot = calls is null ? [] : Snapshot(calls);
-        if (snapshot.Count == 0 && inFlight is null) return null;
+        var table = Timetable(snapshot, new LiveRun(inFlight));
 
-        return Timetable(snapshot, Elapsed(job), new LiveRun(inFlight));
+        return Caption(job.ProgressBody) is { } caption ? caption + "\n\n---\n\n" + table : table;
+    }
+
+    /// <summary>
+    /// Just the "which worker is this" half of a live <see cref="Job.ProgressBody"/> — type, model,
+    /// task, the standing facts Agent.Report composes — with the trailing recent-calls prose cut off.
+    ///
+    /// <para>THE FACTS HALF ONLY, NOT THE WHOLE VALUE. Agent.Report appends up to six recent tool
+    /// names below the facts, separated by a blank line, so a caller can watch "on the right track"
+    /// without expanding the row. Once the table sits below the caption those same calls are already
+    /// listed there, in full and in order — carrying the recent-lines half forward would repeat, in
+    /// prose, exactly what the row's own table shows.</para>
+    ///
+    /// <para>SPLIT ON THE FIRST BLANK LINE, which is the one join Agent.Report uses: it is
+    /// <c>string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)</c> when there is a recent
+    /// list, and just the facts otherwise — so splitting on the first blank line finds the facts
+    /// whether or not recent lines follow.</para>
+    ///
+    /// <para>EACH LINE BECOMES A LIST ITEM, framing rather than re-deriving: Agent.Report indents
+    /// every fact with two literal spaces (<c>"  type: general"</c>), which CommonMark treats as
+    /// ordinary paragraph text and collapses — the indent, and with it the one visual cue that these
+    /// are separate facts rather than one run-on sentence, would not survive rendering at all. A
+    /// leading <c>- </c> is markdown's OWN way of saying "this line stands apart from the next one",
+    /// so it survives the renderer instead of being swallowed by it. This touches only how each line
+    /// is FRAMED — a prefix applied uniformly — never what a line says, so it does not drift when
+    /// Core adds, removes, or reorders a fact.</para>
+    /// </summary>
+    private static string? Caption(string? progressBody)
+    {
+        if (string.IsNullOrEmpty(progressBody)) return null;
+        var blank = progressBody.IndexOf("\n\n", StringComparison.Ordinal);
+        var facts = blank < 0 ? progressBody : progressBody[..blank];
+
+        return string.Join("\n", facts.Split('\n').Select(line => $"- {line.TrimStart()}"));
     }
 
     /// <summary>
@@ -1375,8 +1472,8 @@ public sealed class InlineJobSink : IToolObserver
         job.StartedAt is { } started ? DateTimeOffset.UtcNow - started : TimeSpan.Zero;
 
     /// <summary>Test seam: the table is a pure projection of the calls and the run's length.</summary>
-    public static string TimetableForTest(IReadOnlyList<ToolCallReport> calls, TimeSpan ran) =>
-        Timetable(calls, ran);
+    public static string TimetableForTest(IReadOnlyList<ToolCallReport> calls) =>
+        Timetable(calls);
 
     /// <summary>Test seam for <see cref="WorkerBody"/>, which needs the sink's accumulator and so
     /// cannot be static.</summary>
@@ -1408,12 +1505,17 @@ public sealed class InlineJobSink : IToolObserver
         // failure paths are the ones a leak would collect, since a spawn that broke before answering
         // has no envelope for the branch below to key on. Keyed by the parent's job id, which every
         // one of those paths still has.
-        _workerChildren.TryRemove(job.Id, out _);
+        _workerChildren.TryRemove(job.Id, out var noted);
 
         // THE ENVELOPE IS THE JOIN. A spawn's row is the PARENT's job, and its child's calls are
         // filed under the CHILD's agent id — which the envelope carries and nothing else on this
         // job does.
-        if (SubAgentEnvelope.IdOf(RawContent(job)) is not { } childId) return null;
+        //
+        // EXCEPT WHEN THERE IS NO ENVELOPE. A run stopped part-way never wrote one, so the id has to
+        // come from the child noted at spawn — captured ABOVE the removal below, which is why that
+        // removal reads the value out rather than discarding it.
+        var childId = SubAgentEnvelope.IdOf(RawContent(job)) ?? noted?.Agent.Id;
+        if (childId is null) return null;
 
         // A WORKER THAT DID NOT SUCCEED KEEPS ITS REASON, and this is the one case where the prose
         // is not a narration. BodyText's failure branch composes the error and whatever partial
@@ -1428,7 +1530,19 @@ public sealed class InlineJobSink : IToolObserver
         // THE CALLS ARE STILL DROPPED. The body is one question and the accumulator is another: a
         // failed child's calls are no less finished for its having failed, and forgetting them here
         // leaks exactly the runs a long session has most of.
-        if (job.State != JobState.Succeeded)
+        // A RUN THE USER STOPPED IS NOT A FAILED ONE. A failure has an error to read and a capped
+        // run has the envelope's "hit its turn limit… NOT a completed answer" note — in both the
+        // prose says something a table cannot, and the reasoning above holds. A run stopped by hand
+        // has neither: it wrote no envelope at all, so the only question left is how far it got,
+        // which is exactly what the timetable answers. Returning null for it showed an empty block
+        // behind the expand, and dropping its calls left nothing to show even in principle.
+        //
+        // THE ENVELOPE IS WHAT TELLS THEM APART, not the state: capped and stopped are both
+        // Cancelled, and only one of them has prose worth keeping.
+        var stoppedByHand = job.State == JobState.Cancelled
+            && SubAgentEnvelope.IdOf(RawContent(job)) is null;
+
+        if (job.State != JobState.Succeeded && !stoppedByHand)
         {
             _workerCalls.TryRemove(childId, out _);
             return null;
@@ -1438,7 +1552,16 @@ public sealed class InlineJobSink : IToolObserver
         // this id; leaving it would grow a dictionary of every call the session ever made.
         var calls = _workerCalls.TryRemove(childId, out var recorded) ? recorded : [];
 
-        lock (calls) return Timetable(calls.ToList(), job.Result?.Duration ?? TimeSpan.Zero);
+        List<ToolCallReport> callsCopy;
+        lock (calls) callsCopy = [.. calls];
+        var table = Timetable(callsCopy);
+
+        // THE FINISHED CAPTION, from job.ProgressBody. Agent.cs REPLACES it at the terminal write
+        // (skills, turn count, duration, tokens — strictly more than the live facts), and that
+        // account is the surface that outlives the run, so it belongs above the table here too
+        // rather than being dropped the moment the row settles. No recent-calls half to cut off at
+        // the finish: the finished value carries no "\n\n", so Caption returns it whole.
+        return Caption(job.ProgressBody) is { } caption ? caption + "\n\n---\n\n" + table : table;
     }
 
     /// <summary>
@@ -1450,15 +1573,29 @@ public sealed class InlineJobSink : IToolObserver
     /// unbounded narration it replaces.</para>
     ///
     /// <para>A WORKER THAT CALLED NOTHING GETS THE SUMMARY LINE ALONE. An empty table under a header
-    /// row says only that the <c>expand…</c> lied; "0 calls · 1.2s" is a fact about the run.</para>
+    /// row says only that the <c>expand…</c> lied; "0 calls" is a fact about the run.</para>
+    ///
+    /// <para>THIS FILE SHOWS A DURATION IN THREE PLACES, and a later reader collapsing them to "just
+    /// one clock" is the mistake this file has already made once:
+    /// <list type="bullet">
+    /// <item>a LIVE, TICKING clock (<see cref="CompactHeader"/>'s running elapsed field) reads as a
+    /// clock because it ticks once a second in front of the user, so it keeps the colon-separated
+    /// <c>00:00:03</c> shape.</item>
+    /// <item>a SETTLED total (<see cref="DurationSuffix"/>) is read once after the row has finished
+    /// rather than watched tick, so it takes <see cref="DisplayNumber.Duration"/>'s <c>00h11m00s</c>
+    /// shape instead.</item>
+    /// <item>THIS SUMMARY LINE'S <c>ran</c> is the same wall-clock span as the two above — passed in
+    /// by the caller as <c>Elapsed(job)</c> while running or <c>job.Result.Duration</c> once
+    /// finished — kept here because expanding the row is the one place a reader wants the count and
+    /// the time on the SAME line without also reading the header above it.</item>
+    /// </list></para>
     /// </summary>
     /// <param name="calls">Every call that has FINISHED, in the order it ran.</param>
     /// <param name="ran">How long the run has lasted — its final duration, or its elapsed time so far.</param>
     /// <param name="live">
     /// How the run is going right now, or null for one that is over.
     /// </param>
-    private static string Timetable(IReadOnlyList<ToolCallReport> calls, TimeSpan ran,
-        LiveRun? live = null)
+    private static string Timetable(IReadOnlyList<ToolCallReport> calls, LiveRun? live = null)
     {
         // EVERY NUMBER THROUGH DisplayNumber, and the duration especially. A bare ":0.0" takes the
         // CURRENT CULTURE's decimal separator, so the same run reads "6.2s" or "6,2s" depending on
@@ -1470,11 +1607,24 @@ public sealed class InlineJobSink : IToolObserver
 
         if (calls.Count > 0)
         {
+            // "ACROSS", NOT A SECOND COUNT. This is how many DISTINCT tools the calls used, and
+            // "11 calls · 3 tools" reads as two tallies of the same thing that disagree — the table
+            // below it lists eleven rows. The preposition says the second number measures the first
+            // rather than competing with it.
             var tools = calls.Select(c => c.ToolName).Distinct(StringComparer.Ordinal).Count();
-            parts.Add($"{DisplayNumber.Grouped(tools)} tool{(tools == 1 ? "" : "s")}");
-        }
+            parts.Add($"across {DisplayNumber.Grouped(tools)} tool{(tools == 1 ? "" : "s")}");
 
-        parts.Add($"{DisplayNumber.Fixed(ran.TotalSeconds, 1)}s");
+            // TIME SPENT IN TOOLS, WHICH THE HEADER'S CLOCK IS NOT. That clock measures how long the
+            // WORKER has been alive — thinking, waiting on the provider, everything between calls —
+            // and this measures only the calls themselves. A child that thinks for four minutes and
+            // calls for three seconds reads 00h04m03s up there and 3.0s here, and the GAP between
+            // them is the informative part: it says where the time actually went. Two measurements,
+            // not one fact in two shapes, so dropping either loses something.
+            //
+            // SUMMED FROM THE CALLS rather than taken as a parameter, so it cannot disagree with the
+            // rows listed below it.
+            parts.Add($"{DisplayNumber.Fixed(calls.Sum(c => c.DurationMs) / 1000.0, 1)}s in tools");
+        }
 
         // ZERO COUNTS ARE OMITTED. "16 calls · 4 tools · 6.2s · 0 failed · 0 denied" makes the
         // reader check two words before discarding them, on every row that went fine — and the
