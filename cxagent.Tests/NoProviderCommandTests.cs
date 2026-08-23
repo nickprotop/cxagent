@@ -83,6 +83,7 @@ public class NoProviderCommandTests
     [InlineData("/agents")]
     [InlineData("/diff")]        // git, not the model
     [InlineData("/clear")]
+    [InlineData("/trust")]       // the folder's classification, and the store is on disk
     public void TheseRunWithNoModel(string input)
         => Assert.False(NeedsAModel(input), $"{input} must work with no provider configured");
 
@@ -104,12 +105,12 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A THIRTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // A FOURTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as NotACommand — so a command added to the table but forgotten here
         // silently becomes unavailable without a model. This fails when the counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(13, commands.Count);
+        Assert.Equal(14, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 }

@@ -46,8 +46,14 @@ public sealed class TrustQuestionControl
         markup.AddLine("Anything that can write, and anything outside this folder, still asks.");
         panel.AddControl(markup.WithMargin(1, 1, 1, 1).Build());
 
-        AddButton(panel, "Trust this folder", true);
+        // THE CAUTIOUS ANSWER FIRST, because the first button takes focus and this control opens
+        // in the composer's cell — where the user's next Enter is very often already in flight for
+        // something else. Whichever button sits here is what a stray keystroke chooses, and the two
+        // answers are not equally recoverable: "don't trust" costs prompts and is reversible from
+        // any file prompt or /trust, while an accidental "trust" silently grants every read and
+        // write in the folder and does not ask again.
         AddButton(panel, "Don't trust — ask before everything", false);
+        AddButton(panel, "Trust this folder", true);
 
         return panel;
     }

@@ -144,6 +144,13 @@ public static class SessionCommands
             new("all", "every session ever recorded"),
             new("clear", "delete all usage history, after confirming"),
         ]),
+        // TRUST IS A FOLDER FACT, and the session holds the policy that owns it — so unlike /help
+        // this needs nothing a front end has. Handled rather than NeedsWindow for that reason.
+        new("/trust", "show or set whether this folder is trusted", CommandOutcome.Handled,
+        [
+            new("yes", "trust this folder — stop asking for reads and writes inside it"),
+            new("no", "do not trust it — ask before every file operation"),
+        ]),
         new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
         new("/exit", "quit cxagent", CommandOutcome.Quit),
     ];

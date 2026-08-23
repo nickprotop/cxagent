@@ -57,6 +57,30 @@ public class PermissionPolicy
     /// depends on it, so anything reporting a mode change has to be able to ask.</summary>
     public bool FolderTrusted => _rules.GetTrust(_root) == TrustState.Trusted;
 
+    /// <summary>The folder's classification as stored — Trusted, Untrusted, or never asked.</summary>
+    /// <remarks>
+    /// THREE STATES, NOT THE BOOLEAN ABOVE. <see cref="FolderTrusted"/> folds Unknown and Untrusted
+    /// together, which is right for deciding whether to allow something and wrong for REPORTING:
+    /// "never asked" and "asked and declined" are different facts about the user, and a command that
+    /// showed them as the same word would misdescribe the one case where the startup question is
+    /// still owed.
+    /// </remarks>
+    public TrustState Trust => _rules.GetTrust(_root);
+
+    /// <summary>
+    /// Records this folder's trust classification.
+    ///
+    /// <para>HERE FOR THE REASON <see cref="RememberEdits"/> IS: the folder and the store are both
+    /// here and neither is the caller's. The store is deliberately private so nothing can reach past
+    /// the policy to write trust against the wrong root — which is the whole failure mode, since a
+    /// trust entry written under someone else's scope is silent and grants a folder nobody chose.</para>
+    ///
+    /// <para>THROWS ON A FAILED WRITE, unlike RememberEdits. A forgotten edit mode costs one
+    /// Shift+Tab; a trust decision the user believes they made and which did not persist is a
+    /// security answer that silently did not take. The caller reports it.</para>
+    /// </summary>
+    public void SetTrust(TrustState state) => _rules.SetTrust(_root, state);
+
     /// <summary>
     /// Remembers this edit mode for this folder, so the next session here starts in it.
     ///

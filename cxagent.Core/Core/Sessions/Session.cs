@@ -363,6 +363,58 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
+    /// <summary>
+    /// Shows or sets whether this folder is trusted — the in-app path to a decision that was
+    /// otherwise answerable only at startup or from a file prompt's button.
+    /// </summary>
+    /// <remarks>
+    /// <para>THE SESSION SAYS IT, like <see cref="SetMode"/>: trust is reached two ways and the
+    /// wording belongs with the state, not with whoever asked.</para>
+    ///
+    /// <para>A FAILED WRITE IS REPORTED, never swallowed. RememberEdits can afford to lose a
+    /// preference; this cannot — a user who reads "trusted this folder" and whose answer did not
+    /// reach the disk will be asked again next launch and rightly believe the command is broken.
+    /// Worse in the revoking direction: they would believe trust was withdrawn while it stands.</para>
+    /// </remarks>
+    public CommandStatus SetTrust(string argument)
+    {
+        // NO POLICY MEANS NO FOLDER TO CLASSIFY. A session built without one has no root the store
+        // could key against, and inventing WorkingDirectory here would write trust under a scope
+        // nothing else consults — a grant that looks stored and is never read.
+        if (Policy is null)
+        {
+            Say(new("This session has no permission policy, so there is no folder to trust.",
+                Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var decision = TrustCommand.Decide(new(argument, Policy.Trust, Policy.Root));
+
+        if (decision.NewState is not { } state)
+        {
+            Say(decision.Reply);
+            return CommandStatus.Reported;
+        }
+
+        try
+        {
+            Policy.SetTrust(state);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say(new($"could not save folder trust: {ex.Message}", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        Say(decision.Reply);
+
+        // THE SAME ANNOUNCE /mode MAKES. Trust changes what an edit mode ACTUALLY does — an
+        // accept-edits session on an untrusted folder asks for everything — so anything showing the
+        // mode is now stale and has no other way to learn it.
+        Announce(SessionChangeKind.Mode);
+        return CommandStatus.Changed;
+    }
+
     /// <summary>Records the catalog this session was wired against, so it can answer
     /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
     internal void NoteCatalog(ResolvedConfig resolution, ProviderRegistry? catalog, bool classifierConfigured)

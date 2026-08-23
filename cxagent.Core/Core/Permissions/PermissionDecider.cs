@@ -492,7 +492,16 @@ public sealed class PermissionDecider : IPermissionGate
                 {
                     _notice?.Invoke(new($"could not save folder trust for next time: {ex.Message}", Severity.Warning));
                 }
-                return true;   // silent; the trust state is shown on Settings → Permissions
+
+                // SAID OUT LOUD, because this button is the one place a folder becomes trusted
+                // without the startup question. That question announces its own outcome; this
+                // granted the same thing from a prompt about ONE file and said nothing, so a user
+                // who pressed it had no record of having widened anything — and the next launch
+                // does not ask, because the state is no longer Unknown. "It is on the Settings page"
+                // is not discovery for a decision the user did not know they were making.
+                _notice?.Invoke(new($"trusted this folder — file operations in "
+                    + $"{request.Policy!.Root} will not ask again", Severity.Info));
+                return true;
 
             case PermissionChoice.Deny:
             default:

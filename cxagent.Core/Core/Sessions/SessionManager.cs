@@ -150,6 +150,13 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.SetMode(arguments).Handled());
                     break;
 
+                // THE POLICY IS THE SESSION'S, exactly as /mode's is — the folder, the store and
+                // the root all hang off it, so a front end registering this would be reaching
+                // across for three values the session already holds.
+                case "/trust":
+                    Commands.Register(command, (session, arguments) => session.SetTrust(arguments).Handled());
+                    break;
+
                 case "/compress":
                     Commands.Register(command, (session, arguments) =>
                     {
