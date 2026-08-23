@@ -97,6 +97,13 @@ public sealed class CommandMenu
     /// </summary>
     public Func<string, IReadOnlyList<CommandArgument>>? Values { get; set; }
 
+    /// <summary>
+    /// The registry whose verbs belong in this menu's argument rows — the same lookup dispatch
+    /// uses, so <c>/stats clear</c> shows here exactly when <c>Run</c> would accept it. Null shows
+    /// only the table's own arguments, which is every command that has not had a verb registered.
+    /// </summary>
+    public CommandRegistry? Registry { get; set; }
+
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
 
@@ -141,7 +148,7 @@ public sealed class CommandMenu
         List<Row> matches;
         if (text.Contains(' '))
         {
-            var args = SessionCommands.ArgumentsFor(text, Values);
+            var args = SessionCommands.ArgumentsFor(text, Values, Registry);
 
         // A ROW THAT CARRIES ITS PLACEHOLDER COMPLETES TO THE VERB IN FRONT OF IT. Rows like
         // `show <name>` and `login <name>` are otherwise unselectable: Completes:false makes them

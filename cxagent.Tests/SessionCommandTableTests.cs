@@ -279,7 +279,6 @@ public class SessionCommandTableTests
     [InlineData("/mcp", "show")]
     [InlineData("/mode", "agent")]
     [InlineData("/mode", "edits")]
-    [InlineData("/stats", "clear")]
     [InlineData("/stats", "all")]
     public void TheTable_CarriesEverySubcommand(string command, string argument)
     {
@@ -308,7 +307,9 @@ public class SessionCommandTableTests
     {
         var stats = SessionCommands.All.Single(c => c.Name == "/stats");
 
-        Assert.Equal("[<days>|all|clear]", stats.Hint);
+        // NO "clear" HERE. It is registered as a verb by whichever front end can confirm a
+        // deletion — see CommandVerbTests — and the table's own Hint reads Args, not the registry.
+        Assert.Equal("[<days>|all]", stats.Hint);
     }
 
     /// <summary>
@@ -495,7 +496,6 @@ public class SessionCommandTableTests
         var help = SessionCommands.HelpLines();
 
         Assert.Contains("/mcp reload", help, StringComparison.Ordinal);
-        Assert.Contains("/stats clear", help, StringComparison.Ordinal);
         Assert.Contains("/mode agent <mode>", help, StringComparison.Ordinal);
     }
 
@@ -507,7 +507,6 @@ public class SessionCommandTableTests
         var help = SessionCommands.HelpLines();
 
         Assert.Contains("re-read config.json", help, StringComparison.Ordinal);
-        Assert.Contains("delete all usage history", help, StringComparison.Ordinal);
     }
 
     /// <summary>

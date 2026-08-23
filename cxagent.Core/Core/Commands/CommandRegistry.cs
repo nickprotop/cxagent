@@ -46,6 +46,46 @@ public sealed class CommandRegistry
     /// <summary>Every registered command, for a palette or a help listing.</summary>
     public IReadOnlyList<SessionCommand> All => [.. _byName.Values.Select(e => e.Command)];
 
+    /// <summary>A verb registered against a command, and the code behind it.</summary>
+    private readonly record struct Verb(CommandArgument Argument, CommandHandler Handle);
+
+    private readonly Dictionary<string, List<Verb>> _verbs =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Adds an argument to an existing command, serviced by this front end alone.
+    ///
+    /// <para>FOR WORK CORE CANNOT DO RATHER THAN WORK IT HAS NOT DONE. /stats clear deletes a
+    /// usage archive and must be confirmed first, and a handler that returns bool has no way to
+    /// ask a question and wait for the answer — so the verb, its help row and its palette row all
+    /// belong to whoever can ask. A consumer that registers nothing is never offered it.</para>
+    ///
+    /// <para>THE ARGUMENT TRAVELS WITH THE HANDLER, not declared separately in the table, because
+    /// the two go stale apart: a row offered by every front end and serviced by one is the exact
+    /// failure this replaces.</para>
+    /// </summary>
+    public void RegisterVerb(string command, CommandArgument verb, CommandHandler handle)
+    {
+        if (!_verbs.TryGetValue(command, out var list))
+            _verbs[command] = list = [];
+
+        list.RemoveAll(v => string.Equals(v.Argument.Name, verb.Name,
+            StringComparison.OrdinalIgnoreCase));
+        list.Add(new Verb(verb, handle));
+    }
+
+    /// <summary>
+    /// Everything that may follow this command's name here — the table's arguments plus the verbs
+    /// this process registered.
+    ///
+    /// <para>WHAT HELP AND THE PALETTE MUST READ. Reading <see cref="SessionCommand.Args"/>
+    /// directly offers rows that only some front ends service.</para>
+    /// </summary>
+    public IReadOnlyList<CommandArgument> ArgumentsOf(SessionCommand command) =>
+        _verbs.TryGetValue(command.Name, out var list)
+            ? [.. command.Args, .. list.Select(v => v.Argument)]
+            : command.Args;
+
     /// <summary>
     /// What a dispatch attempt found.
     ///
@@ -76,9 +116,22 @@ public sealed class CommandRegistry
     public Dispatch Run(Session session, string input)
     {
         if (SessionCommands.Match(input) is not { } command) return Dispatch.NotACommand;
+
+        var arguments = SessionCommands.Arguments(input);
+
+        // A VERB FIRST, and matched on the FIRST WORD so "/stats clear" reaches it while
+        // "/stats 30" does not. A verb intercepts one argument, never the command.
+        if (_verbs.TryGetValue(command.Name, out var verbs))
+        {
+            var first = arguments.Split(' ', 2)[0];
+            foreach (var verb in verbs)
+                if (string.Equals(verb.Argument.Name, first, StringComparison.OrdinalIgnoreCase))
+                    return verb.Handle(session, arguments) ? Dispatch.Ran : Dispatch.NotACommand;
+        }
+
         if (!_byName.TryGetValue(command.Name, out var entry)) return Dispatch.NoHandler;
 
-        return entry.Handle(session, SessionCommands.Arguments(input))
+        return entry.Handle(session, arguments)
             ? Dispatch.Ran
             : Dispatch.NotACommand;
     }

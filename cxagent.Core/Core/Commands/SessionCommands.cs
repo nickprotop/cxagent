@@ -131,7 +131,6 @@ public static class SessionCommands
         [
             new("<days>", "how far back to look — default 7", Completes: false),
             new("all", "every session ever recorded"),
-            new("clear", "delete all usage history, after confirming"),
         ]),
         // TRUST IS A FOLDER FACT, and the session holds the policy that owns it.
         new("/trust", "show or set whether this folder is trusted",
@@ -199,7 +198,8 @@ public static class SessionCommands
     /// </para>
     /// </summary>
     public static IReadOnlyList<CommandArgument> ArgumentsFor(
-        string input, Func<string, IReadOnlyList<CommandArgument>>? values = null)
+        string input, Func<string, IReadOnlyList<CommandArgument>>? values = null,
+        CommandRegistry? registry = null)
     {
         var space = input.IndexOf(' ');
         if (space < 0) return [];
@@ -217,6 +217,11 @@ public static class SessionCommands
             string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (!command.TakesArguments) return [];
 
+        // THE REGISTRY'S VIEW, NOT THE TABLE'S OWN — a null registry (every existing caller, every
+        // existing test) falls back to the table's arguments unchanged, so this stays a pure widening
+        // rather than a behaviour change for anyone who has not wired verbs.
+        var args = registry?.ArgumentsOf(command) ?? command.Args;
+
         if (rest.Contains(' '))
         {
             // Two words in: the first named a subcommand, so the values belong to THAT argument.
@@ -227,7 +232,7 @@ public static class SessionCommands
             // ONLY THE LAST WORD MAY BE INCOMPLETE. "/sessions resume 3 extra" is past choosing.
             if (typed.Contains(' ')) return [];
 
-            var under = command.Args.FirstOrDefault(a =>
+            var under = args.FirstOrDefault(a =>
                 a.Name.StartsWith(sub, StringComparison.OrdinalIgnoreCase));
 
             return Narrow(Supplied(values, under.Values), typed);
@@ -235,12 +240,12 @@ public static class SessionCommands
 
         // ONE WORD IN. Offer the declared arguments — and, for a command whose SOLE argument is a
         // live value (`/model <instance>`), the values themselves: there is nothing else to pick.
-        var live = command.Args.Count == 1 ? Supplied(values, command.Args[0].Values) : [];
+        var live = args.Count == 1 ? Supplied(values, args[0].Values) : [];
         if (live.Count > 0) return Narrow(live, rest);
 
-        if (rest.Length == 0) return command.Args;
+        if (rest.Length == 0) return args;
 
-        return [.. command.Args.Where(a =>
+        return [.. args.Where(a =>
             a.Name.StartsWith(rest, StringComparison.OrdinalIgnoreCase))];
     }
 
@@ -435,17 +440,20 @@ public static class SessionCommands
     /// guessed. Markdown says "these are columns" and lets whatever renders it decide.</para>
     /// </summary>
     /// <returns>A markdown table of every command and subcommand.</returns>
-    public static string HelpLines()
+    public static string HelpLines(CommandRegistry? registry = null)
     {
         // ARGUMENTS ARE ROWS, INDENTED UNDER THEIR COMMAND. /help rendered name-plus-summary only,
         // so `/mcp reload`, `/stats clear` and `/mode fan-out` existed in the dispatcher and in no
         // surface a user could find. The indent carries the relationship: these are modifiers of the
         // row above, not commands of their own.
+        //
+        // THE REGISTRY'S VIEW OF ARGUMENTS, same as the palette reads — a null registry falls back
+        // to the table's own Args, which is every caller that has not wired verbs.
         var rows = new List<(string Name, string Summary, bool IsArg)>();
         foreach (var c in All)
         {
             rows.Add((c.Name, c.Summary, false));
-            foreach (var a in c.Args)
+            foreach (var a in registry?.ArgumentsOf(c) ?? c.Args)
                 rows.Add(($"{c.Name} {a.Name}", a.Summary, true));
         }
 

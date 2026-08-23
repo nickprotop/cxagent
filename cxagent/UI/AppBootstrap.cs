@@ -547,18 +547,13 @@ public static class AppBootstrap
             if (declared.Name == "/help")
                 manager.Commands.Register(declared, (_, _) => { mainWindow.ShowHelp(); return true; });
 
-            // OVER THE MANAGER'S. It registered /stats for REPORTING, which is all Core can do;
-            // clearing rewrites history and must be confirmed, which needs somebody to ask. Last
-            // registration wins, so this one takes the whole command and delegates the reporting
-            // half straight back.
+            // THE VERB, NOT THE COMMAND. Core reports usage perfectly well; what this process adds
+            // is the one argument it alone can service — clearing needs a confirmation, and a
+            // synchronous handler cannot ask one.
             if (declared.Name == "/stats")
-                manager.Commands.Register(declared, (session, arguments) =>
-                {
-                    if (!StatsCommand.IsClear(arguments)) return session.SayUsage(arguments).Handled();
-
-                    ConfirmClearHistory(mainWindow, history);
-                    return true;
-                });
+                manager.Commands.RegisterVerb("/stats",
+                    new CommandArgument("clear", "delete all usage history, after confirming"),
+                    (_, _) => { ConfirmClearHistory(mainWindow, history); return true; });
 
             // THE LAST FOUR. Each needs something this process owns rather than any session — the
             // config paths /model resolves against, the rules store and classifier /mode reads, the
@@ -910,7 +905,13 @@ public static class AppBootstrap
         // THE SLASH MENU. Its keys are handled by the portal's own content, NOT here: an open
         // desktop portal captures keyboard input before PreviewKeyPressed is reached, so a hook in
         // this handler would never fire while the menu is up. See CommandMenuContent.
-        var commandMenu = new CommandMenu(system, window, mainWindow.Input) { Composer = mainWindow.Input };
+        var commandMenu = new CommandMenu(system, window, mainWindow.Input)
+        {
+            Composer = mainWindow.Input,
+            // THE SAME LOOKUP DISPATCH USES, so a verb this process registers — /stats clear —
+            // appears here at the moment it becomes real, not from a second copy of the table.
+            Registry = manager.Commands,
+        };
         commandMenu.Chosen += (_, completion) =>
         {
             // Choosing fills the composer rather than dispatching. The command may take arguments,
