@@ -1,42 +1,27 @@
 using CxAgent.Core.Commands;
-using CxAgent.Core.Models;
-using CxAgent.UI;
 using Xunit;
 
 namespace CxAgent.Tests;
 
 public class SessionCommandsTests
 {
-    private static ChatMessage Msg(string role, string content) =>
-        new() { Role = role, Content = content };
-
     [Fact]
-    public void Clear_IsHandled_AndSaysSo()
+    public void Clear_Matches_AndNeedsNoModel()
     {
-        // WHAT /clear ACTUALLY CLEARS is the agent's context, and the CALLER does that — this type
-        // holds no session state. Handing it a List<ChatMessage> to empty here and asserting the
-        // list comes back empty would be theatre: nothing reads that list. AgentTests covers the
-        // context, which is the real thing.
-        Assert.True(SessionCommands.TryHandle("/clear", out var reply));
+        // WHAT /clear ACTUALLY CLEARS is the agent's context, and the caller does that — this type
+        // holds no session state. AgentTests covers the context, which is the real thing.
+        var clear = SessionCommands.Match("/clear");
 
-        Assert.Contains("cleared", reply, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(clear);
+        Assert.False(clear.Value.NeedsModel);
     }
 
     [Fact]
-    public void Compress_IsRecognised_ButLeftToTheCallerToSummarise()
+    public void Compress_Matches_AndNeedsAModel()
     {
-        // /compress means COMPRESS, not truncate. TryHandle is synchronous (a key handler calls it)
-        // and summarising needs a provider call, so the command is RECOGNISED here and serviced by
-        // the caller via SessionCompressor.CompressAsync — the same routine auto-compression uses,
-        // so the manual and automatic paths can never diverge.
-        //
-        // Truncation (SessionCommands.Compress, still below) survives only as the FALLBACK when the
-        // summarisation call fails.
-        // TryHandle must not DO anything for /compress — the outcome says the caller services it,
-        // because summarising needs a provider. Handling it here would race the caller's
-        // summarisation and delete the very turns the summary is about to be built from.
-        Assert.Equal(CommandOutcome.NeedsProvider, SessionCommands.Match("/compress")?.Outcome);
-        Assert.True(SessionCommands.TryHandle("/compress", out _));
+        // /compress means COMPRESS, not truncate: summarising needs a provider call, which is why
+        // it is the one command besides /init that NeedsModel.
+        Assert.True(SessionCommands.Match("/compress")?.NeedsModel);
     }
 
     [Fact]
@@ -48,33 +33,19 @@ public class SessionCommandsTests
     }
 
     [Fact]
-    public void Compress_OnAShortConversation_KeepsEverything()
-    {
-        // The principle, as a test. Compression is LOSSY; running it on a conversation that fits costs
-        // the user context for nothing. Nothing should be dropped just because the command was typed.
-        var conversation = new List<ChatMessage> { Msg("user", "one goal"), Msg("assistant", "one answer") };
-
-        SessionCommands.TryHandle("/compress", out _);
-
-        Assert.Equal(2, conversation.Count);
-    }
-
-    [Fact]
     public void AnOrdinaryGoalIsNotACommand()
     {
         // "/clear" is a command; "clear the build output" is a GOAL. Only an exact leading-slash token
         // counts, or a user loses work to a false positive.
-        var conversation = new List<ChatMessage>();
-
-        Assert.False(SessionCommands.TryHandle("clear the build output", out _));
-        Assert.False(SessionCommands.TryHandle("what does /clear do?", out _));
+        Assert.Null(SessionCommands.Match("clear the build output"));
+        Assert.Null(SessionCommands.Match("what does /clear do?"));
     }
 
     [Fact]
-    public void AnUnknownSlashCommandIsReported_NotRunAsAGoal()
+    public void AnUnknownSlashCommandDoesNotMatch()
     {
-        // A typo'd command must not become a goal — "/claer" would otherwise be planned and executed.
-        Assert.True(SessionCommands.TryHandle("/claer", out var reply));
-        Assert.Contains("/clear", reply);   // names the real commands
+        // A typo'd command must not resolve to anything — the caller is what decides a typo is a
+        // command attempt rather than a goal.
+        Assert.Null(SessionCommands.Match("/claer"));
     }
 }

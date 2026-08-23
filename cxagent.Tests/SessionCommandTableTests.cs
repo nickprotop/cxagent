@@ -42,30 +42,12 @@ public class SessionCommandTableTests
     }
 
     [Fact]
-    public void AnUnknownCommandListsTheRealOnes()
-    {
-        var handled = SessionCommands.TryHandle("/celar", out var reply);
-
-        Assert.True(handled, "an unrecognised slash is a command attempt, not a goal");
-        foreach (var c in SessionCommands.All)
-            Assert.Contains(c.Name, reply, System.StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void CompressIsTheProviderCommand()
     {
-        // There was an IsCompress probe, called BEFORE TryHandle because compressing needs a
-        // provider the sync handler cannot reach. The fact now lives ON the command, so the
-        // dispatcher reads one outcome instead of running checks in a significant order.
-        Assert.Equal(CommandOutcome.NeedsProvider, SessionCommands.Match("/compress")?.Outcome);
-        Assert.Equal(CommandOutcome.Handled, SessionCommands.Match("/clear")?.Outcome);
-    }
-
-    [Fact]
-    public void ExitIsTheOnlyQuitCommand()
-    {
-        Assert.Equal("/exit", Assert.Single(
-            SessionCommands.All, c => c.Outcome == CommandOutcome.Quit).Name);
+        // The fact lives ON the command as NeedsModel, so a caller reads one flag instead of
+        // running an ordered probe before dispatch.
+        Assert.True(SessionCommands.Match("/compress")?.NeedsModel);
+        Assert.False(SessionCommands.Match("/clear")?.NeedsModel);
     }
 
     [Fact]
@@ -88,40 +70,6 @@ public class SessionCommandTableTests
             Assert.Contains(c.Summary, help, System.StringComparison.Ordinal);
         }
     }
-    [Fact]
-    public void EveryCommandHasARealOutcome()
-    {
-        // NotACommand is what Match returns for prose; a command in the TABLE carrying it would be
-        // unreachable — recognised by the matcher and dispatched by nobody.
-        Assert.All(SessionCommands.All,
-            c => Assert.NotEqual(CommandOutcome.NotACommand, c.Outcome));
-    }
-
-    [Fact]
-    public void EveryOutcomeInTheTableIsOneTheDispatcherHandles()
-    {
-        // THE INVARIANT A MENU RESTS ON. Dispatch is a switch over the outcome, so a command whose
-        // outcome has no branch falls through and runs as a GOAL — the model receives "/model gpt-4"
-        // as a task. This is the check that catches a new outcome added to the enum but not to the
-        // switch, which is the one mistake this design makes easy.
-        //
-        // Kept as an explicit list rather than reflected off the enum: the point is to fail when the
-        // two drift, and a test that derives both sides from one of them cannot.
-        var dispatched = new[]
-        {
-            CommandOutcome.Handled,
-            CommandOutcome.NeedsProvider,
-            CommandOutcome.NeedsWindow,
-            // NeedsTurn DOES fall through to the goal path, which is the whole point of it: the
-            // command is rewritten into a prompt first, so what reaches the model is a briefing
-            // rather than the slash command. It still has a branch — the one that rewrites it.
-            CommandOutcome.NeedsTurn,
-            CommandOutcome.Quit,
-        };
-
-        Assert.All(SessionCommands.All, c => Assert.Contains(c.Outcome, dispatched));
-    }
-
     // ---- /mcp ----------------------------------------------------------------------------------
 
     /// <summary>/mcp is a real command with a description, like the others — it joins the table

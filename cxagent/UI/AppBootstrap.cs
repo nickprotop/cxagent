@@ -1026,10 +1026,10 @@ public static class AppBootstrap
             // command that FIXES having no provider. That leaves the window unusable except by
             // killing it, and silent about why.
             //
-            // THE CLASSIFICATION IS ALREADY THERE. CommandOutcome says which commands need the
-            // model: NeedsProvider (/compress) and NeedsTurn (/init). Its own documentation says
-            // the rest "answer from state the app already holds, costing no tokens and no time", so
-            // the guard has to ask it rather than guess.
+            // THE CLASSIFICATION IS ALREADY THERE. SessionCommand.NeedsModel says which commands
+            // need the model: /compress and /init, the only two that reach it. Its own
+            // documentation says the rest "answer from state the app already holds, costing no
+            // tokens and no time", so the guard has to ask it rather than guess.
             //
             // TWO FLAGS MEAN "NO PROVIDER", AND BOTH BELONG INSIDE THE ONE CHECK. Guarding on
             // `session.HasAgent` here while an `if (!mainWindow.SubmissionEnabled) return;` sits
@@ -1040,13 +1040,12 @@ public static class AppBootstrap
             // only other use is choosing the placeholder text.
             if (!session.HasAgent || !mainWindow.SubmissionEnabled)
             {
-                var outcome = SessionCommands.Match(goalText)?.Outcome ?? CommandOutcome.NotACommand;
-                if (outcome is CommandOutcome.NotACommand
-                    or CommandOutcome.NeedsProvider or CommandOutcome.NeedsTurn)
+                var command = SessionCommands.Match(goalText);
+                if (command is null or { NeedsModel: true })
                 {
                     // SAY WHY, rather than dropping the keystroke. Silence here is what made this
                     // read as a frozen window rather than a session waiting to be configured.
-                    mainWindow.Chat.AddMessage(ChatRole.System, outcome is CommandOutcome.NotACommand
+                    mainWindow.Chat.AddMessage(ChatRole.System, command is null
                         ? "No model is configured. Run /model to pick one, or /exit to leave."
                         : "That command needs a model. Run /model to pick one first.");
                     mainWindow.Input.Input = "";
@@ -1063,91 +1062,30 @@ public static class AppBootstrap
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
 
-            // ONE DISPATCH, DRIVEN BY THE OUTCOME. This was three ordered checks — IsCompress, then a
-            // Match whose Quit case was an outcome and whose /help case was a NAME comparison, then
-            // TryHandle — and the order between them was load-bearing without saying so. Adding a
-            // command meant finding the right rung. Now the command's own outcome says who services
-            // it, which is also what lets a menu dispatch a chosen row through this same path.
-            // THE REGISTRY FIRST, BEFORE THE OUTCOME SWITCH. Core seeded what it can service and
-            // this method registered what needs a window; a command that has finished moving is
-            // handled here and never reaches the dispatch below — which matters because that
-            // dispatch ends in a ShowHelp() catch-all, so a migrated command reaching it prints the
-            // key map instead of doing anything.
+            // THE REGISTRY FIRST. Core seeds what it can service — including /compress, which
+            // summarises through the model exactly as auto-compression does — and a command that
+            // has finished moving here never reaches the goal path below.
             if (manager.Commands.TryRun(session, goalText)) return;
 
-            if (SessionCommands.Match(goalText) is { } command)
+            // TEMPORARY: /init HAS NOT MOVED INTO THE REGISTRY YET. It becomes a TURN — the
+            // briefing is rewritten into a prompt and sent to the model like anything the user
+            // could have typed — which is why it is handled here rather than by TryRun above.
+            //
+            // DECLINED WHILE A TURN RUNS — the session refuses and says so. Queued prompts are
+            // JOINED into one message, so an /init waiting behind two other instructions would
+            // reach the model as a paragraph of its briefing glued to unrelated work, attributed
+            // to the user besides.
+            //
+            // THE SESSION SENDS IT AND SAYS WHAT TO SHOW. The prompt and its echo used to be two
+            // locals threaded down separately — the briefing in goalText, the word "/init" in a
+            // turnEcho set here and read a hundred lines below — and splitting them is how a
+            // briefing ends up on the transcript as the user's own words. Session.Initialise
+            // carries the pair.
+            if (SessionCommands.Match(goalText) is { Name: "/init" })
             {
-                switch (command.Outcome)
-                {
-                    case CommandOutcome.NeedsTurn:
-                        // REWRITTEN INTO A PROMPT AND FALLING THROUGH to the ordinary goal path
-                        // below — not handled here. Everything that path already does is exactly
-                        // what this needs: the running-turn queue, the cancellation scope, the
-                        // spinner, the token accounting. Starting a turn here instead would be a
-                        // second submission route that has to relearn all of it.
-                        if (command.Name == "/init")
-                        {
-                            // DECLINED WHILE A TURN RUNS — the session refuses and says so. Queued
-                            // prompts are JOINED into one message, so an /init waiting behind two
-                            // other instructions would reach the model as a paragraph of its briefing
-                            // glued to unrelated work, attributed to the user besides.
-                            //
-                            // THE SESSION SENDS IT AND SAYS WHAT TO SHOW. The prompt and its echo used
-                            // to be two locals threaded down separately — the briefing in goalText, the
-                            // word "/init" in a turnEcho set here and read a hundred lines below — and
-                            // splitting them is how a briefing ends up on the transcript as the user's
-                            // own words. Session.Initialise carries the pair.
-                            if (session.Initialise() is not Session.SubmitOutcome.Started init) return;
-                            WhenTurnEnds(init.Turn);
-                            mainWindow.RetireComposerHint();
-                            return;
-                        }
-                        break;
-
-                    case CommandOutcome.NeedsProvider:
-                        // /compress means COMPRESS — it summarises through the model, exactly as
-                        // auto-compression does, rather than deleting the oldest half. Truncation
-                        // survives only as the fallback when that call fails. It is out here rather
-                        // than in SessionCommands because that type is synchronous and provider-free
-                        // by design — which is what keeps it testable without a window.
-                        // THROUGH THE RUNNER, which owns the provider, the ledger and the job panel.
-                        // Calling the compressor directly, with no job panel, could
-                        // only print one line of prose once the work was over — so a /compress looked
-                        // like nothing happening for several seconds, then a sentence. It now draws
-                        // the same spinner row, with the same expandable summary, as the two automatic
-                        // routes.
-                        //
-                        // DECLINED WHILE A TURN RUNS (0d), and declined rather than queued.
-                        // CompressNowAsync REPLACES Context.Messages wholesale while the agent's
-                        // tool loop is appending results to that same list: best case the results
-                        // are lost, likely case a torn List<T> and an InvalidOperationException
-                        // mid-request. Live today — a parent doing three read_file calls is exposed,
-                        // no sub-agent needed — and 0a's queue makes it MORE reachable, since
-                        // /compress becomes one of the few things a user CAN press during a long
-                        // run.
-                        //
-                        // NOT QUEUED, and the difference from an ordinary prompt is real: a prompt
-                        // is still valid when the turn ends, but /compress is a measurement-and-
-                        // rewrite of a context that is actively changing — running it later is a
-                        // DIFFERENT operation from the one that was asked for. Nothing is lost by
-                        // refusing: the automatic route already compresses on measured pressure, so
-                        // this costs a keystroke, not a compaction.
-                        // THE SESSION DECIDES AND SAYS SO. It refuses while a turn runs — see
-                        // Session.CompressNow for why compaction is refused rather than queued —
-                        // and announces the refusal through the observer, so there is nothing to
-                        // report here.
-                        _ = session.CompressNow(cts.Token);
-                        return;
-                }
-            }
-
-            // Everything else that begins with a slash — /clear, and any unrecognised command, which
-            // gets the "available commands" reply rather than being sent to the model as a task.
-            // Costs nothing: no goal, no provider call, no tokens.
-            if (SessionCommands.TryHandle(goalText, out var commandReply))
-            {
-                if (commandReply is { Length: > 0 })
-                    mainWindow.Chat.AddMessage(ChatRole.System, commandReply);
+                if (session.Initialise() is not Session.SubmitOutcome.Started init) return;
+                WhenTurnEnds(init.Turn);
+                mainWindow.RetireComposerHint();
                 return;
             }
 

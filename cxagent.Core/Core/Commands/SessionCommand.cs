@@ -1,53 +1,6 @@
 namespace CxAgent.Core.Commands;
 
 /// <summary>
-/// What the caller must do about a command it just dispatched.
-///
-/// <para>REPLACES A BOOL PLUS A SIDE-CHANNEL. <c>TryHandle</c> returned "was this a command?" and
-/// <c>/compress</c> needed a separate <c>IsCompress</c> probe called BEFORE it, because compressing
-/// requires a provider call and the handler is synchronous. That worked for one exception and does
-/// not generalise: every command needing something the handler cannot do — a provider, the window,
-/// the process — would arrive as another probe, checked in an order nobody can see is significant.
-/// One outcome per command says it in the return value instead.</para>
-/// </summary>
-public enum CommandOutcome
-{
-    /// <summary>Not a command at all. The caller runs it as a goal.</summary>
-    NotACommand,
-
-    /// <summary>Done, and the reply is ready to show.</summary>
-    Handled,
-
-    /// <summary>
-    /// Recognised, but the work needs a provider and an await — the caller services it. Only
-    /// <c>/compress</c> today: it summarises through the model exactly as auto-compression does.
-    /// </summary>
-    NeedsProvider,
-
-    /// <summary>
-    /// Recognised, but serviced by the UI rather than by the conversation — <c>/help</c> posts the
-    /// key map. Named as an outcome rather than matched by NAME at the call site: the dispatcher was
-    /// branching on outcome for some commands and on <c>cmd.Name == "/help"</c> for others, which is
-    /// the ordered-probe shape the outcome exists to remove.
-    /// </summary>
-    NeedsWindow,
-
-    /// <summary>
-    /// Recognised, and it becomes a TURN — the command is rewritten into a prompt and sent to the
-    /// model like anything the user could have typed.
-    ///
-    /// <para>Only <c>/init</c> today, and the distinction is real: every other command here answers
-    /// from state the app already holds, costing no tokens and no time. This one asks the agent to
-    /// go and look at the project. It shows as an ordinary turn, with its tool calls and its file
-    /// write visible and gated, because that is what it is.</para>
-    /// </summary>
-    NeedsTurn,
-
-    /// <summary>Recognised, and the application should shut down.</summary>
-    Quit,
-}
-
-/// <summary>
 /// One slash command: its name, what it does, and how it is serviced.
 ///
 /// <para>A TABLE, NOT A SWITCH, because three separate things need the same list and were each
@@ -63,7 +16,6 @@ public enum CommandOutcome
 /// </summary>
 /// <param name="Name">The command including its leading slash — <c>/clear</c>.</param>
 /// <param name="Summary">One line, imperative, for help and for a palette row.</param>
-/// <param name="Outcome">What the caller must do when this command is dispatched.</param>
 /// <param name="Arguments">
 /// What may follow the name, or empty when nothing may.
 ///
@@ -76,7 +28,6 @@ public enum CommandOutcome
 public readonly record struct SessionCommand(
     string Name,
     string Summary,
-    CommandOutcome Outcome,
     IReadOnlyList<CommandArgument>? Arguments = null)
 {
     /// <summary>Never null, so every consumer can enumerate without a guard.</summary>
@@ -84,6 +35,20 @@ public readonly record struct SessionCommand(
 
     /// <summary>Does anything follow this command's name?</summary>
     public bool TakesArguments => Args.Count > 0;
+
+    /// <summary>
+    /// True when this command cannot work without a provider — it reaches the model.
+    ///
+    /// <para>TWO COMMANDS, AND THE REST ARE FREE. Everything else answers from state the process
+    /// already holds, costing no tokens and no time, which is what lets a session opened without
+    /// a working provider still run them — including /model, the one command that FIXES having
+    /// no provider.</para>
+    ///
+    /// <para>AN INIT PROPERTY, NOT A POSITIONAL PARAMETER, so only the two commands that need it
+    /// mention it. A bool in the constructor is a value every future declaration must supply and
+    /// can transpose with a neighbour silently.</para>
+    /// </summary>
+    public bool NeedsModel { get; init; }
 
     /// <summary>
     /// The argument names as a compact hint — <c>[days|clear]</c> — for a palette row.

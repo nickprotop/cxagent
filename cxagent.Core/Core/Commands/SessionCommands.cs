@@ -32,12 +32,9 @@ public static class SessionCommands
     /// </summary>
     public static readonly IReadOnlyList<SessionCommand> All =
     [
-        new("/clear", "wipe the conversation", CommandOutcome.Handled),
-        new("/compress", "summarise the conversation to free up room", CommandOutcome.NeedsProvider),
-        // NeedsWindow, not Handled: the live server state belongs to the session, and this type
-        // deliberately holds nothing but the conversation. The caller has the servers and formats
-        // them through DescribeMcp below.
-        new("/mcp", "list MCP servers, inspect one, or reload config", CommandOutcome.NeedsWindow,
+        new("/clear", "wipe the conversation"),
+        new("/compress", "summarise the conversation to free up room") { NeedsModel = true },
+        new("/mcp", "list MCP servers, inspect one, or reload config",
         [
             new("reload", "re-read config.json and reconnect"),
             // VERB AND PLACEHOLDER IN ONE NAME, the same shape as `/sessions resume <number|id>`:
@@ -55,19 +52,13 @@ public static class SessionCommands
             new("show <name>", "inspect one server", Completes: false,
                 Values: ValueSources.McpServers),
         ]),
-        // NeedsWindow like /mcp: discovery reads the session's working directory, and this type
-        // holds nothing but the conversation. NO SUBCOMMANDS — it lists, it does not load, and it is
-        // not a refresh: skills are re-read every turn, so an edited one is already live.
-        new("/skills", "list available skills, and any SKILL.md that was skipped",
-            CommandOutcome.NeedsWindow),
-        // NeedsWindow like /mcp and /skills: it answers from the catalog the session already built,
-        // so it costs no turn and no tokens.
-        //
+        // NO SUBCOMMANDS — it lists, it does not load, and it is not a refresh: skills are re-read
+        // every turn, so an edited one is already live.
+        new("/skills", "list available skills, and any SKILL.md that was skipped"),
         // IT EXISTS BECAUSE THE BRIEFINGS ARE NOT IN config.json. The shipped five live in code, so
         // there is no file to open to read what a type is told, and CONFIG.md is a poor substitute
         // when a drive has just gone wrong in front of you.
         new("/agents", "the sub-agent types this session can spawn, and what each one is told",
-            CommandOutcome.NeedsWindow,
         [
             // COMPLETABLE, for the reason /mcp's row is: naming the type names a SET, not session
             // state, and the session — which holds the catalog it was wired against — answers for
@@ -75,24 +66,24 @@ public static class SessionCommands
             new("show <name>", "the full briefing that type is given", Completes: false,
                 Values: ValueSources.AgentTypes),
         ]),
-        // NeedsTurn, alone among these: it costs tokens and takes time, because the agent has to go
-        // and look at the project. Every other command here answers from state the app already holds.
-        new("/init", "write the project instruction file this agent reads each session",
-            CommandOutcome.NeedsTurn),
-        // NeedsWindow: it shells out to git in the session's working directory, which this type
-        // does not hold. FOR THE USER, NOT THE MODEL — the output goes to the transcript, and
-        // whether the agent should be able to diff its own work is a separate, larger question.
-        new("/diff", "what has changed in the working tree", CommandOutcome.NeedsWindow,
+        // NEEDS A MODEL, alone among these: it costs tokens and takes time, because the agent has to
+        // go and look at the project. Every other command here answers from state the app already
+        // holds.
+        new("/init", "write the project instruction file this agent reads each session")
+            { NeedsModel = true },
+        // It shells out to git in the session's working directory, which this type does not hold.
+        // FOR THE USER, NOT THE MODEL — the output goes to the transcript, and whether the agent
+        // should be able to diff its own work is a separate, larger question.
+        new("/diff", "what has changed in the working tree",
         [
             new("--staged", "what is staged, for people who stage as they go"),
             // NOT COMPLETABLE: any path in the repo, which this static table cannot enumerate and
             // the shell already completes better than a popup could.
             new("<path>", "just this file or folder", Completes: false),
         ]),
-        // NeedsWindow like the rest: the store and the working directory belong to the composition
-        // root, and this table deliberately holds nothing but the conversation.
+        // The store and the working directory belong to the composition root, and this table
+        // deliberately holds nothing but the conversation.
         new("/sessions", "earlier conversations here, and a way back into one",
-            CommandOutcome.NeedsWindow,
         [
             // NOT COMPLETABLE: the value is a number off a listing the user has to read first, or an
             // id. Neither is something this static table could offer.
@@ -100,22 +91,21 @@ public static class SessionCommands
                 Completes: false, Values: ValueSources.Sessions),
             new("all", "every folder, not just this one"),
         ]),
-        // NeedsWindow: the registry of configured instances belongs to the composition root, and
-        // this table holds nothing but the conversation. ONE ARGUMENT, and it is a live value — so
-        // the palette offers the instances themselves rather than a placeholder to type over.
+        // The registry of configured instances belongs to the composition root, and this table holds
+        // nothing but the conversation. ONE ARGUMENT, and it is a live value — so the palette offers
+        // the instances themselves rather than a placeholder to type over.
         new("/model", "show or switch which configured model this session uses",
-            CommandOutcome.NeedsWindow,
         [
             new("<instance>", "a name from `providers` in config", Completes: false,
                 Values: ValueSources.Providers),
         ]),
-        // NeedsWindow for the same reason /mcp is: the live mode belongs to the session's agent, and
-        // this type deliberately holds nothing but the conversation.
+        // The live mode belongs to the session's agent, and this type deliberately holds nothing but
+        // the conversation.
         // THE AXIS IS NAMED, so this one command can grow. Delegation is the only axis today; file
         // editing and a build/plan mode are coming, and each would otherwise have wanted a command
         // of its own — three entries in this list where one will do, and no single place that shows
         // the whole picture. `/mode` bare reports every axis for exactly that reason.
-        new("/mode", "show or set how this session works", CommandOutcome.NeedsWindow,
+        new("/mode", "show or set how this session works",
         [
             // ONE ROW WITH A VALUE LIST, matching `edits <mode>` below. Two rows spelled the whole
             // command out — which worked, and meant the two axes of one command read as different
@@ -135,24 +125,22 @@ public static class SessionCommands
             new("edits <mode>", "how file writes are approved", Completes: false,
                 Values: ValueSources.EditModes),
         ]),
-        // NeedsWindow again: history is a store the composition root owns, and this type holds
-        // nothing but the conversation. `/stats 30` widens the window; the default is a week.
+        // History is a store the composition root owns, and this type holds nothing but the
+        // conversation. `/stats 30` widens the window; the default is a week.
         new("/stats", "usage: tokens, projects, agent types, what fills the context",
-            CommandOutcome.NeedsWindow,
         [
             new("<days>", "how far back to look — default 7", Completes: false),
             new("all", "every session ever recorded"),
             new("clear", "delete all usage history, after confirming"),
         ]),
-        // TRUST IS A FOLDER FACT, and the session holds the policy that owns it — so unlike /help
-        // this needs nothing a front end has. Handled rather than NeedsWindow for that reason.
-        new("/trust", "show or set whether this folder is trusted", CommandOutcome.Handled,
+        // TRUST IS A FOLDER FACT, and the session holds the policy that owns it.
+        new("/trust", "show or set whether this folder is trusted",
         [
             new("yes", "trust this folder — stop asking for reads and writes inside it"),
             new("no", "do not trust it — ask before every file operation"),
         ]),
-        new("/help", "show keys and commands", CommandOutcome.NeedsWindow),
-        new("/exit", "quit cxagent", CommandOutcome.Quit),
+        new("/help", "show keys and commands"),
+        new("/exit", "quit cxagent"),
     ];
 
     /// <summary>The command matching this input's first token, or null.</summary>
@@ -297,54 +285,6 @@ public static class SessionCommands
         if (!trimmed.StartsWith('/')) return "";
         var end = trimmed.IndexOf(' ');
         return end < 0 ? trimmed : trimmed[..end];
-    }
-
-    /// <summary>
-    /// True when <paramref name="input"/> was a recognized (or unrecognized) slash command — either
-    /// way, the caller must NOT treat it as a goal. <paramref name="reply"/> is the chat message to
-    /// display.
-    /// </summary>
-    public static bool TryHandle(string input, out string reply)
-    {
-        var trimmed = input.Trim();
-
-        // Only a leading slash makes something a command — "what does /clear do?" is a question
-        // about the command, not the command itself.
-        if (!trimmed.StartsWith('/'))
-        {
-            reply = "";
-            return false;
-        }
-
-        // First whitespace-delimited token only, so "/clear now please" still matches "/clear".
-        var end = trimmed.IndexOf(' ');
-        var token = end < 0 ? trimmed : trimmed[..end];
-
-        if (Match(trimmed) is not { } command)
-        {
-            // An unrecognised slash is still a COMMAND ATTEMPT, never a goal: sending "/celar" to the
-            // model as a task is worse than saying it does not exist.
-            reply = $"Unknown command '{token}'. Available: {string.Join(", ", All.Select(c => c.Name))}.";
-            return true;
-        }
-
-        switch (command.Name)
-        {
-            case "/clear":
-                // THE CALLER CLEARS THE CONTEXT. This type deliberately holds no session state, so
-                // emptying a List<ChatMessage> here would be a no-op dressed as the command's whole
-                // purpose — nothing downstream reads a list this type owns.
-                reply = "Conversation cleared.";
-                return true;
-
-            default:
-                // /compress, /help and /exit are all serviced by the CALLER: they need a provider, the
-                // window, or the process — none of which this type has, and deliberately so. It takes
-                // the raw conversation and returns a string, which is what makes it testable without a
-                // ConsoleWindowSystem. The outcome on the command says which.
-                reply = "";
-                return true;
-        }
     }
 
     /// <summary>

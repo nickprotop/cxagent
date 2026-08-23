@@ -20,12 +20,8 @@ namespace CxAgent.Tests;
 public class NoProviderCommandTests
 {
     /// <summary>What the submit handler decides, expressed as the predicate it uses.</summary>
-    private static bool NeedsAModel(string input)
-    {
-        var outcome = SessionCommands.Match(input)?.Outcome ?? CommandOutcome.NotACommand;
-        return outcome is CommandOutcome.NotACommand
-            or CommandOutcome.NeedsProvider or CommandOutcome.NeedsTurn;
-    }
+    private static bool NeedsAModel(string input) =>
+        SessionCommands.Match(input) is not { } command || command.NeedsModel;
 
     /// <summary>
     /// The WHOLE handler, both gates, in the order it runs them.
@@ -105,12 +101,28 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A FOURTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
-        // not know, which reads as NotACommand — so a command added to the table but forgotten here
-        // silently becomes unavailable without a model. This fails when the counts diverge.
+        // A FIFTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // not know, which reads as "not a command" — so a command added to the table but forgotten in
+        // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
+        // counts diverge.
         var commands = SessionCommands.All;
 
         Assert.Equal(14, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
+    }
+
+    /// <summary>
+    /// EXACTLY TWO COMMANDS REACH THE MODEL. Every other command answers from state the process
+    /// already holds, costing no tokens and no time — which is why a session with no provider
+    /// must still run them. /model is the command that FIXES having no provider; blocking it
+    /// leaves the window unusable except by killing it.
+    /// </summary>
+    [Fact]
+    public void OnlyCompressAndInit_NeedAModel()
+    {
+        var needy = SessionCommands.All.Where(c => c.NeedsModel).Select(c => c.Name).ToList();
+        needy.Sort(StringComparer.Ordinal);
+
+        Assert.Equal(new[] { "/compress", "/init" }, needy);
     }
 }
