@@ -8,15 +8,15 @@ The first family is LSP: a plugin per language server, each exposing the server'
 tools the model can call, with the protocol machinery entirely inside the plugin and Core knowing
 nothing about LSP at all.
 
-> **Writing a plugin?** Start at
-> [`cxagent.Core/Core/Plugins/README.md`](cxagent.Core/Core/Plugins/README.md) — sidecars, naming,
-> permission, settings, and two working calculator examples.
+> **This is a working design document, not user documentation.** It records why the plugin system
+> is shaped the way it is — why loading is refused mid-turn, why a plugin cannot override a built-in,
+> what each row of the collision matrix decides and when it becomes knowable, what v1 deliberately
+> left out. Most of that is not recoverable from the code that enforces it, which is why it is
+> written down. Read it before changing the design.
 >
-> **This document is the design**, and its audience is anyone about to CHANGE the plugin system: why
-> loading is refused mid-turn, why a plugin cannot override a built-in, what the collision matrix
-> decides and where each row is knowable, what v1 deliberately left out. Read it before proposing a
-> change; the constraints here were expensive to arrive at and most of them are not obvious from the
-> code that enforces them.
+> Documentation for people WRITING a plugin lives with the code, at
+> [`cxagent.Core/Core/Plugins/README.md`](cxagent.Core/Core/Plugins/README.md), and ships beside the
+> examples it refers to.
 
 ---
 
