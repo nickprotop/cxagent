@@ -29,6 +29,18 @@ that exceeds it is a hang to diagnose, not a slow test to wait out.
 Never run `pkill` here. It matches the harness shell wrapper and kills the session; kill the specific
 `dotnet`/`vstest` pids instead.
 
+## Designing
+
+**Specs come from questions, one at a time — not from a draft.** Writing prose alone, I produce
+something plausible, and plausible reads the same whether I knew the answer or invented it. A
+question forces one decision and a wrong answer gets caught before anything is built on it.
+`AgentToolset` claimed dispatch ordering stopped a consumer shadowing `read_file`. It never did. The
+claim survived a solo draft and died to "when and how?"
+
+**Put the cases in a matrix.** A matrix has cells, and an empty cell is visible; prose has none, so a
+case I have not thought about looks like one I have. "A plugin cannot take a built-in's name" is one
+sentence and was nine rows once tabled — three with no answer yet.
+
 ## Verifying
 
 Confirm the test count, not just the exit code. `dotnet test --filter` against a solution root exits 0
