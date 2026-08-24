@@ -100,6 +100,55 @@ public class PluginCatalogTests
     }
 
     /// <summary>
+    /// A client can build a download URL from any entry, without knowing where the plugin came from.
+    ///
+    /// <para>THE TWO SOURCE KINDS ANSWER THE SAME QUESTION DIFFERENTLY, and a picker has to handle
+    /// both: a <c>url</c> source is fetched as written, a <c>release</c> source is a template plus
+    /// the tag being installed, because it tracks the release rather than pinning a version this
+    /// file cannot know. What must never happen is an entry offering neither — a plugin nobody can
+    /// download, listed as available.</para>
+    /// </summary>
+    [Fact]
+    public void EveryEntryCanProduceADownloadUrl()
+    {
+        foreach (var entry in Entries())
+        {
+            var name = entry.GetProperty("name").GetString()!;
+            var source = entry.GetProperty("source");
+
+            switch (source.GetProperty("kind").GetString())
+            {
+                case "url":
+                    var url = source.GetProperty("url").GetString();
+                    Assert.StartsWith("https://", url);
+
+                    // A URL SOURCE CARRIES ITS OWN HASH. Nothing else can vouch for a file fetched
+                    // from somewhere this project does not control.
+                    Assert.Equal(64, source.GetProperty("sha256").GetString()!.Length);
+                    break;
+
+                case "release":
+                    var template = source.GetProperty("urlTemplate").GetString()!;
+                    var built = template
+                        .Replace("{repo}", source.GetProperty("repo").GetString())
+                        .Replace("{asset}", source.GetProperty("asset").GetString())
+                        .Replace("{tag}", "v1.2.3");
+
+                    Assert.StartsWith("https://", built);
+                    Assert.DoesNotContain("{", built);   // every placeholder was substitutable
+                    Assert.Contains("v1.2.3", built);
+
+                    Assert.StartsWith("https://", source.GetProperty("latest").GetString());
+                    break;
+
+                default:
+                    Assert.Fail($"entry '{name}' has an unknown source kind — a client cannot fetch it.");
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
     /// A release-sourced entry names an asset the release workflow actually builds.
     ///
     /// <para>THE ASSET NAME IS WRITTEN IN TWO PLACES — here and in the workflow that zips it — and a

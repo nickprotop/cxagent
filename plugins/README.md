@@ -99,12 +99,17 @@ every setting. Follow [csharp-lsp](csharp-lsp/README.md).
 must match the plugin's own sidecar — `PluginCatalogTests` fails the build if they drift, because the
 picker shows what this file says without loading a DLL to check.
 
-`source` says where the plugin comes from and is the field that separates the two kinds. A plugin
-released here uses `{ "kind": "release", "asset": "..." }` and is fetched from the same release as
-the binary, verified against its `SHA256SUMS`. One hosted elsewhere names its own `url` and carries
-its own `sha256` — and its `publisher`, `license` and `repository` stop being a formality, since
-nobody needs telling who wrote a plugin that ships in the same zip as cxagent and everybody needs
-telling for one that does not.
+`source` says where the plugin comes from, how to download it, and how to check what arrived.
+
+A plugin released here uses `kind: "release"`. It has no fixed URL on purpose — it tracks whichever
+cxagent release is being installed — so it carries `urlTemplate` (fill in `{repo}`, `{asset}` and the
+tag) plus `latest`, GitHub's always-current alias for a client with no tag in hand. Integrity comes
+from the release's own `SHA256SUMS`.
+
+One hosted elsewhere uses `kind: "url"`: a URL fetched as written, and its own `sha256`, because
+nothing in this project can vouch for a file it does not build. Its `publisher`, `license` and
+`repository` stop being a formality too — nobody needs telling who wrote a plugin that ships in the
+same zip as cxagent, and everybody needs telling for one that does not.
 
 The `$example` entry in the file is a worked third-party instance to copy. It is not installed.
 
