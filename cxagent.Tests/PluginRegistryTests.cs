@@ -152,12 +152,18 @@ public class PluginRegistryTests : IDisposable
         Assert.Null(tool.Gate(new JobParameters()));
     }
 
-    /// <summary>A tool the manifest marks <c>gated</c> asks EVERY call — a null AlwaysRule, so no
-    /// stored rule can generalise it, because the plugin-declared policy that WOULD let it
-    /// generalise is a later task's to build. Defaulting to "asks always" rather than "never asks"
-    /// is the safe side of a policy not yet implemented.</summary>
+    /// <summary>
+    /// A tool the manifest marks <c>gated</c> asks, and OFFERS "Always" — the user owns that
+    /// decision, having already approved this binary at load against a hash of its whole load set.
+    ///
+    /// <para>THE RULE NAMES THE PLUGIN AS WELL AS THE TOOL. A bare <c>tool lsp_rename</c> would
+    /// outlive this plugin: uninstall it, install a different one declaring the same tool name, and
+    /// the newcomer inherits a grant the user gave someone else. A built-in can use the bare form
+    /// because nothing else can ever claim its name; a plugin's name is only unique among what
+    /// happens to be installed.</para>
+    /// </summary>
     [Fact]
-    public void AGatedToolsOwnGateAsksEveryCallWithNoAlwaysRule()
+    public void AGatedToolsOwnGateOffersAlwaysScopedToThePlugin()
     {
         var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
             [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: true)]);
@@ -169,7 +175,20 @@ public class PluginRegistryTests : IDisposable
 
         Assert.NotNull(request);
         Assert.Equal(PermissionKind.Tool, request.Kind);
-        Assert.Null(request.AlwaysRule);
+        Assert.Equal("plugin lsp-rust tool lsp_rename", request.AlwaysRule);
+    }
+
+    /// <summary>An ungated tool does not ask at all — the other half of what <c>gated</c> selects
+    /// between, asserted beside it so a change that gates everything fails here.</summary>
+    [Fact]
+    public void AnUngatedToolDoesNotAsk()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("lsp_hover", "shows a type", EmptySchema(), Gated: false)]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        Assert.Null(registry.CurrentTools().Single().Gate(new JobParameters()));
     }
 
     // ---- Unwire ordering -------------------------------------------------------------------------

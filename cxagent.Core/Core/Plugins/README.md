@@ -91,9 +91,14 @@ someone installs the second one, and by then your name is in their config.
 a content hash covering its whole load set — change any byte and the user is asked again. This is
 the only boundary cxagent can enforce on your behalf, and nothing in config can pre-approve it.
 
-**Per-call gating is `"gated": true` in your manifest.** A gated tool asks on *every* call, with no
-"always allow" — deliberately, because a stored rule would be a standing grant to code cxagent did
-not write.
+**Per-call gating is `"gated": true` in your manifest.** A gated tool asks before each call, and the
+prompt offers "Always" like any other. The stored rule names your plugin as well as your tool
+(`plugin calculator tool calc_add`), so it cannot outlive you: uninstall your plugin, install a
+different one declaring the same tool name, and the newcomer starts from no permission rather than
+inheriting a grant the user gave you.
+
+Whether to grant it standing is the user's call — they already approved your binary at load, against
+a hash of its contents, which is the decision that actually determines whether your code runs.
 
 Past that, permission is yours. cxagent cannot know which of your operations are dangerous; if your
 plugin can delete things, gate it yourself before doing them.
@@ -142,8 +147,7 @@ exactly that case.
 `IPluginContext` gives you:
 
 - `WorkingDirectory` — the folder being worked in. Root yourself here.
-- `Settings` — your own config block, verbatim. Read your server path, flags and options from it
-  rather than hardcoding them; that is what lets one binary serve two configurations.
+- `Settings` — your own config block, verbatim. See below.
 - `Logger` — reaches the user's transcript.
 - `Lifetime` — cancelled when the plugin stops. Not a per-call token: use it for a long-lived
   backend, and a call's own token for the call.
@@ -151,6 +155,44 @@ exactly that case.
 
 **You are not handed the transcript, the model, or the permission store.** That is deliberate and
 permanent.
+
+## Settings
+
+`context.Settings` is your plugin's own `"settings"` block from config.json, handed over exactly as
+the user wrote it. cxagent checks that it parses and nothing more — it has no idea what your plugin
+expects.
+
+```json
+"plugins": {
+  "calculator": { "file": "calculator.dll", "settings": { "precision": 4 } }
+}
+```
+
+```csharp
+private static int ReadPrecision(JsonElement settings)
+{
+    if (settings.ValueKind != JsonValueKind.Object ||
+        !settings.TryGetProperty("precision", out var value) ||
+        value.ValueKind != JsonValueKind.Number ||
+        !value.TryGetInt32(out var precision))
+        return DefaultPrecision;
+
+    return Math.Clamp(precision, 0, 15);
+}
+```
+
+**Read your behaviour from here rather than hardcoding it.** This is what lets one binary serve
+several configurations: the C# language-server plugin that ships with cxagent drives both `csharp-ls`
+and OmniSharp from `settings.server` and `settings.args`, with no branch anywhere on which one it is
+talking to.
+
+**Missing is not an error, and neither is a typo.** A plugin configured with no settings block gets
+an empty object, so every read needs a default — and a default that works is the difference between
+a plugin someone can try and one they must configure before it will start. `"precision": "four"`
+is a mistake, not an attack; produce a working plugin at the default rather than a stack trace at
+load.
+
+Both calculator examples read `settings.precision` this way, and both fall back cleanly.
 
 ## Configuring one
 

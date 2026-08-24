@@ -36,6 +36,20 @@ own — and the crash lands later, inside the host, with a stack that never ment
 is that a pointer always comes back. This example keeps a static sentinel for the allocation-failure
 path, and `cxagent_plugin_free` checks for it — `free()` on static storage is undefined behaviour.
 
+## Settings, without a parser
+
+`cxagent_plugin_start` receives the context JSON — working directory and your settings block — and
+this example pulls one integer out with `strstr` and `atoi`:
+
+```
+no settings       1 + 2 -> 3.00
+"precision": 4    1 + 2 -> 3.0000
+```
+
+Enough to show the mechanism, and wrong the moment a settings block nests an object containing the
+word `precision`. A real plugin parses. The point is that settings is where your configuration comes
+from — hardcode a path or a flag and one binary serves one setup, read it here and it serves many.
+
 ## `abiVersion` appears twice
 
 `cxagent_plugin_abi_version()` answers before anything else is read. The manifest carries

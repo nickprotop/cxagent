@@ -276,15 +276,26 @@ public sealed class PluginRegistry
     {
         public ToolDefinition Definition { get; } = new(tool.Name, tool.Description, tool.InputSchema);
 
-        // A MINIMAL GATE FOR NOW, NOT THE REAL POLICY. PLUGINS.md's "the plugin provides its own
-        // policy; Core enforces it" describes a richer shape — the plugin choosing what to show and
-        // how a call generalises — which is a later task's to build. tool.Gated only distinguishes
-        // "asks" from "does not"; a plugin declaring gated=true asks EVERY call (no AlwaysRule, so
-        // no stored rule can ever match it) rather than being silently ungated, which is the wrong
-        // side to default to for a declared-but-unimplemented policy.
+        // A MINIMAL GATE, NOT THE REAL POLICY. PLUGINS.md's "the plugin provides its own policy;
+        // Core enforces it" describes a richer shape — the plugin choosing what to show and how a
+        // call generalises — which is a later task's to build. tool.Gated only distinguishes "asks"
+        // from "does not".
+        //
+        // "ALWAYS" IS OFFERED, AND THE USER OWNS THAT DECISION. Withholding it would not make a
+        // plugin safer: the binary was already approved at load, against a hash of its whole load
+        // set, which is the boundary that actually decides whether this code runs at all. What
+        // withholding DOES do is make a trusted plugin's every call a question, and a tool that
+        // interrupts on all of them is one users route around by disabling gating wholesale — a
+        // worse outcome than the standing grant it was avoiding.
+        //
+        // THE RULE NAMES THE PLUGIN, NOT ONLY THE TOOL. A bare "tool lsp_definition" would survive
+        // uninstalling this plugin and installing a different one that happens to declare the same
+        // name, handing the newcomer a grant the user gave someone else. Built-in tools can use the
+        // bare form (GatedAgentTool) because nothing else can ever claim their names.
         public Permissions.PermissionRequest? Gate(JobParameters call) => tool.Gated
             ? new Permissions.PermissionRequest(Permissions.PermissionKind.Tool,
-                $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin", AlwaysRule: null)
+                $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin",
+                AlwaysRule: $"plugin {plugin.Manifest.Name} tool {tool.Name}")
             : null;
 
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)

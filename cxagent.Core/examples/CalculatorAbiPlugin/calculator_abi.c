@@ -121,9 +121,30 @@ const char* cxagent_plugin_describe(void)
  * A plugin that DOES spawn something starts it here — and says "spawns": true in its manifest, so
  * the host records the pid and can reap it if this process dies without reaching stop.
  */
+/* settings.precision, read at start and used by every later invoke. */
+static int g_precision = 2;
+
 const char* cxagent_plugin_start(const char* context_json)
 {
-    (void)context_json;   /* working directory and settings; a calculator needs neither */
+    /* SETTINGS ARE THIS PLUGIN'S OWN CONFIG BLOCK, VERBATIM — whatever the user wrote under
+       "settings" for this plugin, nested inside the context object alongside the working directory.
+       Reading behaviour from here rather than hardcoding it is what lets one binary serve several
+       configurations.
+
+       MISSING IS NOT AN ERROR: a plugin configured with no settings block gets an empty object, so
+       every read needs a default. A default that works is the difference between a plugin someone
+       can try and one they must configure before it will start. */
+    if (context_json != NULL)
+    {
+        const char* at = strstr(context_json, "\"precision\"");
+        if (at != NULL && (at = strchr(at, ':')) != NULL)
+        {
+            int parsed = atoi(at + 1);
+            /* Clamped, because a config typo must not become undefined behaviour downstream. */
+            if (parsed >= 0 && parsed <= 15) g_precision = parsed;
+        }
+    }
+
     const char* p = heap("{\"ok\":true}");
     return p != NULL ? p : OOM;
 }
@@ -173,10 +194,12 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
 
        content IS WHAT THE MODEL READS. A result carrying only structured keys renders to the model
        as an empty string, and it explains the silence rather than reporting it. */
+    /* %.*f, with g_precision as the precision argument — the settings value reaching the output. */
     char buffer[256];
     snprintf(buffer, sizeof buffer,
         "{\"ok\":true,\"result\":{\"success\":true,\"output\":"
-        "{\"content\":\"%g\",\"answer\":%g}}}", answer, answer);
+        "{\"content\":\"%.*f\",\"answer\":%.*f}}}",
+        g_precision, answer, g_precision, answer);
 
     const char* p = heap(buffer);
     return p != NULL ? p : OOM;

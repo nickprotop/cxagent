@@ -24,6 +24,11 @@ public sealed class CalculatorPlugin : IPlugin
 {
     private IPluginContext _context = null!;
 
+    /// <summary>How many decimal places results are rounded to, from <c>settings.precision</c>.</summary>
+    private int _precision = DefaultPrecision;
+
+    private const int DefaultPrecision = 2;
+
     /// <summary>
     /// Runs once, before <see cref="Start"/>. Returns what this plugin offers.
     ///
@@ -47,8 +52,20 @@ public sealed class CalculatorPlugin : IPlugin
             throw new InvalidOperationException(
                 $"calculator's own sidecar failed to parse: {string.Join("; ", parsed.Errors)}");
 
+        // SETTINGS ARE THIS PLUGIN'S OWN CONFIG BLOCK, VERBATIM — whatever the user wrote under
+        // `"settings"` for this plugin in config.json, handed over unread by cxagent. Reading your
+        // behaviour from here rather than hardcoding it is what lets one binary serve two
+        // configurations: the LSP plugin that ships with cxagent drives two different language
+        // servers this way, with no branch on which one it is talking to.
+        //
+        // MISSING IS NOT AN ERROR. A plugin configured with no settings block at all gets an empty
+        // object, so every read needs a default — and a default that works is the difference
+        // between a plugin someone can try and one they must configure before it will start.
+        _precision = ReadPrecision(context.Settings);
+
         // The logger reaches the user's transcript. Say what a person would want to know at load.
-        _context.Logger.Log($"calculator ready, rooted at {_context.WorkingDirectory}");
+        _context.Logger.Log(
+            $"calculator ready, rooted at {_context.WorkingDirectory}, precision {_precision}");
 
         return Task.FromResult(parsed.Manifest);
     }
@@ -96,6 +113,8 @@ public sealed class CalculatorPlugin : IPlugin
                 $"calculator was asked for '{toolName}', which its own manifest does not declare."),
         };
 
+        answer = Math.Round(answer, _precision);
+
         return Task.FromResult(new JobResult
         {
             Success = true,
@@ -105,7 +124,10 @@ public sealed class CalculatorPlugin : IPlugin
                 // the model as an empty string — not "no answer", nothing at all — and it explains
                 // the silence rather than reporting it. Put the human-readable answer here and the
                 // typed one beside it.
-                ["content"] = answer.ToString("G"),
+                // "F<precision>" RATHER THAN "G": settings.precision is meant to be VISIBLE in the
+                // answer, and a general format would print 3 for both 2 and 4 decimal places,
+                // leaving the setting read but with nothing to show for it.
+                ["content"] = answer.ToString($"F{_precision}"),
                 ["answer"] = answer,
             },
         });
@@ -120,4 +142,25 @@ public sealed class CalculatorPlugin : IPlugin
     /// is usually the fiddliest one in a real plugin.</para>
     /// </summary>
     public Task Stop(CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>
+    /// Reads <c>settings.precision</c>, falling back to <see cref="DefaultPrecision"/>.
+    ///
+    /// <para>DEFENSIVE ABOUT SHAPE, NOT JUST ABSENCE. <see cref="IPluginContext.Settings"/> is
+    /// whatever JSON the user typed — cxagent validates that it parses and nothing more, because it
+    /// has no idea what your plugin expects. A settings block saying <c>"precision": "four"</c> is a
+    /// typo, not an attack, and it should produce a working plugin at the default rather than a
+    /// stack trace at load.</para>
+    /// </summary>
+    private static int ReadPrecision(JsonElement settings)
+    {
+        if (settings.ValueKind != JsonValueKind.Object ||
+            !settings.TryGetProperty("precision", out var value) ||
+            value.ValueKind != JsonValueKind.Number ||
+            !value.TryGetInt32(out var precision))
+            return DefaultPrecision;
+
+        // Math.Round throws outside 0..15, and a plugin must not turn a config typo into a crash.
+        return Math.Clamp(precision, 0, 15);
+    }
 }

@@ -32,12 +32,31 @@ part that transfers to the plugin you actually write.
 
 Two things worth noticing when the prompt appears:
 
-**It asks every time.** There is no "always allow" for a plugin tool — a stored rule would be a
-standing grant to code cxagent did not write.
+**"Always" is offered, and the rule names the plugin.** It stores `plugin calculator tool calc_add`,
+not a bare tool name — so it cannot be inherited by some other plugin that later declares
+`calc_add`. Whether to grant it is yours: you already approved this binary at load.
 
 **It is not the same question as the load prompt.** That one asked whether to trust the binary at
 all, once, showing a hash of its contents. This one asks about a call. Answering the first never
 exempts you from the second.
+
+## Settings
+
+`calculator.plugin.json` has no settings of its own, but the plugin reads one:
+
+```json
+"plugins": { "calculator": { "file": "calculator.dll", "settings": { "precision": 4 } } }
+```
+
+```
+no settings          1 + 2 -> 3.00
+"precision": 4       1 + 2 -> 3.0000
+"precision": "four"  1 + 2 -> 3.00     ← a typo falls back, it does not crash
+```
+
+That last line is the part worth copying. `Settings` is whatever JSON the user typed; cxagent checks
+that it parses and nothing else, because it cannot know what your plugin expects. Read defensively
+about shape, not just absence.
 
 ## What each method is for
 
