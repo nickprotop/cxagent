@@ -7,6 +7,15 @@ Writing a plugin is a different job — [the developer
 guide](../cxagent.Core/docs/plugins.md) covers the contract, the sidecar, permission and settings.
 This page is only about getting one released.
 
+> **This is the manual version of something planned.** A plugin marketplace is on the
+> [roadmap](../ROADMAP.md) — a place to publish an entry from outside this repository, and a dialog
+> in cxagent to browse and install one. [`plugins.json`](plugins.json) is already the schema that
+> would feed it, which is why it carries publisher, licence, per-platform downloads and hashes for
+> a catalog that currently has one entry.
+>
+> Until then these steps are done by hand, and the schema is the part worth keeping honest: it is
+> what a picker will read.
+
 
 **1. The directory.** `plugins/<name>/`, with the project, its sidecar, and a `README.md` covering
 what the plugin does, the release asset to download, anything the USER must install separately, and

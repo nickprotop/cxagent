@@ -73,6 +73,14 @@ than `ToolUpdated`, and the default working mode offered no spawn tool at all.
 
 Ideas, not promises.
 
+**A plugin marketplace.** [`plugins/plugins.json`](plugins/plugins.json) is the catalog a picker
+would read: name, version, publisher, licence, what a plugin declares, where to download it and the
+hash to check it against — with third-party and per-platform entries in the schema, since a native
+plugin ships per RID and may exist for two of the six. What it holds today is one plugin cxagent
+releases itself. What is missing is the part that makes it a marketplace: somewhere to publish an
+entry from outside this repository, and a dialog in cxagent to browse and install one. The catalog
+was designed for that rather than for the single entry it has, so the schema should survive it.
+
 **A plugin that is not written in C#.** The ABI path is built and tested against real native
 libraries, and a C calculator proves the boundary end to end — but no plugin anyone would use has
 been written against it yet. Until one is, whether the host, shim and C header earn their ~1,500
