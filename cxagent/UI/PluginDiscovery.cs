@@ -80,6 +80,85 @@ public static class PluginDiscovery
     }
 
     /// <summary>
+    /// One plugin found in a search folder that <c>config.json</c> says nothing about — see
+    /// <see cref="FindUnconfigured"/>.
+    /// </summary>
+    /// <param name="Name">From its sidecar's own <c>name</c>, which is what <c>/plugin load</c> takes.</param>
+    /// <param name="File">The entry-point filename, for the <c>config.json</c> entry a user would write.</param>
+    /// <param name="Folder">Where it was found, so the report can say which of several folders.</param>
+    /// <param name="ToolCount">How many tools it declares — enough for a user to tell a real find
+    /// from a stale file without loading anything.</param>
+    public sealed record UnconfiguredPlugin(string Name, string File, string Folder, int ToolCount);
+
+    /// <summary>
+    /// Plugins present in <paramref name="searchFolders"/> that no <c>config.json</c> entry names —
+    /// what a user gets after dropping a file into the plugins folder, or after an installer put one
+    /// there.
+    ///
+    /// <para>FOUND IS NOT LOADED, AND NOT OFFERED TO BE LOADED. This returns something to SAY, never
+    /// something to run: dropping a file into a well-known directory is a weaker statement of intent
+    /// than naming it in config, and a startup that prompted "found a plugin, run it?" would turn a
+    /// file appearing in a fixed path into a request to execute code. The caller reports these; the
+    /// user decides, through <c>/plugin load</c> or by writing the config entry.</para>
+    ///
+    /// <para>READS SIDECARS, LOADS NO ASSEMBLY. A sidecar is data — the whole reason it ships beside
+    /// the binary rather than being baked into it is that a plugin's claims can be read without
+    /// running it. This method never touches the DLL.</para>
+    ///
+    /// <para>NEAREST FOLDER WINS, matching <see cref="FindLoadSetDirectory"/>: a project's copy of a
+    /// plugin shadows a global one rather than being reported twice under one name.</para>
+    /// </summary>
+    /// <param name="configured">Config's own plugins, by name — a sidecar naming one of these is
+    /// already the user's business and is not reported as a find. MATCHED ON THE SIDECAR'S NAME, not
+    /// the filename: config keys the plugin by name, and the two need not agree.</param>
+    public static IReadOnlyList<UnconfiguredPlugin> FindUnconfigured(
+        IReadOnlyDictionary<string, PluginConfig> configured, IReadOnlyList<string> searchFolders)
+    {
+        var found = new List<UnconfiguredPlugin>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var folder in searchFolders)
+        {
+            if (!Directory.Exists(folder)) continue;
+
+            foreach (var sidecar in Directory.EnumerateFiles(folder, "*.plugin.json")
+                         .OrderBy(f => f, StringComparer.Ordinal))
+            {
+                PluginManifest? manifest;
+                try
+                {
+                    manifest = PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // AN UNREADABLE FILE IS NOT A FIND. This whole method is a courtesy on the
+                    // startup path; a permissions problem in a plugins folder must not stop a
+                    // session from opening.
+                    continue;
+                }
+
+                if (manifest is null || string.IsNullOrEmpty(manifest.Name)) continue;
+                if (configured.ContainsKey(manifest.Name)) continue;
+                if (!seen.Add(manifest.Name)) continue;
+
+                // THE ENTRY-POINT FILE MUST ACTUALLY BE THERE. A sidecar whose binary was deleted is
+                // a leftover, and reporting it would send a user to `/plugin load` for something
+                // that cannot load. Same stem pairing every other sidecar lookup here uses.
+                var stem = sidecar[..^".plugin.json".Length];
+                var file = Directory.EnumerateFiles(folder, Path.GetFileName(stem) + ".*")
+                    .FirstOrDefault(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                                      || f.EndsWith(".so", StringComparison.OrdinalIgnoreCase));
+                if (file is null) continue;
+
+                found.Add(new UnconfiguredPlugin(
+                    manifest.Name, Path.GetFileName(file), folder, manifest.Tools.Count));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
     /// Loads every ENABLED configured plugin whose file resolves against
     /// <paramref name="searchFolders"/>, in name order for a deterministic prompt sequence when more
     /// than one needs the user's approval.

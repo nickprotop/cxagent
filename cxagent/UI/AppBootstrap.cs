@@ -916,14 +916,42 @@ public static class AppBootstrap
         // WHAT EXISTS, the same split /mcp already draws.
         async Task LoadConfiguredPluginsAsync()
         {
-            if (resolution.Plugins.Count == 0) return;
-
             var searchFolders = PluginDiscovery.SearchFolders(
                 resolution.PluginPaths, session.WorkingDirectory, paths.ConfigDir);
 
-            await PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
-                paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
-                CancellationToken.None);
+            if (resolution.Plugins.Count > 0)
+                await PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
+                    paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
+                    CancellationToken.None);
+
+            ReportUnconfiguredPlugins(searchFolders);
+        }
+
+        /// A plugin sitting in a search folder that config says nothing about is INVISIBLE without
+        /// this: loading iterates config, so the folders are only ever consulted to resolve a name
+        /// config already gave. Someone who drops a plugin in — or runs an installer that does —
+        /// gets no prompt, no message, and a /plugin listing that says "No plugins configured"
+        /// while the file sits in the folder it would have searched.
+        ///
+        /// SAYS, NEVER LOADS. Dropping a file into a well-known directory is a weaker statement of
+        /// intent than naming it in config, and a startup that offered to run what it found would
+        /// turn a file appearing in a fixed path into a request to execute code. The user decides,
+        /// with the command that does it printed next to the name.
+        void ReportUnconfiguredPlugins(IReadOnlyList<string> searchFolders)
+        {
+            var found = PluginDiscovery.FindUnconfigured(resolution.Plugins, searchFolders);
+            if (found.Count == 0) return;
+
+            foreach (var plugin in found)
+                transcript.Write(new Message(
+                    $"plugin '{plugin.Name}' found in {plugin.Folder} ({plugin.ToolCount} tool(s)), "
+                    // THE FILENAME, NOT THE MANIFEST NAME. PluginResolver.Resolve looks a target up
+                    // in config first and falls back to treating it as a FILE — so a name config
+                    // does not know resolves only if it happens to be the filename. Printing the
+                    // manifest name here would hand the user a command that cannot work.
+                    + $"not configured — `/plugin load {plugin.File}` to try it for this session, or "
+                    + $"add `\"{plugin.Name}\": {{ \"file\": \"{plugin.File}\" }}` under \"plugins\" in config.json.",
+                    Severity.Info));
         }
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
