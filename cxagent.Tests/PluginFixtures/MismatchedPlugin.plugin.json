@@ -1,0 +1,8 @@
+{
+  "name": "mismatched",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "sidecar_tool", "description": "what the sidecar says", "inputSchema": { "type": "object" }, "gated": false }
+  ]
+}

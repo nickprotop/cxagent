@@ -2,5 +2,10 @@
   <Project Path="../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
   <Project Path="cxagent.Core/cxagent.Core.csproj" />
   <Project Path="cxagent.Tests/cxagent.Tests.csproj" />
+  <Project Path="cxagent.Tests.PluginFixture/cxagent.Tests.PluginFixture.csproj" />
+  <Project Path="cxagent.Tests.PluginFixture.Mismatched/cxagent.Tests.PluginFixture.Mismatched.csproj" />
+  <Project Path="cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
+  <Project Path="cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
+  <Project Path="cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
   <Project Path="cxagent/cxagent.csproj" />
 </Solution>

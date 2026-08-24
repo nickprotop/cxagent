@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AN ASSEMBLY WITH TWO IPlugin IMPLEMENTATIONS. Proves ManagedPluginLoader refuses to guess
+       which one was meant rather than picking the first by reflection order. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

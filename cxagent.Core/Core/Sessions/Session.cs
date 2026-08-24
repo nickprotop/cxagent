@@ -450,7 +450,16 @@ public sealed partial class Session
     {
         if (RefusedWhileBusy()) return CommandStatus.Refused;
 
-        var result = Plugins.Load(plugin, manifest, isNameTaken: Jobs.ToolBindings.IsBuiltinName);
+        // BUILT-INS, AND WHATEVER THIS SESSION'S AGENT WAS INJECTED WITH (matrix rows 3 and 4). The
+        // built-in half was the only one wired at Task 3, because Agent then exposed no
+        // session-reachable way to ask about an injected name — see AgentHost.KnowsInjectedTool.
+        // Host is null before the session's first wire, so a plugin loaded that early is judged
+        // against built-ins alone; nothing has injected a tool for it to collide with yet either.
+        var isNameTaken = Host is { } host
+            ? name => Jobs.ToolBindings.IsBuiltinName(name) || host.KnowsInjectedTool(name)
+            : (Func<string, bool>)Jobs.ToolBindings.IsBuiltinName;
+
+        var result = Plugins.Load(plugin, manifest, isNameTaken);
 
         if (result is Plugins.PluginLoadResult.NameCollision collision)
         {

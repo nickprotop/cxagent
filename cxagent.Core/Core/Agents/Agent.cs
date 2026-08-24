@@ -422,9 +422,16 @@ public sealed class Agent
         return Jobs.ToolBindings.ToolsNamed(composed.Apply(offered).Select(t => t.Name));
     }
 
-    /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
-    /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
-    internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
+    /// <summary>
+    /// Whether an injected tool named <paramref name="name"/> was offered to this agent — the
+    /// session-reachable half of the plugin/injected collision check (matrix rows 3 and 4). The
+    /// filtering happens once in the constructor, so this is the only way to ask afterward without
+    /// running a turn.
+    /// </summary>
+    public bool KnowsInjectedTool(string name) => _agentTools?.Knows(name) ?? false;
+
+    /// <summary>Test seam, kept for callers that predate <see cref="KnowsInjectedTool"/>.</summary>
+    internal bool KnowsInjectedToolForTest(string name) => KnowsInjectedTool(name);
 
     /// <summary>Test seam: the tool names actually offered on the last request built, so a dynamic
     /// source's per-turn re-read can be observed without a live provider round trip inspecting the

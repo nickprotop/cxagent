@@ -260,6 +260,15 @@ public sealed class AgentHost : IDisposable
     internal IReadOnlyList<string> WithdrawnAgentTools => _agent.WithdrawnAgentTools;
 
     /// <summary>
+    /// Whether an injected tool named <paramref name="name"/> is offered by this session's agent —
+    /// forwarded to <see cref="Agent.KnowsInjectedTool"/> so a plugin load can be refused against it.
+    /// <see cref="Sessions.Session.LoadPlugin"/> composes this into the collision predicate it hands
+    /// <see cref="Plugins.PluginRegistry.Load"/>, closing matrix rows 3 and 4 (plugin x injected):
+    /// before this existed, <c>Session</c> had no session-reachable way to ask the question at all.
+    /// </summary>
+    public bool KnowsInjectedTool(string name) => _agent.KnowsInjectedTool(name);
+
+    /// <summary>
     /// The session agent's plan. A child keeps its own and it stays with the child: a worker's plan
     /// is scaffolding for one job, and pooling it into the session's would make the panel report a
     /// list nobody can act on after the child exits.

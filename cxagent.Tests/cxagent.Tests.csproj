@@ -21,6 +21,32 @@
   <ItemGroup>
     <ProjectReference Include="../cxagent/cxagent.csproj" />
     <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+
+    <!-- REAL DLLS ON DISK FOR ManagedPluginLoaderTests. A ProjectReference here, rather than a
+         second copy of these types inside this project, is what makes Assembly.LoadFrom load a
+         DIFFERENT assembly than cxagent.Tests.dll itself — the loader is only exercised honestly
+         when the plugin it loads is not the process's own entry assembly. Each fixture is its OWN
+         project: an assembly's IPlugin count is a whole-assembly property (GetTypes scans
+         everything in it), so "exactly one" and "more than one" each need a dedicated assembly
+         rather than one shared fixture DLL with several plugin classes in it. -->
+    <ProjectReference Include="../cxagent.Tests.PluginFixture/cxagent.Tests.PluginFixture.csproj" />
+    <ProjectReference Include="../cxagent.Tests.PluginFixture.Mismatched/cxagent.Tests.PluginFixture.Mismatched.csproj" />
+    <ProjectReference Include="../cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
+    <ProjectReference Include="../cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
+    <ProjectReference Include="../cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SIDECARS, COPIED NEXT TO THE FIXTURE DLLS. ManagedPluginLoader looks for
+         '<plugin>.plugin.json' beside '<plugin>.dll' at the OUTPUT path, not the source path, so
+         these must land in the test binaries' own output directory, named after their DLL's own
+         stem, to be found at all. -->
+    <None Include="PluginFixtures/WellFormedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="cxagent.Tests.PluginFixture.plugin.json" />
+    <None Include="PluginFixtures/MismatchedPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="cxagent.Tests.PluginFixture.Mismatched.plugin.json" />
+    <None Include="PluginFixtures/ThrowingPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="cxagent.Tests.PluginFixture.Throwing.plugin.json" />
   </ItemGroup>
 
 </Project>

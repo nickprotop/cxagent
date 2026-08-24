@@ -342,6 +342,69 @@ public class PluginRegistryTests : IDisposable
         Assert.Empty(session.Plugins.CurrentTools());
     }
 
+    /// <summary>An injected tool a session was wired with — used only to occupy a name, so
+    /// <see cref="EchoTool.ExecuteAsync"/> is never actually reached by these tests.</summary>
+    private sealed class EchoTool : IAgentTool
+    {
+        public ToolDefinition Definition { get; } = new("echo_tool", "echoes",
+            JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult { Success = true });
+    }
+
+    /// <summary>
+    /// Matrix rows 3 and 4 (plugin x injected): a plugin whose tool name collides with an injected
+    /// tool's must not load — the gap Task 3 left, because Agent then exposed no session-reachable
+    /// way to ask "does an injected tool own this name" outside an internal test-only method. See
+    /// <see cref="AgentHost.KnowsInjectedTool"/> and <see cref="Session.LoadPlugin"/>'s composed
+    /// predicate.
+    /// </summary>
+    [Fact]
+    public void APluginCollidingWithAnInjectedToolRefusesToLoad()
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts
+            {
+                Observer = new BufferedChatSink(),
+                ToolObserver = new BufferedJobPanel(),
+                Tools = [new EchoTool()],
+            },
+            AgentMode.Single);
+        using var _ = manager;
+
+        var status = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "echo_tool"));
+
+        Assert.Equal(CommandStatus.Reported, status);
+        Assert.Empty(session.Plugins.CurrentTools());
+    }
+
+    /// <summary>The same collision, but the plugin's OTHER tool name is free — the whole plugin
+    /// still refuses (PLUGINS.md, "Name collisions": a half-loaded plugin is unpredictable), proving
+    /// the injected check goes through the same all-or-nothing path as the built-in check.</summary>
+    [Fact]
+    public void APluginCollidingWithAnInjectedToolRefusesWholeEvenWithAnUncontestedToolAlso()
+    {
+        var manager = SessionManager.Create(new AppPaths(_dir));
+        var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts
+            {
+                Observer = new BufferedChatSink(),
+                ToolObserver = new BufferedJobPanel(),
+                Tools = [new EchoTool()],
+            },
+            AgentMode.Single);
+        using var _ = manager;
+
+        var status = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename", "echo_tool"));
+
+        Assert.Equal(CommandStatus.Reported, status);
+        Assert.DoesNotContain(session.Plugins.CurrentTools(), t => t.Definition.Name == "lsp_rename");
+    }
+
     /// <summary>Session close runs the same four steps as an explicit unwire — there is no separate
     /// teardown path, so a plugin loaded and never explicitly unwired still gets Stop called.</summary>
     [Fact]

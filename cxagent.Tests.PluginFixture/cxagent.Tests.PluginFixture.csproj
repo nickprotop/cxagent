@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A REAL, SEPARATE ASSEMBLY, not a type declared inside the test project. ManagedPluginLoader
+       loads a plugin from a DLL PATH — Assembly.LoadFrom on a file — so its tests need something
+       genuinely on disk to point at, distinct from cxagent.Tests.dll itself. This project's whole
+       reason to exist is being that file. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

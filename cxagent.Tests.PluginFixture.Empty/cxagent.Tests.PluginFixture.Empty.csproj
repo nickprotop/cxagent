@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AN ASSEMBLY WITH ZERO IPlugin IMPLEMENTATIONS. No reference to cxagent.Core at all — that is
+       the point: this proves ManagedPluginLoader reports "no IPlugin implementation" for an
+       ordinary DLL that was never a plugin, not just for one that almost qualifies. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+{
+  "name": "well-formed",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "wf_tool", "description": "a fixture tool", "inputSchema": { "type": "object" }, "gated": false }
+  ]
+}
