@@ -945,12 +945,21 @@ public static class AppBootstrap
             foreach (var plugin in found)
                 transcript.Write(new Message(
                     $"plugin '{plugin.Name}' found in {plugin.Folder} ({plugin.ToolCount} tool(s)), "
-                    // THE FILENAME, NOT THE MANIFEST NAME. PluginResolver.Resolve looks a target up
-                    // in config first and falls back to treating it as a FILE — so a name config
-                    // does not know resolves only if it happens to be the filename. Printing the
-                    // manifest name here would hand the user a command that cannot work.
-                    + $"not configured — `/plugin load {plugin.File}` to try it for this session, or "
-                    + $"add `\"{plugin.Name}\": {{ \"file\": \"{plugin.File}\" }}` under \"plugins\" in config.json.",
+                    + "not configured. Add it under \"plugins\" in config.json:\n"
+                    + $"    \"{plugin.Name}\": {{ \"file\": \"{plugin.File}\" }}\n"
+                    // CONFIG FIRST, THE COMMAND SECOND AND HEDGED. A /plugin load carries no
+                    // settings — there is nowhere for them to come from when config does not name
+                    // the plugin — so a plugin needing any (a language server's command, an API
+                    // host) fails to start, correctly and confusingly. Seen live: csharp-lsp loaded,
+                    // then refused with "requires a 'server' string in its settings". Offering both
+                    // routes as equals sends a user down the one that cannot work for the plugins
+                    // most likely to need it.
+                    //
+                    // THE FILENAME, NOT THE MANIFEST NAME, in the command. PluginResolver.Resolve
+                    // looks a target up in config first and otherwise treats it as a FILE, so a name
+                    // config does not know resolves only if it happens to be the filename.
+                    + $"    Or `/plugin load {plugin.File}` to try it for this session — settings "
+                    + "cannot be passed that way, so a plugin needing any will say so and unload.",
                     Severity.Info));
         }
 
