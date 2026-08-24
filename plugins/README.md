@@ -89,7 +89,7 @@ only what cxagent itself releases and supports.
 
 A plugin here is one cxagent builds, releases and installs, so it carries the same expectations as
 the app itself. Writing the plugin is [the dev guide's
-job](../cxagent.Core/Core/Plugins/README.md); getting it into the catalog is these five steps.
+job](../cxagent.Core/docs/plugins.md); getting it into the catalog is these five steps.
 
 **1. The directory.** `plugins/<name>/`, with the project, its sidecar, and a `README.md` covering
 what the plugin does, the release asset to download, anything the USER must install separately, and
@@ -120,7 +120,7 @@ present-but-unconfigured and they decide.
 > fine for a catalog this size and is the first thing worth generating from `plugins.json` if it
 > grows.
 
-*Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/Core/Plugins/README.md) — the
+*Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/docs/plugins.md) — the
 contract, the sidecar format, permission, settings, and two worked examples.*
 
 *[`plugins.json`](plugins.json) is this page as data, for the plugin picker to read.*

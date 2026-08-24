@@ -5,7 +5,7 @@ anything. This is about the other kind — a tool **you** write, that does somet
 not have anticipated.
 
 > Compiled into your app. For tools that arrive at run time from a DLL you did not build, see
-> [writing a plugin](../Core/Plugins/README.md) — same `IAgentTool` at the end, different way in.
+> [writing a plugin](plugins.md) — same `IAgentTool` at the end, different way in.
 
 ```csharp
 new SessionPorts
@@ -242,7 +242,7 @@ public sealed class DeployTool : IAgentTool
 
 ## A runnable example
 
-[`examples/ToolAgent`](../examples/ToolAgent) is a small console front end with three tools, chosen so
+[`examples/ToolAgent`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent) is a small console front end with three tools, chosen so
 that each demonstrates a different answer from `Gate`:
 
 | Tool | `Gate` returns | Behaviour |
@@ -273,4 +273,4 @@ what you agreed to was decided by the rule the tool returned.
 
 - [API reference →](api.md)
 - [Permissions →](../README.md#permissions)
-- [Writing a plugin →](../Core/Plugins/README.md)
+- [Writing a plugin →](plugins.md)

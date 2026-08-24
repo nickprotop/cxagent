@@ -260,7 +260,7 @@ plugin is not approving it**, and nothing in config can pre-approve one. It need
 server on PATH: `dotnet tool install -g csharp-ls`.
 
 See the [plugin catalog](plugins/) for what ships and how to configure it, and
-[cxagent.Core/Core/Plugins](cxagent.Core/Core/Plugins/) if you want to write one.
+[cxagent.Core/Core/Plugins](cxagent.Core/docs/plugins.md) if you want to write one.
 
 ## Configuration
 

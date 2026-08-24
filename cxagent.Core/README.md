@@ -288,7 +288,7 @@ plugin has already decided to run it, and Core does not pretend otherwise.
 A plugin is not sandboxed: it runs in your process and can do what your process can. Core enforces
 the decision to load it, and the plugin declares which of its own tools need a prompt.
 
-**[Writing a plugin →](Core/Plugins/README.md)**
+**[Writing a plugin →](docs/plugins.md)**
 
 ---
 
@@ -573,7 +573,7 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
   what `Gate` should return
-- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins)** — tools loaded from a DLL at run time: the
+- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/docs/plugins.md)** — tools loaded from a DLL at run time: the
   lifecycle, the sidecar, permission and settings
 - **[SpectreAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool

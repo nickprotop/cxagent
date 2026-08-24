@@ -20,8 +20,8 @@ It is measurably more code to reach a place the host would have loaded directly.
 
 Two working examples, the same calculator twice:
 
-- [`examples/CalculatorPlugin`](../../examples/CalculatorPlugin) — managed, ~110 lines
-- [`examples/CalculatorAbiPlugin`](../../examples/CalculatorAbiPlugin) — C, one file
+- [`examples/CalculatorPlugin`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin) — managed, ~110 lines
+- [`examples/CalculatorAbiPlugin`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin) — C, one file
 
 Read them side by side. Nothing differs but the boundary, so the diff between them *is* what the
 boundary costs.
@@ -257,12 +257,12 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 
 ## See also
 
-- [`IPlugin.cs`](IPlugin.cs) — the managed contract, documented per method
-- [`Abi/cxagent_plugin.h`](Abi/cxagent_plugin.h) — the six C functions, with the ownership rules
-- [`Abi/README.md`](Abi/README.md) — the JSON envelopes crossing the ABI boundary
+- [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
+- [`Abi/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/cxagent_plugin.h) — the six C functions, with the ownership rules
+- [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary
 
 Hosting a plugin rather than writing one:
 
-- [`docs/api.md`](../../docs/api.md#plugins) — `LoadPlugin`, the registry, the loader, child-process reaping
-- [`docs/tools.md`](../../docs/tools.md) — the other kind of tool: compiled into your app rather than loaded
-- [the package README](../../README.md#tools-that-arrive-at-run-time) — where plugins sit among everything else
+- [`docs/api.md`](api.md#plugins) — `LoadPlugin`, the registry, the loader, child-process reaping
+- [`docs/tools.md`](tools.md) — the other kind of tool: compiled into your app rather than loaded
+- [the package README](../README.md#tools-that-arrive-at-run-time) — where plugins sit among everything else

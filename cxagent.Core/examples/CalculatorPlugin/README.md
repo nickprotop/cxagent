@@ -76,4 +76,4 @@ way down, including after a crash.
 ## See also
 
 - [`../CalculatorAbiPlugin`](../CalculatorAbiPlugin) — the same calculator in C, across the ABI
-- [the plugin guide](../../Core/Plugins/README.md) — sidecars, naming, permission, spawning
+- [the plugin guide](../../docs/plugins.md) — sidecars, naming, permission, spawning
