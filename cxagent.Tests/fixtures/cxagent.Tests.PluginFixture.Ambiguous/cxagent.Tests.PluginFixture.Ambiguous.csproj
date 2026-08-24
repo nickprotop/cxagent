@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+    <ProjectReference Include="../../../cxagent.Core/cxagent.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -12,6 +12,17 @@
     <NoWarn>$(NoWarn);xUnit1031</NoWarn>
   </PropertyGroup>
 
+  <!-- THE FIXTURE PROJECTS ARE NESTED, SO THEIR SOURCES MUST BE EXCLUDED FROM THIS ONE. An SDK
+       project globs **/*.cs beneath itself, which now sweeps up each fixture's own code and — worse
+       — the AssemblyInfo files MSBuild generates under their obj/, producing duplicate-attribute
+       errors that name a file nobody wrote. They live here because five projects existing only to
+       be loaded by these tests do not belong in the repository root. -->
+  <ItemGroup>
+    <Compile Remove="fixtures/**/*.cs" />
+    <None Remove="fixtures/**" />
+    <EmbeddedResource Remove="fixtures/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
@@ -29,11 +40,11 @@
          project: an assembly's IPlugin count is a whole-assembly property (GetTypes scans
          everything in it), so "exactly one" and "more than one" each need a dedicated assembly
          rather than one shared fixture DLL with several plugin classes in it. -->
-    <ProjectReference Include="../cxagent.Tests.PluginFixture/cxagent.Tests.PluginFixture.csproj" />
-    <ProjectReference Include="../cxagent.Tests.PluginFixture.Mismatched/cxagent.Tests.PluginFixture.Mismatched.csproj" />
-    <ProjectReference Include="../cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
-    <ProjectReference Include="../cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
-    <ProjectReference Include="../cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture/cxagent.Tests.PluginFixture.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Mismatched/cxagent.Tests.PluginFixture.Mismatched.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
 
     <!-- THE REAL LSP PLUGIN, AS A BUILD DEPENDENCY ONLY. ReferenceOutputAssembly="false" is the
          whole point: this project must not compile against a plugin's types, or the core suite
