@@ -153,6 +153,12 @@ public sealed class CxagentLspPlugin : IPlugin
             Success = true,
             Output =
             {
+                // See LocationsResult's own doc: Agent renders Output["content"] and nothing else,
+                // so a diagnostics result without it reaches the model blank.
+                ["content"] = diagnostics.Count == 0
+                    ? "No diagnostics for that file."
+                    : string.Join("\n", diagnostics.Select(d =>
+                        $"{d.Line + 1}:{d.Character + 1} {d.Severity}: {d.Message}")),
                 ["diagnostics"] = diagnostics.Select(d => new Dictionary<string, object?>
                 {
                     // +1: THE SERVER'S 0-BASED POSITION BECOMES THE 1-BASED ONE THE TOOL SCHEMA
@@ -183,19 +189,45 @@ public sealed class CxagentLspPlugin : IPlugin
     private string ResolvePath(string file) =>
         Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file);
 
-    private JobResult LocationsResult(IReadOnlyList<LspLocation> locations) => new()
+    /// <summary>
+    /// A tool result carrying BOTH a <c>content</c> string and the structured <c>locations</c>.
+    ///
+    /// <para><c>content</c> IS WHAT THE MODEL ACTUALLY READS — <c>Agent</c> renders a tool result by
+    /// taking <c>Output["content"]</c> and nothing else, the convention every built-in follows
+    /// (FileJobExecutor writes it for read, grep and glob alike). A result carrying only structured
+    /// keys reaches the model as an EMPTY STRING: it does not see "no locations", it sees nothing at
+    /// all, and answers by inventing a reason the lookup failed. Observed live — the model reported
+    /// the language server was not indexed while the server was running and answering correctly.</para>
+    ///
+    /// <para>The structured key stays beside it: it costs nothing, it is what a non-model consumer
+    /// of JobResult would want, and dropping it to satisfy the renderer would throw away the typed
+    /// answer to keep the printed one.</para>
+    /// </summary>
+    private JobResult LocationsResult(IReadOnlyList<LspLocation> locations)
     {
-        Success = true,
-        Output =
+        var rendered = locations
+            .Select(l => $"{UriToPath(l.UriOrPath)}:{l.Start.Line + 1}:{l.Start.Character + 1}")
+            .ToList();
+
+        return new JobResult
         {
-            ["locations"] = locations.Select(l => new Dictionary<string, object?>
+            Success = true,
+            Output =
             {
-                ["file"] = UriToPath(l.UriOrPath),
-                ["line"] = l.Start.Line + 1,
-                ["character"] = l.Start.Character + 1,
-            }).ToList(),
-        },
-    };
+                // NAMED AS A MISS RATHER THAN LEFT BLANK. "No definition found" is an answer the
+                // model can act on; an empty string is one it has to guess about.
+                ["content"] = rendered.Count == 0
+                    ? "No definition found at that position."
+                    : string.Join("\n", rendered),
+                ["locations"] = locations.Select(l => new Dictionary<string, object?>
+                {
+                    ["file"] = UriToPath(l.UriOrPath),
+                    ["line"] = l.Start.Line + 1,
+                    ["character"] = l.Start.Character + 1,
+                }).ToList(),
+            },
+        };
+    }
 
     private static string UriToPath(string uri) =>
         uri.StartsWith("file://", StringComparison.Ordinal) ? new Uri(uri).LocalPath : uri;

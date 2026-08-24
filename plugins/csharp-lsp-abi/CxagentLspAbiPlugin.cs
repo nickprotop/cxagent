@@ -352,7 +352,15 @@ public static class CxagentLspAbiPlugin
             ["message"] = d.Message,
         }).ToArray();
 
-        var output = new JsonObject { ["diagnostics"] = new JsonArray(items) };
+        var output = new JsonObject
+        {
+            // See LocationsResult: without content the model receives a blank tool result.
+            ["content"] = items.Length == 0
+                ? "No diagnostics for that file."
+                : string.Join("\n", diagnostics.Select(d =>
+                    $"{d.Line + 1}:{d.Character + 1} {d.Severity}: {d.Message}")),
+            ["diagnostics"] = new JsonArray(items),
+        };
         return WriteInvokeResult(true, null, output);
     }
 
@@ -378,7 +386,22 @@ public static class CxagentLspAbiPlugin
             ["character"] = l.Start.Character + 1,
         }).ToArray();
 
-        var output = new JsonObject { ["locations"] = new JsonArray(items) };
+        // content IS WHAT THE MODEL READS — Agent renders a tool result from Output["content"] and
+        // nothing else, the convention every built-in follows. A result carrying only structured
+        // keys arrives as an empty string, and the model answers by inventing a reason the lookup
+        // failed rather than reporting a miss. The structured array stays beside it for any consumer
+        // that wants the typed answer.
+        var rendered = locations
+            .Select(l => $"{UriToPath(l.UriOrPath)}:{l.Start.Line + 1}:{l.Start.Character + 1}")
+            .ToList();
+
+        var output = new JsonObject
+        {
+            ["content"] = rendered.Count == 0
+                ? "No definition found at that position."
+                : string.Join("\n", rendered),
+            ["locations"] = new JsonArray(items),
+        };
         return WriteInvokeResult(true, null, output);
     }
 
