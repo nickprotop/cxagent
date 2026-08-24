@@ -230,6 +230,17 @@ where the plugin came from and what it declares it does:
 A user approving a plugin blind is the weak point of this design — not the absence of per-call
 prompts.
 
+### A host with no gate asks nothing, and that is the embedder's decision
+
+`Session.LoadPlugin` asks only when a gate is wired. Headless hosts and tests have none, so a plugin
+loads there unasked — the same rule every other permission path in this codebase follows, since a
+prompt with nobody to answer it is a hang rather than a safeguard.
+
+It is worth stating plainly because it qualifies the claim above. The load gate is the only boundary
+Core CAN enforce, and in a host that wires no gate there is no boundary at all: the embedder has
+taken permissions on themselves, for plugins exactly as for file writes and shell commands. A
+library cannot do better than refuse to invent consent nobody is present to give.
+
 ### Identity is a content hash, not a filename
 
 A grant names *this binary*, not this path. Replace the file with different code and the grant does
