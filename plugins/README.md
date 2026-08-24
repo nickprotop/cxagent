@@ -85,6 +85,41 @@ Nothing requires a plugin to live here. Anything you drop in the plugins folder 
 `pluginPaths` at — is discovered, reported and approved exactly the same way; this directory is
 only what cxagent itself releases and supports.
 
+## Adding one to this catalog
+
+A plugin here is one cxagent builds, releases and installs, so it carries the same expectations as
+the app itself. Writing the plugin is [the dev guide's
+job](../cxagent.Core/Core/Plugins/README.md); getting it into the catalog is these five steps.
+
+**1. The directory.** `plugins/<name>/`, with the project, its sidecar, and a `README.md` covering
+what the plugin does, the release asset to download, anything the USER must install separately, and
+every setting. Follow [csharp-lsp](csharp-lsp/README.md).
+
+**2. The catalog entry**, in [`plugins.json`](plugins.json). Its `tools` and `spawns` must match the
+plugin's own sidecar — the file is read by the plugin picker, and an entry that disagrees with the
+plugin describes something that does not exist.
+
+**3. The release build**, in `.github/workflows/release.yml`. A managed plugin with no
+`RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would
+upload six identical files. Build rather than publish (`Private="false"` keeps `CxAgent.Core` out of
+the output, and a publish would pull in its whole dependency tree), then zip the DLL with its
+sidecar. They must ship together: the sidecar is read before the assembly is loaded, so a zip
+missing it produces a plugin that cannot load and cannot be described.
+
+**4. The installer**, in `install.sh`, if it should be installed by default. Download from the
+release pinned to `$TAG` — a plugin built from a later commit than the binary it plugs into is a
+skew that surfaces as a puzzling failure — and keep it best-effort, so an older release without the
+asset still installs cxagent itself. Note that `install.sh` installs named plugins, not the whole
+catalog: a plugin can be in the catalog and left for the user to fetch.
+
+**5. Nothing else.** In particular, do not add a config entry anywhere. An installer that enabled a
+plugin would be enabling code the user was never asked about; cxagent reports it as
+present-but-unconfigured and they decide.
+
+> The plugin's name appears in the workflow and the installer by hand, in about six places. That is
+> fine for a catalog this size and is the first thing worth generating from `plugins.json` if it
+> grows.
+
 *Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/Core/Plugins/README.md) — the
 contract, the sidecar format, permission, settings, and two worked examples.*
 
