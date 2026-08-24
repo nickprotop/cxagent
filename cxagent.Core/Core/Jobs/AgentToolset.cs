@@ -22,14 +22,23 @@ public sealed class AgentToolset
 
     public AgentToolset(IReadOnlyList<IAgentTool> tools)
     {
-        // LAST ONE WINS on a duplicate name rather than throwing. A consumer that registers two
-        // tools with one name has made a mistake, but taking down a session at construction is a
-        // worse answer than running the one they most recently asked for.
+        // A DUPLICATE NAME DISABLES BOTH TOOLS AND SAYS SO. Neither is offered, and the reason is
+        // reported rather than left to be inferred.
         //
-        // AN INDEXER, NOT ToDictionary. This said exactly the above while calling ToDictionary,
-        // which throws ArgumentException on a duplicate key — a comment asserting the opposite of
-        // its own code, found by writing the documentation for this interface rather than by any
-        // test. The failure was a wiring-time crash on a plausible consumer mistake.
+        // LAST-WINS IS THE DANGEROUS ANSWER, not the kind one. It depends on registration ORDER,
+        // which an embedder assembling tools from configuration or a container does not control and
+        // cannot see — so the tool that runs is decided by something invisible, and the one that
+        // does not run fails silently. "A fair guess at their intent" is a guess: with two tools
+        // claiming one name there is no evidence which was meant, and running either is a coin flip
+        // the embedder never consented to.
+        //
+        // WITHDRAWING BOTH COSTS ONLY WHAT THE EMBEDDER REGISTERED. Nothing else advertised these
+        // names — unlike a built-in, whose name the model has already been told it has, which is why
+        // that case throws instead of withdrawing.
+        //
+        // NOT A THROW, because two tools with one name is a recoverable state: the rest of the set
+        // is well-formed and the session runs without them. A built-in collision is not recoverable
+        // — the injected tool would win a name the model trusts — so it refuses construction.
         // A BUILT-IN'S NAME THROWS, AND IT IS THE ONE CASE THAT MUST. The paragraph above is right
         // that a wiring-time crash is a poor answer to a consumer's own duplicate — they lose a tool
         // they registered, and running the later one is a reasonable guess at their intent. A
@@ -54,14 +63,35 @@ public sealed class AgentToolset
                 + "the tool, or disable the built-in through tool selection.",
                 nameof(tools));
 
+        var duplicates = tools
+            .GroupBy(t => t.Definition.Name, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        Withdrawn = duplicates;
+
         var byName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
-        foreach (var tool in tools) byName[tool.Definition.Name] = tool;
+        foreach (var tool in tools)
+            if (!duplicates.Contains(tool.Definition.Name, StringComparer.Ordinal))
+                byName[tool.Definition.Name] = tool;
+
         _byName = byName;
     }
 
     /// <summary>Whether an injected tool owns this name. Used to label the transcript row, which
     /// must happen BEFORE the call runs — so it cannot be answered by dispatching.</summary>
     public bool Knows(string toolName) => _byName.ContainsKey(toolName);
+
+    /// <summary>
+    /// Names registered more than once, and therefore offered not at all.
+    ///
+    /// <para>REPORTED RATHER THAN LOGGED HERE, because this type has nowhere to say it: a consumer
+    /// wires it up and a session renders. Exposing the list lets whoever has an output surface tell
+    /// the embedder which names collided — the difference between a tool that is missing and a tool
+    /// that is missing FOR A STATED REASON.</para>
+    /// </summary>
+    public IReadOnlyList<string> Withdrawn { get; }
 
     public IReadOnlyList<ToolDefinition> Definitions() =>
         _byName.Values.Select(t => t.Definition).ToList();

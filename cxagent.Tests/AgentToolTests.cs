@@ -106,24 +106,42 @@ public class AgentToolsetDuplicateTests
         Assert.True(set.Knows("show_diff"));
     }
 
+    /// <summary>
+    /// A DUPLICATE NAME WITHDRAWS BOTH TOOLS, and does not pick one.
+    ///
+    /// <para>Last-wins depends on registration ORDER, which an embedder assembling tools from
+    /// configuration or a container neither controls nor sees — so the tool that runs is chosen by
+    /// something invisible and the other fails silently. With two tools claiming one name there is
+    /// no evidence which was meant.</para>
+    /// </summary>
     [Fact]
-    public void ADuplicateNameDoesNotThrowAtConstruction()
+    public void ADuplicateNameWithdrawsBothTools()
     {
-        // The comment on this constructor promised "last one wins rather than throwing" while the
-        // code used ToDictionary, which throws. A consumer registering two tools with one name has
-        // made a mistake; taking down their session at wiring time is a worse answer than running
-        // the one they most recently asked for.
         var set = new AgentToolset([new Named("dup", "first"), new Named("dup", "second")]);
 
-        Assert.True(set.Knows("dup"));
-        Assert.Single(set.Definitions());
+        Assert.False(set.Knows("dup"));
+        Assert.Empty(set.Definitions());
     }
 
+    /// <summary>The withdrawal is REPORTED, so a missing tool is missing for a stated reason rather
+    /// than absent without explanation.</summary>
     [Fact]
-    public void TheLastRegistrationIsTheOneThatRuns()
+    public void AWithdrawnNameIsReported()
     {
         var set = new AgentToolset([new Named("dup", "first"), new Named("dup", "second")]);
 
-        Assert.Equal("second", Assert.Single(set.Definitions()).Description);
+        Assert.Equal("dup", Assert.Single(set.Withdrawn));
+    }
+
+    /// <summary>A duplicate withdraws only itself: the rest of a well-formed set still runs, which
+    /// is why this is a withdrawal rather than a throw.</summary>
+    [Fact]
+    public void ADuplicateDoesNotWithdrawTheRestOfTheSet()
+    {
+        var set = new AgentToolset(
+            [new Named("dup", "first"), new Named("dup", "second"), new Named("fine", "kept")]);
+
+        Assert.False(set.Knows("dup"));
+        Assert.True(set.Knows("fine"));
     }
 }
