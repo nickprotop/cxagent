@@ -69,6 +69,36 @@ if ! curl -fsSL "https://github.com/$REPO/releases/download/$TAG/uninstall.sh" -
 fi
 chmod +x "$INSTALL_DIR/cxagent-uninstall.sh"
 
+# THE csharp-lsp PLUGIN, INSTALLED BUT NOT CONFIGURED. cxagent reads config.json at startup and only
+# loads plugins named there, so dropping this in the plugins folder gives the user tools they can
+# TRY without this script deciding for them: cxagent announces it as present-but-unconfigured, and
+# `/plugin load csharp-lsp.dll` or a config entry turns it on.
+#
+# NOT WRITING CONFIG IS THE POINT. An installer that enabled a plugin would be enabling code the
+# user has not been asked about, and the load prompt — which shows a hash of the plugin's contents —
+# is the one place that question belongs.
+#
+# FROM THE RELEASE, PINNED TO $TAG, for the same reason the uninstaller above is: a plugin built
+# from a later commit than the binary it plugs into is a skew that surfaces as a puzzling failure.
+#
+# BEST EFFORT. A release predating the plugin has no such asset, and a failed optional download must
+# not fail an otherwise good install of cxagent itself.
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cxagent"
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+
+if curl -fsSL "https://github.com/$REPO/releases/download/$TAG/csharp-lsp.zip" -o "/tmp/csharp-lsp-$$.zip" 2>/dev/null; then
+    # 0700, MATCHING WHAT cxagent ITSELF CREATES. The config directory holds config.json with API
+    # keys in it; creating a subdirectory of it under the caller's umask (commonly 0002 -> 0775)
+    # would leave it group- and world-traversable.
+    mkdir -p "$PLUGIN_DIR"
+    chmod 700 "$CONFIG_DIR" "$PLUGIN_DIR" 2>/dev/null || true
+
+    if command -v unzip > /dev/null 2>&1; then
+        unzip -oq "/tmp/csharp-lsp-$$.zip" -d "$PLUGIN_DIR" && PLUGIN_INSTALLED=1
+    fi
+    rm -f "/tmp/csharp-lsp-$$.zip"
+fi
+
 # Ensure PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     SHELL_RC=""
@@ -96,6 +126,12 @@ echo ""
 echo "  Run:     cxagent"
 echo "  Remove:  cxagent-uninstall.sh"
 echo ""
+if [ -n "$PLUGIN_INSTALLED" ]; then
+    echo "  Also installed: the csharp-lsp plugin (C# code navigation)."
+    echo "  It is NOT enabled — cxagent will say so at startup and tell you how."
+    echo "  It needs a C# language server: csharp-ls (dotnet tool install -g csharp-ls)"
+    echo ""
+fi
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "  Note: Restart your shell or run:"
     echo "    source ~/.bashrc  (or ~/.zshrc)"

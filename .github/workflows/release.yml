@@ -78,6 +78,32 @@ jobs:
         with:
           path: ./artifacts
 
+      # ONE ARTIFACT, NOT SIX. csharp-lsp is a plain net10.0 library with no RuntimeIdentifier — it
+      # is portable MSIL, so the same file runs on every platform the binaries above are built for.
+      # Putting it in the RID matrix would upload six identical copies under six names.
+      #
+      # NOT PART OF THE BINARY. A plugin the user has not asked for should not arrive inside the
+      # thing they installed; this ships beside it, and install.sh places it where discovery looks.
+      # cxagent then announces it as present-but-unconfigured rather than loading it.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the csharp-lsp plugin
+        run: |
+          # BUILD, NOT PUBLISH. A publish resolves the whole dependency tree into the output —
+          # AngleSharp, SQLite and its native runtimes, none of which the plugin uses. The plugin
+          # references CxAgent.Core with Private="false" and resolves it from the host process at
+          # run time, so a build is exactly the two files that ship.
+          dotnet build plugins/csharp-lsp/csharp-lsp.csproj -c Release -o ./plugin-out
+
+          # THE SIDECAR TRAVELS WITH THE DLL, always. It is read BEFORE the assembly is loaded — it
+          # is what the load prompt shows and what discovery reports without running anything — so a
+          # zip missing it produces a plugin that cannot load and cannot be described.
+          test -f ./plugin-out/csharp-lsp.dll
+          test -f ./plugin-out/csharp-lsp.plugin.json
+
       - name: Generate checksums
         run: |
           # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
@@ -90,6 +116,10 @@ jobs:
           done
           cp install.sh install.ps1 uninstall.sh uninstall.ps1 release/
           chmod +x release/cxagent-* release/*.sh 2>/dev/null || true
+
+          # THE PLUGIN AS ONE ZIP, so the DLL and its sidecar cannot be downloaded apart. Two loose
+          # assets invite fetching one of them.
+          (cd plugin-out && zip -q ../release/csharp-lsp.zip csharp-lsp.dll csharp-lsp.plugin.json)
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.
