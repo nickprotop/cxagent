@@ -178,6 +178,58 @@ public class PluginRegistryTests : IDisposable
         Assert.Equal("plugin lsp-rust tool lsp_rename", request.AlwaysRule);
     }
 
+    /// <summary>
+    /// A gated tool the plugin marks <c>alwaysAskable: false</c> asks with NO "Always" — the one
+    /// case where a standing grant is withheld, and the plugin is the party that decides it.
+    ///
+    /// <para>WHY THE PLUGIN AND NOT CORE: a language server's <c>definition</c> is a read that a
+    /// user should be able to stop being asked about, while its <c>rename</c> rewrites files across
+    /// a repository. Those want different answers, and nothing Core can see — a tool name, a JSON
+    /// schema — distinguishes them. The author knows; this is how they say so.</para>
+    /// </summary>
+    [Fact]
+    public void APluginCanWithholdAlwaysForOneOfItsTools()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
+        [
+            new PluginToolManifest("lsp_definition", "finds a declaration", EmptySchema(), Gated: true),
+            new PluginToolManifest("lsp_rename", "rewrites every usage", EmptySchema(), Gated: true,
+                AlwaysAskable: false),
+        ]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        var tools = registry.CurrentTools().ToDictionary(t => t.Definition.Name);
+
+        // THE TWO TOOLS OF ONE PLUGIN DIFFER, which is the whole point of a per-tool flag.
+        Assert.Equal("plugin lsp-rust tool lsp_definition",
+            tools["lsp_definition"].Gate(new JobParameters())!.AlwaysRule);
+        Assert.Null(tools["lsp_rename"].Gate(new JobParameters())!.AlwaysRule);
+
+        // Both still ASK — alwaysAskable narrows how an answer generalises, it does not ungate.
+        Assert.NotNull(tools["lsp_rename"].Gate(new JobParameters()));
+    }
+
+    /// <summary>A manifest that says nothing about <c>alwaysAskable</c> offers Always — the absent
+    /// field means "the author did not think about this", and the answer matching every other
+    /// permission in cxagent is to offer it.</summary>
+    [Fact]
+    public void AlwaysAskableDefaultsToTrueWhenTheManifestOmitsIt()
+    {
+        var json = """
+        {
+          "name": "lsp-rust", "version": "1.0.0", "spawns": false,
+          "tools": [ { "name": "lsp_hover", "description": "d",
+                       "inputSchema": { "type": "object" }, "gated": true } ]
+        }
+        """;
+
+        var parsed = PluginManifest.Parse(json);
+
+        Assert.True(parsed.IsSuccess);
+        Assert.True(parsed.Manifest!.Tools.Single().AlwaysAskable);
+    }
+
     /// <summary>An ungated tool does not ask at all — the other half of what <c>gated</c> selects
     /// between, asserted beside it so a change that gates everything fails here.</summary>
     [Fact]

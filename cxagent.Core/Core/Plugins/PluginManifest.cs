@@ -19,7 +19,22 @@ namespace CxAgent.Core.Plugins;
 /// it through the same prompt machinery every other permission uses — see PLUGINS.md, "The plugin
 /// provides its own policy; Core enforces it".
 /// </param>
-public sealed record PluginToolManifest(string Name, string Description, JsonElement InputSchema, bool Gated = false);
+/// <param name="AlwaysAskable">
+/// Whether the prompt for this tool offers "Always" — true by default, so a gated tool the plugin
+/// says nothing more about behaves like every other permission in cxagent.
+///
+/// <para>SET IT FALSE FOR THE TOOL THAT SHOULD NEVER GET A STANDING GRANT, and only the plugin can
+/// know which one that is. A language-server plugin's <c>definition</c> is a read and a user should
+/// be able to stop being asked; its <c>rename</c> rewrites files across a repository and is worth a
+/// question every time. One flag for the whole plugin would force those two to share an answer.</para>
+///
+/// <para>THIS IS THE PLUGIN'S OWN JUDGEMENT, NOT A SECURITY BOUNDARY. A plugin that wanted a
+/// standing grant simply declares itself always-askable, and the user already approved the binary
+/// at load — so this is the author marking their own sharp edges, which is the only party who can.
+/// Core cannot infer it from a tool name or a schema.</para>
+/// </param>
+public sealed record PluginToolManifest(string Name, string Description, JsonElement InputSchema,
+    bool Gated = false, bool AlwaysAskable = true);
 
 /// <summary>
 /// The sidecar shape and what <c>Describe</c> returns once a plugin is running — deliberately one
@@ -121,7 +136,16 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
                         ? ts.Clone() : JsonDocument.Parse("{}").RootElement;
                     var gated = t.TryGetProperty("gated", out var tg) && tg.ValueKind == JsonValueKind.True;
 
-                    tools.Add(new PluginToolManifest(toolName, description, schema, gated));
+                    // ABSENT MEANS TRUE, unlike "gated" above. The two defaults point opposite ways
+                    // on purpose: a tool that says nothing about gating does not ask (the plugin did
+                    // not claim it was dangerous), and a tool that asks but says nothing about
+                    // "Always" offers it (the plugin did not claim it was UNGENERALISABLE). Both
+                    // read as "the author did not think about this", and in each case that is the
+                    // behaviour matching every other permission in cxagent.
+                    var alwaysAskable = !t.TryGetProperty("alwaysAskable", out var ta)
+                                        || ta.ValueKind != JsonValueKind.False;
+
+                    tools.Add(new PluginToolManifest(toolName, description, schema, gated, alwaysAskable));
                 }
             }
 

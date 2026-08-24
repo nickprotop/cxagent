@@ -295,7 +295,13 @@ public sealed class PluginRegistry
         public Permissions.PermissionRequest? Gate(JobParameters call) => tool.Gated
             ? new Permissions.PermissionRequest(Permissions.PermissionKind.Tool,
                 $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin",
-                AlwaysRule: $"plugin {plugin.Manifest.Name} tool {tool.Name}")
+                // A NULL AlwaysRule IS HOW "no Always button" IS EXPRESSED — see PermissionRequest's
+                // own doc. The plugin declaring alwaysAskable:false is marking its own sharp edge:
+                // the tool it believes should never hold a standing grant, which is a judgement only
+                // its author can make.
+                AlwaysRule: tool.AlwaysAskable
+                    ? $"plugin {plugin.Manifest.Name} tool {tool.Name}"
+                    : null)
             : null;
 
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)

@@ -1,5 +1,8 @@
 # Writing a cxagent plugin
 
+*How to write one. For why the system is shaped this way — and before changing it — see
+[PLUGINS.md](../../../PLUGINS.md), the design.*
+
 A plugin adds tools to a session. It declares what it offers, cxagent asks the user once whether to
 trust it, and from then on the model can call its tools like any built-in.
 
@@ -99,6 +102,19 @@ inheriting a grant the user gave you.
 
 Whether to grant it standing is the user's call — they already approved your binary at load, against
 a hash of its contents, which is the decision that actually determines whether your code runs.
+
+**Mark your sharp edges with `"alwaysAskable": false`.** That tool asks every call and never offers
+"Always". Use it where a standing grant would be wrong even for a plugin the user trusts:
+
+```json
+{ "name": "rename_symbol", "gated": true, "alwaysAskable": false }
+```
+
+Your `definition` lookup is a read, and a user should be able to stop being asked. Your `rename`
+rewrites files across a repository. One flag for the whole plugin would force those to share an
+answer; nothing cxagent can see — a tool name, a schema — tells them apart. You know which is which.
+
+Omit the field and it defaults to true, matching every other permission in cxagent.
 
 Past that, permission is yours. cxagent cannot know which of your operations are dangerous; if your
 plugin can delete things, gate it yourself before doing them.

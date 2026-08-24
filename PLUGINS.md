@@ -8,6 +8,16 @@ The first family is LSP: a plugin per language server, each exposing the server'
 tools the model can call, with the protocol machinery entirely inside the plugin and Core knowing
 nothing about LSP at all.
 
+> **Writing a plugin?** Start at
+> [`cxagent.Core/Core/Plugins/README.md`](cxagent.Core/Core/Plugins/README.md) — sidecars, naming,
+> permission, settings, and two working calculator examples.
+>
+> **This document is the design**, and its audience is anyone about to CHANGE the plugin system: why
+> loading is refused mid-turn, why a plugin cannot override a built-in, what the collision matrix
+> decides and where each row is knowable, what v1 deliberately left out. Read it before proposing a
+> change; the constraints here were expensive to arrive at and most of them are not obvious from the
+> code that enforces them.
+
 ---
 
 ## What a plugin is
@@ -278,6 +288,22 @@ outside the workspace would declare operations that ask.
 
 A plugin declaring nothing is not certified safe by that silence. The load gate is what stands
 behind it.
+
+**Two flags, because a plugin's tools are not uniformly dangerous.** `gated` decides whether a call
+asks at all. `alwaysAskable` — default true — decides whether that prompt offers "Always", and the
+stored rule names the plugin as well as the tool (`plugin csharp-lsp tool csharp_rename`) so it
+cannot be inherited by a later plugin that happens to declare the same tool name.
+
+The second flag exists because one boolean per plugin forces its safest and sharpest tools to share
+an answer. A language server's `definition` is a read a user should be able to stop being asked
+about; its `rename` rewrites files across a repository. Nothing Core can inspect — a name, a schema —
+separates them, and the author is the only party who can say which is which.
+
+Withholding "Always" is not a security boundary and is not treated as one: a plugin wanting standing
+grants simply declares itself always-askable, and the user approved the binary at load regardless.
+It is the author marking their own sharp edges. Refusing "Always" everywhere was tried and is worse
+than it sounds — a trusted plugin that interrupts on every call is one users route around by turning
+gating off wholesale, trading a scoped grant for none at all.
 
 ---
 
