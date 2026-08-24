@@ -6,10 +6,11 @@ namespace CxAgent.Core.Jobs;
 /// <summary>
 /// The consumer's injected tools, as one dispatchable set.
 ///
-/// <para>ORDERED BEHIND THE BUILT-INS ON PURPOSE. This is consulted only after every built-in has
-/// declined, so a consumer cannot shadow <c>read_file</c> by naming a tool <c>read_file</c> — which
-/// would be a silent hijack of a name the model already trusts, and the kind of thing that reads as
-/// a model bug rather than a configuration one.</para>
+/// <para>ORDERED AHEAD OF THE BUILT-INS, AND THAT MEANS AN INJECTED NAME WINS. This link is
+/// consulted BEFORE <see cref="ToolBindings.InvokeAsync"/>, which is where every built-in is
+/// dispatched — so a consumer injecting a tool called <c>read_file</c> shadows the built-in rather
+/// than being declined by it. Ordering is not a defence here and must not be read as one: the only
+/// thing standing between a consumer and a hijacked name is the consumer not choosing it.</para>
 ///
 /// <para>AND BEFORE <see cref="ToolBindings.InvokeAsync"/>, which is not a preference. That method
 /// answers "no such tool" rather than returning null, so it TERMINATES the <c>??</c> chain in
