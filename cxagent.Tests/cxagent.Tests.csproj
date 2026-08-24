@@ -40,7 +40,23 @@
          HeadlessSessionTests.AgainstLocalLlamaCpp for the same pattern) need a language server on
          this machine. -->
     <ProjectReference Include="../plugins/cxagent-dotnet-lsp/cxagent-dotnet-lsp.csproj" />
+
+    <!-- THE REAL HOST PROCESS, launched as a subprocess by AbiPluginHostTests exactly as Task 9c's
+         shim will launch it — a ProjectReference here, not a copy, so the tests exercise the built
+         executable rather than a description of it. -->
+    <ProjectReference Include="../cxagent.PluginHost/cxagent.PluginHost.csproj" />
   </ItemGroup>
+
+  <!-- NATIVE ABI FIXTURES, BUILT BY A SHELL SCRIPT BECAUSE MSBUILD HAS NO C COMPILER TASK.
+       AfterTargets="Build" (not BeforeBuild) so the fixtures land in $(OutDir) after MSBuild has
+       created it — building them earlier would have nowhere guaranteed to copy them onto, and
+       CopyToOutputDirectory cannot ferry a file this project's own compile step didn't produce.
+       Condition guards non-Linux and CI images with no C toolchain: AbiFixtures/build.sh already
+       skips cleanly and exits 0 when no compiler is found, so this target degrades to a no-op
+       rather than failing dotnet build entirely for a fixture only Linux-hosted ABI tests need. -->
+  <Target Name="BuildAbiFixtures" AfterTargets="Build" Condition="'$(OS)' != 'Windows_NT'">
+    <Exec Command="bash &quot;$(MSBuildProjectDirectory)/AbiFixtures/build.sh&quot; &quot;$(OutDir)&quot;" />
+  </Target>
 
   <ItemGroup>
     <!-- SIDECARS, COPIED NEXT TO THE FIXTURE DLLS. ManagedPluginLoader looks for

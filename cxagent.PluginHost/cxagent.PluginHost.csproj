@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ONE PROCESS PER PLUGIN — PLUGINS.md, "Lifecycle" and Task 9's own brief: "so a faulting
+       plugin does not take its neighbours with it." This project builds ONLY that process; the
+       managed shim that spawns one instance per ABI plugin and drives it (Task 9c) is a separate
+       piece, not built here. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>cxagent-plugin-host</AssemblyName>
+    <RootNamespace>CxAgent.PluginHost</RootNamespace>
+
+    <!-- InvariantGlobalization trims the ICU data this process has no use for: it parses JSON and
+         calls into a native library, nothing culture-sensitive ever runs here. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- AbiCodec/AbiContract are the ONLY things this process shares with the rest of Core — the
+         wire vocabulary both sides must agree on. REFERENCE ONLY: this process never touches a
+         session, a job registry, or a permission store, so nothing else in Core is pulled in. -->
+    <ProjectReference Include="../cxagent.Core/cxagent.Core.csproj" />
+  </ItemGroup>
+
+</Project>
