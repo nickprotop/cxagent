@@ -1,0 +1,52 @@
+{
+  "name": "calculator",
+  "version": "1.0.0",
+  "spawns": false,
+  "instructions": "Adds and multiplies two numbers. Addition asks the user for permission every single time, which is absurd for arithmetic and is exactly why it is here: it makes the per-call gate visible in an example small enough to read.",
+  "tools": [
+    {
+      "name": "calc_add",
+      "description": "Adds two numbers. Asks permission on every call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number",
+            "description": "The first number."
+          },
+          "b": {
+            "type": "number",
+            "description": "The second number."
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "gated": true
+    },
+    {
+      "name": "calc_multiply",
+      "description": "Multiplies two numbers. Never asks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number",
+            "description": "The first number."
+          },
+          "b": {
+            "type": "number",
+            "description": "The second number."
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "gated": false
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- A LIBRARY, NOT AN EXE. A plugin is loaded into a host that already exists; the other
+         examples here are programs that build an agent, and this one is the thing an agent loads. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CalculatorPlugin</RootNamespace>
+    <AssemblyName>calculator</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A PROJECT REFERENCE SO THE EXAMPLE MOVES WITH THE API. A consumer writes
+         <PackageReference Include="CxAgent.Core" Version="…" /> instead; referencing the project
+         here means a breaking change to the surface breaks this build rather than being discovered
+         after a release. -->
+    <ProjectReference Include="../../cxagent.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE SIDECAR SHIPS BESIDE THE DLL. ManagedPluginLoader reads it before Load() runs and
+         refuses a mismatch against what Load() returns — see README.md, "The sidecar". -->
+    <None Update="calculator.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
