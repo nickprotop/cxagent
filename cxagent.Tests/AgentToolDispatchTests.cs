@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Mcp;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Jobs;
@@ -334,4 +335,174 @@ public class AgentToolDispatchTests : IDisposable
         Assert.DoesNotContain(toolResults, r => r is not null && r.Contains(TwoAudienceTool.Markup, StringComparison.Ordinal));
     }
 
+    /// <summary>A server standing in for MCP, so a name it advertises can be made to collide with an
+    /// injected tool's. See <c>McpToolsetTests.FakeServer</c> for the same shape.</summary>
+    private sealed class FakeMcpServer(string name, params McpToolDef[] tools) : IMcpServer
+    {
+        public string Name { get; } = name;
+        public string? Instructions => null;
+        public string? Error => null;
+        public IReadOnlyList<McpToolDef> Tools { get; } = tools;
+
+        public Task<string> CallToolAsync(string tool, JsonElement args, CancellationToken ct) =>
+            Task.FromResult("mcp result");
+    }
+
+    private sealed class AllowGate : IPermissionGate
+    {
+        public Task<PermissionOutcome> RequestAsync(PermissionRequest request, CancellationToken ct) =>
+            Task.FromResult(PermissionOutcome.Allow);
+    }
+
+    /// <summary>
+    /// Row 1 of the collision matrix, reported at session open — see
+    /// <see cref="Session.SayWithdrawnAgentTools"/>. AgentToolset.Withdrawn already computed this;
+    /// this asserts something actually reads it.
+    /// </summary>
+    [Fact]
+    public async Task TwoInjectedToolsSharingANameAreWithdrawnAndReported()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var session = Build(provider, [new EchoTool(), new EchoTool()], sink);
+        await session.Host!.RunAsync("go", CancellationToken.None);
+
+        Assert.Contains(sink.Notices, n => n.Contains("echo_tool", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Row 7: a per-request selection (S3) re-enables a built-in that an injected tool of the same
+    /// name had taken. The built-in must still win — <see cref="AnInjectedToolCannotShadowALiveBuiltin"/>
+    /// already covers that — but now the transcript must say why the injected tool did not run.
+    /// </summary>
+    [Fact]
+    public async Task S3ReEnablingAShadowedBuiltinReportsTheSkip()
+    {
+        var tool = new ShadowTool();
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("read_file", new { path = "x.txt" }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var session = Build(provider, [tool], sink);
+        await session.Host!.RunAsync("go", CancellationToken.None,
+            turnTools: new ToolSelection(["inherited"]));
+
+        Assert.Equal(0, tool.Calls);
+        Assert.Contains(sink.Notices, n => n.Contains("read_file", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The ordinary case for the row-7 report: no injected tool owns this name, so the built-in
+    /// just runs and nothing is said. Without this, a report that fires on every built-in call
+    /// would pass the test above for the wrong reason.
+    /// </summary>
+    /// <summary>
+    /// THE NOTICE IS PER CALL, and this pins what that means. A model calling a shadowed name twice
+    /// gets the explanation twice — the alternative, saying it once per session, would leave the
+    /// second call looking like an ordinary built-in result with nothing connecting it to the
+    /// injected tool that did not run.
+    /// </summary>
+    [Fact]
+    public async Task TheShadowNoticeIsSaidForEachAffectedCall()
+    {
+        var tool = new ShadowTool();
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("read_file", new { path = "a.txt" }));
+        provider.EnqueueResponse(LlmResponse.WithToolCall("read_file", new { path = "b.txt" }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var session = Build(provider, [tool], sink,
+            toolSelection: new ToolSelection(["inherited", "-read_file", "+read_file"]));
+        await session.Host!.RunAsync("go", CancellationToken.None);
+
+        Assert.Equal(0, tool.Calls);
+    }
+
+    [Fact]
+    public async Task AnOrdinaryBuiltinCallReportsNothing()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("read_file", new { path = "x.txt" }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var session = Build(provider, [new EchoTool()], sink);
+        await session.Host!.RunAsync("go", CancellationToken.None);
+
+        Assert.Empty(sink.Notices);
+    }
+
+    /// <summary>
+    /// Row 8: an MCP server answers a name an injected tool also owns. MCP resolves earlier in the
+    /// dispatch chain, so it wins — but the injected tool is now unreachable while that server is
+    /// connected, and the transcript must say so.
+    /// </summary>
+    [Fact]
+    public async Task McpWinningOverAnInjectedToolIsReported()
+    {
+        var mcp = new McpToolset([new FakeMcpServer("files", new McpToolDef(
+            "read", "reads", JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone()))],
+            new AllowGate());
+
+        var injected = new EchoTool();
+        var clashing = new Named2("files_read");
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("files_read", new { }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
+            mcp: mcp, agentTools: [clashing]);
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Equal(0, clashing.Calls);
+        Assert.Contains(sink.Notices, n => n.Contains("files_read", StringComparison.Ordinal));
+    }
+
+    /// <summary>The ordinary MCP case: no injected tool owns the name MCP answered, so nothing is
+    /// said. Guards the same "fires on every call" failure as <see cref="AnOrdinaryBuiltinCallReportsNothing"/>.</summary>
+    [Fact]
+    public async Task AnOrdinaryMcpCallReportsNothing()
+    {
+        var mcp = new McpToolset([new FakeMcpServer("files", new McpToolDef(
+            "read", "reads", JsonDocument.Parse("""{"type":"object","properties":{}}""").RootElement.Clone()))],
+            new AllowGate());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(LlmResponse.WithToolCall("files_read", new { }));
+        provider.EnqueueResponse(Done("finished"));
+
+        var sink = new BufferedChatSink();
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            sink, new BufferedJobPanel(), logs: null, maxTurns: 5,
+            mcp: mcp, agentTools: [new EchoTool()]);
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        Assert.Empty(sink.Notices);
+    }
+
+    private sealed class Named2(string name) : IAgentTool
+    {
+        public bool OfferToSubAgents => true;
+        public int Calls { get; private set; }
+
+        public ToolDefinition Definition { get; } = new(
+            name, "clashes with mcp", JsonSerializer.SerializeToElement(new { type = "object" }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(new JobResult { Success = true, Output = { ["content"] = "ran" } });
+        }
+    }
 }

@@ -254,6 +254,11 @@ public sealed class AgentHost : IDisposable
     /// </summary>
     public IReadOnlyList<string> LoadedSkills => _agent.LoadedSkills;
 
+    /// <summary>Injected tool names withdrawn at construction for colliding with another injected
+    /// tool. Read once at session open — see <see cref="Sessions.Session.SayWithdrawnAgentTools"/>.
+    /// </summary>
+    internal IReadOnlyList<string> WithdrawnAgentTools => _agent.WithdrawnAgentTools;
+
     /// <summary>
     /// The session agent's plan. A child keeps its own and it stays with the child: a worker's plan
     /// is scaffolding for one job, and pooling it into the session's would make the panel report a

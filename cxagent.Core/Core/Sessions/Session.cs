@@ -507,6 +507,27 @@ public sealed partial class Session
         Say(new Message("fan-out was requested, but the `agent` tool is not in this session's tool "
           + "selection — working in single mode.", Severity.Warning));
 
+    /// <summary>
+    /// Announces injected tool names withdrawn for colliding with another injected tool of the same
+    /// name — see <see cref="Jobs.AgentToolset.Withdrawn"/>. A no-op when nothing collided.
+    ///
+    /// <para>Called by SessionFactory AFTER the observer is attached, alongside
+    /// <see cref="SayFallbackToSingle"/> — same reason: Say is a no-op before that, and the
+    /// collision itself is already decided by the time <c>Host</c> exists. Without this, a withdrawn
+    /// tool is silently absent, which is exactly the surprise the collision matrix exists to avoid.
+    /// </para>
+    /// </summary>
+    internal void SayWithdrawnAgentTools()
+    {
+        var withdrawn = Host?.WithdrawnAgentTools ?? [];
+        if (withdrawn.Count == 0) return;
+
+        Say(new Message(
+            $"tool name{(withdrawn.Count == 1 ? "" : "s")} "
+          + $"{string.Join(", ", withdrawn.Select(n => $"`{n}`"))} registered more than once — "
+          + "none of the tools claiming them is available this session.", Severity.Warning));
+    }
+
     /// <summary>Announces that an earlier conversation was restored into this session. Called by the
     /// manager, which owns the resume sequence — see SessionManager.Resume.</summary>
     internal void SayResumed(int messages)

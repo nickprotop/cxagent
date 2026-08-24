@@ -303,6 +303,48 @@ public sealed class Agent
     private static bool ShadowsLiveBuiltin(string name, IReadOnlyList<BuiltinTool> allowed) =>
         ToolBindings.NamesFor(allowed).Contains(name, StringComparer.Ordinal);
 
+    /// <summary>
+    /// Row 7 of the collision matrix: a per-request selection re-enabled a built-in that an
+    /// injected tool of the same name had taken. The built-in wins — see
+    /// <see cref="ShadowsLiveBuiltin"/> — but unlike the ordinary case (no injected tool has this
+    /// name, nothing to say), the model was about to reach a DIFFERENT tool than the one that
+    /// registered the name, and a silent skip is the surprise the matrix exists to avoid.
+    ///
+    /// <para>Always returns null, so the caller's <c>??</c> chain falls through to the built-in
+    /// exactly as it did before this existed — this only decides whether to say something first.
+    /// </para>
+    /// </summary>
+    private ToolOutcome? ReportShadowedInjectedTool(string name, IReadOnlyList<BuiltinTool> allowedBuiltins)
+    {
+        if (_agentTools?.Knows(name) == true)
+            _sink.Said(new Message(
+                $"an injected tool named `{name}` is registered, but this request's tool selection "
+              + $"re-enabled the built-in `{name}` — the built-in ran instead.", Severity.Warning));
+
+        return null;
+    }
+
+    /// <summary>
+    /// Row 8 of the collision matrix: an MCP server answered a name that an injected tool also
+    /// owns. MCP resolves earlier in the dispatch chain, so its answer already stands by the time
+    /// this runs — nothing here changes the outcome, only whether the transcript says why the
+    /// injected tool of the same name never ran.
+    ///
+    /// <para><paramref name="mcpResult"/> is passed through unchanged. Null means MCP did not
+    /// answer this name at all, which is the ordinary case for every name no server advertises —
+    /// nothing to report, and the chain falls through exactly as it did before this existed.</para>
+    /// </summary>
+    private string? ReportMcpWonOverInjected(string name, string? mcpResult)
+    {
+        if (mcpResult is not null && _agentTools?.Knows(name) == true)
+            _sink.Said(new Message(
+                $"an MCP server answered `{name}` before the injected tool of the same name could "
+              + "run — the injected tool is unreachable while that server is connected.",
+                Severity.Warning));
+
+        return mcpResult;
+    }
+
     private IReadOnlyList<BuiltinTool> AllowedBuiltins(Jobs.ToolSelection? selection)
     {
         var composed = Jobs.ToolSelection.Then(_toolSelection, selection);
@@ -315,6 +357,11 @@ public sealed class Agent
     /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
     /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
     internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
+
+    /// <summary>Injected tool names withdrawn for colliding with another injected tool — see
+    /// <see cref="Jobs.AgentToolset.Withdrawn"/>. Empty when no offered set was built at all, which
+    /// is the same "nothing to report" as an empty toolset.</summary>
+    internal IReadOnlyList<string> WithdrawnAgentTools => _agentTools?.Withdrawn ?? [];
 
     /// <summary>The plan as it stands, for the UI. Empty is the common case.</summary>
     public IReadOnlyList<TodoItem> Todos => _todos.Items;
@@ -2177,7 +2224,16 @@ public sealed class Agent
                 ?? Text(_askUser is null ? null : await _askUser.TryInvokeAsync(call, ct))
                 // _requesterLabel, so an MCP prompt names the child that wants it — the same value
                 // JobContext carries into the executor path a few lines below.
-                ?? Text(_mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy))
+                //
+                // ROW 8 OF THE COLLISION MATRIX LIVES HERE, not at the injected link below: an MCP
+                // server connects after config is read and can advertise any name, so MCP resolving
+                // FIRST is the only way this dispatch order can even be asked "did MCP just take a
+                // name an injected tool owns?" — by the time the injected link would run, the answer
+                // is already baked into whether this line returned null. ReportMcpWonOverInjected
+                // checks Knows(call.Name) itself, so the ordinary case (no injected tool has this
+                // name) says nothing.
+                ?? Text(ReportMcpWonOverInjected(call.Name,
+                        _mcp is null ? null : await _mcp.TryInvokeAsync(call, ct, _requesterLabel, _policy)))
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
@@ -2196,8 +2252,15 @@ public sealed class Agent
                 //
                 // COMPUTED PER REQUEST, from the same composed selection the terminator is handed
                 // one line below, so the two cannot disagree about what is offered this turn.
+                //
+                // REPORTED ONLY WHEN THE SHADOW ACTUALLY TAKES SOMETHING. Knows(call.Name) is what
+                // tells the ordinary case — no injected tool has this name, so nothing was taken —
+                // apart from a per-request selection (S3) reopening a built-in an injected tool DID
+                // register for: that is row 7 of the collision matrix, knowable only here, at
+                // dispatch, since S3 does not exist until this call is composed. Guarded by
+                // ShadowsLiveBuiltin too so the message names the actual reason, not just "collided".
                 ?? (_agentTools is null || ShadowsLiveBuiltin(call.Name, allowedBuiltins)
-                        ? null
+                        ? ReportShadowedInjectedTool(call.Name, allowedBuiltins)
                         : await _agentTools.TryInvokeAsync(call, ctx, ct))
                 ?? await ToolBindings.InvokeAsync(call, allowedBuiltins, _executors, ctx, ct, _mcp?.Names());
             // No Text() on the last two: they return the executor's own ToolOutcome, which is the

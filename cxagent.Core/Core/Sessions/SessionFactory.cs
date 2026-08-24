@@ -267,6 +267,10 @@ internal static class SessionFactory
         session.NoteCatalog(resolution, resolution.Providers, resolution.ClassifierInstance is { Length: > 0 });
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, executors);
+
+        // AFTER ReplaceHost, which is what sets Host — the property this reads. Withdrawal is
+        // decided inside Agent's constructor, so nothing earlier in this method has a host to ask.
+        session.SayWithdrawnAgentTools();
     }
 
 }
