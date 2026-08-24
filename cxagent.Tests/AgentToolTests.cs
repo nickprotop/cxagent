@@ -68,33 +68,17 @@ public class AgentToolsetDuplicateTests
     }
 
     /// <summary>
-    /// A BUILT-IN'S NAME IS REFUSED AT CONSTRUCTION, unlike a duplicate among injected tools.
-    ///
-    /// <para>The two are not the same mistake. A consumer's own duplicate loses them a tool they
-    /// registered and last-wins is a fair guess at their intent. A built-in collision means the
-    /// injected tool WINS — this set is dispatched ahead of ToolBindings — so the model calls
-    /// <c>read_file</c> and reaches something else, with nothing downstream able to tell.</para>
+    /// A BUILT-IN'S NAME IS NOT REFUSED HERE. Whether a name is a live built-in's depends on the
+    /// composed selection for a request, which this constructor cannot see — a user who disables
+    /// write_file has freed that name. The rule lives at dispatch; see
+    /// AgentToolDispatchTests.AnInjectedToolCannotShadowALiveBuiltin.
     /// </summary>
     [Fact]
-    public void ABuiltinNameThrowsAtConstruction()
+    public void ABuiltinNameIsAcceptedAtConstruction()
     {
-        var ex = Assert.Throws<ArgumentException>(
-            () => new AgentToolset([new Named("read_file", "hijack")]));
+        var set = new AgentToolset([new Named("read_file", "shadow")]);
 
-        Assert.Contains("read_file", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("shadow a built-in", ex.Message, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// THE WIRE NAME, NOT THE ENUM SPELLING. BuiltinTool.ListFiles is offered as `glob`, so a check
-    /// written against enum names would let `glob` through — the exact mistake ToolBindings.ToolsNamed
-    /// exists to prevent, in the other direction.
-    /// </summary>
-    [Fact]
-    public void ABuiltinWhoseWireNameDiffersFromItsEnumIsAlsoRefused()
-    {
-        Assert.Throws<ArgumentException>(() => new AgentToolset([new Named("glob", "hijack")]));
-        Assert.Throws<ArgumentException>(() => new AgentToolset([new Named("grep", "hijack")]));
+        Assert.True(set.Knows("read_file"));
     }
 
     /// <summary>An ordinary injected name is unaffected: the guard names built-ins, not everything.</summary>

@@ -293,6 +293,16 @@ public sealed class Agent
         => Jobs.ToolSelection.Offers(
             Jobs.ToolSelection.Then(_toolSelection, turnTools), toolName);
 
+    /// <summary>
+    /// Whether an OFFERED built-in already owns this name.
+    ///
+    /// <para>Asked of the injected link, which is dispatched ahead of the built-ins and would
+    /// otherwise take the name. A built-in that selection has withheld owns nothing — the name is
+    /// free and an injected tool may have it.</para>
+    /// </summary>
+    private static bool ShadowsLiveBuiltin(string name, IReadOnlyList<BuiltinTool> allowed) =>
+        ToolBindings.NamesFor(allowed).Contains(name, StringComparer.Ordinal);
+
     private IReadOnlyList<BuiltinTool> AllowedBuiltins(Jobs.ToolSelection? selection)
     {
         var composed = Jobs.ToolSelection.Then(_toolSelection, selection);
@@ -1816,6 +1826,16 @@ public sealed class Agent
     {
         if (_offeredNames.Count == 0 || _offeredNames.Contains(name)) return null;
 
+        // A NAME AN INJECTED TOOL OWNS AND A BUILT-IN ALSO HAS IS NOT WITHHELD BY THE BUILT-IN'S
+        // REMOVAL. Selection withholding `write_file` frees the name for an injected tool, so
+        // refusing here would answer for a built-in the selection already removed.
+        //
+        // ONLY WHEN A BUILT-IN SHARES THE NAME, which is what keeps a WITHHELD INJECTED tool
+        // withheld: selection can name injected tools too, and one removed by `-echo_tool` must
+        // stay removed. The narrow case is a collision the selection resolved in the injected
+        // tool's favour, not any injected tool at all.
+        if (_agentTools?.Knows(name) == true && ToolBindings.IsBuiltinName(name)) return null;
+
         // COULD THIS NAME EVER BE OFFERED? Only a name this build knows is "withheld"; anything else
         // is a typo or a stale memory, and belongs to the terminator's message.
         if (!Jobs.Tool.IsKnown(name) && !(_agentTools?.Knows(name) ?? false)) return null;
@@ -2136,6 +2156,11 @@ public sealed class Agent
             // `string?` does not implicitly become `ToolOutcome?` — a user-defined conversion is not
             // considered when lifting a nullable operand. It is a wrapper, not a decision: these
             // sources genuinely have no JobResult, and null still means "not my name, try the next".
+            // ONE COMPUTATION FOR BOTH LINKS BELOW. The injected link asks whether a built-in owns
+            // this name and the terminator dispatches from the same set; deriving them separately is
+            // how they come to disagree about a selection composed once.
+            var allowedBuiltins = AllowedBuiltins(_turnTools);
+
             if (Withheld(call.Name) is { } refusal) outcome = refusal;
             else
             outcome = Text(CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
@@ -2156,8 +2181,25 @@ public sealed class Agent
                 // INJECTED TOOLS IMMEDIATELY BEFORE THE TERMINATOR. ToolBindings.InvokeAsync
                 // answers "no such tool" rather than null, so it ENDS this chain — a link placed
                 // after it never runs at all, and looks perfectly correct while never running.
-                ?? (_agentTools is null ? null : await _agentTools.TryInvokeAsync(call, ctx, ct))
-                ?? await ToolBindings.InvokeAsync(call, AllowedBuiltins(_turnTools), _executors, ctx, ct, _mcp?.Names());
+                //
+                // A LIVE BUILT-IN KEEPS ITS NAME, and only a live one. This link runs BEFORE the
+                // built-ins, so an injected `read_file` would otherwise win a name the model was
+                // told it has — the model calls read_file, reaches something else, and nothing
+                // downstream can tell. Skipping the injected tool when a built-in of that name is
+                // OFFERED is what stops that.
+                //
+                // OFFERED, NOT MERELY EXISTING, and the distinction is the whole rule. A user who
+                // disables write_file through tool selection has freed the name: nothing offers it,
+                // so nothing is shadowed, and an injected tool is entitled to it. That is the escape
+                // hatch the selection grammar exists to provide, and a check written against the
+                // built-in ENUM rather than the offered set would deny it.
+                //
+                // COMPUTED PER REQUEST, from the same composed selection the terminator is handed
+                // one line below, so the two cannot disagree about what is offered this turn.
+                ?? (_agentTools is null || ShadowsLiveBuiltin(call.Name, allowedBuiltins)
+                        ? null
+                        : await _agentTools.TryInvokeAsync(call, ctx, ct))
+                ?? await ToolBindings.InvokeAsync(call, allowedBuiltins, _executors, ctx, ct, _mcp?.Names());
             // No Text() on the last two: they return the executor's own ToolOutcome, which is the
             // whole point of the chain's type — everything below builds job.Result from it.
         }

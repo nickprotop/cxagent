@@ -39,30 +39,16 @@ public sealed class AgentToolset
         // NOT A THROW, because two tools with one name is a recoverable state: the rest of the set
         // is well-formed and the session runs without them. A built-in collision is not recoverable
         // — the injected tool would win a name the model trusts — so it refuses construction.
-        // A BUILT-IN'S NAME THROWS, AND IT IS THE ONE CASE THAT MUST. The paragraph above is right
-        // that a wiring-time crash is a poor answer to a consumer's own duplicate — they lose a tool
-        // they registered, and running the later one is a reasonable guess at their intent. A
-        // built-in collision is a different failure: this set is dispatched AHEAD of ToolBindings, so
-        // the injected tool WINS, and the model goes on calling `read_file` believing it reached the
-        // built-in. There is no reasonable guess to make, nothing downstream detects it, and the
-        // symptom appears as a model bug rather than a wiring one.
+        // A BUILT-IN'S NAME IS NOT REFUSED HERE, because whether it IS a built-in's name depends on
+        // something this constructor cannot see. A user who disables `write_file` through tool
+        // selection has freed that name: nothing offers it, so nothing is shadowed, and refusing an
+        // injected tool for colliding with a tool that is not there would deny the escape hatch the
+        // selection grammar exists to provide.
         //
-        // AT CONSTRUCTION, so an embedder meets it in their own test run rather than in production.
-        var collisions = tools
-            .Select(t => t.Definition.Name)
-            .Where(ToolBindings.IsBuiltinName)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        if (collisions.Count > 0)
-            throw new ArgumentException(
-                $"injected tool{(collisions.Count == 1 ? "" : "s")} "
-                + $"{string.Join(", ", collisions.Select(n => $"'{n}'"))} "
-                + "would shadow a built-in of the same name. This set is dispatched before the "
-                + "built-ins, so the injected tool would win and the model could not tell. Rename "
-                + "the tool, or disable the built-in through tool selection.",
-                nameof(tools));
-
+        // AND THE ANSWER MOVES. Selection composes per turn, so a built-in withheld for one request
+        // is offered in the next — a decision taken once at construction would be wrong for every
+        // turn after the one it was taken in. The check therefore belongs where the offered set is
+        // assembled, against the composed selection for THAT request. See Agent's dispatch.
         var duplicates = tools
             .GroupBy(t => t.Definition.Name, StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
