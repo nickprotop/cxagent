@@ -95,9 +95,18 @@ job](../cxagent.Core/docs/plugins.md); getting it into the catalog is these five
 what the plugin does, the release asset to download, anything the USER must install separately, and
 every setting. Follow [csharp-lsp](csharp-lsp/README.md).
 
-**2. The catalog entry**, in [`plugins.json`](plugins.json). Its `tools` and `spawns` must match the
-plugin's own sidecar — the file is read by the plugin picker, and an entry that disagrees with the
-plugin describes something that does not exist.
+**2. The catalog entry**, in [`plugins.json`](plugins.json). `name`, `version`, `spawns` and `tools`
+must match the plugin's own sidecar — `PluginCatalogTests` fails the build if they drift, because the
+picker shows what this file says without loading a DLL to check.
+
+`source` says where the plugin comes from and is the field that separates the two kinds. A plugin
+released here uses `{ "kind": "release", "asset": "..." }` and is fetched from the same release as
+the binary, verified against its `SHA256SUMS`. One hosted elsewhere names its own `url` and carries
+its own `sha256` — and its `publisher`, `license` and `repository` stop being a formality, since
+nobody needs telling who wrote a plugin that ships in the same zip as cxagent and everybody needs
+telling for one that does not.
+
+The `$example` entry in the file is a worked third-party instance to copy. It is not installed.
 
 **3. The release build**, in `.github/workflows/release.yml`. A managed plugin with no
 `RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would

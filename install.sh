@@ -87,6 +87,26 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cxagent"
 PLUGIN_DIR="$CONFIG_DIR/plugins"
 
 if curl -fsSL "https://github.com/$REPO/releases/download/$TAG/csharp-lsp.zip" -o "/tmp/csharp-lsp-$$.zip" 2>/dev/null; then
+    # VERIFIED AGAINST THE RELEASE'S OWN SHA256SUMS. The release computes these from the artifacts
+    # it built, so a zip that does not match is one that changed between being built and being
+    # downloaded — the case worth refusing rather than unpacking into a folder cxagent loads from.
+    #
+    # A MISSING SHA256SUMS IS NOT A FAILURE: releases predating it exist, and refusing to install
+    # over an absent file would break them. What must never happen is unpacking a zip whose hash was
+    # available and DID NOT match — that is the branch below.
+    if curl -fsSL "https://github.com/$REPO/releases/download/$TAG/SHA256SUMS" -o "/tmp/csharp-lsp-sums-$$" 2>/dev/null        && command -v sha256sum > /dev/null 2>&1; then
+        EXPECTED=$(grep " csharp-lsp.zip$" "/tmp/csharp-lsp-sums-$$" 2>/dev/null | awk '{print $1}')
+        ACTUAL=$(sha256sum "/tmp/csharp-lsp-$$.zip" | awk '{print $1}')
+        if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "  ! csharp-lsp.zip failed its checksum — not installing the plugin."
+            rm -f "/tmp/csharp-lsp-$$.zip" "/tmp/csharp-lsp-sums-$$"
+            PLUGIN_CHECKSUM_FAILED=1
+        fi
+    fi
+    rm -f "/tmp/csharp-lsp-sums-$$"
+fi
+
+if [ -z "$PLUGIN_CHECKSUM_FAILED" ] && [ -f "/tmp/csharp-lsp-$$.zip" ]; then
     # 0700, MATCHING WHAT cxagent ITSELF CREATES. The config directory holds config.json with API
     # keys in it; creating a subdirectory of it under the caller's umask (commonly 0002 -> 0775)
     # would leave it group- and world-traversable.

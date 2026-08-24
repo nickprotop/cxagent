@@ -1,41 +1,114 @@
 {
   "$comment": [
-    "The catalog of plugins cxagent releases. One entry per directory beside this file.",
+    "The catalog of plugins cxagent knows about. One entry per plugin; the ones cxagent itself",
+    "releases also have a directory beside this file.",
     "",
-    "MACHINE-READABLE ON PURPOSE. The plugin dialog reads this to show what is available and",
-    "where to get it, so a future marketplace does not have to parse a README or hardcode a list.",
-    "Keep it truthful by hand until something generates it: an entry naming an asset that no",
-    "release carries is worse than no entry at all.",
+    "MACHINE-READABLE ON PURPOSE. The plugin picker reads this to show what is available and where",
+    "to get it, so it does not have to parse a README or hardcode a list. Keep it truthful by hand",
+    "until something generates it \u2014 an entry naming an asset no release carries is worse than no",
+    "entry at all. CatalogTests checks each entry against the plugin's own sidecar.",
     "",
-    "`asset` is the file name attached to a GitHub release, not a URL — the version is chosen by",
-    "whoever reads this, and pinning a URL here would pin the version too.",
-    "`tools` is what the plugin declares in its own sidecar; a mismatch is a bug in one of them.",
-    "`requires` is what the USER must install separately, which is the thing a catalog entry can",
-    "warn about and an install cannot fix."
+    "FIRST-PARTY AND THIRD-PARTY ENTRIES DIFFER IN ONE FIELD: `source`. A first-party plugin says",
+    "`{ \"kind\": \"release\", \"asset\": \"...\" }` and is fetched from cxagent's own release, pinned",
+    "to the version being installed. Anything else names where it actually lives, and the fields",
+    "below stop being a formality: nobody needs telling who wrote a plugin that ships in the same",
+    "zip as the binary, and everybody needs telling for one that does not.",
+    "",
+    "WHAT THE HASH IS AND IS NOT. `sha256` is over the downloaded artifact, and proves the bytes",
+    "arrived unaltered. It says nothing about who wrote them \u2014 that is `publisher` and",
+    "`repository`, which are claims a reader judges, not facts a client can verify. The separate",
+    "hash the load prompt shows is over the INSTALLED load set, and answers a different question:",
+    "has anything changed since you approved it.",
+    "",
+    "WHY NO `sha256` ON A RELEASE ENTRY. The artifact is built when the release runs, so its hash is",
+    "not knowable when this file is written by hand \u2014 a field for it would be either empty or stale.",
+    "`source.checksums` names the release asset that carries the real hashes instead, which is",
+    "generated from the artifacts themselves. A plugin hosted elsewhere DOES carry `sha256` here,",
+    "because whoever adds the entry has the file in front of them.",
+    "",
+    "The `$example` below is not installed and is not a real plugin. It is here so the third-party",
+    "shape has one worked instance to copy, and so a client parsing this file meets both `source`",
+    "kinds rather than only the one that happens to exist today."
   ],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "plugins": [
     {
       "name": "csharp-lsp",
       "displayName": "C# Language Server",
+      "version": "1.0.0",
       "description": "Go-to-definition, find-references and diagnostics for C#, backed by a language server. Crosses project boundaries: a reference in a test project resolves into the project under test.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/csharp-lsp",
+      "readme": "csharp-lsp/README.md",
       "directory": "csharp-lsp",
-      "asset": "csharp-lsp.zip",
+      "source": {
+        "kind": "release",
+        "asset": "csharp-lsp.zip",
+        "checksums": "SHA256SUMS"
+      },
       "file": "csharp-lsp.dll",
       "kind": "managed",
+      "compatibility": {
+        "minCxagentVersion": "0.8.0",
+        "platforms": [
+          "any"
+        ]
+      },
       "spawns": true,
-      "tools": ["csharp_definition", "csharp_references", "csharp_diagnostics"],
+      "tools": [
+        "csharp_definition",
+        "csharp_references",
+        "csharp_diagnostics"
+      ],
       "requires": {
         "description": "A C# language server on PATH. csharp-ls is the default and needs no configuration.",
         "default": "csharp-ls",
         "install": "dotnet tool install -g csharp-ls",
-        "alternatives": ["/opt/omnisharp/OmniSharp -lsp"]
+        "alternatives": [
+          "/opt/omnisharp/OmniSharp -lsp"
+        ]
       },
       "settings": {
         "server": "The language server command. Defaults to csharp-ls.",
         "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none."
-      },
-      "readme": "csharp-lsp/README.md"
+      }
     }
-  ]
+  ],
+  "$example": {
+    "name": "lsp-rust",
+    "displayName": "Rust Language Server",
+    "version": "0.3.1",
+    "description": "The same three operations for Rust, backed by rust-analyzer.",
+    "publisher": "someone-else",
+    "license": "Apache-2.0",
+    "repository": "https://github.com/someone-else/cxagent-lsp-rust",
+    "sourceUrl": "https://github.com/someone-else/cxagent-lsp-rust",
+    "readme": "https://github.com/someone-else/cxagent-lsp-rust#readme",
+    "source": {
+      "kind": "url",
+      "url": "https://github.com/someone-else/cxagent-lsp-rust/releases/download/v0.3.1/lsp-rust.zip",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "file": "lsp-rust.dll",
+    "kind": "managed",
+    "compatibility": {
+      "minCxagentVersion": "0.8.0",
+      "platforms": [
+        "any"
+      ]
+    },
+    "spawns": true,
+    "tools": [
+      "rust_definition",
+      "rust_references",
+      "rust_diagnostics"
+    ],
+    "requires": {
+      "description": "rust-analyzer on PATH.",
+      "default": "rust-analyzer",
+      "install": "rustup component add rust-analyzer"
+    }
+  }
 }
