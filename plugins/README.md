@@ -1,8 +1,7 @@
 # Plugin catalog
 
-Plugins cxagent releases and supports. One directory each, and
-[`plugins.json`](plugins.json) beside them as the machine-readable version of this page — what the
-plugin dialog will read rather than parsing prose.
+Plugins cxagent releases and supports — what they do, how to install one, and how to turn it on.
+Each has its own page with its download and settings.
 
 | plugin | what it does | needs | |
 | --- | --- | --- | --- |
@@ -80,24 +79,13 @@ which takes settings inline, to try something without one:
 Nothing `/plugin load` does persists — that is the point of it. Once you know you want a plugin,
 write the config entry.
 
-## Adding a plugin to this catalog
+## Other plugins
 
-A plugin here ships as a release asset and gets installed by the installer, so it carries the same
-expectations as the app. Add its directory, a `README.md` documenting the asset and configuration,
-and an entry in `plugins.json`.
+Nothing requires a plugin to live here. Anything you drop in the plugins folder — or point
+`pluginPaths` at — is discovered, reported and approved exactly the same way; this directory is
+only what cxagent itself releases and supports.
 
-Nothing requires a plugin to live here. A third-party plugin is a DLL and a sidecar dropped in the
-plugins folder or named by `pluginPaths`; it needs nothing from this directory and gets the same
-treatment at load.
+*Writing one? That is [`cxagent.Core/Core/Plugins`](../cxagent.Core/Core/Plugins/README.md) — the
+contract, the sidecar format, permission, settings, and two worked examples.*
 
-Two rules if you do add one:
-
-**Name its tools for what makes them yours.** A tool name is claimed session-wide and two plugins
-cannot share one — `csharp_definition`, never `lsp_definition`, or the next language-server plugin
-cannot load beside this one.
-
-**Reference `CxAgent.Core` with `Private="false"`.** The host process already has it loaded; a copy
-beside the plugin is dead weight in every release asset.
-
-See [the plugin guide](../cxagent.Core/Core/Plugins/README.md) for the contract, the sidecar format,
-permission, settings, and two worked calculator examples.
+*[`plugins.json`](plugins.json) is this page as data, for the plugin picker to read.*

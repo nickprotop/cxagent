@@ -26,6 +26,29 @@ Two working examples, the same calculator twice:
 Read them side by side. Nothing differs but the boundary, so the diff between them *is* what the
 boundary costs.
 
+## The project
+
+A managed plugin is an ordinary `net10.0` library — no `RuntimeIdentifier`, so one build runs
+everywhere cxagent does:
+
+```xml
+<ItemGroup>
+  <!-- Private="false": the host process already has CxAgent.Core loaded, and the plugin resolves it
+       from there at run time. Without this the DLL ships beside every copy of your plugin for no
+       reason, and a version that disagrees with the host's is a bug waiting to happen. -->
+  <ProjectReference Include="path/to/cxagent.Core.csproj" Private="false" />
+</ItemGroup>
+
+<ItemGroup>
+  <None Update="myplugin.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+</ItemGroup>
+```
+
+A consumer outside this repo writes `<PackageReference Include="CxAgent.Core" Version="…" />` with
+the same `Private="false"`.
+
+What ships is two files: your DLL and its sidecar.
+
 ## The lifecycle
 
 Four calls, in this order, whichever kind you write:

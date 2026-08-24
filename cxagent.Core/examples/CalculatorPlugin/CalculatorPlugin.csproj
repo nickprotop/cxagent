@@ -15,7 +15,11 @@
          <PackageReference Include="CxAgent.Core" Version="…" /> instead; referencing the project
          here means a breaking change to the surface breaks this build rather than being discovered
          after a release. -->
-    <ProjectReference Include="../../cxagent.Core.csproj" />
+    <!-- Private="false": the host process already has CxAgent.Core loaded and the plugin resolves
+         it from there at run time. Without it, CxAgent.Core.dll is copied beside every build of the
+         plugin — dead weight in anything you ship, and a second copy that can disagree with the
+         host's version. -->
+    <ProjectReference Include="../../cxagent.Core.csproj" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
