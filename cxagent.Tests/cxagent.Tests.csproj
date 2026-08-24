@@ -47,6 +47,26 @@
     <ProjectReference Include="../cxagent.PluginHost/cxagent.PluginHost.csproj" />
   </ItemGroup>
 
+  <!-- THE ABI REWRITE OF THE LSP PLUGIN — NOT A ProjectReference, because it is a NativeAOT native
+       library, not a managed assembly this project could reference or load in-process; see
+       cxagent-dotnet-lsp-abi.csproj's own comment. `dotnet publish -r linux-x64` is what runs the
+       ILC pipeline that turns its [UnmanagedCallersOnly] exports into real `cxagent_plugin_*`
+       symbols — an ordinary `dotnet build` of that project produces a managed .dll with none of
+       them, so this target publishes it explicitly, the same reason AbiFixtures/build.sh compiles
+       its own fixture rather than trusting a build to have done it. Condition guards non-Linux the
+       same way BuildAbiFixtures does; a NativeAOT publish needs a native toolchain (cc/clang) this
+       repo's own gcc check already establishes is present when Linux ABI tests run at all. -->
+  <Target Name="PublishAbiLspPlugin" AfterTargets="Build" Condition="'$(OS)' != 'Windows_NT'">
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)/../plugins/cxagent-dotnet-lsp-abi/cxagent-dotnet-lsp-abi.csproj&quot; -c Release -r linux-x64 --self-contained -p:PublishAot=true -p:NativeLib=Shared -v quiet" />
+    <!-- THE SIDECAR, COPIED BESIDE THE PUBLISHED .so — AbiPluginLoader.Load resolves it from the
+         LIBRARY path with ".plugin.json" swapped in for the extension (same rule as every other
+         sidecar in this project), and `dotnet publish`'s own None/CopyToOutputDirectory only
+         reaches the project's ordinary $(OutDir), never the RID-specific publish/ subfolder this
+         target's -r linux-x64 produces. -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/cxagent-dotnet-lsp-abi/cxagent-dotnet-lsp-abi.plugin.json"
+          DestinationFolder="$(MSBuildProjectDirectory)/../plugins/cxagent-dotnet-lsp-abi/bin/Release/net10.0/linux-x64/publish/" />
+  </Target>
+
   <!-- NATIVE ABI FIXTURES, BUILT BY A SHELL SCRIPT BECAUSE MSBUILD HAS NO C COMPILER TASK.
        AfterTargets="Build" (not BeforeBuild) so the fixtures land in $(OutDir) after MSBuild has
        created it — building them earlier would have nowhere guaranteed to copy them onto, and

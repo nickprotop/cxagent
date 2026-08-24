@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AN ABI PLUGIN IS A NATIVE SHARED LIBRARY, not a managed assembly ManagedPluginLoader can
+       Assembly.LoadFrom — see cxagent_plugin.h. PublishAot with NativeLib=Shared is what turns this
+       project's [UnmanagedCallersOnly] exports into the five extern "C" symbols
+       cxagent.PluginHost's NativePlugin resolves by name; the ABI's own JSON-boundary design (see
+       PLUGINS.md, "The boundary is JSON") does not care that the library on the other side of it
+       happens to be built from C# rather than C — only that it exports the right symbols and speaks
+       the right JSON, which is exactly what this project proves. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>cxagent-dotnet-lsp-abi</AssemblyName>
+    <RootNamespace>CxAgent.Plugins.LspAbi</RootNamespace>
+
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- RUNS ONLY AS PUBLISHED, NEVER AS A PLAIN dotnet build ARTIFACT — a Debug build produces a
+         managed .dll with no [UnmanagedCallersOnly] exports resolved into real symbols; only
+         `dotnet publish` runs the NativeAOT/ILC pipeline that turns this into a loadable .so. Tests
+         that need the .so publish it themselves (see cxagent.Tests.csproj's own build target for
+         the C fixtures, the same "not part of an ordinary build" shape). -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- No ProjectReference to CxAgent.Core. A managed plugin binds against the HOST'S already-loaded
+         Core assembly (see cxagent-dotnet-lsp.csproj's own comment on this) because it loads into
+         the same process; an ABI plugin loads into a SEPARATE process (cxagent-plugin-host) that
+         never runs this assembly's own managed code at all — cxagent_plugin_host talks to this
+         library purely through the five extern "C" exports and JSON, never a shared CLR. Referencing
+         Core here would be a reference to nothing this plugin actually uses. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="cxagent-dotnet-lsp-abi.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
