@@ -160,6 +160,76 @@ public class PluginCatalogTests
     }
 
     /// <summary>
+    /// A plugin's declared platforms match what it can actually be downloaded for.
+    ///
+    /// <para>A MANAGED PLUGIN IS PORTABLE MSIL and says <c>["any"]</c> with a single
+    /// <c>source</c> — one build runs everywhere. AN ABI PLUGIN IS NOT: a <c>.so</c> does not load
+    /// on Windows, and a publisher may ship two RIDs of the six. Those entries key their downloads
+    /// by RID under <c>sources</c>, and this checks the two lists agree.</para>
+    ///
+    /// <para>A PLATFORM CLAIMED WITH NO DOWNLOAD IS THE FAILURE WORTH CATCHING: a picker filters on
+    /// this list, so the plugin is offered to a machine it cannot be installed on, and the error
+    /// arrives as a 404 rather than "not available for your platform". The reverse — a download for
+    /// a platform not claimed — is a plugin nobody is offered, which is only wasted work, but it
+    /// means one of the two lists is wrong either way.</para>
+    ///
+    /// <para>THE EXAMPLES ARE CHECKED TOO, since they are the only native entries that exist and a
+    /// broken example is copied into a real one.</para>
+    /// </summary>
+    [Fact]
+    public void DeclaredPlatformsMatchAvailableDownloads()
+    {
+        var catalog = Catalog();
+
+        var all = Entries().ToList();
+        foreach (var name in new[] { "$example", "$exampleNative" })
+            if (catalog.TryGetProperty(name, out var example))
+                all.Add(example);
+
+        foreach (var entry in all)
+        {
+            var name = entry.GetProperty("name").GetString()!;
+            var platforms = entry.GetProperty("compatibility").GetProperty("platforms")
+                .EnumerateArray().Select(p => p.GetString()!).ToList();
+
+            Assert.NotEmpty(platforms);
+
+            if (platforms is ["any"])
+            {
+                // Portable: one source, no per-platform keys.
+                Assert.True(entry.TryGetProperty("source", out _),
+                    $"'{name}' claims any platform but has no single source.");
+                Assert.False(entry.TryGetProperty("sources", out _),
+                    $"'{name}' claims any platform and yet lists per-platform sources — one of those is wrong.");
+                continue;
+            }
+
+            Assert.True(entry.TryGetProperty("sources", out var sources),
+                $"'{name}' names specific platforms but has no per-platform sources.");
+
+            var keyed = sources.EnumerateObject().Select(p => p.Name).ToList();
+
+            Assert.Equal(platforms.OrderBy(p => p, StringComparer.Ordinal),
+                         keyed.OrderBy(p => p, StringComparer.Ordinal));
+
+            // KNOWN RIDs ONLY. An invented name matches nothing a client computes for itself, so the
+            // plugin is invisible on every machine rather than obviously wrong.
+            string[] known =
+                ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"];
+            foreach (var rid in keyed)
+                Assert.Contains(rid, known);
+
+            // Each one must be fetchable and carry its own hash — see EveryEntryCanProduceADownloadUrl
+            // for why a url source states its own.
+            foreach (var source in sources.EnumerateObject())
+            {
+                Assert.StartsWith("https://", source.Value.GetProperty("url").GetString());
+                Assert.Equal(64, source.Value.GetProperty("sha256").GetString()!.Length);
+            }
+        }
+    }
+
+    /// <summary>
     /// A release-sourced entry names an asset the release workflow actually builds.
     ///
     /// <para>THE ASSET NAME IS WRITTEN IN TWO PLACES — here and in the workflow that zips it — and a

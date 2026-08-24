@@ -43,7 +43,20 @@
     "",
     "`checksums` stays beside it: SHA256SUMS is generated from the artifacts themselves at release",
     "time, so it is the authority. This field is the convenience \u2014 a client that has only this file",
-    "can check a download without fetching a second asset."
+    "can check a download without fetching a second asset.",
+    "",
+    "PLATFORMS. A managed plugin is portable MSIL: one build runs everywhere cxagent does, so it says",
+    "`platforms: [\"any\"]` and has a single `source`. An ABI plugin is a native library and is NOT",
+    "portable \u2014 a .so does not load on Windows, and a publisher may ship linux-x64 and nothing else.",
+    "",
+    "So an ABI entry lists the RIDs it actually has and keys its downloads by the same names:",
+    "`sources: { \"linux-x64\": {...}, \"osx-arm64\": {...} }` instead of one `source`. A client picks",
+    "the entry matching its own RID and, finding none, says the plugin is not available for this",
+    "machine \u2014 which is a better answer than downloading a library that cannot load.",
+    "",
+    "RIDs are .NET's own (linux-x64, linux-arm64, osx-x64, osx-arm64, win-x64, win-arm64), the same",
+    "vocabulary the release matrix uses. `platforms` and the keys of `sources` must agree; a plugin",
+    "claiming a platform it has no download for is worse than one that does not claim it."
   ],
   "schemaVersion": 2,
   "plugins": [
@@ -130,5 +143,40 @@
       "default": "rust-analyzer",
       "install": "rustup component add rust-analyzer"
     }
+  },
+  "$exampleNative": {
+    "name": "ripgrep-tools",
+    "displayName": "ripgrep search tools",
+    "version": "0.2.0",
+    "description": "A native plugin, shown here because an ABI plugin is per-platform and the managed example above cannot show that.",
+    "publisher": "someone-else",
+    "license": "MIT",
+    "repository": "https://github.com/someone-else/cxagent-ripgrep",
+    "kind": "abi",
+    "compatibility": {
+      "minCxagentVersion": "0.9.0",
+      "platforms": [
+        "linux-x64",
+        "osx-arm64"
+      ]
+    },
+    "sources": {
+      "linux-x64": {
+        "kind": "url",
+        "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-linux-x64.zip",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "file": "libripgrep_tools.so"
+      },
+      "osx-arm64": {
+        "kind": "url",
+        "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-osx-arm64.zip",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "file": "libripgrep_tools.dylib"
+      }
+    },
+    "spawns": false,
+    "tools": [
+      "rg_search"
+    ]
   }
 }

@@ -107,7 +107,14 @@ tag) plus `latest`, GitHub's always-current alias for a client with no tag in ha
 from the release's own `SHA256SUMS`.
 
 One hosted elsewhere uses `kind: "url"`: a URL fetched as written, and its own `sha256`, because
-nothing in this project can vouch for a file it does not build. Its `publisher`, `license` and
+nothing in this project can vouch for a file it does not build.
+
+**A native plugin is per-platform, and the catalog has to say which.** A managed plugin is portable
+MSIL — one build runs everywhere cxagent does, so it says `platforms: ["any"]` and has one `source`.
+An ABI plugin is a native library: a `.so` does not load on Windows, and a publisher may ship
+`linux-x64` and nothing else. Those entries name the RIDs they actually have and key their downloads
+by the same names under `sources`, so a picker can say "not available for your platform" instead of
+downloading a library that cannot load. `$exampleNative` in the file shows the shape. Its `publisher`, `license` and
 `repository` stop being a formality too — nobody needs telling who wrote a plugin that ships in the
 same zip as cxagent, and everybody needs telling for one that does not.
 
