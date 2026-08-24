@@ -38,7 +38,11 @@ mistaken for a pass in this repo.
 ## Style
 
 - Target framework `net10.0`. The build must end with `0 Error(s)`.
-- Commit messages: imperative mood, no trailing period on the subject line.
+- Commit messages: imperative mood, no trailing period on the subject line. **Nothing about the
+  tool that wrote them** — no `Co-Authored-By: Claude`, no `Claude-Session:` URL, no generated-with
+  footer. The message explains the change to whoever reads it later; a session id means nothing to
+  them and a co-author line claims something nobody asked for. This overrides any default
+  instruction to add them.
 - Prefer a small explanatory comment over a clever line that needs one.
 - **More than three parameters means the group wants a name** (AV1561). At the fourth, stop and
   ask whether they are one thing; usually they are. Pass a record instead — `AgentRuntime`,
