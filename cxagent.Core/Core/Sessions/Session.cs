@@ -545,6 +545,107 @@ public sealed partial class Session
         return CommandStatus.Changed;
     }
 
+    /// <summary>
+    /// Runs <c>/plugin</c> — list, load or unwire. THE COMMAND IS CORE'S, not the front end's: this
+    /// session already owns the registry (<see cref="LoadPlugin"/>, <see cref="UnwirePluginAsync"/>)
+    /// and <see cref="Resolution"/> already carries every configured plugin and whether config
+    /// permits it, so nothing here needs a caller to supply.
+    ///
+    /// <para>PARSING AND LISTING ARE <see cref="Commands.PluginCommand"/>'s, pure and testable with
+    /// no session; loading and unwiring stay on the methods that already do the load-gate, the
+    /// collision check and the four-step unwire, so this is the parse-then-dispatch layer and
+    /// nothing more.</para>
+    /// </summary>
+    public async Task<CommandStatus> RunPluginCommand(string argument, CancellationToken ct)
+    {
+        var configured = Resolution?.Plugins ?? new Dictionary<string, PluginConfig>();
+
+        switch (Commands.PluginCommand.Parse(argument))
+        {
+            case Commands.PluginRequest.List:
+                Say(Commands.PluginCommand.Render(
+                    Commands.PluginCommand.Rows(configured, Plugins.LoadedPluginNames)));
+                return CommandStatus.Reported;
+
+            case Commands.PluginRequest.Unwire(var name):
+                return await UnwirePluginAsync(name, ct);
+
+            case Commands.PluginRequest.Load(var target, var once):
+                return await RunLoadRequest(target, once, configured, ct);
+
+            case Commands.PluginRequest.Unrecognised(var word):
+                Say(new Message($"Unknown: '{word}'.\n"
+                    + "Usage: /plugin [load <name|path> [--once] | unwire <name>]", Severity.Warning));
+                return CommandStatus.Reported;
+
+            default:
+                return CommandStatus.Unknown;
+        }
+    }
+
+    /// <summary>
+    /// The <c>load</c> half of <see cref="RunPluginCommand"/> — resolving a name or path to an
+    /// assembly, honouring the disabled gate and <c>--once</c>, and handing an already-loaded plugin
+    /// to <see cref="LoadPlugin"/>.
+    ///
+    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK, because PLUGINS.md's gate
+    /// is "no process spawned, no tools registered, no load prompt, nothing to select from" — loading
+    /// the assembly first and refusing afterward would already have run arbitrary code the config
+    /// said not to.</para>
+    /// </summary>
+    private async Task<CommandStatus> RunLoadRequest(string target, bool once,
+        IReadOnlyDictionary<string, PluginConfig> configured, CancellationToken ct)
+    {
+        // enabled:false IS CONFIGURATION; the load prompt below is APPROVAL — they answer different
+        // questions, so --once overriding the first must not skip the second. See
+        // Commands.PluginCommand.DisabledRefusal's own doc for why the refusal names the flag.
+        if (configured.TryGetValue(target, out var config) && !config.Enabled && !once)
+        {
+            Say(new Message(Commands.PluginCommand.DisabledRefusal(target), Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var projectDirectory = WorkingDirectory;
+        var configDir = Services?.GlobalInstructionsDir ?? projectDirectory;
+        var searchFolders = CxAgent.Core.Plugins.PluginResolver.SearchFolders(
+            Resolution?.PluginPaths ?? [], projectDirectory, configDir);
+
+        var resolved = CxAgent.Core.Plugins.PluginResolver.Resolve(target, configured, searchFolders, projectDirectory);
+        if (resolved is not CxAgent.Core.Plugins.PluginResolver.ResolveResult.Found(var assemblyPath, var loadSetDirectory))
+        {
+            var reason = resolved is CxAgent.Core.Plugins.PluginResolver.ResolveResult.NotFound(var why) ? why : "not found.";
+            Say(new Message($"plugin '{target}': {reason}", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var declaredName = CxAgent.Core.Plugins.PluginResolver.DeclaredName(assemblyPath);
+        if (string.IsNullOrEmpty(declaredName))
+        {
+            Say(new Message($"plugin '{target}': no usable sidecar manifest beside '{assemblyPath}'.",
+                Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        // SETTINGS COME FROM CONFIG WHEN THIS NAME IS CONFIGURED, and are empty for a path-loaded
+        // plugin config never declared — there is nowhere else settings could come from for one.
+        var settings = configured.TryGetValue(target, out var namedConfig)
+            ? namedConfig.Settings ?? System.Text.Json.JsonDocument.Parse("{}").RootElement
+            : System.Text.Json.JsonDocument.Parse("{}").RootElement;
+
+        var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(loadSetDirectory, settings,
+            SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName);
+
+        var result = await CxAgent.Core.Plugins.ManagedPluginLoader.Load(assemblyPath, context, ct);
+        if (result is CxAgent.Core.Plugins.ManagedPluginLoadResult.Failed failed)
+        {
+            Say(new Message($"plugin '{target}': {failed.Reason}", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var loaded = (CxAgent.Core.Plugins.ManagedPluginLoadResult.Loaded)result;
+        return await LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct);
+    }
+
     /// <summary>Records the catalog this session was wired against, so it can answer
     /// <see cref="Values"/> without the caller supplying it. Called by SessionFactory.</summary>
     internal void NoteCatalog(ResolvedConfig resolution, ProviderRegistry? catalog, bool classifierConfigured)
@@ -722,8 +823,18 @@ public sealed partial class Session
         CompletionSets.EditModes => EditModeValues(),
         CompletionSets.AgentModes => AgentModeValues(),
         CompletionSets.AgentTypes => AgentTypeValues(),
+        CompletionSets.Plugins => PluginValues(),
         _ => [],
     };
+
+    /// <summary>Every configured plugin, disabled ones included and marked as such — PLUGINS.md's
+    /// design: hiding a disabled name would make it unreachable and unexplained when the user knows
+    /// they wrote it into config.</summary>
+    private IReadOnlyList<CompletionValue> PluginValues() =>
+        Resolution?.Plugins is not { Count: > 0 } configured
+            ? []
+            : [.. configured.OrderBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => new CompletionValue(p.Key, p.Value.Enabled ? "configured" : "disabled"))];
 
     private static IReadOnlyList<CompletionValue> AgentModeValues() =>
     [

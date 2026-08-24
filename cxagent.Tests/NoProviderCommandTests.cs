@@ -80,6 +80,7 @@ public class NoProviderCommandTests
     [InlineData("/diff")]        // git, not the model
     [InlineData("/clear")]
     [InlineData("/trust")]       // the folder's classification, and the store is on disk
+    [InlineData("/plugin")]      // the registry and config.Plugins, neither of which is the model
     public void TheseRunWithNoModel(string input)
         => Assert.False(NeedsAModel(input), $"{input} must work with no provider configured");
 
@@ -107,7 +108,7 @@ public class NoProviderCommandTests
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(13, commands.Count);
+        Assert.Equal(14, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

@@ -195,6 +195,18 @@ public sealed class SessionManager : IDisposable
                         return true;
                     });
                     break;
+
+                // THE REGISTRY AND THE CONFIGURED SET ARE BOTH THE SESSION'S — see
+                // Session.RunPluginCommand. FIRE AND FORGET, like /compress above: a load or an
+                // unwire is itself async (the load gate awaits a prompt, unwire awaits a drain), and
+                // the dispatcher's synchronous contract cannot await either.
+                case "/plugin":
+                    Commands.Register(command, (session, arguments) =>
+                    {
+                        _ = session.RunPluginCommand(arguments, CancellationToken.None);
+                        return true;
+                    });
+                    break;
             }
         }
     }

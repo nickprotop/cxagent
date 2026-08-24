@@ -51,4 +51,10 @@ public static class CompletionSets
     /// because the catalog is the one it was wired against — a config edit since launch has not taken
     /// effect here and offering those names would point at types this session cannot spawn.</summary>
     public const string AgentTypes = "agent-types";
+
+    /// <summary>Configured plugin names, for <c>/plugin load</c> and <c>/plugin unwire</c>. Answered
+    /// by the session — <see cref="Sessions.Session.Resolution"/> already carries every configured
+    /// name and whether config permits it, which is what lets the palette mark a disabled one rather
+    /// than silently omitting a name the user knows they wrote.</summary>
+    public const string Plugins = "plugins";
 }

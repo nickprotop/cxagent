@@ -116,4 +116,7 @@ public static class ValueSources
 
     /// <summary>Sub-agent types, for <c>/agents</c>.</summary>
     public const string AgentTypes = Core.Sessions.CompletionSets.AgentTypes;
+
+    /// <summary>Configured plugin names, for <c>/plugin load</c> and <c>/plugin unwire</c>.</summary>
+    public const string Plugins = Core.Sessions.CompletionSets.Plugins;
 }

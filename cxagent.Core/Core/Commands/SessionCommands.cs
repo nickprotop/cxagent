@@ -131,6 +131,17 @@ public static class SessionCommands
             new("yes", "trust this folder — stop asking for reads and writes inside it"),
             new("no", "do not trust it — ask before every file operation"),
         ]),
+        // THE REGISTRY IS THE SESSION'S, exactly as /trust's policy is — the configured set,
+        // whether config permits each one, and the load gate all hang off it, so a front end
+        // registering this would be reaching across for state the session already holds.
+        new("/plugin", "list configured plugins, load one, or unwire one",
+        [
+            new("load <name|path> [--once]", "load a name from config, or a path config never "
+                + "declared — --once loads one config disabled, for this session only",
+                Completes: false, Values: ValueSources.Plugins),
+            new("unwire <name>", "stop and deregister a loaded plugin", Completes: false,
+                Values: ValueSources.Plugins),
+        ]),
         new("/help", "show keys and commands"),
     ];
 
