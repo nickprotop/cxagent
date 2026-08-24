@@ -90,25 +90,50 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build the csharp-lsp plugin
+      # BUILT ONLY WHEN THE PLUGIN CHANGED. A release that ships an identical plugin ships the
+      # PREVIOUS release's zip, byte for byte, so its version keeps meaning "the plugin's contract"
+      # rather than drifting into "how many cxagent releases have happened". Every release still
+      # carries the asset, so install.sh can always fetch it from the tag it is installing.
+      #
+      # THE VERSION ITSELF IS SET BY publish.sh, before the tag exists — so the tag contains the
+      # right version rather than having one committed into it afterwards. This step only reads it.
+      - name: Build or carry forward the csharp-lsp plugin
         run: |
-          # BUILD, NOT PUBLISH. A publish resolves the whole dependency tree into the output —
-          # AngleSharp, SQLite and its native runtimes, none of which the plugin uses. The plugin
-          # references CxAgent.Core with Private="false" and resolves it from the host process at
-          # run time, so a build is exactly the two files that ship.
-          # THE TAG'S VERSION, AS THE BINARIES GET. Without it the plugin assembly carries whatever
-          # the csproj defaults to for every release ever made, so two different builds report the
-          # same version and nothing on disk can tell them apart. The sidecar's own `version` is
-          # separate and hand-maintained — it describes the plugin's contract, not the build.
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          dotnet build plugins/csharp-lsp/csharp-lsp.csproj -c Release -o ./plugin-out \
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          SIDECAR=plugins/csharp-lsp/csharp-lsp.plugin.json
+          VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
+
+          mkdir -p plugin-out
+
+          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- plugins/csharp-lsp/; then
+            echo "plugin unchanged since $PREV_TAG — carrying its zip forward."
+
+            # THE SAME BYTES, NOT A REBUILD. A rebuild would produce a different hash for identical
+            # source: the assembly embeds its own source paths, and the zip embeds file mtimes.
+            # Re-uploading the exact artifact keeps the plugin's identity stable across releases.
+            if curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/csharp-lsp.zip" \
+                 -o plugin-out/csharp-lsp.zip; then
+              echo "carried forward from $PREV_TAG"
+              exit 0
+            fi
+
+            echo "no zip on $PREV_TAG — building instead."
+          fi
+
+          echo "building csharp-lsp $VERSION"
+
+          # BUILD, NOT PUBLISH. The plugin references CxAgent.Core with Private="false" and resolves
+          # it from the host at run time, so a publish would drag AngleSharp, SQLite and its native
+          # runtimes into an output that ships two files.
+          dotnet build plugins/csharp-lsp/csharp-lsp.csproj -c Release -o ./plugin-build \
             -p:Version="$VERSION"
 
           # THE SIDECAR TRAVELS WITH THE DLL, always. It is read BEFORE the assembly is loaded — it
           # is what the load prompt shows and what discovery reports without running anything — so a
           # zip missing it produces a plugin that cannot load and cannot be described.
-          test -f ./plugin-out/csharp-lsp.dll
-          test -f ./plugin-out/csharp-lsp.plugin.json
+          test -f ./plugin-build/csharp-lsp.dll
+          test -f ./plugin-build/csharp-lsp.plugin.json
+          (cd plugin-build && zip -q ../plugin-out/csharp-lsp.zip csharp-lsp.dll csharp-lsp.plugin.json)
 
       - name: Generate checksums
         run: |
@@ -123,9 +148,8 @@ jobs:
           cp install.sh install.ps1 uninstall.sh uninstall.ps1 release/
           chmod +x release/cxagent-* release/*.sh 2>/dev/null || true
 
-          # THE PLUGIN AS ONE ZIP, so the DLL and its sidecar cannot be downloaded apart. Two loose
-          # assets invite fetching one of them.
-          (cd plugin-out && zip -q ../release/csharp-lsp.zip csharp-lsp.dll csharp-lsp.plugin.json)
+          # THE PLUGIN ZIP, built or carried forward by the step above.
+          cp plugin-out/csharp-lsp.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.
@@ -218,65 +242,6 @@ jobs:
   #
   # NEEDS THE RELEASE JOB so a failed build never publishes a version that cannot be unpublished.
   # NuGet allows unlisting, never reuse: a version pushed by mistake burns that number permanently.
-      # THE CATALOG'S HASH, WRITTEN BY THE THING THAT BUILT THE ARTIFACT. plugins.json carries a
-      # sha256 for the plugin zip so a client holding only that file can verify a download without
-      # fetching SHA256SUMS as well. It cannot be maintained by hand — the artifact does not exist
-      # until the step above builds it — so the release stamps it, along with the tag it belongs to,
-      # which is what lets a reader tell a current hash from one left over from an older release.
-      #
-      # COMMITTED TO master, NOT TO THE TAG. A tag points at a commit that already exists; the hash
-      # is only knowable after it. Writing to master means the catalog in the default branch — the
-      # one a picker reads — describes the release that just happened.
-      #
-      # FAILS SOFT. A release that produced good artifacts must not be marked failed because a
-      # bookkeeping commit could not be pushed; SHA256SUMS on the release is the authority either
-      # way, and this field is the convenience.
-      - name: Stamp the plugin hash into the catalog
-        continue-on-error: true
-        run: |
-          SHA=$(awk '/ csharp-lsp\.zip$/ {print $1}' release/SHA256SUMS)
-          if [ -z "$SHA" ]; then
-            echo "no csharp-lsp.zip in SHA256SUMS — nothing to stamp."
-            exit 0
-          fi
-
-          TAG="${GITHUB_REF#refs/tags/}"
-          python3 - "$SHA" "$TAG" <<'PY'
-          import json, sys, collections
-          sha, tag = sys.argv[1], sys.argv[2]
-          path = "plugins/plugins.json"
-          catalog = json.load(open(path), object_pairs_hook=collections.OrderedDict)
-
-          changed = False
-          for entry in catalog["plugins"]:
-              source = entry["source"]
-              # ONLY A RELEASE SOURCE, AND ONLY THIS ASSET. A url-sourced plugin is hosted elsewhere
-              # and its hash is whoever published it's to state, not this workflow's to overwrite.
-              if source.get("kind") == "release" and source.get("asset") == "csharp-lsp.zip":
-                  if source.get("sha256") != sha:
-                      source["sha256"] = sha
-                      source["stampedAtTag"] = tag
-                      changed = True
-
-          if changed:
-              json.dump(catalog, open(path, "w"), indent=2)
-              open(path, "a").write("\n")
-          print("changed" if changed else "unchanged")
-          PY
-
-          if git diff --quiet plugins/plugins.json; then
-            echo "catalog already current."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add plugins/plugins.json
-          git commit -m "Stamp csharp-lsp.zip hash for $TAG"
-
-          # HEAD IS DETACHED ON A TAG BUILD, so the commit has to be pushed to a named branch
-          # explicitly rather than to whatever is checked out.
-          git push origin HEAD:master
 
   nuget:
     needs: release

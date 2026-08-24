@@ -79,6 +79,25 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  Previous: $LATEST_TAG"
 echo "  New:      $NEW_TAG ($BUMP_TYPE)"
 echo ""
+# THE PLUGIN'S VERSION, DECIDED HERE AND NOT IN CI. A plugin that changed takes this tag's version;
+# one that did not keeps what it has, so the number keeps meaning "the plugin's contract" rather
+# than counting cxagent releases. Seeing 0.9.0 on a v0.12.0 release is then informative.
+#
+# BEFORE THE TAG, WHICH IS THE POINT OF DOING IT HERE. Written after the tag — as CI would have to —
+# the tag itself would contain the old version, and anyone checking out v0.9.0 would find a plugin
+# claiming to be something else.
+PLUGIN_DIR="plugins/csharp-lsp"
+PLUGIN_SIDECAR="$PLUGIN_DIR/csharp-lsp.plugin.json"
+PLUGIN_VERSION=$(python3 -c "import json;print(json.load(open('$PLUGIN_SIDECAR'))['version'])")
+PLUGIN_CHANGED=false
+
+if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "v0.0.0" ] \
+   || ! git diff --quiet "$LATEST_TAG" HEAD -- "$PLUGIN_DIR"; then
+    PLUGIN_CHANGED=true
+fi
+
+echo "  Plugin:   csharp-lsp $PLUGIN_VERSION$([ "$PLUGIN_CHANGED" = true ] && echo " -> $NEW_VERSION (changed)" || echo " (unchanged, carried forward)")"
+echo ""
 echo "  This tag publishes TWO things:"
 echo "    · GitHub release — six platform binaries, revocable"
 echo "    · CxAgent.Core $NEW_VERSION to nuget.org — PERMANENT, the version"
@@ -89,6 +108,39 @@ if [ "$FORCE" = false ]; then
     read -p "Create and push tag '$NEW_TAG'? [y/N] " -n 1 -r
     echo
     [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Aborted." && exit 0
+fi
+
+# THE BUMP IS ITS OWN COMMIT, PUSHED BEFORE THE TAG, so the tag points at a tree whose plugin
+# version matches the release that ships it.
+if [ "$PLUGIN_CHANGED" = true ]; then
+    python3 - "$NEW_VERSION" <<'PYBUMP'
+import json, sys, collections
+
+version = sys.argv[1]
+
+# BOTH FILES, ALWAYS TOGETHER. PluginCatalogTests pins the catalog entry to the sidecar, so writing
+# one without the other fails the build — which is the point of that test.
+sidecar_path = "plugins/csharp-lsp/csharp-lsp.plugin.json"
+sidecar = json.load(open(sidecar_path), object_pairs_hook=collections.OrderedDict)
+sidecar["version"] = version
+json.dump(sidecar, open(sidecar_path, "w"), indent=2)
+open(sidecar_path, "a").write("\n")
+
+catalog_path = "plugins/plugins.json"
+catalog = json.load(open(catalog_path), object_pairs_hook=collections.OrderedDict)
+for entry in catalog["plugins"]:
+    if entry.get("name") == "csharp-lsp":
+        entry["version"] = version
+json.dump(catalog, open(catalog_path, "w"), indent=2)
+open(catalog_path, "a").write("\n")
+PYBUMP
+
+    if ! git diff --quiet plugins/; then
+        git add plugins/csharp-lsp/csharp-lsp.plugin.json plugins/plugins.json
+        git commit -m "Set csharp-lsp version to $NEW_VERSION"
+        git push origin HEAD
+        echo "  ✓ plugin version set to $NEW_VERSION"
+    fi
 fi
 
 git tag -a "$NEW_TAG" -m "Release $NEW_TAG"

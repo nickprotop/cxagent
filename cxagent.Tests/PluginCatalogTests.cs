@@ -140,16 +140,12 @@ public class PluginCatalogTests
 
                     Assert.StartsWith("https://", source.GetProperty("latest").GetString());
 
-                    // sha256 IS STAMPED BY THE RELEASE, so it is null until one has run and a real
-                    // hash whenever it is not. What this pins is that a value, once present, is a
-                    // sha256 and is paired with the tag it came from — a hash with no tag cannot be
-                    // told apart from one left over from an older release.
-                    var stamped = source.GetProperty("sha256");
-                    if (stamped.ValueKind != JsonValueKind.Null)
-                    {
-                        Assert.Equal(64, stamped.GetString()!.Length);
-                        Assert.NotEqual(JsonValueKind.Null, source.GetProperty("stampedAtTag").ValueKind);
-                    }
+                    // sha256 IS NULL FOR THE BUILT-IN PLUGIN — see the catalog's own note on why
+                    // that is left open. What this pins is that a value, once someone sets one, is
+                    // actually a sha256 rather than a URL or a placeholder.
+                    var hash = source.GetProperty("sha256");
+                    if (hash.ValueKind != JsonValueKind.Null)
+                        Assert.Equal(64, hash.GetString()!.Length);
                     break;
 
                 default:
