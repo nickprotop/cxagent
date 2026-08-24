@@ -96,7 +96,13 @@ jobs:
           # AngleSharp, SQLite and its native runtimes, none of which the plugin uses. The plugin
           # references CxAgent.Core with Private="false" and resolves it from the host process at
           # run time, so a build is exactly the two files that ship.
-          dotnet build plugins/csharp-lsp/csharp-lsp.csproj -c Release -o ./plugin-out
+          # THE TAG'S VERSION, AS THE BINARIES GET. Without it the plugin assembly carries whatever
+          # the csproj defaults to for every release ever made, so two different builds report the
+          # same version and nothing on disk can tell them apart. The sidecar's own `version` is
+          # separate and hand-maintained — it describes the plugin's contract, not the build.
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          dotnet build plugins/csharp-lsp/csharp-lsp.csproj -c Release -o ./plugin-out \
+            -p:Version="$VERSION"
 
           # THE SIDECAR TRAVELS WITH THE DLL, always. It is read BEFORE the assembly is loaded — it
           # is what the load prompt shows and what discovery reports without running anything — so a
@@ -127,6 +133,91 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            # THE STAMP COMMIT IS EXCLUDED. It is written by the release itself, so listing it
+            # tells a reader their release contains a change made by publishing that release.
+            CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges \
+                        --invert-grep --grep="^Stamp csharp-lsp.zip hash")
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 \
+                        --invert-grep --grep="^Stamp csharp-lsp.zip hash")
+          fi
+          echo "CHANGELOG<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          body: |
+            ## Install
+
+            **Linux / macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
+            ```
+
+            **.NET tool** (uses the .NET you already have, rather than carrying its own):
+            ```bash
+            dotnet tool install -g cxagent
+            ```
+
+            **Embedding it** — the library half is on NuGet, targeting net8.0, net9.0 and net10.0:
+            ```bash
+            dotnet add package CxAgent.Core
+            ```
+
+            ## Manual Download
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x64 | `cxagent-linux-x64` |
+            | Linux ARM64 | `cxagent-linux-arm64` |
+            | macOS x64 (Intel) | `cxagent-osx-x64` |
+            | macOS ARM64 (Apple Silicon) | `cxagent-osx-arm64` |
+            | Windows x64 | `cxagent-win-x64.exe` |
+            | Windows ARM64 | `cxagent-win-arm64.exe` |
+
+            ## Plugins
+
+            `csharp-lsp.zip` — C# go-to-definition, find-references and diagnostics, from a
+            language server. The install script places it for you; it is **not enabled** until you
+            say so, and cxagent tells you it is there. Needs a C# language server:
+            `dotnet tool install -g csharp-ls`.
+
+            Unzip both files into `~/.config/cxagent/plugins/` to install it by hand.
+
+            ## Changes
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Checksums
+
+            See `SHA256SUMS` in the release assets.
+          draft: false
+          prerelease: false
+
+  # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
+  # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an
+  # answer.
+  #
+  # TRUSTED PUBLISHING (OIDC) RATHER THAN AN API KEY. NuGet mints a short-lived token for this
+  # workflow on this repository; there is no long-lived secret to leak, rotate, or forget. The
+  # `id-token: write` permission below is what lets the runner request it, and it must be granted
+  # per job — the workflow-level `contents: write` above does not cover it.
+  #
+  # NEEDS THE RELEASE JOB so a failed build never publishes a version that cannot be unpublished.
+  # NuGet allows unlisting, never reuse: a version pushed by mistake burns that number permanently.
       # THE CATALOG'S HASH, WRITTEN BY THE THING THAT BUILT THE ARTIFACT. plugins.json carries a
       # sha256 for the plugin zip so a client holding only that file can verify a download without
       # fetching SHA256SUMS as well. It cannot be maintained by hand — the artifact does not exist
@@ -187,78 +278,6 @@ jobs:
           # explicitly rather than to whatever is checked out.
           git push origin HEAD:master
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges)
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
-          fi
-          echo "CHANGELOG<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*
-          body: |
-            ## Install
-
-            **Linux / macOS:**
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
-            ```
-
-            **Windows (PowerShell):**
-            ```powershell
-            irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex
-            ```
-
-            **.NET tool** (uses the .NET you already have, rather than carrying its own):
-            ```bash
-            dotnet tool install -g cxagent
-            ```
-
-            **Embedding it** — the library half is on NuGet, targeting net8.0, net9.0 and net10.0:
-            ```bash
-            dotnet add package CxAgent.Core
-            ```
-
-            ## Manual Download
-
-            | Platform | Binary |
-            |----------|--------|
-            | Linux x64 | `cxagent-linux-x64` |
-            | Linux ARM64 | `cxagent-linux-arm64` |
-            | macOS x64 (Intel) | `cxagent-osx-x64` |
-            | macOS ARM64 (Apple Silicon) | `cxagent-osx-arm64` |
-            | Windows x64 | `cxagent-win-x64.exe` |
-            | Windows ARM64 | `cxagent-win-arm64.exe` |
-
-            ## Changes
-
-            ${{ steps.changelog.outputs.CHANGELOG }}
-
-            ## Checksums
-
-            See `SHA256SUMS` in the release assets.
-          draft: false
-          prerelease: false
-
-  # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
-  # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an
-  # answer.
-  #
-  # TRUSTED PUBLISHING (OIDC) RATHER THAN AN API KEY. NuGet mints a short-lived token for this
-  # workflow on this repository; there is no long-lived secret to leak, rotate, or forget. The
-  # `id-token: write` permission below is what lets the runner request it, and it must be granted
-  # per job — the workflow-level `contents: write` above does not cover it.
-  #
-  # NEEDS THE RELEASE JOB so a failed build never publishes a version that cannot be unpublished.
-  # NuGet allows unlisting, never reuse: a version pushed by mistake burns that number permanently.
   nuget:
     needs: release
     runs-on: ubuntu-latest
