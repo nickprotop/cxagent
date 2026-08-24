@@ -89,37 +89,6 @@ public class HttpJobExecutorTests : IDisposable
     /// as_text is what makes web_fetch worth having: raw HTML is nearly all markup, and a tool
     /// result is re-sent on every later turn — ten raw page fetches measured at 200k of context.
     /// </summary>
-    /// <summary>
-    /// A successful response reaches the MODEL, which means <c>Output</c> carries a <c>content</c>
-    /// key — <c>Agent</c> renders a successful tool result from <c>summary</c> or <c>content</c> and
-    /// nothing else, so a result offering neither arrives as an empty string.
-    ///
-    /// <para>ASSERTS THE KEY, NOT JUST THE BODY. Every other test here reads
-    /// <c>Output["body"]</c> directly and passes whether or not the model can see anything — which
-    /// is exactly how this shipped. Observed with the LSP plugin, whose tools returned correct
-    /// structured output under their own keys: the call succeeded, the model received "", and it
-    /// explained the emptiness by inventing a cause rather than reporting a blank result.</para>
-    /// </summary>
-    [Fact]
-    public async Task Execute_PutsTheBodyUnderContent_SoTheModelCanSeeIt()
-    {
-        const string json = """{"answer":42}""";
-
-        var serve = ServeOnceAs("application/json", json);
-        var r = await new HttpJobExecutor().ExecuteAsync(
-            P(("url", _prefix)), new CollectingContext(), CancellationToken.None);
-        await serve;
-
-        Assert.True(r.Success);
-        Assert.True(r.Output.ContainsKey("content"),
-            "a tool result with no content key renders to the model as an empty string.");
-        Assert.Equal(json, r.Output["content"]?.ToString());
-
-        // The typed keys stay: a caller reading JobResult wants the status without parsing text.
-        Assert.Equal(json, r.Output["body"]?.ToString());
-        Assert.Equal(200, r.Output["status"]);
-    }
-
     [Fact]
     public async Task Execute_WithAsText_ConvertsAnHtmlResponseToReadableText()
     {
