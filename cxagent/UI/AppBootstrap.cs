@@ -369,6 +369,7 @@ public static class AppBootstrap
         // describes what happened at construction, not live state, so repeating it on every
         // re-wire would just be noise about an event that already happened and was already told.
         var permissionLoadErrorReported = false;
+        var pluginReapReported = false;
 
         using var cts = new CancellationTokenSource();
 
@@ -628,6 +629,18 @@ public static class AppBootstrap
             {
                 transcript.Write(new Message(loadError, Severity.Warning));
                 permissionLoadErrorReported = true;
+            }
+
+            // AND WHAT WAS REAPED, once, for the same reason and on the same terms. A previous run
+            // that crashed leaves its plugins' child processes behind — a language server per crash
+            // — and the manager collects them at construction. Collected silently, the user's only
+            // evidence that any of it happened is their memory usage, and a reaper that appears to
+            // do nothing is one somebody will eventually delete as dead code.
+            if (!pluginReapReported && manager.PluginReapLog.Count > 0)
+            {
+                foreach (var line in manager.PluginReapLog)
+                    transcript.Write(new Message(line, Severity.Info));
+                pluginReapReported = true;
             }
             // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
             // interleaved with the turns that caused them. JobPanelSink (and JobPanelControl) still
