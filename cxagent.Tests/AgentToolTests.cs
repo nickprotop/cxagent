@@ -107,6 +107,31 @@ public class AgentToolsetDuplicateTests
         Assert.Empty(set.Definitions());
     }
 
+    /// <summary>
+    /// STRICT REFUSES INSTEAD OF WITHDRAWING. Both answers are honest and neither is silent; an
+    /// embedder assembling tools from configuration may prefer to fail where a developer sees it
+    /// rather than start with tools quietly missing. The library cannot know which it is talking to,
+    /// so it offers the choice and defaults to the one that keeps a session running.
+    /// </summary>
+    [Fact]
+    public void StrictThrowsOnADuplicateInsteadOfWithdrawing()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new AgentToolset(
+            [new Named("dup", "first"), new Named("dup", "second")], strict: true));
+
+        Assert.Contains("dup", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Strict changes nothing for a well-formed set: it is a response to a collision, not a
+    /// stricter definition of one.</summary>
+    [Fact]
+    public void StrictAcceptsAWellFormedSet()
+    {
+        var set = new AgentToolset([new Named("a", "one"), new Named("b", "two")], strict: true);
+
+        Assert.Equal(2, set.Definitions().Count);
+    }
+
     /// <summary>The withdrawal is REPORTED, so a missing tool is missing for a stated reason rather
     /// than absent without explanation.</summary>
     [Fact]

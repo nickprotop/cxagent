@@ -20,7 +20,21 @@ public sealed class AgentToolset
 {
     private readonly IReadOnlyDictionary<string, IAgentTool> _byName;
 
-    public AgentToolset(IReadOnlyList<IAgentTool> tools)
+    /// <param name="tools">The consumer's tools, in registration order.</param>
+    /// <param name="strict">
+    /// Whether a duplicate name refuses construction instead of withdrawing the tools that share it.
+    ///
+    /// <para>FALSE BY DEFAULT, because withdrawing is recoverable and reports itself: the rest of a
+    /// well-formed set still runs, and <see cref="Withdrawn"/> names what collided. Taking down a
+    /// session over one mis-wired tool is a heavier answer than the mistake deserves.</para>
+    ///
+    /// <para>TRUE FOR AN EMBEDDER WHO WOULD RATHER NOT SHIP DEGRADED. A product assembling tools
+    /// from configuration may prefer to fail at wiring time, where a developer sees it, over
+    /// starting with two tools quietly missing — and this library cannot know which of those a
+    /// consumer is. Both answers are honest; neither is silent. The default picks the one that
+    /// keeps a session running.</para>
+    /// </param>
+    public AgentToolset(IReadOnlyList<IAgentTool> tools, bool strict = false)
     {
         // A DUPLICATE NAME DISABLES BOTH TOOLS AND SAYS SO. Neither is offered, and the reason is
         // reported rather than left to be inferred.
@@ -54,6 +68,13 @@ public sealed class AgentToolset
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)
             .ToList();
+
+        if (strict && duplicates.Count > 0)
+            throw new ArgumentException(
+                $"tool name{(duplicates.Count == 1 ? "" : "s")} "
+                + $"{string.Join(", ", duplicates.Select(n => $"'{n}'"))} "
+                + "registered more than once. Strict mode refuses rather than withdrawing them.",
+                nameof(tools));
 
         Withdrawn = duplicates;
 
