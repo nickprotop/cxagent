@@ -25,14 +25,7 @@
     "The `$example` below is not installed and is not a real plugin. It is here so the third-party",
     "shape has one worked instance to copy, and so a client parsing this file meets both `source`",
     "",
-    "HOW A CLIENT BUILDS THE DOWNLOAD URL. A `url` source is fetched as written. A `release` source",
-    "is NOT a fixed URL on purpose \u2014 it tracks whichever cxagent release is being installed, and a",
-    "URL written here would pin a version this file cannot know. `urlTemplate` says how to build one",
-    "from `repo`, `asset` and the tag the client is installing; `latest` is GitHub's own",
-    "always-current alias, for a reader who just wants the newest and has no tag in hand.",
     "",
-    "install.sh does not read this file \u2014 it is the bootstrap, and substitutes $TAG itself. The",
-    "template exists so every OTHER client agrees with it instead of hardcoding the same convention.",
     "",
     "",
     "",
@@ -60,7 +53,13 @@
     "one needs a value reviewed in a commit rather than fetched at install time. Left open on purpose.",
     "",
     "A `url` source DOES carry its own sha256: it pins an exact file somewhere this project does not",
-    "control, so the hash is the only thing vouching for it, and whoever adds the entry has the file."
+    "control, so the hash is the only thing vouching for it, and whoever adds the entry has the file.",
+    "",
+    "HOW A CLIENT DOWNLOADS ONE. A `url` source is fetched as written. A `release` source uses",
+    "`latest` \u2014 GitHub's own always-current alias, which resolves to the newest release carrying that",
+    "asset. There is deliberately no way to ask for a SPECIFIC release's copy: every release carries",
+    "the plugin (an unchanged one is re-uploaded byte for byte), and the plugin's version tracks the",
+    "plugin rather than the release, so 'the latest' is the only version anyone needs to name."
   ],
   "schemaVersion": 2,
   "plugins": [
@@ -77,11 +76,8 @@
       "directory": "csharp-lsp",
       "source": {
         "kind": "release",
-        "repo": "nickprotop/cxagent",
-        "asset": "csharp-lsp.zip",
         "checksums": "SHA256SUMS",
         "sha256": null,
-        "urlTemplate": "https://github.com/{repo}/releases/download/{tag}/{asset}",
         "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/csharp-lsp.zip"
       },
       "file": "csharp-lsp.dll",

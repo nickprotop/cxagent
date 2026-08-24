@@ -128,16 +128,10 @@ public class PluginCatalogTests
                     break;
 
                 case "release":
-                    var template = source.GetProperty("urlTemplate").GetString()!;
-                    var built = template
-                        .Replace("{repo}", source.GetProperty("repo").GetString())
-                        .Replace("{asset}", source.GetProperty("asset").GetString())
-                        .Replace("{tag}", "v1.2.3");
-
-                    Assert.StartsWith("https://", built);
-                    Assert.DoesNotContain("{", built);   // every placeholder was substitutable
-                    Assert.Contains("v1.2.3", built);
-
+                    // ONE URL, DELIBERATELY. There is no way to ask for a specific release's copy:
+                    // every release carries the plugin (an unchanged one re-uploaded byte for byte),
+                    // and the version tracks the plugin rather than the release, so "latest" is the
+                    // only version anyone needs to name.
                     Assert.StartsWith("https://", source.GetProperty("latest").GetString());
 
                     // sha256 IS NULL FOR THE BUILT-IN PLUGIN — see the catalog's own note on why
@@ -243,7 +237,10 @@ public class PluginCatalogTests
             var source = entry.GetProperty("source");
             if (source.GetProperty("kind").GetString() != "release") continue;
 
-            var asset = source.GetProperty("asset").GetString()!;
+            // THE FILENAME OUT OF THE DOWNLOAD URL. The catalog no longer names the asset
+            // separately — `latest` ends in it — and this still has to hold: a catalog pointing at
+            // a file no release builds is a download that 404s for every user.
+            var asset = source.GetProperty("latest").GetString()!.Split('/').Last();
             Assert.Contains(asset, workflow);
         }
     }
