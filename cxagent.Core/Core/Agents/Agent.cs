@@ -1043,10 +1043,13 @@ public sealed class Agent
             // — the same mechanism that makes "no sub-agents of sub-agents" structural: not a rule
             // the agent is asked to follow, a tool it was never given.
             .Concat(_askUser is not null ? new[] { _askUser.Definition } : [])
-            // THE EMBEDDER'S OWN. Last in the list, and dispatched last among the named tools, so a
-            // consumer can never shadow a built-in name the model already trusts. A tool the model
-            // is never TOLD about can never be called, so dispatch alone would have been half a
-            // feature.
+            // THE EMBEDDER'S OWN. Last in the list, which is presentation rather than protection —
+            // dispatch consults injected tools BEFORE the built-ins, so ordering here shadows
+            // nothing. What keeps a consumer off a built-in's name is the check at the dispatch
+            // link, which skips an injected tool while a built-in of that name is offered.
+            //
+            // OFFERED AT ALL, which dispatch alone would not achieve: a tool the model is never TOLD
+            // about can never be called, so both halves are needed.
             .Concat(_agentTools?.Definitions() ?? [])
             .ToList();
 
