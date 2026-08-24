@@ -1,0 +1,48 @@
+{
+  "name": "cxagent-lsp",
+  "version": "1.0.0",
+  "spawns": true,
+  "instructions": "These tools talk to a running language server rooted at the session's working directory. Positions are 1-based (line 1 is the first line, character 1 is the first column of that line), matching how a human reads a file — the plugin converts to the server's own convention internally. lsp_definition and lsp_references need a file path (relative to the working directory or absolute) plus a line and character landing inside the symbol. lsp_diagnostics takes only a file path and reports whatever the server currently has computed for it; call lsp_definition or lsp_references first if diagnostics come back empty right after a file is opened, since the server needs a moment to analyse it.",
+  "tools": [
+    {
+      "name": "lsp_definition",
+      "description": "Finds where the symbol at a file position is DECLARED. Crosses project boundaries: a reference in a test project resolves to a declaration in the project under test, if the server has indexed both.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "Path to the file, relative to the working directory or absolute." },
+          "line": { "type": "integer", "description": "1-based line number of the reference." },
+          "character": { "type": "integer", "description": "1-based column, landing inside the symbol's name." }
+        },
+        "required": ["file", "line", "character"]
+      },
+      "gated": false
+    },
+    {
+      "name": "lsp_references",
+      "description": "Finds every place the symbol at a file position is USED, across every project the server has indexed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "Path to the file, relative to the working directory or absolute." },
+          "line": { "type": "integer", "description": "1-based line number of the symbol." },
+          "character": { "type": "integer", "description": "1-based column, landing inside the symbol's name." }
+        },
+        "required": ["file", "line", "character"]
+      },
+      "gated": false
+    },
+    {
+      "name": "lsp_diagnostics",
+      "description": "Reports the server's current errors and warnings for a file — whatever it has already computed, not a fresh compile on demand.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "Path to the file, relative to the working directory or absolute." }
+        },
+        "required": ["file"]
+      },
+      "gated": false
+    }
+  ]
+}

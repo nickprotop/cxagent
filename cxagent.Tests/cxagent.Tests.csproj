@@ -34,6 +34,12 @@
     <ProjectReference Include="../cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
     <ProjectReference Include="../cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
     <ProjectReference Include="../cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
+
+    <!-- THE REAL LSP PLUGIN, not a fixture — CxagentLspPluginTests exercises its own manifest and
+         position math directly; only the end-to-end tests against a real server (Skip'd, see
+         HeadlessSessionTests.AgainstLocalLlamaCpp for the same pattern) need a language server on
+         this machine. -->
+    <ProjectReference Include="../plugins/cxagent-lsp/cxagent-lsp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

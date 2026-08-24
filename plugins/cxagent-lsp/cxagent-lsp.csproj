@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A MANAGED PLUGIN IS A PLAIN LIBRARY ManagedPluginLoader LOADS BY PATH (Assembly.LoadFrom),
+       not an executable — see cxagent.Tests.PluginFixture.csproj for the same shape. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>cxagent-lsp</AssemblyName>
+    <RootNamespace>CxAgent.Plugins.Lsp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- REFERENCE ONLY, NOT COPIED. The host process (cxagent) already carries CxAgent.Core in its
+         own bin — copying a second copy here would give the loader two different Assembly identities
+         for the same types (IPlugin, JobResult, ...) and every interface check would fail across the
+         boundary. PluginDiscovery loads this plugin's DLL into the SAME process, so it must bind
+         against the host's already-loaded copy rather than ship its own. -->
+    <ProjectReference Include="../../cxagent.Core/cxagent.Core.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The sidecar sits beside the built DLL, exactly like the test fixtures' PreserveNewest copy —
+         PluginDiscovery reads assemblyPath with ".plugin.json" swapped in for the extension. -->
+    <None Include="cxagent-lsp.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

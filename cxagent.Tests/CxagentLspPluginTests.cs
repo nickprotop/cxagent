@@ -1,0 +1,232 @@
+using System.Text.Json;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Models;
+using CxAgent.Core.Plugins;
+using CxAgent.Plugins.Lsp;
+using Xunit;
+
+namespace CxAgent.Tests;
+
+/// <summary>
+/// Tests against the real cxagent-lsp plugin — most of them without a language server at all, since
+/// Load's own manifest match and the settings-reading logic (which server, which args) do not need
+/// one. The end-to-end tests that DO need a real server are separate <see cref="Fact"/>s marked
+/// Skip, in the same style as <c>HeadlessSessionTests.AgainstLocalLlamaCpp</c> — a language server
+/// takes real seconds to index a workspace, and this suite runs in ~7s.
+/// </summary>
+public class CxagentLspPluginTests
+{
+    private sealed class FakeLogger : IPluginLogger
+    {
+        public void Log(string message) { }
+    }
+
+    private sealed class FakeContext(string workingDirectory, object settings) : IPluginContext
+    {
+        public string WorkingDirectory { get; } = workingDirectory;
+        public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(settings);
+        public IPluginLogger Logger { get; } = new FakeLogger();
+        public CancellationToken Lifetime { get; } = CancellationToken.None;
+        public List<int> RegisteredPids { get; } = [];
+        public void RegisterChildProcess(int processId) => RegisteredPids.Add(processId);
+    }
+
+    // ---- Load: the manifest returned matches the sidecar --------------------------------------
+
+    [Fact]
+    public async Task LoadReturnsTheSidecarManifest()
+    {
+        var plugin = new CxagentLspPlugin();
+        var manifest = await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+
+        Assert.Equal("cxagent-lsp", manifest.Name);
+        Assert.True(manifest.Spawns);
+        Assert.Equal(["lsp_definition", "lsp_references", "lsp_diagnostics"],
+            manifest.Tools.Select(t => t.Name).ToArray());
+    }
+
+    // ---- Start: reads server/args from settings, never hardcodes either -----------------------
+
+    [Fact]
+    public async Task StartWithoutAServerSettingFailsWithAClearReason()
+    {
+        var plugin = new CxagentLspPlugin();
+        await plugin.Load(new FakeContext(".", new { }), CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => plugin.Start(CancellationToken.None));
+        Assert.Contains("server", ex.Message);
+    }
+
+    [Fact]
+    public async Task InvokeBeforeStartReportsTheServerIsNotRunningRatherThanThrowing()
+    {
+        var plugin = new CxagentLspPlugin();
+        await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+
+        var result = await plugin.Invoke("lsp_definition", new JobParameters(new()), Fake.Job(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("not running", result.ErrorMessage);
+    }
+
+    // ---- Invoke: an unknown tool name is this plugin's own bug, not a normal failure ----------
+
+    [Fact]
+    public async Task InvokeWithAnUnknownToolNameThrows()
+    {
+        var plugin = new CxagentLspPlugin();
+        await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+
+        // No Start() call, so _client is null — but an unrecognised tool name must fail with the
+        // "unknown tool" reason, not the "not running" one, or a caller cannot tell its own bug
+        // (routing a name this manifest never declared) from an ordinary startup-order mistake.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            plugin.Invoke("lsp_rename", new JobParameters(new()), Fake.Job(), CancellationToken.None));
+    }
+
+    // ---- LspClient.ParseLocations: both response shapes the two servers actually send ---------
+
+    [Fact]
+    public void ParseLocationsAcceptsALocationLinkArray()
+    {
+        var json = """
+        [
+          { "targetUri": "file:///a.cs", "targetRange": { "start": {"line": 4, "character": 2}, "end": {"line": 4, "character": 10} },
+            "targetSelectionRange": { "start": {"line": 4, "character": 2}, "end": {"line": 4, "character": 10} } }
+        ]
+        """;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+        var locations = InvokeParseLocations(node);
+
+        Assert.Single(locations);
+        Assert.Equal("file:///a.cs", locations[0].UriOrPath);
+        Assert.Equal(4, locations[0].Start.Line);
+        Assert.Equal(2, locations[0].Start.Character);
+    }
+
+    [Fact]
+    public void ParseLocationsAcceptsAPlainLocationObject()
+    {
+        var json = """
+        { "uri": "file:///b.cs", "range": { "start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5} } }
+        """;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+        var locations = InvokeParseLocations(node);
+
+        Assert.Single(locations);
+        Assert.Equal("file:///b.cs", locations[0].UriOrPath);
+    }
+
+    [Fact]
+    public void ParseLocationsOnNullResultIsEmptyNotAnError()
+    {
+        var locations = InvokeParseLocations(null);
+        Assert.Empty(locations);
+    }
+
+    private static IReadOnlyList<LspLocation> InvokeParseLocations(System.Text.Json.Nodes.JsonNode? node)
+    {
+        var method = typeof(LspClient).GetMethod("ParseLocations",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        return (IReadOnlyList<LspLocation>)method.Invoke(null, [node])!;
+    }
+
+    private static class Fake
+    {
+        public static IJobContext Job() => new FakeJobContext();
+    }
+
+    // ---- End-to-end against a real server on /tmp/cxgpu ----------------------------------------
+    //
+    // NOT RUN AS PART OF THE DEFAULT SUITE — see HeadlessSessionTests.AgainstLocalLlamaCpp for the
+    // same pattern and its own reasoning. A language server takes real seconds to load and index a
+    // solution's projects; the default suite runs in ~7s and stays there by not paying that cost.
+    // Both were run by hand against /tmp/cxgpu (a real checkout with cxgpu.Tests referencing
+    // cxgpu's AlertEngine across a project boundary) and both landed lsp_definition on
+    // AlertEngine.cs — see the task report for the exact lines observed.
+
+    [Fact(Skip = "Needs csharp-ls on PATH and /tmp/cxgpu checked out. Verified by hand: resolved " +
+                 "cross-project to AlertEngine.cs on 2026-08-24.")]
+    public async Task DefinitionCrossesTheProjectBoundaryAgainstCsharpLs() =>
+        await RunCrossProjectDefinition("csharp-ls", []);
+
+    [Fact(Skip = "Needs /opt/omnisharp/OmniSharp and /tmp/cxgpu checked out. Verified by hand: " +
+                 "resolved cross-project to AlertEngine.cs on 2026-08-24, same settings shape as " +
+                 "csharp-ls proving the plugin reads its server rather than hardcoding one.")]
+    public async Task DefinitionCrossesTheProjectBoundaryAgainstOmniSharp() =>
+        await RunCrossProjectDefinition("/opt/omnisharp/OmniSharp", ["-lsp"]);
+
+    /// <summary>
+    /// The acceptance test from the task brief: <c>new AlertEngine()</c> in cxgpu.Tests must resolve
+    /// to AlertEngine's declaration in cxgpu — a different project, reachable only by a server that
+    /// loaded and indexed the whole workspace. LINE NUMBERS ARE RESOLVED BY GREP AT TEST TIME, not
+    /// hardcoded — /tmp/cxgpu is a live repository and a hardcoded line rots into a false failure the
+    /// moment the file changes above it.
+    /// </summary>
+    private static async Task RunCrossProjectDefinition(string server, IReadOnlyList<string> args)
+    {
+        const string root = "/tmp/cxgpu";
+        const string refFile = "cxgpu.Tests/AlertEngineTests.cs";
+        const string declFile = "cxgpu/Gpu/Alerts/AlertEngine.cs";
+
+        var refLines = File.ReadAllLines(Path.Combine(root, refFile));
+        var refLineIndex = Array.FindIndex(refLines, l => l.Contains("new AlertEngine()"));
+        Assert.True(refLineIndex >= 0, $"'new AlertEngine()' not found in {refFile} — has it moved or been renamed?");
+        var column = refLines[refLineIndex].IndexOf("AlertEngine", StringComparison.Ordinal) + 1;
+
+        var declLines = File.ReadAllLines(Path.Combine(root, declFile));
+        var declLineIndex = Array.FindIndex(declLines, l => l.Contains("class AlertEngine"));
+        Assert.True(declLineIndex >= 0, $"'class AlertEngine' not found in {declFile} — has it moved or been renamed?");
+
+        var plugin = new CxagentLspPlugin();
+        var context = new FakeContext(root, new { server, args });
+        await plugin.Load(context, CancellationToken.None);
+        await plugin.Start(CancellationToken.None);
+        try
+        {
+            Assert.Single(context.RegisteredPids); // RegisterChildProcess must be called, or a crashed test leaks the server.
+
+            var result = await plugin.Invoke("lsp_definition", new JobParameters(new()
+            {
+                ["file"] = refFile,
+                ["line"] = refLineIndex + 1,
+                ["character"] = column,
+            }), Fake.Job(), CancellationToken.None);
+
+            Assert.True(result.Success, result.ErrorMessage);
+            var locations = Assert.IsAssignableFrom<IEnumerable<Dictionary<string, object?>>>(result.Output["locations"]);
+            var location = Assert.Single(locations);
+
+            // THE CONSTRUCTOR, NOT THE CLASS HEADER — "go to definition" on `new AlertEngine()`
+            // lands on the constructor a real IDE would jump to, which sits a few lines below
+            // `class AlertEngine`. Asserting the resolved FILE matches, and that the resolved line
+            // is within the class body (not some other file entirely), is what proves the
+            // cross-project resolution without pinning to a line that shifts whenever a comment
+            // above the constructor changes.
+            Assert.Equal(Path.Combine(root, declFile), (string)location["file"]!);
+            Assert.True((int)location["line"]! > declLineIndex);
+        }
+        finally
+        {
+            await plugin.Stop(CancellationToken.None);
+        }
+    }
+
+    private sealed class FakeJobContext : IJobContext
+    {
+        public void ReportProgress(double percent, string? message = null) { }
+        public void WorkStarting() { }
+        public void ReportPermissionWait(bool waiting) { }
+        public void ReportReviewing(bool reviewing) { }
+        public string? Requester => null;
+        public string? WorkingDirectory => null;
+        public string? DecidedBy { get; set; }
+        public void Log(string line) { }
+        public void Log(JobLogLevel level, string line) { }
+        public void ReportResources(ResourceSnapshot snapshot) { }
+        public void ReportToolCall(string toolName, string summary) { }
+        public void ReportTextDelta(string delta) { }
+        public IReadOnlyDictionary<string, JobResult> CompletedJobOutputs { get; } = new Dictionary<string, JobResult>();
+        public IReadOnlyDictionary<string, string> CompletedJobNames { get; } = new Dictionary<string, string>();
+    }
+}
