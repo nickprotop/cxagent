@@ -54,6 +54,16 @@ internal static class SessionFactory
             : ports.Tools.Select(t => (Jobs.IAgentTool)new Jobs.GatedAgentTool(
                 t, shared.Gate, ports.Policy)).ToList();
 
+        // THE SAME WRAPPING, PER READ rather than once: ports.DynamicTools is called fresh every
+        // turn, so a bare pass-through here would let a tool that starts existing after wiring run
+        // ungated — the exact hole the comment above this describes for the static list, reopened
+        // for a source that cannot be wrapped just once. With no gate the tools pass through
+        // unwrapped, same as the static list just above.
+        var dynamicTools = shared.Gate is null || ports.DynamicTools is null
+            ? ports.DynamicTools
+            : () => ports.DynamicTools().Select(t => (Jobs.IAgentTool)new Jobs.GatedAgentTool(
+                t, shared.Gate, ports.Policy)).ToList();
+
         // S1 THEN S2, COMPOSED ONCE. Levels apply in ORDER — a later one may narrow further or
         // reopen with a `+` term — so this is Then(), not an intersection. S3 arrives per request
         // and is composed onto this at the assembly site; composing it here would freeze it.
@@ -121,6 +131,7 @@ internal static class SessionFactory
             // INHERITED WHOLE (and already gated): a child that edits files needs the same way to
             // show the result as its parent, or the showing is silently skipped.
             AgentTools = agentTools,
+            DynamicTools = dynamicTools,
             ToolSelection = toolSelection,
 
             // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
@@ -229,6 +240,7 @@ internal static class SessionFactory
 
                 // Already gated above. The host hands these to its agent and to every child.
                 AgentTools = agentTools,
+                DynamicTools = dynamicTools,
                 ToolSelection = toolSelection,
             },
             ports.Observer,

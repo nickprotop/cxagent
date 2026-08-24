@@ -109,6 +109,13 @@ public sealed class SubAgentFactory
         public IReadOnlyList<Jobs.IAgentTool>? AgentTools { get; init; }
 
         /// <summary>
+        /// The session's LIVE tool source, inherited by every child the same way <see cref="AgentTools"/>
+        /// is — passed through whole, with Agent's constructor deciding per-tool what a child actually
+        /// gets via <c>OfferToSubAgents</c>. See <c>Agent._dynamicTools</c>.
+        /// </summary>
+        public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
+
+        /// <summary>
         /// The session's tool selection (S1 composed with S2), inherited by every child.
         ///
         /// <para>NOT THE TURN'S. This record is built once when the session is wired, so a
@@ -354,6 +361,7 @@ public sealed class SubAgentFactory
             // that draws for a PERSON declares OfferToSubAgents => false and is withheld there, where
             // _askUser is withheld too, so the guarantee holds for every path that builds a child.
             agentTools: _runtime.AgentTools,
+            dynamicTools: _runtime.DynamicTools,
             // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL. Composed here because this is the only
             // place both are known: the runtime is built once at session wiring, the turn's
             // selection arrives with the spawn.

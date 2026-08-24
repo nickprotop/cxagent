@@ -191,6 +191,25 @@ public sealed class Agent
     /// sub-agent denied the embedder's tools would do the work and skip whatever those tools are
     /// for. A tool that must not go to a child says so itself, via OfferToSubAgents.</summary>
     private readonly Jobs.AgentToolset? _agentTools;
+
+    /// <summary>
+    /// A SECOND source of tools, consulted fresh each turn rather than snapshotted — unlike
+    /// <see cref="_agentTools"/>, which is built once at construction from a list the embedder had
+    /// in hand at the time. A plugin can load after construction, at any later turn boundary, so
+    /// nothing captured once here could ever see it; this is called anew wherever definitions are
+    /// built and wherever dispatch needs to know a name, the same way <see cref="_skills"/> reads
+    /// its catalog fresh instead of caching it.
+    ///
+    /// <para>NOT ROUTED THROUGH <see cref="Jobs.AgentToolset"/>. That type resolves a duplicate name
+    /// last-registration-wins, which is right for one embedder's own tools composed with another's,
+    /// and wrong for a plugin: a plugin silently winning a name it collided with is exactly what
+    /// PLUGINS.md forbids. This field is therefore a separate chain link in the same position, not
+    /// a second contributor merged into the existing set.</para>
+    ///
+    /// <para>Null means no dynamic source at all — the ordinary case for every session with no
+    /// plugin registry — and every call site below treats that the same as "nothing offered".</para>
+    /// </summary>
+    private readonly Func<IReadOnlyList<Jobs.IAgentTool>>? _dynamicTools;
     private readonly Permissions.PermissionPolicy? _policy;
 
     /// <summary>Task 11's speculation handle — see the constructor parameter doc. Null wherever no
@@ -304,6 +323,55 @@ public sealed class Agent
         ToolBindings.NamesFor(allowed).Contains(name, StringComparer.Ordinal);
 
     /// <summary>
+    /// The dynamic source's own dispatch, resolved fresh from <see cref="_dynamicTools"/> rather
+    /// than through <see cref="Jobs.AgentToolset"/> — that type's TryInvokeAsync assumes a set built
+    /// once at construction, which is exactly what a plugin loaded later cannot be.
+    ///
+    /// <para>Null when no tool in the live source answers this name, so the caller's <c>??</c> chain
+    /// falls through to the terminator exactly as the injected link does. THE SAME LIVE-BUILT-IN
+    /// CHECK <see cref="ShadowsLiveBuiltin"/> applies here too: a plugin tool must not win a name an
+    /// offered built-in already owns, for the identical reason an injected tool must not.</para>
+    /// </summary>
+    private async Task<ToolOutcome?> TryInvokeDynamicToolAsync(
+        ToolCall call, IJobContext context, IReadOnlyList<BuiltinTool> allowedBuiltins, CancellationToken ct)
+    {
+        if (_dynamicTools is null || ShadowsLiveBuiltin(call.Name, allowedBuiltins)) return null;
+
+        var tool = _dynamicTools.Invoke().FirstOrDefault(t =>
+            string.Equals(t.Definition.Name, call.Name, StringComparison.Ordinal));
+        if (tool is null) return null;
+
+        var result = await tool.ExecuteAsync(JobParametersFromCall(call), context, ct);
+
+        // THE ERROR BECOMES THE RESULT, never an exception — the same contract AgentToolset and
+        // ToolBindings both hold. The assistant message carrying this call is appended BEFORE it
+        // runs, so an exception unwinding the loop would leave a tool call with no matching result,
+        // an orphan the provider rejects with a 400 no recovery path matches.
+        if (!result.Success)
+            return new ToolOutcome(result.ErrorMessage ?? "error: the tool failed without saying why", result);
+
+        var content = result.Output.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "";
+        if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
+            return new ToolOutcome(s, result);
+
+        return new ToolOutcome(content, result);
+    }
+
+    /// <summary>A tool call's arguments as executor parameters — the same conversion
+    /// <see cref="Jobs.AgentToolset"/> uses for injected tools, so a dynamic tool's call arrives
+    /// shaped identically regardless of which of the two chain links reached it.</summary>
+    private static JobParameters JobParametersFromCall(ToolCall call)
+    {
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+
+        if (call.Arguments.ValueKind == System.Text.Json.JsonValueKind.Object)
+            foreach (var property in call.Arguments.EnumerateObject())
+                values[property.Name] = property.Value;
+
+        return new JobParameters(values);
+    }
+
+    /// <summary>
     /// Row 7 of the collision matrix: a per-request selection re-enabled a built-in that an
     /// injected tool of the same name had taken. The built-in wins — see
     /// <see cref="ShadowsLiveBuiltin"/> — but unlike the ordinary case (no injected tool has this
@@ -357,6 +425,11 @@ public sealed class Agent
     /// <summary>Test seam: whether an injected tool was OFFERED to this agent. The filtering happens
     /// in the constructor, so it cannot be observed any other way without running a turn.</summary>
     internal bool KnowsInjectedToolForTest(string name) => _agentTools?.Knows(name) ?? false;
+
+    /// <summary>Test seam: the tool names actually offered on the last request built, so a dynamic
+    /// source's per-turn re-read can be observed without a live provider round trip inspecting the
+    /// wire request.</summary>
+    internal IReadOnlyCollection<string> LastOfferedToolNamesForTest => _offeredNames;
 
     /// <summary>Injected tool names withdrawn for colliding with another injected tool — see
     /// <see cref="Jobs.AgentToolset.Withdrawn"/>. Empty when no offered set was built at all, which
@@ -706,6 +779,11 @@ public sealed class Agent
     /// model against different endpoints, and keying spend by model alone would merge them.
     /// </param>
     /// <param name="agentTools">Tools the embedder injected, offered beside the built-ins.</param>
+    /// <param name="dynamicTools">
+    /// A second, LIVE source of tools — read fresh each turn rather than captured, so a tool that
+    /// starts existing after this agent was constructed (a plugin loaded at a later turn boundary)
+    /// is still offered. Null for every session with no such source, which is today's default.
+    /// </param>
     /// <param name="toolSelection">
     /// Which tools this agent is offered, or null for all of them. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
@@ -733,6 +811,7 @@ public sealed class Agent
         string? workingDir = null,
         string? instanceName = null,
         IReadOnlyList<Jobs.IAgentTool>? agentTools = null,
+        Func<IReadOnlyList<Jobs.IAgentTool>>? dynamicTools = null,
         Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null)
@@ -807,6 +886,16 @@ public sealed class Agent
             ? agentTools?.Where(t => t.OfferToSubAgents).ToList()
             : agentTools;
         _agentTools = offered is { Count: > 0 } ? new Jobs.AgentToolset(offered) : null;
+        // HELD AS A DELEGATE STILL, not resolved here — resolving now would snapshot exactly the
+        // thing this field exists to avoid, and a child needs its OWN fresh read every turn just as
+        // a parent does. The SAME OfferToSubAgents FILTER _agentTools APPLIES ABOVE is reapplied
+        // here per read rather than once: the live source can return a different tool on every call,
+        // so filtering it once at construction would go stale the moment the source's contents did.
+        _dynamicTools = dynamicTools is null
+            ? null
+            : isSubAgent
+                ? () => dynamicTools().Where(t => t.OfferToSubAgents).ToList()
+                : dynamicTools;
         _toolSelection = toolSelection;
 
         _skills = new Skills.SkillLoader(() =>
@@ -1051,6 +1140,10 @@ public sealed class Agent
             // OFFERED AT ALL, which dispatch alone would not achieve: a tool the model is never TOLD
             // about can never be called, so both halves are needed.
             .Concat(_agentTools?.Definitions() ?? [])
+            // THE DYNAMIC SOURCE, read fresh HERE rather than snapshotted, so a plugin registered
+            // since the last request is offered on THIS one with no restart — the same reason MCP
+            // definitions are concatenated at this point rather than at construction.
+            .Concat(_dynamicTools?.Invoke().Select(t => t.Definition) ?? [])
             .ToList();
 
         // THE SELECTION, APPLIED ONCE, HERE. Everything above has already run every structural gate
@@ -2265,6 +2358,12 @@ public sealed class Agent
                 ?? (_agentTools is null || ShadowsLiveBuiltin(call.Name, allowedBuiltins)
                         ? ReportShadowedInjectedTool(call.Name, allowedBuiltins)
                         : await _agentTools.TryInvokeAsync(call, ctx, ct))
+                // THE DYNAMIC SOURCE, IN THE SAME CHAIN POSITION AS THE INJECTED LINK ABOVE — a
+                // plugin tool is "contributed rather than built in, present or absent per session",
+                // exactly what the injected link already is, so it resolves immediately before the
+                // terminator too. TryInvokeDynamicToolAsync carries its own ShadowsLiveBuiltin check,
+                // so a plugin tool cannot win a name an offered built-in already owns either.
+                ?? await TryInvokeDynamicToolAsync(call, ctx, allowedBuiltins, ct)
                 ?? await ToolBindings.InvokeAsync(call, allowedBuiltins, _executors, ctx, ct, _mcp?.Names());
             // No Text() on the last two: they return the executor's own ToolOutcome, which is the
             // whole point of the chain's type — everything below builds job.Result from it.

@@ -457,6 +457,17 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public IReadOnlyList<Jobs.IAgentTool> AgentTools { get; init; } = [];
 
+        /// <summary>
+        /// A second, LIVE source of tools — consulted fresh every turn rather than snapshotted, so
+        /// a tool that starts existing after this host was built (a plugin loading at a later turn
+        /// boundary) is offered from the turn it arrives. See <c>Agent._dynamicTools</c>.
+        ///
+        /// <para>Null for every session with no such source, which is every session today: nothing
+        /// supplies this yet, and this field exists only so a later registry has somewhere to plug
+        /// in without another round of plumbing through Agent's constructor.</para>
+        /// </summary>
+        public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
+
         /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
         /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
         public Jobs.ToolSelection? ToolSelection { get; init; }
@@ -642,6 +653,7 @@ public sealed class AgentHost : IDisposable
             // THE EMBEDDER'S OWN, gated before they got here. Offered to this agent and, through
             // SubAgentRuntime, to every child it spawns.
             agentTools: _runtime.AgentTools,
+            dynamicTools: _runtime.DynamicTools,
             toolSelection: _runtime.ToolSelection,
             policy: _runtime.Policy,
             classifier: _runtime.Classifier)

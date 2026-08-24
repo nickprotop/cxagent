@@ -48,6 +48,22 @@ public sealed record SessionPorts
     public IReadOnlyList<Jobs.IAgentTool> Tools { get; init; } = [];
 
     /// <summary>
+    /// A second, LIVE source of tools for this session — consulted fresh each turn, unlike
+    /// <see cref="Tools"/>, which SessionFactory captures once into an immutable set at wiring time.
+    ///
+    /// <para>THIS IS THE SEAM A PLUGIN REGISTRY NEEDS, not another entry in <see cref="Tools"/>: a
+    /// plugin can load after this session opened, at any later turn boundary, and nothing captured
+    /// once at wiring time could ever see it. It is also NOT routed through the same collision
+    /// handling as <see cref="Tools"/> — that set resolves a duplicate name last-registration-wins,
+    /// which is wrong for a plugin and right only for one embedder's own tools composed together.
+    /// </para>
+    ///
+    /// <para>Null for every embedder that supplies nothing here, which is every embedder today.
+    /// </para>
+    /// </summary>
+    public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
+
+    /// <summary>
     /// Which tools THIS conversation is offered. Null means no opinion.
     ///
     /// <para>S2, applied after the manager's S1 (code and config alike) and before any per-request
