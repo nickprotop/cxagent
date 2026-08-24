@@ -225,7 +225,7 @@ It is the only place Core can tell the truth, so naming the plugin is not enough
 where the plugin came from and what it declares it does:
 
     lsp-rust wants to run a process and read files in this folder.
-    /home/nick/.config/cxagent/plugins/cxagent-dotnet-lsp-rust.so
+    /home/nick/.config/cxagent/plugins/csharp-lsp-rust.so
 
 A user approving a plugin blind is the weak point of this design — not the absence of per-call
 prompts.
@@ -627,7 +627,7 @@ uses, so nobody learns a second vocabulary:
   "pluginPaths": ["~/.config/cxagent/plugins", ".cxagent/plugins"],
   "plugins": {
     "lsp-rust": {
-      "file": "cxagent-dotnet-lsp-rust.so",
+      "file": "csharp-lsp-rust.so",
       "enabled": true,
       "settings": { "server": "rust-analyzer", "args": ["--log-level", "warn"] }
     }

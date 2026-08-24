@@ -7,8 +7,8 @@
   <Project Path="cxagent.Tests.PluginFixture.Throwing/cxagent.Tests.PluginFixture.Throwing.csproj" />
   <Project Path="cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
   <Project Path="cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
-  <Project Path="plugins/cxagent-dotnet-lsp/cxagent-dotnet-lsp.csproj" />
-  <Project Path="plugins/cxagent-dotnet-lsp-abi/cxagent-dotnet-lsp-abi.csproj" />
+  <Project Path="plugins/csharp-lsp/csharp-lsp.csproj" />
+  <Project Path="plugins/csharp-lsp-abi/csharp-lsp-abi.csproj" />
   <Project Path="cxagent.PluginHost/cxagent.PluginHost.csproj" />
   <Project Path="cxagent/cxagent.csproj" />
 </Solution>

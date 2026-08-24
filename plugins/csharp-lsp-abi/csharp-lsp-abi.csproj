@@ -13,7 +13,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <AssemblyName>cxagent-dotnet-lsp-abi</AssemblyName>
+    <AssemblyName>csharp-lsp-abi</AssemblyName>
     <RootNamespace>CxAgent.Plugins.LspAbi</RootNamespace>
 
     <PublishAot>true</PublishAot>
@@ -30,7 +30,7 @@
 
   <ItemGroup>
     <!-- No ProjectReference to CxAgent.Core. A managed plugin binds against the HOST'S already-loaded
-         Core assembly (see cxagent-dotnet-lsp.csproj's own comment on this) because it loads into
+         Core assembly (see csharp-lsp.csproj's own comment on this) because it loads into
          the same process; an ABI plugin loads into a SEPARATE process (cxagent-plugin-host) that
          never runs this assembly's own managed code at all — cxagent_plugin_host talks to this
          library purely through the five extern "C" exports and JSON, never a shared CLR. Referencing
@@ -38,7 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="cxagent-dotnet-lsp-abi.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="csharp-lsp-abi.plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

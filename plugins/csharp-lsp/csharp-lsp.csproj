@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <AssemblyName>cxagent-dotnet-lsp</AssemblyName>
+    <AssemblyName>csharp-lsp</AssemblyName>
     <RootNamespace>CxAgent.Plugins.Lsp</RootNamespace>
   </PropertyGroup>
 
@@ -24,7 +24,7 @@
   <ItemGroup>
     <!-- The sidecar sits beside the built DLL, exactly like the test fixtures' PreserveNewest copy —
          PluginDiscovery reads assemblyPath with ".plugin.json" swapped in for the extension. -->
-    <None Include="cxagent-dotnet-lsp.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="csharp-lsp.plugin.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

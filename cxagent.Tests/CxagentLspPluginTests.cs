@@ -8,7 +8,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Tests against the real cxagent-dotnet-lsp plugin — most of them without a language server at all, since
+/// Tests against the real csharp-lsp plugin — most of them without a language server at all, since
 /// Load's own manifest match and the settings-reading logic (which server, which args) do not need
 /// one. The end-to-end tests that DO need a real server are separate <see cref="Fact"/>s marked
 /// Skip, in the same style as <c>HeadlessSessionTests.AgainstLocalLlamaCpp</c> — a language server
@@ -39,7 +39,7 @@ public class CxagentLspPluginTests
         var plugin = new CxagentLspPlugin();
         var manifest = await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
 
-        Assert.Equal("cxagent-dotnet-lsp", manifest.Name);
+        Assert.Equal("csharp-lsp", manifest.Name);
         Assert.True(manifest.Spawns);
         Assert.Equal(["lsp_definition", "lsp_references", "lsp_diagnostics"],
             manifest.Tools.Select(t => t.Name).ToArray());

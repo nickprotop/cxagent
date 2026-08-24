@@ -1,5 +1,5 @@
 {
-  "name": "cxagent-dotnet-lsp",
+  "name": "csharp-lsp-abi",
   "version": "1.0.0",
   "spawns": true,
   "instructions": "These tools talk to a running C# language server rooted at the session's working directory, and answer only for C# source files. Positions are 1-based (line 1 is the first line, character 1 is the first column of that line), matching how a human reads a file — the plugin converts to the server's own convention internally. lsp_definition and lsp_references need a file path (relative to the working directory or absolute) plus a line and character landing inside the symbol. lsp_diagnostics takes only a file path and reports whatever the server currently has computed for it; call lsp_definition or lsp_references first if diagnostics come back empty right after a file is opened, since the server needs a moment to analyse it.",

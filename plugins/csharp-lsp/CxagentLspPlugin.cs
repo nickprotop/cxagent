@@ -30,7 +30,7 @@ public sealed class CxagentLspPlugin : IPlugin
         _context = context;
         _workingDirectory = context.WorkingDirectory;
 
-        // THE MANIFEST RETURNED HERE MUST MATCH cxagent-dotnet-lsp.plugin.json BYTE FOR BYTE IN SHAPE — see
+        // THE MANIFEST RETURNED HERE MUST MATCH csharp-lsp.plugin.json BYTE FOR BYTE IN SHAPE — see
         // IPlugin.Load's own doc. Duplicating the schema by hand risks exactly the drift that check
         // exists to catch, so this reads and parses the sidecar rather than restating it — the same
         // file ships beside the DLL either way, and there is only one JSON to keep truthful.
@@ -49,11 +49,11 @@ public sealed class CxagentLspPlugin : IPlugin
         // written. It is verified by loading the plugin from /tmp/cxgpu/.cxagent/plugins in a
         // separate process instead.
         var here = Path.GetDirectoryName(typeof(CxagentLspPlugin).Assembly.Location)!;
-        var sidecarPath = Path.Combine(here, "cxagent-dotnet-lsp.plugin.json");
+        var sidecarPath = Path.Combine(here, "csharp-lsp.plugin.json");
         var parsed = PluginManifest.Parse(File.ReadAllText(sidecarPath));
         if (!parsed.IsSuccess || parsed.Manifest is null)
             throw new InvalidOperationException(
-                $"cxagent-dotnet-lsp's own sidecar failed to parse: {string.Join("; ", parsed.Errors)}");
+                $"csharp-lsp's own sidecar failed to parse: {string.Join("; ", parsed.Errors)}");
 
         return Task.FromResult(parsed.Manifest);
     }
@@ -85,7 +85,7 @@ public sealed class CxagentLspPlugin : IPlugin
             serverEl.ValueKind != JsonValueKind.String)
         {
             throw new InvalidOperationException(
-                "cxagent-dotnet-lsp requires a 'server' string in its settings — the language server command to run.");
+                "csharp-lsp requires a 'server' string in its settings — the language server command to run.");
         }
 
         var server = serverEl.GetString()!;
@@ -105,7 +105,7 @@ public sealed class CxagentLspPlugin : IPlugin
         // reaching an unrecognised one is this plugin's bug regardless of Start/Stop state, not a
         // startup-ordering mistake a caller could otherwise confuse it with.
         if (toolName is not ("lsp_definition" or "lsp_references" or "lsp_diagnostics"))
-            throw new InvalidOperationException($"cxagent-dotnet-lsp has no tool named '{toolName}'.");
+            throw new InvalidOperationException($"csharp-lsp has no tool named '{toolName}'.");
 
         if (_client is null)
             return new JobResult { Success = false, ErrorMessage = "language server is not running." };
@@ -156,7 +156,7 @@ public sealed class CxagentLspPlugin : IPlugin
                 ["diagnostics"] = diagnostics.Select(d => new Dictionary<string, object?>
                 {
                     // +1: THE SERVER'S 0-BASED POSITION BECOMES THE 1-BASED ONE THE TOOL SCHEMA
-                    // PROMISES — see cxagent-dotnet-lsp.plugin.json's own description. Every position this
+                    // PROMISES — see csharp-lsp.plugin.json's own description. Every position this
                     // plugin hands back to the model crosses this same conversion exactly once.
                     ["line"] = d.Line + 1,
                     ["character"] = d.Character + 1,

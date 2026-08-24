@@ -8,7 +8,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// Tests against the ABI rewrite of cxagent-dotnet-lsp — the task-10 counterpart to
+/// Tests against the ABI rewrite of csharp-lsp — the task-10 counterpart to
 /// <see cref="CxagentLspPluginTests"/>, exercised through the REAL <see cref="AbiPluginLoader"/> and
 /// a REAL <c>cxagent-plugin-host</c> subprocess loading a REAL NativeAOT-published <c>.so</c>, not a
 /// managed instance constructed directly — there is no managed instance to construct; this plugin
@@ -28,8 +28,8 @@ public class CxagentLspAbiPluginTests
 
     private static string? LibraryPath()
     {
-        var path = Path.Combine(RepoRoot, "plugins", "cxagent-dotnet-lsp-abi", "bin", "Release",
-            "net10.0", "linux-x64", "publish", "cxagent-dotnet-lsp-abi.so");
+        var path = Path.Combine(RepoRoot, "plugins", "csharp-lsp-abi", "bin", "Release",
+            "net10.0", "linux-x64", "publish", "csharp-lsp-abi.so");
         return File.Exists(path) ? path : null;
     }
 
@@ -71,11 +71,11 @@ public class CxagentLspAbiPluginTests
 
         // A MISMATCH FAILS THE LOAD ITSELF (AbiPluginLoader.Load's own check against
         // PluginManifestMatch.Mismatch) — reaching Loaded at all is already the assertion that
-        // Describe()'s hand-written manifest agrees with cxagent-dotnet-lsp-abi.plugin.json. This
+        // Describe()'s hand-written manifest agrees with csharp-lsp-abi.plugin.json. This
         // test exists to fail LOUDLY with the loader's own mismatch reason rather than lumping that
         // failure into every other test that happens to load the plugin first.
         var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
-        Assert.Equal("cxagent-dotnet-lsp-abi", loaded.Manifest.Name);
+        Assert.Equal("csharp-lsp-abi", loaded.Manifest.Name);
         Assert.True(loaded.Manifest.Spawns);
         Assert.Equal(["lsp_definition", "lsp_references", "lsp_diagnostics"],
             loaded.Manifest.Tools.Select(t => t.Name).ToArray());
@@ -152,13 +152,13 @@ public class CxagentLspAbiPluginTests
     // plugin it replaces, not merely "a plugin that also returns locations." See the task report for
     // the exact run transcript.
 
-    [Fact(Skip = "Needs csharp-ls on PATH, a NativeAOT publish of cxagent-dotnet-lsp-abi, and " +
+    [Fact(Skip = "Needs csharp-ls on PATH, a NativeAOT publish of csharp-lsp-abi, and " +
                  "/tmp/cxgpu checked out. Verified by hand: resolved cross-project to " +
                  "AlertEngine.cs line 30 char 12 on 2026-08-24, matching the managed plugin exactly.")]
     public async Task DefinitionCrossesTheProjectBoundaryAgainstCsharpLs() =>
         await RunCrossProjectDefinition("csharp-ls", []);
 
-    [Fact(Skip = "Needs /opt/omnisharp/OmniSharp, a NativeAOT publish of cxagent-dotnet-lsp-abi, " +
+    [Fact(Skip = "Needs /opt/omnisharp/OmniSharp, a NativeAOT publish of csharp-lsp-abi, " +
                  "and /tmp/cxgpu checked out. Verified by hand: resolved cross-project to " +
                  "AlertEngine.cs line 30 char 12 on 2026-08-24, matching both the managed plugin " +
                  "and this plugin's own csharp-ls run.")]

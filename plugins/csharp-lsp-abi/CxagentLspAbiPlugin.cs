@@ -11,7 +11,7 @@ namespace CxAgent.Plugins.LspAbi;
 // REIMPLEMENTED HERE, NOT REFERENCED FROM CxAgent.Core.Plugins.Abi.AbiCodec/AbiContract — a
 // NativeAOT-published library resolves everything it needs at ILC compile time, and CxAgent.Core is
 // a managed assembly built for the HOST process, never loaded into this one (see
-// cxagent-dotnet-lsp-abi.csproj's own comment on why there is no ProjectReference to it at all).
+// csharp-lsp-abi.csproj's own comment on why there is no ProjectReference to it at all).
 // Field names below are kept byte-for-byte identical to AbiContract.cs's records — this file is the
 // PROOF that the JSON shape, not a shared C# type, is the actual contract cxagent_plugin.h promises;
 // see PLUGINS.md, "The boundary is JSON."
@@ -109,7 +109,7 @@ public static class CxagentLspAbiPlugin
     /// plugin has no assembly-location concept to resolve one against (see cxagent_plugin.h,
     /// OWNERSHIP — everything crossing this boundary is JSON, not a file path), so the manifest
     /// content is baked into this method directly. <see cref="AbiPluginLoader"/>'s own mismatch check
-    /// (PluginManifestMatch.Mismatch, run against cxagent-dotnet-lsp-abi.plugin.json) is what keeps
+    /// (PluginManifestMatch.Mismatch, run against csharp-lsp-abi.plugin.json) is what keeps
     /// this hardcoded copy honest — the same discipline the managed plugin's runtime sidecar read
     /// enforces by construction; this class enforces the same invariant by being kept in sync with
     /// the sidecar file next to it, which the test suite's own describe-matches-sidecar test proves.
@@ -119,7 +119,7 @@ public static class CxagentLspAbiPlugin
     {
         var manifest = new AbiManifestWire(
             AbiVersion: 1,
-            Name: "cxagent-dotnet-lsp-abi",
+            Name: "csharp-lsp-abi",
             Version: "1.0.0",
             Instructions: "These tools talk to a running C# language server rooted at the session's "
                 + "working directory, and answer only for C# source files. Positions are 1-based "
@@ -155,7 +155,7 @@ public static class CxagentLspAbiPlugin
     /// <summary>
     /// <paramref name="lineNoun"/> is the ONLY difference between lsp_definition's and
     /// lsp_references's schema — "reference" vs "symbol" in the line field's description, matching
-    /// cxagent-dotnet-lsp-abi.plugin.json (and cxagent-dotnet-lsp.plugin.json before it) word for
+    /// csharp-lsp-abi.plugin.json (and csharp-lsp.plugin.json before it) word for
     /// word. AbiPluginLoader.Load's own mismatch check (PluginManifestMatch.Mismatch) compares this
     /// method's output against that sidecar byte for byte, so a schema that quietly drifted from it
     /// — even in wording no tool call actually depends on — fails the load rather than the plugin
@@ -236,7 +236,7 @@ public static class CxagentLspAbiPlugin
             // exists for that one reason, mirroring cxagent.Tests/AbiFixtures/fixture_plugin.c's own
             // FIXTURE_CRASH/FIXTURE_MALFORMED discipline on the C side: a plugin author's job is to
             // turn a failure into envelope data, never let it unwind past extern "C".
-            return WriteFailEnvelope($"cxagent-dotnet-lsp-abi failed to start: {ex.Message}");
+            return WriteFailEnvelope($"csharp-lsp-abi failed to start: {ex.Message}");
         }
     }
 
@@ -247,7 +247,7 @@ public static class CxagentLspAbiPlugin
             serverEl.ValueKind != JsonValueKind.String)
         {
             throw new InvalidOperationException(
-                "cxagent-dotnet-lsp-abi requires a 'server' string in its settings — the language server command to run.");
+                "csharp-lsp-abi requires a 'server' string in its settings — the language server command to run.");
         }
 
         var server = serverEl.GetString()!;
@@ -279,7 +279,7 @@ public static class CxagentLspAbiPlugin
             // AbiCodec.ToInvokeResult already surfaces as a call-level failure rather than a
             // JobResult.Success:false the caller could mistake for an ordinary tool failure.
             if (toolName is not ("lsp_definition" or "lsp_references" or "lsp_diagnostics"))
-                return WriteFailEnvelope($"cxagent-dotnet-lsp-abi has no tool named '{toolName}'.");
+                return WriteFailEnvelope($"csharp-lsp-abi has no tool named '{toolName}'.");
 
             if (_client is null)
                 return WriteInvokeResult(false, "language server is not running.", null);
@@ -308,7 +308,7 @@ public static class CxagentLspAbiPlugin
         }
         catch (Exception ex)
         {
-            return WriteFailEnvelope($"cxagent-dotnet-lsp-abi invoke failed: {ex.Message}");
+            return WriteFailEnvelope($"csharp-lsp-abi invoke failed: {ex.Message}");
         }
     }
 
@@ -333,7 +333,7 @@ public static class CxagentLspAbiPlugin
         var diagnostics = _client.Diagnostics(path);
 
         // +1: THE SERVER'S 0-BASED POSITION BECOMES THE 1-BASED ONE THE TOOL SCHEMA PROMISES — see
-        // cxagent-dotnet-lsp-abi.plugin.json's own description, and CxagentLspPlugin's identical
+        // csharp-lsp-abi.plugin.json's own description, and CxagentLspPlugin's identical
         // conversion. Every position this plugin hands back to the model crosses this same
         // conversion exactly once, on either side of the boundary. BUILT AS A JsonArray/JsonObject
         // TREE, NOT A Dictionary<string, object?> — see AbiJobResultWire's own doc for why.
@@ -402,7 +402,7 @@ public static class CxagentLspAbiPlugin
         }
         catch (Exception ex)
         {
-            return WriteFailEnvelope($"cxagent-dotnet-lsp-abi failed to stop: {ex.Message}");
+            return WriteFailEnvelope($"csharp-lsp-abi failed to stop: {ex.Message}");
         }
     }
 
