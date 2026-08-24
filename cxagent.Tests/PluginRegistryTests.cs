@@ -289,7 +289,7 @@ public class PluginRegistryTests : IDisposable
         await arrived.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(session.IsBusy);
 
-        var status = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"));
+        var status = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
 
         Assert.Equal(CommandStatus.Refused, status);
         Assert.Empty(session.Plugins.CurrentTools());
@@ -310,7 +310,7 @@ public class PluginRegistryTests : IDisposable
         using var __ = manager;
 
         Assert.Equal(CommandStatus.Changed,
-            session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename")));
+            await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir));
 
         var started = session.Submit("go");
         await arrived.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -333,7 +333,7 @@ public class PluginRegistryTests : IDisposable
         var session = Wired(out var manager, new MockLlmProvider(), out _);
         using var __ = manager;
 
-        var loaded = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"));
+        var loaded = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
         Assert.Equal(CommandStatus.Changed, loaded);
         Assert.Contains("lsp_rename", session.Plugins.CurrentTools().Select(t => t.Definition.Name));
 
@@ -363,7 +363,7 @@ public class PluginRegistryTests : IDisposable
     /// predicate.
     /// </summary>
     [Fact]
-    public void APluginCollidingWithAnInjectedToolRefusesToLoad()
+    public async Task APluginCollidingWithAnInjectedToolRefusesToLoad()
     {
         var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
@@ -376,7 +376,7 @@ public class PluginRegistryTests : IDisposable
             AgentMode.Single);
         using var _ = manager;
 
-        var status = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "echo_tool"));
+        var status = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "echo_tool"), _dir);
 
         Assert.Equal(CommandStatus.Reported, status);
         Assert.Empty(session.Plugins.CurrentTools());
@@ -386,7 +386,7 @@ public class PluginRegistryTests : IDisposable
     /// still refuses (PLUGINS.md, "Name collisions": a half-loaded plugin is unpredictable), proving
     /// the injected check goes through the same all-or-nothing path as the built-in check.</summary>
     [Fact]
-    public void APluginCollidingWithAnInjectedToolRefusesWholeEvenWithAnUncontestedToolAlso()
+    public async Task APluginCollidingWithAnInjectedToolRefusesWholeEvenWithAnUncontestedToolAlso()
     {
         var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
@@ -399,7 +399,7 @@ public class PluginRegistryTests : IDisposable
             AgentMode.Single);
         using var _ = manager;
 
-        var status = session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename", "echo_tool"));
+        var status = await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename", "echo_tool"), _dir);
 
         Assert.Equal(CommandStatus.Reported, status);
         Assert.DoesNotContain(session.Plugins.CurrentTools(), t => t.Definition.Name == "lsp_rename");
@@ -408,7 +408,7 @@ public class PluginRegistryTests : IDisposable
     /// <summary>Session close runs the same four steps as an explicit unwire — there is no separate
     /// teardown path, so a plugin loaded and never explicitly unwired still gets Stop called.</summary>
     [Fact]
-    public void ClosingASessionUnwiresEveryPluginItLoaded()
+    public async Task ClosingASessionUnwiresEveryPluginItLoaded()
     {
         var manager = SessionManager.Create(new AppPaths(_dir));
         var session = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
@@ -416,7 +416,7 @@ public class PluginRegistryTests : IDisposable
             AgentMode.Single);
 
         var plugin = new FakePlugin();
-        session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"));
+        await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
 
         manager.Close(session);
 

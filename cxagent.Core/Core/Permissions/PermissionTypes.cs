@@ -12,12 +12,20 @@ namespace CxAgent.Core.Permissions;
 /// never exempts the tool from its own <see cref="Jobs.IAgentTool.Gate"/>, which runs on every
 /// call; the two are different questions and this kind only answers the first.</para>
 ///
+/// <para><c>Plugin</c> is the load gate itself — see PLUGINS.md, "The load gate is the only boundary
+/// Core can enforce": may this plugin's whole load set (see <see cref="Plugins.PluginIdentity"/>) run
+/// in this session at all. It answers that ONE question, once, at load; it is not consulted again
+/// per call the way <c>Tool</c> is — a plugin's own declared per-operation gates (PLUGINS.md, "The
+/// plugin provides its own policy; Core enforces it") reuse <c>Tool</c>, because that is already the
+/// vocabulary for "may this specific capability run", and a plugin's gated tool is exactly that
+/// question asked by a different kind of contributor.</para>
+///
 /// <para>PERSISTED BY NAME (<c>JsonStringEnumConverter</c>), so adding a value is a one-way change to
 /// permissions.json: an older binary reading a file containing an <c>"Mcp"</c> or <c>"Tool"</c> rule
 /// throws, treats the whole file as empty — losing every rule and all folder trust — and clobbers it
 /// on the next save. Acceptable, but a downgrade hazard worth knowing about.</para>
 /// </summary>
-public enum PermissionKind { Shell, FileRead, FileWrite, Http, Mcp, Tool }
+public enum PermissionKind { Shell, FileRead, FileWrite, Http, Mcp, Tool, Plugin }
 
 /// <summary>Per-folder trust-on-first-use state. Unknown (never asked) behaves as Untrusted for
 /// the silent class — an unanswered question must never behave like a yes.</summary>

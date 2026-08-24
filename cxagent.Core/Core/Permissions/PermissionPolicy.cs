@@ -490,6 +490,13 @@ public class PermissionPolicy
         // permissions.json, and they were asked again anyway, forever.
         PermissionKind.Tool => request.AlwaysRule,
 
+        // A PLUGIN'S SUBJECT IS ITS CONTENT HASH, NEVER ITS PATH. PLUGINS.md, "Identity is a content
+        // hash, not a filename": "A grant names this binary, not this path. Replace the file with
+        // different code and the grant does not carry over." AlwaysRule already carries
+        // PluginIdentity.HashLoadSet's output — see Session.LoadPlugin — so this arm is the same
+        // shape as Mcp and Tool above: the rule IS the subject, not something resolved from Display.
+        PermissionKind.Plugin => request.AlwaysRule,
+
         // A CAST INTEGER, not a case anyone forgot: every declared PermissionKind is handled above,
         // and null means "cannot be generalised into a rule", which is the safe answer for a value
         // this code has never seen.

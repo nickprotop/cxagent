@@ -443,12 +443,56 @@ public sealed partial class Session
     /// <para>THE CALLER SUPPLIES AN ALREADY-LOADED PLUGIN. Nothing here constructs an
     /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
     /// method is what runs once a loader has one in hand.</para>
+    ///
+    /// <para>THE LOAD GATE — PLUGINS.md, "The load gate is the only boundary Core can enforce".
+    /// Runs before the collision check, because a plugin the user declined must never be probed for
+    /// name collisions or offered to the model at all — declining is the end of the story, not a
+    /// step toward one. Asked ONLY when <see cref="Services"/> carries a gate: a headless session or
+    /// a test with no gate wired has nothing to ask and nothing to enforce with, matching every other
+    /// "no gate, no prompt" path this session already has (see SessionFactory.Wire's own tools
+    /// wrapping). <paramref name="loadSetDirectory"/> feeds <see cref="Plugins.PluginIdentity"/> —
+    /// the grant is over the CONTENT, not the path — while the path itself is what the prompt shows,
+    /// because PLUGINS.md's prompt names origin and declared capability and nothing else Core can
+    /// honestly offer.</para>
     /// </summary>
     /// <param name="plugin">The running instance, past its own Load call.</param>
     /// <param name="manifest">What it declared it contributes.</param>
-    public CommandStatus LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest)
+    /// <param name="loadSetDirectory">The directory holding everything this plugin loads — hashed
+    /// whole for identity (see <see cref="Plugins.PluginIdentity.HashLoadSet"/>) and shown to the
+    /// user as where the plugin came from.</param>
+    /// <param name="ct">Only observed while awaiting the load prompt — the plugin itself is already
+    /// past its own Load call by the time this method is reached.</param>
+    public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
+        string loadSetDirectory, CancellationToken ct = default)
     {
         if (RefusedWhileBusy()) return CommandStatus.Refused;
+
+        if (Services?.Gate is { } gate)
+        {
+            var hash = CxAgent.Core.Plugins.PluginIdentity.HashLoadSet(loadSetDirectory);
+
+            // DECLARED CAPABILITY, NOT INFERRED BEHAVIOUR. Spawns is the one thing a manifest
+            // declares that reads as a capability sentence; "read files in this folder" is true of
+            // every plugin, because WorkingDirectory is handed to all of them at Load regardless of
+            // what they go on to do with it — see IPluginContext.WorkingDirectory.
+            var capability = manifest.Spawns
+                ? "run a process and read files in this folder"
+                : "read files in this folder";
+
+            var request = new Permissions.PermissionRequest(
+                Permissions.PermissionKind.Plugin,
+                $"{manifest.Name} wants to {capability}.\n{loadSetDirectory}",
+                AlwaysRule: hash)
+            { Policy = Policy };
+
+            var outcome = await gate.RequestAsync(request, ct);
+            if (!outcome.Allowed)
+            {
+                Say(new Message($"plugin '{manifest.Name}' was not loaded — the user declined it.",
+                    Severity.Warning));
+                return CommandStatus.Reported;
+            }
+        }
 
         // BUILT-INS, AND WHATEVER THIS SESSION'S AGENT WAS INJECTED WITH (matrix rows 3 and 4). The
         // built-in half was the only one wired at Task 3, because Agent then exposed no
