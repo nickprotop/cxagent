@@ -40,7 +40,14 @@ public class AbiPluginLoaderTests
     private static string ResolveHostDll()
     {
         var repoRoot = Path.GetFullPath(Path.Combine(OutputDir, "..", "..", "..", ".."));
-        var hostDll = Path.Combine(repoRoot, "cxagent.PluginHost", "bin", "Debug", "net10.0", "cxagent-plugin-host.dll");
+        // THE CONFIGURATION THIS TEST RUN WAS BUILT IN, not a hardcoded "Debug". These tests pass
+        // locally under `dotnet test` (Debug by default) and failed in CI, which runs
+        // --configuration Release: the host is a sibling project, so it lands in ITS bin/Release,
+        // and a Debug path finds nothing. Read it off this assembly's own output directory rather
+        // than guessing — AppContext.BaseDirectory is .../cxagent.Tests/bin/<config>/net10.0/.
+        var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
+        var hostDll = Path.Combine(repoRoot, "cxagent.PluginHost", "bin", configuration, "net10.0",
+            "cxagent-plugin-host.dll");
         if (!File.Exists(hostDll))
             throw new FileNotFoundException(
                 $"cxagent-plugin-host.dll not found at '{hostDll}' — build cxagent.PluginHost first.", hostDll);
