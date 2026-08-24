@@ -47,6 +47,16 @@ public sealed record ProviderCatalog(
     string? ClassifierInstance = null,
     string? Theme = null)
 {
+    /// <summary>Configured plugins, by name — see PLUGINS.md, "Configuration". A NAMED MEMBER, not
+    /// an eighth positional parameter — this record is already past the point AV1561 asks a group to
+    /// be named at.</summary>
+    public IReadOnlyDictionary<string, PluginConfig> Plugins { get; init; } =
+        new Dictionary<string, PluginConfig>();
+
+    /// <summary>Where a plugin's <c>file</c> is searched for, in order — a sibling of
+    /// <see cref="Plugins"/>, matching config.json's <c>pluginPaths</c>.</summary>
+    public IReadOnlyList<string> PluginPaths { get; init; } = [];
+
     /// <summary>
     /// S1 as the user wrote it, from <c>llmAgent.tools</c>. Null when config said nothing.
     ///

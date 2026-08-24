@@ -898,6 +898,34 @@ public static class AppBootstrap
         if (resumeNotice is { } notice)
             transcript.Write(notice);
 
+        // CONFIGURED PLUGINS, AFTER THE FIRST WIRE — unlike MCP servers above, a plugin load asks
+        // through Session.LoadPlugin's own load gate (Services?.Gate), and Services is only set once
+        // SessionFactory.Wire has run (Session.NoteServices). Loading before the first wire would
+        // find no gate and load every plugin unasked — the "headless host" path PLUGINS.md's
+        // Permission section describes, silently applied to a session that has a gate coming.
+        //
+        // STILL BEFORE THE RENDER LOOP, so the tools array a plugin contributes is part of the very
+        // first prompt sent rather than invalidating the prefix cache on turn two.
+        //
+        // DISCOVERY LIVES HERE, NOT IN CORE — PLUGINS.md, "Configuration": "Core accepts 'here is a
+        // plugin at this path' and does not care how it was found." PluginDiscovery enumerates the
+        // search folders (config's own pluginPaths, then the project directory, then this process's
+        // global config directory — project over global) and calls the loader; this file only decides
+        // WHAT EXISTS, the same split /mcp already draws.
+        //
+        // BLOCKING, for the same reason the MCP block above is: each load may prompt the user, and
+        // there is no frame to drop before the UI loop begins.
+        if (resolution.Plugins.Count > 0)
+        {
+            var searchFolders = PluginDiscovery.SearchFolders(
+                resolution.PluginPaths, session.WorkingDirectory, paths.ConfigDir);
+
+            PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
+                    paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
+                    CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
         // next one — the shell's own convention, and Claude Code's.
         //

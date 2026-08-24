@@ -77,6 +77,8 @@ public sealed record ResolvedConfig(
     public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes => Catalog.Types;
     public IReadOnlyDictionary<string, McpServerConfig> McpServers => Catalog.Servers;
     public OrchestratorSettings? Orchestrator => Catalog.Orchestrator;
+    public IReadOnlyDictionary<string, PluginConfig> Plugins => Catalog.Plugins;
+    public IReadOnlyList<string> PluginPaths => Catalog.PluginPaths;
 
     /// <summary>S1 as the USER wrote it, from <c>llmAgent.tools</c>. Composed ahead of the
     /// embedder's <c>SharedServices.ToolSelection</c> — one level, two authors.</summary>
@@ -154,7 +156,7 @@ public static class ConfigResolver
                     MaxConcurrentAgents: cfg.MaxConcurrentAgents,
                     ClassifierInstance: settings.Classifier,
                     Theme: settings.Theme)
-                { Tools = settings.Tools },
+                { Tools = settings.Tools, Plugins = settings.Plugins, PluginPaths = settings.PluginPaths },
                 [],
                 settings.Warnings);
         }

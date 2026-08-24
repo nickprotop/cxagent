@@ -2,6 +2,8 @@ using System.Text.Json;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Agents;
+using CxAgent.Core.Jobs;
+using CxAgent.Core.Plugins;
 
 namespace CxAgent.Core.Llm;
 
@@ -234,6 +236,26 @@ public record McpServerConfig(
 }
 
 /// <summary>
+/// One configured plugin — config.json's <c>plugins.&lt;name&gt;</c> entry, in code.
+///
+/// <para>THE KEY IS THE NAME; THE VALUE POINTS AT A FILENAME, NOT A PATH — see PLUGINS.md,
+/// "Configuration": "The file is resolved against the search folders, so a config is portable
+/// between machines. A path would not be." Resolving <see cref="File"/> against the search folders
+/// is discovery's job (AppBootstrap), not this record's.</para>
+/// </summary>
+/// <param name="File">The plugin's entry-point filename, resolved against <c>pluginPaths</c>.</param>
+/// <param name="Enabled">
+/// THE OVERALL GATE, not a filter — PLUGINS.md, "Overriding is forbidden": "False and the plugin
+/// does not load: no process spawned, no tools registered, no load prompt, nothing to select from."
+/// Defaults to true for the same reason <see cref="McpConfig.Enabled"/> does: a plugin someone
+/// bothered to configure is one they want, and requiring <c>"enabled": true</c> on every entry is a
+/// footgun where the plugin silently never appears.
+/// </param>
+/// <param name="Settings">This plugin's own settings object, handed to it verbatim at Load — Core
+/// does not know its shape and does not validate it.</param>
+public sealed record PluginConfig(string File, bool Enabled = true, JsonElement? Settings = null);
+
+/// <summary>
 /// One configured sub-agent type: what it is for, and optionally which model runs it and how long
 /// it may run.
 ///
@@ -338,6 +360,22 @@ public record ProviderSettings(
         new Dictionary<string, McpServerConfig>();
 
     /// <summary>
+    /// Configured plugins, by name — empty when the block is absent, the common case. See
+    /// PLUGINS.md, "Configuration": the same name-to-object shape <c>mcp</c> already uses.
+    /// </summary>
+    public IReadOnlyDictionary<string, PluginConfig> Plugins { get; init; } =
+        new Dictionary<string, PluginConfig>();
+
+    /// <summary>
+    /// Where a <see cref="PluginConfig.File"/> is searched for, in order — a SIBLING of
+    /// <c>plugins</c>, never a key inside it. PLUGINS.md, "Configuration": "A settings key living
+    /// among name-keyed entries collides with a plugin of that name." Empty when the block is absent;
+    /// discovery (AppBootstrap) supplies its own defaults when this is empty, since Core does not
+    /// know what a reasonable default search folder is for the host it is embedded in.
+    /// </summary>
+    public IReadOnlyList<string> PluginPaths { get; init; } = [];
+
+    /// <summary>
     /// Configured sub-agent types, empty when the block is absent — the common case.
     ///
     /// <para>Empty does NOT mean no types: the implicit <c>general</c> is supplied downstream, so a
@@ -415,6 +453,102 @@ public static class ProviderConfigLoader
         // AN EMPTY ARRAY IS A REAL ANSWER — "no tools" — and must not become null, which means "no
         // opinion". Only a `tools` key that was absent returns null, handled above.
         return new Jobs.ToolSelection(terms);
+    }
+
+    /// <summary>
+    /// Finds the sidecar manifest for a plugin's <c>file</c>, searching <paramref name="pluginPaths"/>
+    /// in order — first match wins, the same precedence a search list always carries. Null when no
+    /// search folder holds it, which is not an error here: this feeds only the config-time collision
+    /// check, and a plugin this cannot find yet is still checked properly at its runtime load
+    /// (<see cref="Plugins.ManagedPluginLoader.Load"/>), which has the project directory this method
+    /// does not.
+    ///
+    /// <para>RELATIVE ENTRIES RESOLVE AGAINST <paramref name="configDir"/>, the only anchor available
+    /// at config-read time — <c>LoadAndValidate</c> is not handed a project directory, so a
+    /// <c>pluginPaths</c> entry meant to be resolved against a project (e.g. <c>.cxagent/plugins</c>)
+    /// is simply not found here; that copy is still validated when discovery loads it for real.</para>
+    /// </summary>
+    private static string? FindPluginSidecar(
+        string file, IReadOnlyList<string> pluginPaths, string configDir)
+    {
+        foreach (var raw in pluginPaths)
+        {
+            var expanded = ConfigVariable.Expand(raw);
+            var dir = Path.IsPathRooted(expanded) ? expanded : Path.Combine(configDir, expanded);
+
+            var assemblyPath = Path.Combine(dir, file);
+            if (!File.Exists(assemblyPath)) continue;
+
+            // SAME STEM PAIRING ManagedPluginLoader USES: '<plugin>.dll' pairs with
+            // '<plugin>.plugin.json'. Read here rather than sharing the private constant, since this
+            // check must never load the assembly ManagedPluginLoader pairs the sidecar against.
+            var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
+            if (File.Exists(sidecarPath)) return sidecarPath;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Refuses a STATICALLY CERTAIN plugin tool-name collision — matrix rows 2 and 4-plugin
+    /// (PLUGINS.md, "Name collisions"). Both sides of either row are declared before anything runs,
+    /// so a clash is knowable at config read and refuses to start, naming the file and the key,
+    /// exactly as an unknown provider kind does. Shared between <see cref="LoadAndValidate"/> (reading
+    /// config.json) and <see cref="AgentConfig.Resolve"/> (an embedder's plugins in code), so an
+    /// embedder gets the same check a config.json author does rather than a second, drifting copy.
+    /// </summary>
+    /// <param name="plugins">Every configured plugin, by name.</param>
+    /// <param name="findSidecar">
+    /// Resolves one plugin's sidecar manifest path, or null when it cannot be found from here — not
+    /// an error: a plugin only resolvable via a project-local search folder Core does not know at
+    /// config-read time is still checked properly at its runtime load.
+    /// </param>
+    /// <param name="errors">Appended to — never cleared, so a caller can validate plugins alongside
+    /// its own errors in one list.</param>
+    internal static void ValidatePluginCollisions(IReadOnlyDictionary<string, PluginConfig> plugins,
+        Func<PluginConfig, string?> findSidecar, List<string> errors)
+    {
+        // A DISABLED PLUGIN CONTRIBUTES NO NAMES TO CHECK — row 5: "not a collision — the name is
+        // free". SIDECARS ONLY, NEVER ASSEMBLIES: knowing a plugin's tool names before any binary
+        // loads is what makes this row implementable at all; loading assemblies here would mean a
+        // config READ could execute a plugin's code.
+        var claimedByPlugin = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (pluginName, config) in plugins)
+        {
+            if (!config.Enabled) continue;
+
+            var sidecarPath = findSidecar(config);
+            if (sidecarPath is null) continue;   // unresolved here; the runtime load still checks.
+
+            string sidecarJson;
+            try { sidecarJson = File.ReadAllText(sidecarPath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+
+            var parsed = PluginManifest.Parse(sidecarJson);
+            if (parsed.Manifest is null) continue;   // malformed sidecar: the runtime load reports it.
+
+            foreach (var tool in parsed.Manifest.Tools)
+            {
+                // ROW 4-PLUGIN: a name an ENABLED built-in owns. There is no config path to disable a
+                // built-in yet, so every built-in name is always taken.
+                if (ToolBindings.IsBuiltinName(tool.Name))
+                {
+                    errors.Add($"plugins.{pluginName}: tool '{tool.Name}' (from '{sidecarPath}') "
+                             + "is already a built-in tool name.");
+                    continue;
+                }
+
+                // ROW 2: two plugins declaring the same tool name.
+                if (claimedByPlugin.TryGetValue(tool.Name, out var earlier))
+                {
+                    errors.Add($"plugins.{pluginName}: tool '{tool.Name}' (from '{sidecarPath}') "
+                             + $"collides with plugins.{earlier}, which already declares it.");
+                    continue;
+                }
+
+                claimedByPlugin[tool.Name] = pluginName;
+            }
+        }
     }
 
     public static ProviderSettings LoadAndValidate(AppPaths paths, IReadOnlyDictionary<string, string> env)
@@ -755,6 +889,51 @@ public static class ProviderConfigLoader
                     };
                 }
 
+            // PLUGIN SEARCH FOLDERS — A SIBLING OF `plugins`, not a key inside it. See
+            // ProviderSettings.PluginPaths: a settings key living among name-keyed plugin entries
+            // would collide with a plugin literally named "pluginPaths" or "search".
+            var pluginPaths = new List<string>();
+            if (root.TryGetProperty("pluginPaths", out var pp) && pp.ValueKind == JsonValueKind.Array)
+                foreach (var e in pp.EnumerateArray())
+                    if (e.ValueKind == JsonValueKind.String && e.GetString() is { } s
+                        && !string.IsNullOrWhiteSpace(s))
+                        pluginPaths.Add(s);
+
+            // PLUGINS — read AFTER pluginPaths exists, so a collision check below can resolve each
+            // entry's `file` against the search folders and read its sidecar. See PLUGINS.md,
+            // "Configuration": the key is a name, the value points at a filename.
+            var plugins = new Dictionary<string, PluginConfig>(StringComparer.Ordinal);
+            if (root.TryGetProperty("plugins", out var pl) && pl.ValueKind == JsonValueKind.Object)
+                foreach (var entry in pl.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        errors.Add($"plugins.{entry.Name} is not an object.");
+                        continue;
+                    }
+
+                    var file = entry.Value.TryGetProperty("file", out var f) && f.ValueKind == JsonValueKind.String
+                        ? f.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(file))
+                    {
+                        errors.Add($"plugins.{entry.Name}: 'file' is required.");
+                        continue;
+                    }
+
+                    // ABSENT IS TRUE — the same footgun McpConfig.Enabled avoids: a plugin someone
+                    // bothered to configure is one they want.
+                    var pluginEnabled = !entry.Value.TryGetProperty("enabled", out var pe)
+                                      || pe.ValueKind != JsonValueKind.False;
+
+                    JsonElement? pluginSettings = entry.Value.TryGetProperty("settings", out var ps)
+                        ? ps.Clone() : null;
+
+                    plugins[entry.Name] = new PluginConfig(file, pluginEnabled, pluginSettings);
+                }
+
+            ValidatePluginCollisions(plugins,
+                config => FindPluginSidecar(config.File, pluginPaths, paths.ConfigDir), errors);
+
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);
 
@@ -766,6 +945,8 @@ public static class ProviderConfigLoader
                 Warnings = warnings,
                 Classifier = classifier,
                 Theme = theme,
+                Plugins = plugins,
+                PluginPaths = pluginPaths,
             };
         }
     }

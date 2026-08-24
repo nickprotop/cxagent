@@ -69,8 +69,14 @@ public static class ConfigVariable
     }
 
     /// <summary>Expands a leading <c>~</c>, which is how people write paths and not something
-    /// File.ReadAllText understands.</summary>
-    private static string Expand(string path)
+    /// File.ReadAllText understands.
+    ///
+    /// <para>PUBLIC, not private: <c>pluginPaths</c> entries are written the same way and need the
+    /// same expansion both in Core's own config-time collision check and in an embedding
+    /// application's own plugin discovery (PLUGINS.md, "Discovery is the application's") — a second
+    /// copy of this in every consumer would drift the moment someone changes how <c>~</c> is written.</para>
+    /// </summary>
+    public static string Expand(string path)
     {
         if (path.Length > 0 && path[0] == '~')
         {

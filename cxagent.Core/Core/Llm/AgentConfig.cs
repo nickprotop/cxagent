@@ -128,6 +128,21 @@ public sealed record AgentConfig
     public Dictionary<string, McpConfig> Mcp { get; init; } = [];
 
     /// <summary>
+    /// Plugins this process is configured with, by name — the same vocabulary <c>config.json</c>'s
+    /// <c>plugins</c> uses, so an embedder passing config in code gets the same validation (config-time
+    /// collision checking included) as one editing the file. See <see cref="Llm.PluginConfig"/>.
+    /// </summary>
+    public Dictionary<string, PluginConfig> Plugins { get; init; } = [];
+
+    /// <summary>
+    /// Where a plugin's <see cref="PluginConfig.File"/> is searched for, in order — a SIBLING of
+    /// <see cref="Plugins"/>, matching <c>config.json</c>'s <c>pluginPaths</c> for the same reason
+    /// that key is not nested inside <c>plugins</c> there: a settings member living among name-keyed
+    /// entries collides with a plugin of that name.
+    /// </summary>
+    public List<string> PluginPaths { get; init; } = [];
+
+    /// <summary>
     /// Builds what the runtime consumes.
     ///
     /// <para>THE ERRORS COME BACK AS A VALUE, exactly as ConfigResolver's do — a model named as
@@ -150,6 +165,11 @@ public sealed record AgentConfig
 
         if (Classifier is { } classifier && !Models.ContainsKey(classifier))
             errors.Add($"classifier '{classifier}' is not among the configured models.");
+
+        // SAME CHECK config.json GETS — see ProviderConfigLoader.ValidatePluginCollisions. An
+        // embedder's PluginPaths entries are searched directly, with no config directory to fall
+        // back to for a relative one: code-configured plugins have no such anchor.
+        ProviderConfigLoader.ValidatePluginCollisions(Plugins, config => FindPluginSidecar(config), errors);
 
         if (errors.Count > 0) return ResolvedConfig.Failed(errors);
 
@@ -178,8 +198,29 @@ public sealed record AgentConfig
                     StringComparer.Ordinal),
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
-                ClassifierInstance: Classifier),
+                ClassifierInstance: Classifier)
+            { Plugins = Plugins, PluginPaths = PluginPaths },
             []);
+    }
+
+    /// <summary>
+    /// Finds one plugin's sidecar manifest by searching <see cref="PluginPaths"/> directly, in
+    /// order — the code-config counterpart of <c>ProviderConfigLoader.FindPluginSidecar</c>. A
+    /// relative entry here resolves against the CURRENT DIRECTORY rather than a config directory:
+    /// code-configured plugins have no config.json beside them to anchor a relative path against.
+    /// </summary>
+    private string? FindPluginSidecar(PluginConfig config)
+    {
+        foreach (var raw in PluginPaths)
+        {
+            var assemblyPath = Path.Combine(raw, config.File);
+            if (!File.Exists(assemblyPath)) continue;
+
+            var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
+            if (File.Exists(sidecarPath)) return sidecarPath;
+        }
+
+        return null;
     }
 
     // THE SAME CONSTRUCTION ProviderRegistry.Construct performs for a config.json entry, reached from
