@@ -126,7 +126,17 @@ public class HttpJobExecutor : IJobExecutor
                     return new JobResult
                     {
                         Success = true, ExitCode = 0, Duration = DateTimeOffset.UtcNow - start,
-                        Output = new Dictionary<string, object?> { ["status"] = status, ["body"] = respBody },
+                        // content CARRIES THE BODY BECAUSE THAT IS WHAT THE MODEL READS. Agent
+                        // renders a successful tool result from Output["summary"] or
+                        // Output["content"] and nothing else, so a result offering neither arrives
+                        // as an empty string — the model sees a call that succeeded and returned
+                        // nothing, and explains the emptiness rather than reporting it. status and
+                        // body stay beside it: they are the typed answer, and a caller reading
+                        // JobResult directly wants the status without parsing it back out of text.
+                        Output = new Dictionary<string, object?>
+                        {
+                            ["content"] = respBody, ["status"] = status, ["body"] = respBody,
+                        },
                     };
 
                 if (attempt++ >= maxRetries)
@@ -134,7 +144,13 @@ public class HttpJobExecutor : IJobExecutor
                     {
                         Success = false, ExitCode = status, Duration = DateTimeOffset.UtcNow - start,
                         ErrorMessage = $"unexpected status {status} (expected {(expectStatus?.ToString() ?? "2xx")}) after {attempt} attempt(s)",
-                        Output = new Dictionary<string, object?> { ["status"] = status, ["body"] = respBody },
+                        // ErrorMessage is what a FAILED result renders as, so content is not read
+                        // here — it is set anyway so the shape does not depend on which branch built
+                        // it, and a caller that inspects Output finds the body in the same key.
+                        Output = new Dictionary<string, object?>
+                        {
+                            ["content"] = respBody, ["status"] = status, ["body"] = respBody,
+                        },
                     };
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
