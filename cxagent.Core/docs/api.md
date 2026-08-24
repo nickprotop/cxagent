@@ -204,6 +204,40 @@ Each does the work, says its result through your observer, and returns a `Comman
 
 `.Handled()` → bool, for routing. `.Moved()` → whether a repaint is warranted.
 
+## Plugins
+
+Tools loaded from a DLL at run time, rather than compiled into your app. `Session` owns the two
+lifecycle calls; everything else is in `CxAgent.Core.Plugins`.
+
+| Method | Does |
+|---|---|
+| `LoadPlugin(plugin, manifest, loadSetDirectory, ct?)` | asks the gate, refuses a colliding tool name, starts the plugin, offers its tools. `CommandStatus.Changed` on success |
+| `Plugins` | the session's `PluginRegistry` — `CurrentTools()`, `LoadedPluginNames`, `UnwireAsync(name, ct)` |
+
+**`loadSetDirectory` is hashed, not the file.** `PluginIdentity.HashLoadSet` covers the whole
+directory, so a plugin's approval survives nothing changing and lapses the moment anything does.
+
+**A load with no gate wired does not ask.** A headless host loading a plugin has already decided to
+run it, and Core does not invent a prompt with nobody to answer it. Wire `SessionPorts.Policy` and a
+gate to get the question.
+
+**A failed `Start` unwires.** Tools are registered before the plugin starts, so a backend that never
+comes up would otherwise leave tools answering "not running" with nothing explaining why.
+
+### Loading one from disk
+
+| | |
+|---|---|
+| `ManagedPluginLoader.Load(assemblyPath, context, ct)` | reads the sidecar, loads the assembly, checks the manifest against the sidecar. Returns `Loaded` or `Failed(reason)` |
+| `PluginManifest.Parse(json)` | the sidecar, without loading anything — what a host shows before asking |
+| `IPluginContext` | what the plugin is handed: `WorkingDirectory`, `Settings`, `Logger`, `Lifetime`, `RegisterChildProcess(pid)`. **Never the transcript, the model or the permission store** |
+| `ChildProcessStore` | records what a plugin spawned and reaps it at the next startup. `ReapOrphans(log)` at construction; `ReapPlugin(name, log)` at unwire |
+
+An out-of-process path exists for plugins that cannot be loaded managed — C, Rust, Go — under
+`CxAgent.Core.Plugins.Abi`, with the same `IPlugin` at the end of it.
+
+**[Writing a plugin →](../Core/Plugins/README.md)**
+
 ## Identity
 
 ```csharp

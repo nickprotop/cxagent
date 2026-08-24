@@ -267,6 +267,29 @@ asking, persisting the answer, scoping it to the folder — is already here.
 
 **[Injecting your own tools →](docs/tools.md)**
 
+### Tools that arrive at run time
+
+Injected tools are compiled into your app. A **plugin** is a DLL loaded from disk at run time — the
+same tools, from code you did not build:
+
+```csharp
+await session.LoadPlugin(instance, manifest, loadSetDirectory, ct);
+```
+
+`ManagedPluginLoader` turns a path into that instance; `PluginRegistry` holds it, refuses a tool name
+already taken, and unwires it cleanly at the end. The plugin declares what it offers in a sidecar
+file read *before* its assembly is loaded, so a host can show a user what a plugin claims without
+running it.
+
+**The load gate is the boundary you own.** Wire a permission gate and every load asks, against a
+content hash of the plugin's whole load set. Wire none and nothing asks — a headless host loading a
+plugin has already decided to run it, and Core does not pretend otherwise.
+
+A plugin is not sandboxed: it runs in your process and can do what your process can. Core enforces
+the decision to load it, and the plugin declares which of its own tools need a prompt.
+
+**[Writing a plugin →](Core/Plugins/README.md)**
+
 ---
 
 ## Permissions
@@ -550,6 +573,8 @@ session.Mode        // delegation and edit mode
 - **[API reference →](docs/api.md)** — every public member, with parameters and who calls it
 - **[Injecting your own tools →](docs/tools.md)** — the `IAgentTool` interface, the two gates, and
   what `Gate` should return
+- **[Writing a plugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins)** — tools loaded from a DLL at run time: the
+  lifecycle, the sidecar, permission and settings
 - **[SpectreAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** — a second front end in about a hundred lines: a
   prompt, streamed text, one line per tool
 - **[ToolAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** — injecting your own tools, and the two gates each one
@@ -557,6 +582,10 @@ session.Mode        // delegation and edit mode
 - **[ReadOnlyAgent →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** — the other direction: a selection that
   leaves an agent unable to write, shell out or delegate, printing every tool call so you can watch
   it hold
+- **[CalculatorPlugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin)** — a plugin end to end in about a
+  hundred lines, with a permission prompt for adding two numbers so the gate is visible
+- **[CalculatorAbiPlugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin)** — the same calculator in one
+  file of C, for a plugin your language cannot write managed
 
 ## License
 

@@ -4,6 +4,9 @@ The agent gets read, write, edit, glob, grep, shell, http and web-fetch without 
 anything. This is about the other kind — a tool **you** write, that does something this library could
 not have anticipated.
 
+> Compiled into your app. For tools that arrive at run time from a DLL you did not build, see
+> [writing a plugin](../Core/Plugins/README.md) — same `IAgentTool` at the end, different way in.
+
 ```csharp
 new SessionPorts
 {
@@ -270,3 +273,4 @@ what you agreed to was decided by the rule the tool returned.
 
 - [API reference →](api.md)
 - [Permissions →](../README.md#permissions)
+- [Writing a plugin →](../Core/Plugins/README.md)

@@ -260,3 +260,9 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 - [`IPlugin.cs`](IPlugin.cs) — the managed contract, documented per method
 - [`Abi/cxagent_plugin.h`](Abi/cxagent_plugin.h) — the six C functions, with the ownership rules
 - [`Abi/README.md`](Abi/README.md) — the JSON envelopes crossing the ABI boundary
+
+Hosting a plugin rather than writing one:
+
+- [`docs/api.md`](../../docs/api.md#plugins) — `LoadPlugin`, the registry, the loader, child-process reaping
+- [`docs/tools.md`](../../docs/tools.md) — the other kind of tool: compiled into your app rather than loaded
+- [the package README](../../README.md#tools-that-arrive-at-run-time) — where plugins sit among everything else
