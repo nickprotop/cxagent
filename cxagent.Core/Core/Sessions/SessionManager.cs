@@ -44,6 +44,17 @@ public sealed class SessionManager : IDisposable
     public PermissionRulesStore? Rules { get; }
 
     /// <summary>
+    /// What startup reaping found and did, one line per process — see PLUGINS.md, "Lifecycle":
+    /// "Whatever cannot be closed on the way down must be collectable on the way up." Empty when the
+    /// pid record was empty or absent, which is the ordinary case.
+    ///
+    /// <para>A VALUE, LIKE <see cref="Rules"/>'s <see cref="PermissionRulesStore.LoadError"/> —
+    /// Core has no UI of its own to show this in, so a caller with a transcript echoes it once at
+    /// startup rather than this type writing to a console or a log file nobody asked it to own.</para>
+    /// </summary>
+    public IReadOnlyList<string> PluginReapLog { get; private init; } = [];
+
+    /// <summary>
     /// Rebuilds a session's host over an armed resume. Null until a front end supplies one.
     ///
     /// <para>THE SAME LAYERING AS <c>buildGate</c>, and for the same reason: the ports a rewire needs
@@ -274,7 +285,27 @@ public sealed class SessionManager : IDisposable
             },
             rules,
             ownsServices: true,
-            config ?? ConfigResolver.Resolve(paths, EmptyEnvironment, useMock: false));
+            config ?? ConfigResolver.Resolve(paths, EmptyEnvironment, useMock: false))
+        {
+            PluginReapLog = ReapOrphanedPluginChildren(paths.ConfigDir),
+        };
+    }
+
+    /// <summary>
+    /// Kills whatever a previous run's plugins left behind and never got to close — see
+    /// PLUGINS.md, "Lifecycle": "a pid record written where the next run can find it, and reaped at
+    /// startup." Runs from BOTH <c>Create</c> and <see cref="Over"/>, because a manager over
+    /// caller-built services is still the first place in THIS process a plugin's children could be
+    /// reaped from; skipping it there would protect only the one construction path that happens to
+    /// own its services.
+    /// </summary>
+    private static IReadOnlyList<string> ReapOrphanedPluginChildren(string? configDir)
+    {
+        if (configDir is null) return [];
+
+        var log = new List<string>();
+        new Plugins.ChildProcessStore(configDir).ReapOrphans(log.Add);
+        return log;
     }
 
     /// <summary>
@@ -286,7 +317,10 @@ public sealed class SessionManager : IDisposable
     /// </summary>
     public static SessionManager Over(SharedServices shared, PermissionRulesStore? rules = null,
         ResolvedConfig? config = null) =>
-        new(shared, rules, ownsServices: false, config);
+        new(shared, rules, ownsServices: false, config)
+        {
+            PluginReapLog = ReapOrphanedPluginChildren(shared.GlobalInstructionsDir),
+        };
 
     /// <summary>
     /// What this manager can offer for a named set — see <see cref="CompletionSets"/>.
@@ -469,12 +503,13 @@ public sealed class SessionManager : IDisposable
     }
 
     /// <summary>
-    /// Closes one session: disposes its agent host and forgets it.
+    /// Closes one session: unwires its plugins, disposes its agent host, and forgets it.
     ///
-    /// <para>THE HOST IS THE ONLY DISPOSABLE THING. Session itself is not IDisposable and the two
-    /// Sqlite stores are not either — they open a connection per call rather than holding one, which
-    /// is what lets two sessions share them safely. So closing is exactly this, and a Dispose on
-    /// Session would be ceremony over one line.</para>
+    /// <para>THE HOST IS THE ONLY DISPOSABLE THING SESSION ITSELF OWNS. Session is not IDisposable
+    /// and the two Sqlite stores are not either — they open a connection per call rather than holding
+    /// one, which is what lets two sessions share them safely. A LOADED PLUGIN IS THE EXCEPTION: its
+    /// Stop can spawn work and its children are real OS processes, so closing is no longer the single
+    /// line disposing the host would be — see the unwire call below, which runs first.</para>
     ///
     /// <para>THE SHARED SERVICES SURVIVE: a session ending is not the process ending, and the next
     /// session wants the same rules, the same logs and the same history.</para>
@@ -490,10 +525,10 @@ public sealed class SessionManager : IDisposable
         // gone.
         //
         // BLOCKING, NOT ASYNC, because Close's signature is the one every caller already has — a
-        // CloseAsync would be a second close path for every embedder to learn. Stop today runs
-        // quickly in every implementation this task ships (a fake in tests); a slow plugin's Stop
-        // blocking process shutdown is the same timeout question PLUGINS.md raises for Stop in
-        // general, not something specific to closing.
+        // CloseAsync would be a second close path for every embedder to learn. Bounded, not
+        // unbounded: PluginRegistry.UnwireAsync's own Stop timeout is what keeps this call from
+        // blocking process shutdown on a hung managed plugin — the abandon-and-log remedy described
+        // there, not a second timeout here.
         session.Plugins.UnwireAllAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // BOTH, and in this order: the session owns the turn's cancellation scope now, and the host

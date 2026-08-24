@@ -667,6 +667,15 @@ public sealed partial class Session
           + "They are not shown above, but the agent remembers them.");
     }
 
+    /// <summary>
+    /// Relays a plugin lifecycle notice — a Stop that timed out, or a child process reaped at
+    /// unwire — to whoever is watching this session. Called from <see cref="Plugins.PluginRegistry"/>
+    /// through the delegate <see cref="SessionFactory.Wire"/> attaches, NOT from a plugin's own
+    /// <see cref="Plugins.IPluginLogger"/>: a hung or crashed plugin cannot be trusted to relay its
+    /// own diagnosis, which is why this is the session's line rather than the plugin's.
+    /// </summary>
+    internal void SayPluginLifecycle(string message) => Say(new Message(message, Severity.Warning));
+
     /// <summary>Records the policy this session is judged by, so it can move both mode axes
     /// together. Called by SessionFactory, which is handed it in the ports.</summary>
     internal void NotePolicy(Permissions.PermissionPolicy? policy) => Policy = policy;

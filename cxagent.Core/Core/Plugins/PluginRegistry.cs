@@ -67,8 +67,47 @@ public abstract record PluginLoadResult
 /// </summary>
 public sealed class PluginRegistry
 {
+    /// <summary>The production default for <see cref="UnwireAsync"/>'s Stop timeout — see that
+    /// method's own doc for why a hung Stop is abandoned rather than awaited forever.</summary>
+    public static readonly TimeSpan DefaultStopTimeout = TimeSpan.FromSeconds(10);
+
     private readonly List<LoadedPlugin> _plugins = [];
     private readonly object _gate = new();
+    private readonly TimeSpan _stopTimeout;
+    private ChildProcessStore? _childProcesses;
+    private Action<string> _log = _ => { };
+
+    /// <param name="stopTimeout">How long <see cref="UnwireAsync"/> waits for a plugin's Stop before
+    /// abandoning it. Null takes <see cref="DefaultStopTimeout"/> — a parameter rather than a fixed
+    /// constant so a test proving the timeout actually fires does not have to run it for ten real
+    /// seconds to do so.</param>
+    public PluginRegistry(TimeSpan? stopTimeout = null)
+    {
+        _stopTimeout = stopTimeout ?? DefaultStopTimeout;
+    }
+
+    /// <summary>
+    /// Gives this registry somewhere to record and reap the processes its plugins spawn, and
+    /// somewhere to say so when a reap or a Stop timeout happens.
+    ///
+    /// <para>NOT A CONSTRUCTOR PARAMETER. <see cref="Sessions.Session.Plugins"/> is built in a field
+    /// initialiser, before the session's first wire — the same ordering constraint
+    /// <see cref="Sessions.Session"/>'s own doc states for why it takes only its working directory.
+    /// <see cref="Sessions.SharedServices.GlobalInstructionsDir"/>, which the store's directory comes
+    /// from, is not known until then. A test that never calls this attaches nothing, and every reap
+    /// below is a no-op rather than a null-reference — the same "no gate, no prompt" shape the rest
+    /// of wiring already uses for an absent dependency.</para>
+    ///
+    /// <para><paramref name="log"/> IS NOT A PLUGIN'S OWN <see cref="IPluginLogger"/> — a hung or
+    /// crashed plugin cannot be trusted to relay its own diagnosis, which is the same reasoning
+    /// PLUGINS.md gives for why reaping is Core's obligation rather than the plugin's bookkeeping.
+    /// This is the session's own log line, the same sink <c>Say</c> writes an ordinary notice to.</para>
+    /// </summary>
+    internal void AttachChildProcessStore(ChildProcessStore store, Action<string> log)
+    {
+        _childProcesses = store;
+        _log = log;
+    }
 
     /// <summary>
     /// Registers a plugin's tools, refusing the whole plugin on any name collision — with a
@@ -149,10 +188,23 @@ public sealed class PluginRegistry
     /// command — an executor's job can outlive the turn that started it, so refusing loads mid-turn
     /// does not by itself mean nothing of this plugin's is running.</para>
     ///
-    /// <para>REAP TODAY IS A NO-OP: nothing in this task records a plugin's child processes (that is
-    /// the managed loader's <c>RegisterChildProcess</c> plumbing), so there is nothing yet for this
-    /// step to kill. The step is still named and still runs last, so a later reaping implementation
-    /// has an ordered slot rather than a redesign.</para>
+    /// <para>REAP KILLS WHATEVER OUTLIVED STOP. A well-behaved plugin's own Stop already exits its
+    /// children, so the ordinary case finds nothing left; reap exists for the plugin that did not —
+    /// crashed inside Stop, or is the timed-out case below — and closes PLUGINS.md's stated gap:
+    /// "an orphaned subprocess is the one failure in this feature that outlives the app." Reaping
+    /// here, not only at startup, is what "Unwiring must reap" asks for: a host killed only at
+    /// startup survives for the rest of THIS run if the plugin was merely unwired, not crashed.</para>
+    ///
+    /// <para>STOP HAS A TIMEOUT — PLUGINS.md, "Stop has a timeout, and the remedy differs by
+    /// loader". A managed plugin runs in-process, so there is no host to kill when it hangs: the
+    /// call is abandoned (its Task is left running rather than awaited further) and the hang is
+    /// logged naming the plugin, exactly as that section specifies. AN ABANDONED STOP CANNOT BE
+    /// CANCELLED FROM HERE — <paramref name="ct"/> is not passed to it, deliberately: a plugin's
+    /// Stop is handed its OWN token (<see cref="IPluginContext.Lifetime"/>, cancelled by the loader
+    /// that owns the instance) and this method has no authority to interrupt code it does not
+    /// control, only to stop waiting for it. THE ABI HALF OF THIS ASYMMETRY — killing a host process
+    /// after the same timeout — has no loader to implement it against yet; this is the managed half
+    /// PLUGINS.md asks Task 6 to ship, with the process-kill path left for the ABI task to fill.</para>
     /// </summary>
     /// <returns>False when no plugin of this name is loaded — there was nothing to unwire.</returns>
     public async Task<bool> UnwireAsync(string pluginName, CancellationToken ct)
@@ -177,10 +229,23 @@ public sealed class PluginRegistry
             await Task.Delay(10, ct);
         }
 
-        // STEP 3: STOP. The plugin's own shutdown — its children exit.
-        await plugin.Instance.Stop(ct);
+        // STEP 3: STOP, bounded by _stopTimeout — see this method's own doc for the managed/ABI
+        // asymmetry. Task.WhenAny rather than a CancellationTokenSource on `ct` above: cancelling the
+        // token passed to Stop would ask a MANAGED plugin's own code to observe cancellation it may
+        // never check, which is indistinguishable from the hang this timeout exists to survive. The
+        // await here is abandoned, not cancelled — the Task keeps running until the plugin's own
+        // Lifetime token (cancelled by whoever owns the instance) eventually stops it, if ever.
+        var stop = plugin.Instance.Stop(ct);
+        var finished = await Task.WhenAny(stop, Task.Delay(_stopTimeout, ct));
+        if (finished != stop)
+            _log($"plugin '{pluginName}': Stop did not return within {_stopTimeout} — "
+                + "abandoning it and closing the session around it. Any process this plugin spawned "
+                + "is left to the pid record to reap.");
 
-        // STEP 4: REAP. See the no-op note above.
+        // STEP 4: REAP. Kills any process this plugin registered whose recorded start time still
+        // matches — see ChildProcessStore.ReapPlugin. A plugin that Stopped cleanly already exited
+        // its own children, so this ordinarily finds nothing; it exists for the plugin that did not.
+        _childProcesses?.ReapPlugin(pluginName, _log);
 
         return true;
     }

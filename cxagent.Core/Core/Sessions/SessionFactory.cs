@@ -54,6 +54,15 @@ internal static class SessionFactory
             : ports.Tools.Select(t => (Jobs.IAgentTool)new Jobs.GatedAgentTool(
                 t, shared.Gate, ports.Policy)).ToList();
 
+        // THE PLUGIN REGISTRY'S PID RECORD, ATTACHED HERE RATHER THAN AT CONSTRUCTION — see
+        // PluginRegistry.AttachChildProcessStore's own doc: session.Plugins is built in a field
+        // initialiser, before GlobalInstructionsDir (this process's ConfigDir) is known. Re-attaching
+        // on every re-wire is harmless — it is the same directory every time within one process — and
+        // simpler than a one-shot guard for an operation that costs nothing to repeat.
+        if (shared.GlobalInstructionsDir is { } configDir)
+            session.Plugins.AttachChildProcessStore(new Plugins.ChildProcessStore(configDir),
+                session.SayPluginLifecycle);
+
         // THE SESSION'S OWN PLUGINS, COMPOSED WITH WHATEVER THE EMBEDDER ALSO SUPPLIES. Plugins load
         // through Session.LoadPlugin rather than through ports, so session.Plugins.CurrentTools is a
         // second live source alongside ports.DynamicTools rather than a replacement for it — an
