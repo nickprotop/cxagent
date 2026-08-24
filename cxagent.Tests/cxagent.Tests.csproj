@@ -39,7 +39,7 @@
          position math directly; only the end-to-end tests against a real server (Skip'd, see
          HeadlessSessionTests.AgainstLocalLlamaCpp for the same pattern) need a language server on
          this machine. -->
-    <ProjectReference Include="../plugins/cxagent-lsp/cxagent-lsp.csproj" />
+    <ProjectReference Include="../plugins/cxagent-dotnet-lsp/cxagent-dotnet-lsp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

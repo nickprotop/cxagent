@@ -273,7 +273,7 @@ right, not a coincidence to explain away.
    existing is the state a language server process holds between calls (PLUGINS.md, "What a
    plugin is": "the plugin IS the executor its tools share"). Collapsing lifecycle into `Execute`
    calls would leave a native plugin no ABI-defined moment to start its child process, which
-   `cxagent-lsp` (Task 8) needs and does today via `IPlugin.Start`.
+   `cxagent-dotnet-lsp` (Task 8) needs and does today via `IPlugin.Start`.
 
 2. **No `services[]` / operation-list manifest shape, no closed wire-type vocabulary
    (`i64`/`f64`/`bool`/`string`/`bytes`/`json`).** ConsoleEx's manifest exists to rehydrate
