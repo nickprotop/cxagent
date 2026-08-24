@@ -34,7 +34,22 @@ public sealed class CxagentLspPlugin : IPlugin
         // IPlugin.Load's own doc. Duplicating the schema by hand risks exactly the drift that check
         // exists to catch, so this reads and parses the sidecar rather than restating it — the same
         // file ships beside the DLL either way, and there is only one JSON to keep truthful.
-        var sidecarPath = Path.Combine(AppContext.BaseDirectory, "cxagent-dotnet-lsp.plugin.json");
+        // BESIDE THIS ASSEMBLY, NOT BESIDE THE HOST EXECUTABLE. AppContext.BaseDirectory is the
+        // running process's own directory — the app's output folder, never this plugin's. The two
+        // coincide only when a plugin sits in that same folder, which is what the unit tests in this
+        // repo do and production never does: PluginDiscovery searches .cxagent/plugins and the global
+        // config folder, so a sidecar path built from the host's directory looks in the wrong place
+        // for every real load.
+        //
+        // NOT UNIT-TESTABLE FROM THE TEST HOST, which is why the constraint is written here. Proving
+        // it needs the plugin loaded from a directory that is not the test host's own, and
+        // ManagedPluginLoader uses Assembly.LoadFrom with no AssemblyLoadContext of its own (see its
+        // type doc) — a second copy of an already-loaded identity resolves back to the resident
+        // instance, so an in-process test keeps the test host's directory whichever way this line is
+        // written. It is verified by loading the plugin from /tmp/cxgpu/.cxagent/plugins in a
+        // separate process instead.
+        var here = Path.GetDirectoryName(typeof(CxagentLspPlugin).Assembly.Location)!;
+        var sidecarPath = Path.Combine(here, "cxagent-dotnet-lsp.plugin.json");
         var parsed = PluginManifest.Parse(File.ReadAllText(sidecarPath));
         if (!parsed.IsSuccess || parsed.Manifest is null)
             throw new InvalidOperationException(
