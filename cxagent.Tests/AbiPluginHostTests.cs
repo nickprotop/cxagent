@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Plugins.Abi;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -8,7 +9,9 @@ namespace CxAgent.Tests;
 /// (<c>AbiFixtures/fixture_plugin.c</c>, compiled by <c>AbiFixtures/build.sh</c> at test build
 /// time) — the managed <c>AbiCodec</c> tests already lock the JSON shapes at the unit level; these
 /// lock the actual subprocess boundary Task 9b builds: a real process loading a real shared
-/// library and surviving what that library does to it.
+/// library and surviving what that library does to it. Drives the process through the SAME
+/// <see cref="AbiHostProcess"/> Task 9c's shim (<c>AbiPluginLoader</c>/<c>AbiPlugin</c>) uses in
+/// production, not a description of it — proving the client, not just the wire format.
 ///
 /// <para>SKIPPED, NOT FAILED, WHEN A FIXTURE IS MISSING — see <see cref="RequireFixture"/>. A
 /// machine with no C compiler (AbiFixtures/build.sh's own guard) or a non-Linux CI image still
@@ -23,6 +26,24 @@ public class AbiPluginHostTests
     {
         var path = Path.Combine(OutputDir, name + ".so");
         return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// <c>cxagent-plugin-host.dll</c>'s built path — AppContext.BaseDirectory is cxagent.Tests' own
+    /// output dir, e.g. .../cxagent.Tests/bin/Debug/net10.0/ — the host project is a SIBLING under
+    /// the repo root, built to the same Debug/net10.0 shape, so its path is derived rather than
+    /// hardcoded to one machine's absolute layout.
+    /// </summary>
+    private static readonly string HostDllPath = ResolveHostDll();
+
+    private static string ResolveHostDll()
+    {
+        var repoRoot = Path.GetFullPath(Path.Combine(OutputDir, "..", "..", "..", ".."));
+        var hostDll = Path.Combine(repoRoot, "cxagent.PluginHost", "bin", "Debug", "net10.0", "cxagent-plugin-host.dll");
+        if (!File.Exists(hostDll))
+            throw new FileNotFoundException(
+                $"cxagent-plugin-host.dll not found at '{hostDll}' — build cxagent.PluginHost first.", hostDll);
+        return hostDll;
     }
 
     // Every [Fact] below starts with this — xUnit has no per-test runtime Skip, so the pattern
@@ -42,7 +63,7 @@ public class AbiPluginHostTests
     {
         if (!RequireFixture("fixture-wellformed", out var lib)) return;
 
-        var (host, handshake) = await AbiHostProcess.Launch(lib);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
         await using var disposeHost = host;
 
         Assert.True(handshake.Ready);
@@ -51,18 +72,18 @@ public class AbiPluginHostTests
         Assert.Equal(["echo"], handshake.Manifest.Tools.Select(t => t.Name).ToList());
 
         var settings = JsonSerializer.SerializeToElement(new { });
-        var startReply = await host.Start(OutputDir, settings);
+        var startReply = await host.Start(OutputDir, settings, CancellationToken.None);
         Assert.True(startReply.Ok);
 
         var args = JsonSerializer.SerializeToElement(new { value = "hi" });
-        var invokeReply = await host.Invoke("echo", args);
+        var invokeReply = await host.Invoke("echo", args, CancellationToken.None);
 
         Assert.True(invokeReply.Ok);
         Assert.NotNull(invokeReply.Result);
         Assert.True(invokeReply.Result!.Success);
         Assert.Equal(JsonValueKind.Object, invokeReply.Result.Output.ValueKind);
 
-        var stopReply = await host.Stop();
+        var stopReply = await host.Stop(CancellationToken.None);
         Assert.True(stopReply.Ok);
     }
 
@@ -73,12 +94,12 @@ public class AbiPluginHostTests
     {
         if (!RequireFixture("fixture-malformed", out var lib)) return;
 
-        var (host, handshake) = await AbiHostProcess.Launch(lib);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
         await using var disposeHost = host;
         Assert.True(handshake.Ready);
 
-        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }));
-        var reply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }));
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+        var reply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
 
         // THE CALL FAILS — it does not throw, hang, or bring the host down. Malformed JSON from the
         // plugin is exactly the case AbiCodec.ParseEnvelope names: "fails, quoting a bounded prefix
@@ -89,7 +110,7 @@ public class AbiPluginHostTests
 
         // THE HOST PROCESS ITSELF IS STILL ALIVE after a malformed reply — a bad envelope is a data
         // problem, not a fault that should take the process down.
-        var stopReply = await host.Stop();
+        var stopReply = await host.Stop(CancellationToken.None);
         Assert.True(stopReply.Ok);
     }
 
@@ -108,7 +129,7 @@ public class AbiPluginHostTests
         try
         {
             var (host, handshake) = await AbiHostProcess.Launch(
-                lib, new Dictionary<string, string> { ["FREE_COUNT_PATH"] = countPath });
+                HostDllPath, lib, new Dictionary<string, string> { ["FREE_COUNT_PATH"] = countPath });
             await using var disposeHost = host;
 
             // describe() ALREADY RAN, during the handshake, before this test sent a single request —
@@ -116,19 +137,19 @@ public class AbiPluginHostTests
             // free this test did not itself trigger, and the count below accounts for it.
             Assert.True(handshake.Ready);
 
-            await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }));
+            await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
 
             // THIS INVOKE HITS THE PARSE-FAILURE PATH — fixture-malformed's cxagent_plugin_invoke
             // returns "{ this is not json" every time. AbiCodec.ParseEnvelope fails to parse it and
             // returns EARLY, from inside a try/catch — exactly the path CLAUDE.md's brief calls out
             // as "the exact bug this discipline exists to prevent" if free is skipped on it.
-            var reply1 = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }));
+            var reply1 = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
             Assert.False(reply1.Ok);
 
-            var reply2 = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }));
+            var reply2 = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
             Assert.False(reply2.Ok);
 
-            await host.Stop();
+            await host.Stop(CancellationToken.None);
 
             // Give the fixture's own fopen/fputs/fclose a moment to land on disk before this
             // process reads it back — the host process's own stdout replies (already awaited above)
@@ -157,17 +178,17 @@ public class AbiPluginHostTests
     {
         if (!RequireFixture("fixture-crash", out var lib)) return;
 
-        var (host, handshake) = await AbiHostProcess.Launch(lib);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
         await using var disposeHost = host;
         Assert.True(handshake.Ready);
 
-        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }));
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
 
         // THE SEGFAULT KILLS THE HOST PROCESS — this is the ABI's own contract: a native crash has
         // no unwind path, so it takes down the process it happened in, and that process is THIS
         // host, never cxagent itself. What must survive is that the caller sees a clean failure,
         // not a hang and not an unhandled exception on ITS side.
-        var reply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }));
+        var reply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
 
         Assert.False(reply.Ok);
         Assert.NotNull(reply.Error);
@@ -180,7 +201,7 @@ public class AbiPluginHostTests
     public async Task ALibraryThatDoesNotExistFailsCleanlyAtStartup()
     {
         var missingPath = Path.Combine(OutputDir, "does-not-exist.so");
-        var (host, handshake) = await AbiHostProcess.Launch(missingPath);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, missingPath);
         await using var disposeHost = host;
 
         Assert.False(handshake.Ready);
@@ -195,7 +216,7 @@ public class AbiPluginHostTests
     {
         if (!RequireFixture("fixture-noinvoke", out var lib)) return;
 
-        var (host, handshake) = await AbiHostProcess.Launch(lib);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
         await using var disposeHost = host;
 
         Assert.False(handshake.Ready);
@@ -211,7 +232,7 @@ public class AbiPluginHostTests
     {
         if (!RequireFixture("fixture-badversion", out var lib)) return;
 
-        var (host, handshake) = await AbiHostProcess.Launch(lib);
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
         await using var disposeHost = host;
 
         Assert.False(handshake.Ready);

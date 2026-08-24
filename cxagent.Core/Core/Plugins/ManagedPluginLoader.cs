@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 
 namespace CxAgent.Core.Plugins;
 
@@ -163,96 +162,11 @@ public static class ManagedPluginLoader
         // file the user was asked to approve describes something other than what runs, and the load
         // gate's promise is void. Checked here, before anything is handed to the registry, so a
         // mismatched plugin never reaches a caller that would trust either description.
-        var difference = DescribeMismatch(sidecar, loaded);
+        var difference = PluginManifestMatch.Mismatch(sidecar, loaded, "Load");
         if (difference is not null)
             return new ManagedPluginLoadResult.Failed(
                 $"'{assemblyPath}' does not match its sidecar manifest '{sidecarPath}': {difference}");
 
         return new ManagedPluginLoadResult.Loaded(instance, loaded);
-    }
-
-    /// <summary>
-    /// Names the first difference between the sidecar manifest and what <see cref="IPlugin.Load"/>
-    /// actually returned, or null when they agree. Compares every field the sidecar can declare —
-    /// a match on name and tool names alone would let a plugin's description or gating policy drift
-    /// from what the user was shown at approval time without tripping this check.
-    /// </summary>
-    private static string? DescribeMismatch(PluginManifest sidecar, PluginManifest loaded)
-    {
-        if (sidecar.Name != loaded.Name)
-            return $"sidecar names '{sidecar.Name}', Load returned '{loaded.Name}'.";
-        if (sidecar.Version != loaded.Version)
-            return $"sidecar declares version '{sidecar.Version}', Load returned '{loaded.Version}'.";
-        if (sidecar.Instructions != loaded.Instructions)
-            return "sidecar and Load disagree on 'instructions'.";
-        if (sidecar.Spawns != loaded.Spawns)
-            return $"sidecar declares spawns={sidecar.Spawns}, Load returned spawns={loaded.Spawns}.";
-
-        var sidecarTools = sidecar.Tools.ToDictionary(t => t.Name);
-        var loadedTools = loaded.Tools.ToDictionary(t => t.Name);
-
-        var sidecarOnly = sidecarTools.Keys.Except(loadedTools.Keys).ToList();
-        if (sidecarOnly.Count > 0)
-            return $"sidecar declares tool(s) Load did not return: {string.Join(", ", sidecarOnly)}.";
-
-        var loadedOnly = loadedTools.Keys.Except(sidecarTools.Keys).ToList();
-        if (loadedOnly.Count > 0)
-            return $"Load returned tool(s) the sidecar did not declare: {string.Join(", ", loadedOnly)}.";
-
-        foreach (var (name, sidecarTool) in sidecarTools)
-        {
-            var loadedTool = loadedTools[name];
-            if (sidecarTool.Description != loadedTool.Description)
-                return $"tool '{name}': sidecar and Load disagree on 'description'.";
-            if (sidecarTool.Gated != loadedTool.Gated)
-                return $"tool '{name}': sidecar declares gated={sidecarTool.Gated}, Load returned gated={loadedTool.Gated}.";
-            if (!SchemaEquals(sidecarTool.InputSchema, loadedTool.InputSchema))
-                return $"tool '{name}': sidecar and Load disagree on 'inputSchema'.";
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Structural equality for two JSON Schema documents, ignoring formatting and object-key order.
-    ///
-    /// <para>NOT <c>GetRawText()</c>. The sidecar comes from a human-edited file and the running
-    /// plugin's Load call typically builds its schema in code — <c>{ "type": "object" }</c> from the
-    /// sidecar and a compact <c>{"type":"object"}</c> from <see cref="JsonSerializer"/> are the SAME
-    /// schema, and comparing raw text would refuse every plugin whose sidecar was merely
-    /// pretty-printed. <see cref="JsonElement"/> carries no built-in deep-equals, so this walks both
-    /// trees by hand.</para>
-    /// </summary>
-    private static bool SchemaEquals(JsonElement a, JsonElement b)
-    {
-        if (a.ValueKind != b.ValueKind) return false;
-
-        switch (a.ValueKind)
-        {
-            case JsonValueKind.Object:
-                var aProps = a.EnumerateObject().ToList();
-                var bProps = b.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
-                if (aProps.Count != bProps.Count) return false;
-                return aProps.All(p => bProps.TryGetValue(p.Name, out var bv) && SchemaEquals(p.Value, bv));
-
-            case JsonValueKind.Array:
-                var aItems = a.EnumerateArray().ToList();
-                var bItems = b.EnumerateArray().ToList();
-                return aItems.Count == bItems.Count
-                    && aItems.Zip(bItems, SchemaEquals).All(equal => equal);
-
-            case JsonValueKind.String:
-                return a.GetString() == b.GetString();
-
-            case JsonValueKind.Number:
-                // COMPARED AS TEXT, not as a parsed double: a JSON Schema never needs float
-                // tolerance, and text comparison avoids 1 vs 1.0 silently passing as equal when a
-                // plugin author would reasonably expect them written identically.
-                return a.GetRawText() == b.GetRawText();
-
-            default:
-                // True, False, Null, Undefined — ValueKind equality above already decided these.
-                return true;
-        }
     }
 }

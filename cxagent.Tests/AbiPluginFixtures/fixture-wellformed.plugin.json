@@ -1,0 +1,8 @@
+{
+  "name": "fixture",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "echo", "description": "echoes its argument", "inputSchema": { "type": "object" }, "gated": false }
+  ]
+}

@@ -69,6 +69,13 @@
           TargetPath="cxagent.Tests.PluginFixture.Mismatched.plugin.json" />
     <None Include="PluginFixtures/ThrowingPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
           TargetPath="cxagent.Tests.PluginFixture.Throwing.plugin.json" />
+
+    <!-- BESIDE fixture-wellformed.so AT THE OUTPUT ROOT, not under AbiPluginFixtures/ — AbiPluginLoader
+         resolves a sidecar from the LIBRARY path with ".plugin.json" swapped in for the extension,
+         exactly like ManagedPluginLoader does for a managed assembly, so this must land at the same
+         path the native fixture itself does (AbiFixtures/build.sh's own OUT_DIR). -->
+    <None Include="AbiPluginFixtures/fixture-wellformed.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="fixture-wellformed.plugin.json" />
   </ItemGroup>
 
 </Project>
