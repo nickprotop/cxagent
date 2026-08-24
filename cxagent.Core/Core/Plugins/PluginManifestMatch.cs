@@ -6,7 +6,7 @@ namespace CxAgent.Core.Plugins;
 /// Compares a sidecar manifest against what a plugin actually reported running — shared by
 /// <see cref="ManagedPluginLoader"/> (sidecar vs. <c>IPlugin.Load</c>'s return) and
 /// <c>AbiPluginLoader</c> (sidecar vs. <c>cxagent_plugin_describe</c>'s return), because both loaders
-/// enforce the identical rule from PLUGINS.md: the file a user was asked to approve must describe
+/// enforce the identical rule from the plugin design: the file a user was asked to approve must describe
 /// what actually runs, regardless of which loader loaded it. One comparison, not two that could
 /// silently drift apart on which fields they check.
 /// </summary>

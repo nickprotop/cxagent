@@ -9,13 +9,13 @@ public interface IPluginLogger
 }
 
 /// <summary>
-/// Everything a plugin is handed at Load, and nothing else — see PLUGINS.md, "What a plugin is
+/// Everything a plugin is handed at Load, and nothing else — see the plugin design, "What a plugin is
 /// handed at Load".
 ///
 /// <para>NO TRANSCRIPT, NO MODEL, NO PERMISSION STORE. A plugin sees the arguments of its own calls
 /// and nothing else: it cannot read the user's messages, the model's replies, or another tool's
 /// result, and it cannot start a turn or grant itself a permission. Those are not oversights to be
-/// added later — PLUGINS.md, "What a plugin is not" states passive transcript reading is removed on
+/// added later — the plugin design, "What a plugin is not" states passive transcript reading is removed on
 /// purpose, and "The plugin provides its own policy; Core enforces it" states a plugin declares
 /// permission gates rather than reading or writing grants itself.</para>
 /// </summary>
@@ -49,7 +49,7 @@ public interface IPluginContext
     /// Registers a process this plugin spawned, so Core can record its pid and reap it — at Stop, at
     /// unwire, and at startup if the previous run never reached either.
     ///
-    /// <para>NOT THE PLUGIN'S OWN BOOKKEEPING. PLUGINS.md, "Lifecycle": a plugin that crashed is a
+    /// <para>NOT THE PLUGIN'S OWN BOOKKEEPING. The plugin design, "Lifecycle": a plugin that crashed is a
     /// plugin that cannot clean up after itself, which is the entire scenario reaping exists for.
     /// Calling this is not optional for a plugin that spawns a child process — an unregistered child
     /// is exactly the leak the pid record exists to close.</para>

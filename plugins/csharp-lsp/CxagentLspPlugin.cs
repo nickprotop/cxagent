@@ -6,7 +6,7 @@ using CxAgent.Core.Plugins;
 namespace CxAgent.Plugins.Lsp;
 
 /// <summary>
-/// One managed plugin, one language server, three tools — see PLUGINS.md, "What a plugin is": the
+/// One managed plugin, one language server, three tools — see the plugin design, "What a plugin is": the
 /// plugin IS the executor its tools share, holding the one LspClient connection all three dispatch
 /// through.
 ///

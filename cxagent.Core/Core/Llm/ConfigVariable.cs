@@ -73,7 +73,7 @@ public static class ConfigVariable
     ///
     /// <para>PUBLIC, not private: <c>pluginPaths</c> entries are written the same way and need the
     /// same expansion both in Core's own config-time collision check and in an embedding
-    /// application's own plugin discovery (PLUGINS.md, "Discovery is the application's") — a second
+    /// application's own plugin discovery (the plugin design, "Discovery is the application's") — a second
     /// copy of this in every consumer would drift the moment someone changes how <c>~</c> is written.</para>
     /// </summary>
     public static string Expand(string path)

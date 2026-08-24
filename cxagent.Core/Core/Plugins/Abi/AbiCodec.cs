@@ -35,7 +35,7 @@ public readonly struct AbiParseResult<T>
 /// SAME types <see cref="ManagedPluginLoader"/> already produces — <see cref="PluginManifest"/> and
 /// <see cref="JobResult"/> — so <see cref="PluginRegistry"/> holds an identical shape regardless of
 /// which loader (managed or ABI) produced it. Nothing downstream of a load can tell which loader
-/// ran; that is the whole point of writing one contract for both (PLUGINS.md, "The v1 cut").
+/// ran; that is the whole point of writing one contract for both (the plugin design, "The v1 cut").
 ///
 /// <para>NEVER USES <c>JsonSerializer.Deserialize&lt;T&gt;</c> DIRECTLY ON HOST INPUT WITHOUT A
 /// TRY/CATCH — every entry point here is a boundary a malicious or merely broken native plugin can

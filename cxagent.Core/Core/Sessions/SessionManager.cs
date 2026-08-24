@@ -44,7 +44,7 @@ public sealed class SessionManager : IDisposable
     public PermissionRulesStore? Rules { get; }
 
     /// <summary>
-    /// What startup reaping found and did, one line per process — see PLUGINS.md, "Lifecycle":
+    /// What startup reaping found and did, one line per process — see the plugin design, "Lifecycle":
     /// "Whatever cannot be closed on the way down must be collectable on the way up." Empty when the
     /// pid record was empty or absent, which is the ordinary case.
     ///
@@ -305,7 +305,7 @@ public sealed class SessionManager : IDisposable
 
     /// <summary>
     /// Kills whatever a previous run's plugins left behind and never got to close — see
-    /// PLUGINS.md, "Lifecycle": "a pid record written where the next run can find it, and reaped at
+    /// the plugin design, "Lifecycle": "a pid record written where the next run can find it, and reaped at
     /// startup." Runs from BOTH <c>Create</c> and <see cref="Over"/>, because a manager over
     /// caller-built services is still the first place in THIS process a plugin's children could be
     /// reaped from; skipping it there would protect only the one construction path that happens to
@@ -530,7 +530,7 @@ public sealed class SessionManager : IDisposable
     {
         lock (_gate) _sessions.Remove(session);
 
-        // UNWIRE EVERY PLUGIN FIRST — PLUGINS.md: "closing a session is unwiring every plugin it
+        // UNWIRE EVERY PLUGIN FIRST — the plugin design: "closing a session is unwiring every plugin it
         // loaded, and a plugin cannot tell the difference" from an explicit UnwirePluginAsync. Ahead
         // of disposing the host, so a plugin's Stop still runs against a session that is, from the
         // plugin's own point of view, merely ending normally rather than one whose agent is already

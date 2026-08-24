@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- ONE PROCESS PER PLUGIN — PLUGINS.md, "Lifecycle" and Task 9's own brief: "so a faulting
+  <!-- ONE PROCESS PER PLUGIN — the plugin design, "Lifecycle" and Task 9's own brief: "so a faulting
        plugin does not take its neighbours with it." This project builds ONLY that process; the
        managed shim that spawns one instance per ABI plugin and drives it (Task 9c) is a separate
        piece, not built here. -->

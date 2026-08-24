@@ -14,7 +14,7 @@ namespace CxAgent.Plugins.LspAbi;
 // csharp-lsp-abi.csproj's own comment on why there is no ProjectReference to it at all).
 // Field names below are kept byte-for-byte identical to AbiContract.cs's records — this file is the
 // PROOF that the JSON shape, not a shared C# type, is the actual contract cxagent_plugin.h promises;
-// see PLUGINS.md, "The boundary is JSON."
+// see the plugin design, "The boundary is JSON."
 
 public sealed record AbiToolManifestWire(
     [property: JsonPropertyName("name")] string Name,
@@ -39,7 +39,7 @@ public sealed record AbiPluginContextWire(
 /// A <see cref="JsonElement"/> BACKED BY <c>Dictionary&lt;string, object?&gt;</c> ONE LEVEL UP
 /// (<c>JobResult.Output</c>). That is not a stylistic choice — it is forced the same way the named
 /// records in LspProtocolJson.cs are: <c>JobResult.Output</c> is deliberately open
-/// (<c>Dictionary&lt;string, object?&gt;</c>, PLUGINS.md/Abi/README.md, "the result envelope" — "the
+/// (<c>Dictionary&lt;string, object?&gt;</c>, the plugin design/Abi/README.md, "the result envelope" — "the
 /// same escape hatch JobParameters/JobResult already use managed-side"), and a source-generated
 /// <see cref="JsonSerializerContext"/> cannot describe a polymorphic <c>object?</c> value ahead of
 /// time — attempting to serialize <c>Dictionary&lt;string, object?&gt;</c> under NativeAOT throws

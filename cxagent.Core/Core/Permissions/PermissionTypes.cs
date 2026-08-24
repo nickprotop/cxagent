@@ -12,10 +12,10 @@ namespace CxAgent.Core.Permissions;
 /// never exempts the tool from its own <see cref="Jobs.IAgentTool.Gate"/>, which runs on every
 /// call; the two are different questions and this kind only answers the first.</para>
 ///
-/// <para><c>Plugin</c> is the load gate itself — see PLUGINS.md, "The load gate is the only boundary
+/// <para><c>Plugin</c> is the load gate itself — see the plugin design, "The load gate is the only boundary
 /// Core can enforce": may this plugin's whole load set (see <see cref="Plugins.PluginIdentity"/>) run
 /// in this session at all. It answers that ONE question, once, at load; it is not consulted again
-/// per call the way <c>Tool</c> is — a plugin's own declared per-operation gates (PLUGINS.md, "The
+/// per call the way <c>Tool</c> is — a plugin's own declared per-operation gates (the plugin design, "The
 /// plugin provides its own policy; Core enforces it") reuse <c>Tool</c>, because that is already the
 /// vocabulary for "may this specific capability run", and a plugin's gated tool is exactly that
 /// question asked by a different kind of contributor.</para>

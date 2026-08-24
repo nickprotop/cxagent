@@ -5,7 +5,7 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The CONFIG layer of PLUGINS.md's "Name collisions" matrix — rows 2 and 4-plugin, the only ones
+/// The CONFIG layer of the plugin design's "Name collisions" matrix — rows 2 and 4-plugin, the only ones
 /// catchable before anything runs, plus row 9 (a runtime load still catches what config-time
 /// validation could not see) and the shape of <c>plugins</c>/<c>pluginPaths</c> themselves.
 ///

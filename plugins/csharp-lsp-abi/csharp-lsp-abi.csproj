@@ -4,7 +4,7 @@
        Assembly.LoadFrom — see cxagent_plugin.h. PublishAot with NativeLib=Shared is what turns this
        project's [UnmanagedCallersOnly] exports into the five extern "C" symbols
        cxagent.PluginHost's NativePlugin resolves by name; the ABI's own JSON-boundary design (see
-       PLUGINS.md, "The boundary is JSON") does not care that the library on the other side of it
+       the plugin design, "The boundary is JSON") does not care that the library on the other side of it
        happens to be built from C# rather than C — only that it exports the right symbols and speaks
        the right JSON, which is exactly what this project proves. -->
 

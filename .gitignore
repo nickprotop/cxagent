@@ -43,3 +43,7 @@ CLAUDE.md
 # out, not project documentation — a plan that outlives its task is clutter, and
 # one worth keeping belongs in docs/ under a name a human chose.
 plans/
+
+# Working design notes — internal, not part of the published repo.
+# The reasoning behind decisions, kept where the person making the next one can read it.
+.design/

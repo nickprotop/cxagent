@@ -8,7 +8,7 @@ namespace CxAgent.UI;
 
 /// <summary>
 /// Finds a configured plugin's entry-point file on disk and loads it into a session — the piece
-/// PLUGINS.md, "Configuration" puts on the APPLICATION rather than Core: "Core accepts 'here is a
+/// the plugin design, "Configuration" puts on the APPLICATION rather than Core: "Core accepts 'here is a
 /// plugin at this path' and does not care how it was found. Enumerating folders, presenting a picker
 /// and deciding what to load is orchestration — Core is the infrastructure underneath it."
 ///
@@ -29,7 +29,7 @@ public static class PluginDiscovery
 
     /// <summary>
     /// The folders searched for a plugin's <see cref="PluginConfig.File"/>, nearest (most specific)
-    /// first — PLUGINS.md, "Two locations, project wins": "A project overrides a globally installed
+    /// first — the plugin design, "Two locations, project wins": "A project overrides a globally installed
     /// plugin rather than colliding with it."
     ///
     /// <para>CONFIGURED PATHS COME FIRST, IN THE ORDER WRITTEN, because a user who bothered to list
@@ -42,7 +42,7 @@ public static class PluginDiscovery
     /// <para>RELATIVE ENTRIES RESOLVE AGAINST THE PROJECT DIRECTORY, not the config directory —
     /// unlike <c>ProviderConfigLoader</c>'s config-time collision check, which has no project
     /// directory to resolve against and falls back to the config directory instead. This is the
-    /// richer resolution that check's own doc says the runtime load has and it does not: PLUGINS.md's
+    /// richer resolution that check's own doc says the runtime load has and it does not: the plugin design's
     /// example <c>.cxagent/plugins</c> is meant to be read relative to the repo being worked in, and
     /// a plugin only findable that way is exactly the case config-time validation cannot see.</para>
     /// </summary>
@@ -103,7 +103,7 @@ public static class PluginDiscovery
 
         foreach (var (name, config) in plugins.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
-            // THE GATE, NOT A FILTER — PLUGINS.md, "Overriding is forbidden": false means no
+            // THE GATE, NOT A FILTER — the plugin design, "Overriding is forbidden": false means no
             // process, no tools, no prompt, nothing. A disabled plugin is skipped before anything
             // about it is even looked up.
             if (!config.Enabled) continue;

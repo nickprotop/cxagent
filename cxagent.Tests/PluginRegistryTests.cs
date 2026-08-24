@@ -13,8 +13,8 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The mutable registry PLUGINS.md's whole design rests on, and the turn boundary that keeps it
-/// correct — see PLUGINS.md, "Loading is refused mid-turn" and "Unwire is one ordered operation".
+/// The mutable registry the plugin design's whole design rests on, and the turn boundary that keeps it
+/// correct — see the plugin design, "Loading is refused mid-turn" and "Unwire is one ordered operation".
 ///
 /// <para>NO LOADER YET. Every plugin here is <see cref="FakePlugin"/> — nothing in this task
 /// constructs an <see cref="IPlugin"/> from disk, so the fixture is what Task 4 replaces.</para>
@@ -76,7 +76,7 @@ public class PluginRegistryTests : IDisposable
     }
 
     /// <summary>A name already taken outside the registry — a built-in or an injected tool — refuses
-    /// the whole plugin, not just the colliding tool. See PLUGINS.md, "Name collisions": a
+    /// the whole plugin, not just the colliding tool. See the plugin design, "Name collisions": a
     /// half-loaded plugin is unpredictable from its manifest.</summary>
     [Fact]
     public void ACollisionWithAnOutsideNameRefusesTheWholePluginNotJustOneTool()
@@ -454,7 +454,7 @@ public class PluginRegistryTests : IDisposable
     }
 
     /// <summary>The same collision, but the plugin's OTHER tool name is free — the whole plugin
-    /// still refuses (PLUGINS.md, "Name collisions": a half-loaded plugin is unpredictable), proving
+    /// still refuses (the plugin design, "Name collisions": a half-loaded plugin is unpredictable), proving
     /// the injected check goes through the same all-or-nothing path as the built-in check.</summary>
     [Fact]
     public async Task APluginCollidingWithAnInjectedToolRefusesWholeEvenWithAnUncontestedToolAlso()

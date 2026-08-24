@@ -25,11 +25,11 @@ internal sealed class LoadedPlugin(IPlugin instance, PluginManifest manifest)
 /// <summary>
 /// What happened to a load attempt.
 ///
-/// <para>A DUPLICATE NAME REFUSES THE WHOLE PLUGIN, never just the colliding tool — see PLUGINS.md,
+/// <para>A DUPLICATE NAME REFUSES THE WHOLE PLUGIN, never just the colliding tool — see the plugin design,
 /// "Name collisions": a plugin that half-loaded is a plugin whose behaviour nobody can predict from
 /// its manifest. This is deliberately NOT <see cref="Jobs.AgentToolset"/>'s rule, which resolves a
 /// duplicate name last-registration-wins; that is right for one embedder's own tools composed
-/// together and wrong for a plugin, where silently winning a name is exactly what PLUGINS.md
+/// together and wrong for a plugin, where silently winning a name is exactly what the plugin design
 /// forbids.</para>
 /// </summary>
 public abstract record PluginLoadResult
@@ -47,12 +47,12 @@ public abstract record PluginLoadResult
 }
 
 /// <summary>
-/// The mutable set of tools plugins contribute to one session — the registry PLUGINS.md's whole
+/// The mutable set of tools plugins contribute to one session — the registry the plugin design's whole
 /// design rests on: "a registry that can be mutated at a turn boundary and that refuses collisions,
 /// sitting in the same chain position rather than inside the existing set."
 ///
 /// <para>ONE PER SESSION, like <see cref="Jobs.AgentToolset"/> and everything else a plugin touches
-/// — see PLUGINS.md, "Scope: one instance per session".</para>
+/// — see the plugin design, "Scope: one instance per session".</para>
 ///
 /// <para><see cref="CurrentTools"/> IS THE SEAM. It is handed to <c>SessionPorts.DynamicTools</c> as
 /// a live delegate, exactly the shape <c>DynamicToolSourceTests</c> already exercises: consulted
@@ -100,7 +100,7 @@ public sealed class PluginRegistry
     ///
     /// <para><paramref name="log"/> IS NOT A PLUGIN'S OWN <see cref="IPluginLogger"/> — a hung or
     /// crashed plugin cannot be trusted to relay its own diagnosis, which is the same reasoning
-    /// PLUGINS.md gives for why reaping is Core's obligation rather than the plugin's bookkeeping.
+    /// the plugin design gives for why reaping is Core's obligation rather than the plugin's bookkeeping.
     /// This is the session's own log line, the same sink <c>Say</c> writes an ordinary notice to.</para>
     /// </summary>
     internal void AttachChildProcessStore(ChildProcessStore store, Action<string> log)
@@ -177,7 +177,7 @@ public sealed class PluginRegistry
 
     /// <summary>
     /// Unwires one plugin: deregister, drain, Stop, reap — in that order, and the order is the
-    /// contract. See PLUGINS.md, "Unwire is one ordered operation".
+    /// contract. See the plugin design, "Unwire is one ordered operation".
     ///
     /// <para>DEREGISTER FIRST. Removing the plugin from <see cref="_plugins"/> before anything else
     /// is what makes the drain below finite: a plugin still reachable from <see cref="CurrentTools"/>
@@ -190,12 +190,12 @@ public sealed class PluginRegistry
     ///
     /// <para>REAP KILLS WHATEVER OUTLIVED STOP. A well-behaved plugin's own Stop already exits its
     /// children, so the ordinary case finds nothing left; reap exists for the plugin that did not —
-    /// crashed inside Stop, or is the timed-out case below — and closes PLUGINS.md's stated gap:
+    /// crashed inside Stop, or is the timed-out case below — and closes the plugin design's stated gap:
     /// "an orphaned subprocess is the one failure in this feature that outlives the app." Reaping
     /// here, not only at startup, is what "Unwiring must reap" asks for: a host killed only at
     /// startup survives for the rest of THIS run if the plugin was merely unwired, not crashed.</para>
     ///
-    /// <para>STOP HAS A TIMEOUT — PLUGINS.md, "Stop has a timeout, and the remedy differs by
+    /// <para>STOP HAS A TIMEOUT — the plugin design, "Stop has a timeout, and the remedy differs by
     /// loader". A managed plugin runs in-process, so there is no host to kill when it hangs: the
     /// call is abandoned (its Task is left running rather than awaited further) and the hang is
     /// logged naming the plugin, exactly as that section specifies. AN ABANDONED STOP CANNOT BE
@@ -204,7 +204,7 @@ public sealed class PluginRegistry
     /// that owns the instance) and this method has no authority to interrupt code it does not
     /// control, only to stop waiting for it. THE ABI HALF OF THIS ASYMMETRY — killing a host process
     /// after the same timeout — has no loader to implement it against yet; this is the managed half
-    /// PLUGINS.md asks Task 6 to ship, with the process-kill path left for the ABI task to fill.</para>
+    /// the plugin design asks Task 6 to ship, with the process-kill path left for the ABI task to fill.</para>
     /// </summary>
     /// <returns>False when no plugin of this name is loaded — there was nothing to unwire.</returns>
     public async Task<bool> UnwireAsync(string pluginName, CancellationToken ct)
@@ -251,7 +251,7 @@ public sealed class PluginRegistry
     }
 
     /// <summary>
-    /// Unwires every loaded plugin, in no particular order — session close runs this. PLUGINS.md:
+    /// Unwires every loaded plugin, in no particular order — session close runs this. The plugin design:
     /// "closing a session is unwiring every plugin it loaded, and a plugin cannot tell the
     /// difference" from the four-step path above, so this is that path, once per plugin.
     /// </summary>
@@ -276,7 +276,7 @@ public sealed class PluginRegistry
     {
         public ToolDefinition Definition { get; } = new(tool.Name, tool.Description, tool.InputSchema);
 
-        // A MINIMAL GATE, NOT THE REAL POLICY. PLUGINS.md's "the plugin provides its own policy;
+        // A MINIMAL GATE, NOT THE REAL POLICY. The plugin design's "the plugin provides its own policy;
         // Core enforces it" describes a richer shape — the plugin choosing what to show and how a
         // call generalises — which is a later task's to build. tool.Gated only distinguishes "asks"
         // from "does not".

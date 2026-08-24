@@ -203,7 +203,7 @@ public sealed class Agent
     /// <para>NOT ROUTED THROUGH <see cref="Jobs.AgentToolset"/>. That type resolves a duplicate name
     /// last-registration-wins, which is right for one embedder's own tools composed with another's,
     /// and wrong for a plugin: a plugin silently winning a name it collided with is exactly what
-    /// PLUGINS.md forbids. This field is therefore a separate chain link in the same position, not
+    /// the plugin design forbids. This field is therefore a separate chain link in the same position, not
     /// a second contributor merged into the existing set.</para>
     ///
     /// <para>Null means no dynamic source at all — the ordinary case for every session with no

@@ -4,7 +4,7 @@ using System.Text;
 namespace CxAgent.Core.Plugins;
 
 /// <summary>
-/// A content hash over a plugin's WHOLE LOAD SET — see PLUGINS.md, "Identity is a content hash, not
+/// A content hash over a plugin's WHOLE LOAD SET — see the plugin design, "Identity is a content hash, not
 /// a filename": "The hash covers everything loaded, not one file. A managed plugin with dependency
 /// assemblies is a directory, and hashing only its entry point leaves a swapped dependency changing
 /// the code without changing the identity — the grant would carry over to something the user never
@@ -30,7 +30,7 @@ public static class PluginIdentity
     /// sorting; folding the relative path (forward-slash normalised, so the same tree hashes the same
     /// on Windows and Linux) into the digest for each file removes that. The path is relative to
     /// <paramref name="loadSetDirectory"/> so moving the whole plugin to a different folder — which
-    /// PLUGINS.md's "Identity is a content hash, not a filename" says must NOT matter — does not
+    /// the plugin design's "Identity is a content hash, not a filename" says must NOT matter — does not
     /// change the identity.</para>
     /// </summary>
     /// <param name="loadSetDirectory">The directory holding everything this plugin loads — its entry

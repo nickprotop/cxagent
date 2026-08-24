@@ -16,7 +16,7 @@ namespace CxAgent.Core.Plugins;
 /// </param>
 /// <param name="Gated">
 /// Whether a call to this tool asks permission first. The plugin supplies this policy; Core enforces
-/// it through the same prompt machinery every other permission uses — see PLUGINS.md, "The plugin
+/// it through the same prompt machinery every other permission uses — see the plugin design, "The plugin
 /// provides its own policy; Core enforces it".
 /// </param>
 /// <param name="AlwaysAskable">
@@ -38,7 +38,7 @@ public sealed record PluginToolManifest(string Name, string Description, JsonEle
 
 /// <summary>
 /// The sidecar shape and what <c>Describe</c> returns once a plugin is running — deliberately one
-/// type for both, because a config-time collision check (PLUGINS.md, matrix row 2) needs a plugin's
+/// type for both, because a config-time collision check (the plugin design, matrix row 2) needs a plugin's
 /// tool names before any binary loads, and a manifest available only from a running plugin would
 /// make that check impossible to perform ahead of time.
 /// </summary>
@@ -46,7 +46,7 @@ public sealed record PluginToolManifest(string Name, string Description, JsonEle
 /// <param name="Version">The plugin's version, free-form.</param>
 /// <param name="Instructions">
 /// A block of system-prompt text describing how to use this plugin's tools as a set, or null when
-/// the plugin has none. See PLUGINS.md, "The system prompt" — per-tool descriptions cannot state
+/// the plugin has none. See the plugin design, "The system prompt" — per-tool descriptions cannot state
 /// facts about the plugin as a whole (a shared workspace, a warm index) without repeating them.
 /// </param>
 /// <param name="Spawns">
@@ -59,13 +59,13 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
 {
     /// <summary>
     /// Every hook-point key this build knows how to service. Anything else in a manifest is refused
-    /// by name rather than silently dropped — see PLUGINS.md, "Hook points": "v1 honours `tools` and
+    /// by name rather than silently dropped — see the plugin design, "Hook points": "v1 honours `tools` and
     /// `permission`; the rest are refused by name."
     /// </summary>
     private static readonly string[] KnownKinds = ["tools", "permission"];
 
     /// <summary>
-    /// Every hook-point key PLUGINS.md names, known or not — used only to tell an unrecognised
+    /// Every hook-point key the plugin design names, known or not — used only to tell an unrecognised
     /// property in the manifest from an unrelated typo. A key outside this list is not a plugin hook
     /// at all and is left alone rather than reported as a refused kind.
     /// </summary>
@@ -150,7 +150,7 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
             }
 
             // A KIND THIS BUILD DOES NOT SERVICE IS REFUSED BY NAME. `tools` and `permission` are
-            // read above; every other hook point PLUGINS.md names is reported if present, so a
+            // read above; every other hook point the plugin design names is reported if present, so a
             // manifest declaring `commands` against a build that services only tools is told so
             // rather than left believing the declaration took effect.
             foreach (var kind in AllDeclaredKinds)

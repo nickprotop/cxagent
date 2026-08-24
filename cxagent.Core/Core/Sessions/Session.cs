@@ -431,7 +431,7 @@ public sealed partial class Session
 
     /// <summary>
     /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
-    /// on — see <see cref="Plugins.PluginRegistry.Load"/> and PLUGINS.md, "Loading is refused
+    /// on — see <see cref="Plugins.PluginRegistry.Load"/> and the plugin design, "Loading is refused
     /// mid-turn".
     ///
     /// <para>REFUSED MID-TURN, not queued, for the SAME reason <see cref="SetMode(WorkingMode)"/>
@@ -444,7 +444,7 @@ public sealed partial class Session
     /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
     /// method is what runs once a loader has one in hand.</para>
     ///
-    /// <para>THE LOAD GATE — PLUGINS.md, "The load gate is the only boundary Core can enforce".
+    /// <para>THE LOAD GATE — the plugin design, "The load gate is the only boundary Core can enforce".
     /// Runs before the collision check, because a plugin the user declined must never be probed for
     /// name collisions or offered to the model at all — declining is the end of the story, not a
     /// step toward one. Asked ONLY when <see cref="Services"/> carries a gate: a headless session or
@@ -452,7 +452,7 @@ public sealed partial class Session
     /// "no gate, no prompt" path this session already has (see SessionFactory.Wire's own tools
     /// wrapping). <paramref name="loadSetDirectory"/> feeds <see cref="Plugins.PluginIdentity"/> —
     /// the grant is over the CONTENT, not the path — while the path itself is what the prompt shows,
-    /// because PLUGINS.md's prompt names origin and declared capability and nothing else Core can
+    /// because the plugin design's prompt names origin and declared capability and nothing else Core can
     /// honestly offer.</para>
     /// </summary>
     /// <param name="plugin">The running instance, past its own Load call.</param>
@@ -544,7 +544,7 @@ public sealed partial class Session
 
     /// <summary>
     /// Unwires one loaded plugin — deregister, drain, Stop, reap, in that order — see
-    /// <see cref="Plugins.PluginRegistry.UnwireAsync"/> and PLUGINS.md, "Unwire is one ordered
+    /// <see cref="Plugins.PluginRegistry.UnwireAsync"/> and the plugin design, "Unwire is one ordered
     /// operation".
     ///
     /// <para>REFUSED MID-TURN, for the same reason loading is: a call already in flight for one of
@@ -611,7 +611,7 @@ public sealed partial class Session
     /// assembly, honouring the disabled gate and <c>--once</c>, and handing an already-loaded plugin
     /// to <see cref="LoadPlugin"/>.
     ///
-    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK, because PLUGINS.md's gate
+    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK, because the plugin design's gate
     /// is "no process spawned, no tools registered, no load prompt, nothing to select from" — loading
     /// the assembly first and refusing afterward would already have run arbitrary code the config
     /// said not to.</para>
@@ -854,7 +854,7 @@ public sealed partial class Session
         _ => [],
     };
 
-    /// <summary>Every configured plugin, disabled ones included and marked as such — PLUGINS.md's
+    /// <summary>Every configured plugin, disabled ones included and marked as such — the plugin design's
     /// design: hiding a disabled name would make it unreachable and unexplained when the user knows
     /// they wrote it into config.</summary>
     private IReadOnlyList<CompletionValue> PluginValues() =>

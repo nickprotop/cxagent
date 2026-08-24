@@ -8,7 +8,7 @@ namespace CxAgent.Core.Plugins;
 /// Finds the assembly <c>/plugin load</c> means, by a configured name or by a path — the Core-side
 /// counterpart to the front end's <c>PluginDiscovery</c>, which does the same search at startup for
 /// every ENABLED plugin in one pass. This does it for ONE plugin, on demand, and accepts a name
-/// config never declared: PLUGINS.md's whole case for the path form is a plugin nobody has
+/// config never declared: the plugin design's whole case for the path form is a plugin nobody has
 /// configured yet, and a resolver that only understood configured names could not serve it.
 /// </summary>
 public static class PluginResolver

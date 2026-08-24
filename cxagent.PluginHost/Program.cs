@@ -10,7 +10,7 @@ using CxAgent.PluginHost;
 // unhandled exception here is exactly the failure mode this process is the wall against.
 //
 // ARGV[0] IS THE NATIVE LIBRARY PATH — the one thing this process is configured with. No session
-// state, no config, no permission decisions cross into this process; PLUGINS.md and Task 9's brief
+// state, no config, no permission decisions cross into this process; the plugin design and Task 9's brief
 // both say those stay in Core deliberately, and a host that started making them would become a
 // second Core.
 

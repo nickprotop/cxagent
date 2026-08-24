@@ -134,7 +134,7 @@ public sealed class LspClient : IAsyncDisposable
     /// <paramref name="workspaceRoot"/> via <c>rootUri</c> — the LSP-standard way a server learns its
     /// workspace. csharp-ls has no command-line workspace flag and learns its root ONLY this way;
     /// OmniSharp accepts <c>-s</c> too, but sending rootUri regardless costs nothing and keeps this
-    /// method identical for both servers, which is the point — see PLUGINS.md and the task brief on
+    /// method identical for both servers, which is the point — see the plugin design and the task brief on
     /// reading settings rather than hardcoding per-server behaviour.
     /// </summary>
     private async Task InitializeAsync(string workspaceRoot, CancellationToken ct)

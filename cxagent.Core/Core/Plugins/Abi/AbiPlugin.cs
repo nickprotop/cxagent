@@ -118,7 +118,7 @@ public sealed class AbiPlugin : IPlugin
     /// <summary>
     /// Sends <c>stop</c> and disposes the host process regardless of whether that reply was
     /// <c>ok:true</c> — a plugin that failed its own shutdown still gets its process torn down,
-    /// matching PLUGINS.md's "Unwire is one ordered operation": <see cref="PluginRegistry.UnwireAsync"/>
+    /// matching the plugin design's "Unwire is one ordered operation": <see cref="PluginRegistry.UnwireAsync"/>
     /// already reaps whatever a plugin's Stop leaves behind, and disposing here (which kills the
     /// process if it has not already exited) is this loader's own half of "the ABI half of this
     /// asymmetry" — see that method's own doc — closing the process rather than leaving it to the

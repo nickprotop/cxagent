@@ -1,7 +1,6 @@
 # Writing a cxagent plugin
 
-*Everything you need to write one. The design notes behind these rules are in the repo's own
-[PLUGINS.md](../../../PLUGINS.md) — worth reading before changing the system, not before using it.*
+*Everything you need to write one.*
 
 A plugin adds tools to a session. It declares what it offers, cxagent asks the user once whether to
 trust it, and from then on the model can call its tools like any built-in.
@@ -238,5 +237,3 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 - [`IPlugin.cs`](IPlugin.cs) — the managed contract, documented per method
 - [`Abi/cxagent_plugin.h`](Abi/cxagent_plugin.h) — the six C functions, with the ownership rules
 - [`Abi/README.md`](Abi/README.md) — the JSON envelopes crossing the ABI boundary
-- [`PLUGINS.md`](../../../PLUGINS.md) — cxagent's own design notes: why the boundaries are where
-  they are. Internal, and not needed to write a plugin.

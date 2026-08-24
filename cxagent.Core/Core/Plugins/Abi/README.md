@@ -241,7 +241,7 @@ distortion, and it is called out here rather than quietly bent: a managed plugin
 cooperative cancellation mid-`Invoke`; a native one CANNOT be asked to, only abandoned by the
 host. The asymmetry is accepted rather than closed, because closing it would mean either blocking
 `plugin_invoke` behind a lock that lets the host inject a signal (reintroducing exactly the
-coupling `PLUGINS.md`'s "the host does not serialize invokes" language rejects for the same
+coupling the plugin design's "the host does not serialize invokes" language rejects for the same
 reason ConsoleEx gives) or running every native call pre-emptively on a killable OS thread
 (possible, but a 9b concern about how the host manages its own process/thread pool, not a change
 to this wire contract).
@@ -270,7 +270,7 @@ right, not a coincidence to explain away.
 1. **Explicit lifecycle functions (`start`, `stop`) instead of a single stateless `Execute`.**
    ConsoleEx's native services have no lifecycle beyond construction — `Execute` is the only call.
    cxagent's `IPlugin` has `Load → Start → Invoke* → Stop`, and an LSP plugin's whole reason for
-   existing is the state a language server process holds between calls (PLUGINS.md, "What a
+   existing is the state a language server process holds between calls (the plugin design, "What a
    plugin is": "the plugin IS the executor its tools share"). Collapsing lifecycle into `Execute`
    calls would leave a native plugin no ABI-defined moment to start its child process, which
    `csharp-lsp` (Task 8) needs and does today via `IPlugin.Start`.
@@ -287,7 +287,7 @@ right, not a coincidence to explain away.
 
 3. **No `plugin_kind` pre-load probe.** ConsoleEx's probe answers "is this a plugin at all,
    without risking `plugin_describe`" for a directory-scan of many candidate `.so` files sharing a
-   folder with unrelated binaries. cxagent's plugin discovery (PLUGINS.md, "Configuration") is
+   folder with unrelated binaries. cxagent's plugin discovery (the plugin design, "Configuration") is
    name-keyed from `config.json` — the caller already knows a named entry is meant to be a
    plugin before it ever resolves a symbol, so there is nothing a pre-`describe` probe would rule
    out that config resolution has not already settled. Symbol resolution failure

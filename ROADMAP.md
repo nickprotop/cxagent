@@ -39,7 +39,7 @@ one message run at once, and none outlives the turn that started it.
 
 **Skills.** `SKILL.md` files whose description sits in the prompt while the body loads on demand.
 
-**`CxAgent.Core` extracted.** What `isolated-kernel.md` designed, shipped as an assembly and a
+**`CxAgent.Core` extracted.** What the isolated-kernel design called for, shipped as an assembly and a
 package: `Session` and `SessionManager` are the API, `AgentHost` is internal, and the composition
 root owns no turn lifecycle. Verified as a consumer would — packed to a local feed, referenced from
 a clean project with no source access, and run.

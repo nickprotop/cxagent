@@ -47,7 +47,7 @@ public sealed record ProviderCatalog(
     string? ClassifierInstance = null,
     string? Theme = null)
 {
-    /// <summary>Configured plugins, by name — see PLUGINS.md, "Configuration". A NAMED MEMBER, not
+    /// <summary>Configured plugins, by name — see the plugin design, "Configuration". A NAMED MEMBER, not
     /// an eighth positional parameter — this record is already past the point AV1561 asks a group to
     /// be named at.</summary>
     public IReadOnlyDictionary<string, PluginConfig> Plugins { get; init; } =

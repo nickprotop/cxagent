@@ -4,7 +4,7 @@ namespace CxAgent.Core.Plugins;
 
 /// <summary>
 /// What a load attempt produced — an <see cref="IPlugin"/> instance past its own <c>Load</c> call,
-/// or a reason it never got there. See PLUGINS.md, "Permission" and "Failure": a load failure is
+/// or a reason it never got there. See the plugin design, "Permission" and "Failure": a load failure is
 /// reported, never silent, because the load gate is the only place Core can tell the user what a
 /// plugin is before trusting it — a plugin that failed to say why defeats that at the first hurdle.
 /// </summary>
@@ -24,11 +24,11 @@ public abstract record ManagedPluginLoadResult
 
 /// <summary>
 /// Constructs an <see cref="IPlugin"/> from a managed assembly on disk — the first of the two v1
-/// loaders (PLUGINS.md, "The v1 cut": "Both loaders ship in v1. Managed in-process and ABI
+/// loaders (the plugin design, "The v1 cut": "Both loaders ship in v1. Managed in-process and ABI
 /// out-of-process, against one contract.").
 ///
 /// <para>NO <see cref="System.Runtime.Loader.AssemblyLoadContext"/> OF ITS OWN, DELIBERATELY.
-/// PLUGINS.md's lifecycle is Unwire, not Unload, and says why: "A managed plugin's assembly cannot
+/// the plugin design's lifecycle is Unwire, not Unload, and says why: "A managed plugin's assembly cannot
 /// be removed from the process without loading it into an AssemblyLoadContext of its own, and even
 /// then only if nothing outlives it holding a reference." Giving this loader an ALC would let a
 /// plugin's assembly actually be collected, which is a promise Unwire does not make and this loader
@@ -158,7 +158,7 @@ public static class ManagedPluginLoader
                 $"'{sidecar.Name}' threw from Load: {ex.Message}");
         }
 
-        // THE SIDECAR AND WHAT LOAD RETURNS MUST MATCH — PLUGINS.md is explicit that otherwise the
+        // THE SIDECAR AND WHAT LOAD RETURNS MUST MATCH — the plugin design is explicit that otherwise the
         // file the user was asked to approve describes something other than what runs, and the load
         // gate's promise is void. Checked here, before anything is handed to the registry, so a
         // mismatched plugin never reaches a caller that would trust either description.
