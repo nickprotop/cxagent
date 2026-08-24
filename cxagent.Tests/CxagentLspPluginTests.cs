@@ -16,9 +16,12 @@ namespace CxAgent.Tests;
 /// </summary>
 public class CxagentLspPluginTests
 {
+    /// <summary>Records what the plugin logged — the plugin's only way of telling a user something,
+    /// so a test asserting it said something has to keep the lines.</summary>
     private sealed class FakeLogger : IPluginLogger
     {
-        public void Log(string message) { }
+        public List<string> Messages { get; } = [];
+        public void Log(string message) => Messages.Add(message);
     }
 
     private sealed class FakeContext(string workingDirectory, object settings) : IPluginContext
@@ -28,6 +31,9 @@ public class CxagentLspPluginTests
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public List<int> RegisteredPids { get; } = [];
+
+        /// <summary>What the plugin logged, for a test that asserts it announced something.</summary>
+        public List<string> Logged => ((FakeLogger)Logger).Messages;
         public void RegisterChildProcess(int processId) => RegisteredPids.Add(processId);
     }
 
@@ -47,14 +53,31 @@ public class CxagentLspPluginTests
 
     // ---- Start: reads server/args from settings, never hardcodes either -----------------------
 
+    /// <summary>
+    /// No <c>server</c> setting means csharp-ls, not a refusal — and the plugin SAYS so.
+    ///
+    /// <para>A DEFAULT EXISTS BECAUSE <c>/plugin load</c> CARRIES NO SETTINGS unless the user types
+    /// them: a plugin that required one could be tried only by editing config first, which is the
+    /// opposite of what that command is for. csharp-ls is the default because it is pure LSP over
+    /// stdio and needs no flags — OmniSharp speaks its own protocol without <c>-lsp</c>, so
+    /// defaulting to it would fail in a way that reads as the plugin being broken.</para>
+    ///
+    /// <para>ASSERTS THE LOG, NOT THE PROCESS. Starting a real server here would make this test need
+    /// csharp-ls installed; what this pins is that the choice was made and announced, which is the
+    /// part a user depends on when a session drives a server they never named.</para>
+    /// </summary>
     [Fact]
-    public async Task StartWithoutAServerSettingFailsWithAClearReason()
+    public async Task StartWithoutAServerSettingUsesCsharpLsAndSaysSo()
     {
         var plugin = new CxagentLspPlugin();
-        await plugin.Load(new FakeContext(".", new { }), CancellationToken.None);
+        var context = new FakeContext(".", new { });
+        await plugin.Load(context, CancellationToken.None);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => plugin.Start(CancellationToken.None));
-        Assert.Contains("server", ex.Message);
+        // The start itself fails without csharp-ls on PATH (or on the fake working directory), and
+        // that is not what this test is about — the log line is written before any of that.
+        try { await plugin.Start(CancellationToken.None); } catch { /* see above */ }
+
+        Assert.Contains(context.Logged, m => m.Contains("csharp-ls") && m.Contains("no 'server'"));
     }
 
     [Fact]

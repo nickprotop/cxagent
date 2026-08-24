@@ -328,4 +328,46 @@ public class PluginCommandTests : IDisposable
         Assert.Contains("loaded", listing);
         Assert.Contains("disabled", listing);
     }
+
+    /// <summary>
+    /// Settings written after the target are taken VERBATIM from the first brace to the end.
+    ///
+    /// <para>NOT TOKENISED AND REJOINED. A settings object holds spaces and quotes, so rebuilding it
+    /// from words would make the result depend on how the user spaced it — and a value containing a
+    /// space would come back changed. The JSON parser downstream is the one thing that decides
+    /// whether the block is valid.</para>
+    /// </summary>
+    [Fact]
+    public void LoadTakesInlineSettingsVerbatim()
+    {
+        var request = Assert.IsType<PluginRequest.Load>(
+            PluginCommand.Parse("""load csharp-lsp { "server": "csharp ls", "args": [] }"""));
+
+        Assert.Equal("csharp-lsp", request.Target);
+        Assert.Equal("""{ "server": "csharp ls", "args": [] }""", request.Settings);
+        Assert.False(request.Once);
+    }
+
+    /// <summary>--once and inline settings compose: the flag is read from the words BEFORE the
+    /// brace, so it cannot be confused with anything inside the settings object.</summary>
+    [Fact]
+    public void OnceAndInlineSettingsComposeInEitherOrder()
+    {
+        var request = Assert.IsType<PluginRequest.Load>(
+            PluginCommand.Parse("""load csharp-lsp --once { "server": "x" }"""));
+
+        Assert.Equal("csharp-lsp", request.Target);
+        Assert.True(request.Once);
+        Assert.Equal("""{ "server": "x" }""", request.Settings);
+    }
+
+    /// <summary>A load with no brace has no settings — the ordinary form, unchanged.</summary>
+    [Fact]
+    public void LoadWithoutSettingsCarriesNone()
+    {
+        var request = Assert.IsType<PluginRequest.Load>(PluginCommand.Parse("load csharp-lsp.dll"));
+
+        Assert.Equal("csharp-lsp.dll", request.Target);
+        Assert.Null(request.Settings);
+    }
 }

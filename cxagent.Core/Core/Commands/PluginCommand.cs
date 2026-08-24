@@ -12,7 +12,13 @@ public abstract record PluginRequest
 
     /// <summary><c>/plugin load &lt;name|path&gt;</c>, with <paramref name="Once"/> set when
     /// <c>--once</c> followed it.</summary>
-    public sealed record Load(string Target, bool Once) : PluginRequest;
+    /// <param name="Target">The plugin to load — a configured name, a bare filename searched the
+    /// plugin folders, or a path.</param>
+    /// <param name="Once">Whether <c>--once</c> was given, overriding <c>enabled:false</c> for this
+    /// session only.</param>
+    /// <param name="Settings">Inline settings written after the target as a JSON object, or null
+    /// when none were given — see <see cref="PluginCommand.Parse"/>.</param>
+    public sealed record Load(string Target, bool Once, string? Settings = null) : PluginRequest;
 
     /// <summary><c>/plugin unwire &lt;name&gt;</c>.</summary>
     public sealed record Unwire(string Name) : PluginRequest;
@@ -69,14 +75,30 @@ public static class PluginCommand
 
         if (verb.Equals("load", StringComparison.OrdinalIgnoreCase))
         {
+            // INLINE SETTINGS ARE SPLIT OFF BEFORE WORDS ARE, and everything from the first '{' to
+            // the end is taken verbatim. A settings object contains spaces and quotes, so tokenising
+            // it and rejoining would depend on how the user spaced it; taking the tail whole means
+            // `/plugin load p { "server": "x y" }` survives, and the JSON parser downstream is the
+            // one thing that decides whether the block is valid.
+            //
+            // WHY INLINE SETTINGS EXIST AT ALL: /plugin load carries none otherwise, so a plugin
+            // needing any could only be TRIED by editing config first — a bad trade for the case
+            // this command is for, which is finding out whether a plugin is worth configuring.
+            var brace = argument.IndexOf('{');
+            var head = brace < 0 ? argument : argument[..brace];
+            var settings = brace < 0 ? null : argument[brace..].Trim();
+
+            var headWords = head.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
             // --ONCE MAY APPEAR ANYWHERE AFTER THE TARGET, not just last — a user editing a typed
             // command should not have the flag's position matter to whether it is recognised.
-            var once = words.Skip(2).Any(w => w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase));
-            var rest = words.Skip(1).Where(w => !w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase)).ToList();
+            var once = headWords.Skip(2).Any(w => w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase));
+            var rest = headWords.Skip(1)
+                .Where(w => !w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase)).ToList();
 
             return rest.Count == 0
                 ? new PluginRequest.Unrecognised("load")
-                : new PluginRequest.Load(string.Join(' ', rest), once);
+                : new PluginRequest.Load(string.Join(' ', rest), once, settings);
         }
 
         if (verb.Equals("unwire", StringComparison.OrdinalIgnoreCase))

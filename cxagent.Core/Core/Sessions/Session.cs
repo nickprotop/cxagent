@@ -593,12 +593,13 @@ public sealed partial class Session
             case Commands.PluginRequest.Unwire(var name):
                 return await UnwirePluginAsync(name, ct);
 
-            case Commands.PluginRequest.Load(var target, var once):
-                return await RunLoadRequest(target, once, configured, ct);
+            case Commands.PluginRequest.Load(var target, var once, var inlineSettings):
+                return await RunLoadRequest(target, once, inlineSettings, configured, ct);
 
             case Commands.PluginRequest.Unrecognised(var word):
                 Say(new Message($"Unknown: '{word}'.\n"
-                    + "Usage: /plugin [load <name|path> [--once] | unwire <name>]", Severity.Warning));
+                    + "Usage: /plugin [load <name|path> [--once] [{ settings }] | unwire <name>]",
+                    Severity.Warning));
                 return CommandStatus.Reported;
 
             default:
@@ -616,7 +617,7 @@ public sealed partial class Session
     /// the assembly first and refusing afterward would already have run arbitrary code the config
     /// said not to.</para>
     /// </summary>
-    private async Task<CommandStatus> RunLoadRequest(string target, bool once,
+    private async Task<CommandStatus> RunLoadRequest(string target, bool once, string? inlineSettings,
         IReadOnlyDictionary<string, PluginConfig> configured, CancellationToken ct)
     {
         // enabled:false IS CONFIGURATION; the load prompt below is APPROVAL — they answer different
@@ -649,11 +650,41 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
-        // SETTINGS COME FROM CONFIG WHEN THIS NAME IS CONFIGURED, and are empty for a path-loaded
-        // plugin config never declared — there is nowhere else settings could come from for one.
-        var settings = configured.TryGetValue(target, out var namedConfig)
-            ? namedConfig.Settings ?? System.Text.Json.JsonDocument.Parse("{}").RootElement
-            : System.Text.Json.JsonDocument.Parse("{}").RootElement;
+        // INLINE SETTINGS WIN OVER CONFIG'S, because a user who typed them on this command is
+        // saying what to use for THIS load — the same precedence a flag has over a config value
+        // everywhere else. Config's settings are the fallback for a configured name, and an empty
+        // object for a plugin config never declared.
+        //
+        // PARSED HERE SO A TYPO IS REPORTED AS ONE. Handing malformed JSON to the plugin would
+        // surface as whatever that plugin makes of an unreadable settings object — usually a
+        // defaulted value and no explanation — when the actual fault is a brace the user missed.
+        System.Text.Json.JsonElement settings;
+        if (inlineSettings is not null)
+        {
+            try
+            {
+                settings = System.Text.Json.JsonDocument.Parse(inlineSettings).RootElement.Clone();
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                Say(new Message($"the settings after '{target}' are not valid JSON: {ex.Message}",
+                    Severity.Warning));
+                return CommandStatus.Reported;
+            }
+
+            if (settings.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                Say(new Message("plugin settings must be a JSON object, for example: "
+                    + $"/plugin load {target} {{ \"server\": \"csharp-ls\" }}", Severity.Warning));
+                return CommandStatus.Reported;
+            }
+        }
+        else
+        {
+            settings = configured.TryGetValue(target, out var namedConfig)
+                ? namedConfig.Settings ?? System.Text.Json.JsonDocument.Parse("{}").RootElement
+                : System.Text.Json.JsonDocument.Parse("{}").RootElement;
+        }
 
         // WorkingDirectory IS THIS SESSION'S FOLDER, not loadSetDirectory — see that member's own
         // contract ("where the plugin should root itself — an LSP plugin starts its server here").

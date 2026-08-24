@@ -21,6 +21,10 @@ namespace CxAgent.Plugins.Lsp;
 /// </summary>
 public sealed class CxagentLspPlugin : IPlugin
 {
+    /// <summary>The language server used when settings name none — see
+    /// <see cref="ReadServerSettings"/>.</summary>
+    private const string DefaultServer = "csharp-ls";
+
     private IPluginContext _context = null!;
     private LspClient? _client;
     private string _workingDirectory = "";
@@ -62,6 +66,12 @@ public sealed class CxagentLspPlugin : IPlugin
     {
         var (server, args) = ReadServerSettings(_context.Settings);
 
+        // SAY WHICH SERVER, WHEN NOBODY CHOSE IT. A session quietly driving a server the user did
+        // not name is the confusing case: the tools work or fail for reasons that live in a
+        // default they never saw.
+        if (ReferenceEquals(server, DefaultServer))
+            _context.Logger.Log($"csharp-lsp: no 'server' in settings, using '{DefaultServer}'.");
+
         var (client, processId) = await LspClient.StartAsync(server, args, _workingDirectory, ct)
             .ConfigureAwait(false);
         _client = client;
@@ -84,8 +94,17 @@ public sealed class CxagentLspPlugin : IPlugin
             !settings.TryGetProperty("server", out var serverEl) ||
             serverEl.ValueKind != JsonValueKind.String)
         {
-            throw new InvalidOperationException(
-                "csharp-lsp requires a 'server' string in its settings — the language server command to run.");
+            // A DEFAULT, SO THE PLUGIN WORKS WITH NO SETTINGS AT ALL. `/plugin load` carries no
+            // settings — there is nowhere for them to come from when config does not name the
+            // plugin — so a plugin that REQUIRED one could only ever be tried by editing config
+            // first. csharp-ls is the default because it is pure LSP over stdio and needs no flags:
+            // OmniSharp speaks its own protocol unless given -lsp, so defaulting to it would fail
+            // in a way that looks like the plugin being broken.
+            //
+            // NOT SILENT. A default that differs from what the user meant is worth one line in the
+            // transcript, and the log reaches it — a session that mysteriously drives the wrong
+            // server is worse than one that says which it picked.
+            return (DefaultServer, []);
         }
 
         var server = serverEl.GetString()!;
