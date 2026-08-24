@@ -217,6 +217,20 @@ public static class ToolBindings
     /// names a worker is actually OFFERED must be the same strings — two mappings would drift, and the
     /// failure is silent: the orchestrator plans against a tool name the worker cannot call.</para>
     /// </summary>
+    /// <summary>
+    /// Whether <paramref name="name"/> is a built-in's wire name.
+    ///
+    /// <para>HERE BECAUSE THE MAPPING IS HERE, for the reason <see cref="ToolsNamed"/> states: this
+    /// type owns enum-to-name, and a second copy drifts the moment either moves. A caller checking
+    /// against a hand-written list would miss that <c>ListFiles</c> is offered as <c>glob</c>.</para>
+    ///
+    /// <para>Asked by anything that CONTRIBUTES a tool, so a contributed name cannot quietly occupy
+    /// one the model already trusts — see <see cref="AgentToolset"/>, which is dispatched ahead of
+    /// these and so would win the name outright.</para>
+    /// </summary>
+    public static bool IsBuiltinName(string name) =>
+        Specs.Any(s => string.Equals(s.Spec.Name, name, StringComparison.Ordinal));
+
     public static IEnumerable<string> NamesFor(IReadOnlyList<BuiltinTool> tools)
     {
         var allowed = new HashSet<BuiltinTool>(tools);

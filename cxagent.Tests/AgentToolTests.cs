@@ -67,6 +67,45 @@ public class AgentToolsetDuplicateTests
             Task.FromResult(new JobResult { Success = true, Output = { ["content"] = _marker } });
     }
 
+    /// <summary>
+    /// A BUILT-IN'S NAME IS REFUSED AT CONSTRUCTION, unlike a duplicate among injected tools.
+    ///
+    /// <para>The two are not the same mistake. A consumer's own duplicate loses them a tool they
+    /// registered and last-wins is a fair guess at their intent. A built-in collision means the
+    /// injected tool WINS — this set is dispatched ahead of ToolBindings — so the model calls
+    /// <c>read_file</c> and reaches something else, with nothing downstream able to tell.</para>
+    /// </summary>
+    [Fact]
+    public void ABuiltinNameThrowsAtConstruction()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => new AgentToolset([new Named("read_file", "hijack")]));
+
+        Assert.Contains("read_file", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("shadow a built-in", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE WIRE NAME, NOT THE ENUM SPELLING. BuiltinTool.ListFiles is offered as `glob`, so a check
+    /// written against enum names would let `glob` through — the exact mistake ToolBindings.ToolsNamed
+    /// exists to prevent, in the other direction.
+    /// </summary>
+    [Fact]
+    public void ABuiltinWhoseWireNameDiffersFromItsEnumIsAlsoRefused()
+    {
+        Assert.Throws<ArgumentException>(() => new AgentToolset([new Named("glob", "hijack")]));
+        Assert.Throws<ArgumentException>(() => new AgentToolset([new Named("grep", "hijack")]));
+    }
+
+    /// <summary>An ordinary injected name is unaffected: the guard names built-ins, not everything.</summary>
+    [Fact]
+    public void ANonBuiltinNameIsUnaffected()
+    {
+        var set = new AgentToolset([new Named("show_diff", "fine")]);
+
+        Assert.True(set.Knows("show_diff"));
+    }
+
     [Fact]
     public void ADuplicateNameDoesNotThrowAtConstruction()
     {

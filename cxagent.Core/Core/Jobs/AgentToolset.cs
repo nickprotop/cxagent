@@ -30,6 +30,30 @@ public sealed class AgentToolset
         // which throws ArgumentException on a duplicate key — a comment asserting the opposite of
         // its own code, found by writing the documentation for this interface rather than by any
         // test. The failure was a wiring-time crash on a plausible consumer mistake.
+        // A BUILT-IN'S NAME THROWS, AND IT IS THE ONE CASE THAT MUST. The paragraph above is right
+        // that a wiring-time crash is a poor answer to a consumer's own duplicate — they lose a tool
+        // they registered, and running the later one is a reasonable guess at their intent. A
+        // built-in collision is a different failure: this set is dispatched AHEAD of ToolBindings, so
+        // the injected tool WINS, and the model goes on calling `read_file` believing it reached the
+        // built-in. There is no reasonable guess to make, nothing downstream detects it, and the
+        // symptom appears as a model bug rather than a wiring one.
+        //
+        // AT CONSTRUCTION, so an embedder meets it in their own test run rather than in production.
+        var collisions = tools
+            .Select(t => t.Definition.Name)
+            .Where(ToolBindings.IsBuiltinName)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (collisions.Count > 0)
+            throw new ArgumentException(
+                $"injected tool{(collisions.Count == 1 ? "" : "s")} "
+                + $"{string.Join(", ", collisions.Select(n => $"'{n}'"))} "
+                + "would shadow a built-in of the same name. This set is dispatched before the "
+                + "built-ins, so the injected tool would win and the model could not tell. Rename "
+                + "the tool, or disable the built-in through tool selection.",
+                nameof(tools));
+
         var byName = new Dictionary<string, IAgentTool>(StringComparer.Ordinal);
         foreach (var tool in tools) byName[tool.Definition.Name] = tool;
         _byName = byName;
