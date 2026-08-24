@@ -464,9 +464,21 @@ public static class ProviderConfigLoader
     /// does not.
     ///
     /// <para>RELATIVE ENTRIES RESOLVE AGAINST <paramref name="configDir"/>, the only anchor available
-    /// at config-read time — <c>LoadAndValidate</c> is not handed a project directory, so a
-    /// <c>pluginPaths</c> entry meant to be resolved against a project (e.g. <c>.cxagent/plugins</c>)
-    /// is simply not found here; that copy is still validated when discovery loads it for real.</para>
+    /// at config-read time — <c>LoadAndValidate</c>'s four callers (both <c>ResolvedConfig</c> resolve
+    /// paths, <c>McpCommand</c>, <c>SettingsEntry</c>) all pass only an <c>AppPaths</c>, not a project
+    /// directory, so threading one through here would be a signature change to all four in service of
+    /// a check that is deliberately the EARLY half of a two-layer defence. A <c>pluginPaths</c> entry
+    /// meant to be resolved against a project (e.g. <c>.cxagent/plugins</c>) is simply not found here.</para>
+    ///
+    /// <para>THAT IS THE RIGHT TRADE, NOT A GAP, because this check proves a STATIC collision — one
+    /// that does not depend on which copy eventually loads. Two plugins declaring <c>lsp_definition</c>
+    /// collide whether the winning binary comes from the global directory or the project's; project-vs-
+    /// global precedence decides WHICH FILE loads, not WHETHER two declared names clash. So a plugin
+    /// only resolvable via a project-local folder does not need this earlier check to see it — it is
+    /// still caught, later, at its runtime load (<see cref="Plugins.ManagedPluginLoader.Load"/> via
+    /// <c>PluginDiscovery</c>'s project-aware search), just without this layer's file-and-key message.
+    /// Erroring here instead would be a false alarm about a perfectly valid configuration Core simply
+    /// cannot see from where it stands.</para>
     /// </summary>
     private static string? FindPluginSidecar(
         string file, IReadOnlyList<string> pluginPaths, string configDir)
@@ -500,8 +512,9 @@ public static class ProviderConfigLoader
     /// <param name="plugins">Every configured plugin, by name.</param>
     /// <param name="findSidecar">
     /// Resolves one plugin's sidecar manifest path, or null when it cannot be found from here — not
-    /// an error: a plugin only resolvable via a project-local search folder Core does not know at
-    /// config-read time is still checked properly at its runtime load.
+    /// an error, because this check proves a STATIC collision independent of which copy eventually
+    /// loads: a plugin only resolvable via a project-local search folder Core does not know at
+    /// config-read time still has its collisions caught, just at its runtime load instead.
     /// </param>
     /// <param name="errors">Appended to — never cleared, so a caller can validate plugins alongside
     /// its own errors in one list.</param>
@@ -517,15 +530,25 @@ public static class ProviderConfigLoader
         {
             if (!config.Enabled) continue;
 
+            // UNRESOLVED IS "CANNOT CHECK THIS ONE", NOT AN ERROR — most often a plugin only
+            // reachable through a project-local search folder this method was not handed (see
+            // FindPluginSidecar's own doc for why threading one through is the wrong trade). Config
+            // validation refusing to start over a file the user may not even have installed the
+            // project-relative copy of yet would be a worse outcome than the collision it guards.
             var sidecarPath = findSidecar(config);
-            if (sidecarPath is null) continue;   // unresolved here; the runtime load still checks.
+            if (sidecarPath is null) continue;
 
+            // SAME "CANNOT CHECK THIS ONE" FOR AN UNREADABLE OR MALFORMED SIDECAR. This method's job
+            // is catching a collision BEFORE anything runs — it is not the place to report a broken
+            // manifest, which is ManagedPluginLoader.Load's own job when it actually tries to load
+            // the plugin. Refusing config here over a sidecar the user has not finished writing would
+            // take every provider and every other plugin down with it.
             string sidecarJson;
             try { sidecarJson = File.ReadAllText(sidecarPath); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
             var parsed = PluginManifest.Parse(sidecarJson);
-            if (parsed.Manifest is null) continue;   // malformed sidecar: the runtime load reports it.
+            if (parsed.Manifest is null) continue;
 
             foreach (var tool in parsed.Manifest.Tools)
             {

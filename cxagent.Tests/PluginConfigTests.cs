@@ -207,6 +207,32 @@ public class PluginConfigTests : IDisposable
         Assert.Single(s.Plugins);
     }
 
+    /// <summary>A malformed sidecar is "cannot check this one", not a config error — refusing to
+    /// start over a sidecar the user has not finished writing would take providers and every other
+    /// plugin down with it. ManagedPluginLoader.Load is where a broken manifest is actually
+    /// reported, when the plugin it belongs to is really loaded.</summary>
+    [Fact]
+    public void MalformedSidecar_IsNotAConfigError()
+    {
+        var pluginsDir = Path.Combine(_dir, "plugins");
+        Directory.CreateDirectory(pluginsDir);
+        File.WriteAllText(Path.Combine(pluginsDir, "lsp-rust.dll"), "not a real assembly");
+        File.WriteAllText(Path.Combine(pluginsDir, "lsp-rust.plugin.json"), "{ not valid json");
+
+        WriteConfig($$"""
+        {
+          {{ProviderBlock}},
+          {{PluginPathsBlock}}
+          "plugins": {
+            "lsp-rust": { "file": "lsp-rust.dll" }
+          }
+        }
+        """);
+
+        var s = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+        Assert.Single(s.Plugins);
+    }
+
     // ---- AgentConfig gets the same validation ------------------------------------------------
 
     [Fact]
