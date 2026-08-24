@@ -32,6 +32,20 @@ model. The drives keep finding things the tests do not.
 
 ## Recent work
 
+**Plugins.** Tools loaded from a DLL the user names in config, without recompiling cxagent. A plugin
+declares what it offers, the user approves the binary once against a hash of its whole load set, and
+its tools join the session's — refused if any name collides with a built-in or another plugin. Child
+processes are registered and reaped, so a session that crashes does not leak a language server. The
+first one is `csharp-lsp`, driving either `csharp-ls` or OmniSharp from configuration alone, with the
+LSP entirely inside the plugin and Core knowing nothing about it.
+
+An out-of-process ABI path sits beside it — a C header, a host process and a shim — so a plugin can be
+written in C, Rust or Go, isolated well enough that a segfault fails the call rather than the session.
+Everything above is shared; only the loader differs. The worked example is a calculator in one file
+of C, and the LSP plugin is managed: an ABI plugin written in C# needs NativeAOT, which strips the
+reflection `System.Text.Json` wants, so every payload grows a hand-written `JsonTypeInfo` — more code
+to reach a place the host would have loaded directly.
+
 **Sub-agents.** The agent can hand a job to a worker with its own context and briefing. Several in
 one message run at once, and none outlives the turn that started it.
 
@@ -58,6 +72,15 @@ than `ToolUpdated`, and the default working mode offered no spawn tool at all.
 ## Next
 
 Ideas, not promises.
+
+**A plugin that is not written in C#.** The ABI path is built and tested against real native
+libraries, and a C calculator proves the boundary end to end — but no plugin anyone would use has
+been written against it yet. Until one is, whether the host, shim and C header earn their ~1,500
+lines is untested by anything but the tests.
+
+**A plugin's own permission policy.** A tool says `gated` and `alwaysAskable` and that is the whole
+vocabulary. The design describes a richer shape — the plugin choosing what the prompt shows and how
+an answer generalises — which would let a plugin gate *this path* rather than *this tool*.
 
 **Publish `CxAgent.Core`.** It packs clean and a consumer runs against it; nothing has been pushed to
 nuget.org. The version is a default `1.0.0`, which is a claim about stability worth making
