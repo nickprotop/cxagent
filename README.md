@@ -228,6 +228,40 @@ the session knew a skill was in force.
 
 See [CONFIG.md](CONFIG.md#skills) for where they live and how shadowing works.
 
+## Plugins
+
+Tools from a DLL you drop in a folder, without rebuilding cxagent.
+
+The one that ships is **csharp-lsp**: go-to-definition, find-references and diagnostics for C#,
+backed by a language server. It crosses project boundaries — a reference in a test project resolves
+into the project under test — which grep cannot do.
+
+`install.sh` puts it in your plugins folder and stops there. cxagent tells you it is present and
+leaves it alone:
+
+```
+plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), not configured.
+```
+
+Turn it on for one session, with no file to edit:
+
+```
+/plugin load csharp-lsp.dll
+```
+
+or keep it, in `config.json`:
+
+```json
+"plugins": { "csharp-lsp": { "file": "csharp-lsp.dll" } }
+```
+
+Either way it asks once whether to trust the binary, showing a hash of its contents — **installing a
+plugin is not approving it**, and nothing in config can pre-approve one. It needs a C# language
+server on PATH: `dotnet tool install -g csharp-ls`.
+
+See the [plugin catalog](plugins/) for what ships and how to configure it, and
+[cxagent.Core/Core/Plugins](cxagent.Core/Core/Plugins/) if you want to write one.
+
 ## Configuration
 
 `~/.config/cxagent/config.json`:
@@ -246,7 +280,8 @@ Provider kinds: `ollama`, `openai-compatible` (requires `baseUrl`), `anthropic`.
 Set `contextWindow` on a provider when you know it — it is the denominator for the occupancy
 readout and the trigger for compaction. Left unset, cxagent asks the endpoint at startup.
 
-Optional blocks: `agents` for sub-agent types, `mcp` for MCP servers, `orchestrator` for caps.
+Optional blocks: `agents` for sub-agent types, `mcp` for MCP servers, `plugins` for tools loaded from
+disk, `orchestrator` for caps.
 
 **[CONFIG.md](CONFIG.md) is the full reference** — every block, where the file lives on each OS, what
 else cxagent keeps in that directory, and how `AGENTS.md` / `CXAGENT.md` / `CLAUDE.md` are resolved.
@@ -336,6 +371,13 @@ money for a result that was partly wrong.
 **It talks to whatever you configure.** Your prompts, your file contents and your shell output go to
 your chosen model provider, and to any MCP server you have enabled. What they do with it is between
 you and them.
+
+**A plugin is code you chose to run.** A plugin is a DLL loaded into cxagent's own process, so it can
+do anything cxagent can — it is not sandboxed, and no permission gate constrains what it does
+internally. What cxagent can enforce is the decision to load it at all: it asks once, showing a hash
+of the plugin's whole contents, and asks again if a single byte of it changes. Nothing in config can
+pre-approve one. Past that, a plugin gates its own operations, or does not; **trusting a plugin is
+trusting its author**, exactly as installing any other software is.
 
 **A sub-agent is an agent.** It inherits its parent's tools and the same permission gate. A type's
 briefing — "never edit files" — is a request written into its prompt, not a sandbox. Models do not
