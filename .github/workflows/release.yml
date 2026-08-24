@@ -127,6 +127,66 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
+      # THE CATALOG'S HASH, WRITTEN BY THE THING THAT BUILT THE ARTIFACT. plugins.json carries a
+      # sha256 for the plugin zip so a client holding only that file can verify a download without
+      # fetching SHA256SUMS as well. It cannot be maintained by hand — the artifact does not exist
+      # until the step above builds it — so the release stamps it, along with the tag it belongs to,
+      # which is what lets a reader tell a current hash from one left over from an older release.
+      #
+      # COMMITTED TO master, NOT TO THE TAG. A tag points at a commit that already exists; the hash
+      # is only knowable after it. Writing to master means the catalog in the default branch — the
+      # one a picker reads — describes the release that just happened.
+      #
+      # FAILS SOFT. A release that produced good artifacts must not be marked failed because a
+      # bookkeeping commit could not be pushed; SHA256SUMS on the release is the authority either
+      # way, and this field is the convenience.
+      - name: Stamp the plugin hash into the catalog
+        continue-on-error: true
+        run: |
+          SHA=$(awk '/ csharp-lsp\.zip$/ {print $1}' release/SHA256SUMS)
+          if [ -z "$SHA" ]; then
+            echo "no csharp-lsp.zip in SHA256SUMS — nothing to stamp."
+            exit 0
+          fi
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          python3 - "$SHA" "$TAG" <<'PY'
+          import json, sys, collections
+          sha, tag = sys.argv[1], sys.argv[2]
+          path = "plugins/plugins.json"
+          catalog = json.load(open(path), object_pairs_hook=collections.OrderedDict)
+
+          changed = False
+          for entry in catalog["plugins"]:
+              source = entry["source"]
+              # ONLY A RELEASE SOURCE, AND ONLY THIS ASSET. A url-sourced plugin is hosted elsewhere
+              # and its hash is whoever published it's to state, not this workflow's to overwrite.
+              if source.get("kind") == "release" and source.get("asset") == "csharp-lsp.zip":
+                  if source.get("sha256") != sha:
+                      source["sha256"] = sha
+                      source["stampedAtTag"] = tag
+                      changed = True
+
+          if changed:
+              json.dump(catalog, open(path, "w"), indent=2)
+              open(path, "a").write("\n")
+          print("changed" if changed else "unchanged")
+          PY
+
+          if git diff --quiet plugins/plugins.json; then
+            echo "catalog already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins/plugins.json
+          git commit -m "Stamp csharp-lsp.zip hash for $TAG"
+
+          # HEAD IS DETACHED ON A TAG BUILD, so the commit has to be pushed to a named branch
+          # explicitly rather than to whatever is checked out.
+          git push origin HEAD:master
+
       - name: Generate changelog
         id: changelog
         run: |

@@ -20,15 +20,10 @@
     "hash the load prompt shows is over the INSTALLED load set, and answers a different question:",
     "has anything changed since you approved it.",
     "",
-    "WHY NO `sha256` ON A RELEASE ENTRY. The artifact is built when the release runs, so its hash is",
-    "not knowable when this file is written by hand \u2014 a field for it would be either empty or stale.",
-    "`source.checksums` names the release asset that carries the real hashes instead, which is",
     "generated from the artifacts themselves. A plugin hosted elsewhere DOES carry `sha256` here,",
-    "because whoever adds the entry has the file in front of them.",
     "",
     "The `$example` below is not installed and is not a real plugin. It is here so the third-party",
     "shape has one worked instance to copy, and so a client parsing this file meets both `source`",
-    "kinds rather than only the one that happens to exist today.",
     "",
     "HOW A CLIENT BUILDS THE DOWNLOAD URL. A `url` source is fetched as written. A `release` source",
     "is NOT a fixed URL on purpose \u2014 it tracks whichever cxagent release is being installed, and a",
@@ -39,11 +34,16 @@
     "install.sh does not read this file \u2014 it is the bootstrap, and substitutes $TAG itself. The",
     "template exists so every OTHER client agrees with it instead of hardcoding the same convention.",
     "",
-    "minCxagentVersion IS NULL UNTIL THE FIRST RELEASE CARRYING THE PLUGIN. It cannot be written",
-    "ahead of time: the version is stamped from the tag when the release runs, so any number here",
-    "before then is a guess, and a wrong one tells a client the plugin works on a release whose",
-    "assets do not include it. v0.8.0 carries no csharp-lsp.zip. Fill this in with the tag of the",
-    "first release that does."
+    "",
+    "`sha256` ON A RELEASE ENTRY IS WRITTEN BY THE RELEASE, NOT BY HAND. The artifact does not exist",
+    "until the workflow builds it, so a hand-written hash would be a guess; a generated one is a",
+    "fact. The release computes it, commits it here with the tag it belongs to in `stampedAtTag`,",
+    "and a reader can tell a current hash from a stale one by comparing that tag to the version they",
+    "are installing. Null before the first release that carries the plugin.",
+    "",
+    "`checksums` stays beside it: SHA256SUMS is generated from the artifacts themselves at release",
+    "time, so it is the authority. This field is the convenience \u2014 a client that has only this file",
+    "can check a download without fetching a second asset."
   ],
   "schemaVersion": 2,
   "plugins": [
@@ -63,13 +63,15 @@
         "repo": "nickprotop/cxagent",
         "asset": "csharp-lsp.zip",
         "checksums": "SHA256SUMS",
+        "sha256": null,
+        "stampedAtTag": null,
         "urlTemplate": "https://github.com/{repo}/releases/download/{tag}/{asset}",
         "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/csharp-lsp.zip"
       },
       "file": "csharp-lsp.dll",
       "kind": "managed",
       "compatibility": {
-        "minCxagentVersion": null,
+        "minCxagentVersion": "0.9.0",
         "platforms": [
           "any"
         ]
