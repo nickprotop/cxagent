@@ -8,8 +8,8 @@
 The sessions, agents and turn loop behind [cxagent](https://github.com/nickprotop/cxagent) — usable
 without a terminal.
 
-A conversation, the agent running it, tool execution, sub-agent delegation, permissions, MCP and
-resumable stores. You supply where the text goes; there is no UI dependency.
+A conversation, the agent running it, tool execution, sub-agent delegation, permissions, MCP,
+plugins and resumable stores. You supply where the text goes; there is no UI dependency.
 
 ```
 dotnet add package CxAgent.Core
@@ -27,6 +27,7 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 | **Permissions** | every call passes a gate you answer; decisions persist and scope to a folder |
 | **Tool selection** | [narrow what an agent is offered](docs/api.md#tool-selection) — per session, turn, or type |
 | **MCP** | stdio and HTTP servers |
+| **Plugins** | [tools from a DLL loaded at run time](docs/plugins.md) — approved once, against a hash of what you load |
 | **Providers** | Anthropic, OpenAI-compatible, Ollama — several at once |
 | **Stores** | resume a session; a usage archive you can query |
 
@@ -36,9 +37,11 @@ Targets `net8.0`, `net9.0` and `net10.0`.
 |---|---|
 | **[api.md](docs/api.md)** | every public type, configuration, and tool selection |
 | **[tools.md](docs/tools.md)** | injecting tools of your own |
+| **[plugins.md](docs/plugins.md)** | tools loaded from a DLL at run time |
 | **[examples/ToolAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent)** | a runnable console app with an injected tool |
 | **[examples/SpectreAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent)** | the same, with a rendered UI |
 | **[examples/ReadOnlyAgent](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent)** | taking tools away — a selection you can watch hold |
+| **[examples/CalculatorPlugin](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin)** | a plugin end to end, gating something absurd so the prompt is visible |
 
 Below: the mental model, then the four calls an app makes.
 
@@ -87,8 +90,8 @@ produces goes through the `ISessionObserver` you hand it.
 | a prompt hook + a `PermissionPolicy` | how a human is asked, and which folder to judge against — see [Permissions](#permissions) |
 | a model | see [Configuration](#configuration) |
 
-The conversation, the turn loop, the tools, delegation, permissions, compaction, MCP and the stores
-are all in here.
+The conversation, the turn loop, the tools, delegation, permissions, compaction, MCP, plugins and
+the stores are all in here.
 
 ---
 
