@@ -51,6 +51,48 @@ public class PluginConfigTests : IDisposable
         "defaultProvider": "claude"
         """;
 
+    /// <summary>
+    /// The configured plugins reach <see cref="ResolvedConfig"/>, which is what
+    /// <c>AppBootstrap</c> gates plugin loading on and what <c>/plugin</c> lists.
+    ///
+    /// <para>PARSING IS NOT REACHING — the same trap
+    /// <c>ToolSelectionConfigTests.LlmAgentToolsReachesTheSessionsAgent</c> exists for, and for the
+    /// same key's neighbour. <see cref="ConfigResolver"/> builds its catalog in more than one place,
+    /// and a member carried by one construction and not another parses, validates and warns
+    /// correctly while being dropped on the path an ordinary startup actually takes. Every other
+    /// test in this file asserts against <c>LoadAndValidate</c>'s settings, so all of them stay
+    /// green in exactly that case.</para>
+    ///
+    /// <para>useMock: false DELIBERATELY, matching that test's own reasoning: the mock arm returns a
+    /// fixed catalog without reading config, so a mocked resolve would exercise none of this chain.
+    /// The provider block names an API key that is never used — resolution reads settings and builds
+    /// a registry, it does not call a provider.</para>
+    /// </summary>
+    [Fact]
+    public void ConfiguredPluginsReachTheResolvedConfig()
+    {
+        WritePluginFixture("lsp-rust.dll", "lsp-rust", "lsp_definition");
+        WriteConfig($$"""
+        {
+          {{ProviderBlock}},
+          {{PluginPathsBlock}}
+          "plugins": { "lsp-rust": { "file": "lsp-rust.dll", "enabled": true } }
+        }
+        """);
+
+        var settings = ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv);
+        Assert.True(settings.Plugins.ContainsKey("lsp-rust"), "precondition: the loader read the key.");
+
+        var resolved = ConfigResolver.Resolve(Paths(), NoEnv, useMock: false);
+
+        Assert.True(resolved.Errors.Count == 0,
+            "resolution failed: " + string.Join("; ", resolved.Errors));
+        Assert.True(resolved.Plugins.ContainsKey("lsp-rust"),
+            "the plugin parsed but never reached ResolvedConfig — AppBootstrap gates on this and would load nothing.");
+        Assert.Equal("lsp-rust.dll", resolved.Plugins["lsp-rust"].File);
+        Assert.Equal(["plugins"], resolved.PluginPaths);
+    }
+
     // ---- Shape: plugins keyed by name, pluginPaths a sibling ---------------------------------
 
     [Fact]

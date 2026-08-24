@@ -256,7 +256,11 @@ public static class ConfigResolver
                 // dropped on every normal startup, taking effect only after a /model switch went
                 // through the other method. Every config test was green: they proved the loader
                 // read it, and nothing proved anything applied it.
-                { Tools = settings.Tools },
+                // PLUGINS AND PLUGINPATHS TRAVEL WITH Tools, for the identical reason: this path
+                // runs on every normal startup, and a key carried only by ResolveInstance takes
+                // effect only after a /model switch. A configured plugin that loads after switching
+                // models but not on launch is the same defect wearing a different key's name.
+                { Tools = settings.Tools, Plugins = settings.Plugins, PluginPaths = settings.PluginPaths },
                 [],
                 settings.Warnings);
         }
