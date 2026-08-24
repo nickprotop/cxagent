@@ -48,15 +48,19 @@ public sealed record SessionPorts
     public IReadOnlyList<Jobs.IAgentTool> Tools { get; init; } = [];
 
     /// <summary>
-    /// A second, LIVE source of tools for this session — consulted fresh each turn, unlike
-    /// <see cref="Tools"/>, which SessionFactory captures once into an immutable set at wiring time.
+    /// An EMBEDDER'S OWN second, live source of tools for this session — consulted fresh each turn,
+    /// unlike <see cref="Tools"/>, which SessionFactory captures once into an immutable set at wiring
+    /// time.
     ///
-    /// <para>THIS IS THE SEAM A PLUGIN REGISTRY NEEDS, not another entry in <see cref="Tools"/>: a
-    /// plugin can load after this session opened, at any later turn boundary, and nothing captured
-    /// once at wiring time could ever see it. It is also NOT routed through the same collision
-    /// handling as <see cref="Tools"/> — that set resolves a duplicate name last-registration-wins,
-    /// which is wrong for a plugin and right only for one embedder's own tools composed together.
-    /// </para>
+    /// <para>THIS IS THE SAME KIND OF SEAM A PLUGIN REGISTRY NEEDS, and is composed alongside it
+    /// rather than being it: <see cref="Session.Plugins"/> is the session's OWN live source — built
+    /// in the constructor, mutated by <see cref="Session.LoadPlugin"/> and
+    /// <see cref="Session.UnwirePluginAsync"/> — and SessionFactory reads both this port and that
+    /// registry into one merged delegate. An embedder supplying this sees its own tools offered
+    /// exactly as before; a plugin loaded through the session is offered in addition, not instead.
+    /// Neither is routed through <see cref="Tools"/>'s collision handling — that set resolves a
+    /// duplicate name last-registration-wins, which is wrong for a plugin and right only for one
+    /// embedder's own tools composed together.</para>
     ///
     /// <para>Null for every embedder that supplies nothing here, which is every embedder today.
     /// </para>

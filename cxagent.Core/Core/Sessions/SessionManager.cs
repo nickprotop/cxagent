@@ -483,6 +483,19 @@ public sealed class SessionManager : IDisposable
     {
         lock (_gate) _sessions.Remove(session);
 
+        // UNWIRE EVERY PLUGIN FIRST — PLUGINS.md: "closing a session is unwiring every plugin it
+        // loaded, and a plugin cannot tell the difference" from an explicit UnwirePluginAsync. Ahead
+        // of disposing the host, so a plugin's Stop still runs against a session that is, from the
+        // plugin's own point of view, merely ending normally rather than one whose agent is already
+        // gone.
+        //
+        // BLOCKING, NOT ASYNC, because Close's signature is the one every caller already has — a
+        // CloseAsync would be a second close path for every embedder to learn. Stop today runs
+        // quickly in every implementation this task ships (a fake in tests); a slow plugin's Stop
+        // blocking process shutdown is the same timeout question PLUGINS.md raises for Stop in
+        // general, not something specific to closing.
+        session.Plugins.UnwireAllAsync(CancellationToken.None).GetAwaiter().GetResult();
+
         // BOTH, and in this order: the session owns the turn's cancellation scope now, and the host
         // owns the agent and its MCP servers. Closing one without the other leaks whichever was
         // missed for the life of the process.

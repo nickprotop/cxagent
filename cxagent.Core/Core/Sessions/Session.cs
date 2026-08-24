@@ -260,6 +260,20 @@ public sealed partial class Session
     /// </summary>
     public Permissions.PermissionPolicy? Policy { get; private set; }
 
+    /// <summary>
+    /// The mutable set of tools this session's plugins contribute — see
+    /// <see cref="Plugins.PluginRegistry"/>.
+    ///
+    /// <para>OWNED HERE, NOT BY THE EMBEDDER, unlike <see cref="SessionPorts.DynamicTools"/>. A
+    /// plugin is loaded and unwired through commands this session itself exposes
+    /// (<see cref="LoadPlugin"/>, <see cref="UnwirePluginAsync"/>), so the registry those commands
+    /// mutate has to be a session field rather than something supplied once at Wire time — the same
+    /// reason <see cref="Policy"/> is a field and not a port.</para>
+    ///
+    /// <para>BUILT IN THE CONSTRUCTOR, before the first wire, so a plugin can load into a session
+    /// that has never talked to a model — the registry does not depend on <see cref="Host"/>.</para>
+    /// </summary>
+    public Plugins.PluginRegistry Plugins { get; } = new();
 
     /// <summary>Public form of <see cref="RefusedWhileBusy"/>, for the manager's resume — which is a
     /// session operation performed from outside because the store belongs to the manager.</summary>
@@ -412,6 +426,69 @@ public sealed partial class Session
         // accept-edits session on an untrusted folder asks for everything — so anything showing the
         // mode is now stale and has no other way to learn it.
         Announce(SessionChangeKind.Mode);
+        return CommandStatus.Changed;
+    }
+
+    /// <summary>
+    /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
+    /// on — see <see cref="Plugins.PluginRegistry.Load"/> and PLUGINS.md, "Loading is refused
+    /// mid-turn".
+    ///
+    /// <para>REFUSED MID-TURN, not queued, for the SAME reason <see cref="SetMode(WorkingMode)"/>
+    /// refuses: the tool list is fixed once a request begins, so a tool cannot appear or vanish
+    /// between two turns of one request and leave the model chasing something that is no longer
+    /// there. This is that invariant reaching a new source of tools, not a new rule — see
+    /// <see cref="RefusedWhileBusy"/>.</para>
+    ///
+    /// <para>THE CALLER SUPPLIES AN ALREADY-LOADED PLUGIN. Nothing here constructs an
+    /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
+    /// method is what runs once a loader has one in hand.</para>
+    /// </summary>
+    /// <param name="plugin">The running instance, past its own Load call.</param>
+    /// <param name="manifest">What it declared it contributes.</param>
+    public CommandStatus LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest)
+    {
+        if (RefusedWhileBusy()) return CommandStatus.Refused;
+
+        var result = Plugins.Load(plugin, manifest, isNameTaken: Jobs.ToolBindings.IsBuiltinName);
+
+        if (result is Plugins.PluginLoadResult.NameCollision collision)
+        {
+            Say(new Message(
+                $"plugin '{manifest.Name}' was not loaded — its tool '{collision.ToolName}' is "
+                + "already offered by this session.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        Announce(SessionChangeKind.Plugins);
+        Say(new Message($"plugin '{manifest.Name}' loaded — {manifest.Tools.Count} tool(s) offered.",
+            Severity.Info));
+        return CommandStatus.Changed;
+    }
+
+    /// <summary>
+    /// Unwires one loaded plugin — deregister, drain, Stop, reap, in that order — see
+    /// <see cref="Plugins.PluginRegistry.UnwireAsync"/> and PLUGINS.md, "Unwire is one ordered
+    /// operation".
+    ///
+    /// <para>REFUSED MID-TURN, for the same reason loading is: a call already in flight for one of
+    /// this plugin's tools would fail for a reason nobody could trace back to a plugin command if
+    /// its tools vanished out from under a running turn. Refusing here rather than only draining is
+    /// what keeps the tool list — the thing the invariant is actually about — fixed for the whole
+    /// turn, not just eventually consistent with it.</para>
+    /// </summary>
+    public async Task<CommandStatus> UnwirePluginAsync(string pluginName, CancellationToken ct)
+    {
+        if (RefusedWhileBusy()) return CommandStatus.Refused;
+
+        if (!await Plugins.UnwireAsync(pluginName, ct))
+        {
+            Say(new Message($"no plugin named '{pluginName}' is loaded.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        Announce(SessionChangeKind.Plugins);
+        Say(new Message($"plugin '{pluginName}' unwired.", Severity.Info));
         return CommandStatus.Changed;
     }
 

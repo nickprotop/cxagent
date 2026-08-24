@@ -25,4 +25,8 @@ public enum SessionChangeKind
     /// <summary>The conversation was emptied. What a surface does about its own scrollback is its
     /// own decision — the session only reports that the messages behind it are gone.</summary>
     ContextCleared,
+
+    /// <summary>A plugin loaded or unwired. The tool list a running turn was offered never changes —
+    /// see <see cref="Session.LoadPlugin"/> — so this always describes something a NEW turn will see.</summary>
+    Plugins,
 }
