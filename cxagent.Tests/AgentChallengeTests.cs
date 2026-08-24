@@ -123,9 +123,17 @@ public class AgentChallengeTests
             provider.EnqueueResponse(Write(f, "broken"));
             provider.EnqueueResponse(ShellCall("dotnet build"));      // fails in the sandbox
             provider.EnqueueResponse(Write(f, "fixed"));
-            // A REAL build verb, so it replaces the earlier verdict. `true` exits 0 and prints
-            // nothing, so no failure marker is present -- the second build is clean.
-            provider.EnqueueResponse(ShellCall("dotnet build --help >/dev/null 2>&1 || true"));
+            // A REAL build verb, so it replaces the earlier verdict — the verdict is decided from
+            // the COMMAND TEXT (LooksLikeBuildOrTest), so the string must contain one.
+            //
+            // DOES NOT INVOKE THE SDK. This was `dotnet build --help >/dev/null 2>&1 || true`, and
+            // a real dotnet invocation makes the test depend on a shared, contended resource: under
+            // a full-suite run the SDK is already busy, and `|| true` covers a nonzero exit but not
+            // a slow start or a timeout. Observed failing in full-suite runs and passing in
+            // isolation, which is the signature. `echo` needs nothing, exits 0, and prints no
+            // failure marker, so the second build reads as clean for the same reason the old one
+            // did — without racing anything.
+            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null"));
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();

@@ -202,19 +202,22 @@ public class LazyWindowProbeTests
 
         public int Port { get; }
 
+        /// <summary>Where this endpoint actually answers — see the note in the constructor.</summary>
+        public string Origin { get; }
+
         public FakeEndpoint()
         {
-            // A FREE PORT, ASKED OF THE OS — the same idiom OAuthFlowTests uses, and for the reason
-            // this test learned the hard way: a hardcoded port collides with whatever else in the
-            // suite happens to bind, and the failure lands in the OTHER test as "Address already in
-            // use". Bind 0, read what was granted, release it, then claim it for real.
-            var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-            probe.Start();
-            Port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-            probe.Stop();
-
-            _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-            _listener.Start();
+            // THE SHARED RETRYING BINDER — see TestPorts. Asking the OS for a port, releasing it
+            // and then claiming it "for real" narrows the collision window without closing it: the
+            // port is free to everyone between the release and the claim, and a parallel class
+            // doing the same thing can win it. That is the residue of the hardcoded-port bug this
+            // once had, not a fix for it.
+            // ORIGIN, NOT JUST THE PORT. BindLoopback binds `localhost`, and a client pointed at
+            // 127.0.0.1 on the same port reaches nothing — HttpListener matches on the host string,
+            // not the resolved address. Callers must build URLs from what was actually bound.
+            var prefix = TestPorts.BindLoopback(ref _listener);
+            Origin = prefix.TrimEnd('/');
+            Port = new Uri(prefix).Port;
             _ = Task.Run(async () =>
             {
                 while (_listener.IsListening)
@@ -249,10 +252,10 @@ public class LazyWindowProbeTests
             {
                 // Declares nothing — the case that must ask.
                 ["served"] = new("openai-compatible", "served", null,
-                    $"http://127.0.0.1:{port}/v1", null, null, null, false),
+                    $"{endpoint.Origin}/v1", null, null, null, false),
                 // Declares 4096 — config is the user telling us something, and must win.
                 ["declared"] = new("openai-compatible", "other", null,
-                    $"http://127.0.0.1:{port}/v1", null, 4096, null, false),
+                    $"{endpoint.Origin}/v1", null, 4096, null, false),
             },
             "served", [], new Dictionary<string, RoutingTarget>(), null);
 

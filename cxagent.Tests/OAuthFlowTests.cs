@@ -39,7 +39,8 @@ public class OAuthFlowTests : IDisposable
     /// directly rather than inferred from a result.</summary>
     private sealed class FakeTokenServer : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        // NOT READONLY: TestPorts.BindLoopback may replace this listener — see TestPorts.
+        private HttpListener _listener = new();
         private readonly CancellationTokenSource _cts = new();
 
         public string Url { get; }
@@ -50,14 +51,13 @@ public class OAuthFlowTests : IDisposable
 
         public FakeTokenServer()
         {
-            var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            probe.Start();
-            var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-            probe.Stop();
-
-            Url = $"http://127.0.0.1:{port}/token";
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-            _listener.Start();
+            // THE SHARED RETRYING BINDER — see TestPorts. Probing for a free port, stopping the
+            // probe and then binding HttpListener leaves a window in which anything can take that
+            // port, including another test class doing the same dance in parallel. That is the
+            // "Address already in use" flake, and it moves between classes from run to run because
+            // the loser is whoever binds second.
+            var prefix = TestPorts.BindLoopback(ref _listener);
+            Url = prefix + "token";
             _ = Task.Run(LoopAsync);
         }
 

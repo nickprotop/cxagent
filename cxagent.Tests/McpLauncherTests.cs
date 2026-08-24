@@ -242,13 +242,14 @@ public class McpLauncherTests : IDisposable
     [Fact]
     public async Task StartAsync_AServerThatNeedsAuth_IsKeptSoItCanBeLoggedInTo()
     {
-        using var listener = new System.Net.HttpListener();
-        var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        listener.Start();
+        // THE SHARED RETRYING BINDER — see TestPorts. The probe-then-claim idiom leaves the port
+        // free to everyone in between, which is the "Address already in use" flake.
+        var listener = new System.Net.HttpListener();
+        var prefix = TestPorts.BindLoopback(ref listener);
+        // THE BOUND ORIGIN, not a 127.0.0.1 URL rebuilt from the port: BindLoopback binds
+        // `localhost`, and HttpListener matches the host string rather than the address.
+        var origin = prefix.TrimEnd('/');
+        using var _listenerScope = listener;
 
         // Answers every request with the 401 an unauthorized MCP server sends.
         _ = Task.Run(async () =>
@@ -259,7 +260,7 @@ public class McpLauncherTests : IDisposable
                 try { ctx = await listener.GetContextAsync(); } catch (Exception) { return; }
                 ctx.Response.StatusCode = 401;
                 ctx.Response.Headers.Add("WWW-Authenticate",
-                    $"Bearer resource_metadata=\"http://127.0.0.1:{port}/.well-known/oauth-protected-resource\"");
+                    $"Bearer resource_metadata=\"{origin}/.well-known/oauth-protected-resource\"");
                 try { ctx.Response.Close(); } catch (Exception) { }
             }
         });
@@ -269,7 +270,7 @@ public class McpLauncherTests : IDisposable
             var result = await McpLauncher.StartAsync(
                 new Dictionary<string, McpServerConfig>
                 {
-                    ["remote"] = new([], true, null, null, null, Url: $"http://127.0.0.1:{port}/mcp"),
+                    ["remote"] = new([], true, null, null, null, Url: $"{origin}/mcp"),
                 },
                 CancellationToken.None);
 

@@ -35,11 +35,31 @@
     <ProjectReference Include="../cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
     <ProjectReference Include="../cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
 
-    <!-- THE REAL LSP PLUGIN, not a fixture — CxagentLspPluginTests exercises its own manifest and
-         position math directly; only the end-to-end tests against a real server (Skip'd, see
-         HeadlessSessionTests.AgainstLocalLlamaCpp for the same pattern) need a language server on
-         this machine. -->
-    <ProjectReference Include="../plugins/csharp-lsp/csharp-lsp.csproj" />
+    <!-- THE REAL LSP PLUGIN, AS A BUILD DEPENDENCY ONLY. ReferenceOutputAssembly="false" is the
+         whole point: this project must not compile against a plugin's types, or the core suite
+         acquires a compile-time dependency on one particular plugin and the next one arrives by
+         copying that pattern until the test project is a plugin registry.
+         What is still needed is the DLL and its sidecar ON DISK — CxagentLspPluginTests loads them
+         the way production does, through ManagedPluginLoader — and a reference is how MSBuild is
+         told to build that project first. Same mechanism the fixtures above use, for the same
+         reason: the reference orders the build, it does not hand over types. -->
+    <ProjectReference Include="../plugins/csharp-lsp/csharp-lsp.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- THE PLUGIN'S OWN OUTPUT, COPIED BESIDE THE TESTS. ReferenceOutputAssembly="false" above stops
+       MSBuild copying the DLL along with the reference — which is the point, since a copy that
+       arrives as a side effect of a compile-time reference is the coupling being removed. The tests
+       still need the file on disk to load it, so the copy is stated here instead: an explicit
+       dependency on an ARTIFACT rather than an implicit one on a reference.
+       AfterTargets="Build" and not a None item, because the DLL does not exist until that project
+       has built. -->
+  <Target Name="CopyCsharpLspPlugin" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/csharp-lsp/bin/$(Configuration)/net10.0/csharp-lsp.dll"
+          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+
+  <ItemGroup>
 
     <!-- THE REAL HOST PROCESS, launched as a subprocess by AbiPluginHostTests exactly as Task 9c's
          shim will launch it — a ProjectReference here, not a copy, so the tests exercise the built

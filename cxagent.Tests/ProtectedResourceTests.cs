@@ -29,7 +29,10 @@ public class ProtectedResourceTests : IDisposable
     /// <summary>Serves canned documents on loopback, so the fetch path is real HTTP.</summary>
     private sealed class FakeHost : IDisposable
     {
-        private readonly HttpListener _listener = new();
+        // NOT READONLY: TestPorts.BindLoopback may REPLACE this listener — a failed Start can leave
+        // a registration in the process-global endpoint map that Prefixes.Clear does not unwind, and
+        // the only clean recovery is a fresh instance. See TestPorts.
+        private HttpListener _listener = new();
         private readonly CancellationTokenSource _cts = new();
         private readonly Dictionary<string, (int Status, string Body)> _routes;
 
@@ -38,14 +41,13 @@ public class ProtectedResourceTests : IDisposable
         public FakeHost(Dictionary<string, (int Status, string Body)> routes)
         {
             _routes = routes;
-            var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            l.Start();
-            var port = ((IPEndPoint)l.LocalEndpoint).Port;
-            l.Stop();
-
-            Origin = $"http://127.0.0.1:{port}";
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-            _listener.Start();
+            // THE SHARED RETRYING BINDER, not a port picked and released. Asking the OS for a free
+            // port, stopping the probe listener and then binding HttpListener leaves a window in
+            // which anything can take that port — including another test class doing the same dance
+            // in parallel, which is precisely what happens in a full-suite run. Observed as
+            // "Address already in use" that moved between classes from run to run.
+            var prefix = TestPorts.BindLoopback(ref _listener);
+            Origin = prefix.TrimEnd('/');
             _ = Task.Run(LoopAsync);
         }
 

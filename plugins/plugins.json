@@ -1,0 +1,41 @@
+{
+  "$comment": [
+    "The catalog of plugins cxagent releases. One entry per directory beside this file.",
+    "",
+    "MACHINE-READABLE ON PURPOSE. The plugin dialog reads this to show what is available and",
+    "where to get it, so a future marketplace does not have to parse a README or hardcode a list.",
+    "Keep it truthful by hand until something generates it: an entry naming an asset that no",
+    "release carries is worse than no entry at all.",
+    "",
+    "`asset` is the file name attached to a GitHub release, not a URL — the version is chosen by",
+    "whoever reads this, and pinning a URL here would pin the version too.",
+    "`tools` is what the plugin declares in its own sidecar; a mismatch is a bug in one of them.",
+    "`requires` is what the USER must install separately, which is the thing a catalog entry can",
+    "warn about and an install cannot fix."
+  ],
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "name": "csharp-lsp",
+      "displayName": "C# Language Server",
+      "description": "Go-to-definition, find-references and diagnostics for C#, backed by a language server. Crosses project boundaries: a reference in a test project resolves into the project under test.",
+      "directory": "csharp-lsp",
+      "asset": "csharp-lsp.zip",
+      "file": "csharp-lsp.dll",
+      "kind": "managed",
+      "spawns": true,
+      "tools": ["csharp_definition", "csharp_references", "csharp_diagnostics"],
+      "requires": {
+        "description": "A C# language server on PATH. csharp-ls is the default and needs no configuration.",
+        "default": "csharp-ls",
+        "install": "dotnet tool install -g csharp-ls",
+        "alternatives": ["/opt/omnisharp/OmniSharp -lsp"]
+      },
+      "settings": {
+        "server": "The language server command. Defaults to csharp-ls.",
+        "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none."
+      },
+      "readme": "csharp-lsp/README.md"
+    }
+  ]
+}

@@ -2,7 +2,6 @@ using System.Text.Json;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
-using CxAgent.Plugins.Lsp;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -24,6 +23,29 @@ public class CxagentLspPluginTests
         public void Log(string message) => Messages.Add(message);
     }
 
+    /// <summary>
+    /// The plugin, loaded from disk THE WAY PRODUCTION LOADS IT rather than constructed.
+    ///
+    /// <para>THIS PROJECT DOES NOT REFERENCE THE PLUGIN'S TYPES — its ProjectReference carries
+    /// ReferenceOutputAssembly="false", so the plugin is built and sits beside these tests without
+    /// the core suite compiling against any particular plugin. That is what stops the next plugin
+    /// arriving as a second reference until this project is a plugin registry.</para>
+    ///
+    /// <para>The cost is that everything here goes through <see cref="IPlugin"/>, which is also the
+    /// benefit: a test that cannot reach past the interface is a test of the contract a plugin
+    /// actually ships.</para>
+    /// </summary>
+    private static async Task<IPlugin> LoadPluginAsync(FakeContext context)
+    {
+        var dll = Path.Combine(AppContext.BaseDirectory, "csharp-lsp.dll");
+        Assert.True(File.Exists(dll),
+            $"csharp-lsp.dll is not beside the tests at '{dll}' — the ProjectReference that builds it is missing.");
+
+        var result = await ManagedPluginLoader.Load(dll, context, CancellationToken.None);
+        var loaded = Assert.IsType<ManagedPluginLoadResult.Loaded>(result);
+        return loaded.Instance;
+    }
+
     private sealed class FakeContext(string workingDirectory, object settings) : IPluginContext
     {
         public string WorkingDirectory { get; } = workingDirectory;
@@ -42,7 +64,7 @@ public class CxagentLspPluginTests
     [Fact]
     public async Task LoadReturnsTheSidecarManifest()
     {
-        var plugin = new CxagentLspPlugin();
+        var plugin = await LoadPluginAsync(new FakeContext(".", new { server = "csharp-ls" }));
         var manifest = await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
 
         Assert.Equal("csharp-lsp", manifest.Name);
@@ -69,9 +91,8 @@ public class CxagentLspPluginTests
     [Fact]
     public async Task StartWithoutAServerSettingUsesCsharpLsAndSaysSo()
     {
-        var plugin = new CxagentLspPlugin();
         var context = new FakeContext(".", new { });
-        await plugin.Load(context, CancellationToken.None);
+        var plugin = await LoadPluginAsync(context);
 
         // The start itself fails without csharp-ls on PATH (or on the fake working directory), and
         // that is not what this test is about — the log line is written before any of that.
@@ -83,8 +104,7 @@ public class CxagentLspPluginTests
     [Fact]
     public async Task InvokeBeforeStartReportsTheServerIsNotRunningRatherThanThrowing()
     {
-        var plugin = new CxagentLspPlugin();
-        await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+        var plugin = await LoadPluginAsync(new FakeContext(".", new { server = "csharp-ls" }));
 
         var result = await plugin.Invoke("csharp_definition", new JobParameters(new()), Fake.Job(), CancellationToken.None);
 
@@ -97,8 +117,7 @@ public class CxagentLspPluginTests
     [Fact]
     public async Task InvokeWithAnUnknownToolNameThrows()
     {
-        var plugin = new CxagentLspPlugin();
-        await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
+        var plugin = await LoadPluginAsync(new FakeContext(".", new { server = "csharp-ls" }));
 
         // No Start() call, so _client is null — but an unrecognised tool name must fail with the
         // "unknown tool" reason, not the "not running" one, or a caller cannot tell its own bug
@@ -122,9 +141,9 @@ public class CxagentLspPluginTests
         var locations = InvokeParseLocations(node);
 
         Assert.Single(locations);
-        Assert.Equal("file:///a.cs", locations[0].UriOrPath);
-        Assert.Equal(4, locations[0].Start.Line);
-        Assert.Equal(2, locations[0].Start.Character);
+        Assert.Equal("file:///a.cs", Read(locations[0], "UriOrPath"));
+        Assert.Equal(4, Read(locations[0], "Start.Line"));
+        Assert.Equal(2, Read(locations[0], "Start.Character"));
     }
 
     [Fact]
@@ -137,7 +156,7 @@ public class CxagentLspPluginTests
         var locations = InvokeParseLocations(node);
 
         Assert.Single(locations);
-        Assert.Equal("file:///b.cs", locations[0].UriOrPath);
+        Assert.Equal("file:///b.cs", Read(locations[0], "UriOrPath"));
     }
 
     [Fact]
@@ -147,11 +166,41 @@ public class CxagentLspPluginTests
         Assert.Empty(locations);
     }
 
-    private static IReadOnlyList<LspLocation> InvokeParseLocations(System.Text.Json.Nodes.JsonNode? node)
+    /// <summary>
+    /// <c>LspClient.ParseLocations</c>, reached by reflection over the plugin's own assembly.
+    ///
+    /// <para>ALREADY REFLECTION BEFORE THIS PROJECT STOPPED REFERENCING THE PLUGIN — the method is
+    /// private, so a compile-time reference never helped reach it. What changed is where the TYPE
+    /// comes from: the assembly loaded from disk, rather than a name the compiler resolved.</para>
+    ///
+    /// <para>WORTH TESTING DESPITE BEING PRIVATE: it decodes the two different shapes real servers
+    /// answer with — csharp-ls sends LocationLink[], OmniSharp a plain Location — and getting that
+    /// wrong yields an empty result rather than an error, which is the failure mode hardest to spot
+    /// from outside.</para>
+    /// </summary>
+    /// <summary>One property of a reflected LspLocation — <c>UriOrPath</c>, or a nested
+    /// <c>Start.Line</c> via a dotted path. Keeps the assertions below reading like assertions
+    /// rather than like reflection.</summary>
+    private static object? Read(object target, string path)
     {
-        var method = typeof(LspClient).GetMethod("ParseLocations",
+        var current = target;
+        foreach (var part in path.Split('.'))
+        {
+            current = current!.GetType().GetProperty(part)!.GetValue(current);
+        }
+        return current;
+    }
+
+    private static IReadOnlyList<object> InvokeParseLocations(System.Text.Json.Nodes.JsonNode? node)
+    {
+        var assembly = System.Reflection.Assembly.LoadFrom(
+            Path.Combine(AppContext.BaseDirectory, "csharp-lsp.dll"));
+        var type = assembly.GetType("CxAgent.Plugins.Lsp.LspClient")
+                   ?? throw new InvalidOperationException("LspClient not found in the plugin assembly.");
+
+        var method = type.GetMethod("ParseLocations",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        return (IReadOnlyList<LspLocation>)method.Invoke(null, [node])!;
+        return ((System.Collections.IEnumerable)method.Invoke(null, [node])!).Cast<object>().ToList();
     }
 
     private static class Fake
@@ -201,7 +250,7 @@ public class CxagentLspPluginTests
         var declLineIndex = Array.FindIndex(declLines, l => l.Contains("class AlertEngine"));
         Assert.True(declLineIndex >= 0, $"'class AlertEngine' not found in {declFile} — has it moved or been renamed?");
 
-        var plugin = new CxagentLspPlugin();
+        var plugin = await LoadPluginAsync(new FakeContext(root, new { server, args }));
         var context = new FakeContext(root, new { server, args });
         await plugin.Load(context, CancellationToken.None);
         await plugin.Start(CancellationToken.None);
