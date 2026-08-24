@@ -51,6 +51,24 @@ public class DynamicToolSourceTests
         }
     }
 
+    /// <summary>A dynamic tool answering under its own key rather than <c>content</c> — the shape a
+    /// plugin author naturally writes, since <see cref="IAgentTool"/> says nothing about a key
+    /// named content.</summary>
+    private sealed class StructuredTool : IAgentTool
+    {
+        public ToolDefinition Definition { get; } = new("structured", "answers under its own key",
+            JsonSerializer.SerializeToElement(new { type = "object", properties = new { } }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct) =>
+            Task.FromResult(new JobResult
+            {
+                Success = true,
+                Output = { ["locations"] = "/tmp/x.cs:30:12" },
+            });
+    }
+
     private static LlmResponse Done(string text) =>
         new() { Text = text, StopReason = "end_turn", Usage = new LlmUsage { InputTokens = 10, OutputTokens = 2 } };
 
@@ -126,5 +144,46 @@ public class DynamicToolSourceTests
         await agent.SendAsync("go again", CancellationToken.None);
 
         Assert.DoesNotContain(agent.LastOfferedToolNamesForTest, n => n == "late_tool");
+    }
+
+    /// <summary>
+    /// A dynamic tool's result reaches the model even when it answers under a key of its own — the
+    /// dynamic path renders through the same <c>JobDigest.RenderOutput</c> the built-ins use, which
+    /// renders every key rather than only <c>content</c>.
+    ///
+    /// <para>THE OLD BEHAVIOUR WAS SILENT. Reading only <c>Output["content"]</c> turned any other
+    /// shape into an EMPTY STRING — the model saw a call that succeeded and returned nothing, and
+    /// answered by inventing a reason rather than reporting a blank. Observed live with a language
+    /// server plugin that was running and answering correctly the whole time.</para>
+    /// </summary>
+    [Fact]
+    public async Task ADynamicToolsResultReachesTheModelUnderAnyKey()
+    {
+        var source = new MutableToolSource();
+        source.Add(new StructuredTool());
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            ToolCalls = [new ToolCall { Id = "c1", Name = "structured", Arguments = JsonSerializer.SerializeToElement(new { }) }],
+            StopReason = "tool_use",
+            Usage = new LlmUsage { InputTokens = 10, OutputTokens = 2 },
+        });
+        provider.EnqueueResponse(Done("done"));
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new BufferedChatSink(), new BufferedJobPanel(), logs: null, maxTurns: 5,
+            dynamicTools: source.Get);
+
+        await agent.SendAsync("go", CancellationToken.None);
+
+        // The tool result message the model was sent on the second turn.
+        Assert.NotNull(provider.LastMessages);
+        var toolResult = provider.LastMessages!.LastOrDefault(m => m.ToolCallId == "c1");
+
+        Assert.NotNull(toolResult);
+        Assert.False(string.IsNullOrEmpty(toolResult!.Content),
+            "the tool succeeded but the model was sent an empty string — it cannot tell that from a tool that found nothing.");
+        Assert.Contains("/tmp/x.cs:30:12", toolResult.Content);
     }
 }

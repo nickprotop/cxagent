@@ -634,8 +634,12 @@ public static class ToolBindings
     /// <para>The marker is counted INSIDE the cap. It was not: <c>half + marker + half</c> returned
     /// roughly <c>cap + 30</c> characters, so the one number this constant exists to guarantee was
     /// the one thing it did not — and ProcessRunner documents its own cap as matching this one.</para>
+    ///
+    /// <para>INTERNAL RATHER THAN PRIVATE so the dynamic-tool path in <c>Agent</c> caps its results
+    /// with this exact implementation. A second copy of "elide the middle, count the marker" is a
+    /// second place for the off-by-thirty above to come back.</para>
     /// </summary>
-    private static string Truncate(string text, int cap)
+    internal static string Truncate(string text, int cap)
     {
         if (cap <= 0 || text.Length <= cap) return text;
 

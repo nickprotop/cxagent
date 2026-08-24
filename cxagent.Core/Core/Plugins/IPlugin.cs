@@ -36,7 +36,7 @@ public interface IPlugin
     /// one executor and are told apart by a pinned action. Here the plugin IS that executor: it
     /// holds whatever one connection or one client its tools share (an LSP plugin's server process,
     /// for one), and routing a name to an operation on it is the plugin's own business, not the
-    /// registry's — the registry does not know what "lsp_definition" means.
+    /// registry's — the registry does not know what "csharp_definition" means.
     ///
     /// <para><paramref name="toolName"/> IS ALWAYS ONE THIS PLUGIN'S OWN MANIFEST DECLARED. The
     /// registry that dispatches here only ever calls it for a tool this plugin's own <see

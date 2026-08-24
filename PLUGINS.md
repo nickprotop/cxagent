@@ -449,6 +449,18 @@ re-enabling a built-in an injected tool had taken is a clash that existed nowher
 selection was written. The built-in wins — the model was promised that name — and the transcript
 says why, because a silent skip is the surprise worth avoiding.
 
+**Name your tools after what makes them yours.** The matrix says what happens when two plugins claim
+one name; it does not make the clash pleasant. Row 2 refuses the second plugin's whole load, and the
+user's only remedy is editing a plugin they did not write. A tool called `lsp_definition` claims a
+name every language-server plugin has equal claim to, so installing a C# one and a Rust one is a
+configuration that cannot work. `csharp_definition` and `rust_definition` both fit, and the model
+picks between them by reading the names — which is also how it knows which one to call in a mixed
+repository.
+
+The rule generalises past LSP: a plugin's tool names should say what it does AND what it does it to.
+Prefer the specific name even when yours is the only such plugin today, because the collision arrives
+when someone installs the second one, and by then your name is in their config.
+
 **A turn is never refused for a collision.** The temptation is real: no surprises, nothing ambiguous
 runs. But the user's question is not the thing at fault, and refusing it costs them their prompt for
 a wiring detail they often cannot fix. Worse, a clash from S2 would refuse EVERY turn — a session

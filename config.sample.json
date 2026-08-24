@@ -2,11 +2,11 @@
   "//": [
     "cxagent configuration. Copy to ~/.config/cxagent/config.json and edit.",
     "",
-    "Every block is OPTIONAL except `providers` — without one there is no model to talk to,",
+    "Every block is OPTIONAL except `providers` \u2014 without one there is no model to talk to,",
     "and cxagent starts into its setup wizard instead.",
     "",
     "AN UNKNOWN KEY IS IGNORED; AN UNKNOWN VALUE IS AN ERROR. There is no key-level",
-    "validation, so a misspelled key name is silent — `contextWindwo` simply does nothing.",
+    "validation, so a misspelled key name is silent \u2014 `contextWindwo` simply does nothing.",
     "Values are checked: an unknown provider `kind`, or a name referencing a provider that",
     "is not configured, stops startup and says so. Check that a key took effect rather than",
     "assuming it did.",
@@ -16,7 +16,7 @@
   ],
   "//providers": [
     "THE MODEL CATALOG. Each entry is an INSTANCE: a name you choose, bound to one endpoint",
-    "and one model. Names are referenced elsewhere in this file — `defaultProvider` and, from",
+    "and one model. Names are referenced elsewhere in this file \u2014 `defaultProvider` and, from",
     "step 2, an agent type's `provider`.",
     "",
     "kind: openai-compatible | anthropic | ollama",
@@ -26,7 +26,7 @@
     "  OPTIONAL, AND CONFIGURED WINS OVER PROBED. Absent, cxagent asks the endpoint at startup",
     "  (bounded at three seconds; any failure just leaves it unknown, and an unknown window",
     "  means compaction falls back to a fixed threshold). Setting it explicitly is you saying",
-    "  something the server cannot know — a shared endpoint, a deliberately smaller budget —",
+    "  something the server cannot know \u2014 a shared endpoint, a deliberately smaller budget \u2014",
     "  and a number read off the server must not override that.",
     "",
     "  Do not set it LARGER than the endpoint really allows. Nothing compacts until the",
@@ -41,7 +41,7 @@
       "contextWindow": 212992,
       "//maxConcurrentAgents": [
         "How many sub-agents may call THIS endpoint at once. Absent or 0 = unlimited (the default).",
-        "cxagent cannot discover what an endpoint tolerates, so it does not guess — set this when",
+        "cxagent cannot discover what an endpoint tolerates, so it does not guess \u2014 set this when",
         "you know. A single-threaded local server queues concurrent children at the socket and",
         "splits its context across slots; a hosted API answers them and returns 429s.",
         "See CONFIG.md. The real bound on a run is orchestrator.maxTurns, not this."
@@ -53,7 +53,7 @@
   "defaultProvider": "local",
   "//classifier": [
     "Which instance reviews actions in `/mode edits auto`. A name from `providers`, or absent.",
-    "ABSENT MEANS AUTO IS NOT OFFERED — not listed by /mode, not reachable by Shift+Tab, not",
+    "ABSENT MEANS AUTO IS NOT OFFERED \u2014 not listed by /mode, not reachable by Shift+Tab, not",
     "parseable as a flag. A mode that claims background review while nothing reviews is worse",
     "than no mode.",
     "A REMOTE INSTANCE AVOIDS EVICTING THE SESSION. A local endpoint on --parallel 1 has one",
@@ -61,14 +61,14 @@
     "at 28ms for 20k tokens against 5,850ms cold), which is survivable but not free. A separate",
     "endpoint never touches that slot.",
     "Cost is small either way: measured against gemini-2.5-flash-lite, one classification is",
-    "about $0.0000174 — roughly 1.7 cents per thousand.",
+    "about $0.0000174 \u2014 roughly 1.7 cents per thousand.",
     "Auto FAILS CLOSED. A timeout, a transport error, a malformed reply or an unrecognised",
     "verdict all ask; only an explicit allow is silent."
   ],
   "classifier": "local",
   "//theme": [
     "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
-    "ABSENT MEANS `cxagent` — its own palette, a near-black ground with a warm amber accent.",
+    "ABSENT MEANS `cxagent` \u2014 its own palette, a near-black ground with a warm amber accent.",
     "Names match case-insensitively, so \"ocean\" finds \"Ocean\".",
     "A NAME THAT MATCHES NOTHING FALLS BACK rather than failing. Which themes exist is a",
     "question only the window system can answer and it does not exist when this file is read,",
@@ -78,7 +78,7 @@
   ],
   "theme": "cxagent",
   "//agents": [
-    "SUB-AGENT TYPES. The five cxagent ships — explore, planner, builder, review, test — are",
+    "SUB-AGENT TYPES. The five cxagent ships \u2014 explore, planner, builder, review, test \u2014 are",
     "  BUILT IN as of this version: their briefings and descriptions live in the program, not",
     "  here, and they are available without configuring anything. Delete this block entirely and",
     "  they still work.",
@@ -86,7 +86,7 @@
     "WHY THEY MOVED. A briefing is not a preference like a model name; it is the contract a type",
     "  keeps with the code around it. cxagent names the file a planner must write, checks whether",
     "  it appeared, and the builder refuses work that arrives without one. A copy in this file is a",
-    "  third party to an agreement between three others, free to drift from all of them — and every",
+    "  third party to an agreement between three others, free to drift from all of them \u2014 and every",
     "  fix shipped only to whoever re-copied this sample.",
     "",
     "WHAT YOU MAY STILL SET on a built-in name:",
@@ -103,7 +103,7 @@
     "  \"when finding something means reading across several files\", not \"searches files\".",
     "",
     "briefing: the CHILD's highest-authority instruction, in full. Written in the second person.",
-    "  Config is the only legitimate author of it — a parent cannot set it.",
+    "  Config is the only legitimate author of it \u2014 a parent cannot set it.",
     "",
     "Run /agents to see every type, or /agents <name> for the briefing one is given. CONFIG.md",
     "  reproduces the same text."
@@ -117,7 +117,7 @@
     "planner": {
       "provider": "local"
     },
-    "//researcher": "A name cxagent does not ship, so it is entirely yours — briefing required.",
+    "//researcher": "A name cxagent does not ship, so it is entirely yours \u2014 briefing required.",
     "researcher": {
       "description": "when a question needs reading outside this repository, not inside it",
       "briefing": "You research and report. Read what you are pointed at, quote the passages that answer the question with their source, and say plainly when the answer is not there. You change no files.",
@@ -125,12 +125,12 @@
     }
   },
   "//mcp": [
-    "MCP servers, by name. `command` is argv — no shell, so no pipes or globs.",
+    "MCP servers, by name. `command` is argv \u2014 no shell, so no pipes or globs.",
     "Optional: `enabled` (default true), `cwd`, `env`, `timeoutMs`.",
     "An HTTP server uses `url` instead of `command`, and may carry `headers` for auth.",
     "",
     "A server's own usage instructions, when it sends any, are appended to the system prompt",
-    "attributed to it by name — so a server can tell the model how to use it, and the model",
+    "attributed to it by name \u2014 so a server can tell the model how to use it, and the model",
     "can tell that advice apart from cxagent's own."
   ],
   "mcp": {
@@ -143,16 +143,63 @@
       "enabled": true
     }
   },
+  "//pluginPaths": [
+    "Where a plugin's `file` is searched for, in order, before the two defaults.",
+    "A relative entry resolves against the PROJECT directory, not this file's folder.",
+    "The defaults are appended after these: `<project>/.cxagent/plugins`, then",
+    "`<this config's folder>/plugins` \u2014 so a plugin dropped in either is found with no",
+    "pluginPaths entry at all, and a project's copy wins over a globally installed one.",
+    "",
+    "A NOTE ON WHERE TO PUT THEM: a plugin folder INSIDE the project is searched by some",
+    "language servers too. OmniSharp scans a workspace for projects and will crawl a",
+    "plugin binary sitting in it; the global folder avoids that entirely."
+  ],
+  "pluginPaths": [
+    "~/.config/cxagent/plugins"
+  ],
+  "//plugins": [
+    "Plugins, by name. `file` is the entry-point filename, found under pluginPaths.",
+    "Optional: `enabled` (default true), `settings` (handed to the plugin verbatim).",
+    "",
+    "`enabled: false` is CONFIGURATION, not permission: it means no process, no tools,",
+    "no prompt, nothing. Loading is APPROVAL and is asked separately \u2014 every load prompts",
+    "once, and nothing in this file can pre-approve a binary. `/plugin load <name> --once`",
+    "overrides enabled:false for one session and STILL asks.",
+    "",
+    "A plugin cannot take a built-in's name, and two plugins cannot share a tool name \u2014",
+    "so name a plugin's tools for what makes them yours (`csharp_definition`, not",
+    "`lsp_definition`), or the second language-server plugin a user installs cannot load."
+  ],
+  "plugins": {
+    "csharp-lsp": {
+      "file": "csharp-lsp.dll",
+      "enabled": true,
+      "settings": {
+        "server": "csharp-ls",
+        "args": []
+      }
+    },
+    "csharp-lsp-omnisharp": {
+      "file": "csharp-lsp.dll",
+      "enabled": false,
+      "settings": {
+        "server": "/opt/omnisharp/OmniSharp",
+        "args": [
+          "-lsp"
+        ]
+      }
+    }
+  },
   "//orchestrator": [
     "The two settings that bind a run. Both optional.",
     "",
     "maxTurns: turns one request may take before the agent stops and summarises what it got.",
     "  Absent means the built-in ceiling (300), which is NOT the same as no cap.",
-    "  0 means NO CAP — the explicit opt-out.",
+    "  0 means NO CAP \u2014 the explicit opt-out.",
     "  It applies to the session agent AND to sub-agents: a child inherits this unless its own",
     "  type sets `agents.<name>.maxTurns`.",
     "contextCompressThreshold: compact above this many tokens. Absent and a contextWindow is",
-    "  known, it is 80% of that window — which is the better answer, since it tracks the model",
+    "  known, it is 80% of that window \u2014 which is the better answer, since it tracks the model",
     "  rather than a number that was right for whatever was configured when it was written.",
     "  Absent with no window either, a fixed built-in threshold is used."
   ],

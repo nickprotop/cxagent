@@ -125,25 +125,25 @@ public static class CxagentLspAbiPlugin
                 + "working directory, and answer only for C# source files. Positions are 1-based "
                 + "(line 1 is the first line, character 1 is the first column of that line), matching "
                 + "how a human reads a file — the plugin converts to the server's own convention "
-                + "internally. lsp_definition and lsp_references need a file path (relative to the "
+                + "internally. csharp_definition and csharp_references need a file path (relative to the "
                 + "working directory or absolute) plus a line and character landing inside the "
-                + "symbol. lsp_diagnostics takes only a file path and reports whatever the server "
-                + "currently has computed for it; call lsp_definition or lsp_references first if "
+                + "symbol. csharp_diagnostics takes only a file path and reports whatever the server "
+                + "currently has computed for it; call csharp_definition or csharp_references first if "
                 + "diagnostics come back empty right after a file is opened, since the server needs "
                 + "a moment to analyse it.",
             Spawns: true,
             Tools:
             [
-                new AbiToolManifestWire("lsp_definition",
+                new AbiToolManifestWire("csharp_definition",
                     "Finds where the symbol at a file position is DECLARED. Crosses project "
                     + "boundaries: a reference in a test project resolves to a declaration in the "
                     + "project under test, if the server has indexed both.",
                     PositionToolSchema("reference"), false),
-                new AbiToolManifestWire("lsp_references",
+                new AbiToolManifestWire("csharp_references",
                     "Finds every place the symbol at a file position is USED, across every project "
                     + "the server has indexed.",
                     PositionToolSchema("symbol"), false),
-                new AbiToolManifestWire("lsp_diagnostics",
+                new AbiToolManifestWire("csharp_diagnostics",
                     "Reports the server's current errors and warnings for a file — whatever it has "
                     + "already computed, not a fresh compile on demand.",
                     FileOnlyToolSchema(), false),
@@ -153,8 +153,8 @@ public static class CxagentLspAbiPlugin
     }
 
     /// <summary>
-    /// <paramref name="lineNoun"/> is the ONLY difference between lsp_definition's and
-    /// lsp_references's schema — "reference" vs "symbol" in the line field's description, matching
+    /// <paramref name="lineNoun"/> is the ONLY difference between csharp_definition's and
+    /// csharp_references's schema — "reference" vs "symbol" in the line field's description, matching
     /// csharp-lsp-abi.plugin.json (and csharp-lsp.plugin.json before it) word for
     /// word. AbiPluginLoader.Load's own mismatch check (PluginManifestMatch.Mismatch) compares this
     /// method's output against that sidecar byte for byte, so a schema that quietly drifted from it
@@ -278,7 +278,7 @@ public static class CxagentLspAbiPlugin
             // into; it reports the same "this is a bug" distinction as ok:false instead, which
             // AbiCodec.ToInvokeResult already surfaces as a call-level failure rather than a
             // JobResult.Success:false the caller could mistake for an ordinary tool failure.
-            if (toolName is not ("lsp_definition" or "lsp_references" or "lsp_diagnostics"))
+            if (toolName is not ("csharp_definition" or "csharp_references" or "csharp_diagnostics"))
                 return WriteFailEnvelope($"csharp-lsp-abi has no tool named '{toolName}'.");
 
             if (_client is null)
@@ -297,8 +297,8 @@ public static class CxagentLspAbiPlugin
 
             return toolName switch
             {
-                "lsp_definition" => HandleDefinition(arguments),
-                "lsp_references" => HandleReferences(arguments),
+                "csharp_definition" => HandleDefinition(arguments),
+                "csharp_references" => HandleReferences(arguments),
                 _ => HandleDiagnostics(arguments),
             };
         }

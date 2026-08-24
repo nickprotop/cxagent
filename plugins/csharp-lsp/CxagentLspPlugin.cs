@@ -104,7 +104,7 @@ public sealed class CxagentLspPlugin : IPlugin
         // IPlugin.Invoke's own doc: toolName is always one this plugin's own manifest declared, so
         // reaching an unrecognised one is this plugin's bug regardless of Start/Stop state, not a
         // startup-ordering mistake a caller could otherwise confuse it with.
-        if (toolName is not ("lsp_definition" or "lsp_references" or "lsp_diagnostics"))
+        if (toolName is not ("csharp_definition" or "csharp_references" or "csharp_diagnostics"))
             throw new InvalidOperationException($"csharp-lsp has no tool named '{toolName}'.");
 
         if (_client is null)
@@ -117,8 +117,8 @@ public sealed class CxagentLspPlugin : IPlugin
         {
             return toolName switch
             {
-                "lsp_definition" => await HandleDefinitionAsync(call, ct).ConfigureAwait(false),
-                "lsp_references" => await HandleReferencesAsync(call, ct).ConfigureAwait(false),
+                "csharp_definition" => await HandleDefinitionAsync(call, ct).ConfigureAwait(false),
+                "csharp_references" => await HandleReferencesAsync(call, ct).ConfigureAwait(false),
                 _ => HandleDiagnostics(call),
             };
         }
@@ -175,7 +175,7 @@ public sealed class CxagentLspPlugin : IPlugin
 
     /// <summary>Resolves the file, opens it with the server, and converts the 1-based tool position
     /// to the server's 0-based one — the one place this conversion happens for the two position-taking
-    /// tools, so lsp_definition and lsp_references cannot drift apart on it.</summary>
+    /// tools, so csharp_definition and csharp_references cannot drift apart on it.</summary>
     private (string Path, LspPosition Position) OpenAndResolvePosition(JobParameters call)
     {
         var path = ResolvePath(call.Get<string>("file"));

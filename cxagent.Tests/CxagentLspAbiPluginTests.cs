@@ -77,7 +77,7 @@ public class CxagentLspAbiPluginTests
         var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
         Assert.Equal("csharp-lsp-abi", loaded.Manifest.Name);
         Assert.True(loaded.Manifest.Spawns);
-        Assert.Equal(["lsp_definition", "lsp_references", "lsp_diagnostics"],
+        Assert.Equal(["csharp_definition", "csharp_references", "csharp_diagnostics"],
             loaded.Manifest.Tools.Select(t => t.Name).ToArray());
     }
 
@@ -106,7 +106,7 @@ public class CxagentLspAbiPluginTests
             CancellationToken.None);
         var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
 
-        var invokeResult = await loaded.Instance.Invoke("lsp_definition", new JobParameters(new()), FakeJob(), CancellationToken.None);
+        var invokeResult = await loaded.Instance.Invoke("csharp_definition", new JobParameters(new()), FakeJob(), CancellationToken.None);
 
         Assert.False(invokeResult.Success);
         Assert.Contains("not running", invokeResult.ErrorMessage);
@@ -204,7 +204,7 @@ public class CxagentLspAbiPluginTests
             // is the only one there is to find.
             Assert.Single(context.RegisteredPids);
 
-            var result = await plugin.Invoke("lsp_definition", new JobParameters(new()
+            var result = await plugin.Invoke("csharp_definition", new JobParameters(new()
             {
                 ["file"] = refFile,
                 ["line"] = refLineIndex + 1,

@@ -350,11 +350,27 @@ public sealed class Agent
         if (!result.Success)
             return new ToolOutcome(result.ErrorMessage ?? "error: the tool failed without saying why", result);
 
-        var content = result.Output.TryGetValue("content", out var c) ? c?.ToString() ?? "" : "";
+        // RENDERED THE WAY A BUILT-IN'S RESULT IS, through the same JobDigest.RenderOutput that
+        // ToolBindings uses — every key, `content` bare and the rest as `key: value`. Reading only
+        // Output["content"] here meant a tool that answered under any other key reached the model as
+        // an EMPTY STRING: not "no results", nothing at all, so the model explained the silence
+        // instead of reporting it. A dynamic tool is written by someone who does not have this file
+        // in front of them, and the built-in convention is not discoverable from IAgentTool.
+        //
+        // TRUNCATED TO THE SAME CAP, for the reason the built-in path has one: a tool result is
+        // re-sent on every later turn, so an uncapped one costs its whole size again each time.
+        // A plugin is exactly where an unbounded result is most likely — it answers from a source
+        // this process does not control.
+        //
+        // `summary` STILL WINS WHERE IT EXISTS: a tool that went to the trouble of summarising its
+        // own output is saying which of its keys is the answer, and that beats rendering all of them.
         if (result.Output.TryGetValue("summary", out var summary) && summary?.ToString() is { Length: > 0 } s)
-            return new ToolOutcome(s, result);
+            return new ToolOutcome(Jobs.ToolBindings.Truncate(s, Jobs.ToolBindings.MaxToolResultChars), result);
 
-        return new ToolOutcome(content, result);
+        return new ToolOutcome(
+            Jobs.ToolBindings.Truncate(
+                Execution.JobDigest.RenderOutput(result.Output), Jobs.ToolBindings.MaxToolResultChars),
+            result);
     }
 
     /// <summary>A tool call's arguments as executor parameters — the same conversion

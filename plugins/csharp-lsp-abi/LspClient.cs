@@ -24,7 +24,7 @@ public sealed record LspDiagnostic(int Line, int Character, string Severity, str
 /// <para>ONE SERVER PROCESS, ONE CLIENT, FOR THE PLUGIN'S WHOLE LIFETIME. A language server's value
 /// here is its warm index across the workspace — csharp-ls and OmniSharp both take real seconds to
 /// load a solution's projects, and starting fresh per tool call would pay that cost on every single
-/// lsp_definition. See IPluginContext.Lifetime's own doc: this class is what actually lives on that
+/// csharp_definition. See IPluginContext.Lifetime's own doc: this class is what actually lives on that
 /// token — behind the ABI boundary, "lives on that token" means "lives for as long as the
 /// cxagent-plugin-host process hosting this plugin does," since a native plugin has no managed
 /// IPluginContext of its own to hold a token from; see cxagent_plugin.h, "context" for why.</para>

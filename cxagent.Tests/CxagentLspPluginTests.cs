@@ -41,7 +41,7 @@ public class CxagentLspPluginTests
 
         Assert.Equal("csharp-lsp", manifest.Name);
         Assert.True(manifest.Spawns);
-        Assert.Equal(["lsp_definition", "lsp_references", "lsp_diagnostics"],
+        Assert.Equal(["csharp_definition", "csharp_references", "csharp_diagnostics"],
             manifest.Tools.Select(t => t.Name).ToArray());
     }
 
@@ -63,7 +63,7 @@ public class CxagentLspPluginTests
         var plugin = new CxagentLspPlugin();
         await plugin.Load(new FakeContext(".", new { server = "csharp-ls" }), CancellationToken.None);
 
-        var result = await plugin.Invoke("lsp_definition", new JobParameters(new()), Fake.Job(), CancellationToken.None);
+        var result = await plugin.Invoke("csharp_definition", new JobParameters(new()), Fake.Job(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Contains("not running", result.ErrorMessage);
@@ -142,7 +142,7 @@ public class CxagentLspPluginTests
     // same pattern and its own reasoning. A language server takes real seconds to load and index a
     // solution's projects; the default suite runs in ~7s and stays there by not paying that cost.
     // Both were run by hand against /tmp/cxgpu (a real checkout with cxgpu.Tests referencing
-    // cxgpu's AlertEngine across a project boundary) and both landed lsp_definition on
+    // cxgpu's AlertEngine across a project boundary) and both landed csharp_definition on
     // AlertEngine.cs — see the task report for the exact lines observed.
 
     [Fact(Skip = "Needs csharp-ls on PATH and /tmp/cxgpu checked out. Verified by hand: resolved " +
@@ -186,7 +186,7 @@ public class CxagentLspPluginTests
         {
             Assert.Single(context.RegisteredPids); // RegisterChildProcess must be called, or a crashed test leaks the server.
 
-            var result = await plugin.Invoke("lsp_definition", new JobParameters(new()
+            var result = await plugin.Invoke("csharp_definition", new JobParameters(new()
             {
                 ["file"] = refFile,
                 ["line"] = refLineIndex + 1,
