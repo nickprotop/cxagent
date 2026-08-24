@@ -1,8 +1,10 @@
 using System.Text.Json;
 using CxAgent.Core.Agents;
 using CxAgent.Core.Commands;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
+using CxAgent.Core.Permissions;
 using CxAgent.Core.Plugins;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
@@ -32,15 +34,25 @@ public class PluginRegistryTests : IDisposable
             toolNames.Select(n => new PluginToolManifest(n, "does something", EmptySchema())).ToList());
 
     /// <summary>Never spawns anything and Stops instantly — records whether Stop ran, which is what
-    /// the ordering tests need to observe.</summary>
+    /// the ordering tests need to observe. Invoke records every call it received and echoes the
+    /// tool name back in its result, so a dispatch test can tell one plugin tool's call from
+    /// another's without needing a real LSP-shaped executor behind it.</summary>
     private sealed class FakePlugin : IPlugin
     {
         public bool Stopped { get; private set; }
+        public List<string> InvokedToolNames { get; } = [];
 
         public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
             throw new NotSupportedException("the registry is handed an already-loaded plugin in these tests");
 
         public Task Start(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+            CancellationToken ct)
+        {
+            InvokedToolNames.Add(toolName);
+            return Task.FromResult(new JobResult { Success = true, Output = { ["tool"] = toolName } });
+        }
 
         public Task Stop(CancellationToken ct)
         {
@@ -98,6 +110,66 @@ public class PluginRegistryTests : IDisposable
         // lsp-python contributed NOTHING — lsp_hover did not collide, but the plugin is refused whole.
         Assert.DoesNotContain(registry.CurrentTools(), t => t.Definition.Name == "lsp_hover");
         Assert.Equal(["lsp_rename"], registry.CurrentTools().Select(t => t.Definition.Name).ToList());
+    }
+
+    // ---- Dispatch: a tool call routes into its owning plugin by name -----------------------------
+
+    /// <summary>The registry's IAgentTool adapter routes a call THROUGH the plugin instance rather
+    /// than servicing it itself — one plugin is the executor behind every tool it declared, told
+    /// apart by name, the same shape ToolBindings already has for several tools sharing one
+    /// executor. Two tools from the same plugin dispatch to the SAME instance with different names.</summary>
+    [Fact]
+    public async Task ATwoToolPluginDispatchesEachCallToItsOwnToolName()
+    {
+        var registry = new PluginRegistry();
+        var plugin = new FakePlugin();
+        registry.Load(plugin, Manifest("lsp-rust", "lsp_definition", "lsp_rename"), isNameTaken: _ => false);
+
+        var tools = registry.CurrentTools();
+        var definition = tools.Single(t => t.Definition.Name == "lsp_definition");
+        var rename = tools.Single(t => t.Definition.Name == "lsp_rename");
+
+        var context = new TestJobContext();
+        var first = await definition.ExecuteAsync(new JobParameters(), context, CancellationToken.None);
+        var second = await rename.ExecuteAsync(new JobParameters(), context, CancellationToken.None);
+
+        Assert.Equal(["lsp_definition", "lsp_rename"], plugin.InvokedToolNames);
+        Assert.True(first.Success);
+        Assert.Equal("lsp_definition", first.Output["tool"]);
+        Assert.Equal("lsp_rename", second.Output["tool"]);
+    }
+
+    /// <summary>A tool whose manifest does not set <c>gated</c> asks nothing — GATE 1 in
+    /// GatedAgentTool ("may this tool run at all") is a separate question this adapter's own Gate
+    /// does not need to answer.</summary>
+    [Fact]
+    public void AnUngatedToolsOwnGateIsNull()
+    {
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), Manifest("lsp-rust", "lsp_definition"), isNameTaken: _ => false);
+
+        var tool = registry.CurrentTools().Single();
+        Assert.Null(tool.Gate(new JobParameters()));
+    }
+
+    /// <summary>A tool the manifest marks <c>gated</c> asks EVERY call — a null AlwaysRule, so no
+    /// stored rule can generalise it, because the plugin-declared policy that WOULD let it
+    /// generalise is a later task's to build. Defaulting to "asks always" rather than "never asks"
+    /// is the safe side of a policy not yet implemented.</summary>
+    [Fact]
+    public void AGatedToolsOwnGateAsksEveryCallWithNoAlwaysRule()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: true)]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        var tool = registry.CurrentTools().Single();
+        var request = tool.Gate(new JobParameters());
+
+        Assert.NotNull(request);
+        Assert.Equal(PermissionKind.Tool, request.Kind);
+        Assert.Null(request.AlwaysRule);
     }
 
     // ---- Unwire ordering -------------------------------------------------------------------------

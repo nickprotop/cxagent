@@ -201,31 +201,33 @@ public sealed class PluginRegistry
 
     /// <summary>
     /// Adapts one plugin tool into <see cref="IAgentTool"/>, counting it in and out of
-    /// <see cref="LoadedPlugin.InFlight"/> so <see cref="UnwireAsync"/> has something to drain.
-    ///
-    /// <para>EXECUTION IS NOT YET WIRED. <see cref="IPlugin"/> has no dispatch method — Load, Start
-    /// and Stop are its whole surface — because running a tool call is the managed/ABI loader's job,
-    /// not the registry's; this task builds the mutable set and its lifecycle, not the loader. A
-    /// call therefore fails clearly rather than silently no-opping, which is the honest state of a
-    /// plugin the registry can register but the process cannot yet run.</para>
+    /// <see cref="LoadedPlugin.InFlight"/> so <see cref="UnwireAsync"/> has something to drain, and
+    /// routing a call into the plugin BY NAME — see <see cref="IPlugin.Invoke"/>: one plugin instance
+    /// is the executor behind every tool it declared, told apart by the name pinned here at
+    /// construction, the same shape <c>ToolBindings</c> already has for several tools sharing one
+    /// executor.
     /// </summary>
     private sealed class PluginTool(LoadedPlugin plugin, PluginToolManifest tool) : IAgentTool
     {
         public ToolDefinition Definition { get; } = new(tool.Name, tool.Description, tool.InputSchema);
 
-        // GATING IS NOT WIRED YET EITHER: PLUGINS.md's "the plugin provides its own policy; Core
-        // enforces it" is the load-gate task's territory. tool.Gated is stored on the manifest for
-        // that task to read; nothing here consults it, so every plugin tool is ungated for now.
-        public Permissions.PermissionRequest? Gate(JobParameters call) => null;
+        // A MINIMAL GATE FOR NOW, NOT THE REAL POLICY. PLUGINS.md's "the plugin provides its own
+        // policy; Core enforces it" describes a richer shape — the plugin choosing what to show and
+        // how a call generalises — which is a later task's to build. tool.Gated only distinguishes
+        // "asks" from "does not"; a plugin declaring gated=true asks EVERY call (no AlwaysRule, so
+        // no stored rule can ever match it) rather than being silently ungated, which is the wrong
+        // side to default to for a declared-but-unimplemented policy.
+        public Permissions.PermissionRequest? Gate(JobParameters call) => tool.Gated
+            ? new Permissions.PermissionRequest(Permissions.PermissionKind.Tool,
+                $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin", AlwaysRule: null)
+            : null;
 
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
         {
             Interlocked.Increment(ref plugin.InFlight);
             try
             {
-                throw new NotSupportedException(
-                    $"plugin '{plugin.Manifest.Name}' has no dispatch path yet — the loader that " +
-                    $"runs '{tool.Name}' has not been built.");
+                return await plugin.Instance.Invoke(tool.Name, call, context, ct);
             }
             finally
             {
