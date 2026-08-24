@@ -26,6 +26,9 @@ Two working examples, the same calculator twice:
 Read them side by side. Nothing differs but the boundary, so the diff between them *is* what the
 boundary costs.
 
+The [other examples](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples) cover
+the rest: a second front end, injecting tools, and narrowing what an agent may do.
+
 ## The project
 
 A managed plugin is an ordinary `net10.0` library — no `RuntimeIdentifier`, so one build runs

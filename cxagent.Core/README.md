@@ -587,6 +587,8 @@ session.Mode        // delegation and edit mode
 - **[CalculatorAbiPlugin →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin)** — the same calculator in one
   file of C, for a plugin your language cannot write managed
 
+**[All five, with what each one is for →](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples)**
+
 ## License
 
 MIT. See [LICENSE](https://github.com/nickprotop/cxagent/blob/master/LICENSE).
