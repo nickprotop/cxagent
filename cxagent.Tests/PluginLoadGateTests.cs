@@ -37,13 +37,72 @@ public class PluginLoadGateTests : IDisposable
         public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
             throw new NotSupportedException("the registry is handed an already-loaded plugin in these tests");
 
-        public Task Start(CancellationToken ct) => Task.CompletedTask;
+        /// <summary>Whether <see cref="Start"/> ran — IPlugin.Start's contract is "runs after Load",
+        /// and a plugin whose tools are offered but which was never started answers every call with
+        /// "not running". Recorded rather than ignored so a test can assert the lifecycle completed.</summary>
+        public bool Started { get; private set; }
+
+        /// <summary>Set to make Start throw, for the failed-start path.</summary>
+        public Exception? StartFailure { get; init; }
+
+        public Task Start(CancellationToken ct)
+        {
+            if (StartFailure is not null) return Task.FromException(StartFailure);
+            Started = true;
+            return Task.CompletedTask;
+        }
 
         public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
             CancellationToken ct) =>
             Task.FromResult(new JobResult { Success = true, Output = { ["tool"] = toolName } });
 
         public Task Stop(CancellationToken ct) => Task.CompletedTask;
+    }
+
+    // ---- Lifecycle: Load is not enough, Start has to run ----------------------------------------
+
+    /// <summary>
+    /// A loaded plugin is STARTED, not merely registered — <see cref="IPlugin.Start"/>'s own contract
+    /// is "Runs after Load. The plugin may spawn processes, open connections, index — whatever it
+    /// needs before its tools can be called."
+    ///
+    /// <para>NOTHING ELSE ASSERTS THIS. Every other test drives a plugin by constructing it and
+    /// calling Start by hand, so all of them pass whether or not the SESSION starts what it loads.
+    /// Observed live: the plugin loaded, announced "3 tool(s) offered", the model picked one, and the
+    /// call came back in 0.0s saying the language server was not running — because nothing between
+    /// the gate and the registry had ever called Start.</para>
+    /// </summary>
+    [Fact]
+    public async Task ALoadedPluginIsStarted()
+    {
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
+        using var _ = manager;
+        var plugin = new FakePlugin();
+
+        var status = await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
+
+        Assert.Equal(CommandStatus.Changed, status);
+        Assert.True(plugin.Started,
+            "the session registered the plugin's tools but never started it — every call would report the backend is not running.");
+    }
+
+    /// <summary>
+    /// A plugin that throws from Start is UNLOADED, not left half-loaded with its tools still
+    /// offered. A tool whose backing process never came up is worse than an absent one: the model
+    /// sees it, calls it, and is told it is not running with nothing explaining why.
+    /// </summary>
+    [Fact]
+    public async Task APluginThatFailsToStartIsUnloadedAndSaysSo()
+    {
+        var session = SessionWithGate(new ScriptedGate(PermissionOutcome.Allow), out var manager);
+        using var _ = manager;
+        var plugin = new FakePlugin { StartFailure = new InvalidOperationException("no server on PATH") };
+
+        var status = await session.LoadPlugin(plugin, Manifest("lsp-rust", "lsp_rename"), _dir);
+
+        Assert.Equal(CommandStatus.Reported, status);
+        Assert.DoesNotContain("lsp_rename",
+            session.Plugins.CurrentTools().Select(t => t.Definition.Name));
     }
 
     // ---- Identity: a content hash over the WHOLE load set, not one file --------------------------

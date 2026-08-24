@@ -513,6 +513,29 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
+        // START AFTER THE COLLISION CHECK, NEVER BEFORE IT. IPlugin.Start's own contract says it
+        // "runs after Load", and it is where a plugin spawns its processes and opens its
+        // connections — so starting a plugin this session then REFUSES would leave a language
+        // server (or a host process) running for something that offers no tools.
+        //
+        // A FAILED START UNWIRES RATHER THAN LEAVING A HALF-LOADED PLUGIN. Its tools are already
+        // registered by this point, and a tool whose backing process never came up answers every
+        // call with a puzzle: the model sees the tool offered, calls it, and is told the thing is
+        // not running, with nothing in the transcript explaining why. Withdrawing the tools and
+        // saying so once is the honest outcome — and UnwireAsync is already the path that stops the
+        // plugin and reaps whatever it managed to spawn before failing.
+        try
+        {
+            await plugin.Start(ct);
+        }
+        catch (Exception ex)
+        {
+            await Plugins.UnwireAsync(manifest.Name, ct);
+            Say(new Message($"plugin '{manifest.Name}' failed to start and was unloaded: {ex.Message}",
+                Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
         Announce(SessionChangeKind.Plugins);
         Say(new Message($"plugin '{manifest.Name}' loaded — {manifest.Tools.Count} tool(s) offered.",
             Severity.Info));
@@ -632,7 +655,11 @@ public sealed partial class Session
             ? namedConfig.Settings ?? System.Text.Json.JsonDocument.Parse("{}").RootElement
             : System.Text.Json.JsonDocument.Parse("{}").RootElement;
 
-        var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(loadSetDirectory, settings,
+        // WorkingDirectory IS THIS SESSION'S FOLDER, not loadSetDirectory — see that member's own
+        // contract ("where the plugin should root itself — an LSP plugin starts its server here").
+        // The load set is where the plugin's files were found; rooting a server there aims it at a
+        // folder containing the plugin binary and nothing else, so every lookup answers empty.
+        var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(WorkingDirectory, settings,
             SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName);
 
         var result = await CxAgent.Core.Plugins.ManagedPluginLoader.Load(assemblyPath, context, ct);

@@ -904,26 +904,26 @@ public static class AppBootstrap
         // find no gate and load every plugin unasked — the "headless host" path PLUGINS.md's
         // Permission section describes, silently applied to a session that has a gate coming.
         //
-        // STILL BEFORE THE RENDER LOOP, so the tools array a plugin contributes is part of the very
-        // first prompt sent rather than invalidating the prefix cache on turn two.
+        // ON THE FIRST PUMP, NOT HERE — see LoadConfiguredPluginsAsync below and the deferral beside
+        // the trust prompt that runs it. Unlike the MCP block above, a plugin load ASKS: the load
+        // gate builds a control in the composer cell and awaits an answer, which needs a render loop
+        // that has not started yet. Blocking on it here waits forever for a dialog nothing can draw.
         //
         // DISCOVERY LIVES HERE, NOT IN CORE — PLUGINS.md, "Configuration": "Core accepts 'here is a
         // plugin at this path' and does not care how it was found." PluginDiscovery enumerates the
         // search folders (config's own pluginPaths, then the project directory, then this process's
         // global config directory — project over global) and calls the loader; this file only decides
         // WHAT EXISTS, the same split /mcp already draws.
-        //
-        // BLOCKING, for the same reason the MCP block above is: each load may prompt the user, and
-        // there is no frame to drop before the UI loop begins.
-        if (resolution.Plugins.Count > 0)
+        async Task LoadConfiguredPluginsAsync()
         {
+            if (resolution.Plugins.Count == 0) return;
+
             var searchFolders = PluginDiscovery.SearchFolders(
                 resolution.PluginPaths, session.WorkingDirectory, paths.ConfigDir);
 
-            PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
-                    paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
-                    CancellationToken.None)
-                .GetAwaiter().GetResult();
+            await PluginDiscovery.LoadConfiguredAsync(session, resolution.Plugins, searchFolders,
+                paths.ConfigDir, message => transcript.Write(new Message(message, Severity.Warning)),
+                CancellationToken.None);
         }
 
         // Submit model: plain Enter SUBMITS, and a line ending in a BACKSLASH continues onto the
@@ -1385,13 +1385,24 @@ public static class AppBootstrap
         }
         else
         {
-            system.EnqueueOnUIThread(() => _ = AskTrustIfUnknownAsync());
+            system.EnqueueOnUIThread(() => _ = AskTrustThenLoadPluginsAsync());
         }
 
         async Task RunWizardThenAskTrustAsync()
         {
             await RunFirstRunSetupAsync();
-            await AskTrustIfUnknownAsync();   // sequenced AFTER the wizard, not concurrently
+            await AskTrustThenLoadPluginsAsync();   // sequenced AFTER the wizard, not concurrently
+        }
+
+        // PLUGINS AFTER TRUST, NEVER BESIDE IT. Both ask through the same composer cell, and the
+        // decider serialises prompts to one at a time — so a plugin load started concurrently with
+        // the trust question would sit behind it anyway, having already decided to run in a folder
+        // the user has not yet agreed to work in. Trusting the folder is the precondition for
+        // loading anything out of it.
+        async Task AskTrustThenLoadPluginsAsync()
+        {
+            await AskTrustIfUnknownAsync();
+            await LoadConfiguredPluginsAsync();
         }
 
         // D10: same deferral, same reason. Adding a status-bar item calls Invalidate(Relayout),

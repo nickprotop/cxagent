@@ -134,7 +134,12 @@ public static class PluginDiscovery
                 continue;
             }
 
-            var context = new StartupPluginContext(loadSetDirectory,
+            // THE SESSION'S FOLDER, NOT THE PLUGIN'S OWN. IPluginContext.WorkingDirectory is "where
+            // the plugin should root itself — an LSP plugin starts its server here", which is the
+            // folder being worked in; loadSetDirectory is where the plugin's FILES live, and rooting
+            // a language server there points it at a directory holding one DLL and a sidecar. It
+            // indexes nothing and every lookup returns empty, with no error to explain why.
+            var context = new StartupPluginContext(session.WorkingDirectory,
                 config.Settings ?? JsonDocument.Parse("{}").RootElement,
                 report, children, declaredName);
 
