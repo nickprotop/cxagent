@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cxagent — a terminal coding agent</title>
 <meta name="description" content="A terminal AI coding agent. Give it a goal in plain language; it reads your files, works out what to change, and changes them.">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <nav class="site-nav">
-  <a class="brand" href="/">cxagent</a>
-  <a href="/install.html">Install</a>
-  <a href="/plugins.html">Plugins</a>
-  <a href="/core.html">CxAgent.Core</a>
-  <a href="/docs/">Docs</a>
+  <a class="brand" href="./">cxagent</a>
+  <a href="install.html">Install</a>
+  <a href="plugins.html">Plugins</a>
+  <a href="core.html">CxAgent.Core</a>
+  <a href="docs/">Docs</a>
   <a href="https://github.com/nickprotop/cxagent">GitHub</a>
 </nav>
 <main class="wide">
@@ -27,7 +27,7 @@
 
 <div class="install-line">
 <pre><code>curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash</code></pre>
-<p class="note">Linux and macOS, no .NET required. <a href="/install.html">Windows, the .NET tool,
+<p class="note">Linux and macOS, no .NET required. <a href="install.html">Windows, the .NET tool,
 building from source, and verifying a download →</a></p>
 </div>
 
@@ -41,14 +41,14 @@ rather than photographed — so the text is exact. Nothing is staged, and the mi
 the pictures.</p>
 
 <figure>
-  <img src="/screenshots/01-trust.png" alt="cxagent asking whether to trust the current folder, listing what that would allow">
+  <img src="screenshots/01-trust.png" alt="cxagent asking whether to trust the current folder, listing what that would allow">
   <figcaption><strong>Trusting a folder.</strong> The first question of the first session. Reads and
   writes inside this folder stop asking; anything that writes elsewhere, and every shell command,
   still stops.</figcaption>
 </figure>
 
 <figure>
-  <img src="/screenshots/02-sub-agents.png" alt="A worker agent running in its own context, with the session panel splitting workers from this agent">
+  <img src="screenshots/02-sub-agents.png" alt="A worker agent running in its own context, with the session panel splitting workers from this agent">
   <figcaption><strong>Sub-agents.</strong> A worker explores in its own context, with its own turn
   count and occupancy — the parent stays where it was. The panel splits <code>workers</code> from
   <code>this agent</code>, because a session that spent most of its tokens inside children would
@@ -57,14 +57,14 @@ the pictures.</p>
 </figure>
 
 <figure>
-  <img src="/screenshots/04-question-step-1.png" alt="The agent asking the user a question, presented as a numbered step with described options">
+  <img src="screenshots/04-question-step-1.png" alt="The agent asking the user a question, presented as a numbered step with described options">
   <figcaption><strong>Asking you.</strong> When a decision is yours, the model gets one call and up
   to four questions, presented as steps. Every option carries a description saying what it means — a
   list of bare labels asks you to guess what the model was thinking.</figcaption>
 </figure>
 
 <figure>
-  <img src="/screenshots/08-running-the-build.png" alt="A sequence of shell commands in the transcript, two failing in red before one succeeds">
+  <img src="screenshots/08-running-the-build.png" alt="A sequence of shell commands in the transcript, two failing in red before one succeeds">
   <figcaption><strong>Running what it built.</strong> A feature that compiles but was never executed
   is not finished. Every shell command asks first. Failed calls render red and stay in the
   transcript — here the agent adapted its own invocation across three failures before the export
@@ -72,14 +72,14 @@ the pictures.</p>
 </figure>
 
 <figure>
-  <img src="/screenshots/17-worker-timeline.png" alt="An expanded worker row showing its model, its briefing, and every tool call it made with timings">
+  <img src="screenshots/17-worker-timeline.png" alt="An expanded worker row showing its model, its briefing, and every tool call it made with timings">
   <figcaption><strong>The worker timeline.</strong> A finished worker is one row; opened, it shows
   its own model, the task as it was briefed, its turns and tokens, then every call it made with the
   time each took and how much came back.</figcaption>
 </figure>
 
 <figure>
-  <img src="/screenshots/12-stats.png" alt="The /stats output ranking tools by characters returned, with failure counts and the permission gate's accounting">
+  <img src="screenshots/12-stats.png" alt="The /stats output ranking tools by characters returned, with failure counts and the permission gate's accounting">
   <figcaption><strong>What it cost.</strong> <code>/stats</code> ranks tools by characters returned
   rather than call count — a turn re-sends everything before it, so one tool returning 215k
   characters does not cost that once. The last line is the permission gate's own accounting: how
@@ -87,14 +87,14 @@ the pictures.</p>
 </figure>
 
 <figure>
-  <img src="/screenshots/15-plugin-load.png" alt="The plugin load prompt, showing three tools, a prompt contribution, and a hash of the load set">
+  <img src="screenshots/15-plugin-load.png" alt="The plugin load prompt, showing three tools, a prompt contribution, and a hash of the load set">
   <figcaption><strong>Loading a plugin.</strong> A plugin is a DLL cxagent did not ship. The prompt
   says what it will contribute and covers its approval with a hash of the whole load set — change a
   byte and the question comes back. Installing a plugin is not approving it.</figcaption>
 </figure>
 
 <figure>
-  <img src="/screenshots/14-plugin-lsp.png" alt="csharp_definition resolving a cross-project reference in 3.1s, then csharp_references answering in 0.2s">
+  <img src="screenshots/14-plugin-lsp.png" alt="csharp_definition resolving a cross-project reference in 3.1s, then csharp_references answering in 0.2s">
   <figcaption><strong>A plugin working.</strong> <code>csharp_definition</code> resolves a reference
   in a test project to its declaration in the project under test — across a boundary grep cannot
   cross. Note the timings: the first call pays to index the solution, everything after it is
@@ -108,27 +108,27 @@ more, with the full walkthrough →</a></p>
 
 <ul class="cards">
   <li class="card">
-    <h3><a href="/install.html">Install</a></h3>
+    <h3><a href="install.html">Install</a></h3>
     <p>Six platform binaries, the shell and PowerShell one-liners, the .NET tool, uninstalling, and
     checking a download against <code>SHA256SUMS</code>.</p>
   </li>
   <li class="card">
-    <h3><a href="/plugins.html">Plugins</a></h3>
+    <h3><a href="plugins.html">Plugins</a></h3>
     <p>The catalog of plugins cxagent knows about, what each one requires, and which of its tools
     stop to ask.</p>
   </li>
   <li class="card">
-    <h3><a href="/core.html">CxAgent.Core</a></h3>
+    <h3><a href="core.html">CxAgent.Core</a></h3>
     <p>Everything under the terminal as a NuGet package: sessions, agents, tools, delegation,
     permissions and MCP, with no UI dependency.</p>
   </li>
   <li class="card">
-    <h3><a href="/writing-a-plugin.html">Writing a plugin</a></h3>
+    <h3><a href="writing-a-plugin.html">Writing a plugin</a></h3>
     <p>Add tools from a DLL without rebuilding cxagent — from the calculator example to a catalog
     submission.</p>
   </li>
   <li class="card">
-    <h3><a href="/docs/">Documentation</a></h3>
+    <h3><a href="docs/">Documentation</a></h3>
     <p>Commands, configuration, and the plugin contract, rendered from the repository's own
     markdown.</p>
   </li>

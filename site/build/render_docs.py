@@ -174,7 +174,10 @@ def main() -> int:
                         f"{current} links to {target}, but '{Path(rel).name}' has no heading "
                         f"'{anchor}'.")
                     return target
-                target_page = f"/docs/{RENDERED[rel]}.html"
+                # SIBLING, NOT ROOT-ABSOLUTE. These pages are written into _site/docs/, and the
+                # site is served from a project subpath (/cxagent/), where a leading "/" resolves
+                # to the domain root and 404s. A bare name resolves next to the linking page.
+                target_page = f"{RENDERED[rel]}.html"
                 return f"{target_page}#{anchor}" if anchor else target_page
 
             # NOT RENDERED: leave for GitHub rather than 404 inside the site. The target is
