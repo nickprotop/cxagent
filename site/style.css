@@ -333,3 +333,140 @@ figcaption strong { color: var(--fg-bright); }
 .doc-group ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
 .doc-group li { margin: 0.35rem 0; }
 .doc-group li span { color: var(--fg-dim); }
+
+/* --- Landing page: hero, transcript viewer -----------------------------------------------------
+   The landing page keeps prose at the same 72ch measure as every other page (it no longer opts out
+   with .wide) and lets ONE element break wider: the transcript frame. The captures need width to
+   stay readable, but the sentences around them do not, and stretching both to 62rem made the page
+   a column of unreadably long lines beside a stack of full-bleed images. */
+
+.lede {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin: 0 0 0.75rem;
+}
+
+.hero h1 { letter-spacing: -0.02em; }
+
+/* The install command is the page's first call to action, so it sits directly under the tagline
+   rather than below six screens of screenshots. */
+/* The install command is one long unbreakable token, so a fixed measure gives it a horizontal
+   scrollbar — a poor look for the page's primary call to action. Let it wrap instead, and give it
+   a little more room than the prose. */
+.install-line {
+  /* Aligned to the prose measure: a block that starts left of every sentence around it reads as a
+     mistake, and the command wraps rather than needing the extra width. */
+  margin: 1.6rem 0 0.4rem;
+}
+
+.install-line pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.install-line .note { margin-top: 0.6rem; }
+
+/* Break out of the prose measure, centred, without knowing the parent's width. */
+.bleed {
+  width: min(58rem, calc(100vw - 3rem));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+/* --- The transcript viewer ---
+   Seven stacked figures became one framed terminal with tabs: the same shape as the thing being
+   demonstrated, and six screens of scrolling collapsed into one. Without JavaScript every panel
+   stays visible and the page degrades to the stacked figures it used to be. */
+.viewer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-code);
+}
+
+.viewer-chrome {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--fg-dim);
+}
+
+.viewer-dots { display: flex; gap: 0.35rem; }
+.viewer-dots i {
+  width: 0.6rem; height: 0.6rem; border-radius: 50%;
+  background: var(--border); display: block;
+}
+
+.viewer-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.viewer-tabs button {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+
+.viewer-tabs button:hover { color: var(--fg); }
+
+.viewer-tabs button[aria-selected="true"] {
+  color: var(--fg-bright);
+  border-bottom-color: var(--accent);
+}
+
+.viewer-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.viewer-panel img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The caption reads as the app's own status line, in mono under the frame. */
+.viewer-caption {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--fg-dim);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.viewer-caption strong { color: var(--fg-bright); }
+
+/* No JS: every panel ships visible and stacks, exactly as the old figure list did, and the tab
+   strip stays hidden because nothing can act on it. JS reveals the tabs and hides the panels it
+   is not showing. */
+.viewer-panel + .viewer-panel { border-top: 1px solid var(--border); }
+.viewer-tabs { display: none; }
+.js .viewer-tabs { display: flex; }
+.js .viewer-panel[hidden] { display: none; }
+
+@media (max-width: 46rem) {
+  .bleed { width: 100%; margin-left: 0; transform: none; }
+  .viewer-tabs button { padding: 0.5rem 0.6rem; font-size: 0.76rem; }
+}

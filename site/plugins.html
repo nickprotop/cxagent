@@ -196,7 +196,7 @@ assembly, so the load prompt can tell you what a plugin claims without running i
     box.appendChild(el("p", null, "The plugin catalog could not be loaded: " + reason));
     var p = el("p", "note");
     p.appendChild(document.createTextNode("It is published at "));
-    p.appendChild(link("/catalog.json", "/catalog.json"));
+    p.appendChild(link("catalog.json", "catalog.json"));
     p.appendChild(document.createTextNode(", and the committed source it is generated from is "));
     p.appendChild(link("https://github.com/nickprotop/cxagent/blob/master/plugins/plugins.json",
                        "plugins/plugins.json"));
@@ -205,7 +205,9 @@ assembly, so the load prompt can tell you what a plugin claims without running i
     mount.appendChild(box);
   }
 
-  fetch("/catalog.json", { cache: "no-cache" })
+  // RELATIVE, like every other path here: the site is served from a project subpath,
+  // where a leading slash resolves to the domain root and the fetch 404s.
+  fetch("catalog.json", { cache: "no-cache" })
     .then(function (response) {
       if (!response.ok) throw new Error("HTTP " + response.status);
       return response.json();

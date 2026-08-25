@@ -16,9 +16,10 @@
   <a href="docs/">Docs</a>
   <a href="https://github.com/nickprotop/cxagent">GitHub</a>
 </nav>
-<main class="wide">
+<main>
 
 <div class="hero">
+  <p class="lede">Terminal coding agent</p>
   <h1>cxagent</h1>
   <p class="tagline">A terminal AI coding agent: give it a goal in plain language, and it reads
   your files, works out what to change, and changes them — in one context, with the real bytes in
@@ -40,66 +41,54 @@ OpenAI-compatible endpoint, or Anthropic.</p>
 rather than photographed — so the text is exact. Nothing is staged, and the mistakes are still in
 the pictures.</p>
 
-<figure>
-  <img src="screenshots/01-trust.png" alt="cxagent asking whether to trust the current folder, listing what that would allow">
-  <figcaption><strong>Trusting a folder.</strong> The first question of the first session. Reads and
-  writes inside this folder stop asking; anything that writes elsewhere, and every shell command,
-  still stops.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/02-sub-agents.png" alt="A worker agent running in its own context, with the session panel splitting workers from this agent">
-  <figcaption><strong>Sub-agents.</strong> A worker explores in its own context, with its own turn
-  count and occupancy — the parent stays where it was. The panel splits <code>workers</code> from
-  <code>this agent</code>, because a session that spent most of its tokens inside children would
-  otherwise look identical to one that spawned none. The prompt below says which child
-  asked.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/04-question-step-1.png" alt="The agent asking the user a question, presented as a numbered step with described options">
-  <figcaption><strong>Asking you.</strong> When a decision is yours, the model gets one call and up
-  to four questions, presented as steps. Every option carries a description saying what it means — a
-  list of bare labels asks you to guess what the model was thinking.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/08-running-the-build.png" alt="A sequence of shell commands in the transcript, two failing in red before one succeeds">
-  <figcaption><strong>Running what it built.</strong> A feature that compiles but was never executed
-  is not finished. Every shell command asks first. Failed calls render red and stay in the
-  transcript — here the agent adapted its own invocation across three failures before the export
-  ran.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/17-worker-timeline.png" alt="An expanded worker row showing its model, its briefing, and every tool call it made with timings">
-  <figcaption><strong>The worker timeline.</strong> A finished worker is one row; opened, it shows
-  its own model, the task as it was briefed, its turns and tokens, then every call it made with the
-  time each took and how much came back.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/12-stats.png" alt="The /stats output ranking tools by characters returned, with failure counts and the permission gate's accounting">
-  <figcaption><strong>What it cost.</strong> <code>/stats</code> ranks tools by characters returned
-  rather than call count — a turn re-sends everything before it, so one tool returning 215k
-  characters does not cost that once. The last line is the permission gate's own accounting: how
-  many calls asked, and how many were answered by a stored rule.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/15-plugin-load.png" alt="The plugin load prompt, showing three tools, a prompt contribution, and a hash of the load set">
-  <figcaption><strong>Loading a plugin.</strong> A plugin is a DLL cxagent did not ship. The prompt
-  says what it will contribute and covers its approval with a hash of the whole load set — change a
-  byte and the question comes back. Installing a plugin is not approving it.</figcaption>
-</figure>
-
-<figure>
-  <img src="screenshots/14-plugin-lsp.png" alt="csharp_definition resolving a cross-project reference in 3.1s, then csharp_references answering in 0.2s">
-  <figcaption><strong>A plugin working.</strong> <code>csharp_definition</code> resolves a reference
-  in a test project to its declaration in the project under test — across a boundary grep cannot
-  cross. Note the timings: the first call pays to index the solution, everything after it is
-  answered from a warm index.</figcaption>
-</figure>
+<div class="viewer bleed">
+  <div class="viewer-chrome">
+    <span class="viewer-dots"><i></i><i></i><i></i></span>
+    <span>cxagent — a real session, captured from tmux</span>
+  </div>
+  <div class="viewer-tabs" role="tablist" data-tabs aria-label="Session captures">
+    <button role="tab" id="tab-01-trust" aria-controls="panel-01-trust" aria-selected="true" tabindex="0">trust</button>
+    <button role="tab" id="tab-02-sub-agents" aria-controls="panel-02-sub-agents" aria-selected="false" tabindex="-1">sub-agents</button>
+    <button role="tab" id="tab-04-question-step-1" aria-controls="panel-04-question-step-1" aria-selected="false" tabindex="-1">asking you</button>
+    <button role="tab" id="tab-08-running-the-build" aria-controls="panel-08-running-the-build" aria-selected="false" tabindex="-1">the build</button>
+    <button role="tab" id="tab-17-worker-timeline" aria-controls="panel-17-worker-timeline" aria-selected="false" tabindex="-1">worker timeline</button>
+    <button role="tab" id="tab-12-stats" aria-controls="panel-12-stats" aria-selected="false" tabindex="-1">cost</button>
+    <button role="tab" id="tab-15-plugin-load" aria-controls="panel-15-plugin-load" aria-selected="false" tabindex="-1">plugin load</button>
+    <button role="tab" id="tab-14-plugin-lsp" aria-controls="panel-14-plugin-lsp" aria-selected="false" tabindex="-1">plugin at work</button>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-01-trust" aria-labelledby="tab-01-trust">
+    <img src="screenshots/01-trust.png" alt="cxagent asking whether to trust the current folder, listing what that would allow">
+    <p class="viewer-caption"><strong>Trusting a folder.</strong> The first question of the first session. Reads and writes inside this folder stop asking; anything that writes elsewhere, and every shell command, still stops.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-02-sub-agents" aria-labelledby="tab-02-sub-agents">
+    <img src="screenshots/02-sub-agents.png" alt="A worker agent running in its own context, with the session panel splitting workers from this agent">
+    <p class="viewer-caption"><strong>Sub-agents.</strong> A worker explores in its own context, with its own turn count and occupancy — the parent stays where it was. The panel splits <code>workers</code> from <code>this agent</code>, because a session that spent most of its tokens inside children would otherwise look identical to one that spawned none. The prompt below says which child asked.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-04-question-step-1" aria-labelledby="tab-04-question-step-1">
+    <img src="screenshots/04-question-step-1.png" alt="The agent asking the user a question, presented as a numbered step with described options">
+    <p class="viewer-caption"><strong>Asking you.</strong> When a decision is yours, the model gets one call and up to four questions, presented as steps. Every option carries a description saying what it means — a list of bare labels asks you to guess what the model was thinking.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-08-running-the-build" aria-labelledby="tab-08-running-the-build">
+    <img src="screenshots/08-running-the-build.png" alt="A sequence of shell commands in the transcript, two failing in red before one succeeds">
+    <p class="viewer-caption"><strong>Running what it built.</strong> A feature that compiles but was never executed is not finished. Every shell command asks first. Failed calls render red and stay in the transcript — here the agent adapted its own invocation across three failures before the export ran.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-17-worker-timeline" aria-labelledby="tab-17-worker-timeline">
+    <img src="screenshots/17-worker-timeline.png" alt="An expanded worker row showing its model, its briefing, and every tool call it made with timings">
+    <p class="viewer-caption"><strong>The worker timeline.</strong> A finished worker is one row; opened, it shows its own model, the task as it was briefed, its turns and tokens, then every call it made with the time each took and how much came back.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-12-stats" aria-labelledby="tab-12-stats">
+    <img src="screenshots/12-stats.png" alt="The /stats output ranking tools by characters returned, with failure counts and the permission gate's accounting">
+    <p class="viewer-caption"><strong>What it cost.</strong> <code>/stats</code> ranks tools by characters returned rather than call count — a turn re-sends everything before it, so one tool returning 215k characters does not cost that once. The last line is the permission gate's own accounting: how many calls asked, and how many were answered by a stored rule.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-15-plugin-load" aria-labelledby="tab-15-plugin-load">
+    <img src="screenshots/15-plugin-load.png" alt="The plugin load prompt, showing three tools, a prompt contribution, and a hash of the load set">
+    <p class="viewer-caption"><strong>Loading a plugin.</strong> A plugin is a DLL cxagent did not ship. The prompt says what it will contribute and covers its approval with a hash of the whole load set — change a byte and the question comes back. Installing a plugin is not approving it.</p>
+  </div>
+  <div class="viewer-panel" role="tabpanel" id="panel-14-plugin-lsp" aria-labelledby="tab-14-plugin-lsp">
+    <img src="screenshots/14-plugin-lsp.png" alt="csharp_definition resolving a cross-project reference in 3.1s, then csharp_references answering in 0.2s">
+    <p class="viewer-caption"><strong>A plugin working.</strong> <code>csharp_definition</code> resolves a reference in a test project to its declaration in the project under test — across a boundary grep cannot cross. Note the timings: the first call pays to index the solution, everything after it is answered from a warm index.</p>
+  </div>
+</div>
 
 <p class="note"><a href="https://github.com/nickprotop/cxagent/tree/master/docs/screenshots">Ten
 more, with the full walkthrough →</a></p>
@@ -159,5 +148,44 @@ full version of this section →</a></p>
 <footer>
   cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
 </footer>
+
+<script>
+// PROGRESSIVE: the panels are all visible until this runs, so the page without JavaScript is the
+// stacked figure list it used to be. The .js class is what switches the viewer to one-at-a-time.
+(function () {
+  var viewer = document.querySelector(".viewer");
+  if (!viewer) return;
+  document.documentElement.classList.add("js");
+
+  var tabs = Array.prototype.slice.call(viewer.querySelectorAll('[role="tab"]'));
+  var panels = Array.prototype.slice.call(viewer.querySelectorAll('[role="tabpanel"]'));
+
+  function show(index) {
+    tabs.forEach(function (tab, i) {
+      var on = i === index;
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+      tab.tabIndex = on ? 0 : -1;
+      panels[i].hidden = !on;
+    });
+  }
+
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { show(i); });
+    tab.addEventListener("keydown", function (e) {
+      var next = e.key === "ArrowRight" ? i + 1
+               : e.key === "ArrowLeft"  ? i - 1
+               : e.key === "Home"       ? 0
+               : e.key === "End"        ? tabs.length - 1
+               : -1;
+      if (next < 0 || next >= tabs.length) return;
+      e.preventDefault();
+      show(next);
+      tabs[next].focus();
+    });
+  });
+
+  show(0);
+}());
+</script>
 </body>
 </html>
