@@ -133,6 +133,8 @@ public static class PluginResolver
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
+        public int HostContract => PluginContract.Version;
+        public string HostVersion => PluginContract.HostVersion;
         public IPluginLogger Logger { get; } = new ReportingLogger(report);
 
         // CANCELLED AT STOP, AND ONLY AT STOP — see IPluginContext.Lifetime's own doc. Nothing has

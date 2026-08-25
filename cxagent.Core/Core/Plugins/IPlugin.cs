@@ -52,3 +52,29 @@ public interface IPlugin
     /// </summary>
     Task Stop(CancellationToken ct);
 }
+
+/// <summary>
+/// Implemented by a plugin that declares any tool <c>"gated": "dynamic"</c> — the per-call decision
+/// the manifest's booleans cannot express.
+///
+/// <para>A SEPARATE INTERFACE, NOT A DEFAULT METHOD ON <see cref="IPlugin"/>. A default returning
+/// null would make "declared dynamic and implemented nothing" indistinguishable from "implemented a
+/// gate that permits this call" — so a sidecar promising a per-call decision could quietly never
+/// ask, and the promise a user read before approving the load would be unfalsifiable. As its own
+/// interface the absence is visible at load, where <see cref="ManagedPluginLoader"/> refuses it.</para>
+/// </summary>
+public interface IPluginGateSource
+{
+    /// <summary>
+    /// Whether THIS call asks, and what the prompt should say. Null means no prompt.
+    ///
+    /// <para>SYNCHRONOUS, matching <see cref="Jobs.IAgentTool.Gate"/>, which the caller invokes
+    /// synchronously. A gate decides over arguments already in hand; forbidding I/O structurally is
+    /// what keeps a consent prompt from waiting on a network call.</para>
+    ///
+    /// <para>THROWING IS SAFE, AND ASKS. Core treats a throw as "ask, and offer no standing grant" —
+    /// a broken gate is noisy rather than silently permissive, and cannot accumulate a permanent
+    /// allowance while it is broken.</para>
+    /// </summary>
+    PluginGate? Gate(string toolName, JobParameters call);
+}

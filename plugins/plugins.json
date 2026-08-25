@@ -22,8 +22,8 @@
     "",
     "generated from the artifacts themselves. A plugin hosted elsewhere DOES carry `sha256` here,",
     "",
-    "The `$example` below is not installed and is not a real plugin. It is here so the third-party",
-    "shape has one worked instance to copy, and so a client parsing this file meets both `source`",
+    "A worked entry for each `source` shape lives in RELEASING.md, beside the steps for adding",
+    "one. This file carries only plugins that actually exist.",
     "",
     "",
     "",
@@ -83,7 +83,7 @@
       "file": "csharp-lsp.dll",
       "kind": "managed",
       "compatibility": {
-        "minCxagentVersion": "0.9.0",
+        "pluginContract": 2,
         "platforms": [
           "any"
         ]
@@ -107,75 +107,5 @@
         "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none, or [\"--features\",\"razor-support\"] to analyse .razor and .cshtml."
       }
     }
-  ],
-  "$example": {
-    "name": "lsp-rust",
-    "displayName": "Rust Language Server",
-    "version": "0.3.1",
-    "description": "The same three operations for Rust, backed by rust-analyzer.",
-    "publisher": "someone-else",
-    "license": "Apache-2.0",
-    "repository": "https://github.com/someone-else/cxagent-lsp-rust",
-    "sourceUrl": "https://github.com/someone-else/cxagent-lsp-rust",
-    "readme": "https://github.com/someone-else/cxagent-lsp-rust#readme",
-    "source": {
-      "kind": "url",
-      "url": "https://github.com/someone-else/cxagent-lsp-rust/releases/download/v0.3.1/lsp-rust.zip",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-    },
-    "file": "lsp-rust.dll",
-    "kind": "managed",
-    "compatibility": {
-      "minCxagentVersion": "0.8.0",
-      "platforms": [
-        "any"
-      ]
-    },
-    "spawns": true,
-    "tools": [
-      "rust_definition",
-      "rust_references",
-      "rust_diagnostics"
-    ],
-    "requires": {
-      "description": "rust-analyzer on PATH.",
-      "default": "rust-analyzer",
-      "install": "rustup component add rust-analyzer"
-    }
-  },
-  "$exampleNative": {
-    "name": "ripgrep-tools",
-    "displayName": "ripgrep search tools",
-    "version": "0.2.0",
-    "description": "A native plugin, shown here because an ABI plugin is per-platform and the managed example above cannot show that.",
-    "publisher": "someone-else",
-    "license": "MIT",
-    "repository": "https://github.com/someone-else/cxagent-ripgrep",
-    "kind": "abi",
-    "compatibility": {
-      "minCxagentVersion": "0.9.0",
-      "platforms": [
-        "linux-x64",
-        "osx-arm64"
-      ]
-    },
-    "sources": {
-      "linux-x64": {
-        "kind": "url",
-        "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-linux-x64.zip",
-        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-        "file": "libripgrep_tools.so"
-      },
-      "osx-arm64": {
-        "kind": "url",
-        "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-osx-arm64.zip",
-        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-        "file": "libripgrep_tools.dylib"
-      }
-    },
-    "spawns": false,
-    "tools": [
-      "rg_search"
-    ]
-  }
+  ]
 }

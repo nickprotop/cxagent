@@ -19,7 +19,7 @@ namespace CxAgent.Plugins.Lsp;
 /// {"server":"/opt/omnisharp/OmniSharp","args":["-lsp"]} are both just "start this command with
 /// these arguments" to this class.</para>
 /// </summary>
-public sealed class CxagentLspPlugin : IPlugin
+public sealed class CxagentLspPlugin : IPlugin, IPluginGateSource
 {
     /// <summary>The language server used when settings name none — see
     /// <see cref="ReadServerSettings"/>.</summary>
@@ -33,6 +33,21 @@ public sealed class CxagentLspPlugin : IPlugin
     {
         _context = context;
         _workingDirectory = context.WorkingDirectory;
+
+        // THE PLUGIN'S HALF OF THE CONTRACT CHECK, and the only half that can catch this case. A
+        // host that KNOWS contract 2 refuses anything else before this method is ever called — but a
+        // host OLDER than 2 has never heard of it, reads this plugin's sidecar with its own rules,
+        // and takes `"gated": "dynamic"` for whatever its boolean parser falls back to. That is
+        // false: these three tools would offer themselves UNGATED, and a read outside the working
+        // directory would happen with no prompt, on a host with nothing wrong with it except age.
+        //
+        // Throwing is the whole mechanism: IPlugin.Load's contract is that a throw fails the load
+        // and names the reason, which is exactly the outcome wanted here.
+        if (context.HostContract < RequiredContract)
+            throw new NotSupportedException(
+                $"csharp-lsp needs plugin contract {RequiredContract}; this cxagent speaks "
+              + $"{context.HostContract}. Its tools decide per call whether to ask permission, and a "
+              + "host that does not understand that would run them without asking at all.");
 
         // THE MANIFEST RETURNED HERE MUST MATCH csharp-lsp.plugin.json BYTE FOR BYTE IN SHAPE — see
         // IPlugin.Load's own doc. Duplicating the schema by hand risks exactly the drift that check
@@ -236,6 +251,70 @@ public sealed class CxagentLspPlugin : IPlugin
     }
 
     /// <summary>What these tools answer for. Anything else is refused — see <see cref="ResolvePath"/>.</summary>
+    /// <summary>
+    /// Whether an already-normalised path is inside the working directory.
+    ///
+    /// <para>SYMLINKS ARE NOT RESOLVED, deliberately. <see cref="Path.GetFullPath"/> flattens ".."
+    /// but does not follow links, so a symlink INSIDE the tree pointing outside it reads as
+    /// contained here. Following links would need every segment resolved and would still race a
+    /// link swapped between the check and the read; this gate is a prompt about where the model
+    /// SAID to look, not a sandbox, and pretending otherwise would be the more dangerous claim.</para>
+    /// </summary>
+    private bool IsInsideWorkspace(string fullPath)
+    {
+        var root = Path.GetFullPath(_workingDirectory);
+        if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
+
+        // A CASE-SENSITIVE COMPARE ON UNIX, insensitive on Windows: a path differing only in case is
+        // the same file there and a different one here, and getting this backwards would either
+        // prompt for files already inside the tree or fail to prompt for files outside it.
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        return fullPath.StartsWith(root, comparison);
+    }
+
+    /// <summary>
+    /// Asks before reading a file outside the working directory, and says nothing about one inside.
+    ///
+    /// <para>THIS IS WHY THE TOOLS ARE "dynamic" RATHER THAN GATED. Every call here is a read, and
+    /// a prompt on each one would make the plugin unusable — a language server is consulted dozens
+    /// of times per turn. What deserves a question is not the READING, it is the reading of
+    /// something the user did not open this session to work on.</para>
+    ///
+    /// <para>A MALFORMED CALL ASKS RATHER THAN REFUSING HERE. An argument that is missing or not a
+    /// path cannot be shown to be inside the workspace, and Invoke's own refusal will produce the
+    /// better message a moment later — but only if the call is permitted to get that far.</para>
+    /// </summary>
+    public PluginGate? Gate(string toolName, JobParameters call)
+    {
+        var file = call.Get("file", "");
+        if (string.IsNullOrWhiteSpace(file)) return null;
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+
+        return IsInsideWorkspace(full)
+            ? null
+            : new PluginGate($"read '{full}', which is outside {_workingDirectory}");
+    }
+
+    /// <summary>
+    /// The contract this plugin needs, matching <c>pluginContract</c> in its own sidecar. Stated as
+    /// a constant rather than read back from the parsed manifest because the check runs BEFORE the
+    /// sidecar is read — a host too old to be trusted with the manifest is too old to have its
+    /// reading of that manifest believed.
+    /// </summary>
+    private const int RequiredContract = 2;
+
     private static readonly string[] ServedExtensions = [".cs", ".csx", ".razor", ".cshtml"];
 
     /// <summary>
@@ -258,7 +337,10 @@ public sealed class CxagentLspPlugin : IPlugin
 
     private string ResolvePath(string file, string toolName)
     {
-        var path = Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file);
+        // NORMALISED, because Path.Combine does not resolve ".." — it leaves the segments in the
+        // string, so "../../elsewhere/Secrets.cs" stays literal and any containment test on the raw
+        // value would be comparing a path that has not been walked yet.
+        var path = Path.GetFullPath(Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file));
 
         var extension = Path.GetExtension(path);
         if (!ServedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))

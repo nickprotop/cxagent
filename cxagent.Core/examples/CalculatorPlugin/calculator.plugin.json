@@ -1,4 +1,5 @@
 {
+  "pluginContract": 2,
   "name": "calculator",
   "version": "1.0.0",
   "spawns": false,
@@ -47,6 +48,28 @@
         ]
       },
       "gated": false
+    },
+    {
+      "name": "calc_divide",
+      "description": "Divides a by b. Asks only when b is zero.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number",
+            "description": "The first number."
+          },
+          "b": {
+            "type": "number",
+            "description": "The second number."
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ]
+      },
+      "gated": "dynamic"
     }
   ]
 }

@@ -24,7 +24,7 @@ namespace CxAgent.Core.Plugins.Abi;
 /// spawning the host, running the handshake, and registering the child process; by the time this
 /// type exists, all of that has already succeeded.</para>
 /// </summary>
-public sealed class AbiPlugin : IPlugin
+public sealed class AbiPlugin : IPlugin, IPluginGateSource
 {
     private readonly AbiHostProcess _host;
     private readonly PluginManifest _manifest;
@@ -80,6 +80,53 @@ public sealed class AbiPlugin : IPlugin
     /// side of <see cref="PluginRegistry"/>, exactly as Abi/README.md draws the same distinction on
     /// the wire (<c>ok</c> vs <c>result.success</c>).
     /// </summary>
+    /// <summary>
+    /// How long a gate may take before the host stops waiting and asks instead. Short because this
+    /// runs on the path that renders a permission prompt: a gate is meant to inspect arguments
+    /// already in hand, so anything slower than this is a plugin doing something a gate should not.
+    /// </summary>
+    private static readonly TimeSpan GateTimeout = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// The per-call decision, ACROSS A PROCESS BOUNDARY AND SYNCHRONOUSLY.
+    ///
+    /// <para>THE BLOCK IS THE POINT OF THE TIMEOUT. <see cref="Jobs.IAgentTool.Gate"/> is
+    /// synchronous, so this cannot await; a managed plugin answers in nanoseconds but an ABI plugin
+    /// is another process, and an unbounded wait here would hang the interface on a plugin that
+    /// never replies. <see cref="GateTimeout"/> bounds it, and every way of not getting an answer —
+    /// timeout, a dead host, an unparseable reply — reads the same: ASK, and offer no standing
+    /// grant. A gate that cannot answer must never be able to decide "allow".</para>
+    /// </summary>
+    public PluginGate? Gate(string toolName, JobParameters call)
+    {
+        HostReply reply;
+        try
+        {
+            var argumentsJson = AbiCodec.WriteInvokeCall(toolName, call);
+            using var arguments = JsonDocument.Parse(argumentsJson);
+            reply = _host.Gate(toolName, arguments.RootElement.Clone(), GateTimeout, CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+            return Unanswered(toolName);
+        }
+
+        if (!reply.Ok) return Unanswered(toolName);
+
+        // A GATE THAT SAID NOTHING SAID "no prompt" — the same meaning as a managed gate returning
+        // null, and the reason every v2 plugin can export a gate that unconditionally returns NULL.
+        return reply.Gate is null
+            ? null
+            : new PluginGate(reply.Gate.Display, reply.Gate.AlwaysAskable);
+    }
+
+    /// <summary>A gate that produced no usable answer. Asks, and withholds "Always": a broken gate
+    /// must not be able to earn a standing grant while it is broken.</summary>
+    private PluginGate Unanswered(string toolName) =>
+        new($"run '{toolName}' from the '{_manifest.Name}' plugin (its permission check did not answer)",
+            AlwaysAskable: false);
+
     public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
     {
         var argumentsJson = AbiCodec.WriteInvokeCall(toolName, call);

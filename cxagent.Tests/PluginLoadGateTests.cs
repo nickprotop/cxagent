@@ -371,7 +371,7 @@ public class PluginLoadGateTests : IDisposable
         // re-wired with one via SessionFactory directly rather than re-opening through a second
         // manager (which would build a second, disconnected registry).
         var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
-            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: true)]);
+            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: PluginGating.Always)]);
 
         SessionFactory.Wire(session, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SharedServices { Gate = gate },

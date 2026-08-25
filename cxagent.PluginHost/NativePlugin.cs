@@ -3,10 +3,10 @@ using System.Runtime.InteropServices;
 namespace CxAgent.PluginHost;
 
 /// <summary>
-/// What loading a native library and resolving its five exports produced — a live
+/// What loading a native library and resolving its seven exports produced — a live
 /// <see cref="NativePlugin"/>, or a reason it never got there. Every failure here is exactly one
 /// this process must refuse CLEANLY rather than guess past: a missing file, a file that is not a
-/// shared library, or one that does not export all five <c>cxagent_plugin_*</c> symbols.
+/// shared library, or one that does not export all seven <c>cxagent_plugin_*</c> symbols.
 /// </summary>
 public abstract record NativePluginLoadResult
 {
@@ -18,7 +18,7 @@ public abstract record NativePluginLoadResult
 }
 
 /// <summary>
-/// The five <c>extern "C"</c> exports cxagent_plugin.h declares, resolved once by name from a
+/// The seven <c>extern "C"</c> exports cxagent_plugin.h declares, resolved once by name from a
 /// loaded library and called through function pointers — NOT <c>[DllImport]</c>, because the path to
 /// load is a runtime argument (the library named in a plugin's config entry), not a compile-time
 /// constant <c>DllImport</c> requires. <see cref="NativeLibrary.GetExport"/> is the same resolution
@@ -37,6 +37,7 @@ public sealed class NativePlugin : IDisposable
     private delegate IntPtr DescribeFn();
     private delegate IntPtr StartFn(IntPtr contextJson);
     private delegate IntPtr InvokeFn(IntPtr toolName, IntPtr callJson);
+    private delegate IntPtr GateFn(IntPtr toolName, IntPtr callJson);
     private delegate IntPtr StopFn();
     private delegate void FreeFn(IntPtr ptr);
 
@@ -45,23 +46,36 @@ public sealed class NativePlugin : IDisposable
     private readonly DescribeFn _describe;
     private readonly StartFn _start;
     private readonly InvokeFn _invoke;
+    private readonly GateFn _gate;
     private readonly StopFn _stop;
     private readonly FreeFn _free;
 
-    private NativePlugin(IntPtr handle, AbiVersionFn abiVersion, DescribeFn describe, StartFn start,
-        InvokeFn invoke, StopFn stop, FreeFn free)
+    /// <summary>
+    /// Every <c>cxagent_plugin_*</c> symbol a v2 library must export, resolved together.
+    ///
+    /// <para>ONE RECORD RATHER THAN SEVEN PARAMETERS: they are the ABI's export table, not seven
+    /// unrelated arguments, and they are all the same delegate-shaped kind of thing. Passed
+    /// positionally, transposing two that share a signature — <c>describe</c> and <c>stop</c> both
+    /// take nothing and return a pointer — compiles cleanly and calls the wrong function.</para>
+    /// </summary>
+    private sealed record Exports(
+        AbiVersionFn AbiVersion, DescribeFn Describe, StartFn Start,
+        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free);
+
+    private NativePlugin(IntPtr handle, Exports exports)
     {
         _handle = handle;
-        _abiVersion = abiVersion;
-        _describe = describe;
-        _start = start;
-        _invoke = invoke;
-        _stop = stop;
-        _free = free;
+        _abiVersion = exports.AbiVersion;
+        _describe = exports.Describe;
+        _start = exports.Start;
+        _invoke = exports.Invoke;
+        _gate = exports.Gate;
+        _stop = exports.Stop;
+        _free = exports.Free;
     }
 
     /// <summary>
-    /// Loads <paramref name="libraryPath"/> and resolves all five exports. Resolving every symbol
+    /// Loads <paramref name="libraryPath"/> and resolves all seven exports. Resolving every symbol
     /// UP FRONT, before returning a usable instance, is what turns "this .so is not a cxagent
     /// plugin" into one clean load-time failure instead of a null-pointer call the first time some
     /// unrelated tool invocation happens to reach the one export that was never actually there.
@@ -88,11 +102,12 @@ public sealed class NativePlugin : IDisposable
             var describe = ResolveExport<DescribeFn>(handle, "cxagent_plugin_describe");
             var start = ResolveExport<StartFn>(handle, "cxagent_plugin_start");
             var invoke = ResolveExport<InvokeFn>(handle, "cxagent_plugin_invoke");
+            var gate = ResolveExport<GateFn>(handle, "cxagent_plugin_gate");
             var stop = ResolveExport<StopFn>(handle, "cxagent_plugin_stop");
             var free = ResolveExport<FreeFn>(handle, "cxagent_plugin_free");
 
             return new NativePluginLoadResult.Loaded(
-                new NativePlugin(handle, abiVersion, describe, start, invoke, stop, free));
+                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free)));
         }
         catch (MissingExportException ex)
         {
@@ -119,7 +134,7 @@ public sealed class NativePlugin : IDisposable
     }
 
     /// <summary>The ABI version this library reports — checked by the caller against
-    /// <see cref="CxAgent.Core.Plugins.Abi.AbiContract.CurrentVersion"/> with exact equality before
+    /// <see cref="CxAgent.Core.Plugins.PluginContract.Version"/> with exact equality before
     /// anything else here is trusted, exactly as cxagent_plugin.h requires.</summary>
     public int AbiVersion() => _abiVersion();
 
@@ -149,6 +164,37 @@ public sealed class NativePlugin : IDisposable
     /// serializing invokes it cannot tolerate concurrently, so this method takes no lock and simply
     /// forwards the call.
     /// </summary>
+    /// <summary>
+    /// Calls <c>cxagent_plugin_gate</c>. Returns null when the plugin returned NULL, which is its
+    /// way of saying "this call needs no prompt" — the one export whose null return is an ANSWER
+    /// rather than a failure, so it is not routed through CallAndFree's non-null expectation.
+    /// </summary>
+    public string? Gate(string toolName, string callJson)
+    {
+        var namePtr = Utf8.StringToNative(toolName);
+        var callPtr = Utf8.StringToNative(callJson);
+        try
+        {
+            var result = _gate(namePtr, callPtr);
+            if (result == IntPtr.Zero) return null;
+            try
+            {
+                return Utf8.NativeToString(result);
+            }
+            finally
+            {
+                // FREED THROUGH THE PLUGIN'S OWN FREE, like every other returned pointer: the
+                // library allocated it and only the library knows how to release it.
+                _free(result);
+            }
+        }
+        finally
+        {
+            Utf8.FreeNative(namePtr);
+            Utf8.FreeNative(callPtr);
+        }
+    }
+
     public string Invoke(string toolName, string callJson)
     {
         var namePtr = Utf8.StringToNative(toolName);

@@ -8,6 +8,40 @@ namespace CxAgent.Core.Plugins;
 /// — <see cref="Gated"/> is manifest-only policy that a running plugin's dispatch needs and the
 /// model's tool list does not.
 /// </summary>
+/// <summary>
+/// When a plugin tool asks permission. Three states rather than a boolean because a tool's danger
+/// often lives in its ARGUMENTS, not its identity: a query tool's <c>SELECT</c> is a read and its
+/// <c>DROP</c> is not, and no boolean fixed before the call can tell them apart.
+/// </summary>
+public enum PluginGating
+{
+    /// <summary>Never asks. The default — the load gate already approved this binary.</summary>
+    Never,
+
+    /// <summary>Asks on every call, whatever the arguments say.</summary>
+    Always,
+
+    /// <summary>Asks <see cref="IPlugin.Gate"/>, per call, with the arguments in hand.</summary>
+    Dynamic,
+}
+
+/// <summary>
+/// What a plugin returns from <see cref="IPlugin.Gate"/> to ask about one call.
+///
+/// <para>DELIBERATELY NOT A <see cref="Permissions.PermissionRequest"/>, and this is the security
+/// boundary of the whole feature. A PermissionRequest carries <c>Kind</c> and <c>AlwaysRule</c>,
+/// and both are stored verbatim and matched against the store later — so a plugin that could
+/// return one could return <c>Kind: Shell, AlwaysRule: "rm*"</c>, and a user clicking "Always" on
+/// what looked like a plugin prompt would write a SHELL grant into permissions.json. The plugin
+/// supplies the wording it needs; Core decides the scope.</para>
+/// </summary>
+/// <param name="Display">What the prompt says this call will do — the plugin knows the arguments,
+/// so it can name the file or the statement rather than only the tool.</param>
+/// <param name="AlwaysAskable">Whether this particular call may be granted standing permission.
+/// ANDs with the manifest's own flag, which is a floor: a sidecar that withheld "Always" cannot
+/// have it handed back at runtime.</param>
+public sealed record PluginGate(string Display, bool AlwaysAskable = true);
+
 /// <param name="Name">The tool's name, as offered to the model.</param>
 /// <param name="Description">What the model is told the tool does.</param>
 /// <param name="InputSchema">
@@ -34,7 +68,7 @@ namespace CxAgent.Core.Plugins;
 /// Core cannot infer it from a tool name or a schema.</para>
 /// </param>
 public sealed record PluginToolManifest(string Name, string Description, JsonElement InputSchema,
-    bool Gated = false, bool AlwaysAskable = true);
+    PluginGating Gated = PluginGating.Never, bool AlwaysAskable = true);
 
 /// <summary>
 /// The sidecar shape and what <c>Describe</c> returns once a plugin is running — deliberately one
@@ -57,6 +91,15 @@ public sealed record PluginToolManifest(string Name, string Description, JsonEle
 public sealed record PluginManifest(string Name, string Version, string? Instructions, bool Spawns,
     IReadOnlyList<PluginToolManifest> Tools)
 {
+    /// <summary>
+    /// The contract this plugin was built against, or null when its manifest does not say.
+    ///
+    /// <para>CHECKED BEFORE THE PLUGIN IS CONSTRUCTED, which is the only place a check like this is
+    /// worth anything: a manifest read after Load has already run the plugin's code, so refusing
+    /// then discards a return value rather than preventing anything.</para>
+    /// </summary>
+    public int? Contract { get; init; }
+
     /// <summary>
     /// Every hook-point key this build knows how to service. Anything else in a manifest is refused
     /// by name rather than silently dropped — see the plugin design, "Hook points": "v1 honours `tools` and
@@ -134,7 +177,13 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
                     // a value that was never actually parsed from anything.
                     var schema = t.TryGetProperty("inputSchema", out var ts) && ts.ValueKind == JsonValueKind.Object
                         ? ts.Clone() : JsonDocument.Parse("{}").RootElement;
-                    var gated = t.TryGetProperty("gated", out var tg) && tg.ValueKind == JsonValueKind.True;
+                    // THREE-STATE, NOT A BOOLEAN. "dynamic" routes a call through
+                    // IPluginGateSource.Gate. Keeping it in the same field as the booleans is what
+                    // keeps the sidecar a complete statement of gating policy: a reader who sees
+                    // only `gated` has seen everything.
+                    var gated = PluginGatingJson.Parse(
+                        t.TryGetProperty("gated", out var tg) ? tg : default, toolName, out var gatingError);
+                    if (gatingError is not null) errors.Add(gatingError);
 
                     // ABSENT MEANS TRUE, unlike "gated" above. The two defaults point opposite ways
                     // on purpose: a tool that says nothing about gating does not ask (the plugin did
@@ -160,7 +209,18 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
                     errors.Add($"manifest declares '{kind}', which this build does not service.");
             }
 
-            var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools);
+            // "abiVersion" IS READ AS A SYNONYM. The field predates managed plugins having a
+            // contract number at all, and an ABI manifest in the wild spells it that way; one
+            // contract covers both loaders, so the two spellings must mean the same thing rather
+            // than one silently meaning nothing.
+            int? contract = root.TryGetProperty("pluginContract", out var pc) && pc.TryGetInt32(out var pcv) ? pcv
+                : root.TryGetProperty("abiVersion", out var av) && av.TryGetInt32(out var avv) ? avv
+                : null;
+
+            var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools)
+            {
+                Contract = contract,
+            };
             return new PluginManifestParseResult(manifest, errors);
         }
     }

@@ -4,22 +4,14 @@ using System.Text.Json.Serialization;
 namespace CxAgent.Core.Plugins.Abi;
 
 /// <summary>
-/// The ABI version this build understands — see <c>cxagent_plugin.h</c>, "ABI HANDSHAKE": checked
-/// with EXACT EQUALITY against what a native library reports, never a floor. A future v2 host may
-/// accept <c>{1, 2}</c> explicitly, with code that knows both shapes; nothing here does that yet.
-/// </summary>
-public static class AbiContract
-{
-    public const int CurrentVersion = 1;
-}
-
-/// <summary>
 /// The JSON <c>cxagent_plugin_describe</c> returns — see Abi/README.md, "describe". Field-for-field
 /// <see cref="PluginManifest"/> plus the redundant <see cref="AbiVersion"/> the wire format alone
 /// needs (Abi/README.md explains why the version is checked twice).
 /// </summary>
 public sealed record AbiManifest(
-    [property: JsonPropertyName("abiVersion")] int AbiVersion,
+    // "pluginContract", THE SAME NAME A MANAGED SIDECAR USES. One contract covers both loaders, so
+    // it is spelled once; a second name for the same number is a second thing to keep in step.
+    [property: JsonPropertyName("pluginContract")] int AbiVersion,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("instructions")] string? Instructions,
@@ -31,7 +23,11 @@ public sealed record AbiToolManifest(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("description")] string Description,
     [property: JsonPropertyName("inputSchema")] JsonElement InputSchema,
-    [property: JsonPropertyName("gated")] bool Gated);
+    // A JsonElement, NOT A BOOL, because "gated" is three-state: true, false, or "dynamic".
+    // Parsed rather than typed so an ABI plugin and a managed sidecar are held to exactly the same
+    // rule — including refusing an unknown string by name instead of falling back to "never ask".
+    [property: JsonPropertyName("gated")] JsonElement Gated,
+    [property: JsonPropertyName("alwaysAskable")] bool? AlwaysAskable = null);
 
 /// <summary>
 /// The JSON <c>cxagent_plugin_start</c> receives — see Abi/README.md, "context". Deliberately
@@ -41,7 +37,11 @@ public sealed record AbiToolManifest(
 /// </summary>
 public sealed record AbiPluginContext(
     [property: JsonPropertyName("workingDirectory")] string WorkingDirectory,
-    [property: JsonPropertyName("settings")] JsonElement Settings);
+    [property: JsonPropertyName("settings")] JsonElement Settings,
+    // THE HOST'S OWN CONTRACT, so a native plugin can refuse a host too old to refuse it first —
+    // see IPluginContext.HostContract. Absent means a host predating the field, which is exactly
+    // the case worth refusing, so a reader treats a missing value as 0 rather than as "current".
+    [property: JsonPropertyName("hostContract")] int HostContract = 0);
 
 /// <summary>
 /// The JSON <c>cxagent_plugin_invoke</c> receives — see Abi/README.md, "call". <see cref="Arguments"/>

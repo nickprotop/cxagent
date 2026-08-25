@@ -166,7 +166,7 @@ public class PluginRegistryTests : IDisposable
     public void AGatedToolsOwnGateOffersAlwaysScopedToThePlugin()
     {
         var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
-            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: true)]);
+            [new PluginToolManifest("lsp_rename", "renames a symbol", EmptySchema(), Gated: PluginGating.Always)]);
         var registry = new PluginRegistry();
         registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
 
@@ -192,8 +192,8 @@ public class PluginRegistryTests : IDisposable
     {
         var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
         [
-            new PluginToolManifest("lsp_definition", "finds a declaration", EmptySchema(), Gated: true),
-            new PluginToolManifest("lsp_rename", "rewrites every usage", EmptySchema(), Gated: true,
+            new PluginToolManifest("lsp_definition", "finds a declaration", EmptySchema(), Gated: PluginGating.Always),
+            new PluginToolManifest("lsp_rename", "rewrites every usage", EmptySchema(), Gated: PluginGating.Always,
                 AlwaysAskable: false),
         ]);
         var registry = new PluginRegistry();
@@ -236,7 +236,7 @@ public class PluginRegistryTests : IDisposable
     public void AnUngatedToolDoesNotAsk()
     {
         var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
-            [new PluginToolManifest("lsp_hover", "shows a type", EmptySchema(), Gated: false)]);
+            [new PluginToolManifest("lsp_hover", "shows a type", EmptySchema(), Gated: PluginGating.Never)]);
         var registry = new PluginRegistry();
         registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
 
@@ -560,5 +560,123 @@ public class PluginRegistryTests : IDisposable
         manager.Close(session);
 
         Assert.True(plugin.Stopped);
+    }
+
+    // ---- per-call gates: the plugin decides from the arguments ----
+
+    /// <summary>Gates on an argument: a path under the root passes, anything else asks.</summary>
+    private sealed class GatingPlugin(Func<string, JobParameters, PluginGate?> gate)
+        : IPlugin, IPluginGateSource
+    {
+        public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
+            throw new NotSupportedException("already loaded in these tests");
+        public Task Start(CancellationToken ct) => Task.CompletedTask;
+        public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+            CancellationToken ct) => Task.FromResult(new JobResult { Success = true });
+        public Task Stop(CancellationToken ct) => Task.CompletedTask;
+        public PluginGate? Gate(string toolName, JobParameters call) => gate(toolName, call);
+    }
+
+    private static PluginManifest OneTool(PluginToolManifest tool) =>
+        new("gp", "1.0.0", Instructions: null, Spawns: false, [tool]);
+
+    private static IAgentTool ToolFor(IPlugin plugin, PluginToolManifest tool)
+    {
+        var registry = new PluginRegistry();
+        registry.Load(plugin, OneTool(tool), isNameTaken: _ => false);
+        return registry.CurrentTools().Single();
+    }
+
+    private static JobParameters WithFile(string file) =>
+        new(new Dictionary<string, object?> { ["file"] = file });
+
+    /// <summary>
+    /// THE WHOLE POINT: one tool, two calls, two different answers. A static boolean cannot express
+    /// this — it must either ask about every read or none of them.
+    /// </summary>
+    [Fact]
+    public void ADynamicToolAsksAboutOneCallAndNotAnother()
+    {
+        var tool = ToolFor(
+            new GatingPlugin((_, call) => call.Get("file", "").StartsWith('/')
+                ? new PluginGate($"read '{call.Get("file", "")}', outside the workspace")
+                : null),
+            new PluginToolManifest("read_it", "reads", EmptySchema(), Gated: PluginGating.Dynamic));
+
+        Assert.Null(tool.Gate(WithFile("inside.cs")));
+
+        var request = tool.Gate(WithFile("/etc/outside.cs"));
+        Assert.NotNull(request);
+        Assert.Contains("/etc/outside.cs", request.Display);
+    }
+
+    /// <summary>
+    /// A plugin cannot forge the SCOPE of what it asks for. It supplies wording; Core decides the
+    /// kind and the rule, so a plugin prompt can never write a Shell grant into permissions.json.
+    /// </summary>
+    [Fact]
+    public void ADynamicGatesKindAndRuleAreCoresNotThePlugins()
+    {
+        var tool = ToolFor(
+            new GatingPlugin((_, _) => new PluginGate("do something alarming")),
+            new PluginToolManifest("t", "does", EmptySchema(), Gated: PluginGating.Dynamic));
+
+        var request = tool.Gate(new JobParameters())!;
+
+        Assert.Equal(PermissionKind.Tool, request.Kind);
+        Assert.Equal("plugin gp tool t", request.AlwaysRule);
+    }
+
+    /// <summary>A gate that throws asks anyway, and NEVER offers Always — a broken gate must not be
+    /// able to accumulate a standing grant.</summary>
+    [Fact]
+    public void AThrowingGateAsksWithoutOfferingAlways()
+    {
+        var tool = ToolFor(
+            new GatingPlugin((_, _) => throw new InvalidOperationException("boom")),
+            new PluginToolManifest("t", "does", EmptySchema(), Gated: PluginGating.Dynamic));
+
+        var request = tool.Gate(new JobParameters());
+
+        Assert.NotNull(request);
+        Assert.Null(request.AlwaysRule);
+    }
+
+    /// <summary>alwaysAskable is a floor: the sidecar's false cannot be widened by a runtime gate.</summary>
+    [Fact]
+    public void AManifestThatWithholdsAlwaysCannotBeWidenedByTheGate()
+    {
+        var tool = ToolFor(
+            new GatingPlugin((_, _) => new PluginGate("ask", AlwaysAskable: true)),
+            new PluginToolManifest("t", "does", EmptySchema(),
+                Gated: PluginGating.Dynamic, AlwaysAskable: false));
+
+        Assert.Null(tool.Gate(new JobParameters())!.AlwaysRule);
+    }
+
+    /// <summary>gated:true never consults the gate — the sidecar's promise stands whatever the code says.</summary>
+    [Fact]
+    public void AStaticallyGatedToolNeverConsultsTheGate()
+    {
+        var consulted = false;
+        var tool = ToolFor(
+            new GatingPlugin((_, _) => { consulted = true; return null; }),
+            new PluginToolManifest("t", "does", EmptySchema(), Gated: PluginGating.Always));
+
+        Assert.NotNull(tool.Gate(new JobParameters()));
+        Assert.False(consulted);
+    }
+
+    /// <summary>gated:false never consults the gate either — "never ask" keeps meaning never ask.</summary>
+    [Fact]
+    public void AnUngatedToolNeverConsultsTheGate()
+    {
+        var consulted = false;
+        var tool = ToolFor(
+            new GatingPlugin((_, _) => { consulted = true; return new PluginGate("ask"); }),
+            new PluginToolManifest("t", "does", EmptySchema(), Gated: PluginGating.Never));
+
+        Assert.Null(tool.Gate(new JobParameters()));
+        Assert.False(consulted);
     }
 }

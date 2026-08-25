@@ -1,6 +1,6 @@
 # CalculatorAbiPlugin — the same calculator, in C
 
-One file, six exported functions, no JSON library.
+One file, seven exported functions, no JSON library.
 
 ```bash
 cc -shared -fPIC -o calculator.so calculator_abi.c
@@ -50,10 +50,10 @@ Enough to show the mechanism, and wrong the moment a settings block nests an obj
 word `precision`. A real plugin parses. The point is that settings is where your configuration comes
 from — hardcode a path or a flag and one binary serves one setup, read it here and it serves many.
 
-## `abiVersion` appears twice
+## `pluginContract` appears twice
 
 `cxagent_plugin_abi_version()` answers before anything else is read. The manifest carries
-`"abiVersion": 1` as well, so a host holding a JSON blob can check it without a live library.
+`"pluginContract": 2` as well, so a host holding a JSON blob can check it without a live library.
 
 Omit the manifest field and it reads as 0 — the load is refused for an unsupported version your file
 never mentions. Worth knowing before you spend an evening on it.
@@ -61,5 +61,5 @@ never mentions. Worth knowing before you spend an evening on it.
 ## See also
 
 - [`../CalculatorPlugin`](../CalculatorPlugin) — the same calculator, managed
-- [`cxagent_plugin.h`](../../Core/Plugins/Abi/cxagent_plugin.h) — the six functions and their ownership rules
+- [`cxagent_plugin.h`](../../Core/Plugins/Abi/cxagent_plugin.h) — the seven functions and their ownership rules
 - [`Abi/README.md`](../../Core/Plugins/Abi/README.md) — the JSON envelopes

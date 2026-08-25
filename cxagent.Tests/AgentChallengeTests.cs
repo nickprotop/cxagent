@@ -94,7 +94,7 @@ public class AgentChallengeTests
 
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(Write(f, "new"));
-            provider.EnqueueResponse(ShellCall("dotnet build"));            // returns a failure
+            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null; exit 1"));  // fails, invokes nothing
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
@@ -121,18 +121,20 @@ public class AgentChallengeTests
 
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(Write(f, "broken"));
-            provider.EnqueueResponse(ShellCall("dotnet build"));      // fails in the sandbox
+            // A FAILING BUILD THAT INVOKES NOTHING. The verdict is read from the COMMAND TEXT
+            // (LooksLikeBuildOrTest), so the string must name a build — but the SDK never has to
+            // run for that, and running it here would aim a real `dotnet build` at whatever
+            // directory the test process happens to be in: this repo, while the suite is building
+            // it. `exit 1` fails on demand, instantly, contending with nothing.
+            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null; exit 1"));
             provider.EnqueueResponse(Write(f, "fixed"));
-            // A REAL build verb, so it replaces the earlier verdict — the verdict is decided from
-            // the COMMAND TEXT (LooksLikeBuildOrTest), so the string must contain one.
+            // A BUILD VERB IN THE TEXT, so it replaces the earlier verdict — the verdict is read
+            // from the COMMAND TEXT (LooksLikeBuildOrTest), never from an exit code.
             //
-            // DOES NOT INVOKE THE SDK. This was `dotnet build --help >/dev/null 2>&1 || true`, and
-            // a real dotnet invocation makes the test depend on a shared, contended resource: under
-            // a full-suite run the SDK is already busy, and `|| true` covers a nonzero exit but not
-            // a slow start or a timeout. Observed failing in full-suite runs and passing in
-            // isolation, which is the signature. `echo` needs nothing, exits 0, and prints no
-            // failure marker, so the second build reads as clean for the same reason the old one
-            // did — without racing anything.
+            // NOTHING IN THIS FILE INVOKES THE REAL TOOLCHAIN. The agent under test has no working
+            // directory, so a `dotnet` command runs wherever the test process happens to be — this
+            // repo, while the suite is building it. `echo` exits 0 and prints no failure marker, so
+            // the build reads as clean while contending with nothing.
             provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null"));
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
@@ -162,10 +164,10 @@ public class AgentChallengeTests
 
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(Write(f, "new"));
-            provider.EnqueueResponse(ShellCall("dotnet test"));       // fails in the sandbox
+            provider.EnqueueResponse(ShellCall("echo 'dotnet test' >/dev/null; exit 1"));
             // A CLEAN BUILD AFTERWARDS. Exits 0 and prints no failure marker, so on its own it is a
             // passing verdict — it must not be allowed to answer for the test run.
-            provider.EnqueueResponse(ShellCall("dotnet build --help >/dev/null 2>&1 || true"));
+            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null"));
             for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
 
             var sink = new RecordingSink();
@@ -191,9 +193,9 @@ public class AgentChallengeTests
 
             var provider = new MockLlmProvider();
             provider.EnqueueResponse(Write(f, "broken"));
-            provider.EnqueueResponse(ShellCall("dotnet test"));       // fails in the sandbox
+            provider.EnqueueResponse(ShellCall("echo 'dotnet test' >/dev/null; exit 1"));
             provider.EnqueueResponse(Write(f, "fixed"));
-            provider.EnqueueResponse(ShellCall("dotnet test --help >/dev/null 2>&1 || true"));
+            provider.EnqueueResponse(ShellCall("echo 'dotnet test' >/dev/null"));
             for (var i = 0; i < 4; i++) provider.EnqueueResponse(Prose("Fixed and verified."));
 
             var sink = new RecordingSink();

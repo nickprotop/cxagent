@@ -23,12 +23,25 @@ internal static class PluginManifestMatch
     /// <param name="actualSource">Names where <paramref name="actual"/> came from, in the error
     /// message — <c>"Load"</c> for a managed plugin, <c>"describe"</c> for an ABI one, so a mismatch
     /// report reads correctly for either loader without this method needing to know which one called it.</param>
+    /// <summary>"none" rather than an empty string, so a manifest that simply omitted the field
+    /// reads differently from one that declared a number.</summary>
+    private static string Describe(int? contract) => contract?.ToString() ?? "none";
+
     public static string? Mismatch(PluginManifest sidecar, PluginManifest actual, string actualSource)
     {
         if (sidecar.Name != actual.Name)
             return $"sidecar names '{sidecar.Name}', {actualSource} returned '{actual.Name}'.";
         if (sidecar.Version != actual.Version)
             return $"sidecar declares version '{sidecar.Version}', {actualSource} returned '{actual.Version}'.";
+
+        // THE CONTRACT IS CHECKED TWICE, AGAINST TWO DIFFERENT SOURCES. The loader already refused a
+        // sidecar declaring a contract this build does not speak — but that is the sidecar's claim,
+        // and a JSON file is not what runs. This compares it against what the plugin's own code
+        // returned, so a binary whose sidecar says 2 while its code was built for 1 is caught rather
+        // than trusted on the strength of a file anyone could edit beside it.
+        if (sidecar.Contract != actual.Contract)
+            return $"sidecar declares plugin contract {Describe(sidecar.Contract)}, "
+                 + $"{actualSource} returned {Describe(actual.Contract)}.";
         if (sidecar.Instructions != actual.Instructions)
             return $"sidecar and {actualSource} disagree on 'instructions'.";
         if (sidecar.Spawns != actual.Spawns)

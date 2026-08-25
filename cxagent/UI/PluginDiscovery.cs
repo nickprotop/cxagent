@@ -246,6 +246,8 @@ public static class PluginDiscovery
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
+        public int HostContract => CxAgent.Core.Plugins.PluginContract.Version;
+        public string HostVersion => CxAgent.Core.Plugins.PluginContract.HostVersion;
         public IPluginLogger Logger { get; } = new ReportingLogger(report);
         public CancellationToken Lifetime { get; } = CancellationToken.None;
 

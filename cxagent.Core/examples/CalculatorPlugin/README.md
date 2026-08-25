@@ -13,8 +13,8 @@ name it in config:
 "plugins": { "calculator": { "file": "calculator.dll", "enabled": true } }
 ```
 
-cxagent asks once whether to trust the binary, then the model can call `calc_add` and
-`calc_multiply`.
+cxagent asks once whether to trust the binary, then the model can call `calc_add`,
+`calc_multiply` and `calc_divide`.
 
 ## Why a calculator
 
@@ -24,7 +24,12 @@ contract rather than someone else's problem.
 
 ## Why addition asks permission
 
-`calc_add` declares `"gated": true`; `calc_multiply` does not. One run shows you both paths.
+`calc_add` declares `"gated": true`; `calc_multiply` does not; `calc_divide` declares
+`"gated": "dynamic"` and decides per call. One run shows you all three paths.
+
+The third is the one worth watching. `calc_divide` asks only when the divisor is zero — same tool,
+same schema, a different answer depending on the arguments. That case is why the callback exists: a
+boolean fixed before the call would have to interrupt on every division or none of them.
 
 Gating arithmetic is ridiculous, and that is deliberate. A gate on something genuinely dangerous
 teaches you what the danger was. A gate on `2 + 2` can only teach you the mechanism, which is the

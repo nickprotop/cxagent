@@ -30,6 +30,38 @@ public interface IPluginContext
     /// </summary>
     JsonElement Settings { get; }
 
+    /// <summary>
+    /// The plugin contract this host speaks — the same number a plugin declares as
+    /// <c>pluginContract</c> in its sidecar.
+    ///
+    /// <para>THE CHECK GOES BOTH WAYS, AND THIS IS THE HALF ONLY A PLUGIN CAN MAKE. The host
+    /// refuses a contract it does not know before this plugin's assembly is even loaded — but a
+    /// host OLDER than a contract cannot refuse what it has never heard of. It reads the newer
+    /// manifest with its own rules, and a field it does not recognise becomes whatever its parser
+    /// falls back to; a gating policy can go missing that way without anything failing.</para>
+    ///
+    /// <para>So a plugin that needs a newer host has to look. Compare this against the contract you
+    /// were built for and throw from <see cref="IPlugin.Load"/> if it is lower — a throw there
+    /// fails the load cleanly and says why. ZERO MEANS A HOST TOO OLD TO HAVE THIS PROPERTY: it
+    /// cannot be read on a build that predates it, so a plugin reaching that build gets whatever
+    /// default its own host shim supplies, and treating an absent contract as 0 makes "older than
+    /// anything I know" the honest reading rather than an unanswerable one.</para>
+    /// </summary>
+    int HostContract { get; }
+
+    /// <summary>
+    /// The cxagent version hosting this plugin, as "major.minor.patch".
+    ///
+    /// <para>FOR LOGGING AND DISPLAY, NOT COMPATIBILITY. Whether this host understands you is
+    /// settled by <c>pluginContract</c> before your assembly is loaded — a number compared exactly,
+    /// where a version is a moving target that could be high enough while missing the very feature
+    /// you needed.</para>
+    ///
+    /// <para>A LOCAL BUILD REPORTS "0.0.0" — the placeholder the release workflow replaces with the
+    /// git tag. Treat it as "unknown, probably newest" rather than as older than everything.</para>
+    /// </summary>
+    string HostVersion { get; }
+
     /// <summary>Where this plugin logs. See <see cref="IPluginLogger"/>.</summary>
     IPluginLogger Logger { get; }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CxAgent.Core.Models;
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Plugins.Abi;
 using Xunit;
 
@@ -14,7 +15,7 @@ public class AbiCodecTests
 {
     private const string WellFormedManifestJson = """
         {
-          "abiVersion": 1,
+          "pluginContract": 2,
           "name": "lsp-rust",
           "version": "1.0.0",
           "instructions": "Positions are 1-based.",
@@ -32,18 +33,18 @@ public class AbiCodecTests
     [Fact]
     public void CurrentVersionPassesTheHandshake()
     {
-        var result = AbiCodec.CheckVersion(AbiContract.CurrentVersion);
+        var result = AbiCodec.CheckVersion(PluginContract.Version);
         Assert.True(result.IsSuccess);
     }
 
     [Fact]
     public void AFutureVersionIsRefusedByExactEquality_NotAFloor()
     {
-        var result = AbiCodec.CheckVersion(AbiContract.CurrentVersion + 1);
+        var result = AbiCodec.CheckVersion(PluginContract.Version + 1);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("2", result.Error);
-        Assert.Contains(AbiContract.CurrentVersion.ToString(), result.Error);
+        Assert.Contains((PluginContract.Version + 1).ToString(), result.Error);
+        Assert.Contains(PluginContract.Version.ToString(), result.Error);
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public class AbiCodecTests
         // The handshake function and the manifest body both carry a version — see Abi/README.md,
         // "describe": deliberately redundant so the two can be checked against each other, not just
         // against the host's own constant.
-        var json = WellFormedManifestJson.Replace("\"abiVersion\": 1", "\"abiVersion\": 2");
+        var json = WellFormedManifestJson.Replace("\"pluginContract\": 2", "\"pluginContract\": 99");
 
         var result = AbiCodec.ParseManifest(json);
 

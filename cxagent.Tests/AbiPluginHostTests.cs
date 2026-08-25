@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxAgent.Core.Plugins;
 using CxAgent.Core.Plugins.Abi;
 using Xunit;
 
@@ -76,7 +77,7 @@ public class AbiPluginHostTests
         Assert.True(handshake.Ready);
         Assert.NotNull(handshake.Manifest);
         Assert.Equal("fixture", handshake.Manifest!.Name);
-        Assert.Equal(["echo"], handshake.Manifest.Tools.Select(t => t.Name).ToList());
+        Assert.Equal(["echo", "echo_dynamic"], handshake.Manifest.Tools.Select(t => t.Name).ToList());
 
         var settings = JsonSerializer.SerializeToElement(new { });
         var startReply = await host.Start(OutputDir, settings, CancellationToken.None);
@@ -245,6 +246,6 @@ public class AbiPluginHostTests
         Assert.False(handshake.Ready);
         Assert.NotNull(handshake.Error);
         Assert.Contains("99", handshake.Error);
-        Assert.Contains("version 1", handshake.Error);
+        Assert.Contains($"version {PluginContract.Version}", handshake.Error);
     }
 }

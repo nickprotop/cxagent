@@ -32,6 +32,9 @@ public static class HostProtocol
         Start,
         Invoke,
         Stop,
+
+        /// <summary>One per-call permission decision — see <c>cxagent_plugin_gate</c>.</summary>
+        Gate,
     }
 }
 
@@ -59,7 +62,19 @@ public sealed record HostReply(
     [property: JsonPropertyName("id")] long Id,
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("result")] AbiJobResult? Result,
-    [property: JsonPropertyName("error")] string? Error);
+    [property: JsonPropertyName("error")] string? Error,
+    /// <summary>A gate reply's payload — null for every other request kind, and null from a gate
+    /// that decided this call needs no prompt.</summary>
+    [property: JsonPropertyName("gate")] AbiGate? Gate = null);
+
+/// <summary>
+/// What <c>cxagent_plugin_gate</c> returns, mirroring <see cref="PluginGate"/>. Carries WORDING
+/// ONLY: the permission's kind and its "always" rule are built host-side, so a plugin cannot widen
+/// a prompt about its own tool into a grant over anything else.
+/// </summary>
+public sealed record AbiGate(
+    [property: JsonPropertyName("display")] string Display,
+    [property: JsonPropertyName("alwaysAskable")] bool AlwaysAskable = true);
 
 /// <summary>
 /// The one line the host process writes before reading any request — the library loaded, the ABI

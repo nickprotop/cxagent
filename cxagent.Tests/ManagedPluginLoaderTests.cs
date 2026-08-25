@@ -27,6 +27,8 @@ public class ManagedPluginLoaderTests
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(new { });
+        public int HostContract => PluginContract.Version;
+        public string HostVersion => PluginContract.HostVersion;
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public void RegisterChildProcess(int processId) { }
@@ -76,6 +78,30 @@ public class ManagedPluginLoaderTests
     // ---- Zero or multiple IPlugin implementations ----------------------------------------------
 
     /// <summary>A real assembly with no IPlugin implementation at all fails with a clear message —
+    /// <summary>
+    /// THE REFUSAL HAPPENS BEFORE THE ASSEMBLY IS LOADED, which is the only placement worth having:
+    /// Assembly.LoadFrom is irreversible and a constructor is arbitrary code, so a check after
+    /// either discards a result rather than preventing anything.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"name":"nocontract","version":"1.0.0","tools":[]}""", "pluginContract")]
+    [InlineData("""{"pluginContract":1,"name":"old","version":"1.0.0","tools":[]}""", "contract 1")]
+    [InlineData("""{"pluginContract":99,"name":"future","version":"1.0.0","tools":[]}""", "contract 99")]
+    public async Task AManifestThisBuildCannotVouchForIsRefused(string manifest, string expected)
+    {
+        var dll = FixtureDll("cxagent.Tests.PluginFixture.Empty");
+        var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
+        await File.WriteAllTextAsync(sidecar, manifest);
+        try
+        {
+            var result = await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None);
+
+            var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+            Assert.Contains(expected, failed.Reason);
+        }
+        finally { File.Delete(sidecar); }
+    }
+
     /// not a guess and not a crash. Needs its own sidecar so the failure is attributable to the
     /// type search rather than a missing file.</summary>
     [Fact]
@@ -83,7 +109,7 @@ public class ManagedPluginLoaderTests
     {
         var dll = FixtureDll("cxagent.Tests.PluginFixture.Empty");
         var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
-        await File.WriteAllTextAsync(sidecar, """{"name":"empty","version":"1.0.0","tools":[]}""");
+        await File.WriteAllTextAsync(sidecar, """{"pluginContract":2,"name":"empty","version":"1.0.0","tools":[]}""");
         try
         {
             var result = await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None);
@@ -105,7 +131,7 @@ public class ManagedPluginLoaderTests
     {
         var dll = FixtureDll("cxagent.Tests.PluginFixture.Ambiguous");
         var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
-        await File.WriteAllTextAsync(sidecar, """{"name":"ambiguous","version":"1.0.0","tools":[]}""");
+        await File.WriteAllTextAsync(sidecar, """{"pluginContract":2,"name":"ambiguous","version":"1.0.0","tools":[]}""");
         try
         {
             var result = await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None);

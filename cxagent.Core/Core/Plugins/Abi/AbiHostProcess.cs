@@ -128,6 +128,22 @@ internal sealed class AbiHostProcess : IAsyncDisposable
         Send(HostProtocol.RequestKind.Invoke, toolName, arguments, ct);
 
     /// <summary>Sends a <c>stop</c> request and awaits its reply.</summary>
+    /// <summary>
+    /// One per-call permission decision, BOUNDED. The caller is synchronous — IAgentTool.Gate is,
+    /// and a permission prompt is decided on the UI path — so this cannot wait indefinitely on
+    /// another process: a plugin that never answers would freeze the interface rather than ask a
+    /// question. The timeout expiring is not an error to report but a decision to make, and the
+    /// caller reads it as "ask", never as "allow".
+    /// </summary>
+    public Task<HostReply> Gate(string toolName, JsonElement arguments, TimeSpan timeout,
+        CancellationToken ct)
+    {
+        var timed = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timed.CancelAfter(timeout);
+        return Send(HostProtocol.RequestKind.Gate, toolName, arguments, timed.Token)
+            .ContinueWith(t => { timed.Dispose(); return t.Result; }, TaskScheduler.Default);
+    }
+
     public Task<HostReply> Stop(CancellationToken ct) =>
         Send(HostProtocol.RequestKind.Stop, null, null, ct);
 
@@ -219,7 +235,19 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             return new HostReply(id, false, null, $"plugin host wrote an unparseable reply: {ex.Message}");
         }
 
-        return reply ?? new HostReply(id, false, null, $"plugin host wrote a reply line that parsed to null: '{line}'");
+        if (reply is null)
+            return new HostReply(id, false, null, $"plugin host wrote a reply line that parsed to null: '{line}'");
+
+        // A REPLY WE DID NOT ASK FOR IS NOT AN ANSWER. A gate that timed out stops waiting but its
+        // reply still arrives eventually, so the next call would otherwise read someone else's line
+        // and believe it. Failing the call is the honest reading: this request has no answer, and
+        // silently accepting a stale one would decide a PERMISSION question from the wrong call.
+        if (reply.Id != id)
+            return new HostReply(id, false, null,
+                $"plugin host replied to request {reply.Id} while {id} was outstanding — "
+                + "a reply from an abandoned call, discarded rather than mistaken for this one.");
+
+        return reply;
     }
 
     /// <summary>Best-effort stderr capture for an error message — never throws, because a process

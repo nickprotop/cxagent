@@ -36,15 +36,35 @@ int32_t cxagent_plugin_abi_version(void) {
 #ifdef FIXTURE_BADVERSION
     return 99;
 #else
-    return 1;
+    return 2;
 #endif
 }
 
 const char* cxagent_plugin_describe(void) {
     return dup_str(
-        "{\"abiVersion\":1,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
+        "{\"pluginContract\":2,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
         "\"spawns\":false,\"tools\":[{\"name\":\"echo\",\"description\":\"echoes its argument\","
-        "\"inputSchema\":{\"type\":\"object\"},\"gated\":false}]}");
+        "\"inputSchema\":{\"type\":\"object\"},\"gated\":false},"
+        "{\"name\":\"echo_dynamic\",\"description\":\"echoes, asking about some arguments\","
+        "\"inputSchema\":{\"type\":\"object\"},\"gated\":\"dynamic\"}]}");
+}
+
+/*
+ * GATE. Returns NULL when this call needs no prompt, or a JSON object naming what to show. Every
+ * v2 plugin exports this — one that gates nothing returns NULL unconditionally, which is cheaper
+ * than a second export table for hosts to reason about.
+ *
+ * A PANIC MUST NOT CROSS THIS BOUNDARY (see cxagent_plugin.h): a gate that cannot decide returns
+ * malformed output or NULL, and the host reads that as "ask", never as "allow".
+ */
+const char* cxagent_plugin_gate(const char* tool_name, const char* call_json) {
+    if (tool_name == NULL || strcmp(tool_name, "echo_dynamic") != 0) return NULL;
+
+    /* Gates on the ARGUMENTS, which is the whole point of the callback: "loud" asks, quiet does not. */
+    if (call_json != NULL && strstr(call_json, "loud") != NULL)
+        return dup_str("{\"display\":\"echo loudly\",\"alwaysAskable\":true}");
+
+    return NULL;
 }
 
 const char* cxagent_plugin_start(const char* context_json) {

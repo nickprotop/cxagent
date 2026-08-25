@@ -91,6 +91,22 @@ The same works inline, for trying one without editing anything:
 /plugin load csharp-lsp.dll { "server": "/opt/omnisharp/OmniSharp", "args": ["-lsp"] }
 ```
 
+## Permissions
+
+Its three tools all read, so none of them asks — as long as the file is **inside the directory you
+started cxagent in**.
+
+A file outside it asks first, naming the path. Symbol lookups routinely resolve across project
+boundaries, and a repository that references a package or a sibling checkout can send the server
+somewhere you did not open this session to work on. Reading is still reading; the question is
+whether you meant to.
+
+Answering "Always" grants that standing, scoped to this plugin and this tool.
+
+**Symlinks are not followed.** A link inside the directory pointing outside it reads as inside, so
+this is a prompt about where the model said to look, not a sandbox. What stands behind that is the
+load gate: you approved this binary, against a hash of its contents, before it ran at all.
+
 ## Notes
 
 **Positions are 1-based** — line 1 is the first line, character 1 the first column — matching how a

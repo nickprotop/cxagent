@@ -314,10 +314,6 @@ public sealed class PluginRegistry
     {
         public ToolDefinition Definition { get; } = new(tool.Name, tool.Description, tool.InputSchema);
 
-        // A MINIMAL GATE, NOT THE REAL POLICY. The plugin design's "the plugin provides its own policy;
-        // Core enforces it" describes a richer shape — the plugin choosing what to show and how a
-        // call generalises — which is a later task's to build. tool.Gated only distinguishes "asks"
-        // from "does not".
         //
         // "ALWAYS" IS OFFERED, AND THE USER OWNS THAT DECISION. Withholding it would not make a
         // plugin safer: the binary was already approved at load, against a hash of its whole load
@@ -330,17 +326,68 @@ public sealed class PluginRegistry
         // uninstalling this plugin and installing a different one that happens to declare the same
         // name, handing the newcomer a grant the user gave someone else. Built-in tools can use the
         // bare form (GatedAgentTool) because nothing else can ever claim their names.
-        public Permissions.PermissionRequest? Gate(JobParameters call) => tool.Gated
-            ? new Permissions.PermissionRequest(Permissions.PermissionKind.Tool,
-                $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin",
-                // A NULL AlwaysRule IS HOW "no Always button" IS EXPRESSED — see PermissionRequest's
-                // own doc. The plugin declaring alwaysAskable:false is marking its own sharp edge:
-                // the tool it believes should never hold a standing grant, which is a judgement only
-                // its author can make.
-                AlwaysRule: tool.AlwaysAskable
-                    ? $"plugin {plugin.Manifest.Name} tool {tool.Name}"
-                    : null)
-            : null;
+        public Permissions.PermissionRequest? Gate(JobParameters call) => tool.Gated switch
+        {
+            PluginGating.Never => null,
+            PluginGating.Always => Ask($"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin",
+                                       tool.AlwaysAskable),
+            _ => DynamicGate(call),
+        };
+
+        /// <summary>
+        /// The per-call decision, asked of the plugin itself.
+        ///
+        /// <para>FAILURE ASKS AND WITHHOLDS "ALWAYS". A gate that throws has told us nothing about
+        /// this call, so the safe reading is "ask" — and a broken gate must not be able to earn a
+        /// standing grant while broken, which is the one case where a manifest saying
+        /// alwaysAskable:true is overruled.</para>
+        /// </summary>
+        private Permissions.PermissionRequest? DynamicGate(JobParameters call)
+        {
+            // NOT A CAST. ManagedPluginLoader refuses a plugin that declares "dynamic" without a
+            // gate, so reaching here without one is a host that skipped that check — an embedder
+            // wiring a plugin by hand, or a loader yet to grow the same refusal. Asking is the only
+            // safe reading: the manifest said this call might need permission and nothing can now
+            // say it does not.
+            if (plugin.Instance is not IPluginGateSource source)
+                return Ask($"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin "
+                         + "(it declares a per-call permission check but provides none)",
+                    alwaysAskable: false);
+
+            PluginGate? gate;
+            try
+            {
+                gate = source.Gate(tool.Name, call);
+            }
+            catch (Exception)
+            {
+                return Ask($"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin "
+                         + "(its permission check failed)", alwaysAskable: false);
+            }
+
+            if (gate is null) return null;
+
+            // THE PLUGIN'S WORDING, NEVER ITS SCOPE. Display is the plugin's — it saw the arguments
+            // and can name the file. Kind and AlwaysRule are built here, so no plugin can turn its
+            // own prompt into a grant over shell, files or anything else it does not own.
+            //
+            // ALWAYSASKABLE IS AN AND: the manifest is a floor. A sidecar that withheld "Always" is
+            // a promise the user read before approving the load, and a runtime call does not get to
+            // hand it back.
+            return Ask(string.IsNullOrWhiteSpace(gate.Display)
+                    ? $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin"
+                    : gate.Display,
+                gate.AlwaysAskable && tool.AlwaysAskable);
+        }
+
+        /// <summary>
+        /// A NULL AlwaysRule IS HOW "no Always button" IS EXPRESSED — see PermissionRequest's own
+        /// doc. The plugin declaring alwaysAskable:false is marking its own sharp edge: the tool it
+        /// believes should never hold a standing grant, which is a judgement only its author can make.
+        /// </summary>
+        private Permissions.PermissionRequest Ask(string display, bool alwaysAskable) =>
+            new(Permissions.PermissionKind.Tool, display,
+                AlwaysRule: alwaysAskable ? $"plugin {plugin.Manifest.Name} tool {tool.Name}" : null);
 
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
         {

@@ -21,7 +21,7 @@ This page is only about getting one released.
 what the plugin does, the release asset to download, anything the USER must install separately, and
 every setting. Follow [csharp-lsp](csharp-lsp/README.md).
 
-**2. The catalog entry**, in [`plugins.json`](plugins.json). `name`, `version`, `spawns` and `tools`
+**2. The catalog entry**, in [`plugins.json`](plugins.json). `name`, `version`, `spawns`, `tools` and `pluginContract`
 must match the plugin's own sidecar — `PluginCatalogTests` fails the build if they drift, because the
 picker shows what this file says without loading a DLL to check.
 
@@ -40,11 +40,94 @@ MSIL — one build runs everywhere cxagent does, so it says `platforms: ["any"]`
 An ABI plugin is a native library: a `.so` does not load on Windows, and a publisher may ship
 `linux-x64` and nothing else. Those entries name the RIDs they actually have and key their downloads
 by the same names under `sources`, so a picker can say "not available for your platform" instead of
-downloading a library that cannot load. `$exampleNative` in the file shows the shape. Its `publisher`, `license` and
+downloading a library that cannot load. The second worked entry below shows the shape. Its `publisher`, `license` and
 `repository` stop being a formality too — nobody needs telling who wrote a plugin that ships in the
 same zip as cxagent, and everybody needs telling for one that does not.
 
-The `$example` entry in the file is a worked third-party instance to copy. It is not installed.
+### Two worked entries
+
+Neither is real, and neither belongs in `plugins.json` — that file carries only plugins that exist.
+Copy the one whose `source` shape matches what you are adding.
+
+**Hosted elsewhere** — a fixed URL, and its own `sha256` because nothing here builds it:
+
+```json
+{
+  "name": "lsp-rust",
+  "displayName": "Rust Language Server",
+  "version": "0.3.1",
+  "description": "The same three operations for Rust, backed by rust-analyzer.",
+  "publisher": "someone-else",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/someone-else/cxagent-lsp-rust",
+  "sourceUrl": "https://github.com/someone-else/cxagent-lsp-rust",
+  "readme": "https://github.com/someone-else/cxagent-lsp-rust#readme",
+  "source": {
+    "kind": "url",
+    "url": "https://github.com/someone-else/cxagent-lsp-rust/releases/download/v0.3.1/lsp-rust.zip",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "file": "lsp-rust.dll",
+  "kind": "managed",
+  "compatibility": {
+    "pluginContract": 2,
+    "platforms": [
+      "any"
+    ]
+  },
+  "spawns": true,
+  "tools": [
+    "rust_definition",
+    "rust_references",
+    "rust_diagnostics"
+  ],
+  "requires": {
+    "description": "rust-analyzer on PATH.",
+    "default": "rust-analyzer",
+    "install": "rustup component add rust-analyzer"
+  }
+}
+```
+
+**Native, and per-platform** — one `source` per RID, named by the same RIDs `platforms` lists:
+
+```json
+{
+  "name": "ripgrep-tools",
+  "displayName": "ripgrep search tools",
+  "version": "0.2.0",
+  "description": "A native plugin, shown here because an ABI plugin is per-platform and the managed example above cannot show that.",
+  "publisher": "someone-else",
+  "license": "MIT",
+  "repository": "https://github.com/someone-else/cxagent-ripgrep",
+  "kind": "abi",
+  "compatibility": {
+    "pluginContract": 2,
+    "platforms": [
+      "linux-x64",
+      "osx-arm64"
+    ]
+  },
+  "sources": {
+    "linux-x64": {
+      "kind": "url",
+      "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-linux-x64.zip",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "file": "libripgrep_tools.so"
+    },
+    "osx-arm64": {
+      "kind": "url",
+      "url": "https://github.com/someone-else/cxagent-ripgrep/releases/download/v0.2.0/ripgrep-tools-osx-arm64.zip",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "file": "libripgrep_tools.dylib"
+    }
+  },
+  "spawns": false,
+  "tools": [
+    "rg_search"
+  ]
+}
+```
 
 **3. The release build**, in `.github/workflows/release.yml`. A managed plugin with no
 `RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would

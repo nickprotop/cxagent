@@ -259,6 +259,9 @@ Either way it asks once whether to trust the binary, showing a hash of its conte
 plugin is not approving it**, and nothing in config can pre-approve one. It needs a C# language
 server on PATH: `dotnet tool install -g csharp-ls`.
 
+Its lookups run unasked inside the folder you started in, and ask before reading a file outside it —
+a plugin decides that per call, from the arguments, rather than being on or off for every call.
+
 See the [plugin catalog](plugins/) for what ships and how to configure it, and
 [cxagent.Core/Core/Plugins](cxagent.Core/docs/plugins.md) if you want to write one.
 
@@ -288,7 +291,7 @@ else cxagent keeps in that directory, and how `AGENTS.md` / `CXAGENT.md` / `CLAU
 [`config.sample.json`](config.sample.json) documents every key inline, including what each one's
 absence means.
 
-**[ROADMAP.md](ROADMAP.md)** is what is built, what is next, and what was tried and removed.
+**[ROADMAP.md](ROADMAP.md)** is what is next.
 
 ### Command line
 

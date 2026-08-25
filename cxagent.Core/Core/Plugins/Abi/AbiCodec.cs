@@ -57,17 +57,17 @@ public static class AbiCodec
     // ---- version handshake ----
 
     /// <summary>
-    /// Checks a native library's reported ABI version against <see cref="AbiContract.CurrentVersion"/>
+    /// Checks a native library's reported ABI version against <see cref="PluginContract.Version"/>
     /// with EXACT equality — see cxagent_plugin.h, "ABI HANDSHAKE". A host meeting a version it does
     /// not understand refuses cleanly rather than guessing at an unfamiliar shape.
     /// </summary>
     public static AbiParseResult<int> CheckVersion(int reportedVersion)
     {
-        return reportedVersion == AbiContract.CurrentVersion
+        return reportedVersion == PluginContract.Version
             ? AbiParseResult<int>.Success(reportedVersion)
             : AbiParseResult<int>.Failure(
                 $"plugin reports ABI version {reportedVersion}, this host understands version "
-                + $"{AbiContract.CurrentVersion} only — refusing the load rather than guessing at "
+                + $"{PluginContract.Version} only — refusing the load rather than guessing at "
                 + "an unfamiliar shape.");
     }
 
@@ -75,7 +75,7 @@ public static class AbiCodec
 
     /// <summary>
     /// Parses <c>cxagent_plugin_describe</c>'s JSON into an <see cref="AbiManifest"/>, checking the
-    /// in-body <c>abiVersion</c> against <see cref="AbiContract.CurrentVersion"/> as well as the
+    /// in-body <c>abiVersion</c> against <see cref="PluginContract.Version"/> as well as the
     /// handshake function — see Abi/README.md, "describe": the two are deliberately redundant so a
     /// mismatch between them is caught as a manifest error rather than silently trusting whichever
     /// the host happened to read first.
@@ -118,13 +118,21 @@ public static class AbiCodec
     /// </summary>
     public static PluginManifest ToPluginManifest(AbiManifest abi) => new(
         abi.Name, abi.Version, abi.Instructions, abi.Spawns,
-        abi.Tools.Select(t => new PluginToolManifest(t.Name, t.Description, t.InputSchema, t.Gated)).ToList());
+        abi.Tools.Select(t => new PluginToolManifest(t.Name, t.Description, t.InputSchema,
+            PluginGatingJson.Parse(t.Gated, t.Name, out _), t.AlwaysAskable ?? true)).ToList())
+    {
+        // CARRIED, NOT DROPPED. describe's own contract number is what the SIDECAR is compared
+        // against downstream; leaving it null here would make every ABI plugin look like one whose
+        // code declared nothing.
+        Contract = abi.AbiVersion,
+    };
 
     // ---- start context (host -> plugin) ----
 
     /// <summary>Writes the JSON <c>cxagent_plugin_start</c> receives — see Abi/README.md, "context".</summary>
     public static string WriteContext(string workingDirectory, JsonElement settings) =>
-        JsonSerializer.Serialize(new AbiPluginContext(workingDirectory, settings), WriteOptions);
+        JsonSerializer.Serialize(
+            new AbiPluginContext(workingDirectory, settings, PluginContract.Version), WriteOptions);
 
     // ---- invoke call (host -> plugin) ----
 

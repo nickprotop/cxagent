@@ -90,6 +90,14 @@ public class PluginCatalogTests
             Assert.Equal(sidecar.GetProperty("spawns").GetBoolean(),
                 entry.GetProperty("spawns").GetBoolean());
 
+            // PINNED LIKE THE REST. The catalog states the contract so a picker can filter before
+            // downloading anything; the sidecar is what the loader actually enforces. A catalog
+            // claiming a contract the plugin does not implement would send someone to fetch a
+            // plugin their cxagent then refuses — so the two are held together here, where a
+            // disagreement is a failing build rather than a bad download.
+            Assert.Equal(sidecar.GetProperty("pluginContract").GetInt32(),
+                entry.GetProperty("compatibility").GetProperty("pluginContract").GetInt32());
+
             var declared = sidecar.GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()).ToArray();
             var catalogued = entry.GetProperty("tools").EnumerateArray()
@@ -162,19 +170,11 @@ public class PluginCatalogTests
     /// arrives as a 404 rather than "not available for your platform". The reverse — a download for
     /// a platform not claimed — is a plugin nobody is offered, which is only wasted work, but it
     /// means one of the two lists is wrong either way.</para>
-    ///
-    /// <para>THE EXAMPLES ARE CHECKED TOO, since they are the only native entries that exist and a
-    /// broken example is copied into a real one.</para>
     /// </summary>
     [Fact]
     public void DeclaredPlatformsMatchAvailableDownloads()
     {
-        var catalog = Catalog();
-
         var all = Entries().ToList();
-        foreach (var name in new[] { "$example", "$exampleNative" })
-            if (catalog.TryGetProperty(name, out var example))
-                all.Add(example);
 
         foreach (var entry in all)
         {

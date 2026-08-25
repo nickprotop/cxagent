@@ -1,4 +1,5 @@
 {
+  "pluginContract": 2,
   "name": "well-formed",
   "version": "1.0.0",
   "spawns": false,

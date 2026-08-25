@@ -33,7 +33,7 @@ public class PluginManifestTests
         var tool = Assert.Single(manifest.Tools);
         Assert.Equal("lsp_definition", tool.Name);
         Assert.Equal("Jump to a symbol's definition.", tool.Description);
-        Assert.False(tool.Gated);
+        Assert.Equal(PluginGating.Never, tool.Gated);
         Assert.Equal(JsonValueKind.Object, tool.InputSchema.ValueKind);
     }
 
@@ -115,7 +115,7 @@ public class PluginManifestTests
         var manifest = result.Manifest!;
         Assert.Null(manifest.Instructions);
         Assert.False(manifest.Spawns);
-        Assert.False(manifest.Tools[0].Gated);
+        Assert.Equal(PluginGating.Never, manifest.Tools[0].Gated);
     }
 
     /// <summary>
@@ -162,5 +162,23 @@ public class PluginManifestTests
         Assert.False(result.IsSuccess);
         Assert.Contains(result.Errors, e => e.Contains("name"));
         Assert.Contains(result.Errors, e => e.Contains("version"));
+    }
+
+    /// <summary>
+    /// THE SIDECAR IS A CLAIM; THE CODE IS THE THING THAT RUNS. The loader refuses a sidecar whose
+    /// contract it does not speak, but a JSON file sitting beside a DLL is not what executes — so
+    /// the number the plugin's own code reports is compared against it too, and a binary built for
+    /// one contract cannot ride in on a sidecar claiming another.
+    /// </summary>
+    [Fact]
+    public void ASidecarAndCodeDisagreeingOnTheContractIsAMismatch()
+    {
+        var sidecar = new PluginManifest("p", "1.0.0", null, false, []) { Contract = 2 };
+        var fromCode = new PluginManifest("p", "1.0.0", null, false, []) { Contract = 1 };
+
+        var difference = PluginManifestMatch.Mismatch(sidecar, fromCode, "Load");
+
+        Assert.NotNull(difference);
+        Assert.Contains("contract", difference);
     }
 }

@@ -86,6 +86,14 @@ public static class ManagedPluginLoader
 
         var sidecar = parsed.Manifest;
 
+        // BOTH CHECKS RUN BEFORE THE ASSEMBLY IS EVEN LOADED, let alone constructed. The sidecar is
+        // the only description of a plugin available before its code can run, so this is the one
+        // point where refusing actually prevents something: Assembly.LoadFrom is irreversible (the
+        // default context is resident for the process's life) and a constructor is arbitrary code.
+        // A check placed after either of those discards a result rather than stopping anything.
+        var refusal = PluginContract.Refusal(sidecar, sidecarPath);
+        if (refusal is not null) return new ManagedPluginLoadResult.Failed(refusal);
+
         Assembly assembly;
         try
         {
@@ -167,6 +175,17 @@ public static class ManagedPluginLoader
             return new ManagedPluginLoadResult.Failed(
                 $"'{assemblyPath}' does not match its sidecar manifest '{sidecarPath}': {difference}");
 
+        // A "dynamic" TOOL MUST HAVE A GATE TO ASK. The sidecar told the user this tool decides per
+        // call whether to interrupt them; a plugin that declares it and implements no gate would
+        // silently never ask, and the disclosure they approved the load on would be unfalsifiable.
+        // Refused here, beside the mismatch check, because it is the same kind of lie.
+        var dynamicTools = loaded.Tools.Where(t => t.Gated == PluginGating.Dynamic).Select(t => t.Name).ToList();
+        if (dynamicTools.Count > 0 && instance is not IPluginGateSource)
+            return new ManagedPluginLoadResult.Failed(
+                $"'{sidecar.Name}' declares gated:\"dynamic\" for {string.Join(", ", dynamicTools)} "
+              + $"but '{pluginType.FullName}' does not implement {nameof(IPluginGateSource)}.");
+
         return new ManagedPluginLoadResult.Loaded(instance, loaded);
     }
+
 }

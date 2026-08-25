@@ -12,7 +12,10 @@ public sealed class WellFormedPlugin : IPlugin
     public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct) =>
         Task.FromResult(new PluginManifest("well-formed", "1.0.0", Instructions: null, Spawns: false,
             [new PluginToolManifest("wf_tool", "a fixture tool",
-                JsonSerializer.SerializeToElement(new { type = "object" }))]));
+                JsonSerializer.SerializeToElement(new { type = "object" }))])
+        {
+            Contract = 2,
+        });
 
     public Task Start(CancellationToken ct) => Task.CompletedTask;
 

@@ -46,10 +46,13 @@ public class CxagentLspPluginTests
         return loaded.Instance;
     }
 
-    private sealed class FakeContext(string workingDirectory, object settings) : IPluginContext
+    private sealed class FakeContext(string workingDirectory, object settings, int hostContract = -1)
+        : IPluginContext
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(settings);
+        public int HostContract { get; } = hostContract < 0 ? PluginContract.Version : hostContract;
+        public string HostVersion => PluginContract.HostVersion;
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public List<int> RegisteredPids { get; } = [];
@@ -72,6 +75,95 @@ public class CxagentLspPluginTests
         Assert.Equal(["csharp_definition", "csharp_references", "csharp_diagnostics"],
             manifest.Tools.Select(t => t.Name).ToArray());
     }
+
+    /// <summary>
+    /// A HOST TOO OLD TO REFUSE THIS PLUGIN IS REFUSED BY IT. An older cxagent never heard of
+    /// <c>"gated": "dynamic"</c>, so it reads the sidecar with its own rules and takes the value for
+    /// false — offering these three tools UNGATED. Nothing fails; the gate simply is not there. The
+    /// host cannot catch that, so the plugin does.
+    /// </summary>
+    [Fact]
+    public async Task AHostBelowContract2IsRefusedByThePluginItself()
+    {
+        // 1, NOT 0: both take the same branch, but 1 is the case that actually shipped — a cxagent
+        // that knows plugins and predates per-call gating. 0 only ever means "too old to have the
+        // property at all", which the same comparison covers.
+        var dll = Path.Combine(AppContext.BaseDirectory, "csharp-lsp.dll");
+        var context = new FakeContext(".", new { server = "csharp-ls" }, hostContract: 1);
+
+        var result = await ManagedPluginLoader.Load(dll, context, CancellationToken.None);
+
+        var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+        Assert.Contains("contract 2", failed.Reason);
+    }
+
+    // ---- Gate: a read outside the workspace asks; one inside does not -------------------------
+
+    /// <summary>
+    /// THE CASE A BOOLEAN CANNOT EXPRESS. Every tool here reads, so gating them all would ask on
+    /// every symbol lookup — dozens per turn — and gating none would read any .cs file on the disk
+    /// unasked. The argument is what separates the two.
+    /// </summary>
+    [Fact]
+    public async Task AReadInsideTheWorkspaceIsNotGated()
+    {
+        var dir = Directory.CreateTempSubdirectory("lsp-gate-in-").FullName;
+        try
+        {
+            var plugin = await LoadPluginAsync(new FakeContext(dir, new { server = "csharp-ls" }));
+            var source = Assert.IsAssignableFrom<IPluginGateSource>(plugin);
+
+            Assert.Null(source.Gate("csharp_definition", Call("Program.cs")));
+            Assert.Null(source.Gate("csharp_definition", Call(Path.Combine(dir, "src", "Program.cs"))));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// BOTH WAYS OUT ARE COVERED. An absolute path was used verbatim and a relative one was joined
+    /// without normalising, so ".." walked straight out of the tree — neither is a rootedness
+    /// question, both are the same missing containment check.
+    /// </summary>
+    [Theory]
+    [InlineData("/etc/passwd.cs")]
+    [InlineData("../../elsewhere/Secrets.cs")]
+    public async Task AReadOutsideTheWorkspaceAsksAndNamesTheFile(string file)
+    {
+        var dir = Directory.CreateTempSubdirectory("lsp-gate-out-").FullName;
+        try
+        {
+            var plugin = await LoadPluginAsync(new FakeContext(dir, new { server = "csharp-ls" }));
+            var source = Assert.IsAssignableFrom<IPluginGateSource>(plugin);
+
+            var gate = source.Gate("csharp_definition", Call(file));
+
+            Assert.NotNull(gate);
+            Assert.Contains("outside", gate.Display);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// A CALL WITH NO USABLE PATH IS NOT THE GATE'S TO REFUSE. Invoke already answers a missing or
+    /// wrong-typed argument with a message naming what was wrong; a gate that asked here would put
+    /// a permission prompt in front of an error the user can do nothing about.
+    /// </summary>
+    [Fact]
+    public async Task ACallWithNoFileArgumentIsNotGated()
+    {
+        var dir = Directory.CreateTempSubdirectory("lsp-gate-none-").FullName;
+        try
+        {
+            var plugin = await LoadPluginAsync(new FakeContext(dir, new { server = "csharp-ls" }));
+            var source = Assert.IsAssignableFrom<IPluginGateSource>(plugin);
+
+            Assert.Null(source.Gate("csharp_definition", new JobParameters()));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    private static JobParameters Call(string file) =>
+        new(new Dictionary<string, object?> { ["file"] = file });
 
     // ---- Start: reads server/args from settings, never hardcodes either -----------------------
 

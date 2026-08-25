@@ -15,12 +15,16 @@ namespace CalculatorPlugin;
 /// <para>ADDING TWO NUMBERS ASKS THE USER FOR PERMISSION. That is ridiculous on purpose. A gate on
 /// something genuinely dangerous teaches you what the danger was; a gate on <c>2 + 2</c> can only
 /// teach you the mechanism, which is the part that transfers to the plugin you actually write.
-/// <c>calc_multiply</c> sits beside it ungated, so one run shows you both paths.</para>
+/// <c>calc_multiply</c> sits beside it ungated.</para>
+///
+/// <para>THE THIRD TOOL IS THE ONE THAT MATTERS. <c>calc_divide</c> asks only when the divisor is
+/// zero — same tool, same schema, a different answer decided by the ARGUMENTS. That is the case
+/// neither boolean can express, and the reason a per-call gate exists at all.</para>
 ///
 /// <para>The same calculator exists as a C ABI plugin in <c>../CalculatorAbiPlugin</c>. Reading the
 /// two together shows what the out-of-process boundary costs, since nothing else differs.</para>
 /// </summary>
-public sealed class CalculatorPlugin : IPlugin
+public sealed class CalculatorPlugin : IPlugin, IPluginGateSource
 {
     private IPluginContext _context = null!;
 
@@ -42,8 +46,21 @@ public sealed class CalculatorPlugin : IPlugin
     /// found. They coincide only when a plugin sits in the app's output directory — which is what a
     /// unit test does and what production never does.</para>
     /// </summary>
+    /// <summary>The contract this plugin needs, matching <c>pluginContract</c> in its sidecar.</summary>
+    private const int RequiredContract = 2;
+
     public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct)
     {
+        // THE CHECK THE HOST CANNOT MAKE FOR YOU. A host that knows contract 2 refuses anything else
+        // before this method runs — but an OLDER host has never heard of 2, reads this sidecar with
+        // its own rules, and takes calc_divide's `"gated": "dynamic"` for whatever its parser falls
+        // back to. That is false: the tool would be offered ungated and would never ask, on a host
+        // with nothing wrong with it but age. Throwing here fails the load and says why.
+        if (context.HostContract < RequiredContract)
+            throw new NotSupportedException(
+                $"calculator needs plugin contract {RequiredContract}; this host speaks "
+              + $"{context.HostContract}.");
+
         _context = context;
 
         var here = Path.GetDirectoryName(typeof(CalculatorPlugin).Assembly.Location)!;
@@ -99,6 +116,32 @@ public sealed class CalculatorPlugin : IPlugin
     /// plugin returned, so a name that was never declared cannot arrive — throwing says so, where
     /// returning a plausible zero would hide it.</para>
     /// </summary>
+    /// <summary>
+    /// THE THIRD KIND OF GATE, and the one a boolean cannot express: whether this call is worth a
+    /// question depends on its ARGUMENTS, not on which tool was named.
+    ///
+    /// <para>Dividing is ordinarily harmless, so asking every time would be noise. A divisor of
+    /// zero is the one call that cannot succeed, and that is worth stopping for. Nothing in the
+    /// tool's name or its JSON schema distinguishes the two — only the values do, and only the
+    /// author knows which values matter.</para>
+    ///
+    /// <para>The wording is this method's to choose and the SCOPE is not: the host builds the
+    /// permission and decides what an "always" would cover, so a plugin cannot turn a prompt about
+    /// its own tool into a standing grant over anything else.</para>
+    /// </summary>
+    public PluginGate? Gate(string toolName, JobParameters call)
+    {
+        if (toolName != "calc_divide") return null;
+
+        // A DEFAULT RATHER THAN Get<double>: a gate runs BEFORE the call is validated, so it sees
+        // whatever the model actually sent — including a missing or non-numeric argument. Throwing
+        // here would be read as "ask", which is a worse answer than letting Invoke explain what was
+        // wrong with the arguments a moment later.
+        return call.Get("b", 1d) == 0
+            ? new PluginGate("divide by zero, which cannot produce an answer")
+            : null;
+    }
+
     public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
         CancellationToken ct)
     {
@@ -109,6 +152,7 @@ public sealed class CalculatorPlugin : IPlugin
         {
             "calc_add" => a + b,
             "calc_multiply" => a * b,
+            "calc_divide" => b == 0 ? throw new ArgumentException("cannot divide by zero.") : a / b,
             _ => throw new ArgumentException(
                 $"calculator was asked for '{toolName}', which its own manifest does not declare."),
         };

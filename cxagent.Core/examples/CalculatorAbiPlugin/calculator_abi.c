@@ -3,7 +3,7 @@
  *
  * THE SAME CALCULATOR AS ../CalculatorPlugin, DELIBERATELY. Reading the two side by side is the
  * point: the managed one implements IPlugin and is loaded into the host's own process; this one
- * exports six C functions and runs behind a host process that isolates it. Everything else — the
+ * exports seven C functions and runs behind a host process that isolates it. Everything else — the
  * tool names, the manifest, the nonsense permission gate — is identical, so the diff between them
  * IS the cost of the boundary and nothing else.
  *
@@ -47,7 +47,7 @@ static const char* heap(const char* text)
  * The one function that does NOT allocate: the host reads this before anything else and refuses a
  * version it does not know, so a mismatch is a clean message rather than a misparsed struct.
  */
-int32_t cxagent_plugin_abi_version(void) { return 1; }
+int32_t cxagent_plugin_abi_version(void) { return 2; }
 
 /* ---- describe --------------------------------------------------------------------------------
  *
@@ -67,7 +67,7 @@ static const char MANIFEST[] =
          a JSON blob from an unknown source can check it without a live library. Omit it and it
          reads as 0 — an unsupported version, refused at load with a message about a version this
          file never mentioned. */
-      "\"abiVersion\":1,"
+      "\"pluginContract\":2,"
       "\"name\":\"calculator\","
       "\"version\":\"1.0.0\","
       "\"spawns\":false,"
@@ -100,6 +100,21 @@ static const char MANIFEST[] =
             "\"required\":[\"a\",\"b\"]"
           "},"
           "\"gated\":false"
+        "},"
+        "{"
+          "\"name\":\"calc_divide\","
+          "\"description\":\"Divides a by b. Asks only when b is zero.\","
+          "\"inputSchema\":{"
+            "\"type\":\"object\","
+            "\"properties\":{"
+              "\"a\":{\"type\":\"number\",\"description\":\"The first number.\"},"
+              "\"b\":{\"type\":\"number\",\"description\":\"The second number.\"}"
+            "},"
+            "\"required\":[\"a\",\"b\"]"
+          "},"
+          /* THE ARGUMENTS DECIDE, so the manifest cannot: "dynamic" routes each call through
+             cxagent_plugin_gate below. */
+          "\"gated\":\"dynamic\""
         "}"
       "]"
     "}";
@@ -134,6 +149,25 @@ const char* cxagent_plugin_start(const char* context_json)
        MISSING IS NOT AN ERROR: a plugin configured with no settings block gets an empty object, so
        every read needs a default. A default that works is the difference between a plugin someone
        can try and one they must configure before it will start. */
+    /* THE CHECK THE HOST CANNOT MAKE FOR YOU. The handshake already refused a host that does not
+       know contract 2 — but a host OLDER than 2 has never heard of it, reads this plugin's manifest
+       with its own rules, and takes calc_divide's "gated":"dynamic" for whatever its parser falls
+       back to. That is false: the tool would be offered ungated and would never ask.
+
+       ABSENT MEANS OLD. A host predating "hostContract" does not send it, and 0 is then the honest
+       reading — refusing is correct precisely because such a host cannot refuse us. */
+    {
+        int host_contract = 0;
+        if (context_json != NULL)
+        {
+            const char* hc = strstr(context_json, "\"hostContract\"");
+            if (hc != NULL && (hc = strchr(hc, ':')) != NULL) host_contract = atoi(hc + 1);
+        }
+        if (host_contract < 2)
+            return heap("{\"ok\":false,\"error\":\"calculator needs plugin contract 2; "
+                        "this host is older and would run its gated tool without asking.\"}");
+    }
+
     if (context_json != NULL)
     {
         const char* at = strstr(context_json, "\"precision\"");
@@ -158,7 +192,7 @@ const char* cxagent_plugin_stop(void)
 /* ---- invoke ----------------------------------------------------------------------------------
  *
  * ONE FUNCTION FOR EVERY TOOL, dispatching on tool_name — the ABI has no per-tool entry point, so
- * a plugin offering twelve tools still exports exactly these six functions.
+ * a plugin offering twelve tools still exports exactly these seven functions.
  *
  * READING THE ARGUMENTS BY HAND, because this example refuses to pull in a JSON parser. strstr for
  * the key, atof for the value: enough for two numbers, and wrong the moment an argument is nested
@@ -172,6 +206,26 @@ static double number_after(const char* json, const char* key)
     return at == NULL ? 0.0 : atof(at + 1);
 }
 
+/* GATE. Asked once per call for a tool the manifest marked "dynamic" — here only calc_divide.
+   Returns NULL for "no prompt", which is also what every tool that is not calc_divide gets.
+
+   THE ARGUMENTS ARE THE WHOLE REASON THIS EXISTS. Dividing is ordinarily harmless and asking every
+   time would be noise; a divisor of zero is the one call that cannot succeed. Nothing in the tool's
+   name or schema separates them.
+
+   NEVER RETURN NULL TO SIGNAL AN ERROR — the host reads NULL as "this call is fine". A gate that
+   cannot decide should return malformed output or simply take too long, both of which the host
+   reads as "ask". */
+const char* cxagent_plugin_gate(const char* tool_name, const char* call_json)
+{
+    if (tool_name == NULL || strcmp(tool_name, "calc_divide") != 0) return NULL;
+
+    if (call_json != NULL && number_after(call_json, "\"b\"") == 0)
+        return heap("{\"display\":\"divide by zero, which cannot produce an answer\"}");
+
+    return NULL;
+}
+
 const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
 {
     double a = number_after(call_json, "\"a\"");
@@ -182,6 +236,13 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json)
         answer = a + b;
     else if (strcmp(tool_name, "calc_multiply") == 0)
         answer = a * b;
+    else if (strcmp(tool_name, "calc_divide") == 0)
+    {
+        if (b == 0)
+            return heap("{\"ok\":true,\"result\":{\"success\":false,"
+                        "\"error\":\"cannot divide by zero.\"}}");
+        answer = a / b;
+    }
     else
         /* A NAME THIS PLUGIN NEVER DECLARED. It cannot arrive from the host, which dispatches from
            this plugin's own manifest — so reaching here is this plugin's bug, and saying so beats

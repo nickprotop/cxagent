@@ -149,6 +149,8 @@ static async Task HandleRequest(NativePlugin plugin, HostRequest request)
 
             HostProtocol.RequestKind.Invoke => RunInvokeCall(request, plugin),
 
+            HostProtocol.RequestKind.Gate => RunGateCall(request, plugin),
+
             HostProtocol.RequestKind.Stop => RunVoidCall(request.Id, plugin.Stop),
 
             _ => new HostReply(request.Id, false, null, $"unknown request kind '{request.Kind}'."),
@@ -163,6 +165,42 @@ static async Task HandleRequest(NativePlugin plugin, HostRequest request)
     }
 
     await WriteLine(reply);
+}
+
+/// <summary>
+/// One per-call permission decision. The plugin returning NULL means "no prompt", which travels as
+/// a successful reply carrying no gate — distinct from a FAILED reply, which the parent reads as
+/// "could not decide, so ask". Conflating the two would let a plugin whose gate is broken look
+/// exactly like one that decided the call was harmless.
+/// </summary>
+static HostReply RunGateCall(HostRequest request, NativePlugin plugin)
+{
+    var toolName = request.ToolName ?? "";
+    var callJson = request.Arguments?.GetRawText() ?? "{}";
+
+    string? json;
+    try
+    {
+        json = plugin.Gate(toolName, callJson);
+    }
+    catch (Exception ex)
+    {
+        return new HostReply(request.Id, false, null, $"gate threw: {ex.Message}");
+    }
+
+    if (json is null) return new HostReply(request.Id, true, null, null);
+
+    try
+    {
+        var gate = JsonSerializer.Deserialize<AbiGate>(json);
+        return gate is null
+            ? new HostReply(request.Id, false, null, "gate returned a JSON null rather than an object or NULL.")
+            : new HostReply(request.Id, true, null, null, gate);
+    }
+    catch (JsonException ex)
+    {
+        return new HostReply(request.Id, false, null, $"gate returned unparseable JSON: {ex.Message}");
+    }
 }
 
 static HostReply RunVoidCall(long id, Func<string> call)

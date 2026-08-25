@@ -12,7 +12,7 @@ Two kinds, and the choice is made for you by your language:
 | written in | C# | C, Rust, Go, C++ — anything with a C ABI |
 | runs in | cxagent's own process | a separate host process |
 | a crash | takes cxagent with it | fails the call, session survives |
-| you implement | `IPlugin` — four methods | six `extern "C"` functions |
+| you implement | `IPlugin` — four methods, plus `IPluginGateSource` if you gate per call | seven `extern "C"` functions |
 
 **Write managed if you are writing C#.** An ABI plugin in .NET needs NativeAOT, which strips the
 reflection `System.Text.Json` depends on, so every payload then needs a hand-written `JsonTypeInfo`.
@@ -92,7 +92,9 @@ and refuses the load if it disagrees with what `Load` returns.
 The simplest way to keep the two in step is to parse the sidecar in `Load` and return that — one
 JSON, true by construction. Both examples do this.
 
-An ABI plugin's manifest additionally carries `"abiVersion": 1`. Omit it and it reads as 0, and the
+An ABI plugin carries `pluginContract` in its describe JSON as well as in its sidecar — the
+handshake export answers before any JSON is parsed, and the body lets a host check a manifest it
+already holds. Omit it and it reads as 0, and the
 load is refused for an unsupported version the file never mentions.
 
 **Read it from beside your own assembly, not `AppContext.BaseDirectory`.** That property is the
@@ -187,9 +189,117 @@ Omit the field and it defaults to true, matching every other permission in cxage
 Past that, permission is yours. cxagent cannot know which of your operations are dangerous; if your
 plugin can delete things, gate it yourself before doing them.
 
-The calculator examples gate addition and not multiplication. That is absurd, and it is the point: a
-gate on something genuinely dangerous teaches you what the danger was, while a gate on `2 + 2` can
-only teach you the mechanism.
+**When the ARGUMENTS decide, use `"gated": "dynamic"`.** Some tools are dangerous only sometimes. A
+query tool's `SELECT` is a read and its `DROP TABLE` is not; a file tool is harmless inside the
+workspace and worth a question outside it. A boolean fixed before the call cannot tell those apart,
+so it forces you to choose between asking about every harmless call — noise users escape by
+disabling gating wholesale — and asking about none of them.
+
+`"dynamic"` routes each call through a method that sees the arguments:
+
+```json
+{ "name": "db_query", "gated": "dynamic" }
+```
+
+```csharp
+public sealed class QueryPlugin : IPlugin, IPluginGateSource
+{
+    public PluginGate? Gate(string toolName, JobParameters call)
+    {
+        var sql = call.Get("sql", "");
+        return sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+            ? null                                   // a read: no prompt
+            : new PluginGate($"run: {sql}");         // anything else: ask, and show what
+    }
+}
+```
+
+Returning null means no prompt. Returning a `PluginGate` asks, and its `Display` is yours to write —
+you saw the arguments, so name the file or the statement rather than only the tool.
+
+You supply the wording; cxagent decides the scope. A `PluginGate` carries no permission kind and no
+"always" rule, because those decide what a stored grant would cover — and a plugin that could set
+them could turn a prompt about its own tool into a grant over shell commands or files it does not
+own.
+
+**Declaring `"dynamic"` without implementing `IPluginGateSource` fails the load.** The sidecar told
+the user this tool decides per call; a plugin that then never decides would make that promise
+unfalsifiable.
+
+### The one field the host checks before your code runs
+
+```json
+{ "pluginContract": 2, "name": "my-plugin", ... }
+```
+
+**Required, and checked with exact equality.** It says which shape you were built against — the
+manifest fields, the gating vocabulary, the lifecycle. A host cannot know whether an unfamiliar
+contract omits something whose absence changes behaviour silently, so it refuses rather than
+guesses. Omit it and the load is refused too: a manifest that does not say what it was built against
+cannot be checked, and assuming compatible is the least safe reading available.
+
+Exact equality cuts both ways, and that is deliberate — a contract-1 plugin is refused by a
+contract-2 host exactly as a contract-3 one would be. One comparison answers both directions.
+
+**There is no version floor beside it**, and adding one would be a step backwards. What a plugin
+needs is never really "cxagent 0.9.5"; it is "a host that understands `dynamic`" — which *is* the
+contract. A version is a proxy that can be satisfied by a build whose number is high enough but
+which dropped the feature.
+
+It is read from the sidecar **before your assembly is loaded**, let alone constructed. That is the
+only placement worth having: loading an assembly is irreversible and a constructor is arbitrary
+code, so a check after either discards a result rather than preventing anything.
+
+**Check it back, from `Load`.** The host refuses a contract it does not know — but a host OLDER than
+your contract has never heard of it, and reads your manifest with its own rules. A cxagent that
+predates `"dynamic"` takes it for `false` and offers your tools ungated; nothing fails, the gate is
+simply absent. Only you can catch that:
+
+```csharp
+public Task<PluginManifest> Load(IPluginContext context, CancellationToken ct)
+{
+    if (context.HostContract < 2)
+        throw new NotSupportedException($"needs contract 2; this host speaks {context.HostContract}.");
+    ...
+}
+```
+
+A throw from `Load` fails the load and names the reason. `csharp-lsp` does exactly this, because its
+three tools gate per call and a host that cannot see that would run them without asking.
+
+`IPluginContext.HostVersion` is cxagent's own version, for logging or display — not how
+compatibility is decided.
+
+### The manifest and the callback
+
+The two answer different questions, and the manifest wins where they disagree.
+
+Your sidecar is read **before your assembly loads** — that is what lets cxagent show a user what you
+claim without running you, and what the load prompt summarises. `Gate` runs **after** they approved
+that, once per call.
+
+So the manifest is a ceiling and the callback narrows beneath it:
+
+| `gated` | `Gate()` returns | result |
+|---|---|---|
+| `true` | not called | asks — always |
+| `false` | not called | never asks |
+| `"dynamic"` | `null` | no prompt |
+| `"dynamic"` | a `PluginGate` | asks, with your wording |
+
+A `true` tool asks even if your code would rather it did not, and `alwaysAskable: false` cannot be
+widened back at runtime. Otherwise the sidecar a user read before approving would be a claim your
+code could quietly abandon.
+
+**A gate that fails asks anyway.** Throw, hang, or return something unparseable and cxagent prompts
+with a generic description and no "Always" — a broken gate is noisy rather than silently permissive,
+and cannot earn a standing grant while it is broken. Never return null to signal an error: null
+means "this call is fine".
+
+The calculator examples gate addition, never gate multiplication, and gate division only when the
+divisor is zero. The first two are absurd on their own, and that is the point: a gate on `2 + 2` can
+only teach you the mechanism. The third is the one that shows why the mechanism exists — same tool,
+same schema, different answer, decided by the arguments.
 
 ## Returning a result
 
@@ -304,7 +414,7 @@ index a plugin binary sitting in `.cxagent/plugins`. The global folder avoids th
 ## See also
 
 - [`IPlugin.cs`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/IPlugin.cs) — the managed contract, documented per method
-- [`Abi/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/cxagent_plugin.h) — the six C functions, with the ownership rules
+- [`Abi/cxagent_plugin.h`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/cxagent_plugin.h) — the seven C functions, with the ownership rules
 - [`Abi/README.md`](https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/Core/Plugins/Abi/README.md) — the JSON envelopes crossing the ABI boundary
 
 Hosting a plugin rather than writing one:

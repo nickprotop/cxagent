@@ -1,8 +1,9 @@
 {
+  "pluginContract": 2,
   "name": "csharp-lsp",
   "version": "0.9.3",
   "spawns": true,
-  "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml) under the working directory. Any other file is refused.\n\nPositions are 1-based \u2014 line 1 is the first line, character 1 the first column \u2014 and must land inside the symbol's name.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
+  "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml). Any other file type is refused. A file outside the working directory asks the user's permission first, so prefer paths inside it.\n\nPositions are 1-based \u2014 line 1 is the first line, character 1 the first column \u2014 and must land inside the symbol's name.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
   "tools": [
     {
       "name": "csharp_definition",
@@ -29,7 +30,7 @@
           "character"
         ]
       },
-      "gated": false
+      "gated": "dynamic"
     },
     {
       "name": "csharp_references",
@@ -56,7 +57,7 @@
           "character"
         ]
       },
-      "gated": false
+      "gated": "dynamic"
     },
     {
       "name": "csharp_diagnostics",
@@ -73,7 +74,7 @@
           "file"
         ]
       },
-      "gated": false
+      "gated": "dynamic"
     }
   ]
 }

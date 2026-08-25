@@ -5,13 +5,14 @@ vocabulary they exchange, and the reasoning behind it. Nothing here builds a hos
 a managed shim (9c) — this is the contract those two are built against, so it is written down and
 locked by tests before either exists.
 
-## The four calls, and what crosses each one
+## The calls, and what crosses each one
 
 | C function | Managed equivalent | JSON in | JSON out |
 | --- | --- | --- | --- |
 | `cxagent_plugin_abi_version` | — (handshake only) | — | an `int32_t`, not JSON |
 | `cxagent_plugin_describe` | `IPlugin.Load`'s returned manifest | — | `PluginManifest` |
 | `cxagent_plugin_start` | `IPlugin.Start` | `AbiPluginContext` | `AbiResultEnvelope` (void) |
+| `cxagent_plugin_gate` | `IPluginGateSource.Gate` | `AbiInvokeCall` | a gate object, or NULL |
 | `cxagent_plugin_invoke` | `IPlugin.Invoke` | `AbiInvokeCall` | `AbiResultEnvelope` (JobResult) |
 | `cxagent_plugin_stop` | `IPlugin.Stop` | — | `AbiResultEnvelope` (void) |
 
@@ -24,22 +25,26 @@ before its own static initializers have run, but *can* before it has a working d
 splitting the two costs nothing and gives the host a manifest to validate before it commits to
 starting the plugin at all.
 
-## `abiVersion` — the handshake
+## `pluginContract` — the handshake
 
 `cxagent_plugin_abi_version()` returns a bare `int32_t`, not JSON. This is the one function
 exempt from "everything is JSON," for the same reason ConsoleEx's spec states: **the version
 check has to precede parsing**, so it cannot itself depend on a JSON shape the host might not
 understand yet. Its signature can never change.
 
-The current constant is `1`. **Exact equality, not a floor** — see `cxagent_plugin.h`'s own
-comment. A host meeting version `2` refuses the load and names both versions in its error; it
-does not attempt to read a v2 manifest with v1 assumptions.
+The current constant is `2`. **Exact equality, not a floor** — see `cxagent_plugin.h`'s own
+comment. A host meeting a version it does not know refuses the load and names both versions in its
+error; it does not attempt to read an unfamiliar manifest with familiar assumptions.
+
+**v2 added `cxagent_plugin_gate`, so every v1 plugin is refused rather than degraded.** That is the
+handshake working as intended: a v1 library has no gate to call, and a host that guessed at the
+absence would be deciding permission questions on behalf of a plugin that never answered one.
 
 ## `describe` — the manifest
 
 ```json
 {
-  "abiVersion": 1,
+  "pluginContract": 2,
   "name": "lsp-rust",
   "version": "1.0.0",
   "instructions": "These tools talk to a running language server...",
@@ -50,18 +55,24 @@ does not attempt to read a v2 manifest with v1 assumptions.
       "description": "Finds where the symbol at a file position is declared.",
       "inputSchema": { "type": "object", "properties": { "...": "..." } },
       "gated": false
+    },
+    {
+      "name": "lsp_rename",
+      "description": "Renames a symbol across the solution.",
+      "inputSchema": { "type": "object", "properties": { "...": "..." } },
+      "gated": "dynamic"
     }
   ]
 }
 ```
 
-Every field but `abiVersion` mirrors `CxAgent.Core.Plugins.PluginManifest` and
+Every field but `pluginContract` mirrors `CxAgent.Core.Plugins.PluginManifest` and
 `PluginToolManifest` field for field — same names, same optionality — because an ABI plugin's
 manifest must be indistinguishable from a managed one to everything downstream of the loader:
 `PluginRegistry`, the collision matrix, and the load-gate prompt read a `PluginManifest`, not
-"a managed one" or "an ABI one." `abiVersion` is the one addition, carried in the manifest body
+"a managed one" or "an ABI one." `pluginContract` is the one addition, carried in the manifest body
 as well as returned by the handshake function — deliberately redundant, exactly as ConsoleEx's
-spec keeps them redundant (§7.1, "On `abiVersion` appearing twice"): the handshake function is
+spec keeps them redundant (§7.1, "On the contract appearing twice"): the handshake function is
 checked first, before the manifest is trusted enough to parse, and the in-body copy lets a
 mismatch between the two be caught as a manifest error with a clear message rather than silently
 trusting whichever the host happened to read.
@@ -119,6 +130,30 @@ plugin may index into it unconditionally exactly as `cxagent_plugin.h` states fo
 `toolName` is a plain string, not re-validated against the manifest by the wire format — the same
 division of responsibility `IPlugin.Invoke`'s own doc states: "an unrecognised name reaching this
 method is this plugin's own bug, not a name the caller must additionally validate."
+
+## `gate` — one per-call permission decision
+
+Called only for a tool whose manifest says `"gated": "dynamic"`, and only before the call it is
+about. Receives the same `AbiInvokeCall` JSON `invoke` does; returns either NULL or:
+
+```json
+{ "display": "run: DROP TABLE users", "alwaysAskable": true }
+```
+
+NULL means **this call needs no prompt**. That is an answer, not a failure — it is what a plugin
+gating nothing returns for every call, and why every v2 plugin can export a gate of three lines.
+
+`display` is wording, not scope. The host builds the permission itself and decides what an "always"
+grant would cover, so a plugin cannot widen a prompt about its own tool into a grant over anything
+else. `alwaysAskable` may only narrow: a manifest that already said `false` is not overridden.
+
+**Never return NULL to signal an error.** The host reads NULL as "this call is fine". A gate that
+cannot decide should return malformed JSON or simply take too long — both read as "ask, and offer no
+standing grant".
+
+**It must be fast.** The host calls this synchronously while deciding whether to interrupt the user,
+and abandons a gate that takes longer than a few hundred milliseconds — an abandoned gate asks.
+Inspect the arguments; do not open a connection.
 
 ## The result envelope
 

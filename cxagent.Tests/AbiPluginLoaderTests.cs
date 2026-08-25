@@ -68,6 +68,8 @@ public class AbiPluginLoaderTests
         public List<int> RegisteredPids { get; } = [];
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(new { });
+        public int HostContract => PluginContract.Version;
+        public string HostVersion => PluginContract.HostVersion;
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public void RegisterChildProcess(int processId) => RegisteredPids.Add(processId);
@@ -76,6 +78,36 @@ public class AbiPluginLoaderTests
     private static FakeContext Context() => new(OutputDir);
 
     // ---- The clean case: load, start, invoke, stop ----------------------------------------------
+
+    /// <summary>
+    /// THE GATE CROSSES THE PROCESS BOUNDARY. The fixture decides from the ARGUMENTS — "loud" asks,
+    /// anything else does not — which is the case a manifest boolean cannot express, proven here
+    /// against a real host process rather than an in-process fake.
+    /// </summary>
+    [Fact]
+    public async Task AnAbiPluginsGateDecidesPerCallFromTheArguments()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var result = await AbiPluginLoader.Load(HostDllPath, lib, Context(), CancellationToken.None);
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
+        var source = Assert.IsAssignableFrom<IPluginGateSource>(loaded.Instance);
+
+        try
+        {
+            Assert.Null(source.Gate("echo_dynamic", new JobParameters(
+                new Dictionary<string, object?> { ["text"] = "quiet" })));
+
+            var gate = source.Gate("echo_dynamic", new JobParameters(
+                new Dictionary<string, object?> { ["text"] = "loud" }));
+            Assert.NotNull(gate);
+            Assert.Equal("echo loudly", gate.Display);
+        }
+        finally
+        {
+            await loaded.Instance.Stop(CancellationToken.None);
+        }
+    }
 
     [Fact]
     public async Task AWellFormedPluginLoadsStartsInvokesAndStops()
@@ -87,7 +119,7 @@ public class AbiPluginLoaderTests
 
         var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
         Assert.Equal("fixture", loaded.Manifest.Name);
-        Assert.Equal(["echo"], loaded.Manifest.Tools.Select(t => t.Name).ToList());
+        Assert.Equal(["echo", "echo_dynamic"], loaded.Manifest.Tools.Select(t => t.Name).ToList());
 
         // THE HOST PROCESS ITSELF IS A REGISTERED CHILD — the brief's own requirement: "the host
         // process is itself a child process that must be reaped if this session crashes."
@@ -105,6 +137,38 @@ public class AbiPluginLoaderTests
         await plugin.Stop(CancellationToken.None);
     }
 
+    /// <summary>
+    /// THE SAME REFUSAL THE MANAGED LOADER MAKES, and at the same point: read from the sidecar
+    /// before a host process is spawned or the library mapped. Two loaders refusing one manifest
+    /// for different reasons, or at different costs, would be two behaviours where the file
+    /// describes one.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"name":"fixture","version":"1.0.0","spawns":false,"tools":[]}""", "no 'pluginContract'")]
+    [InlineData("""{"pluginContract":1,"name":"fixture","version":"1.0.0","spawns":false,"tools":[]}""", "contract 1")]
+    public async Task ASidecarThisBuildCannotVouchForIsRefusedBeforeAnythingIsSpawned(
+        string manifest, string expected)
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var copy = Path.Combine(OutputDir, $"fixture-wellformed-contract-{Guid.NewGuid():N}.so");
+        File.Copy(lib, copy);
+        var sidecarPath = Path.ChangeExtension(copy, null) + ".plugin.json";
+        await File.WriteAllTextAsync(sidecarPath, manifest);
+        try
+        {
+            var result = await AbiPluginLoader.Load(HostDllPath, copy, Context(), CancellationToken.None);
+
+            var failed = Assert.IsType<AbiPluginLoadResult.Failed>(result);
+            Assert.Contains(expected, failed.Reason);
+        }
+        finally
+        {
+            File.Delete(sidecarPath);
+            File.Delete(copy);
+        }
+    }
+
     // ---- Sidecar / describe mismatch --------------------------------------------------------------
 
     [Fact]
@@ -119,7 +183,7 @@ public class AbiPluginLoaderTests
         File.Copy(lib, copy);
         var sidecarPath = Path.ChangeExtension(copy, null) + ".plugin.json";
         await File.WriteAllTextAsync(sidecarPath,
-            """{"name":"fixture","version":"1.0.0","spawns":false,"tools":[{"name":"different_tool","description":"d","inputSchema":{"type":"object"},"gated":false}]}""");
+            """{"pluginContract":2,"name":"fixture","version":"1.0.0","spawns":false,"tools":[{"name":"different_tool","description":"d","inputSchema":{"type":"object"},"gated":false}]}""");
         try
         {
             var result = await AbiPluginLoader.Load(HostDllPath, copy, Context(), CancellationToken.None);

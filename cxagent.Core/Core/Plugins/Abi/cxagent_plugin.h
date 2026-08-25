@@ -40,7 +40,10 @@ extern "C" {
 #endif
 
 /*
- * ABI HANDSHAKE. Returns the ABI version this library was built against — currently 1.
+ * HANDSHAKE. Returns the plugin contract this library was built against — currently 2.
+ *
+ * THE SAME NUMBER A MANAGED PLUGIN'S SIDECAR CALLS "pluginContract". One contract covers both
+ * loaders; the C entry point keeps its historical name because its signature can never change.
  *
  * Checked BEFORE every other call. The host compares this against the versions it understands
  * with EXACT EQUALITY, never a floor: a host built for v1 cannot know whether a v2 plugin omits a
@@ -75,6 +78,33 @@ const char* cxagent_plugin_describe(void);
  * return value, released via cxagent_plugin_free.
  */
 const char* cxagent_plugin_start(const char* context_json);
+
+/*
+ * GATE. Decides whether ONE call needs the user's permission, and what the prompt should say.
+ * Returns NULL for "no prompt", or a JSON object: {"display": "...", "alwaysAskable": true}.
+ *
+ * EVERY v2 PLUGIN EXPORTS THIS, including one that gates nothing — such a plugin returns NULL
+ * unconditionally, which is three lines and keeps one export table for every plugin rather than
+ * two shapes a host must tell apart.
+ *
+ * ONLY CALLED FOR A TOOL THE MANIFEST MARKED "gated": "dynamic". A tool declaring true or false has
+ * already answered, and the host does not ask twice.
+ *
+ * `display` IS WORDING, NOT SCOPE. The host builds the permission itself and decides what an
+ * "always" grant would cover; a plugin cannot widen a prompt about its own tool into a standing
+ * grant over anything else. Say what THIS call does — the file, the statement — since the arguments
+ * are the reason this function exists at all.
+ *
+ * FAILING IS SAFE AND MEANS "ASK". Return NULL only when the call genuinely needs no prompt: a gate
+ * that cannot decide should return malformed output or let the host time out, both of which the
+ * host reads as "ask, and offer no standing grant". Never return NULL to signal an error — that
+ * reads as "this call is fine".
+ *
+ * MUST BE FAST. The host calls this synchronously while deciding whether to interrupt the user, and
+ * abandons a gate that takes longer than a few hundred milliseconds. Inspect the arguments; do not
+ * open a connection.
+ */
+const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
 
 /*
  * INVOKE. Runs one call to one of this plugin's own tools, named by `tool_name` — always a name

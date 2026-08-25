@@ -495,6 +495,18 @@ public sealed partial class Session
                 (var n, false) => $"It adds {n} tools.",
             };
 
+            // A SEPARATE SENTENCE, AND ONLY WHEN THERE IS ONE. A tool that decides per call whether
+            // to interrupt is a different thing to agree to than one that always asks or never
+            // does — the load prompt is the only moment the user weighs this plugin as a whole, so
+            // a policy they cannot see here is one they never got to refuse. Folding it into the
+            // count above would have meant an arm per combination for a clause most plugins never
+            // show at all.
+            var dynamic = manifest.Tools.Count(t => t.Gated == CxAgent.Core.Plugins.PluginGating.Dynamic);
+            if (dynamic > 0)
+                contributes += dynamic == 1
+                    ? " One of them decides per call whether to ask you."
+                    : $" {dynamic} of them decide per call whether to ask you.";
+
             var request = new Permissions.PermissionRequest(
                 Permissions.PermissionKind.Plugin,
                 $"{manifest.Name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",
