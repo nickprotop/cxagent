@@ -1,0 +1,74 @@
+name: Pages
+
+# TWO TRIGGERS, ONE PATH. A release has fresh artifacts; a push to the site has none, and both
+# download the current release's asset rather than trusting anything cached -- so a typo fix and a
+# release publish identical catalogs. See the design doc, "Two triggers, one path".
+on:
+  release:
+    types: [published]
+  push:
+    branches: [master]
+    paths:
+      - 'site/**'
+      - 'plugins/plugins.json'
+      - 'COMMANDS.md'
+      - 'CONFIG.md'
+      - 'cxagent.Core/docs/plugins.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# NEWEST WINS, AND A RUNNING DEPLOY IS NOT CANCELLED. Two deploys racing would be
+# non-deterministic about which site survives; cancelling one mid-upload can leave Pages holding a
+# partial artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render the three documents
+        run: python3 site/build/render_docs.py --root . --out _site
+
+      - name: Copy the authored pages
+        # AFTER RENDERING, so an authored file always wins over a generated one of the same name.
+        run: cp -r site/. _site/ && rm -rf _site/build
+
+      - name: Download the current release's plugin artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p _artifact
+          # THE ASSET A USER WOULD ACTUALLY GET. Hashing anything else -- a local build, a previous
+          # release -- would publish a value that does not match what the download URL serves.
+          gh release download --repo "${GITHUB_REPOSITORY}" \
+              --pattern csharp-lsp.zip --dir _artifact
+
+      - name: Generate the catalog
+        run: |
+          python3 site/build/catalog.py \
+              --catalog plugins/plugins.json \
+              --asset _artifact/csharp-lsp.zip \
+              --out _site/catalog.json
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

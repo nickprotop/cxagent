@@ -162,13 +162,9 @@ jobs:
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
-            # THE STAMP COMMIT IS EXCLUDED. It is written by the release itself, so listing it
-            # tells a reader their release contains a change made by publishing that release.
-            CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges \
-                        --invert-grep --grep="^Stamp csharp-lsp.zip hash")
+            CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges)
           else
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20 \
-                        --invert-grep --grep="^Stamp csharp-lsp.zip hash")
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
           fi
           echo "CHANGELOG<<EOF" >> "$GITHUB_OUTPUT"
           echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
