@@ -126,6 +126,29 @@ public sealed class CxagentLspPlugin : IPlugin
         if (toolName is not ("csharp_definition" or "csharp_references" or "csharp_diagnostics"))
             throw new InvalidOperationException($"csharp-lsp has no tool named '{toolName}'.");
 
+        // THE FILE IS CHECKED BEFORE THE SERVER IS. Whether this tool serves a .go file does not
+        // depend on a server being up, and answering "not running" to a call that would be refused
+        // anyway sends the caller to fix the wrong thing.
+        try
+        {
+            ResolveFileArgument(call, toolName);
+        }
+        catch (ToolRefusal refusal)
+        {
+            return new JobResult { Success = false, ErrorMessage = refusal.Message };
+        }
+        catch (KeyNotFoundException)
+        {
+            // A MISSING ARGUMENT IS A FAILED CALL, NOT A CRASH. The schema marks file required, so
+            // reaching here means the model omitted it — and it can fix that if told, where an
+            // unhandled exception just reports that the tool broke.
+            return new JobResult
+            {
+                Success = false,
+                ErrorMessage = $"{toolName} needs a 'file' argument — the path to a C# or Razor file.",
+            };
+        }
+
         if (_client is null)
             return new JobResult { Success = false, ErrorMessage = "language server is not running." };
 
@@ -227,6 +250,12 @@ public sealed class CxagentLspPlugin : IPlugin
     /// of <c>File.ReadAllText</c> inside the client, which surfaces as a crashed tool rather than a
     /// failed call.</para>
     /// </summary>
+    /// <summary>The <c>file</c> argument resolved and checked — see <see cref="ResolvePath"/>. Used
+    /// by <see cref="Invoke"/> to refuse before the server is consulted, and by each handler to get
+    /// the path it works with.</summary>
+    private string ResolveFileArgument(JobParameters call, string toolName) =>
+        ResolvePath(call.Get<string>("file"), toolName);
+
     private string ResolvePath(string file, string toolName)
     {
         var path = Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file);
