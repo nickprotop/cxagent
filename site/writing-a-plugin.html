@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing a plugin — cxagent</title>
+<meta name="description" content="From the calculator example to a catalog entry: declaring a plugin contract, deciding what needs gating, publishing a release, and submitting it.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/">cxagent</a>
+  <a href="/install.html">Install</a>
+  <a href="/plugins.html">Plugins</a>
+  <a href="/core.html">CxAgent.Core</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<h1>Writing a plugin</h1>
+<p class="lede">From an example that already runs, to an entry in the catalog.</p>
+
+<h2>What a plugin is</h2>
+
+<p>A plugin is a library cxagent did not ship, loaded into a session at run time. It can add
+<strong>tools</strong> the model may call, and it can add a block of <strong>guidance to the system
+prompt</strong> — saying what individual tool descriptions cannot, such as that positions are 1-based
+or which file types it serves. A plugin that declares no tools and only that block is a valid plugin
+too.</p>
+
+<p>It declares all of this in a <strong>sidecar file</strong> that cxagent reads <em>before</em> it
+loads the assembly, so the load prompt can show what a plugin claims without running any of its
+code.</p>
+
+<p>Two flavours: <strong>managed</strong>, a .NET assembly, portable across every platform cxagent
+runs on; and <strong>ABI</strong>, a native library, for a plugin your language cannot write managed
+— not portable, so it ships per platform.</p>
+
+<p>Know what you are asking of a user. A plugin is not sandboxed: it runs in cxagent's own process
+and can do what that process can. The gate cxagent enforces is the decision to load it at all.</p>
+
+<h2>1. Start from the calculator</h2>
+
+<p>Both examples are a complete plugin in about a hundred lines, deliberately gating something
+absurd — adding two numbers — so the permission prompt is visible the first time you run it.</p>
+
+<div class="doc-group">
+<ul>
+<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin">CalculatorPlugin</a>
+    <span>— managed, the usual starting point</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin">CalculatorAbiPlugin</a>
+    <span>— the same calculator in one file of C</span></li>
+</ul>
+</div>
+
+<p>Copy one, rename it, and get it loading before you change what it does. Load it into a session
+with no config file to edit:</p>
+
+<pre><code>/plugin load my-plugin.dll</code></pre>
+
+<h2>2. Declare your plugin contract</h2>
+
+<p>Your sidecar names the contract version it was written against:</p>
+
+<pre><code>{ "pluginContract": 2, "name": "my-plugin", ... }</code></pre>
+
+<p>The host compares this for <strong>exact equality</strong>. A contract-1 plugin is refused by a
+contract-2 host exactly as a contract-3 one would be, and that is deliberate: a plugin written for a
+different contract may omit something whose absence changes behaviour silently, so the host refuses
+rather than guessing.</p>
+
+<p><strong>Check it back from your own <code>Load</code>.</strong> A host <em>older</em> than your
+contract has never heard of it and reads your manifest with its own rules — a cxagent predating
+<code>"dynamic"</code> takes it for <code>false</code> and offers your tools ungated. Nothing fails,
+and the gate you declared is simply not there. So verify:</p>
+
+<pre><code>if (context.HostContract &lt; 2)
+    throw new NotSupportedException($"needs contract 2; this host speaks {context.HostContract}.");</code></pre>
+
+<h2>3. Decide what needs gating</h2>
+
+<p>Each tool in your sidecar declares whether a call needs a human. There are three states:</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th><code>gated</code></th><th>What it means</th><th>Use it when</th></tr></thead>
+<tbody>
+<tr><td><code>true</code></td><td>every call asks</td>
+    <td>the tool can always do something the user would want to see first</td></tr>
+<tr><td><code>false</code></td><td>no call asks</td>
+    <td>the tool only ever reads, or only ever touches your own state</td></tr>
+<tr><td><code>"dynamic"</code></td><td>your code decides, per call, from the arguments</td>
+    <td>the tool is dangerous only sometimes</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong><code>"dynamic"</code> is for when the arguments decide.</strong> A tool is not
+categorically safe or dangerous — a query that reads is not the same call as one that writes, and a
+lookup inside the working folder is not the same call as one outside it. That is exactly what the
+shipped <code>csharp-lsp</code> tools do: they run unasked inside the folder you started in, and ask
+before reading a file outside it. Declaring the tool <code>true</code> instead would make every
+lookup a prompt, which trains a user to click through them.</p>
+
+<p><code>"dynamic"</code> routes each call to a method that sees the arguments and returns either a
+gate with your own wording, or <code>null</code> for no prompt. <strong>Declaring
+<code>"dynamic"</code> without implementing <code>IPluginGateSource</code> fails the load</strong>:
+the sidecar promised a decision the assembly cannot make, and silently gating nothing is the wrong
+answer.</p>
+
+<h2>4. Publish a release with your artifact</h2>
+
+<p>Publish the built plugin as a release asset on your own repository, and publish a
+<code>SHA256SUMS</code> — or the hash of the artifact itself — alongside it. Your catalog entry pins
+that hash, and it is the only thing vouching for a file hosted somewhere this project does not
+control.</p>
+
+<p>Version the plugin, and keep the version in the sidecar in step with the release that carries it.
+A catalog entry naming an asset no release carries is worse than no entry at all.</p>
+
+<h2>5. Submit it to the catalog</h2>
+
+<p>The <a href="/plugins.html">catalog</a> is a committed file in the cxagent repository. To add an
+entry, open an issue from the plugin submission template:</p>
+
+<p><a href="https://github.com/nickprotop/cxagent/issues/new?template=submit_a_plugin.yml">Submit a
+plugin →</a></p>
+
+<p>It asks for the plugin's name, its repository, a one-line description, the contract it targets,
+the platforms it actually has downloads for, and its tools with each one's gating. Those are the
+fields the catalog carries, and they are what a reader judges before deciding to run your code —
+<code>publisher</code> and <code>repository</code> are claims, not facts a client can verify, which
+is why they must be true.</p>
+
+<p>The steps for adding an entry by hand, and a worked example of each <code>source</code> shape,
+are in <a href="https://github.com/nickprotop/cxagent/blob/master/plugins/RELEASING.md">RELEASING.md</a>.</p>
+
+<h2>The reference</h2>
+
+<p>The full contract — the lifecycle, the sidecar's every field, permission and settings, and the
+managed and ABI interfaces side by side — is at
+<a href="/docs/plugins.html">/docs/plugins.html</a>.</p>
+
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+</body>
+</html>

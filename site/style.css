@@ -1,0 +1,335 @@
+/* One stylesheet for every page — the authored ones and the ones render_docs.py produces from the
+   repository's markdown. They share a nav, so they must share a nav's styling; a second stylesheet
+   would drift on the first change that touched only one of them.
+
+   Dark by default because the tool is a terminal application and the site is usually opened from a
+   terminal. The light override follows the reader's system setting rather than a toggle: a toggle
+   needs JavaScript and state, and this site is static files that must work opened from disk. */
+
+:root {
+  --bg: #0f1115;
+  --bg-raised: #171a21;
+  --bg-code: #10131a;
+  --fg: #d7dae0;
+  --fg-dim: #969ba6;
+  --fg-bright: #f2f4f7;
+  --accent: #6aa9ff;
+  --accent-dim: #3d6ea8;
+  --border: #262b35;
+  --warn: #e0b341;
+  --ok: #6cc08b;
+
+  --font-prose: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+                Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas,
+               "DejaVu Sans Mono", monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-raised: #f6f7f9;
+    --bg-code: #f2f3f6;
+    --fg: #24282f;
+    --fg-dim: #5d636e;
+    --fg-bright: #0d1015;
+    --accent: #1a5fb4;
+    --accent-dim: #7a9dcc;
+    --border: #dde0e6;
+    --warn: #8a6100;
+    --ok: #1f7a4d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-prose);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- Navigation ------------------------------------------------------------------------------ */
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1.4rem;
+  padding: 0.9rem 1.6rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: 0.95rem;
+}
+
+.site-nav a { color: var(--fg-dim); }
+.site-nav a:hover { color: var(--fg-bright); }
+
+.site-nav .brand {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--fg-bright);
+  margin-right: auto;
+}
+
+/* The nav wraps onto a second line on a narrow screen; `margin-right: auto` on the brand would
+   then push the links to the far edge, so it is dropped once there is no room for two columns. */
+@media (max-width: 34rem) {
+  .site-nav { gap: 1rem; }
+  .site-nav .brand { margin-right: 0; width: 100%; }
+}
+
+/* --- Page shells ----------------------------------------------------------------------------- */
+
+/* 72ch keeps a line of prose at a length the eye can track back from. The landing page opts out
+   with .wide because its screenshots are terminal captures — squeezed to 72ch the text inside them
+   is unreadable, which defeats the point of showing them. */
+main {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+}
+
+main.wide { max-width: 62rem; }
+
+footer {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 4rem;
+  border-top: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 0.9rem;
+}
+
+h1, h2, h3, h4 {
+  color: var(--fg-bright);
+  line-height: 1.25;
+  margin: 2.4rem 0 0.8rem;
+}
+
+h1 { font-size: 2.1rem; margin-top: 0.5rem; }
+h2 { font-size: 1.45rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; }
+
+h1 + p.lede {
+  font-size: 1.15rem;
+  color: var(--fg-dim);
+  margin-top: 0;
+}
+
+blockquote {
+  margin: 1.4rem 0;
+  padding: 0.6rem 1.2rem;
+  border-left: 3px solid var(--accent-dim);
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+blockquote p:first-child { margin-top: 0; }
+blockquote p:last-child { margin-bottom: 0; }
+
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+/* --- Code ------------------------------------------------------------------------------------ */
+
+code, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+/* Inline code only. A <code> inside a <pre> inherits the block's background instead, or every
+   line in a listing gets its own pill.
+
+   `overflow-wrap: anywhere` because an inline run has no scroll container to escape into: a long
+   unbreakable path in running prose widens the whole PAGE on a phone, and a document-wide
+   horizontal scrollbar is worse than a path broken mid-token. A <pre> keeps `white-space: pre`
+   and scrolls instead, which is where commands meant for copying live. */
+:not(pre) > code {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  overflow-wrap: anywhere;
+}
+
+/* NO WRAPPING. These are commands to copy: a wrapped one hides where the line actually ends, and
+   a reader who selects it gets a newline the shell will run at. Horizontal scroll instead. */
+pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+}
+
+pre code { background: none; border: 0; padding: 0; }
+
+/* --- Tables ---------------------------------------------------------------------------------- */
+
+/* The rendered docs are table-heavy — CONFIG.md is largely tables — and a borderless table of
+   three-word cells is unreadable. The wrapper scrolls so a wide table never widens the page. */
+.table-scroll { overflow-x: auto; margin: 1.2rem 0; }
+
+/* `display: block` with its own scroll, NOT just a wrapper. The rendered pages emit a bare
+   <table> with nothing around it, so a table narrow enough to fit but too rigid to shrink still
+   pushes the document sideways on a phone. Making the table itself the scroll container means a
+   wide one is scrollable wherever it appears, wrapped or not. `width: max-content` with a
+   `min-width` keeps it filling the column when it fits and overflowing into its own scroll when
+   it does not. */
+table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%;
+  font-size: 0.94rem;
+}
+
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th { background: var(--bg-raised); color: var(--fg-bright); font-weight: 600; }
+
+/* --- Images ---------------------------------------------------------------------------------- */
+
+img { max-width: 100%; height: auto; display: block; }
+
+figure {
+  margin: 2rem 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+figure img { border-bottom: 1px solid var(--border); }
+
+figcaption {
+  padding: 0.8rem 1rem;
+  font-size: 0.92rem;
+  color: var(--fg-dim);
+}
+
+figcaption strong { color: var(--fg-bright); }
+
+/* --- Landing page ---------------------------------------------------------------------------- */
+
+.hero { padding: 1rem 0 0.5rem; }
+
+.hero h1 {
+  font-family: var(--font-mono);
+  font-size: 2.6rem;
+  letter-spacing: -0.02em;
+}
+
+.hero .tagline {
+  font-size: 1.25rem;
+  color: var(--fg);
+  max-width: 58ch;
+}
+
+.install-line {
+  margin: 1.6rem 0 0.4rem;
+}
+
+.note { color: var(--fg-dim); font-size: 0.92rem; }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  padding: 1rem 1.1rem;
+}
+
+.card h3 { margin: 0 0 0.3rem; font-size: 1.05rem; }
+.card p { margin: 0; color: var(--fg-dim); font-size: 0.94rem; }
+
+/* --- Marketplace ----------------------------------------------------------------------------- */
+
+.plugin-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 1.2rem 1.3rem;
+  margin: 1.5rem 0;
+}
+
+.plugin-card h3 { margin: 0; font-size: 1.25rem; }
+
+.plugin-card .plugin-name {
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+  font-size: 0.9rem;
+}
+
+.plugin-card .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.8rem 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+  color: var(--fg-dim);
+}
+
+.plugin-card .meta strong { color: var(--fg); font-weight: 600; }
+
+.tools { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0 0; padding: 0; list-style: none; }
+
+.tool {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  background: var(--bg-code);
+}
+
+/* A tool that can stop and ask is the fact a reader is here for, so it is marked rather than
+   described in a column they have to look up. */
+.tool.gated { border-color: var(--warn); }
+.tool .gate-note { color: var(--warn); font-family: var(--font-prose); font-size: 0.8rem; }
+.tool .gate-note.never { color: var(--fg-dim); }
+
+.catalog-error {
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  background: var(--bg-raised);
+}
+
+.catalog-error code { word-break: break-all; }
+
+/* --- Docs index ------------------------------------------------------------------------------ */
+
+.doc-group { margin: 1.6rem 0; }
+.doc-group ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.doc-group li { margin: 0.35rem 0; }
+.doc-group li span { color: var(--fg-dim); }

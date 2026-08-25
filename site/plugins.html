@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plugins — cxagent</title>
+<meta name="description" content="The catalog of plugins cxagent knows about: what each one adds, what it requires installed, and which of its tools stop to ask.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/">cxagent</a>
+  <a href="/install.html">Install</a>
+  <a href="/plugins.html">Plugins</a>
+  <a href="/core.html">CxAgent.Core</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<h1>Plugins</h1>
+<p class="lede">Tools from a DLL you drop in a folder, without rebuilding cxagent.</p>
+
+<p>cxagent asks before loading any plugin, showing a hash of everything it would load. Installing a
+plugin is not approving it.</p>
+
+<p>Nothing in your config file can pre-approve one, and if a single byte of the load set changes,
+the question comes back. Past that point a plugin is not sandboxed: it runs inside cxagent's own
+process and can do what that process can. What cxagent enforces is the decision to load it —
+<strong>trusting a plugin is trusting its author</strong>, exactly as installing any other software
+is.</p>
+
+<h2>The catalog</h2>
+
+<div id="catalog">
+  <p class="note">Loading the catalog…</p>
+</div>
+
+<h2>Installing one</h2>
+
+<p>Put the plugin's file in your plugins folder — <code>~/.config/cxagent/plugins</code> on Linux,
+<code>%APPDATA%\cxagent\plugins</code> on Windows,
+<code>~/Library/Application Support/cxagent/plugins</code> on macOS. cxagent will notice it and say
+so, without loading it:</p>
+
+<pre><code>plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), not configured.</code></pre>
+
+<p>Turn it on for one session, with no file to edit:</p>
+
+<pre><code>/plugin load csharp-lsp.dll</code></pre>
+
+<p>Or keep it, in <code>config.json</code>:</p>
+
+<pre><code>"plugins": { "csharp-lsp": { "file": "csharp-lsp.dll" } }</code></pre>
+
+<p>Either way it asks once, on first load, and shows you what it is about to run.</p>
+
+<h2>About the checksum</h2>
+
+<p>Where a catalog entry carries a <code>sha256</code>, it is over the artifact you download.</p>
+
+<p>The checksum here proves the file you downloaded is the file this release published. It does not
+prove who built it.</p>
+
+<p>Who built it is the <strong>publisher</strong> and <strong>repository</strong> on each entry
+below — claims you judge for yourself, not facts a client can verify. The separate hash cxagent
+shows at load time answers a third question again: has anything changed since you last approved
+it.</p>
+
+<h2>Writing one</h2>
+
+<p>A plugin declares what it offers in a sidecar file that cxagent reads <em>before</em> loading its
+assembly, so the load prompt can tell you what a plugin claims without running it.
+<a href="/writing-a-plugin.html">Start here →</a> or go straight to
+<a href="/docs/plugins.html">the contract</a>.</p>
+
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+
+<script>
+// The catalog is fetched rather than baked in because it is generated at release time: the hash of
+// a published artifact cannot exist in a file committed before that artifact was built. This page
+// is copied verbatim into the site; catalog.json is written beside it by the release workflow.
+(function () {
+  var mount = document.getElementById("catalog");
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  // "dynamic" means the plugin decides per call, from the arguments — the csharp-lsp tools look
+  // inside your working folder unasked and stop for anything outside it. Rendering the raw word
+  // would leave a reader to guess whether it means "sometimes" or "at run time".
+  function gateText(gated) {
+    if (gated === true) return "asks every call";
+    if (gated === false) return "never asks";
+    if (gated === "dynamic") return "asks about some calls";
+    return String(gated);
+  }
+
+  function link(href, text) {
+    var a = el("a", null, text || href);
+    a.href = href;
+    a.rel = "noopener";
+    return a;
+  }
+
+  function metaItem(label, value) {
+    var li = document.createElement("li");
+    li.appendChild(document.createTextNode(label + " "));
+    if (value instanceof Node) li.appendChild(value);
+    else li.appendChild(el("strong", null, value));
+    return li;
+  }
+
+  function renderPlugin(p) {
+    var card = el("div", "plugin-card");
+
+    var heading = el("h3");
+    heading.appendChild(document.createTextNode(p.displayName || p.name));
+    card.appendChild(heading);
+    card.appendChild(el("div", "plugin-name", p.name + " · " + (p.version || "unversioned")));
+
+    if (p.description) card.appendChild(el("p", null, p.description));
+
+    var meta = el("ul", "meta");
+    if (p.publisher) meta.appendChild(metaItem("Publisher", p.publisher));
+    if (p.license) meta.appendChild(metaItem("License", p.license));
+    if (p.kind) meta.appendChild(metaItem("Kind", p.kind));
+    var compat = p.compatibility || {};
+    if (compat.pluginContract !== undefined)
+      meta.appendChild(metaItem("Plugin contract", "v" + compat.pluginContract));
+    if (compat.platforms && compat.platforms.length)
+      meta.appendChild(metaItem("Platforms", compat.platforms.join(", ")));
+    if (p.repository)
+      meta.appendChild(metaItem("Repository", link(p.repository, p.repository.replace(/^https:\/\//, ""))));
+    card.appendChild(meta);
+
+    if (p.requires) {
+      var req = el("p");
+      req.appendChild(el("strong", null, "Requires: "));
+      req.appendChild(document.createTextNode(p.requires.description || p.requires.default || ""));
+      card.appendChild(req);
+      if (p.requires.install) {
+        var pre = el("pre");
+        pre.appendChild(el("code", null, p.requires.install));
+        card.appendChild(pre);
+      }
+    }
+
+    if (p.tools && p.tools.length) {
+      card.appendChild(el("p", null, p.tools.length === 1 ? "One tool:" : p.tools.length + " tools:"));
+      var tools = el("ul", "tools");
+      p.tools.forEach(function (tool) {
+        var asks = tool.gated !== false;
+        var li = el("li", asks ? "tool gated" : "tool");
+        li.appendChild(document.createTextNode(tool.name + " "));
+        li.appendChild(el("span", asks ? "gate-note" : "gate-note never", "— " + gateText(tool.gated)));
+        tools.appendChild(li);
+      });
+      card.appendChild(tools);
+    }
+
+    var links = el("p", "note");
+    if (p.sourceUrl) {
+      links.appendChild(link(p.sourceUrl, "Source and README"));
+    }
+    var source = p.source || {};
+    if (source.latest) {
+      if (links.childNodes.length) links.appendChild(document.createTextNode(" · "));
+      links.appendChild(link(source.latest, "Download"));
+    }
+    if (links.childNodes.length) card.appendChild(links);
+
+    if (source.sha256) {
+      var sum = el("p", "note");
+      sum.appendChild(document.createTextNode("sha256 "));
+      sum.appendChild(el("code", null, source.sha256));
+      card.appendChild(sum);
+    }
+
+    return card;
+  }
+
+  // A FAILED FETCH MUST SAY SO. A blank section under a heading reads as "no plugins yet", which
+  // is a different and wrong answer; the catalog is also the one part of this site that can be
+  // missing while every other page renders.
+  function failed(reason) {
+    mount.textContent = "";
+    var box = el("div", "catalog-error");
+    box.appendChild(el("p", null, "The plugin catalog could not be loaded: " + reason));
+    var p = el("p", "note");
+    p.appendChild(document.createTextNode("It is published at "));
+    p.appendChild(link("/catalog.json", "/catalog.json"));
+    p.appendChild(document.createTextNode(", and the committed source it is generated from is "));
+    p.appendChild(link("https://github.com/nickprotop/cxagent/blob/master/plugins/plugins.json",
+                       "plugins/plugins.json"));
+    p.appendChild(document.createTextNode("."));
+    box.appendChild(p);
+    mount.appendChild(box);
+  }
+
+  fetch("/catalog.json", { cache: "no-cache" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    })
+    .then(function (catalog) {
+      var plugins = (catalog && catalog.plugins) || [];
+      mount.textContent = "";
+      if (!plugins.length) {
+        mount.appendChild(el("p", null, "The catalog is published, and currently lists no plugins."));
+        return;
+      }
+      plugins.forEach(function (p) { mount.appendChild(renderPlugin(p)); });
+    })
+    .catch(function (error) { failed(error.message); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation — cxagent</title>
+<meta name="description" content="cxagent's documentation, grouped by audience: using it, writing a plugin, and embedding CxAgent.Core.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/">cxagent</a>
+  <a href="/install.html">Install</a>
+  <a href="/plugins.html">Plugins</a>
+  <a href="/core.html">CxAgent.Core</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<h1>Documentation</h1>
+<p class="lede">Three audiences, and what each one needs.</p>
+
+<p>The pages below are rendered from the repository's own markdown rather than copied — the source
+is edited in one place, and a link at the foot of each takes you to it. Anything not rendered here
+links to GitHub, because it is written for someone already reading the source.</p>
+
+<h2>Using cxagent</h2>
+
+<div class="doc-group">
+<ul>
+<li><a href="/docs/commands.html">Commands</a>
+    <span>— everything you can type in the composer: <code>/mode</code>, <code>/stats</code>,
+    <code>/plugin</code>, <code>/skills</code>, and the keys</span></li>
+<li><a href="/docs/config.html">Configuration</a>
+    <span>— every block of <code>config.json</code>, where the file lives on each OS, and what each
+    key's absence means</span></li>
+</ul>
+</div>
+
+<p class="note">New here? <a href="/install.html">Install</a> first — you do not need to write any
+configuration to start.</p>
+
+<h2>Writing a plugin</h2>
+
+<div class="doc-group">
+<ul>
+<li><a href="/writing-a-plugin.html">The on-ramp</a>
+    <span>— from the calculator example to a catalog submission</span></li>
+<li><a href="/docs/plugins.html">The contract</a>
+    <span>— the lifecycle, the sidecar, gating, settings, and the managed and ABI interfaces</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/plugins/RELEASING.md">Releasing a plugin</a>
+    <span>— adding a catalog entry, with a worked example of each <code>source</code> shape</span></li>
+</ul>
+</div>
+
+<h2>Embedding CxAgent.Core</h2>
+
+<div class="doc-group">
+<ul>
+<li><a href="/core.html">Overview</a>
+    <span>— what the library is, and the four calls an app makes</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/api.md">API reference</a>
+    <span>— every public type, configuration, and tool selection</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/tools.md">Tools</a>
+    <span>— injecting tools of your own: <code>IAgentTool</code>, the two gates, and what
+    <code>Gate</code> should return</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples">Examples</a>
+    <span>— five runnable apps, from a console front end to a plugin in C</span></li>
+</ul>
+</div>
+
+<h2>Elsewhere in the repository</h2>
+
+<div class="doc-group">
+<ul>
+<li><a href="https://github.com/nickprotop/cxagent#readme">README</a>
+    <span>— what cxagent is, and what it actually does to your machine</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/tree/master/docs/screenshots">A session, in pictures</a>
+    <span>— eighteen captures from real sessions, mistakes included</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/ROADMAP.md">Roadmap</a>
+    <span>— what is next</span></li>
+</ul>
+</div>
+
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+</body>
+</html>

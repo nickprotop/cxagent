@@ -105,7 +105,7 @@ bare `/mode` reports every axis for that reason.
 
 A **planning** axis was considered and declined: withholding the write tools does not make a model
 plan well, and the `planner` agent type already carries a briefing that does. (Withholding them is
-now expressible — see [tool selection](CONFIG.md#tools-what-an-agent-is-offered) — which does not change the argument: the
+now expressible — see [tool selection](CONFIG.md#tools--what-an-agent-is-offered) — which does not change the argument: the
 reason not to offer a planning MODE is that the restriction is not what produces a good plan.) `/mode edits
 always-ask` covers the safety half. `/mode work plan` therefore answers "not settable yet" rather
 than pretending — the intent is real, and the planner type is where it is served.
@@ -306,7 +306,7 @@ often forget they configured, and it explains both a surprising answer and a sur
 the file appeared.
 
 A built-in type says so in its detail view, along with the reminder that a `briefing` or
-`description` under that name in `config.json` is ignored. See [CONFIG.md](CONFIG.md#agents-sub-agent-types).
+`description` under that name in `config.json` is ignored. See [CONFIG.md](CONFIG.md#agents--sub-agent-types).
 
 It lists; it does not spawn. Which type fits a task is the model's decision, made against this same
 catalog.

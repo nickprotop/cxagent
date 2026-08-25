@@ -23,7 +23,8 @@ every setting. Follow [csharp-lsp](csharp-lsp/README.md).
 
 **2. The catalog entry**, in [`plugins.json`](plugins.json). `name`, `version`, `spawns`, `tools` and `pluginContract`
 must match the plugin's own sidecar — `PluginCatalogTests` fails the build if they drift, because the
-picker shows what this file says without loading a DLL to check.
+picker shows what this file says without loading a DLL to check. `tools` carries each tool's `gated`
+value as well as its name, so the marketplace can say which tools ask before acting.
 
 `source` says where the plugin comes from, how to download it, and how to check what arrived.
 
@@ -77,9 +78,9 @@ Copy the one whose `source` shape matches what you are adding.
   },
   "spawns": true,
   "tools": [
-    "rust_definition",
-    "rust_references",
-    "rust_diagnostics"
+    { "name": "rust_definition", "gated": false },
+    { "name": "rust_references", "gated": false },
+    { "name": "rust_diagnostics", "gated": false }
   ],
   "requires": {
     "description": "rust-analyzer on PATH.",
@@ -124,7 +125,7 @@ Copy the one whose `source` shape matches what you are adding.
   },
   "spawns": false,
   "tools": [
-    "rg_search"
+    { "name": "rg_search", "gated": false }
   ]
 }
 ```

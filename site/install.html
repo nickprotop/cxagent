@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install — cxagent</title>
+<meta name="description" content="Install cxagent: the one-line installers, the six platform binaries, the .NET tool, uninstalling, and verifying a download against SHA256SUMS.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/">cxagent</a>
+  <a href="/install.html">Install</a>
+  <a href="/plugins.html">Plugins</a>
+  <a href="/core.html">CxAgent.Core</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<h1>Install</h1>
+<p class="lede">A self-contained binary, a .NET tool, or a build from source.</p>
+
+<h2>Linux and macOS</h2>
+
+<pre><code>curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/install.sh | bash
+cxagent</code></pre>
+
+<p>The script picks the binary matching your platform, puts it in <code>~/.local/bin</code>, and
+adds that directory to your <code>PATH</code> if it is not already there. No .NET is required — the
+binary carries its own runtime. It also places the <code>csharp-lsp</code> plugin in your plugins
+folder and <em>stops there</em>: cxagent will tell you the plugin is present and wait to be told to
+load it. See <a href="/plugins.html">Plugins</a>.</p>
+
+<h2>Windows</h2>
+
+<pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/install.ps1 | iex</code></pre>
+
+<h2>As a .NET tool</h2>
+
+<p>Requires the .NET 10 SDK or runtime. Unlike the binaries this one is framework-dependent — it
+uses the .NET you already have rather than carrying its own.</p>
+
+<pre><code>dotnet tool install -g cxagent
+cxagent</code></pre>
+
+<p>Update it with <code>dotnet tool update -g cxagent</code>.</p>
+
+<h2>From source</h2>
+
+<p>Requires the .NET 10 SDK.</p>
+
+<pre><code>git clone https://github.com/nickprotop/cxagent.git
+cd cxagent
+./build-and-install.sh</code></pre>
+
+<h2>The binaries</h2>
+
+<p>Every release publishes six. If you would rather not pipe a script into a shell, download the one
+for your platform from the
+<a href="https://github.com/nickprotop/cxagent/releases/latest">latest release</a>, make it
+executable, and put it somewhere on your <code>PATH</code>.</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>Platform</th><th>Asset</th></tr></thead>
+<tbody>
+<tr><td>Linux, x64</td><td><code>cxagent-linux-x64</code></td></tr>
+<tr><td>Linux, ARM64</td><td><code>cxagent-linux-arm64</code></td></tr>
+<tr><td>macOS, Intel</td><td><code>cxagent-osx-x64</code></td></tr>
+<tr><td>macOS, Apple silicon</td><td><code>cxagent-osx-arm64</code></td></tr>
+<tr><td>Windows, x64</td><td><code>cxagent-win-x64.exe</code></td></tr>
+<tr><td>Windows, ARM64</td><td><code>cxagent-win-arm64.exe</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Verifying a download</h2>
+
+<p>Each release carries a <code>SHA256SUMS</code> asset, computed from the artifacts the release
+actually built. Fetch it from the same release as the binary and check the file you downloaded
+against it:</p>
+
+<pre><code>curl -fsSLO https://github.com/nickprotop/cxagent/releases/latest/download/cxagent-linux-x64
+curl -fsSLO https://github.com/nickprotop/cxagent/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS</code></pre>
+
+<p>On macOS, <code>shasum -a 256</code> takes the same <code>--check</code>. On Windows:</p>
+
+<pre><code>Get-FileHash .\cxagent-win-x64.exe -Algorithm SHA256</code></pre>
+
+<p>and compare the value against the matching line in <code>SHA256SUMS</code>.</p>
+
+<p>This check proves the file you downloaded is the file that release published — it catches a
+corrupted or truncated download. It does not prove who built it.</p>
+
+<h2>First run</h2>
+
+<p><strong>You do not need to write any configuration to start.</strong> With no config file, or
+none that names a working provider, a setup wizard asks for a provider and model and writes the file
+for you. Provider kinds are <code>ollama</code>, <code>openai-compatible</code> and
+<code>anthropic</code>.</p>
+
+<p>The file lands in <code>~/.config/cxagent/config.json</code> on Linux
+(<code>$XDG_CONFIG_HOME</code> when set), <code>%APPDATA%\cxagent\config.json</code> on Windows, and
+<code>~/Library/Application Support/cxagent/config.json</code> on macOS. The same directory holds
+your session history, logs and plugins. <a href="/docs/config.html">Every configuration key →</a></p>
+
+<h2>Uninstalling</h2>
+
+<p>However you installed it:</p>
+
+<pre><code># the install script (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.sh | bash
+
+# the .NET tool
+dotnet tool uninstall -g cxagent</code></pre>
+
+<pre><code>irm https://raw.githubusercontent.com/nickprotop/cxagent/master/uninstall.ps1 | iex</code></pre>
+
+<p>Your configuration and session history are left alone. They live in
+<code>$XDG_CONFIG_HOME/cxagent</code> (<code>%APPDATA%\cxagent</code> on Windows,
+<code>~/Library/Application Support/cxagent</code> on macOS) — delete that directory to remove them
+too.</p>
+
+</main>
+<footer>
+  cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+</footer>
+</body>
+</html>

@@ -101,9 +101,24 @@ public class PluginCatalogTests
             var declared = sidecar.GetProperty("tools").EnumerateArray()
                 .Select(t => t.GetProperty("name").GetString()).ToArray();
             var catalogued = entry.GetProperty("tools").EnumerateArray()
-                .Select(t => t.GetString()).ToArray();
+                .Select(t => t.GetProperty("name").GetString()).ToArray();
 
             Assert.Equal(declared, catalogued);
+
+            // GATING IS PINNED TOO, because the marketplace page shows which tools ask before
+            // acting and a visitor decides from it before downloading anything. A catalog claiming
+            // a gating the plugin does not implement would be a promise made on a page nobody can
+            // check against the binary.
+            var declaredGating = sidecar.GetProperty("tools").EnumerateArray()
+                .ToDictionary(t => t.GetProperty("name").GetString()!,
+                              t => t.GetProperty("gated").ToString());
+            foreach (var tool in entry.GetProperty("tools").EnumerateArray())
+            {
+                var toolName = tool.GetProperty("name").GetString()!;
+                Assert.True(declaredGating.ContainsKey(toolName),
+                    $"'{name}' catalogs a tool '{toolName}' its sidecar does not declare.");
+                Assert.Equal(declaredGating[toolName], tool.GetProperty("gated").ToString());
+            }
         }
     }
 

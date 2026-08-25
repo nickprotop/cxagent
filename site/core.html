@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CxAgent.Core — cxagent</title>
+<meta name="description" content="The sessions, agents and turn loop behind cxagent, as a NuGet package — usable without a terminal.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="site-nav">
+  <a class="brand" href="/">cxagent</a>
+  <a href="/install.html">Install</a>
+  <a href="/plugins.html">Plugins</a>
+  <a href="/core.html">CxAgent.Core</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/nickprotop/cxagent">GitHub</a>
+</nav>
+<main>
+
+<h1>CxAgent.Core</h1>
+<p class="lede">The agent loop without a terminal.</p>
+
+<p>Everything under cxagent's UI ships as a package: a conversation, the agent running it, tool
+execution, sub-agent delegation, permissions, MCP, plugins and resumable stores. You supply where
+the text goes; there is no UI dependency. cxagent is one consumer of it, and
+<a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent">a
+Spectre.Console front end</a> is another, in about a hundred lines.</p>
+
+<pre><code>dotnet add package CxAgent.Core</code></pre>
+
+<p>Targets <code>net8.0</code>, <code>net9.0</code> and <code>net10.0</code>. MIT licensed.</p>
+
+<h2>The mental model</h2>
+
+<p><strong>A session is a conversation. An agent is the loop that runs one turn of it. You supply
+where words go.</strong> Everything else follows from those three sentences.</p>
+
+<p>You construct far less than people expect. <code>SessionManager.Create</code> builds what
+sessions share — the resume database, the usage archive, the log directory, the permission rules
+store, the command registry — and <code>Open</code> builds everything per-session. You never
+construct an <code>Agent</code> or a tool.</p>
+
+<h2>An app is four calls</h2>
+
+<pre><code>using CxAgent.Core.Sessions;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Storage;
+
+using var manager = SessionManager.Create(new AppPaths(configDir));
+
+var session = manager.Open(
+    workingDirectory,                                        // the permission boundary
+    resolution,                                              // which model — see below
+    new SessionPorts { Observer = sink, ToolObserver = jobs });   // where words and tool activity go
+
+if (session.Submit("summarise this folder") is Session.SubmitOutcome.Started started)
+    await started.Turn;</code></pre>
+
+<p><code>Submit</code> is synchronous. It returns a receipt rather than a task, because there are
+three outcomes and they are three different things for a caller to do:
+<code>Started</code> (a turn began — await it), <code>Queued</code> (a turn was already running, and
+this joined the queue), and <code>NoAgent</code> (no model is wired).</p>
+
+<h2>What is actually yours to write</h2>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>You supply</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>ISessionObserver</code></td><td>where words go — the one thing you must implement</td></tr>
+<tr><td><code>IToolObserver</code></td><td>tool activity; a no-op is fine</td></tr>
+<tr><td>a prompt hook + a <code>PermissionPolicy</code></td><td>how a human is asked, and which folder to judge against</td></tr>
+<tr><td>a model</td><td>from code, from cxagent's own <code>config.json</code>, or a test double</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The text an observer receives is markdown, and Core escapes what it interpolates — so a path like
+<code>my_test_file.cs</code> arrives with its underscores intact. Core writes no colour tags, so
+there is nothing to strip.</p>
+
+<h2>Permissions</h2>
+
+<p><strong>The engine is in here. The only thing left to you is asking a human.</strong> Trust per
+folder, the working-directory boundary, edit modes, stored rules, the read-only command list, the
+<code>Auto</code> classifier and the wrapper that gates every tool are all Core. What Core cannot do
+is put a question on a screen, so you supply one delegate: given this request, what does the human
+say?</p>
+
+<p>Two halves, and one without the other is silent. <code>buildGate</code> gives the decider a way to
+ask; <code>SessionPorts.Policy</code> gives it the folder and edit mode to judge against. Omit the
+policy and every request is refused rather than guessed at; pass no <code>buildGate</code> at all and
+nothing is gated — a legitimate headless arrangement, but a choice rather than something to inherit
+by forgetting.</p>
+
+<h2>Tools</h2>
+
+<p>The agent gets read, write, edit, glob, grep, shell, http and web fetch without you registering
+anything, plus <code>todowrite</code>, <code>ask_user</code>, <code>agent</code> and
+<code>skill</code>. Each is wrapped in a permission gate at construction, so there is no path that
+runs a tool ungated.</p>
+
+<p>You can add your own — a <code>deploy(env)</code>, a <code>queryOurWarehouse(sql)</code> — with
+one line of wiring. They are offered beside the built-ins, dispatched behind them, and gated on the
+way through. Or offer fewer: a <code>ToolSelection</code> narrows what an agent is handed, and a
+withheld tool is refused if called by name rather than merely hidden.</p>
+
+<pre><code>ToolSelection = new ToolSelection([Tool.Inherited, Tool.Not.RunShell]),</code></pre>
+
+<h2>Reference</h2>
+
+<div class="doc-group">
+<ul>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/api.md">api.md</a>
+    <span>— every public type, configuration, and tool selection</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/tools.md">tools.md</a>
+    <span>— injecting tools of your own: the <code>IAgentTool</code> interface and the two gates</span></li>
+<li><a href="/docs/plugins.html">The plugin contract</a>
+    <span>— tools loaded from a DLL at run time</span></li>
+<li><a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples">The examples directory</a>
+    <span>— five runnable apps, with what each one is for</span></li>
+</ul>
+</div>
+
+<p class="note">The examples: <a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ToolAgent">ToolAgent</a>
+(a console app with an injected tool),
+<a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/SpectreAgent">SpectreAgent</a>
+(the same, with a rendered UI),
+<a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/ReadOnlyAgent">ReadOnlyAgent</a>
+(taking tools away — a selection you can watch hold),
+<a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorPlugin">CalculatorPlugin</a>
+and
+<a href="https://github.com/nickprotop/cxagent/tree/master/cxagent.Core/examples/CalculatorAbiPlugin">CalculatorAbiPlugin</a>
+(a plugin end to end, managed and in one file of C).</p>
+
+</main>
+<footer>
+  <a href="https://github.com/nickprotop/cxagent/blob/master/cxagent.Core/README.md">The full
+  CxAgent.Core README on GitHub</a>
+</footer>
+</body>
+</html>

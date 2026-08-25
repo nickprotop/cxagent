@@ -90,9 +90,9 @@
       },
       "spawns": true,
       "tools": [
-        "csharp_definition",
-        "csharp_references",
-        "csharp_diagnostics"
+        { "name": "csharp_definition", "gated": "dynamic" },
+        { "name": "csharp_references", "gated": "dynamic" },
+        { "name": "csharp_diagnostics", "gated": "dynamic" }
       ],
       "requires": {
         "description": "A C# language server on PATH. csharp-ls is the default and needs no configuration.",
