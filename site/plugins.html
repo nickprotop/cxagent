@@ -21,14 +21,8 @@
 <h1>Plugins</h1>
 <p class="lede">Tools from a DLL you drop in a folder, without rebuilding cxagent.</p>
 
-<p>cxagent asks before loading any plugin, showing a hash of everything it would load. Installing a
-plugin is not approving it.</p>
-
-<p>Nothing in your config file can pre-approve one, and if a single byte of the load set changes,
-the question comes back. Past that point a plugin is not sandboxed: it runs inside cxagent's own
-process and can do what that process can. What cxagent enforces is the decision to load it —
-<strong>trusting a plugin is trusting its author</strong>, exactly as installing any other software
-is.</p>
+<p class="note">cxagent asks before loading any plugin, and installing one is not approving it —
+<a href="#trust">what that means →</a></p>
 
 <h2>The catalog</h2>
 
@@ -55,7 +49,23 @@ so, without loading it:</p>
 
 <p>Either way it asks once, on first load, and shows you what it is about to run.</p>
 
-<h2>About the checksum</h2>
+<h2>Writing one</h2>
+
+<p>A plugin declares what it offers in a sidecar file that cxagent reads <em>before</em> loading its
+assembly, so the load prompt can tell you what a plugin claims without running it.
+<a href="writing-a-plugin.html">Start here →</a> or go straight to
+<a href="docs/plugins.html">the contract</a>.</p>
+
+<h2 id="trust">Trusting a plugin</h2>
+
+<p>cxagent asks before loading any plugin, showing a hash of everything it would load. Nothing in
+your config file can pre-approve one, and if a single byte of the load set changes, the question
+comes back. Past that point a plugin is not sandboxed: it runs inside cxagent's own process and can
+do what that process can. What cxagent enforces is the decision to load it —
+<strong>trusting a plugin is trusting its author</strong>, exactly as installing any other software
+is.</p>
+
+<h3>What the checksum proves</h3>
 
 <p>Where a catalog entry carries a <code>sha256</code>, it is over the artifact you download.</p>
 
@@ -66,13 +76,6 @@ prove who built it.</p>
 below — claims you judge for yourself, not facts a client can verify. The separate hash cxagent
 shows at load time answers a third question again: has anything changed since you last approved
 it.</p>
-
-<h2>Writing one</h2>
-
-<p>A plugin declares what it offers in a sidecar file that cxagent reads <em>before</em> loading its
-assembly, so the load prompt can tell you what a plugin claims without running it.
-<a href="writing-a-plugin.html">Start here →</a> or go straight to
-<a href="docs/plugins.html">the contract</a>.</p>
 
 </main>
 <footer>

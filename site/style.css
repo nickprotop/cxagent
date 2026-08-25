@@ -345,7 +345,9 @@ figcaption strong { color: var(--fg-bright); }
    than a deliberate break. One column, one edge — prose and captures agree. */
 body:has(.viewer) main { max-width: 56rem; }
 
-.lede {
+/* Scoped to the landing hero: a bare .lede also exists as the intro paragraph on every other
+   page, and styling that one as an uppercase mono eyebrow was wrong. */
+.hero .lede {
   font-family: var(--font-mono);
   font-size: 0.82rem;
   letter-spacing: 0.14em;
@@ -372,6 +374,9 @@ body:has(.viewer) main { max-width: 56rem; }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A horizontal scrollbar under a one-line command is worse than a wrapped line. */
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .install-line .note { margin-top: 0.6rem; }
 
