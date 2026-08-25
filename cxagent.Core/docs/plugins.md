@@ -100,6 +100,45 @@ running process's folder — where cxagent lives, not where your plugin was foun
 when a plugin sits in the app's output directory, which is what a test does and production never
 does.
 
+## Adding to the model's instructions
+
+A plugin's `instructions` is a block of text that joins the system prompt while the plugin is
+loaded — for what the individual tool descriptions cannot say, because it is true of the set rather
+than of one call:
+
+```json
+{
+  "name": "csharp-lsp",
+  "instructions": "Positions are 1-based — line 1 is the first line, character 1 the first column.",
+  "tools": [ ... ]
+}
+```
+
+It appears under a heading naming your tools, so the model can tell which calls it governs. Read
+fresh each turn: load a plugin mid-session and its guidance arrives with its tools; unwire it and
+both go together.
+
+**Write it for the model, not for a reader of logs.** The model sees a flat list of tools and has no
+concept of a plugin, so "this plugin talks to a language server" names something it cannot act on.
+Say what changes what it would do — a position convention, a call that must come first, what an
+empty result means.
+
+### A plugin with no tools at all
+
+`"tools": []` is valid. The plugin loads, offers nothing callable, and contributes only its
+`instructions` — a way to ship prompt text as a versioned artifact that can be installed, approved
+and removed as a unit.
+
+```json
+{ "name": "house-style", "version": "1.0.0", "spawns": false,
+  "instructions": "Prefer records over classes for data.", "tools": [] }
+```
+
+**Prefer `CXAGENT.md` unless you need what a plugin gives you.** A project instruction file needs no
+binary, no approval and no install — for one repository's conventions it is the lighter answer. A
+plugin earns itself when the text must travel with a version, reach many checkouts, or be turned on
+and off without editing a file.
+
 ## Naming your tools
 
 A tool name is claimed session-wide. A plugin cannot take a built-in's name, and two plugins cannot
@@ -115,9 +154,13 @@ someone installs the second one, and by then your name is in their config.
 
 ## Permission
 
-**cxagent asks once, at load, whether to trust the binary.** That prompt names the plugin and shows
-a content hash covering its whole load set — change any byte and the user is asked again. This is
-the only boundary cxagent can enforce on your behalf, and nothing in config can pre-approve it.
+**cxagent asks once, at load, whether to trust the binary.** That prompt names the plugin, says what
+it will contribute — how many tools, and whether it adds guidance to the model's instructions — and
+shows a content hash covering its whole load set. Change any byte and the user is asked again. This
+is the only boundary cxagent can enforce on your behalf, and nothing in config can pre-approve it.
+
+The contribution matters to the person answering: a plugin that adds no tools and only prompt text
+shapes every later turn without ever appearing as a tool call they can watch.
 
 **Per-call gating is `"gated": true` in your manifest.** A gated tool asks before each call, and the
 prompt offers "Always" like any other. The stored rule names your plugin as well as your tool

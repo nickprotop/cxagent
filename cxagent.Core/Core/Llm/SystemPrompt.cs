@@ -535,11 +535,14 @@ public static class SystemPrompt
         if (plugins.Count == 0) return;
 
         sb.AppendLine();
-        sb.AppendLine("# Plugin tools");
+        // "PLUGINS", NOT "PLUGIN TOOLS". A plugin may declare no tools at all and contribute only
+        // this text — repository conventions, a house style — so a header promising guidance about
+        // tools describes the wrong thing for it. Each block still names its tools where it has any.
+        sb.AppendLine("# Plugins");
         sb.AppendLine();
-        sb.AppendLine("Some tools come from plugins loaded into this session. Each plugin's own "
-                    + "guidance follows, naming the tools it covers — it describes how to use them "
-                    + "together, which their individual descriptions cannot.");
+        sb.AppendLine("Guidance from plugins loaded into this session, each naming the tools it "
+                    + "covers where it has any — it says what their individual descriptions cannot, "
+                    + "or applies to this session as a whole.");
 
         foreach (var plugin in plugins)
         {

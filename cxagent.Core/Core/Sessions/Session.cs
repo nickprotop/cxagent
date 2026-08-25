@@ -479,9 +479,25 @@ public sealed partial class Session
                 ? "run a process and read files in this folder"
                 : "read files in this folder";
 
+            // WHAT IT WILL CONTRIBUTE, WHICH IS THE PART BEING APPROVED. A plugin is not only a
+            // bundle of tools: one may add nothing callable and only text to the system prompt, and
+            // a prompt shapes every later turn without ever appearing as a tool call the user can
+            // see. "3 tools" and "guidance for the model" are different things to say yes to, so the
+            // prompt says which — counted from the manifest rather than described in prose, since
+            // the manifest is what the loader has already checked against the sidecar.
+            var contributes = (manifest.Tools.Count, HasInstructions: !string.IsNullOrWhiteSpace(manifest.Instructions)) switch
+            {
+                (0, true) => "It adds guidance to the model's instructions and no tools.",
+                (0, false) => "It adds no tools.",
+                (1, true) => "It adds 1 tool, and guidance to the model's instructions.",
+                (1, false) => "It adds 1 tool.",
+                (var n, true) => $"It adds {n} tools, and guidance to the model's instructions.",
+                (var n, false) => $"It adds {n} tools.",
+            };
+
             var request = new Permissions.PermissionRequest(
                 Permissions.PermissionKind.Plugin,
-                $"{manifest.Name} wants to {capability}.\n{loadSetDirectory}",
+                $"{manifest.Name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",
                 AlwaysRule: hash)
             { Policy = Policy };
 

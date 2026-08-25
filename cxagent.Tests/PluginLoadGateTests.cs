@@ -208,6 +208,43 @@ public class PluginLoadGateTests : IDisposable
             AgentMode.Single);
     }
 
+    /// <summary>
+    /// The load prompt says WHAT THE PLUGIN CONTRIBUTES, not only what it may touch.
+    ///
+    /// <para>A PLUGIN IS NOT ONLY A BUNDLE OF TOOLS. One may add nothing callable and only text to
+    /// the system prompt — and a prompt shapes every later turn without ever appearing as a tool
+    /// call the user can watch. Being told "wants to read files in this folder" and nothing else
+    /// gives no way to tell that apart from a plugin that adds three tools.</para>
+    ///
+    /// <para>COUNTED FROM THE MANIFEST, which the loader has already checked against the sidecar —
+    /// so the sentence cannot describe something other than what will load.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(2, true, "It adds 2 tools, and guidance to the model's instructions.")]
+    [InlineData(1, false, "It adds 1 tool.")]
+    [InlineData(0, true, "It adds guidance to the model's instructions and no tools.")]
+    [InlineData(0, false, "It adds no tools.")]
+    public async Task TheLoadPromptSaysWhatThePluginContributes(
+        int toolCount, bool hasInstructions, string expected)
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+
+        var tools = Enumerable.Range(0, toolCount)
+            .Select(i => new PluginToolManifest($"tool_{i}", "does something", EmptySchema()))
+            .ToArray();
+        var manifest = new PluginManifest("lsp-rust", "1.0.0",
+            Instructions: hasInstructions ? "Positions are 1-based." : null,
+            Spawns: false, tools);
+
+        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+
+        var request = Assert.Single(gate.Requests);
+        Assert.Contains(expected, request.Display, StringComparison.Ordinal);
+    }
+
     // ---- Config cannot pre-approve a plugin --------------------------------------------------------
 
     /// <summary>the plugin design, "Loading is refused mid-turn": "A runtime load always prompts... A

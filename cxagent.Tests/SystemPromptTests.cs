@@ -321,6 +321,32 @@ public class SystemPromptTests
     }
 
     /// <summary>
+    /// A plugin with NO TOOLS still contributes its guidance, attributed to itself.
+    ///
+    /// <para>THE SHAPE THAT MAKES A PROMPT-ONLY PLUGIN POSSIBLE. A plugin declaring an empty tools
+    /// list loads, offers nothing callable, and contributes only prose — house style, a project's
+    /// conventions, anything a repository wants every session to know. There is nothing to name in
+    /// the heading, so it falls back to the plugin's own name: the reader still needs to know who
+    /// said it, and "unattributed paragraph in a system prompt" reads as though the app itself
+    /// did.</para>
+    /// </summary>
+    [Fact]
+    public void Build_IncludesAPluginThatHasInstructionsButNoTools()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            PluginInstructions =
+            [
+                new CxAgent.Core.Plugins.PluginInstructions(
+                    "house-style", [], "Prefer records over classes for data."),
+            ],
+        });
+
+        Assert.Contains("Prefer records over classes for data.", p, StringComparison.Ordinal);
+        Assert.Contains("From the 'house-style' plugin:", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Sorted by plugin name, so the prefix does not churn.
     ///
     /// <para>Plugins are held in LOAD ORDER, which is stable within a session and differs between
@@ -355,7 +381,7 @@ public class SystemPromptTests
     {
         var p = SystemPrompt.Build(Context());
 
-        Assert.DoesNotContain("# Plugin tools", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("# Plugins", p, StringComparison.Ordinal);
     }
 
     /// <summary>Attributed to the server that said it. An unattributed paragraph in a system prompt
