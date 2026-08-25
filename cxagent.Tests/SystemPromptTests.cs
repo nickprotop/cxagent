@@ -296,6 +296,68 @@ public class SystemPromptTests
         Assert.Contains("Resolve the library id first.", p, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A plugin's guidance reaches the prompt, attributed to the TOOLS it governs.
+    ///
+    /// <para>NOT TO THE PLUGIN'S NAME ALONE, which is what the MCP section does for servers. The
+    /// model sees a flat list of tools and has no concept of a plugin, so "from the 'lsp-rust'
+    /// plugin" names something it cannot act on. Two language-server plugins both say something
+    /// about positions; only the tool names say which claim governs which call.</para>
+    /// </summary>
+    [Fact]
+    public void Build_IncludesEachPluginsInstructionsUnderItsToolNames()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            PluginInstructions =
+            [
+                new CxAgent.Core.Plugins.PluginInstructions(
+                    "lsp-rust", ["rust_definition", "rust_references"], "Positions are 1-based."),
+            ],
+        });
+
+        Assert.Contains("Positions are 1-based.", p, StringComparison.Ordinal);
+        Assert.Contains("rust_definition, rust_references:", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Sorted by plugin name, so the prefix does not churn.
+    ///
+    /// <para>Plugins are held in LOAD ORDER, which is stable within a session and differs between
+    /// sessions when two are loaded in a different sequence. An unsorted render would produce a
+    /// different prompt for the same set of plugins and invalidate the cache for no change in
+    /// content — the same reason the MCP section sorts its servers.</para>
+    /// </summary>
+    [Fact]
+    public void Build_SortsPluginInstructionsByName()
+    {
+        CxAgent.Core.Plugins.PluginInstructions Block(string name) =>
+            new(name, [$"{name}_tool"], $"Guidance from {name}.");
+
+        var loadedOneWay = SystemPrompt.Build(Context() with
+        {
+            PluginInstructions = [Block("zebra"), Block("alpha")],
+        });
+        var loadedTheOther = SystemPrompt.Build(Context() with
+        {
+            PluginInstructions = [Block("alpha"), Block("zebra")],
+        });
+
+        Assert.Equal(loadedOneWay, loadedTheOther);
+        Assert.True(loadedOneWay.IndexOf("Guidance from alpha.", StringComparison.Ordinal)
+                  < loadedOneWay.IndexOf("Guidance from zebra.", StringComparison.Ordinal));
+    }
+
+    /// <summary>No plugins, no section — the same early return the MCP block makes, for the same
+    /// reason: a heading every prompt carries whether or not it has content is permanent weight.</summary>
+    [Fact]
+    public void Build_OmitsThePluginSectionWhenThereAreNone()
+    {
+        var p = SystemPrompt.Build(Context());
+
+        Assert.DoesNotContain("# Plugin tools", p, StringComparison.Ordinal);
+    }
+
     /// <summary>Attributed to the server that said it. An unattributed paragraph in a system prompt
     /// reads as though the app itself said it — the same rule project instructions follow.</summary>
     [Fact]

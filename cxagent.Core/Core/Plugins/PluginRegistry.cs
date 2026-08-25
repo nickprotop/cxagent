@@ -46,6 +46,13 @@ public abstract record PluginLoadResult
     public sealed record NameCollision(string ToolName) : PluginLoadResult;
 }
 
+/// <summary>One plugin's system-prompt text and the tools it governs — see
+/// <see cref="PluginRegistry.InstructionsForPrompt"/>.</summary>
+/// <param name="Plugin">The plugin's own name, for the heading and for a stable sort.</param>
+/// <param name="Tools">Its tool names, so the text is attributable to the tools it describes.</param>
+/// <param name="Text">The manifest's instructions, trimmed.</param>
+public sealed record PluginInstructions(string Plugin, IReadOnlyList<string> Tools, string Text);
+
 /// <summary>
 /// The mutable set of tools plugins contribute to one session — the registry the plugin design's whole
 /// design rests on: "a registry that can be mutated at a turn boundary and that refuses collisions,
@@ -149,6 +156,37 @@ public sealed class PluginRegistry
         lock (_gate)
             return _plugins
                 .SelectMany(p => p.Manifest.Tools.Select(t => (IAgentTool)new PluginTool(p, t)))
+                .ToList();
+    }
+
+    /// <summary>
+    /// Each loaded plugin's system-prompt text, by plugin name — empty when it declared none.
+    ///
+    /// <para>READ PER TURN, NOT CACHED, and that is the difference from MCP's equivalent. An MCP
+    /// server can finish its handshake at turn 82, unbidden, and rewriting the prompt then would
+    /// force a full reprocess for something nobody asked for — so that one is cached at first use.
+    /// A plugin arrives because the user typed <c>/plugin load</c> at a turn boundary and asked the
+    /// tool list to change. Its guidance has to move with its tools, or the model reads instructions
+    /// for tools it does not have, or has tools with no instructions.</para>
+    ///
+    /// <para>STABLE WHILE NOTHING LOADS OR UNWIRES: the manifest is a record fixed at load, and this
+    /// list only changes under those two operations, both refused mid-turn. So a per-turn read
+    /// renders byte-identical text and the prompt prefix stays cached until a user action changes
+    /// it — which is the same rule the tool list itself already follows.</para>
+    ///
+    /// <para>THE TOOL NAMES TRAVEL WITH THE TEXT. A second language-server plugin's guidance would
+    /// otherwise be a second block making overlapping claims about "positions" and "the server",
+    /// with nothing saying which tools each governs.</para>
+    /// </summary>
+    public IReadOnlyList<PluginInstructions> InstructionsForPrompt()
+    {
+        lock (_gate)
+            return _plugins
+                .Where(p => !string.IsNullOrWhiteSpace(p.Manifest.Instructions))
+                .Select(p => new PluginInstructions(
+                    p.Manifest.Name,
+                    [.. p.Manifest.Tools.Select(t => t.Name)],
+                    p.Manifest.Instructions!.Trim()))
                 .ToList();
     }
 

@@ -210,6 +210,11 @@ public sealed class Agent
     /// plugin registry — and every call site below treats that the same as "nothing offered".</para>
     /// </summary>
     private readonly Func<IReadOnlyList<Jobs.IAgentTool>>? _dynamicTools;
+
+    /// <summary>Each loaded plugin's guidance, read fresh per prompt — see
+    /// <see cref="Plugins.PluginRegistry.InstructionsForPrompt"/> for why this is not cached the way
+    /// <see cref="McpPrompt"/> is.</summary>
+    private readonly Func<IReadOnlyList<Plugins.PluginInstructions>>? _pluginInstructions;
     private readonly Permissions.PermissionPolicy? _policy;
 
     /// <summary>Task 11's speculation handle — see the constructor parameter doc. Null wherever no
@@ -807,6 +812,11 @@ public sealed class Agent
     /// starts existing after this agent was constructed (a plugin loaded at a later turn boundary)
     /// is still offered. Null for every session with no such source, which is today's default.
     /// </param>
+    /// <param name="pluginInstructions">
+    /// The guidance those plugins declare, read from the same live source and on the same turn — so
+    /// a plugin's instructions arrive with its tools and leave with them. Null when nothing supplies
+    /// plugins.
+    /// </param>
     /// <param name="toolSelection">
     /// Which tools this agent is offered, or null for all of them. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
@@ -835,6 +845,7 @@ public sealed class Agent
         string? instanceName = null,
         IReadOnlyList<Jobs.IAgentTool>? agentTools = null,
         Func<IReadOnlyList<Jobs.IAgentTool>>? dynamicTools = null,
+        Func<IReadOnlyList<Plugins.PluginInstructions>>? pluginInstructions = null,
         Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null)
@@ -914,6 +925,8 @@ public sealed class Agent
         // a parent does. The SAME OfferToSubAgents FILTER _agentTools APPLIES ABOVE is reapplied
         // here per read rather than once: the live source can return a different tool on every call,
         // so filtering it once at construction would go stale the moment the source's contents did.
+        _pluginInstructions = pluginInstructions;
+
         _dynamicTools = dynamicTools is null
             ? null
             : isSubAgent
@@ -1052,6 +1065,15 @@ public sealed class Agent
                     // connects late still offers its tools; it just cannot retroactively rewrite the
                     // prose above them.
                     McpInstructions = McpPrompt(),
+
+                    // READ FRESH, UNLIKE McpPrompt ABOVE. That one is cached because a server can
+                    // finish connecting at turn 82 and rewriting the prefix then costs a full
+                    // reprocess for something nobody asked for. A plugin arrives because the user
+                    // typed /plugin load at a turn boundary — the tool list changed on request, and
+                    // the guidance for those tools has to change with it. Unwire is the same in
+                    // reverse: text for tools that are gone is worse than no text, because it reads
+                    // as actionable.
+                    PluginInstructions = _pluginInstructions?.Invoke() ?? [],
 
                     // READ FROM DISK EACH PROMPT, exactly like the instruction files below and for
                     // the same reason: a skill edited mid-session takes effect on the next turn. The

@@ -149,6 +149,11 @@ internal static class SessionFactory
             // show the result as its parent, or the showing is silently skipped.
             AgentTools = agentTools,
             DynamicTools = dynamicTools,
+
+            // THE SAME LIVE SOURCE THE TOOLS COME FROM. Read per turn, so a plugin loaded at a turn
+            // boundary contributes its guidance on the same turn its tools appear, and unwiring
+            // removes both together.
+            PluginInstructions = session.Plugins.InstructionsForPrompt,
             ToolSelection = toolSelection,
 
             // THE PARENT'S LEDGER (D7): a child's spend is the session's spend.
@@ -258,6 +263,7 @@ internal static class SessionFactory
                 // Already gated above. The host hands these to its agent and to every child.
                 AgentTools = agentTools,
                 DynamicTools = dynamicTools,
+                PluginInstructions = session.Plugins.InstructionsForPrompt,
                 ToolSelection = toolSelection,
             },
             ports.Observer,

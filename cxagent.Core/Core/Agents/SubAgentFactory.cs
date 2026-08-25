@@ -115,6 +115,11 @@ public sealed class SubAgentFactory
         /// </summary>
         public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
 
+        /// <summary>Each loaded plugin's system-prompt guidance — read per turn from the same live
+        /// source as <see cref="DynamicTools"/>, so a plugin's text arrives and departs with its
+        /// tools rather than lagging a turn behind them.</summary>
+        public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
+
         /// <summary>
         /// The session's tool selection (S1 composed with S2), inherited by every child.
         ///
@@ -362,6 +367,7 @@ public sealed class SubAgentFactory
             // _askUser is withheld too, so the guarantee holds for every path that builds a child.
             agentTools: _runtime.AgentTools,
             dynamicTools: _runtime.DynamicTools,
+            pluginInstructions: _runtime.PluginInstructions,
             // S1∘S2 FROM THE RUNTIME, S3 FROM THE CALL. Composed here because this is the only
             // place both are known: the runtime is built once at session wiring, the turn's
             // selection arrives with the spawn.

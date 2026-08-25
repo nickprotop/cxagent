@@ -172,13 +172,14 @@ public sealed class LspClient : IAsyncDisposable
 
         var text = File.ReadAllText(absolutePath);
 
-        // THE ONE LANGUAGE-SPECIFIC LINE IN THIS PLUGIN, and the reason its name says dotnet. A
-        // server decides how to parse a document from the languageId it is handed, so this constant
-        // is what scopes the plugin to C# — everything else here (the framing, the handshake, the
-        // position conversion, the server command itself) is protocol, not language. Pointing this
-        // plugin at gopls or rust-analyzer would not fail loudly; the server would accept the
-        // document, parse it as C#, and quietly return nothing useful. A general LSP plugin derives
-        // this from the file extension instead; that is a different plugin, deliberately not this one.
+        // A CONSTANT, AND THE SERVER DOES NOT READ IT. languageId is required by the LSP spec, so
+        // something must be sent — but csharp-ls routes on the file extension in the uri and ignores
+        // this value: measured, it resolves a definition identically when handed "csharp", "go",
+        // "plaintext" or "". Deriving it from the extension would be code that provably changes
+        // nothing.
+        //
+        // WHAT ACTUALLY SCOPES THIS PLUGIN TO C# IS THE SERVER IT IS POINTED AT — settings.server.
+        // Which files it will open at all is decided before this, in CxagentLspPlugin.ResolvePath.
         _rpc.SendNotification("textDocument/didOpen", new
         {
             textDocument = new { uri, languageId = "csharp", version = 1, text },

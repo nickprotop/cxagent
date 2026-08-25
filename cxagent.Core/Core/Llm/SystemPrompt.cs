@@ -26,6 +26,17 @@ public readonly record struct SystemPromptContext(
         new Dictionary<string, string>();
 
     /// <summary>
+    /// Each loaded plugin's own guidance, with the tools it governs — see
+    /// <see cref="Plugins.PluginRegistry.InstructionsForPrompt"/>.
+    ///
+    /// <para>A LIST OF RECORDS, not a name→text dictionary like <see cref="McpInstructions"/>,
+    /// because a plugin's block has to name its TOOLS as well as itself. Two language-server plugins
+    /// each say something about "positions" and "the server", and without the tool names the model
+    /// has to work out from prose which statement governs which call.</para>
+    /// </summary>
+    public IReadOnlyList<Plugins.PluginInstructions> PluginInstructions { get; init; } = [];
+
+    /// <summary>
     /// The skills available to this agent — NAME AND DESCRIPTION ONLY. The body is fetched by the
     /// load tool when the model decides a task matches, which is the whole economics of the feature:
     /// twenty skills of 3k each would be 60k of permanent prefix, while their catalog is a few
@@ -422,6 +433,7 @@ public static class SystemPrompt
             sb.AppendLine();
 
             AppendMcpInstructions(sb, ctx);
+            AppendPluginInstructions(sb, ctx);
             AppendSkills(sb, ctx);
             return sb.ToString();
         }
@@ -482,6 +494,7 @@ public static class SystemPrompt
                     + "file you create.");
 
         AppendMcpInstructions(sb, ctx);
+        AppendPluginInstructions(sb, ctx);
         AppendSkills(sb, ctx);
 
         return sb.ToString();
@@ -500,6 +513,47 @@ public static class SystemPrompt
     /// unattributed paragraph appended to a system prompt reads as though the app itself said it,
     /// leaving the model no way to weigh a server's advice against a general instruction.</para>
     /// </summary>
+    /// <summary>
+    /// Each plugin's own guidance, under its own heading with the tools it governs.
+    ///
+    /// <para>SORTED BY PLUGIN NAME. Plugins are held in load order, which is stable within a session
+    /// and differs between sessions when two are loaded in a different sequence — the same reason
+    /// <see cref="AppendMcpInstructions"/> sorts its servers. An unsorted list would churn the
+    /// prefix for no change in content.</para>
+    ///
+    /// <para>THE HEADING CARRIES THE TOOL NAMES so every statement is attributable. "Positions are
+    /// 1-based" is true of one plugin's tools and possibly false of another's, and the model has no
+    /// other way to tell which block applies to the call it is about to make.</para>
+    /// </summary>
+    private static void AppendPluginInstructions(StringBuilder sb, SystemPromptContext ctx)
+    {
+        var plugins = ctx.PluginInstructions
+            .Where(p => !string.IsNullOrWhiteSpace(p.Text))
+            .OrderBy(p => p.Plugin, StringComparer.Ordinal)
+            .ToList();
+
+        if (plugins.Count == 0) return;
+
+        sb.AppendLine();
+        sb.AppendLine("# Plugin tools");
+        sb.AppendLine();
+        sb.AppendLine("Some tools come from plugins loaded into this session. Each plugin's own "
+                    + "guidance follows, naming the tools it covers — it describes how to use them "
+                    + "together, which their individual descriptions cannot.");
+
+        foreach (var plugin in plugins)
+        {
+            sb.AppendLine();
+            sb.AppendLine(plugin.Tools.Count > 0
+                ? $"{string.Join(", ", plugin.Tools)}:"
+                : $"From the '{plugin.Plugin}' plugin:");
+            sb.AppendLine();
+            sb.AppendLine(plugin.Text.Trim());
+        }
+
+        sb.AppendLine();
+    }
+
     private static void AppendMcpInstructions(StringBuilder sb, SystemPromptContext ctx)
     {
         var servers = ctx.McpInstructions

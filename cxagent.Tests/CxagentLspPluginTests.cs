@@ -112,6 +112,59 @@ public class CxagentLspPluginTests
         Assert.Contains("not running", result.ErrorMessage);
     }
 
+    /// <summary>
+    /// A file this plugin does not serve is REFUSED, naming the tool and what to do instead.
+    ///
+    /// <para>AN EMPTY RESULT WOULD BE WORSE THAN AN ERROR. A language server handed a Go file
+    /// returns no locations, and "no locations" reads to the model as "nothing found here" — so it
+    /// explains the silence rather than reaching for a tool that could answer. Observed with this
+    /// exact plugin: an empty result produced an invented account of why the lookup failed.</para>
+    ///
+    /// <para>NAMES THE TOOL, NOT THE PLUGIN. The model sees a flat list of tools and has no concept
+    /// of a plugin, so a message about "the csharp-lsp plugin" names something it cannot act on.</para>
+    /// </summary>
+    [Fact]
+    public async Task AFileItDoesNotServeIsRefusedRatherThanAnsweredEmptily()
+    {
+        // AN ABSOLUTE WORKING DIRECTORY, as every real session has — Session hands the folder it
+        // opened. A relative one makes ResolvePath produce a relative path, which is not a valid URI.
+        var plugin = await LoadPluginAsync(new FakeContext(Path.GetTempPath(), new { server = "csharp-ls" }));
+        await plugin.Start(CancellationToken.None);
+
+        var result = await plugin.Invoke("csharp_definition",
+            new JobParameters(new Dictionary<string, object?>
+                { ["file"] = "main.go", ["line"] = 1, ["character"] = 1 }),
+            Fake.Job(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("csharp_definition", result.ErrorMessage);
+        Assert.Contains("main.go", result.ErrorMessage);
+    }
+
+    /// <summary>The four served extensions get past the check — a refusal that also blocked C# would
+    /// pass the test above while breaking the plugin entirely.</summary>
+    [Theory]
+    [InlineData("Foo.cs")]
+    [InlineData("Foo.csx")]
+    [InlineData("Foo.razor")]
+    [InlineData("Foo.cshtml")]
+    public async Task TheServedExtensionsAreNotRefused(string file)
+    {
+        var plugin = await LoadPluginAsync(new FakeContext(Path.GetTempPath(), new { server = "csharp-ls" }));
+        await plugin.Start(CancellationToken.None);
+
+        var result = await plugin.Invoke("csharp_definition",
+            new JobParameters(new Dictionary<string, object?>
+                { ["file"] = file, ["line"] = 1, ["character"] = 1 }),
+            Fake.Job(), CancellationToken.None);
+
+        // The file does not exist, so this fails — but on the MISSING-FILE path, not the extension
+        // one. What is asserted is that the extension check let it through.
+        Assert.False(result.Success);
+        Assert.DoesNotContain("is not one of those", result.ErrorMessage);
+        Assert.Contains("no file at", result.ErrorMessage);
+    }
+
     // ---- Invoke: an unknown tool name is this plugin's own bug, not a normal failure ----------
 
     [Fact]

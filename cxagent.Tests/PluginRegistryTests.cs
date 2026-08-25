@@ -243,6 +243,74 @@ public class PluginRegistryTests : IDisposable
         Assert.Null(registry.CurrentTools().Single().Gate(new JobParameters()));
     }
 
+    // ---- The system prompt --------------------------------------------------------------------
+
+    /// <summary>
+    /// A plugin's manifest instructions reach the prompt, WITH the tools they govern.
+    ///
+    /// <para>THE FIELD WAS PARSED AND NEVER READ. PluginManifest.Instructions is validated against
+    /// the sidecar at load — a mismatch fails the load — and its own doc calls it "a block of
+    /// system-prompt text", which nothing put in one. A plugin could say "positions are 1-based" and
+    /// the model never saw it.</para>
+    ///
+    /// <para>THE TOOL NAMES TRAVEL WITH IT because a second language-server plugin would otherwise
+    /// contribute a second block making overlapping claims about "positions" and "the server", and
+    /// nothing would say which tools each governs.</para>
+    /// </summary>
+    [Fact]
+    public void APluginsInstructionsReachThePromptWithItsToolNames()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0",
+            Instructions: "Positions are 1-based.", Spawns: false,
+            [new PluginToolManifest("rust_definition", "finds a declaration", EmptySchema())]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        var block = Assert.Single(registry.InstructionsForPrompt());
+
+        Assert.Equal("lsp-rust", block.Plugin);
+        Assert.Equal("Positions are 1-based.", block.Text);
+        Assert.Equal(["rust_definition"], block.Tools);
+    }
+
+    /// <summary>A plugin declaring no instructions contributes no block — a heading with nothing
+    /// under it is prompt weight for no content.</summary>
+    [Fact]
+    public void APluginWithNoInstructionsContributesNothing()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("rust_definition", "finds a declaration", EmptySchema())]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        Assert.Empty(registry.InstructionsForPrompt());
+    }
+
+    /// <summary>
+    /// Unwiring removes the guidance along with the tools.
+    ///
+    /// <para>TEXT FOR TOOLS THAT ARE GONE IS WORSE THAN NO TEXT: it reads as actionable, so a model
+    /// told "call rust_definition first" keeps trying a name nothing answers. The two must move
+    /// together, which is why both are read per turn from this registry rather than cached.</para>
+    /// </summary>
+    [Fact]
+    public async Task UnwiringRemovesTheInstructionsWithTheTools()
+    {
+        var manifest = new PluginManifest("lsp-rust", "1.0.0",
+            Instructions: "Positions are 1-based.", Spawns: false,
+            [new PluginToolManifest("rust_definition", "finds a declaration", EmptySchema())]);
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), manifest, isNameTaken: _ => false);
+
+        Assert.Single(registry.InstructionsForPrompt());
+        Assert.Single(registry.CurrentTools());
+
+        await registry.UnwireAsync("lsp-rust", CancellationToken.None);
+
+        Assert.Empty(registry.InstructionsForPrompt());
+        Assert.Empty(registry.CurrentTools());
+    }
+
     // ---- Unwire ordering -------------------------------------------------------------------------
 
     /// <summary>Unwiring is one ordered operation: deregister, drain, Stop, reap. Deregistering

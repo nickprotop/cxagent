@@ -2,17 +2,17 @@
   "name": "csharp-lsp",
   "version": "0.9.0",
   "spawns": true,
-  "instructions": "These tools talk to a running C# language server rooted at the session's working directory, and answer only for C# source files. Positions are 1-based (line 1 is the first line, character 1 is the first column of that line), matching how a human reads a file \u2014 the plugin converts to the server's own convention internally. csharp_definition and csharp_references need a file path (relative to the working directory or absolute) plus a line and character landing inside the symbol. csharp_diagnostics takes only a file path and reports whatever the server currently has computed for it; call csharp_definition or csharp_references first if diagnostics come back empty right after a file is opened, since the server needs a moment to analyse it.",
+  "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml) under the working directory. Any other file is refused.\n\nPositions are 1-based \u2014 line 1 is the first line, character 1 the first column \u2014 and must land inside the symbol's name.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
   "tools": [
     {
       "name": "csharp_definition",
-      "description": "Finds where the symbol at a file position is DECLARED. Crosses project boundaries: a reference in a test project resolves to a declaration in the project under test, if the server has indexed both.",
+      "description": "Finds where the symbol at a C# or Razor file position is DECLARED. Crosses project boundaries: a reference in a test project resolves to a declaration in the project under test, if the server has indexed both.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "file": {
             "type": "string",
-            "description": "Path to the file, relative to the working directory or absolute."
+            "description": "Path to a C# or Razor file (.cs, .csx, .razor, .cshtml), relative to the working directory or absolute."
           },
           "line": {
             "type": "integer",
@@ -33,13 +33,13 @@
     },
     {
       "name": "csharp_references",
-      "description": "Finds every place the symbol at a file position is USED, across every project the server has indexed.",
+      "description": "Finds every place the symbol at a C# or Razor file position is USED, across every project the server has indexed.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "file": {
             "type": "string",
-            "description": "Path to the file, relative to the working directory or absolute."
+            "description": "Path to a C# or Razor file (.cs, .csx, .razor, .cshtml), relative to the working directory or absolute."
           },
           "line": {
             "type": "integer",
@@ -60,13 +60,13 @@
     },
     {
       "name": "csharp_diagnostics",
-      "description": "Reports the server's current errors and warnings for a file \u2014 whatever it has already computed, not a fresh compile on demand.",
+      "description": "Reports the current errors and warnings for a C# or Razor file \u2014 whatever has already been computed, not a fresh compile on demand.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "file": {
             "type": "string",
-            "description": "Path to the file, relative to the working directory or absolute."
+            "description": "Path to a C# or Razor file (.cs, .csx, .razor, .cshtml), relative to the working directory or absolute."
           }
         },
         "required": [

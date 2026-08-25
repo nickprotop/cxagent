@@ -477,6 +477,11 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public Func<IReadOnlyList<Jobs.IAgentTool>>? DynamicTools { get; init; }
 
+        /// <summary>Each loaded plugin's system-prompt guidance — read per turn from the same live
+        /// source as <see cref="DynamicTools"/>, so a plugin's text arrives and departs with its
+        /// tools rather than lagging a turn behind them.</summary>
+        public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
+
         /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
         /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
         public Jobs.ToolSelection? ToolSelection { get; init; }
@@ -663,6 +668,7 @@ public sealed class AgentHost : IDisposable
             // SubAgentRuntime, to every child it spawns.
             agentTools: _runtime.AgentTools,
             dynamicTools: _runtime.DynamicTools,
+            pluginInstructions: _runtime.PluginInstructions,
             toolSelection: _runtime.ToolSelection,
             policy: _runtime.Policy,
             classifier: _runtime.Classifier)

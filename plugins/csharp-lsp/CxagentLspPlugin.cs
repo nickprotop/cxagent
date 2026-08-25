@@ -136,10 +136,17 @@ public sealed class CxagentLspPlugin : IPlugin
         {
             return toolName switch
             {
-                "csharp_definition" => await HandleDefinitionAsync(call, ct).ConfigureAwait(false),
-                "csharp_references" => await HandleReferencesAsync(call, ct).ConfigureAwait(false),
-                _ => HandleDiagnostics(call),
+                "csharp_definition" => await HandleDefinitionAsync(call, toolName, ct).ConfigureAwait(false),
+                "csharp_references" => await HandleReferencesAsync(call, toolName, ct).ConfigureAwait(false),
+                _ => HandleDiagnostics(call, toolName),
             };
+        }
+        catch (ToolRefusal refusal)
+        {
+            // A REFUSAL IS A FAILED CALL, NOT A CRASH. The model is told what this tool serves and
+            // what to do instead, which is the difference between "wrong tool for this file" and
+            // "this capability is broken" — and it cannot tell those apart from an empty result.
+            return new JobResult { Success = false, ErrorMessage = refusal.Message };
         }
         catch (LspErrorException ex)
         {
@@ -147,23 +154,23 @@ public sealed class CxagentLspPlugin : IPlugin
         }
     }
 
-    private async Task<JobResult> HandleDefinitionAsync(JobParameters call, CancellationToken ct)
+    private async Task<JobResult> HandleDefinitionAsync(JobParameters call, string toolName, CancellationToken ct)
     {
-        var (path, position) = OpenAndResolvePosition(call);
+        var (path, position) = OpenAndResolvePosition(call, toolName);
         var locations = await _client!.DefinitionAsync(path, position, ct).ConfigureAwait(false);
         return LocationsResult(locations);
     }
 
-    private async Task<JobResult> HandleReferencesAsync(JobParameters call, CancellationToken ct)
+    private async Task<JobResult> HandleReferencesAsync(JobParameters call, string toolName, CancellationToken ct)
     {
-        var (path, position) = OpenAndResolvePosition(call);
+        var (path, position) = OpenAndResolvePosition(call, toolName);
         var locations = await _client!.ReferencesAsync(path, position, ct).ConfigureAwait(false);
         return LocationsResult(locations);
     }
 
-    private JobResult HandleDiagnostics(JobParameters call)
+    private JobResult HandleDiagnostics(JobParameters call, string toolName)
     {
-        var path = ResolvePath(call.Get<string>("file"));
+        var path = ResolvePath(call.Get<string>("file"), toolName);
         _client!.EnsureOpen(path);
         var diagnostics = _client.Diagnostics(path);
 
@@ -195,9 +202,9 @@ public sealed class CxagentLspPlugin : IPlugin
     /// <summary>Resolves the file, opens it with the server, and converts the 1-based tool position
     /// to the server's 0-based one — the one place this conversion happens for the two position-taking
     /// tools, so csharp_definition and csharp_references cannot drift apart on it.</summary>
-    private (string Path, LspPosition Position) OpenAndResolvePosition(JobParameters call)
+    private (string Path, LspPosition Position) OpenAndResolvePosition(JobParameters call, string toolName)
     {
-        var path = ResolvePath(call.Get<string>("file"));
+        var path = ResolvePath(call.Get<string>("file"), toolName);
         _client!.EnsureOpen(path);
 
         var line = call.Get<int>("line");
@@ -205,8 +212,42 @@ public sealed class CxagentLspPlugin : IPlugin
         return (path, new LspPosition(line - 1, character - 1));
     }
 
-    private string ResolvePath(string file) =>
-        Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file);
+    /// <summary>What these tools answer for. Anything else is refused — see <see cref="ResolvePath"/>.</summary>
+    private static readonly string[] ServedExtensions = [".cs", ".csx", ".razor", ".cshtml"];
+
+    /// <summary>
+    /// The absolute path for a tool's <c>file</c> argument, or a refusal.
+    ///
+    /// <para>REFUSING BEATS ANSWERING EMPTILY. A language server handed a Go file returns no
+    /// locations, and an empty result reads to the model as "nothing found here" — so it explains
+    /// the silence rather than trying a tool that could answer. Naming the extension turns that into
+    /// something it can act on.</para>
+    ///
+    /// <para>THE MISSING-FILE CASE IS CHECKED HERE TOO, because the alternative is an exception out
+    /// of <c>File.ReadAllText</c> inside the client, which surfaces as a crashed tool rather than a
+    /// failed call.</para>
+    /// </summary>
+    private string ResolvePath(string file, string toolName)
+    {
+        var path = Path.IsPathRooted(file) ? file : Path.Combine(_workingDirectory, file);
+
+        var extension = Path.GetExtension(path);
+        if (!ServedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            throw new ToolRefusal(
+                $"{toolName} works on C# and Razor files ({string.Join(", ", ServedExtensions)}). "
+              + $"'{file}' is not one of those — use a different tool for this file, or read it directly.");
+
+        if (!File.Exists(path))
+            throw new ToolRefusal(
+                $"no file at '{path}' — a relative path is resolved against the working directory.");
+
+        return path;
+    }
+
+    /// <summary>A refusal the caller turns into a failed <see cref="JobResult"/> — see
+    /// <see cref="Invoke"/>. An exception rather than a return value because
+    /// <see cref="ResolvePath"/> is called from three places that each want the same handling.</summary>
+    private sealed class ToolRefusal(string message) : Exception(message);
 
     /// <summary>
     /// A tool result carrying BOTH a <c>content</c> string and the structured <c>locations</c>.

@@ -104,7 +104,7 @@
       },
       "settings": {
         "server": "The language server command. Defaults to csharp-ls.",
-        "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none."
+        "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none, or [\"--features\",\"razor-support\"] to analyse .razor and .cshtml."
       }
     }
   ],

@@ -11,6 +11,9 @@ C# code navigation, backed by a language server. Three tools:
 Definitions and references cross project boundaries: a reference in a test project resolves into the
 project under test, provided the server has indexed both.
 
+**Serves `.cs`, `.csx`, `.razor` and `.cshtml`.** Any other file is refused with a message naming the
+extension, rather than returning an empty result that reads as "nothing found here".
+
 ## Install
 
 `install.sh` does this for you. By hand:
@@ -63,6 +66,15 @@ Everything is optional. With no `settings` at all the plugin uses `csharp-ls` an
 | --- | --- | --- |
 | `server` | `csharp-ls` | the language server command |
 | `args` | none | arguments for it |
+
+**Razor needs the server told to handle it.** The plugin will open `.razor` and `.cshtml` files, but
+a server started without Razor analysis simply answers nothing for them. With `csharp-ls`:
+
+```json
+"settings": { "args": ["--features", "razor-support"] }
+```
+
+OmniSharp has no Razor support to enable. `.cs` and `.csx` need no configuration either way.
 
 ```json
 "plugins": {
