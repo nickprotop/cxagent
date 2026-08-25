@@ -41,6 +41,14 @@ claim survived a solo draft and died to "when and how?"
 case I have not thought about looks like one I have. "A plugin cannot take a built-in's name" is one
 sentence and was nine rows once tabled — three with no answer yet.
 
+**A behaviour change that was not asked for gets a question first, however small and however
+confident I am.** Fixing something is not licence to change what a caller sees. While making a test
+stop needing a language server, I also reordered the plugin's checks so a wrong file type is refused
+before the "server is not running" reply — a better answer, and a judgment call about which error is
+more useful, decided silently and then published. What was asked for was a CI fix and a patch
+release. Say what the fix turned up and what I would do about it; the decision is not mine to make
+on the way past.
+
 ## Verifying
 
 Confirm the test count, not just the exit code. `dotnet test --filter` against a solution root exits 0
