@@ -392,7 +392,7 @@ briefing — "never edit files" — is a request written into its prompt, not a 
 reliably follow instructions they are given. **Permissions and tool selection are the mechanisms
 that constrain an agent; prose is not.**
 
-A [tool selection](CONFIG.md#tools-what-an-agent-is-offered) narrows what an agent is offered, and a withheld tool is
+A [tool selection](CONFIG.md#tools--what-an-agent-is-offered) narrows what an agent is offered, and a withheld tool is
 refused if called by name rather than merely hidden — so it constrains rather than suggests. It is
 not a security boundary on its own: it decides what this deployment offers, while the permission
 gate decides what any offered tool may do.
