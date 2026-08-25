@@ -1,6 +1,6 @@
 {
   "name": "csharp-lsp",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "spawns": true,
   "instructions": "csharp_definition, csharp_references and csharp_diagnostics answer questions about C# and Razor source (.cs, .csx, .razor, .cshtml) under the working directory. Any other file is refused.\n\nPositions are 1-based \u2014 line 1 is the first line, character 1 the first column \u2014 and must land inside the symbol's name.\n\ncsharp_diagnostics reports what has already been analysed. Immediately after a file is first touched it may return nothing; calling csharp_definition or csharp_references on that file first gives the analysis time to happen.\n\nRazor files may return no results if the environment lacks Razor analysis. An empty result means nothing was found, not that the call failed.",
   "tools": [
