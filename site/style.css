@@ -7,21 +7,29 @@
    needs JavaScript and state, and this site is static files that must work opened from disk. */
 
 :root {
-  --bg: #0f1115;
-  --bg-raised: #171a21;
-  --bg-code: #10131a;
-  --fg: #d7dae0;
-  --fg-dim: #969ba6;
-  --fg-bright: #f2f4f7;
-  --accent: #6aa9ff;
-  --accent-dim: #3d6ea8;
-  --border: #262b35;
-  --warn: #e0b341;
-  --ok: #6cc08b;
+  --bg: #080a0c;
+  --bg-raised: #141820;
+  --bg-code: #05070a;
+  --fg: #a9b6c2;
+  --fg-dim: #6d7d8b;
+  --fg-bright: #e8edf2;
+  /* cxagent's own prompt renders green, so the accent comes from the product rather than being
+     chosen. Same structure as the SharpConsoleUI site, its own signal. */
+  --accent: #3ddc84;
+  --accent-dim: #2a9b5d;
+  --accent-bg: rgba(61, 220, 132, 0.08);
+  --accent-glow: rgba(61, 220, 132, 0.22);
+  --border: #22303a;
+  --border-dim: #161f27;
+  --warn: #ffbd2e;
+  --ok: #3ddc84;
+  --red: #ff5f57;
+  --dot-green: #28c840;
+  --radius: 10px;
+  --radius-sm: 6px;
 
-  --font-prose: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-                Arial, "Noto Sans", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas,
+  --font-prose: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Fragment Mono", ui-monospace, "SF Mono", "JetBrains Mono", Consolas,
                "DejaVu Sans Mono", monospace;
 }
 
@@ -334,145 +342,154 @@ figcaption strong { color: var(--fg-bright); }
 .doc-group li { margin: 0.35rem 0; }
 .doc-group li span { color: var(--fg-dim); }
 
-/* --- Landing page: hero, transcript viewer -----------------------------------------------------
-   The landing page keeps prose at the same 72ch measure as every other page (it no longer opts out
-   with .wide) and lets ONE element break wider: the transcript frame. The captures need width to
-   stay readable, but the sentences around them do not, and stretching both to 62rem made the page
-   a column of unreadably long lines beside a stack of full-bleed images. */
+/* --- Landing page ------------------------------------------------------------------------------
+   The landing page follows the same shape as the SharpConsoleUI site: a wide split hero with a live
+   terminal window beside the pitch, window chrome as the recurring device, "// SECTION" markers, and
+   a sidebar explorer instead of a column of screenshots. The two projects share an author and a
+   stack, so they read as a family; the accent is the one thing that differs. */
 
-/* The landing page sits between the doc measure and the old .wide: at 72ch the transcript frame
-   was visibly wider than every sentence above and below it, which reads as a misalignment rather
-   than a deliberate break. One column, one edge — prose and captures agree. */
-body:has(.viewer) main { max-width: 56rem; }
+body.landing { max-width: none; }
+.landing main { max-width: 1180px; padding: 0 32px 0; }
+.landing section { padding: 56px 0; }
 
-/* Scoped to the landing hero: a bare .lede also exists as the intro paragraph on every other
-   page, and styling that one as an uppercase mono eyebrow was wrong. */
-.hero .lede {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fg-dim);
-  margin: 0 0 0.75rem;
+/* nav */
+.landing .site-nav {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(8, 10, 12, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-dim);
 }
 
-.hero h1 { letter-spacing: -0.02em; }
+/* split hero */
+.hero-split { display: flex; align-items: center; gap: 56px; padding: 64px 0 56px; }
+.hero-text { flex: 1; min-width: 0; }
+.hero-media { flex: 0 0 520px; max-width: 520px; }
 
-/* The install command is the page's first call to action, so it sits directly under the tagline
-   rather than below six screens of screenshots. */
-/* The install command is one long unbreakable token, so a fixed measure gives it a horizontal
-   scrollbar — a poor look for the page's primary call to action. Let it wrap instead, and give it
-   a little more room than the prose. */
-.install-line {
-  /* Aligned to the prose measure: a block that starts left of every sentence around it reads as a
-     mistake, and the command wraps rather than needing the extra width. */
-  margin: 1.6rem 0 0.4rem;
+.landing h1 {
+  font: 700 clamp(2.4rem, 5vw, 3.4rem)/1.07 var(--font-prose);
+  letter-spacing: -0.035em; color: var(--fg-bright); margin: 0 0 18px; border: 0; padding: 0;
 }
+.landing h1 em { font-style: normal; color: var(--accent); }
+.hero-text .tagline { font-size: 1.06rem; line-height: 1.6; max-width: 46ch; margin: 0 0 24px; }
 
-.install-line pre {
-  margin: 0;
+.pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.pill {
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-dim);
+  border: 1px solid var(--border); border-radius: 99px; padding: 4px 11px;
+}
+.pill b { color: var(--accent); font-weight: 400; }
+
+.btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+.btn {
+  font-family: var(--font-mono); font-size: 0.85rem; padding: 11px 20px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  color: var(--fg-bright); text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.btn-primary { background: var(--accent); color: #04150c; border-color: var(--accent); font-weight: 500; }
+.btn-primary:hover { box-shadow: 0 0 0 4px var(--accent-glow); }
+.btn-ghost:hover { border-color: var(--accent); background: var(--accent-bg); }
+
+/* window chrome — the recurring device */
+.win {
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+  background: var(--bg-raised);
+  box-shadow: 0 28px 70px rgba(0,0,0,0.55), 0 0 0 1px var(--border-dim);
+}
+.win-bar {
+  display: flex; align-items: center; gap: 10px; padding: 11px 15px;
+  background: var(--bg-raised); border-bottom: 1px solid var(--border); user-select: none;
+}
+.tl-dots { display: flex; gap: 7px; }
+.tl-dot { width: 12px; height: 12px; border-radius: 50%; }
+.tl-dot.r { background: var(--red); }
+.tl-dot.y { background: var(--warn); }
+.tl-dot.g { background: var(--dot-green); }
+.tl-title {
+  flex: 1; text-align: center; font-family: var(--font-mono);
+  font-size: 0.72rem; color: var(--fg-dim); letter-spacing: 0.04em;
+}
+.win > img { display: block; width: 100%; height: auto; }
+
+/* section markers */
+.section-label {
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.12em;
+  color: var(--fg-dim); text-transform: uppercase; margin-bottom: 14px;
+}
+.section-label span { color: var(--accent); margin-right: 8px; }
+.landing h2 {
+  font: 700 1.9rem/1.2 var(--font-prose); letter-spacing: -0.025em;
+  color: var(--fg-bright); margin: 0 0 10px; border: 0; padding: 0;
+}
+.section-sub { max-width: 62ch; margin: 0 0 26px; }
+
+/* the session explorer */
+.explorer { display: grid; grid-template-columns: 250px 1fr; }
+.exp-nav { background: var(--bg-raised); border-right: 1px solid var(--border); padding: 8px 0; }
+.exp-item {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  background: none; border: 0; border-left: 2px solid transparent;
+  padding: 11px 16px; cursor: pointer; color: var(--fg);
+  font: 400 0.9rem var(--font-prose);
+}
+.exp-item:hover { background: var(--accent-bg); }
+.exp-item[aria-selected="true"] {
+  background: var(--accent-bg); border-left-color: var(--accent); color: var(--accent);
+}
+.exp-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.exp-icon { font-size: 1.05rem; opacity: 0.9; flex-shrink: 0; }
+.exp-body { display: flex; flex-direction: column; min-width: 0; }
+.exp-shot { background: var(--bg-code); border-bottom: 1px solid var(--border); }
+.exp-shot img { display: block; width: 100%; height: auto; }
+.exp-text { padding: 20px 24px; }
+.exp-text h3 { font: 500 1.02rem var(--font-prose); color: var(--fg-bright); margin: 0 0 7px; }
+.exp-text p { margin: 0; font-size: 0.94rem; line-height: 1.62; max-width: 74ch; }
+
+/* numbered differentiators — order is real here, they are not decoration */
+.uniques {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1px; background: var(--border-dim);
+  border: 1px solid var(--border-dim); border-radius: var(--radius); overflow: hidden;
+}
+.u-item { background: var(--bg-raised); padding: 22px 24px; }
+.u-num { font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent); margin-bottom: 9px; }
+.u-title { font: 500 1rem var(--font-prose); color: var(--fg-bright); margin: 0 0 6px; }
+.u-body { font-size: 0.92rem; line-height: 1.6; margin: 0; }
+
+/* link chips */
+.chips { display: flex; flex-wrap: wrap; gap: 9px; }
+.chip {
+  font-family: var(--font-mono); font-size: 0.82rem; color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 9px 14px; text-decoration: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.chip b { color: var(--fg-dim); font-weight: 400; margin-right: 7px; }
+
+.landing .install-line pre {
+  background: var(--bg-code);
+  /* Keep the wrap: a scrollbar under the page's primary call to action is worse than two lines. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.warn-block { border-left: 2px solid var(--warn); padding-left: 18px; }
+.warn-block p { max-width: 66ch; }
+.warn-block b { color: var(--fg-bright); }
 
-/* A horizontal scrollbar under a one-line command is worse than a wrapped line. */
-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* No JS: the sidebar is inert, so it stays hidden and every capture stacks with its text. */
+.exp-nav { display: none; }
+.js .exp-nav { display: block; }
+.js .exp-body > [hidden] { display: none; }
+/* Stacked without JS: each capture keeps a rule between it and the next. */
+.exp-pane + .exp-pane { border-top: 1px solid var(--border); }
 
-.install-line .note { margin-top: 0.6rem; }
-
-/* Break out of the prose measure, centred, without knowing the parent's width. */
-.bleed { width: 100%; }
-
-/* --- The transcript viewer ---
-   Seven stacked figures became one framed terminal with tabs: the same shape as the thing being
-   demonstrated, and six screens of scrolling collapsed into one. Without JavaScript every panel
-   stays visible and the page degrades to the stacked figures it used to be. */
-.viewer {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg-code);
-}
-
-.viewer-chrome {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--fg-dim);
-}
-
-.viewer-dots { display: flex; gap: 0.35rem; }
-.viewer-dots i {
-  width: 0.6rem; height: 0.6rem; border-radius: 50%;
-  background: var(--border); display: block;
-}
-
-.viewer-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-}
-
-.viewer-tabs button {
-  appearance: none;
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--fg-dim);
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  padding: 0.55rem 0.9rem;
-  cursor: pointer;
-}
-
-.viewer-tabs button:hover { color: var(--fg); }
-
-.viewer-tabs button[aria-selected="true"] {
-  color: var(--fg-bright);
-  border-bottom-color: var(--accent);
-}
-
-.viewer-tabs button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.viewer-panel img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-/* The caption reads as the app's own status line, in mono under the frame. */
-.viewer-caption {
-  margin: 0;
-  padding: 0.7rem 0.9rem;
-  border-top: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--fg-dim);
-  font-size: 0.92rem;
-  line-height: 1.5;
-}
-
-.viewer-caption strong { color: var(--fg-bright); }
-
-/* No JS: every panel ships visible and stacks, exactly as the old figure list did, and the tab
-   strip stays hidden because nothing can act on it. JS reveals the tabs and hides the panels it
-   is not showing. */
-.viewer-panel + .viewer-panel { border-top: 1px solid var(--border); }
-.viewer-tabs { display: none; }
-.js .viewer-tabs { display: flex; }
-.js .viewer-panel[hidden] { display: none; }
-
-@media (max-width: 46rem) {
-  .bleed { width: 100%; margin-left: 0; transform: none; }
-  .viewer-tabs button { padding: 0.5rem 0.6rem; font-size: 0.76rem; }
+@media (max-width: 60rem) {
+  .hero-split { flex-direction: column; align-items: stretch; gap: 34px; }
+  .hero-media { flex: 1; max-width: none; }
+  .explorer { grid-template-columns: 1fr; }
+  .js .exp-nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .exp-item { border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .exp-item[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--accent); }
+  .landing main { padding: 0 20px; }
 }
