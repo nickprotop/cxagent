@@ -1,0 +1,87 @@
+name: Submit a plugin
+description: Ask for a plugin to be listed in the marketplace catalog.
+labels: ["plugin-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Review asks whether this entry is truthful and useful — that the plugin exists, its
+        metadata matches its sidecar, and its description is honest. It is not a security review:
+        cxagent asks before loading any plugin, showing a hash of everything it would load, and
+        that is the boundary a user relies on.
+
+  - type: input
+    id: name
+    attributes:
+      label: Plugin name
+      placeholder: "my-plugin"
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      placeholder: "https://github.com/you/my-plugin"
+    validations:
+      required: true
+
+  - type: input
+    id: description
+    attributes:
+      label: One-line description
+    validations:
+      required: true
+
+  - type: input
+    id: publisher
+    attributes:
+      label: Publisher
+      description: The name or handle this should be attributed to.
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      placeholder: "MIT"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tools
+    attributes:
+      label: Tools it adds, and which gate
+      description: >
+        One tool per line, and whether it gates: `true`, `false`, or `"dynamic"`.
+      placeholder: |
+        my_tool - gated: true
+        my_other_tool - gated: false
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-contract
+    attributes:
+      label: pluginContract number
+      description: The contract version this plugin declares. Currently 2.
+      placeholder: "2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: requires
+    attributes:
+      label: Anything a user must install separately
+      description: A language server, a CLI tool, a runtime — whatever the plugin doesn't bundle.
+    validations:
+      required: false
+
+  - type: input
+    id: existing-pr
+    attributes:
+      label: Link to an already-open PR
+      description: If you've already opened a PR adding the catalog entry, link it here.
+    validations:
+      required: false

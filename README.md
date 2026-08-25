@@ -9,6 +9,8 @@
 
 </div>
 
+**[nickprotop.github.io/cxagent](https://nickprotop.github.io/cxagent/)** — install instructions, the plugin marketplace, and docs.
+
 **A terminal AI coding agent built on [SharpConsoleUI](https://github.com/nickprotop/ConsoleEx).**
 
 Give it a goal in plain language. It reads your files, works out what to change, and changes them —
@@ -23,9 +25,11 @@ Bring your own model: Ollama, any OpenAI-compatible endpoint, or Anthropic.
   inside the child, and 4% of the parent's context used.</sub>
 </div>
 
-## [See it working →](docs/screenshots/)
+## [See it working →](https://nickprotop.github.io/cxagent/)
 
-One session closing three features in another repo, with the mistakes left in.
+One session closing three features in another repo, with the mistakes left in — the full walkthrough
+is on the site; [`docs/screenshots/`](docs/screenshots/) has the raw captures if you'd rather read
+them here.
 
 ## Quick Start
 
@@ -262,8 +266,9 @@ server on PATH: `dotnet tool install -g csharp-ls`.
 Its lookups run unasked inside the folder you started in, and ask before reading a file outside it —
 a plugin decides that per call, from the arguments, rather than being on or off for every call.
 
-See the [plugin catalog](plugins/) for what ships and how to configure it, and
-[cxagent.Core/Core/Plugins](cxagent.Core/docs/plugins.md) if you want to write one.
+Browse plugins at [https://nickprotop.github.io/cxagent/plugins.html](https://nickprotop.github.io/cxagent/plugins.html). Writing one starts at
+[https://nickprotop.github.io/cxagent/writing-a-plugin.html](https://nickprotop.github.io/cxagent/writing-a-plugin.html); the full contract is in
+[cxagent.Core/docs/plugins.md](cxagent.Core/docs/plugins.md).
 
 ## Configuration
 

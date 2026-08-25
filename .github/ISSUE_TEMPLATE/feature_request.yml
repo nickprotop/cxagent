@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose something cxagent doesn't do yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What do you want cxagent to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is current behaviour insufficient?
+      description: What you're working around today, and what it costs you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've tried or thought about, and why they fall short.
+    validations:
+      required: false

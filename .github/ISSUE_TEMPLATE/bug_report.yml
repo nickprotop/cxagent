@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in cxagent is broken or behaving unexpectedly.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: cxagent version
+      description: Output of `cxagent --version`.
+      placeholder: "1.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Distro/version, macOS version, or Windows version.
+      placeholder: "Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: provider-model
+    attributes:
+      label: Provider and model
+      description: >
+        Which provider (Anthropic, an OpenAI-compatible endpoint, or Ollama) and which model —
+        behaviour varies enough between them that a report without this is hard to reproduce.
+      placeholder: "Anthropic, claude-opus-5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did and what went wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: >
+        Terminal output, a stack trace, or a log excerpt, if you have one. Redact API keys before
+        pasting — cxagent never needs one to reproduce a bug.
+      render: shell
+    validations:
+      required: false
