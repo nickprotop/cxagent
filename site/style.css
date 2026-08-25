@@ -340,6 +340,11 @@ figcaption strong { color: var(--fg-bright); }
    stay readable, but the sentences around them do not, and stretching both to 62rem made the page
    a column of unreadably long lines beside a stack of full-bleed images. */
 
+/* The landing page sits between the doc measure and the old .wide: at 72ch the transcript frame
+   was visibly wider than every sentence above and below it, which reads as a misalignment rather
+   than a deliberate break. One column, one edge — prose and captures agree. */
+body:has(.viewer) main { max-width: 56rem; }
+
 .lede {
   font-family: var(--font-mono);
   font-size: 0.82rem;
@@ -371,11 +376,7 @@ figcaption strong { color: var(--fg-bright); }
 .install-line .note { margin-top: 0.6rem; }
 
 /* Break out of the prose measure, centred, without knowing the parent's width. */
-.bleed {
-  width: min(58rem, calc(100vw - 3rem));
-  margin-left: 50%;
-  transform: translateX(-50%);
-}
+.bleed { width: 100%; }
 
 /* --- The transcript viewer ---
    Seven stacked figures became one framed terminal with tabs: the same shape as the thing being
