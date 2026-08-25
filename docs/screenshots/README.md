@@ -154,3 +154,53 @@ Nothing marked it finished, so it stayed resumable: `cxagent --resume QQEQXA` re
 The question above the listing is the check that matters — *without re-reading anything*, which gaps,
 which format, what crash. It answered all three from memory, with the stack trace and the root cause
 it had diagnosed, and spent no tool calls doing it.
+
+---
+
+## Delegating a piece of reading
+
+![Worker result](16-worker-result.png)
+
+A worker is one row. It ran in its own context, spent its own turns, and what comes back is the
+answer — the row above it stays a row, and the transcript carries on.
+
+The panel splits `workers` from `this agent` because they are different money: the parent paid for a
+question and a summary, and the reading happened somewhere that could be thrown away afterwards.
+
+![Worker timeline](17-worker-timeline.png)
+
+The same row, opened. Its own model, its own task as it was briefed, its turns and its tokens — then
+every call it made, with the time each took and how much came back.
+
+The two failed `glob` calls above it are the parent's, not the worker's: it guessed a path, guessed
+again, and found the files on the third try before delegating. Those are in the picture because they
+are what the session did.
+
+---
+
+## Plugins
+
+![Loading a plugin](15-plugin-load.png)
+
+A plugin is a DLL cxagent did not ship, loaded into this session. The prompt is the only boundary
+cxagent can enforce on your behalf, so it says what the plugin will contribute — **3 tools, and
+guidance to the model's instructions** — and covers its approval with a hash of the whole load set.
+Change a byte of it and this question comes back.
+
+Installing a plugin does not enable it. `install.sh` places `csharp-lsp` in the plugins folder and
+stops; cxagent reports that it is there and waits to be told.
+
+![The LSP plugin working](14-plugin-lsp.png)
+
+The same session, using tools that are not part of cxagent. `csharp_definition` resolves a reference
+in `cxgpu.Tests` to its declaration in `cxgpu` — across a project boundary, which is the thing grep
+cannot do — and `csharp_references` finds all 34 usages.
+
+Note the two timings: **3.1s** for the first call and **0.2s** for the second. The first pays for the
+language server to index the solution; everything after that is answered from a warm index. The
+plugin holds that server for the life of the session and cxagent reaps it if the session dies.
+
+The tools come from a manifest, and so does the prose above them: a plugin can add a block to the
+system prompt saying what its individual tool descriptions cannot — here, that positions are 1-based
+and which file types it serves. A plugin that declares *no* tools and only that block is a valid
+plugin too.
