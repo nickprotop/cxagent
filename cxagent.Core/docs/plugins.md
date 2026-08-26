@@ -402,7 +402,12 @@ Both calculator examples read `settings.precision` this way, and both fall back 
 ```
 
 Searched in `pluginPaths` order, then `<project>/.cxagent/plugins`, then `<config>/plugins` — so a
-project's copy wins over a globally installed one.
+project's copy wins over a globally installed one. Each of those is searched itself and one level
+down, so `plugins/calculator/calculator.dll` is found the same as a loose `calculator.dll` sitting
+in the folder. **Ship in a directory of its own** — a plugin's identity is a hash over everything in
+its load-set folder, and .NET resolves its dependencies from that same folder, so a folder shared
+with another plugin means neither is isolated and installing either one re-asks the other's load
+prompt.
 
 `enabled: false` means no process, no tools, no prompt, nothing. It is configuration, not permission:
 loading still asks, every time. `/plugin load <name> --once` overrides `enabled: false` for one

@@ -19,9 +19,11 @@ extension, rather than returning an empty result that reads as "nothing found he
 `install.sh` does this for you. By hand:
 
 1. Download **`csharp-lsp.zip`** from the [latest release](https://github.com/nickprotop/cxagent/releases/latest).
-2. Unpack both files — `csharp-lsp.dll` and `csharp-lsp.plugin.json` — into your plugins folder:
-   - Linux / macOS: `~/.config/cxagent/plugins/`
-   - Windows: `%APPDATA%\cxagent\plugins\`
+2. Unpack both files — `csharp-lsp.dll` and `csharp-lsp.plugin.json` — into a directory of their
+   own inside your plugins folder, `csharp-lsp/` alongside the other, so its hash describes only
+   this plugin:
+   - Linux / macOS: `~/.config/cxagent/plugins/csharp-lsp/`
+   - Windows: `%APPDATA%\cxagent\plugins\csharp-lsp\`
 
 The sidecar must travel with the DLL. It is read before the assembly is loaded — it is what the
 approval prompt shows and what cxagent reports without running anything — so a plugin missing it
