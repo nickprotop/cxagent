@@ -70,4 +70,48 @@ public static class PluginIdentity
         stream.FlushFinalBlock();
         return Convert.ToHexString(sha.Hash!).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// The names of other plugins whose sidecars sit inside <paramref name="loadSetDirectory"/> —
+    /// empty when this plugin has the directory to itself.
+    ///
+    /// <para>WHAT THIS COSTS A USER, which is why it is worth saying. A plugin's identity is a hash
+    /// over its whole load set, and the load gate stores an "always" grant against that hash. When
+    /// the load set holds another plugin's files, installing or updating that other plugin moves
+    /// this one's hash: its gate asks again, citing a change the user did not make to it, and the
+    /// standing grant stops applying.</para>
+    ///
+    /// <para>AT ANY DEPTH, because <see cref="HashLoadSet"/> walks with
+    /// <see cref="SearchOption.AllDirectories"/>. A nested plugin sits inside a loose one's load set,
+    /// and after one-plugin-one-directory ships that is the ordinary way a second plugin arrives —
+    /// so a top-level check would miss the case this exists to report.</para>
+    /// </summary>
+    public static IReadOnlyList<string> SharesLoadSetWith(string loadSetDirectory, string pluginName)
+    {
+        if (!Directory.Exists(loadSetDirectory)) return [];
+
+        var others = new List<string>();
+
+        foreach (var sidecar in Directory
+                     .EnumerateFiles(loadSetDirectory, "*.plugin.json", SearchOption.AllDirectories)
+                     .OrderBy(f => f, StringComparer.Ordinal))
+        {
+            string? name;
+            try
+            {
+                name = PluginManifest.Parse(File.ReadAllText(sidecar)).Manifest?.Name;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // AN UNREADABLE SIDECAR IS NOT A FINDING. This runs on the load path to produce a
+                // warning; a permissions problem must not turn a courtesy into a failure.
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(name) && !string.Equals(name, pluginName, StringComparison.Ordinal))
+                others.Add(name);
+        }
+
+        return others;
+    }
 }

@@ -69,12 +69,26 @@ public static class PluginDiscovery
     /// The directory holding <paramref name="file"/> and its sidecar, searched for in
     /// <see cref="SearchFolders"/> order — first match wins, matching every other search-path
     /// resolution in this codebase. Null when no folder holds it.
+    ///
+    /// <para>ONE LEVEL, NOT A WALK, and the folder before its subdirectories in ordinal order —
+    /// identical to <c>PluginResolver.FindLoadSetDirectory</c>, which is the Core-side counterpart
+    /// this duplicates. THIS is the one that runs at startup: a change to only the other leaves a
+    /// nested plugin loadable by /plugin load and invisible when cxagent starts.</para>
     /// </summary>
     public static string? FindLoadSetDirectory(string file, IReadOnlyList<string> searchFolders)
     {
         foreach (var folder in searchFolders)
+        {
             if (File.Exists(Path.Combine(folder, file)))
                 return folder;
+
+            if (!Directory.Exists(folder)) continue;
+
+            foreach (var nested in Directory.EnumerateDirectories(folder)
+                         .OrderBy(d => d, StringComparer.Ordinal))
+                if (File.Exists(Path.Combine(nested, file)))
+                    return nested;
+        }
 
         return null;
     }
@@ -121,7 +135,16 @@ public static class PluginDiscovery
         {
             if (!Directory.Exists(folder)) continue;
 
-            foreach (var sidecar in Directory.EnumerateFiles(folder, "*.plugin.json")
+            // THE FOLDER AND ITS IMMEDIATE SUBDIRECTORIES, because a plugin installed into a folder
+            // of its own is invisible to a top-level scan — and this scan is the only thing that
+            // tells a user an installed-but-unconfigured plugin exists at all. One level, matching
+            // FindLoadSetDirectory: deeper is a plugin's own dependencies, not another plugin.
+            var scanned = new List<string> { folder };
+            scanned.AddRange(Directory.EnumerateDirectories(folder)
+                .OrderBy(d => d, StringComparer.Ordinal));
+
+            foreach (var scan in scanned)
+            foreach (var sidecar in Directory.EnumerateFiles(scan, "*.plugin.json")
                          .OrderBy(f => f, StringComparer.Ordinal))
             {
                 PluginManifest? manifest;
@@ -145,13 +168,13 @@ public static class PluginDiscovery
                 // a leftover, and reporting it would send a user to `/plugin load` for something
                 // that cannot load. Same stem pairing every other sidecar lookup here uses.
                 var stem = sidecar[..^".plugin.json".Length];
-                var file = Directory.EnumerateFiles(folder, Path.GetFileName(stem) + ".*")
+                var file = Directory.EnumerateFiles(scan, Path.GetFileName(stem) + ".*")
                     .FirstOrDefault(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
                                       || f.EndsWith(".so", StringComparison.OrdinalIgnoreCase));
                 if (file is null) continue;
 
                 found.Add(new UnconfiguredPlugin(
-                    manifest.Name, Path.GetFileName(file), folder, manifest.Tools.Count));
+                    manifest.Name, Path.GetFileName(file), scan, manifest.Tools.Count));
             }
         }
 

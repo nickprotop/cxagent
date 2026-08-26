@@ -98,11 +98,37 @@ public static class PluginResolver
             + $"{string.Join(", ", searchFolders)}.");
     }
 
+    /// <summary>
+    /// The folder holding <paramref name="file"/>: each search folder itself, then its immediate
+    /// subdirectories.
+    ///
+    /// <para>ONE LEVEL, NOT A WALK. A plugin's own dependencies may sit in nested folders, and
+    /// descending into those would find a dependency and hand it back as an entry point.</para>
+    ///
+    /// <para>THE FOLDER BEFORE ITS SUBDIRECTORIES, and subdirectories in ordinal order. A loose
+    /// copy and a nested copy of one filename is a configuration a user built; which wins has to be
+    /// the same answer on every run and every machine, and <c>Directory.EnumerateDirectories</c>
+    /// returns filesystem order, which the BCL documents as unspecified.</para>
+    ///
+    /// <para>DUPLICATED IN <c>PluginDiscovery.FindLoadSetDirectory</c>, deliberately — see this
+    /// type's own doc. The two must change together: that one is what loads configured plugins at
+    /// startup, and a nested plugin found by only one of them is loadable by <c>/plugin load</c>
+    /// and invisible when cxagent starts.</para>
+    /// </summary>
     private static string? FindLoadSetDirectory(string file, IReadOnlyList<string> searchFolders)
     {
         foreach (var folder in searchFolders)
+        {
             if (File.Exists(Path.Combine(folder, file)))
                 return folder;
+
+            if (!Directory.Exists(folder)) continue;
+
+            foreach (var nested in Directory.EnumerateDirectories(folder)
+                         .OrderBy(d => d, StringComparer.Ordinal))
+                if (File.Exists(Path.Combine(nested, file)))
+                    return nested;
+        }
 
         return null;
     }
