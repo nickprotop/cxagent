@@ -202,3 +202,22 @@ The tools come from a manifest, and so does the prose above them: a plugin can a
 system prompt saying what its individual tool descriptions cannot — here, that positions are 1-based
 and which file types it serves. A plugin that declares *no* tools and only that block is a valid
 plugin too.
+
+---
+
+## A second project, and a worker's receipts
+
+![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)
+
+A different run: two workers exploring [cxgpu](https://github.com/nickprotop/cxgpu), a GPU monitoring
+tool, and reporting back. The summary above the input is written from what they found rather than
+from the files — the parent never read them. The panel carries what that cost while it happened,
+splitting the 1.2M tokens the workers spent from the 61k this agent spent.
+
+The two `Worker` rows are collapsed. That is the same session with one of them open:
+
+![A worker's tool calls listed in a table, with arguments and durations](session-lsp-worker.png)
+
+Fifty-two calls across six tools in under four seconds, each with what it asked for and how long it
+took. Some are `csharp_definition` — a plugin's tools, listed among `glob`, `grep` and `read_file`
+with nothing to mark them as additions. A worker's report is a claim; this is the work behind it.

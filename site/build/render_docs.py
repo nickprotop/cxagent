@@ -14,6 +14,7 @@ failing silently on something it does not understand.
 import argparse
 import html
 import re
+import shutil
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -27,7 +28,14 @@ RENDERED = OrderedDict([
     ("COMMANDS.md", "commands"),
     ("CONFIG.md", "config"),
     ("cxagent.Core/docs/plugins.md", "plugins"),
+    ("docs/screenshots/README.md", "walkthrough"),
 ])
+
+
+# WHAT COUNTS AS AN ASSET rather than a document to link out to. Deliberately short: anything not
+# listed here is treated as a link, which is the safer default -- a wrong link is visible, a file
+# silently copied into the site is not.
+ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
 
 def slug(text: str) -> str:
@@ -78,6 +86,14 @@ def render_body(markdown: str, resolve) -> str:
             i += 1
             cls = f' class="language-{html.escape(lang)}"' if lang else ""
             out.append(f"<pre><code{cls}>{html.escape(chr(10).join(block))}</code></pre>")
+            continue
+
+        # A THEMATIC BREAK, which these documents use to separate one capture's section from the
+        # next. Matched before the paragraph branch, or a run of hyphens on its own line renders as
+        # the literal text "---".
+        if re.fullmatch(r"\s*(-{3,}|\*{3,}|_{3,})\s*", line):
+            out.append("<hr>")
+            i += 1
             continue
 
         heading = re.match(r"^(#{1,6})\s+(.*)$", line)
@@ -134,9 +150,23 @@ def render_body(markdown: str, resolve) -> str:
 
 
 def link_up(text: str, resolve) -> str:
+    """Images first, then links.
+
+    THE ORDER IS NOT A STYLE CHOICE. The link pattern matches the tail of an image too -- the `!` is
+    the only difference -- so running links first turns `![alt](x.png)` into a stray `!` followed by
+    an anchor wrapping the alt text, and the image never renders at all.
+    """
+    def image(match):
+        alt, target = match.group(1), match.group(2)
+        # LAZY, because the walkthrough carries seventeen full-window terminal captures and a reader
+        # arriving at the top should not wait for the ones they may never scroll to.
+        return (f'<img src="{html.escape(resolve(target))}" alt="{alt}" loading="lazy">')
+
     def one(match):
         label, target = match.group(1), match.group(2)
         return f'<a href="{html.escape(resolve(target))}">{label}</a>'
+
+    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", image, text)
     return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", one, text)
 
 
@@ -155,9 +185,13 @@ def main() -> int:
         sources[rel] = path.read_text()
 
     anchors = {rel: headings_of(text) for rel, text in sources.items()}
-    by_basename = {Path(rel).name: rel for rel in RENDERED}
+    # KEYED ON THE RESOLVED PATH, NOT THE BASENAME. Two rendered documents can share a filename --
+    # docs/screenshots/README.md is one -- and a basename key would make one of them claim every
+    # link to the other, silently pointing a reader at the wrong page.
+    by_path = {(args.root / rel).resolve(): rel for rel in RENDERED}
 
     problems = []
+    assets: list[Path] = []
 
     def resolver(current: str):
         def resolve(target: str) -> str:
@@ -165,10 +199,13 @@ def main() -> int:
                 return target
 
             path_part, _, anchor = target.partition("#")
-            base = Path(path_part).name if path_part else Path(current).name
+            # Resolved against the LINKING document's directory, the way a reader on GitHub would
+            # follow it -- so ../README.md from cxagent.Core/docs is the repository's own README.
+            resolved = ((args.root / Path(current).parent / path_part).resolve()
+                        if path_part else (args.root / current).resolve())
 
-            if base in by_basename:
-                rel = by_basename[base]
+            if resolved in by_path:
+                rel = by_path[resolved]
                 if anchor and anchor not in anchors[rel]:
                     problems.append(
                         f"{current} links to {target}, but '{Path(rel).name}' has no heading "
@@ -183,6 +220,18 @@ def main() -> int:
             # NOT RENDERED: leave for GitHub rather than 404 inside the site. The target is
             # resolved against the linking document's own directory, the way a reader on GitHub
             # would follow it.
+            # AN ASSET IS COPIED, NOT LINKED OUT. A .png resolved to a GitHub blob URL renders
+            # GitHub's page around the image rather than the image, so a walkthrough of seventeen
+            # captures would show seventeen framed web pages. Assets are copied beside the rendered
+            # page instead, and referenced relative to it.
+            if Path(path_part).suffix.lower() in ASSET_SUFFIXES:
+                source = (args.root / Path(current).parent / path_part).resolve()
+                if not source.is_file():
+                    problems.append(f"{current} references {target}, which does not exist.")
+                    return target
+                assets.append(source)
+                return f"assets/{source.name}"
+
             joined = (args.root / Path(current).parent / path_part).resolve()
             try:
                 repo_rel = joined.relative_to(args.root.resolve())
@@ -198,6 +247,7 @@ def main() -> int:
         return resolve
 
     args.out.mkdir(parents=True, exist_ok=True)
+
     (args.out / "docs").mkdir(exist_ok=True)
 
     pages = {}
@@ -210,6 +260,25 @@ def main() -> int:
         for problem in problems:
             print(f"error: {problem}", file=sys.stderr)
         return 1
+
+    # AFTER THE LINK CHECK, so a failed build copies nothing. Deduplicated by name: the same capture
+    # referenced from two documents is one file, and two different files sharing a name would
+    # silently overwrite each other -- which is why that case is refused rather than resolved.
+    if assets:
+        by_name: dict[str, Path] = {}
+        for source in assets:
+            existing = by_name.get(source.name)
+            if existing is not None and existing != source:
+                print(f"error: two different files are both called '{source.name}': "
+                      f"{existing} and {source}.", file=sys.stderr)
+                return 1
+            by_name[source.name] = source
+
+        asset_dir = args.out / "docs" / "assets"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        for name, source in sorted(by_name.items()):
+            shutil.copyfile(source, asset_dir / name)
+        print(f"copied {len(by_name)} asset(s)")
 
     template = (Path(__file__).parent / "doc-template.html").read_text()
     for rel, name in RENDERED.items():

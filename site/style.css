@@ -699,3 +699,10 @@ pre.has-copy:hover .copy-button,
   font-size: 0.9rem;
   font-style: italic;
 }
+
+/* A thematic break between a document's sections. Quiet: it separates, it does not decorate. */
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--border-dim);
+  margin: 3rem 0;
+}

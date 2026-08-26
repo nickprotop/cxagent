@@ -90,6 +90,11 @@ public class DocRendererTests
             File.WriteAllText(Path.Combine(fake, "CONFIG.md"), "# Configuration\n\nNothing here.\n");
             File.WriteAllText(Path.Combine(fake, "cxagent.Core", "docs", "plugins.md"),
                 "# Writing a plugin\n\nNothing here.\n");
+            // EVERY DOCUMENT IN RENDERED MUST EXIST, or the renderer fails on the missing file
+            // before it reaches the broken link this test is about.
+            Directory.CreateDirectory(Path.Combine(fake, "docs", "screenshots"));
+            File.WriteAllText(Path.Combine(fake, "docs", "screenshots", "README.md"),
+                "# cxagent, in use\n\nNothing here.\n");
 
             var (exit, stderr) = Render(outDir, root: fake);
 
@@ -117,6 +122,75 @@ public class DocRendererTests
             var plugins = File.ReadAllText(Path.Combine(dir, "docs", "plugins.html"));
             Assert.Contains("github.com/nickprotop/cxagent/blob/master/cxagent.Core/docs/tools.md",
                 plugins);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// These documents separate their sections with a rule. Rendered as text it is three hyphens
+    /// sitting in the prose, which reads as a mistake in the source rather than as a divider.
+    /// </summary>
+    [Fact]
+    public void AThematicBreakBecomesARule()
+    {
+        var dir = Directory.CreateTempSubdirectory("doc-hr-").FullName;
+        try
+        {
+            Render(dir);
+            var page = File.ReadAllText(Path.Combine(dir, "docs", "commands.html"));
+
+            Assert.Contains("<hr>", page);
+            Assert.DoesNotContain("<p>---</p>", page);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// IMAGES ARE COPIED, NOT LINKED OUT. A .png resolved to a GitHub blob URL renders GitHub's page
+    /// around the image rather than the image, so the walkthrough's seventeen captures would each
+    /// show a framed web page.
+    /// </summary>
+    [Fact]
+    public void ImagesAreRenderedAndTheirFilesCopied()
+    {
+        var dir = Directory.CreateTempSubdirectory("doc-img-").FullName;
+        try
+        {
+            var (exit, stderr) = Render(dir);
+            Assert.True(exit == 0, $"renderer failed: {stderr}");
+
+            var page = File.ReadAllText(Path.Combine(dir, "docs", "walkthrough.html"));
+            Assert.Contains("<img src=\"assets/01-trust.png\"", page);
+            Assert.DoesNotContain("github.com/nickprotop/cxagent/blob/master/docs/screenshots/01-trust.png",
+                page);
+
+            Assert.True(File.Exists(Path.Combine(dir, "docs", "assets", "01-trust.png")),
+                "the capture was referenced but never copied beside the page.");
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>
+    /// TWO RENDERED DOCUMENTS CAN SHARE A FILENAME. `docs/screenshots/README.md` is one, and a
+    /// lookup keyed on the basename made it claim every `README.md` link in the repository —
+    /// including `cxagent.Core/docs/plugins.md`'s link to the repository's own README, which then
+    /// failed the anchor check against the wrong document entirely.
+    /// </summary>
+    [Fact]
+    public void ALinkToADifferentReadmeIsNotClaimedByTheRenderedOne()
+    {
+        var dir = Directory.CreateTempSubdirectory("doc-readme-").FullName;
+        try
+        {
+            var (exit, stderr) = Render(dir);
+            Assert.True(exit == 0, $"renderer failed: {stderr}");
+
+            // plugins.md links to ../README.md#tools-that-arrive-at-run-time — the package README,
+            // which is not rendered, so it must leave for GitHub rather than resolve to the
+            // walkthrough that happens to share its filename.
+            var plugins = File.ReadAllText(Path.Combine(dir, "docs", "plugins.html"));
+            Assert.Contains("github.com/nickprotop/cxagent/blob/master/cxagent.Core/README.md", plugins);
+            Assert.DoesNotContain("walkthrough.html#tools-that-arrive-at-run-time", plugins);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
