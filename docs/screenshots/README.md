@@ -1,10 +1,11 @@
 # cxagent, in use
 
-Every shot below is from one session: a local `qwen3.6-35b-a3b` closing three unfinished features in
-[cxlog](https://github.com/nickprotop/cxlog) — wiring `--follow`, `--export` and `--session` to
-services that already existed, then running the binary it had just built.
+Real sessions, driven by a local `qwen3.6-35b-a3b`. Most are one run at
+[cxlog](https://github.com/nickprotop/cxlog) — closing three unfinished features by wiring
+`--follow`, `--export` and `--session` to services that already existed, then running the binary it
+had just built.
 
-Nothing here is staged. The mistakes are in the pictures too, because they are what the session
+Nothing here is staged. The mistakes are in the pictures too, because they are what the runs
 actually did.
 
 ---
