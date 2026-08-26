@@ -37,11 +37,16 @@ RENDERED = OrderedDict([
 # silently copied into the site is not.
 ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
-# A DOCUMENT WHOSE POINT IS ITS PICTURES GETS THE PAGE'S FULL WIDTH. The 82ch column is right for
-# prose -- the eye tracks back from a short line -- and wrong for a full-window terminal capture,
-# which renders at half scale there and stops being readable at all. Named rather than inferred from
-# an image count: a prose document with one diagram in it is still prose.
-WIDE = {"walkthrough"}
+# EVERY DOCUMENT RENDERED HERE IS A REFERENCE, NOT AN ESSAY. The 82ch column suits prose, where the
+# eye tracks back from a short line -- but these carry twenty to thirty fenced blocks and forty-odd
+# table rows each, and the walkthrough is nineteen full-window captures. In that column a third of
+# the code blocks scrolled sideways and the captures rendered at half scale, so the thing a reader
+# came for was the thing that did not fit.
+#
+# NARROW IS STILL AVAILABLE, by name, for the day something prose-shaped is rendered: drop it from
+# this set. Listing what is wide rather than what is narrow would mean remembering to add each new
+# document, and forgetting would silently cramp it.
+NARROW: set[str] = set()
 
 
 def slug(text: str) -> str:
@@ -292,7 +297,7 @@ def main() -> int:
         (args.out / "docs" / f"{name}.html").write_text(
             template
             .replace("{{title}}", html.escape(title.group(1) if title else name))
-            .replace("{{wide}}", " doc-wide" if name in WIDE else "")
+            .replace("{{wide}}", "" if name in NARROW else " doc-wide")
             .replace("{{body}}", pages[name])
             .replace("{{source}}", f"{GITHUB_BLOB}/{rel}"))
         print(f"rendered {rel} -> docs/{name}.html")

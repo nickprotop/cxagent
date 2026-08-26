@@ -83,13 +83,16 @@ a:hover { text-decoration: underline; }
 /* --- Navigation ------------------------------------------------------------------------------ */
 
 .site-nav {
+  /* CENTRED, NOT BASELINE. An inline-flex brand containing an image takes its baseline from the
+     image's box rather than from the wordmark's text, so `baseline` sat the brand nine pixels above
+     the links beside it. Centring aligns what a reader actually compares: the middles. */
+  align-items: center;
   position: sticky;
   top: 0;
   z-index: 20;
   transition: box-shadow 0.2s ease, background 0.2s ease;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
   gap: 1.4rem;
   padding: 0.9rem 1.6rem;
   border-bottom: 1px solid var(--border);
