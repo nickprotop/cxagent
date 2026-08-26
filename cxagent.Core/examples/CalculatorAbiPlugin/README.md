@@ -6,8 +6,8 @@ One file, seven exported functions, no JSON library.
 cc -shared -fPIC -o calculator.so calculator_abi.c
 ```
 
-Copy `calculator.so` and `calculator.plugin.json` into your plugins folder and name the `.so` in
-config, exactly as you would a managed plugin.
+Copy `calculator.so` and `calculator.plugin.json` into a `calculator/` directory inside your
+plugins folder and name the `.so` in config, exactly as you would a managed plugin.
 
 ## Write an ABI plugin when your language cannot be loaded managed
 

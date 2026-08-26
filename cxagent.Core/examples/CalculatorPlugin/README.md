@@ -6,12 +6,18 @@ Two tools, four methods, and a permission prompt for adding two numbers.
 dotnet build cxagent.Core/examples/CalculatorPlugin
 ```
 
-That produces `calculator.dll` and `calculator.plugin.json`. Copy both into your plugins folder and
-name it in config:
+That produces `calculator.dll` and `calculator.plugin.json`. Copy both into a `calculator/`
+directory inside your plugins folder and name it in config:
 
 ```json
 "plugins": { "calculator": { "file": "calculator.dll", "enabled": true } }
 ```
+
+A directory of its own is not a tidiness convention: your plugin's identity is a hash over
+everything in the folder it loads from, and .NET resolves your dependencies from that same
+folder. Share one with another plugin and neither is isolated — installing either re-asks the
+other's trust prompt. cxagent searches a plugins folder and its immediate subdirectories, so a
+nested plugin is found exactly as a loose one is.
 
 cxagent asks once whether to trust the binary, then the model can call `calc_add`,
 `calc_multiply` and `calc_divide`.
