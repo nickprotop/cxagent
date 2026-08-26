@@ -98,19 +98,25 @@ a:hover { text-decoration: underline; }
 
 /* --- Page shells ----------------------------------------------------------------------------- */
 
-/* 72ch keeps a line of prose at a length the eye can track back from. The landing page opts out
-   with .wide because its screenshots are terminal captures — squeezed to 72ch the text inside them
-   is unreadable, which defeats the point of showing them. */
+/* THE PAGE IS WIDE; THE PROSE INSIDE IT IS NOT. Constraining the whole column to 72ch also
+   constrains the things that are not prose — terminal captures, wide tables, the catalog — and
+   those become unreadable long before a paragraph does. So every page gets the same shell the
+   landing page uses, and the measure is applied to paragraphs instead (see .page-head p, .footnote
+   p below). A page that is half empty on a laptop reads as an afterthought beside its own
+   landing page. */
 main {
-  max-width: 72ch;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 5rem;
+  padding: 2.5rem 2rem 5rem;
 }
 
-main.wide { max-width: 62rem; }
+/* Long-form reading, where the eye tracking back matters more than the room: the rendered
+   documents are the one place a narrow column is right. Their tables and code blocks scroll
+   inside it rather than widening it. */
+main.doc { max-width: 82ch; }
 
 footer {
-  max-width: 72ch;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 1.5rem 1.5rem 4rem;
   border-top: 1px solid var(--border);
@@ -413,9 +419,13 @@ body.landing { max-width: none; }
 
 /* section markers */
 .section-label {
+  display: block;
   font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.12em;
   color: var(--fg-dim); text-transform: uppercase; margin-bottom: 14px;
 }
+/* The label names the page, so the heading follows immediately rather than carrying the browser's
+   default top margin, which would leave the two floating apart. */
+.section-label + h1 { margin-top: 0; }
 .section-label span { color: var(--accent); margin-right: 8px; }
 .landing h2 {
   font: 700 1.9rem/1.2 var(--font-prose); letter-spacing: -0.025em;
@@ -493,3 +503,116 @@ body.landing { max-width: none; }
   .exp-item[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--accent); }
   .landing main { padding: 0 20px; }
 }
+
+/* ---- Inner pages: the landing page's shell, with prose kept readable inside it ------------- */
+
+/* THE MEASURE MOVED FROM THE PAGE TO THE PARAGRAPH. main is 1180px so tables, captures and the
+   catalog have room; a run of text inside it would be unreadable at that width, so the elements
+   that ARE prose carry the limit themselves. */
+main > p,
+main > ul,
+main > ol,
+main > blockquote,
+.page-head .lede,
+.footnote p,
+.footnote ul { max-width: 74ch; }
+
+.page-head { padding: 1rem 0 2.5rem; border-bottom: 1px solid var(--border-dim); margin-bottom: 2.5rem; }
+.page-head h1 { margin: 0.4rem 0 0.6rem; }
+.page-head .lede { color: var(--fg); font-size: 1.08rem; line-height: 1.6; margin: 0; }
+
+/* ---- The catalog: one row per plugin, detail behind a disclosure --------------------------- */
+
+#catalog { margin: 0 0 4rem; }
+
+.plugin-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  margin: 0 0 0.75rem;
+  overflow: hidden;
+}
+
+.plugin-row > summary {
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) 1fr;
+  grid-template-areas: "title blurb" "facts facts";
+  gap: 0.35rem 1.5rem;
+  align-items: baseline;
+  list-style: none;
+}
+.plugin-row > summary::-webkit-details-marker { display: none; }
+
+/* THE MARKER IS DRAWN, NOT INHERITED. A default disclosure triangle sits on the baseline of the
+   first line and drifts out of alignment once the summary becomes a grid. */
+.plugin-row > summary::after {
+  content: "▸";
+  position: absolute;
+  right: 1.25rem;
+  top: 1.05rem;
+  color: var(--accent-dim);
+  font-size: 0.9rem;
+  transition: transform 0.15s ease;
+}
+.plugin-row[open] > summary::after { content: "▾"; }
+.plugin-row > summary { position: relative; padding-right: 3rem; }
+
+.plugin-title { grid-area: title; display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.plugin-title strong { font-size: 1.05rem; color: var(--fg-bright); }
+.plugin-slug { font-family: var(--font-mono); font-size: 0.85rem; color: var(--fg-dim); }
+/* CLAMPED TO TWO LINES. A row's height must not depend on how verbose its author was, or the list
+   stops being scannable at exactly the moment it gets long. The full text is one click away. */
+.plugin-blurb {
+  grid-area: blurb;
+  color: var(--fg);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.plugin-facts {
+  grid-area: facts;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+}
+
+.plugin-row:hover { border-color: var(--accent-dim); }
+.plugin-row[open] { border-color: var(--accent-dim); }
+
+.plugin-detail {
+  padding: 0.25rem 1.25rem 1.25rem;
+  border-top: 1px solid var(--border-dim);
+  margin-top: 0.25rem;
+}
+.plugin-detail > p { max-width: 74ch; }
+
+/* A RUN, NOT A LIST. Publisher, licence and repository are three short facts; bullets give them a
+   visual weight that competes with the tools above them. */
+.plugin-detail .meta {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  font-size: 0.9rem;
+  color: var(--fg-dim);
+}
+.plugin-detail .meta strong { color: var(--fg); font-weight: 500; }
+.plugin-links { margin-top: 1rem; }
+
+/* ---- Footnotes below the catalog: present, but plainly secondary to it --------------------- */
+
+.plugin-footnotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 2.5rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid var(--border-dim);
+}
+.footnote h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+.footnote p { font-size: 0.95rem; }

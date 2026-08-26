@@ -18,43 +18,39 @@
 </nav>
 <main>
 
-<h1>Plugins</h1>
-<p class="lede">Tools from a DLL you drop in a folder, without rebuilding cxagent.</p>
-
-<p class="note">cxagent asks before loading any plugin, and installing one is not approving it —
-<a href="#trust">what that means →</a></p>
-
-<h2>The catalog</h2>
+<header class="page-head">
+  <span class="section-label">// &nbsp;CATALOG</span>
+  <h1>Plugins</h1>
+  <p class="lede">Tools from a DLL you drop in a folder, without rebuilding cxagent. Every plugin
+  here declares what it offers before it runs, and cxagent asks you before it does.</p>
+</header>
 
 <div id="catalog">
   <p class="note">Loading the catalog…</p>
 </div>
 
-<h2>Installing one</h2>
+<section class="plugin-footnotes">
 
+<div class="footnote">
+<h2>Installing one</h2>
 <p>Put the plugin's file in your plugins folder — <code>~/.config/cxagent/plugins</code> on Linux,
 <code>%APPDATA%\cxagent\plugins</code> on Windows,
-<code>~/Library/Application Support/cxagent/plugins</code> on macOS. cxagent will notice it and say
-so, without loading it:</p>
-
-<pre><code>plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), not configured.</code></pre>
-
-<p>Turn it on for one session, with no file to edit:</p>
-
-<pre><code>/plugin load csharp-lsp.dll</code></pre>
-
-<p>Or keep it, in <code>config.json</code>:</p>
-
+<code>~/Library/Application Support/cxagent/plugins</code> on macOS. cxagent notices it and says so,
+without loading it. Turn it on for one session with <code>/plugin load csharp-lsp.dll</code>, or keep
+it in <code>config.json</code>:</p>
 <pre><code>"plugins": { "csharp-lsp": { "file": "csharp-lsp.dll" } }</code></pre>
-
 <p>Either way it asks once, on first load, and shows you what it is about to run.</p>
+</div>
 
-<h2>Writing one</h2>
+<div class="footnote">
+<h2>Publishing one</h2>
+<p>A plugin declares what it offers in a sidecar file cxagent reads <em>before</em> loading its
+assembly, so the load prompt can say what a plugin claims without running it.</p>
+<p><a href="writing-a-plugin.html">Write a plugin →</a><br>
+<a href="docs/plugins.html">The contract in full →</a></p>
+</div>
 
-<p>A plugin declares what it offers in a sidecar file that cxagent reads <em>before</em> loading its
-assembly, so the load prompt can tell you what a plugin claims without running it.
-<a href="writing-a-plugin.html">Start here →</a> or go straight to
-<a href="docs/plugins.html">the contract</a>.</p>
+</section>
 
 <h2 id="trust">Trusting a plugin</h2>
 
@@ -121,43 +117,47 @@ it.</p>
     return li;
   }
 
+  // A ROW, NOT A CARD. Everything a visitor needs to CHOOSE — what it is, whether it runs on their
+  // machine, how much it adds — fits one scannable line plus a summary. Everything they need once
+  // they have chosen is behind the disclosure. A catalog that renders every plugin's requirements,
+  // install command and per-tool gating inline is unreadable at ten entries and buries the one at
+  // one entry.
   function renderPlugin(p) {
-    var card = el("div", "plugin-card");
+    var row = el("details", "plugin-row");
+    row.id = p.name;
 
-    var heading = el("h3");
-    heading.appendChild(document.createTextNode(p.displayName || p.name));
-    card.appendChild(heading);
-    card.appendChild(el("div", "plugin-name", p.name + " · " + (p.version || "unversioned")));
+    var head = el("summary");
+    var title = el("span", "plugin-title");
+    title.appendChild(el("strong", null, p.displayName || p.name));
+    title.appendChild(el("span", "plugin-slug", p.name));
+    head.appendChild(title);
+    if (p.description) head.appendChild(el("span", "plugin-blurb", p.description));
 
-    if (p.description) card.appendChild(el("p", null, p.description));
-
-    var meta = el("ul", "meta");
-    if (p.publisher) meta.appendChild(metaItem("Publisher", p.publisher));
-    if (p.license) meta.appendChild(metaItem("License", p.license));
-    if (p.kind) meta.appendChild(metaItem("Kind", p.kind));
     var compat = p.compatibility || {};
-    if (compat.pluginContract !== undefined)
-      meta.appendChild(metaItem("Plugin contract", "v" + compat.pluginContract));
-    if (compat.platforms && compat.platforms.length)
-      meta.appendChild(metaItem("Platforms", compat.platforms.join(", ")));
-    if (p.repository)
-      meta.appendChild(metaItem("Repository", link(p.repository, p.repository.replace(/^https:\/\//, ""))));
-    card.appendChild(meta);
+    var facts = [];
+    if (p.kind) facts.push(p.kind);
+    if (compat.pluginContract !== undefined) facts.push("contract v" + compat.pluginContract);
+    if (p.tools && p.tools.length) facts.push(p.tools.length === 1 ? "1 tool" : p.tools.length + " tools");
+    if (compat.platforms && compat.platforms.length) facts.push(compat.platforms.join(" · "));
+    if (p.version) facts.push("v" + p.version);
+    if (facts.length) head.appendChild(el("span", "plugin-facts", facts.join("  ·  ")));
+    row.appendChild(head);
+
+    var body = el("div", "plugin-detail");
 
     if (p.requires) {
       var req = el("p");
-      req.appendChild(el("strong", null, "Requires: "));
+      req.appendChild(el("strong", null, "Requires "));
       req.appendChild(document.createTextNode(p.requires.description || p.requires.default || ""));
-      card.appendChild(req);
+      body.appendChild(req);
       if (p.requires.install) {
         var pre = el("pre");
         pre.appendChild(el("code", null, p.requires.install));
-        card.appendChild(pre);
+        body.appendChild(pre);
       }
     }
 
     if (p.tools && p.tools.length) {
-      card.appendChild(el("p", null, p.tools.length === 1 ? "One tool:" : p.tools.length + " tools:"));
       var tools = el("ul", "tools");
       p.tools.forEach(function (tool) {
         var asks = tool.gated !== false;
@@ -166,28 +166,36 @@ it.</p>
         li.appendChild(el("span", asks ? "gate-note" : "gate-note never", "— " + gateText(tool.gated)));
         tools.appendChild(li);
       });
-      card.appendChild(tools);
+      body.appendChild(tools);
     }
 
-    var links = el("p", "note");
-    if (p.sourceUrl) {
-      links.appendChild(link(p.sourceUrl, "Source and README"));
-    }
+    var meta = el("ul", "meta");
+    if (p.publisher) meta.appendChild(metaItem("Publisher", p.publisher));
+    if (p.license) meta.appendChild(metaItem("License", p.license));
+    if (p.repository)
+      meta.appendChild(metaItem("Repository", link(p.repository, p.repository.replace(/^https:\/\//, ""))));
+    body.appendChild(meta);
+
+    var links = el("p", "plugin-links");
+    if (p.sourceUrl) links.appendChild(link(p.sourceUrl, "Source and README"));
     var source = p.source || {};
     if (source.latest) {
       if (links.childNodes.length) links.appendChild(document.createTextNode(" · "));
       links.appendChild(link(source.latest, "Download"));
     }
-    if (links.childNodes.length) card.appendChild(links);
+    if (links.childNodes.length) body.appendChild(links);
 
+    // THE CHECKSUM IS SHOWN, NOT HIDDEN BEHIND A CLAIM. A reader who wants to verify a download
+    // needs the value in front of them, and one who does not can ignore a line of hex.
     if (source.sha256) {
       var sum = el("p", "note");
       sum.appendChild(document.createTextNode("sha256 "));
       sum.appendChild(el("code", null, source.sha256));
-      card.appendChild(sum);
+      body.appendChild(sum);
     }
 
-    return card;
+    row.appendChild(body);
+    return row;
   }
 
   // A FAILED FETCH MUST SAY SO. A blank section under a heading reads as "no plugins yet", which
@@ -223,6 +231,21 @@ it.</p>
         return;
       }
       plugins.forEach(function (p) { mount.appendChild(renderPlugin(p)); });
+
+      // A LINK TO ONE PLUGIN OPENS IT. Rows are collapsed by default, so #csharp-lsp would
+      // otherwise land on a closed row and read as the wrong plugin — or as none.
+      var wanted = decodeURIComponent(location.hash.replace(/^#/, ""));
+      if (wanted) {
+        var target = document.getElementById(wanted);
+        if (target && target.tagName === "DETAILS") {
+          target.open = true;
+          target.scrollIntoView({ block: "start" });
+        }
+      } else if (plugins.length === 1) {
+        // ONE PLUGIN IS NOT A LIST TO BROWSE. Collapsing the only entry hides the entire content
+        // of the page behind a click for no benefit; the disclosure earns itself at two.
+        mount.firstChild.open = true;
+      }
     })
     .catch(function (error) { failed(error.message); });
 })();
