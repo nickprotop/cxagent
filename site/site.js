@@ -1,0 +1,75 @@
+// Progressive polish shared by every page: a copy button on each code block, the nav link for the
+// current page marked, and a shadow under the nav once the page scrolls beneath it.
+//
+// NOTHING HERE IS LOAD-BEARING. Every page is complete without this file: the code is selectable,
+// the nav still navigates, and the shadow is decoration. It is loaded with `defer` for the same
+// reason — nothing below depends on it having run.
+(function () {
+  "use strict";
+
+  // ---- Copy buttons -------------------------------------------------------------------------
+  //
+  // ON THE <pre>, NOT INSIDE IT. A button inside the <pre> becomes part of what a manual selection
+  // drags over, so the reader who ignores the button ends up copying the word "Copy" along with
+  // the command.
+  var blocks = document.querySelectorAll("pre > code");
+  Array.prototype.forEach.call(blocks, function (code) {
+    var pre = code.parentNode;
+    pre.classList.add("has-copy");
+
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "copy-button";
+    button.textContent = "Copy";
+    // The command is already visible; the button is redundant for a screen reader unless it says
+    // what it copies.
+    button.setAttribute("aria-label", "Copy this command to the clipboard");
+
+    button.addEventListener("click", function () {
+      var text = code.textContent;
+      var done = function (ok) {
+        button.textContent = ok ? "Copied" : "Press ⌘C";
+        button.classList.toggle("copied", ok);
+        setTimeout(function () {
+          button.textContent = "Copy";
+          button.classList.remove("copied");
+        }, 1600);
+      };
+
+      // navigator.clipboard IS NOT ALWAYS THERE: it needs a secure context, so a page opened from
+      // disk during development has no clipboard API at all. Failing silently would leave a button
+      // that looks broken; saying which keys to press is a real answer.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); },
+                                                 function () { done(false); });
+      } else {
+        done(false);
+      }
+    });
+
+    pre.appendChild(button);
+  });
+
+  // ---- Which page am I on -------------------------------------------------------------------
+  //
+  // COMPARED BY RESOLVED PATH, not by the href attribute: the links are relative, the site is
+  // served from a project subpath, and "docs/" and "docs/index.html" are the same page.
+  var here = location.pathname.replace(/index\.html$/, "");
+  var links = document.querySelectorAll(".site-nav a");
+  Array.prototype.forEach.call(links, function (a) {
+    var target = new URL(a.getAttribute("href"), location.href);
+    if (target.origin !== location.origin) return;
+    if (target.pathname.replace(/index\.html$/, "") === here) {
+      a.setAttribute("aria-current", "page");
+    }
+  });
+
+  // ---- Nav shadow once content slides under it ----------------------------------------------
+  var nav = document.querySelector(".site-nav");
+  if (nav) {
+    var sync = function () { nav.classList.toggle("scrolled", window.scrollY > 4); };
+    // passive: this listener never calls preventDefault, and saying so keeps scrolling smooth.
+    window.addEventListener("scroll", sync, { passive: true });
+    sync();
+  }
+}());

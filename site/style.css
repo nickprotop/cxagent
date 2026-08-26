@@ -51,7 +51,22 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+/* SCROLL-PADDING, NOT JUST SMOOTH SCROLLING. The nav is sticky, so an anchor target lands
+   underneath it without this and the reader sees the wrong heading at the top of the page. */
+html { scroll-padding-top: 4.5rem; }
+
+/* EVERY ANIMATION HERE IS OPTIONAL. Motion is decoration on a documentation site, and for a reader
+   who has asked their system to stop moving things it is worse than decoration. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 body {
   margin: 0;
@@ -68,6 +83,10 @@ a:hover { text-decoration: underline; }
 /* --- Navigation ------------------------------------------------------------------------------ */
 
 .site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  transition: box-shadow 0.2s ease, background 0.2s ease;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -76,6 +95,20 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
   font-size: 0.95rem;
+}
+
+/* THE SHADOW APPEARS ONLY ONCE THERE IS SOMETHING UNDERNEATH. At the top of the page the nav sits
+   on the background and a shadow would be drawing a line for no reason. */
+.site-nav.scrolled {
+  box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.55);
+  border-bottom-color: var(--border);
+}
+
+/* WHERE YOU ARE, in a nav whose links otherwise look identical. */
+.site-nav a[aria-current="page"] {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 2px;
 }
 
 .site-nav a { color: var(--fg-dim); }
@@ -494,6 +527,15 @@ body.landing { max-width: none; }
 /* Stacked without JS: each capture keeps a rule between it and the next. */
 .exp-pane + .exp-pane { border-top: 1px solid var(--border); }
 
+/* AN ANIMATION, NOT A TRANSITION. Panes are shown and hidden with the `hidden` attribute, and
+   display:none has no intermediate state to transition from — so the reveal is keyframed instead.
+   Short and small: the point is to let the eye follow the swap, not to perform. */
+@keyframes exp-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.js .exp-pane:not([hidden]) { animation: exp-reveal 0.18s ease-out; }
+
 @media (max-width: 60rem) {
   .hero-split { flex-direction: column; align-items: stretch; gap: 34px; }
   .hero-media { flex: 1; max-width: none; }
@@ -616,3 +658,57 @@ main > blockquote,
 }
 .footnote h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
 .footnote p { font-size: 0.95rem; }
+
+/* ---- Copy buttons on code blocks ----------------------------------------------------------- */
+
+pre.has-copy { position: relative; }
+
+/* HIDDEN UNTIL WANTED on a pointer device, and always present without one. A button that only
+   appears on hover is invisible to a touch screen, which has no hover to give. */
+.copy-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  font: 500 0.75rem/1 var(--font-mono);
+  color: var(--fg-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+pre.has-copy:hover .copy-button,
+.copy-button:focus-visible { opacity: 1; }
+.copy-button:hover { color: var(--fg-bright); border-color: var(--accent-dim); }
+.copy-button.copied { color: var(--accent); border-color: var(--accent); opacity: 1; }
+
+@media (hover: none) {
+  .copy-button { opacity: 1; }
+}
+
+/* ---- A capture on the plugins page --------------------------------------------------------- */
+
+.plugin-shot { margin: 3.5rem 0 0; }
+.plugin-shot img {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
+}
+.plugin-shot figcaption {
+  max-width: 74ch;
+  margin: 1rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+/* A quiet aside under an explorer caption: the thread between two captures of one session. */
+.exp-aside {
+  margin-top: 0.7rem;
+  color: var(--fg-dim);
+  font-size: 0.9rem;
+  font-style: italic;
+}

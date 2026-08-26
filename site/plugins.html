@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plugins — cxagent</title>
 <meta name="description" content="The catalog of plugins cxagent knows about: what each one adds, what it requires installed, and which of its tools stop to ask.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Plugins — cxagent">
+<meta property="og:url" content="https://nickprotop.github.io/cxagent/plugins.html">
+<meta property="og:image" content="https://nickprotop.github.io/cxagent/screenshots/01-trust.png">
+<meta property="og:site_name" content="cxagent">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:description" content="Tools from a DLL you drop in a folder, without rebuilding cxagent.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,6 +36,15 @@
 <div id="catalog">
   <p class="note">Loading the catalog…</p>
 </div>
+
+<figure class="plugin-shot">
+  <img src="screenshots/session-lsp-worker.png" loading="lazy"
+       alt="A worker's tool calls listed in a table, three of them csharp_definition from the language-server plugin">
+  <figcaption>A worker expanded, mid-session. Of the six tools it called, some come from the
+  <code>csharp-lsp</code> plugin — <code>csharp_definition</code> among them — and nothing in the
+  table distinguishes them from the tools cxagent ships with. That is the point of a plugin: the
+  model is offered one set of tools, and where each came from is your business, not its.</figcaption>
+</figure>
 
 <section class="plugin-footnotes">
 
@@ -250,5 +267,6 @@ it.</p>
     .catch(function (error) { failed(error.message); });
 })();
 </script>
+<script src="site.js" defer></script>
 </body>
 </html>

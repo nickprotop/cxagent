@@ -8,6 +8,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="cxagent — a terminal coding agent">
+<meta property="og:url" content="https://nickprotop.github.io/cxagent/">
+<meta property="og:image" content="https://nickprotop.github.io/cxagent/screenshots/01-trust.png">
+<meta property="og:site_name" content="cxagent">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="style.css">
 </head>
 <body class="landing">
@@ -71,6 +78,8 @@
     </div>
     <div class="explorer">
       <div class="exp-nav" role="tablist" aria-label="Session captures" data-tabs>
+      <button type="button" class="exp-item" role="tab" id="tab-session-overview" aria-controls="pane-session-overview"><span class="exp-icon">&#128220;</span><span>A whole session</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-session-lsp-worker" aria-controls="pane-session-lsp-worker"><span class="exp-icon">&#128301;</span><span>Tools at work</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-01-trust" aria-controls="pane-01-trust"><span class="exp-icon">&#128274;</span><span>Trust</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-02-sub-agents" aria-controls="pane-02-sub-agents"><span class="exp-icon">&#127807;</span><span>Sub-agents</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-04-question-step-1" aria-controls="pane-04-question-step-1"><span class="exp-icon">&#10067;</span><span>Asking you</span></button>
@@ -81,6 +90,14 @@
       <button type="button" class="exp-item" role="tab" id="tab-14-plugin-lsp" aria-controls="pane-14-plugin-lsp"><span class="exp-icon">&#128270;</span><span>Plugin at work</span></button>
       </div>
       <div class="exp-body" id="panels">
+      <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
+        <div class="exp-shot"><a href="screenshots/session-overview.png" title="Open the full-size capture"><img src="screenshots/session-overview.png" alt="A session exploring a codebase, with two finished workers and the panel showing cost" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A session, end to end</h3><p>Two workers explored a GPU monitoring tool and reported back. The agent wrote the summary you are reading from what they found, not from the files — and the panel on the right carries what that cost while it happened: 1.2M tokens across workers, four fifths of them served from cache.</p><p class="exp-aside">The next capture is this same session, scrolled up.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-session-lsp-worker" aria-labelledby="tab-session-lsp-worker">
+        <div class="exp-shot"><a href="screenshots/session-lsp-worker.png" title="Open the full-size capture"><img src="screenshots/session-lsp-worker.png" alt="A worker calling language-server tools, with a table of every call and its duration" loading="lazy"></a></div>
+        <div class="exp-text"><h3>The same session, one worker open</h3><p>Every collapsed worker expands into what it actually did: fifty-two calls across six tools in under four seconds, each with its arguments and its duration. Some are <code>csharp_definition</code> — a plugin's tools, sitting among the built-in ones with nothing to tell them apart.</p><p class="exp-aside">You are not asked to trust a summary of the work. The work is there.</p></div>
+      </div>
       <div class="exp-pane" role="tabpanel" id="pane-01-trust" aria-labelledby="tab-01-trust">
         <div class="exp-shot"><img src="screenshots/01-trust.png" alt="Trusting a folder"></div>
         <div class="exp-text"><h3>Trusting a folder</h3><p>The first question of the first session. Reads and writes inside this folder stop asking; anything that writes elsewhere, and every shell command, still stops.</p></div>
@@ -198,5 +215,6 @@
   cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
 </footer>
 <script src="explorer.js"></script>
+<script src="site.js" defer></script>
 </body>
 </html>
