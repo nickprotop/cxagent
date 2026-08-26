@@ -92,7 +92,7 @@
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
         <div class="exp-shot"><a href="screenshots/session-overview.png" title="Open the full-size capture"><img src="screenshots/session-overview.png" alt="A session exploring a codebase, with two finished workers and the panel showing cost" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A session, end to end</h3><p>Two workers explored a GPU monitoring tool and reported back. The agent wrote the summary you are reading from what they found, not from the files — and the panel on the right carries what that cost while it happened: 1.2M tokens across workers, four fifths of them served from cache.</p><p class="exp-aside">The next capture is this same session, scrolled up.</p></div>
+        <div class="exp-text"><h3>A session, end to end</h3><p>Two workers explored a GPU monitoring tool and reported back. The agent wrote the summary you are reading from what they found, not from the files — and the panel on the right carries what that cost while it happened: 1.2M tokens across workers. The system prompt is built the same way every turn, so what the model has already read stays read.</p><p class="exp-aside">The next capture is this same session, scrolled up.</p></div>
       </div>
       <div class="exp-pane" role="tabpanel" id="pane-session-lsp-worker" aria-labelledby="tab-session-lsp-worker">
         <div class="exp-shot"><a href="screenshots/session-lsp-worker.png" title="Open the full-size capture"><img src="screenshots/session-lsp-worker.png" alt="A worker calling language-server tools, with a table of every call and its duration" loading="lazy"></a></div>
@@ -139,9 +139,9 @@
 </section>
 
 <section id="why">
-  <div class="section-label"><span>//</span> Differentiators</div>
-  <h2>What sets cxagent apart</h2>
-  <p class="section-sub">One context, the real bytes, and a permission model you can actually see.</p>
+  <div class="section-label"><span>//</span> How it works</div>
+  <h2>How it works</h2>
+  <p class="section-sub">One context, the real bytes on disk, and a prompt that does not move under a running conversation.</p>
 
   <div class="uniques">
     <div class="u-item">
