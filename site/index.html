@@ -38,6 +38,10 @@
       <span class="pill">licence <b>MIT</b></span>
       <span class="pill">runs on <b>Linux · macOS · Windows</b></span>
       <span class="pill">models <b>Ollama · OpenAI-compatible · Anthropic</b></span>
+      <!-- FILLED FROM THE CATALOG by site.js, and hidden until it is. The release workflow
+           regenerates that file on every publish, so a version written in here would be stale the
+           moment a release shipped with nothing failing to say so. -->
+      <a class="pill pill-link" id="version" href="https://github.com/nickprotop/cxagent/releases/latest" hidden></a>
     </div>
 
     <div class="install-line">
@@ -231,10 +235,6 @@
 </main>
 <footer>
   cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
-  <!-- FILLED FROM THE CATALOG, which the plugins page already fetches and which the release
-       workflow regenerates on every publish. A version written into the HTML would be stale the
-       moment a release shipped without anyone editing this file. -->
-  <span id="version"></span>
 </footer>
 <script src="explorer.js"></script>
 <script src="site.js" defer></script>

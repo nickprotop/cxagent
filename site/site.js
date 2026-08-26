@@ -85,9 +85,10 @@
       .then(function (catalog) {
         var plugin = catalog && catalog.plugins && catalog.plugins[0];
         if (!plugin || !plugin.version) return;
-        versionSlot.innerHTML =
-          ' Current release <a href="https://github.com/nickprotop/cxagent/releases/latest">v'
-          + plugin.version + ' — what changed →</a>';
+        // textContent, not innerHTML: the anchor and its href are already in the markup, so this
+        // only fills the label -- and a value from a fetched file never becomes markup.
+        versionSlot.textContent = "v" + plugin.version + " — what changed →";
+        versionSlot.hidden = false;
       })
       .catch(function () { /* a footer line is not worth an error message */ });
   }

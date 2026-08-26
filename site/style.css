@@ -727,3 +727,13 @@ main.doc-wide > ul,
 main.doc-wide > ol,
 main.doc-wide > blockquote { max-width: 78ch; }
 main.doc-wide > p:has(> img) { max-width: none; }
+
+/* THE ONE PILL YOU CAN CLICK, and it has to look like it. Styled identically to its neighbours it
+   reads as another static fact; the accent and the arrow are what say otherwise. */
+.pill-link {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.pill-link:hover { border-color: var(--accent); color: var(--fg-bright); }
