@@ -688,23 +688,6 @@ pre.has-copy:hover .copy-button,
   .copy-button { opacity: 1; }
 }
 
-/* ---- A capture on the plugins page --------------------------------------------------------- */
-
-.plugin-shot { margin: 3.5rem 0 0; }
-.plugin-shot img {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
-}
-.plugin-shot figcaption {
-  max-width: 74ch;
-  margin: 1rem 0 0;
-  color: var(--fg-dim);
-  font-size: 0.92rem;
-  line-height: 1.6;
-}
-
 /* A quiet aside under an explorer caption: the thread between two captures of one session. */
 .exp-aside {
   margin-top: 0.7rem;
