@@ -728,8 +728,25 @@ main.doc-wide > ol,
 main.doc-wide > blockquote { max-width: 78ch; }
 main.doc-wide > p:has(> img) { max-width: none; }
 
-/* THE ONE PILL YOU CAN CLICK, and it has to look like it. Styled identically to its neighbours it
-   reads as another static fact; the accent and the arrow are what say otherwise. */
+/* ITS OWN ROW, ALWAYS. Left to wrap it sat beside `models` at 1440px, alone at 1100px and alone
+   again at 900px -- landing wherever there happened to be room, which reads as an accident rather
+   than a decision. A flex-basis of 100% breaks the line before it every time.
+   
+   IT IS ALSO NOT THE SAME KIND OF FACT as the three above it: those are fixed properties of the
+   software, this one changes with every release. A row of its own says so without a caption. */
+/* A ROW OF ITS OWN, forced rather than left to chance. Wrapping naturally it sat beside `models` at
+   1440px, alone at 1100px and alone again at 900px -- landing wherever there was room, which reads
+   as an accident. `.pills` wraps, so a full-width spacer before this pill breaks the line every
+   time; the pill itself keeps its own width, since one stretched across the hero stops looking like
+   a pill at all.
+
+   IT IS ALSO NOT THE SAME KIND OF FACT as the three above: those are fixed properties of the
+   software, this changes with every release. Its own row says so without needing a caption. */
+.pill-break { flex-basis: 100%; height: 0; }
+/* Hidden with the pill it precedes: a spacer left behind when the version cannot be read would push
+   nothing onto a row that then holds nothing. */
+.pill-break:has(+ .pill-link[hidden]) { display: none; }
+.pill-link { margin-top: 2px; }
 .pill-link {
   color: var(--accent);
   border-color: var(--accent-dim);
