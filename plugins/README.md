@@ -31,6 +31,15 @@ The last two are always searched, so a plugin dropped in either is found with no
 at all. Project before global means a repo's own copy of a plugin shadows an installed one rather
 than colliding with it.
 
+Each of those is searched **itself and one level down**, so a plugin in a directory of its own —
+`plugins/csharp-lsp/csharp-lsp.dll` — is found exactly as one sitting loose in the folder is.
+
+**A directory of its own is the layout to prefer.** A plugin's identity is a hash over everything in
+its load-set folder, and .NET resolves its dependencies from that folder too, so two plugins sharing
+one are neither isolated from each other nor separately identifiable: installing or updating either
+one changes the other's hash and re-asks its load prompt. `install.sh` writes the nested layout, and
+a loose plugin keeps working — cxagent says so at load rather than refusing it.
+
 A relative `pluginPaths` entry resolves against **the project directory**, not the config folder — so
 `".cxagent/tools"` means the repo you are in, and an absolute path or `~` means what it says.
 

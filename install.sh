@@ -113,8 +113,23 @@ if [ -z "$PLUGIN_CHECKSUM_FAILED" ] && [ -f "/tmp/csharp-lsp-$$.zip" ]; then
     mkdir -p "$PLUGIN_DIR"
     chmod 700 "$CONFIG_DIR" "$PLUGIN_DIR" 2>/dev/null || true
 
-    if command -v unzip > /dev/null 2>&1; then
-        unzip -oq "/tmp/csharp-lsp-$$.zip" -d "$PLUGIN_DIR" && PLUGIN_INSTALLED=1
+    # A DIRECTORY OF ITS OWN. A plugin's identity is a hash over everything in its folder, and
+    # Assembly.LoadFrom resolves dependencies from that folder too — so two plugins sharing one are
+    # neither isolated nor separately identifiable. cxagent searches a plugins folder and its
+    # immediate subdirectories, so this loads exactly as a loose install did.
+    PLUGIN_HOME="$PLUGIN_DIR/csharp-lsp"
+
+    # AN EXISTING LOOSE COPY IS LEFT ALONE. The folder is searched before its subdirectories, so a
+    # loose csharp-lsp.dll would shadow whatever is written here — installing over it silently would
+    # leave the user running one copy and reading about another.
+    if [ -f "$PLUGIN_DIR/csharp-lsp.dll" ]; then
+        echo "  ! csharp-lsp is already installed directly in $PLUGIN_DIR."
+        echo "    Leaving it alone. Remove csharp-lsp.dll and csharp-lsp.plugin.json from there"
+        echo "    and re-run to move it into a directory of its own."
+    elif command -v unzip > /dev/null 2>&1; then
+        mkdir -p "$PLUGIN_HOME"
+        chmod 700 "$PLUGIN_HOME" 2>/dev/null || true
+        unzip -oq "/tmp/csharp-lsp-$$.zip" -d "$PLUGIN_HOME" && PLUGIN_INSTALLED=1
     fi
     rm -f "/tmp/csharp-lsp-$$.zip"
 fi
