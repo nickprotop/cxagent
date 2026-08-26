@@ -46,6 +46,10 @@
     <p class="note">No .NET required. Anything outside your working folder asks first.
     <a href="install.html">Windows, the .NET tool, building from source →</a></p>
 
+    <p class="note">It runs on your machine, against the model you name. There is no cxagent account
+    and no cxagent server: the only things it talks to are the endpoint in your config, the MCP
+    servers you add, and whatever a tool call reaches for.</p>
+
     <div class="btns">
       <a class="btn btn-primary" href="install.html">Get started</a>
       <a class="btn btn-ghost" href="#session">See a session</a>
@@ -197,6 +201,7 @@
     <a class="chip" href="writing-a-plugin.html"><b>04</b>Writing a plugin</a>
     <a class="chip" href="docs/commands.html"><b>05</b>Commands</a>
     <a class="chip" href="docs/config.html"><b>06</b>Configuration</a>
+    <a class="chip" href="https://github.com/nickprotop/cxagent/releases"><b>↗</b>Releases</a>
     <a class="chip" href="https://github.com/nickprotop/cxagent"><b>↗</b>GitHub</a>
   </div>
 </section>
@@ -226,6 +231,10 @@
 </main>
 <footer>
   cxagent is MIT licensed. <a href="https://github.com/nickprotop/cxagent">Source on GitHub</a>.
+  <!-- FILLED FROM THE CATALOG, which the plugins page already fetches and which the release
+       workflow regenerates on every publish. A version written into the HTML would be stale the
+       moment a release shipped without anyone editing this file. -->
+  <span id="version"></span>
 </footer>
 <script src="explorer.js"></script>
 <script src="site.js" defer></script>
