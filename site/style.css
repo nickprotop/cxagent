@@ -489,8 +489,11 @@ body.landing { max-width: none; }
 .exp-text p { margin: 0; font-size: 0.94rem; line-height: 1.62; max-width: 74ch; }
 
 /* numbered differentiators — order is real here, they are not decoration */
+/* THREE ACROSS, NOT auto-fit. With five items, auto-fit packs four onto the first row and strands
+   the fifth beside three empty cells — which reads as a layout bug rather than a fifth point. Three
+   columns give 3 + 2, where the short row is a pair and looks deliberate. */
 .uniques {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 1px; background: var(--border-dim);
   border: 1px solid var(--border-dim); border-radius: var(--radius); overflow: hidden;
 }
@@ -540,6 +543,7 @@ body.landing { max-width: none; }
   .hero-split { flex-direction: column; align-items: stretch; gap: 34px; }
   .hero-media { flex: 1; max-width: none; }
   .explorer { grid-template-columns: 1fr; }
+  .uniques { grid-template-columns: 1fr; }
   .js .exp-nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
   .exp-item { border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
   .exp-item[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--accent); }

@@ -67,9 +67,8 @@
 <section id="session">
   <div class="section-label"><span>//</span> Sessions</div>
   <h2>What a session looks like</h2>
-  <p class="section-sub">Every capture is from a real session, rendered from
-  <code>tmux capture-pane</code> output rather than photographed — so the text is exact. Nothing is
-  staged, and the mistakes are still in the pictures.</p>
+  <p class="section-sub">Every capture is from a real session. Nothing is staged, and the
+  mistakes are still in the pictures.</p>
 
   <div class="win">
     <div class="win-bar">
@@ -153,20 +152,28 @@
     <div class="u-item">
       <div class="u-num">02</div>
       <p class="u-title">Sub-agents keep their own context</p>
-      <p class="u-body">A worker explores in its own window with its own turn count, and the panel
-      splits workers from this agent, so where the tokens went stays legible.</p>
+      <p class="u-body">A worker gets its own window and its own turn count. The panel counts what
+      workers spent separately from what this agent spent, because a session that did most of its
+      work inside children otherwise looks identical to one that spawned none.</p>
     </div>
     <div class="u-item">
       <div class="u-num">03</div>
       <p class="u-title">Bring your own model</p>
-      <p class="u-body">Ollama, any OpenAI-compatible endpoint, or Anthropic. Nothing is hosted, and
-      nothing phones home.</p>
+      <p class="u-body">Ollama, any OpenAI-compatible endpoint, or Anthropic — named in your config
+      file, and switchable mid-session. There is no cxagent service between you and the model.</p>
     </div>
     <div class="u-item">
       <div class="u-num">04</div>
       <p class="u-title">A plugin is a decision, not an install</p>
-      <p class="u-body">A plugin is a DLL you drop in a folder. cxagent shows a hash of everything it
-      would load and asks — installing one is not approving it.</p>
+      <p class="u-body">A plugin is a DLL you drop in a folder. Before any of it runs, cxagent reads
+      the sidecar file beside it, shows you a hash of everything it would load, and asks.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">05</div>
+      <p class="u-title">The prompt does not move</p>
+      <p class="u-body">Built the same way every turn, from facts sorted into a fixed order — so an
+      MCP server connecting at turn 82, or a skill the filesystem happened to list differently, does
+      not rewrite what the model has already read.</p>
     </div>
   </div>
 </section>

@@ -7,9 +7,6 @@ services that already existed, then running the binary it had just built.
 Nothing here is staged. The mistakes are in the pictures too, because they are what the session
 actually did.
 
-> These are rendered from `tmux capture-pane` output rather than photographed off a screen, so the
-> colours and text are exact and the glyph metrics are the renderer's rather than your terminal's.
-
 ---
 
 ## Trusting a folder
