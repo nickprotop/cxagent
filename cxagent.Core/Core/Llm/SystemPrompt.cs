@@ -600,9 +600,12 @@ public static class SystemPrompt
     /// </summary>
     private static void AppendSkills(StringBuilder sb, SystemPromptContext ctx)
     {
-        // NO RE-SORT. The catalog is already ordered by name, and sorting again here would put the
-        // guarantee in two places — the second one silently wrong the day the first changes.
-        var skills = ctx.Skills;
+        // SORTED HERE TOO, matching AppendMcpInstructions and AppendPluginInstructions above. The
+        // catalog already orders by name, so this is redundant today — and redundant is the point:
+        // this section rides in the cached prefix, and a builder that depends on its caller having
+        // sorted is one caller away from churning that prefix for every user with no failing test
+        // to say so. A handful of items sorted once per prompt is not a cost worth reasoning about.
+        var skills = ctx.Skills.OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
         if (skills.Count == 0) return;
 
         sb.AppendLine();
