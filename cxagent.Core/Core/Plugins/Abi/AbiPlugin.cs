@@ -80,6 +80,41 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
     /// side of <see cref="PluginRegistry"/>, exactly as Abi/README.md draws the same distinction on
     /// the wire (<c>ok</c> vs <c>result.success</c>).
     /// </summary>
+    public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
+    {
+        var argumentsJson = AbiCodec.WriteInvokeCall(toolName, call);
+        using var doc = JsonDocument.Parse(argumentsJson);
+        var arguments = doc.RootElement.GetProperty("arguments").Clone();
+
+        var reply = await _host.Invoke(toolName, arguments, ct).ConfigureAwait(false);
+        if (!reply.Ok)
+            return new JobResult { Success = false, ErrorMessage = reply.Error ?? $"plugin '{_manifest.Name}' call to '{toolName}' failed." };
+
+        if (reply.Result is null)
+            return new JobResult
+            {
+                Success = false,
+                ErrorMessage = $"plugin '{_manifest.Name}' replied ok:true to invoke with no result — invoke always returns a JobResult.",
+            };
+
+        var r = reply.Result;
+        var output = r.Output.ValueKind == JsonValueKind.Object
+            ? r.Output.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)
+            : new Dictionary<string, object?>();
+
+        return new JobResult
+        {
+            Success = r.Success,
+            ExitCode = r.ExitCode,
+            ErrorMessage = r.ErrorMessage,
+            PermissionDenied = r.PermissionDenied,
+            DecidedBy = r.DecidedBy,
+            Output = output,
+            LogFile = r.LogFile,
+            Duration = TimeSpan.FromMilliseconds(r.DurationMs),
+        };
+    }
+
     /// <summary>
     /// How long a gate may take before the host stops waiting and asks instead. Short because this
     /// runs on the path that renders a permission prompt: a gate is meant to inspect arguments
@@ -127,40 +162,6 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
         new($"run '{toolName}' from the '{_manifest.Name}' plugin (its permission check did not answer)",
             AlwaysAskable: false);
 
-    public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context, CancellationToken ct)
-    {
-        var argumentsJson = AbiCodec.WriteInvokeCall(toolName, call);
-        using var doc = JsonDocument.Parse(argumentsJson);
-        var arguments = doc.RootElement.GetProperty("arguments").Clone();
-
-        var reply = await _host.Invoke(toolName, arguments, ct).ConfigureAwait(false);
-        if (!reply.Ok)
-            return new JobResult { Success = false, ErrorMessage = reply.Error ?? $"plugin '{_manifest.Name}' call to '{toolName}' failed." };
-
-        if (reply.Result is null)
-            return new JobResult
-            {
-                Success = false,
-                ErrorMessage = $"plugin '{_manifest.Name}' replied ok:true to invoke with no result — invoke always returns a JobResult.",
-            };
-
-        var r = reply.Result;
-        var output = r.Output.ValueKind == JsonValueKind.Object
-            ? r.Output.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value)
-            : new Dictionary<string, object?>();
-
-        return new JobResult
-        {
-            Success = r.Success,
-            ExitCode = r.ExitCode,
-            ErrorMessage = r.ErrorMessage,
-            PermissionDenied = r.PermissionDenied,
-            DecidedBy = r.DecidedBy,
-            Output = output,
-            LogFile = r.LogFile,
-            Duration = TimeSpan.FromMilliseconds(r.DurationMs),
-        };
-    }
 
     /// <summary>
     /// Sends <c>stop</c> and disposes the host process regardless of whether that reply was

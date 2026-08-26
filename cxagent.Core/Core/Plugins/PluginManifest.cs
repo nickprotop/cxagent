@@ -5,7 +5,7 @@ namespace CxAgent.Core.Plugins;
 
 /// <summary>
 /// One tool a plugin contributes, in the sidecar's own shape rather than <see cref="ToolDefinition"/>
-/// — <see cref="Gated"/> is manifest-only policy that a running plugin's dispatch needs and the
+/// — <see cref="PluginToolManifest.Gated"/> is manifest-only policy that a running plugin's dispatch needs and the
 /// model's tool list does not.
 /// </summary>
 /// <summary>
@@ -21,12 +21,12 @@ public enum PluginGating
     /// <summary>Asks on every call, whatever the arguments say.</summary>
     Always,
 
-    /// <summary>Asks <see cref="IPlugin.Gate"/>, per call, with the arguments in hand.</summary>
+    /// <summary>Asks <see cref="IPluginGateSource.Gate"/>, per call, with the arguments in hand.</summary>
     Dynamic,
 }
 
 /// <summary>
-/// What a plugin returns from <see cref="IPlugin.Gate"/> to ask about one call.
+/// What a plugin returns from <see cref="IPluginGateSource.Gate"/> to ask about one call.
 ///
 /// <para>DELIBERATELY NOT A <see cref="Permissions.PermissionRequest"/>, and this is the security
 /// boundary of the whole feature. A PermissionRequest carries <c>Kind</c> and <c>AlwaysRule</c>,

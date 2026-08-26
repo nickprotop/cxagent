@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="cxagent">
+  <!-- The same prompt-and-caret as the favicon, drawn at a size where the stroke can breathe.
+       A terminal is what cxagent is; a lettered mark would be two glyphs and a smudge. -->
+  <rect width="40" height="40" rx="9" fill="#0d1117"/>
+  <rect x="0.75" y="0.75" width="38.5" height="38.5" rx="8.25" fill="none"
+        stroke="#1f6f43" stroke-width="1.5"/>
+  <path d="M11 13.5 L17.5 20 L11 26.5" fill="none" stroke="#3ddc84" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="20.5" y="24.2" width="9.5" height="2.8" rx="1.4" fill="#3ddc84"/>
+</svg>

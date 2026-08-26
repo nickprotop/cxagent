@@ -58,13 +58,19 @@ public sealed record HostRequest(
 /// parent already knows how to read that shape, and translating it into a second one here would be
 /// exactly the kind of near-duplicate shape the ABI's own single-envelope design avoids.
 /// </summary>
+/// <param name="Id">The request this answers — replies may arrive out of order, so a caller matches
+/// on this rather than on arrival.</param>
+/// <param name="Ok">Whether the CALL crossed the boundary, which is a different question from
+/// whether the work succeeded — see <see cref="AbiJobResult"/> for the second.</param>
+/// <param name="Result">The tool's own result, for an invoke; null for every other kind.</param>
+/// <param name="Error">Why the call could not be made, when <paramref name="Ok"/> is false.</param>
+/// <param name="Gate">A gate reply's payload — null for every other request kind, and null from a
+/// gate that decided this call needs no prompt.</param>
 public sealed record HostReply(
     [property: JsonPropertyName("id")] long Id,
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("result")] AbiJobResult? Result,
     [property: JsonPropertyName("error")] string? Error,
-    /// <summary>A gate reply's payload — null for every other request kind, and null from a gate
-    /// that decided this call needs no prompt.</summary>
     [property: JsonPropertyName("gate")] AbiGate? Gate = null);
 
 /// <summary>

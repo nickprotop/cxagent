@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="docs/logo.svg" alt="" width="72" height="72">
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![NuGet](https://img.shields.io/nuget/v/cxagent.svg?label=dotnet%20tool)](https://www.nuget.org/packages/cxagent)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)

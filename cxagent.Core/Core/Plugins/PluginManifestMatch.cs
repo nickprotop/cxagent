@@ -23,10 +23,6 @@ internal static class PluginManifestMatch
     /// <param name="actualSource">Names where <paramref name="actual"/> came from, in the error
     /// message — <c>"Load"</c> for a managed plugin, <c>"describe"</c> for an ABI one, so a mismatch
     /// report reads correctly for either loader without this method needing to know which one called it.</param>
-    /// <summary>"none" rather than an empty string, so a manifest that simply omitted the field
-    /// reads differently from one that declared a number.</summary>
-    private static string Describe(int? contract) => contract?.ToString() ?? "none";
-
     public static string? Mismatch(PluginManifest sidecar, PluginManifest actual, string actualSource)
     {
         if (sidecar.Name != actual.Name)
@@ -114,4 +110,8 @@ internal static class PluginManifestMatch
                 return true;
         }
     }
+
+    /// <summary>"none" rather than an empty string, so a manifest that simply omitted the field
+    /// reads differently from one that declared a number.</summary>
+    private static string Describe(int? contract) => contract?.ToString() ?? "none";
 }

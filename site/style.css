@@ -115,12 +115,20 @@ a:hover { text-decoration: underline; }
 .site-nav a:hover { color: var(--fg-bright); }
 
 .site-nav .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--fg-bright);
   margin-right: auto;
+  text-decoration: none;
 }
+
+/* THE MARK CARRIES NO alt TEXT, because the wordmark beside it already says "cxagent" — a screen
+   reader announcing the name twice is worse than not announcing the picture. */
+.brand-mark { display: block; border-radius: 5px; }
 
 /* The nav wraps onto a second line on a narrow screen; `margin-right: auto` on the brand would
    then push the links to the far edge, so it is dropped once there is no room for two columns. */
