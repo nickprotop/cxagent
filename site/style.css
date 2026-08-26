@@ -706,3 +706,24 @@ pre.has-copy:hover .copy-button,
   border-top: 1px solid var(--border-dim);
   margin: 3rem 0;
 }
+
+/* A rendered document whose captures are the content, not decoration around it. */
+main.doc-wide { max-width: 1180px; }
+
+/* FILLED, NOT MERELY CAPPED. The captures were taken at different window sizes, so `max-width: 100%`
+   alone leaves a 1499px shot and a 1746px shot rendering at different widths down the page -- and
+   the smaller ones sitting in whitespace they could have used. Terminal text is the content here,
+   and every pixel of column is a pixel of legibility. */
+main.doc-wide img {
+  width: 100%;
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+}
+/* Its prose still reads at a sane measure inside that width -- but a paragraph that is nothing but a
+   capture is not prose, and the measure would cap the picture it wraps. :has lets the rule skip
+   exactly those. */
+main.doc-wide > p,
+main.doc-wide > ul,
+main.doc-wide > ol,
+main.doc-wide > blockquote { max-width: 78ch; }
+main.doc-wide > p:has(> img) { max-width: none; }

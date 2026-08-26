@@ -37,6 +37,12 @@ RENDERED = OrderedDict([
 # silently copied into the site is not.
 ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
+# A DOCUMENT WHOSE POINT IS ITS PICTURES GETS THE PAGE'S FULL WIDTH. The 82ch column is right for
+# prose -- the eye tracks back from a short line -- and wrong for a full-window terminal capture,
+# which renders at half scale there and stops being readable at all. Named rather than inferred from
+# an image count: a prose document with one diagram in it is still prose.
+WIDE = {"walkthrough"}
+
 
 def slug(text: str) -> str:
     """GitHub's heading-anchor rule: lowercase, punctuation dropped, spaces to hyphens.
@@ -286,6 +292,7 @@ def main() -> int:
         (args.out / "docs" / f"{name}.html").write_text(
             template
             .replace("{{title}}", html.escape(title.group(1) if title else name))
+            .replace("{{wide}}", " doc-wide" if name in WIDE else "")
             .replace("{{body}}", pages[name])
             .replace("{{source}}", f"{GITHUB_BLOB}/{rel}"))
         print(f"rendered {rel} -> docs/{name}.html")
