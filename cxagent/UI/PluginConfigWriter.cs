@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.UI;
 
 /// <summary>
 /// Writes a plugin's entry into <c>config.json</c>.

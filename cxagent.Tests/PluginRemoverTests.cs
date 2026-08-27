@@ -1,5 +1,5 @@
 using CxAgent.Core.Llm;
-using CxAgent.Core.Plugins;
+using CxAgent.UI;
 using Xunit;
 
 namespace CxAgent.Tests;

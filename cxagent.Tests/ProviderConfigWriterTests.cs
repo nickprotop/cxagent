@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
+using CxAgent.UI;
 using Xunit;
 
 namespace CxAgent.Tests;

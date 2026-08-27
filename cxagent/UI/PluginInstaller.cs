@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.UI;
 
 /// <summary>How an install went.</summary>
 public abstract record InstallResult

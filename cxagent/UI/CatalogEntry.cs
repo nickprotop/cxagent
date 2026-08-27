@@ -1,4 +1,4 @@
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.UI;
 
 /// <summary>One tool a catalogued plugin offers, and whether calling it asks.</summary>
 /// <param name="Name">The tool's name, as the model sees it.</param>

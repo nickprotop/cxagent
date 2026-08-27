@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.UI;
 
 /// <summary>
 /// Reads the published catalog, and keeps the last good copy so the dialog opens without a network.

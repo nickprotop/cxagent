@@ -44,7 +44,7 @@ public class AppPaths
     ///
     /// The mode is NOT cosmetic: this directory holds config.json (which stores API KEYS), cxagent.db,
     /// and every job's log output. A bare Directory.CreateDirectory inherits the process umask — under
-    /// the common default of 0002 that yields 775, i.e. group- and world-traversable. ProviderConfigWriter
+    /// the common default of 0002 that yields 775, i.e. group- and world-traversable. The config writer
     /// separately forces config.json itself to 0600, but a readable directory still exposes the file
     /// listing and anything a future writer forgets to chmod.
     ///
@@ -71,7 +71,8 @@ public class AppPaths
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Best-effort: a filesystem that rejects chmod (some network/FUSE mounts) must not stop the
-            // app from starting. The file-level 0600 in ProviderConfigWriter is the stronger guarantee.
+            // app from starting. The stronger guarantee is the file's own 0600, set by whatever writes
+            // config.json — this directory mode is defence in depth, not the primary control.
         }
     }
 }

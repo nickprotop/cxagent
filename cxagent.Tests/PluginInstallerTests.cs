@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
-using CxAgent.Core.Plugins;
+using CxAgent.UI;
 using Xunit;
 
 namespace CxAgent.Tests;

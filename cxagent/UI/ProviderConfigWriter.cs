@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CxAgent.Core.Llm;
 using CxAgent.Core.Storage;
 
-namespace CxAgent.Core.Llm;
+namespace CxAgent.UI;
 
 /// <summary>
 /// Writes &lt;ConfigDir&gt;/config.json. The counterpart to ProviderConfigLoader.

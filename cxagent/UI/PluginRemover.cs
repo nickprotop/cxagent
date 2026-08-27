@@ -1,6 +1,6 @@
 using CxAgent.Core.Llm;
 
-namespace CxAgent.Core.Plugins;
+namespace CxAgent.UI;
 
 /// <summary>What removing a plugin would do, decided before anything is deleted.</summary>
 public abstract record RemovalPlan
