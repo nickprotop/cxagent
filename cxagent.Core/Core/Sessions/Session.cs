@@ -742,6 +742,73 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Takes a new set of plugin entries, keeping everything else this session resolved against.
+    ///
+    /// <para>ONLY THE ENTRIES MOVE. Rebinding the whole resolution would carry the caller's model
+    /// and catalog into this session too — the SwapProvider shape this record's own doc records,
+    /// where a method updated some of a wide value and the rest travelled along unnoticed.</para>
+    /// </summary>
+    internal void RebindPlugins(Llm.PluginEntries entries)
+    {
+        if (Resolution is null) return;
+
+        Resolution = Resolution with { Entries = entries };
+        Announce(SessionChangeKind.Plugins);
+    }
+
+    /// <summary>What a mutator could not apply because this session was mid-turn: the entries to
+    /// take, and a plugin to stop first. Null means nothing was missed.</summary>
+    private sealed record PendingPlugins(Llm.PluginEntries Entries, string? Unwire);
+
+    private PendingPlugins? _pendingPlugins;
+
+    /// <summary>Records what this session could not take while it was running a turn. A later
+    /// deferral replaces an earlier one — the entries are a whole set, so the newest is the truth,
+    /// and a pending unwire survives only if the newest change still calls for it.</summary>
+    internal void DeferPlugins(Llm.PluginEntries entries, string? unwire = null) =>
+        _pendingPlugins = new PendingPlugins(entries, unwire ?? _pendingPlugins?.Unwire);
+
+    /// <summary>Takes whatever a mutator deferred while this session was mid-turn — the turn's own
+    /// unwind calls this, so a change made during a long turn lands the moment the turn ends rather
+    /// than stranding the session on a stale view for the rest of its life.</summary>
+    internal void CatchUpOnPlugins()
+    {
+        // Interlocked because the manager writes this field from another thread while the turn's
+        // finally reads it — a plain read-then-null would drop a mutation landing between the two.
+        if (Interlocked.Exchange(ref _pendingPlugins, null) is not { } missed) return;
+
+        if (missed.Unwire is { } name && Plugins.LoadedPluginNames.Contains(name, StringComparer.Ordinal))
+        {
+            CommandStatus unwound;
+            try
+            {
+                unwound = UnwirePluginAsync(name, CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // THIS RUNS IN THE TURN'S FINALLY, where nothing is catching: an escape here would
+                // surface from the turn's unwind and read as the turn itself failing. Said instead —
+                // and the entries still land, because they are the config's truth either way; a
+                // plugin that would not stop is its own report, not a reason to stay stale.
+                Say(new Message($"plugin '{name}' failed to stop while catching up: {ex.Message}",
+                    Severity.Warning));
+                RebindPlugins(missed.Entries);
+                return;
+            }
+
+            if (unwound is CommandStatus.Refused)
+            {
+                // ANOTHER TURN ALREADY BEGAN — a queued prompt starting as this one unwinds. Keep
+                // the deferral rather than rebinding half of it; the next turn's end tries again.
+                _pendingPlugins = missed;
+                return;
+            }
+        }
+
+        RebindPlugins(missed.Entries);
+    }
+
+    /// <summary>
     /// Where this session says things — the same observer its turns stream through.
     ///
     /// <para>SO IT CAN REPORT ITS OWN CHANGES. A front end composing these sentences itself would

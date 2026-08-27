@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using CxAgent.Core.Llm;
 using CommandTable = CxAgent.Core.Commands.SessionCommands;
 using CxAgent.Core.Permissions;
@@ -35,6 +37,12 @@ public sealed class SessionManager : IDisposable
     private readonly List<Session> _sessions = [];
     private readonly object _gate = new();
     private readonly bool _ownsServices;
+
+    /// <summary>The directory a relative <c>pluginPaths</c> entry resolves against — AddPlugin's
+    /// collision check needs exactly this one string, so it is kept rather than the AppPaths it
+    /// arrived in. Null for a manager whose services name no config directory; the sidecar lookup
+    /// then answers null, which the check reads as "cannot check this one" rather than an error.</summary>
+    private readonly string? _configDir;
 
     /// <summary>What every session in this process shares. Built once, handed to each.</summary>
     public SharedServices Shared { get; }
@@ -84,7 +92,7 @@ public sealed class SessionManager : IDisposable
     /// cares reads those and one that does not carries on. Hiding this inside Open would have taken
     /// the errors with it, and "no provider" without "why" is worse than no answer.</para>
     /// </summary>
-    public ResolvedConfig Config { get; }
+    public ResolvedConfig Config { get; private set; }
 
     private SessionManager(SharedServices shared, PermissionRulesStore? rules, bool ownsServices,
         ResolvedConfig? config = null)
@@ -92,6 +100,7 @@ public sealed class SessionManager : IDisposable
         Shared = shared;
         Rules = rules;
         _ownsServices = ownsServices;
+        _configDir = shared.GlobalInstructionsDir;
         Config = config ?? new ResolvedConfig(null, ProviderCatalog.Empty, ["no configuration was resolved"]);
 
         SeedCommands();
@@ -459,13 +468,184 @@ public sealed class SessionManager : IDisposable
         SessionFactory.Wire(session, config ?? Config, Shared, ports, mode ?? WorkingMode.Default);
 
         lock (_gate)
+        {
             if (!_sessions.Contains(session)) _sessions.Add(session);
+
+            // WIRED BEFORE IT JOINED THE LIST, so a plugin mutation that landed in between wired it
+            // from the old entries and then skipped it — it was not in the snapshot Change rebinds.
+            // Taking the current set here is idempotent when nothing changed and closes that window
+            // when it did. `config is null` because a caller that supplied its own resolution asked
+            // for exactly that one; only a session on the manager's config follows the manager's
+            // entries.
+            if (config is null) session.RebindPlugins(Config.PluginSet);
+        }
 
         // SO A COMMAND CAN REACH BACK. /sessions resume restores THROUGH the manager, because the
         // four steps of a resume only work together — see Resume.
         session.NoteManager(this);
 
         return session;
+    }
+
+    /// <summary>
+    /// Adds or replaces one configured plugin, by name.
+    ///
+    /// <para>THE SAME CHECKS THE OTHER TWO DOORS RUN. config.json's reader refuses an entry with no
+    /// <c>file</c> and both doors refuse a tool name two plugins claim; a mutator that skipped them
+    /// would be the one way to get an entry into the process that nothing vouched for.</para>
+    /// </summary>
+    public PluginChangeResult AddPlugin(Session caller, string name, PluginConfig entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.File))
+            return new PluginChangeResult.Refused($"'{name}' needs a file — the entry point to load.");
+
+        // THE COLLISION CHECK BOTH OTHER DOORS RUN. Two plugins claiming one tool name is refused at
+        // config-read (ProviderConfigLoader.LoadAndValidate) and in AgentConfig.Resolve; a mutator
+        // that skipped it would be the one way to get a colliding pair into a running process.
+        var errors = new List<string>();
+        var candidate = new Dictionary<string, PluginConfig>(Config.Plugins, StringComparer.Ordinal)
+        {
+            [name] = entry,
+        };
+        ProviderConfigLoader.ValidatePluginCollisions(candidate,
+            c => _configDir is { } dir
+                ? ProviderConfigLoader.FindSidecar(c.File, Config.Catalog.PluginPaths, dir)
+                : null,
+            errors);
+
+        if (errors.Count > 0) return new PluginChangeResult.Refused(string.Join(" ", errors));
+
+        return Change(caller, entries => entries.With(name, entry));
+    }
+
+    /// <summary>Removes one configured plugin by name, unwiring it first if it is loaded — otherwise
+    /// the listing reclassifies it from configured to path-loaded, which is not what removing an
+    /// entry means.</summary>
+    public PluginChangeResult RemovePlugin(Session caller, string name)
+    {
+        if (!Config.Plugins.ContainsKey(name))
+            return new PluginChangeResult.Refused($"'{name}' is not a configured plugin.");
+
+        return Change(caller, entries => entries.Without(name), unwire: name);
+    }
+
+    /// <summary>Flips <c>enabled</c> without removing the entry. Disabling unwires a loaded plugin:
+    /// "off" that leaves the tools live is the outcome a user reads as a broken button.</summary>
+    public PluginChangeResult SetPluginEnabled(Session caller, string name, bool enabled)
+    {
+        if (!Config.Plugins.TryGetValue(name, out var existing))
+            return new PluginChangeResult.Refused($"'{name}' is not a configured plugin.");
+
+        return Change(caller, entries => entries.With(name, existing with { Enabled = enabled }),
+                      unwire: enabled ? null : name);
+    }
+
+    /// <summary>
+    /// Replaces the settings block a plugin is handed verbatim.
+    ///
+    /// <para>REFUSED WHILE THE PLUGIN IS LOADED. A plugin reads its settings when it starts, so
+    /// changing the entry underneath leaves the live view describing something the running plugin is
+    /// not using — and nothing would ever reconcile the two. Unwiring first is the honest path, and
+    /// the refusal says so.</para>
+    /// </summary>
+    public PluginChangeResult SetPluginSettings(Session caller, string name, JsonElement? settings)
+    {
+        if (!Config.Plugins.TryGetValue(name, out var existing))
+            return new PluginChangeResult.Refused($"'{name}' is not a configured plugin.");
+
+        if (caller.Plugins.LoadedPluginNames.Contains(name, StringComparer.Ordinal))
+            return new PluginChangeResult.Refused(
+                $"'{name}' is loaded and reads its settings at start. "
+              + $"`/plugin unwire {name}` first, then change them.");
+
+        // CLONED, NOT STORED AS HANDED OVER. A JsonElement is a window onto its JsonDocument's
+        // buffer and dies with it — a caller that parses a block, passes it here and disposes the
+        // document leaves this entry throwing ObjectDisposedException on the next read. The file
+        // door already clones for exactly this reason (ProviderConfigLoader.LoadAndValidate), and a
+        // mutator that did not would make the same value safe or unsafe depending on which door it
+        // came through.
+        return Change(caller, entries =>
+            entries.With(name, existing with { Settings = settings?.Clone() }));
+    }
+
+    /// <summary>
+    /// The one path every mutator takes: refuse if the CALLING session is mid-turn, rebuild the
+    /// manager's entries, then rebind every session that is not itself mid-turn and tell it —
+    /// unwiring first where the change means a loaded plugin must stop.
+    ///
+    /// <para>THE CALLER'S TURN, NOT EVERY SESSION'S. Busy is per session; blocking a change because
+    /// some other tab is mid-turn would make one long turn freeze another tab's dialog.</para>
+    ///
+    /// <para>A SESSION MID-TURN IS SKIPPED, NOT FORGOTTEN. Its model is reading a tool list that is
+    /// fixed for the request by design — <c>RefusedWhileBusy</c>'s own note: "a tool cannot appear
+    /// or vanish between two turns of one request and leave the model chasing something that is no
+    /// longer there." So it keeps the view it has and takes the manager's current entries when its
+    /// turn ends. Skipping without that catch-up would strand it on a stale view for the rest of the
+    /// session, which is the bug this whole design exists to prevent.</para>
+    ///
+    /// <para>ONE RACE IS ACCEPTED, NOT CLOSED: a session can become busy between the IsBusy read
+    /// below and its rebind, and IsBusy is briefly false between drain laps of one Submit — so "no
+    /// session's view moves under a running model" is a strong tendency here, not an invariant. The
+    /// consequence is mild: a turn's tool list is built from the REGISTRY at the turn's start, and
+    /// the readers of Resolution are command paths that re-read per invocation, so a rebind landing
+    /// an instant into a turn changes what a command would report, not what the model works from.
+    /// Closing it would mean holding a lock across a whole turn.</para>
+    /// </summary>
+    private PluginChangeResult Change(
+        Session caller, Func<PluginEntries, PluginEntries> change, string? unwire = null)
+    {
+        if (caller.RefuseIfBusy()) return new PluginChangeResult.Refused("a turn is running.");
+
+        // UNDER THE LOCK, AND ONLY THIS. Two mutators racing would otherwise read-modify-write the
+        // same Config and silently lose one change, and a session Opened concurrently would be wired
+        // from the pre-change value (SessionFactory.Wire reads Config in Open, BEFORE _sessions.Add
+        // runs) and never appear in the snapshot to be rebound — a session stale for its whole life.
+        // Taking the snapshot in the same lock closes that window, together with Open's own rebind.
+        //
+        // NOTHING SLOW IS IN HERE. The unwires below await a plugin's Stop, which has a multi-second
+        // timeout; holding _gate across that would block Open, Close and every read of Sessions.
+        List<Session> targets;
+        lock (_gate)
+        {
+            Config = Config with { Entries = change(Config.PluginSet) };
+            targets = _sessions.ToList();
+        }
+
+        foreach (var session in targets)
+        {
+            // EVERY SESSION, NOT THE CALLER'S. Session.Plugins is a registry per session and this is
+            // a CONFIG change: "this plugin is off" is global, where `/plugin unwire` typed in a tab
+            // stops it in that tab only. Unwiring just the caller would leave another session serving
+            // tools its own config view calls disabled — the two-answers-from-Core state this design
+            // exists to prevent.
+            if (session.IsBusy)
+            {
+                // DEFERRED WHOLE, unwire included. Its tool list is fixed for the request in flight,
+                // which is what RefusedWhileBusy protects; it takes both when its turn ends.
+                session.DeferPlugins(Config.PluginSet, unwire);
+                continue;
+            }
+
+            if (unwire is { } name && session.Plugins.LoadedPluginNames.Contains(name, StringComparer.Ordinal))
+            {
+                // THE RESULT IS CHECKED, NOT ASSUMED. A turn can begin between the IsBusy read above
+                // and this call — _busy is written on the turn's own thread and flips between drain
+                // laps of one Submit — and UnwirePluginAsync answers Refused when it does. Rebinding
+                // anyway would leave this session disabled in config and serving the tools, which is
+                // the divergence the whole design exists to prevent. Defer instead: it takes both
+                // the unwire and the entries when its turn ends.
+                if (session.UnwirePluginAsync(name, CancellationToken.None).GetAwaiter().GetResult()
+                    is CommandStatus.Refused)
+                {
+                    session.DeferPlugins(Config.PluginSet, unwire);
+                    continue;
+                }
+            }
+
+            session.RebindPlugins(Config.PluginSet);
+        }
+
+        return new PluginChangeResult.Applied();
     }
 
     /// <summary>
@@ -563,4 +743,15 @@ public sealed class SessionManager : IDisposable
     {
         foreach (var session in Sessions) Close(session);
     }
+}
+
+/// <summary>What a per-entry plugin change did. <see cref="Refused"/> carries words a user can act
+/// on, because every refusal here is something they asked for and did not get.</summary>
+public abstract record PluginChangeResult
+{
+    private PluginChangeResult() { }
+
+    public sealed record Applied : PluginChangeResult;
+
+    public sealed record Refused(string Reason) : PluginChangeResult;
 }

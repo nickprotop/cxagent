@@ -480,7 +480,7 @@ public static class ProviderConfigLoader
     /// Erroring here instead would be a false alarm about a perfectly valid configuration Core simply
     /// cannot see from where it stands.</para>
     /// </summary>
-    private static string? FindPluginSidecar(
+    internal static string? FindSidecar(
         string file, IReadOnlyList<string> pluginPaths, string configDir)
     {
         foreach (var raw in pluginPaths)
@@ -532,7 +532,7 @@ public static class ProviderConfigLoader
 
             // UNRESOLVED IS "CANNOT CHECK THIS ONE", NOT AN ERROR — most often a plugin only
             // reachable through a project-local search folder this method was not handed (see
-            // FindPluginSidecar's own doc for why threading one through is the wrong trade). Config
+            // FindSidecar's own doc for why threading one through is the wrong trade). Config
             // validation refusing to start over a file the user may not even have installed the
             // project-relative copy of yet would be a worse outcome than the collision it guards.
             var sidecarPath = findSidecar(config);
@@ -955,7 +955,7 @@ public static class ProviderConfigLoader
                 }
 
             ValidatePluginCollisions(plugins,
-                config => FindPluginSidecar(config.File, pluginPaths, paths.ConfigDir), errors);
+                config => FindSidecar(config.File, pluginPaths, paths.ConfigDir), errors);
 
             if (errors.Count > 0)
                 throw new ProviderConfigException(errors);

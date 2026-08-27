@@ -40,6 +40,20 @@ public sealed partial class Session
 
     private bool _busy;
 
+    /// <summary>Marks this session busy until the returned scope is disposed, so a test can exercise
+    /// the mid-turn paths without driving a model. NOT a general-purpose control: the turn loop owns
+    /// this flag, and anything but a test taking it would be racing the loop for it.</summary>
+    internal IDisposable PretendBusyForTesting()
+    {
+        Volatile.Write(ref _busy, true);
+        return new BusyScope(this);
+    }
+
+    private sealed class BusyScope(Session session) : IDisposable
+    {
+        public void Dispose() => Volatile.Write(ref session._busy, false);
+    }
+
     /// <summary>
     /// Mints turn ids for this session's transcript — and now genuinely from the session, which is
     /// what <see cref="ChatMessageId"/> has claimed all along ("MINTED BY THE SESSION, not by
@@ -345,6 +359,12 @@ public sealed partial class Session
                 // RELEASED HOWEVER THE LAP ENDS, including the cancellation that returns above: a turn
                 // that died leaving this set would refuse every later prompt and look hung.
                 Volatile.Write(ref _busy, false);
+
+                // WHAT THE MANAGER CHANGED WHILE THIS TURN RAN. A plugin mutator skips a busy
+                // session deliberately — the tool list is fixed for a request — but skipping is a
+                // deferral, not a discard, and a session left on the old entries would answer
+                // /plugin with a state the user changed some time ago.
+                CatchUpOnPlugins();
 
                 // THE SCOPE STAYS UNTIL THE NEXT LAP REPLACES IT, deliberately not disposed here. A
                 // cancellation callback can still be running on another thread as this unwinds, and

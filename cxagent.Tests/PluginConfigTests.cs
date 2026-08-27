@@ -26,7 +26,7 @@ public class PluginConfigTests : IDisposable
     private static readonly Dictionary<string, string> NoEnv = new();
 
     /// <summary>Drops a stub entry-point file plus a real sidecar under <c>&lt;ConfigDir&gt;/plugins</c>
-    /// — everything <see cref="ProviderConfigLoader.FindPluginSidecar"/> needs to find and read a
+    /// — everything <see cref="ProviderConfigLoader.FindSidecar"/> needs to find and read a
     /// plugin's declared tool names without loading anything.</summary>
     private void WritePluginFixture(string fileName, string manifestName, params string[] toolNames)
     {

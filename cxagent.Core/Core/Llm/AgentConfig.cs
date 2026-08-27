@@ -206,7 +206,7 @@ public sealed record AgentConfig
 
     /// <summary>
     /// Finds one plugin's sidecar manifest by searching <see cref="PluginPaths"/> directly, in
-    /// order — the code-config counterpart of <c>ProviderConfigLoader.FindPluginSidecar</c>. A
+    /// order — the code-config counterpart of <c>ProviderConfigLoader.FindSidecar</c>. A
     /// relative entry here resolves against the CURRENT DIRECTORY rather than a config directory:
     /// code-configured plugins have no config.json beside them to anchor a relative path against.
     /// </summary>
