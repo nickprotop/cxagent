@@ -47,14 +47,9 @@ public sealed record ProviderCatalog(
     string? ClassifierInstance = null,
     string? Theme = null)
 {
-    /// <summary>Configured plugins, by name — see the plugin design, "Configuration". A NAMED MEMBER, not
-    /// an eighth positional parameter — this record is already past the point AV1561 asks a group to
-    /// be named at.</summary>
-    public IReadOnlyDictionary<string, PluginConfig> Plugins { get; init; } =
-        new Dictionary<string, PluginConfig>();
-
-    /// <summary>Where a plugin's <c>file</c> is searched for, in order — a sibling of
-    /// <see cref="Plugins"/>, matching config.json's <c>pluginPaths</c>.</summary>
+    /// <summary>Where a plugin's <c>file</c> is searched for, in order — matching config.json's
+    /// <c>pluginPaths</c>. Search paths are resolved once and stay fixed for the process, unlike the
+    /// plugin entries themselves — see <see cref="PluginEntries"/> for why those moved out.</summary>
     public IReadOnlyList<string> PluginPaths { get; init; } = [];
 
     /// <summary>

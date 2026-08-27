@@ -63,7 +63,7 @@ public class PluginCommandTests : IDisposable
         manager = SessionManager.Create(new AppPaths(_dir));
         sink = new BufferedChatSink();
         var resolution = ResolvedConfig.ForTesting(new MockLlmProvider())
-            .WithCatalog(ProviderCatalog.Empty with { Plugins = plugins ?? new Dictionary<string, PluginConfig>() });
+            .WithPlugins(plugins ?? new Dictionary<string, PluginConfig>());
 
         return manager.Open(_dir, resolution,
             new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() },
@@ -213,7 +213,7 @@ public class PluginCommandTests : IDisposable
         });
         var sink = new BufferedChatSink();
         var resolution = ResolvedConfig.ForTesting(new MockLlmProvider())
-            .WithCatalog(ProviderCatalog.Empty with { Plugins = plugins });
+            .WithPlugins(plugins);
         var session = manager.Open(_dir, resolution,
             new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
@@ -257,7 +257,7 @@ public class PluginCommandTests : IDisposable
         });
         var sink = new BufferedChatSink();
         var resolution = ResolvedConfig.ForTesting(new MockLlmProvider())
-            .WithCatalog(ProviderCatalog.Empty with { Plugins = plugins });
+            .WithPlugins(plugins);
         var session = manager.Open(_dir, resolution,
             new SessionPorts { Observer = sink, ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
@@ -285,7 +285,7 @@ public class PluginCommandTests : IDisposable
         using var disposeManager = manager;
 
         var resolution = ResolvedConfig.ForTesting(new MockLlmProvider())
-            .WithCatalog(ProviderCatalog.Empty with { Plugins = plugins });
+            .WithPlugins(plugins);
 
         var first = manager.Open(_dir, resolution,
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },

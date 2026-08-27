@@ -48,11 +48,15 @@ namespace CxAgent.Core.Llm;
 /// <param name="Errors">Why resolution failed. Empty on the happy path.</param>
 /// <param name="Warnings">Non-fatal complaints, said once so a skipped server is not mistaken for a
 /// slow one.</param>
+/// <param name="Entries">The configured plugins. Held apart from <paramref name="Catalog"/> because
+/// the catalog is fixed for the process and these are not — <c>/plugin load</c> and
+/// <c>/plugin unwire</c> change this set mid-session by design.</param>
 public sealed record ResolvedConfig(
     ActiveModel? Model,
     ProviderCatalog Catalog,
     IReadOnlyList<string> Errors,
-    IReadOnlyList<string>? Warnings = null)
+    IReadOnlyList<string>? Warnings = null,
+    PluginEntries? Entries = null)
 {
     /// <summary>Whether anything usable resolved. Errors says why not.</summary>
     public bool HasProvider => Model is not null;
@@ -77,7 +81,14 @@ public sealed record ResolvedConfig(
     public IReadOnlyDictionary<string, AgentTypeConfig> AgentTypes => Catalog.Types;
     public IReadOnlyDictionary<string, McpServerConfig> McpServers => Catalog.Servers;
     public OrchestratorSettings? Orchestrator => Catalog.Orchestrator;
-    public IReadOnlyDictionary<string, PluginConfig> Plugins => Catalog.Plugins;
+    /// <summary>The configured plugins. READ THROUGH THE PAIRING IS FINE; writing is not — a caller
+    /// changing one goes through <see cref="Sessions.SessionManager"/>, which owns the set every
+    /// session's view is rebound from. The same split this record already draws for ActiveModel.</summary>
+    public IReadOnlyDictionary<string, PluginConfig> Plugins => PluginSet.All;
+
+    /// <summary>The set itself, for the manager's per-entry mutators.</summary>
+    public PluginEntries PluginSet => Entries ?? PluginEntries.None;
+
     public IReadOnlyList<string> PluginPaths => Catalog.PluginPaths;
 
     /// <summary>S1 as the USER wrote it, from <c>llmAgent.tools</c>. Composed ahead of the
@@ -102,6 +113,12 @@ public sealed record ResolvedConfig(
 
     /// <summary>The same model over a different catalog — for a caller assembling one in pieces.</summary>
     public ResolvedConfig WithCatalog(ProviderCatalog catalog) => this with { Catalog = catalog };
+
+    /// <summary>The same configuration over a different plugin set — the catalog's counterpart to
+    /// <see cref="WithCatalog"/>, now that plugins live outside it. For assembling a test fixture in
+    /// pieces, where the plugins are the one thing the test wants to vary.</summary>
+    public ResolvedConfig WithPlugins(IReadOnlyDictionary<string, PluginConfig> plugins) =>
+        this with { Entries = new PluginEntries(plugins) };
 
     /// <summary>The same configuration, with the model's window corrected. The one field a caller
     /// legitimately adjusts alone: it is config-only, so a probe or a test may know it late.</summary>
@@ -156,9 +173,10 @@ public static class ConfigResolver
                     MaxConcurrentAgents: cfg.MaxConcurrentAgents,
                     ClassifierInstance: settings.Classifier,
                     Theme: settings.Theme)
-                { Tools = settings.Tools, Plugins = settings.Plugins, PluginPaths = settings.PluginPaths },
+                { Tools = settings.Tools, PluginPaths = settings.PluginPaths },
                 [],
-                settings.Warnings);
+                settings.Warnings,
+                Entries: new PluginEntries(settings.Plugins));
         }
         catch (Exception)
         {
@@ -256,13 +274,15 @@ public static class ConfigResolver
                 // dropped on every normal startup, taking effect only after a /model switch went
                 // through the other method. Every config test was green: they proved the loader
                 // read it, and nothing proved anything applied it.
-                // PLUGINS AND PLUGINPATHS TRAVEL WITH Tools, for the identical reason: this path
-                // runs on every normal startup, and a key carried only by ResolveInstance takes
-                // effect only after a /model switch. A configured plugin that loads after switching
-                // models but not on launch is the same defect wearing a different key's name.
-                { Tools = settings.Tools, Plugins = settings.Plugins, PluginPaths = settings.PluginPaths },
+                // PLUGINPATHS TRAVELS WITH Tools, for the identical reason: this path runs on every
+                // normal startup, and a key carried only by ResolveInstance takes effect only after a
+                // /model switch. A configured plugin path that resolves after switching models but not
+                // on launch is the same defect wearing a different key's name. Plugins themselves make
+                // the same trip via Entries below.
+                { Tools = settings.Tools, PluginPaths = settings.PluginPaths },
                 [],
-                settings.Warnings);
+                settings.Warnings,
+                Entries: new PluginEntries(settings.Plugins));
         }
         catch (ProviderConfigException ex)
         {

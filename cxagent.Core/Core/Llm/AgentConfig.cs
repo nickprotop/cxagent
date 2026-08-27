@@ -199,8 +199,9 @@ public sealed record AgentConfig
                 Orchestrator: new OrchestratorSettings(MaxTurns, CompressAbove),
                 MaxConcurrentAgents: chosen.MaxConcurrentAgents,
                 ClassifierInstance: Classifier)
-            { Plugins = Plugins, PluginPaths = PluginPaths },
-            []);
+            { PluginPaths = PluginPaths },
+            [],
+            Entries: new PluginEntries(Plugins));
     }
 
     /// <summary>
