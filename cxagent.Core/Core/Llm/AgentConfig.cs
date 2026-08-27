@@ -171,6 +171,11 @@ public sealed record AgentConfig
         // back to for a relative one: code-configured plugins have no such anchor.
         ProviderConfigLoader.ValidatePluginCollisions(Plugins, config => FindPluginSidecar(config), errors);
 
+        // THE SAME ENDPOINT RULES config.json GETS. An embedder writing an openai-compatible model
+        // with no baseUrl otherwise gets a provider that fails at first use, far from the mistake.
+        foreach (var (name, model) in Models)
+            ProviderConfigLoader.ValidateEndpoint(name, KindName(model.Kind), model.BaseUrl, errors);
+
         if (errors.Count > 0) return ResolvedConfig.Failed(errors);
 
         var instances = Models.ToDictionary(

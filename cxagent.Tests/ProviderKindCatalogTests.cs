@@ -30,24 +30,26 @@ public class ProviderKindCatalogTests
     }
 
     /// <summary>
-    /// The catalog's RequiresApiKey must agree with ProviderConfigLoader's validation, which requires
-    /// an apiKey for every KnownKind except those in its private KeylessKinds set ({"ollama"}).
-    /// A catalog that says "no key needed" for a kind the loader demands one from makes the wizard
-    /// skip the prompt and then write a config that fails to load — setup that produces a broken
-    /// install. Asserted by round-tripping a key-less config through the real loader.
+    /// The loader no longer refuses a keyless config for any kind — it cannot tell an OpenRouter
+    /// endpoint (needs a key) from a llama.cpp server on localhost (needs none) from the kind alone,
+    /// so a missing apiKey is not a config-time error and the endpoint's own 401 is the honest
+    /// failure instead. This replaces a prior version of this test that asserted the loader's
+    /// rejection agreed with ProviderKindCatalog.RequiresApiKey; that agreement is gone because the
+    /// rejection it was checking is gone. RequiresApiKey remains, but only as the wizard's prompt
+    /// default — see the comment on ProviderKindCatalog.All.
     /// </summary>
     [Theory]
     [InlineData("anthropic")]
     [InlineData("openai-compatible")]
     [InlineData("ollama")]
-    public void RequiresApiKey_AgreesWithLoaderValidation(string kind)
+    public void LoaderAcceptsAKeylessConfig_ForEveryKind(string kind)
     {
         var dir = Path.Combine(Path.GetTempPath(), "cxagent-pkc-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
-            // A config for this kind with NO apiKey. baseUrl is supplied so that only the
-            // key rule can fail the load.
+            // A config for this kind with NO apiKey. baseUrl is supplied so that the endpoint is
+            // otherwise structurally complete.
             File.WriteAllText(Path.Combine(dir, "config.json"), $$"""
             {
               "providers": {
@@ -58,19 +60,8 @@ public class ProviderKindCatalogTests
             """);
 
             var paths = new CxAgent.Core.Storage.AppPaths(dir);
-            bool loaderRejectedIt;
-            try
-            {
-                ProviderConfigLoader.LoadAndValidate(paths, new Dictionary<string, string>());
-                loaderRejectedIt = false;
-            }
-            catch (ProviderConfigException)
-            {
-                loaderRejectedIt = true;
-            }
-
-            var catalogSaysKeyNeeded = ProviderKindCatalog.For(kind).RequiresApiKey;
-            Assert.Equal(loaderRejectedIt, catalogSaysKeyNeeded);
+            var settings = ProviderConfigLoader.LoadAndValidate(paths, new Dictionary<string, string>());
+            Assert.Null(settings.Providers["p"].ApiKey);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

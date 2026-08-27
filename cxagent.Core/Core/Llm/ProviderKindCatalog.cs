@@ -19,10 +19,11 @@ public static class ProviderKindCatalog
     {
         new ProviderKindInfo("anthropic", "Anthropic (Claude)",
             RequiresApiKey: true,  RequiresBaseUrl: false, ModelHint: "claude-sonnet-4-5"),
-        // RequiresApiKey: true is NOT arbitrary — it mirrors ProviderConfigLoader's validation rule
-        // (ProviderConfig.cs): an apiKey is required for every KnownKind except those in KeylessKinds,
-        // and KeylessKinds is {"ollama"} only. Setting this false would make the wizard skip the key
-        // prompt and then write a config the loader rejects at next startup.
+        // RequiresApiKey here is a WIZARD DEFAULT, not a loader rule: the loader cannot tell an
+        // OpenRouter endpoint (needs a key) from a llama.cpp server on localhost (needs none) from
+        // the kind alone, so it no longer demands one. Prompting for a key is still the right default
+        // for setup — most anthropic/openai-compatible endpoints do want one — it just is not
+        // enforced past the wizard.
         new ProviderKindInfo("openai-compatible", "OpenAI-compatible endpoint",
             RequiresApiKey: true,  RequiresBaseUrl: true,  ModelHint: "gpt-4o-mini"),
         new ProviderKindInfo("ollama", "Ollama (local)",

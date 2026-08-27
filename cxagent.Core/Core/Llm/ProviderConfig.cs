@@ -412,8 +412,25 @@ public static class ProviderConfigLoader
     public static readonly IReadOnlySet<string> KnownKinds =
         new HashSet<string> { "anthropic", "openai-compatible", "ollama" };
 
-    private static readonly IReadOnlySet<string> KeylessKinds =
-        new HashSet<string> { "ollama" };
+    /// <summary>
+    /// The endpoint rules that depend on the provider KIND, in one place because both doors must
+    /// reach the same verdict.
+    ///
+    /// <para>WHY THESE AND NOT THE REST. Most of what the file path checks is unrepresentable in
+    /// code and needs no twin: <c>ModelConfig.Kind</c> is an enum, so an unknown kind cannot be
+    /// written, and <c>Model</c> is a required parameter, so a missing one is a compile error. A
+    /// type that makes the mistake impossible has satisfied the rule more strongly than a check
+    /// could. What is left is the rules a type cannot state — the ones conditional on the kind —
+    /// and those are these.</para>
+    ///
+    /// <para>ONE PLACE, so a new provider kind updates both doors at once. Two copies would agree
+    /// until the day someone added a kind to one of them.</para>
+    /// </summary>
+    public static void ValidateEndpoint(string name, string kind, string? baseUrl, List<string> errors)
+    {
+        if (kind == "openai-compatible" && string.IsNullOrWhiteSpace(baseUrl))
+            errors.Add($"provider '{name}': 'baseUrl' is required for kind 'openai-compatible'.");
+    }
 
     /// <summary>
     /// A <c>tools</c> array as a selection, warning on any term whose SHAPE is wrong.
@@ -629,10 +646,7 @@ public static class ProviderConfigLoader
                         errors.Add($"provider '{name}': unknown kind '{kind}' (known: {string.Join(", ", KnownKinds)}).");
                     if (string.IsNullOrWhiteSpace(model))
                         errors.Add($"provider '{name}': 'model' is required.");
-                    if (kind == "openai-compatible" && string.IsNullOrWhiteSpace(baseUrl))
-                        errors.Add($"provider '{name}': 'baseUrl' is required for kind 'openai-compatible'.");
-                    if (KnownKinds.Contains(kind) && !KeylessKinds.Contains(kind) && string.IsNullOrWhiteSpace(apiKey))
-                        errors.Add($"provider '{name}': 'apiKey' is required for kind '{kind}' (or set {envKey}).");
+                    ValidateEndpoint(name, kind, baseUrl, errors);
 
                     providers[name] = new ProviderInstanceConfig(kind, model, apiKey, baseUrl, extra, contextWindow,
                         maxConcurrentAgents, cacheControl);

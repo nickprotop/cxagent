@@ -44,14 +44,21 @@ public class ProviderConfigTests : IDisposable
         Assert.Equal("env-key", s.Providers["claude"].ApiKey);
     }
 
+    // A missing apiKey used to be the third error this test batched alongside an unknown kind and a
+    // dangling defaultProvider. That rule is gone: cxagent cannot tell an OpenRouter endpoint (needs
+    // a key) from a local llama.cpp server (needs none) from the kind alone, so a missing apiKey is
+    // no longer a config-time error (see ProviderConfigLoader.ValidateEndpoint). A missing baseUrl on
+    // an openai-compatible endpoint takes its place — that rule is genuinely kind-conditional and
+    // stays, so the "batched, not fail-fast" behaviour this test exists to cover still has three
+    // simultaneous errors to prove it against.
     [Fact]
-    public void Rejects_UnknownKind_And_MissingKey_And_DanglingDefault_AllAtOnce()
+    public void Rejects_UnknownKind_And_MissingBaseUrl_And_DanglingDefault_AllAtOnce()
     {
         WriteConfig("""
         {
           "providers": {
-            "bad":  { "kind": "made-up", "model": "x" },
-            "nokey":{ "kind": "anthropic", "model": "claude-x" }
+            "bad":     { "kind": "made-up", "model": "x" },
+            "nourl":   { "kind": "openai-compatible", "model": "gpt", "apiKey": "k" }
           },
           "defaultProvider": "ghost"
         }
@@ -59,7 +66,7 @@ public class ProviderConfigTests : IDisposable
         var ex = Assert.Throws<ProviderConfigException>(() =>
             ProviderConfigLoader.LoadAndValidate(Paths(), NoEnv));
         Assert.Contains(ex.Errors, e => e.Contains("made-up"));      // unknown kind
-        Assert.Contains(ex.Errors, e => e.Contains("nokey"));        // missing key
+        Assert.Contains(ex.Errors, e => e.Contains("nourl"));        // missing baseUrl
         Assert.Contains(ex.Errors, e => e.Contains("ghost"));        // dangling defaultProvider
         Assert.True(ex.Errors.Count >= 3);                            // batched, not fail-fast
     }
