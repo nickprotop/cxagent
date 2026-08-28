@@ -174,4 +174,61 @@ public class CatalogGeneratorTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    /// <summary>
+    /// CXAGENT'S VERSION IS PUBLISHED SEPARATELY FROM ANY PLUGIN'S, because the two diverge by
+    /// design: a plugin that did not change keeps its own number across a release, so the site
+    /// reading plugins[0].version showed v0.9.6 on the day v0.9.7 shipped.
+    ///
+    /// <para>Optional, because a local run has no release to name — and its absence must leave the
+    /// key out rather than write an empty one, which the site would render as "v".</para>
+    /// </summary>
+    [Fact]
+    public void TheGeneratedCatalogCarriesCxagentsOwnVersion()
+    {
+        var root = RepoRoot();
+        var dir = Directory.CreateTempSubdirectory("catalog-ver-").FullName;
+        try
+        {
+            var assets = ReleasePlugins(root)
+                .ToDictionary(name => name, name => Path.Combine(dir, $"{name}.zip"));
+            foreach (var (name, asset) in assets)
+                File.WriteAllText(asset, $"bytes for {name}");
+
+            var withVersion = Path.Combine(dir, "with.json");
+            var args = new List<string>
+            {
+                "--catalog", Path.Combine(root, "plugins", "plugins.json"),
+                "--out", withVersion, "--version", "9.9.9",
+            };
+            foreach (var (name, asset) in assets) { args.Add("--plugin"); args.Add($"{name}={asset}"); }
+
+            var run = Run(args.ToArray());
+            Assert.True(run.Exit == 0, $"generator failed: {run.Stderr}");
+
+            using var stamped = JsonDocument.Parse(File.ReadAllText(withVersion));
+            Assert.Equal("9.9.9", stamped.RootElement.GetProperty("cxagentVersion").GetString());
+
+            // AND IT IS NOT A PLUGIN'S NUMBER. The committed catalog's own versions stay whatever
+            // they are; stamping the app's version must not touch them.
+            foreach (var plugin in stamped.RootElement.GetProperty("plugins").EnumerateArray())
+                Assert.NotEqual("9.9.9", plugin.GetProperty("version").GetString());
+
+            // OMITTED LEAVES THE KEY OUT ENTIRELY.
+            var without = Path.Combine(dir, "without.json");
+            args[args.IndexOf("--out") + 1] = without;
+            args.Remove("--version");
+            args.Remove("9.9.9");
+
+            var bare = Run(args.ToArray());
+            Assert.True(bare.Exit == 0, $"generator failed: {bare.Stderr}");
+            using var plain = JsonDocument.Parse(File.ReadAllText(without));
+            Assert.False(plain.RootElement.TryGetProperty("cxagentVersion", out _),
+                "omitting --version must leave cxagentVersion out, not write an empty one.");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

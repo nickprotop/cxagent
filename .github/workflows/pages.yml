@@ -58,11 +58,23 @@ jobs:
               --pattern csharp-lsp.zip --pattern calculator.zip --dir _artifact
 
       - name: Generate the catalog
+        env:
+          # `gh release view` below needs it; the download step's env does not reach this step.
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # THE VERSION COMES FROM THE RELEASE THE ASSETS CAME FROM, not from the ref that
+          # triggered this run: a push to master builds the site for whatever release is current,
+          # and naming the ref would label those pages with a tag that has not shipped. Read from
+          # the same release the step above downloaded, so the hashes and the number agree.
+          VERSION=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName -q .tagName)
+          VERSION="${VERSION#v}"
+          echo "cxagent version for the site: $VERSION"
+
           python3 site/build/catalog.py \
               --catalog plugins/plugins.json \
               --plugin csharp-lsp=_artifact/csharp-lsp.zip \
               --plugin calculator=_artifact/calculator.zip \
+              --version "$VERSION" \
               --out _site/catalog.json
 
       - uses: actions/upload-pages-artifact@v3

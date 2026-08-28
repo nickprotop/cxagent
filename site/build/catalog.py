@@ -37,6 +37,9 @@ def main() -> int:
     parser.add_argument("--plugin", action="append", default=[], metavar="NAME=PATH",
                        help="a catalog entry and the release artifact whose hash fills its "
                             "source.sha256; repeat for each plugin")
+    parser.add_argument("--version", metavar="X.Y.Z",
+                       help="cxagent's own version, published as cxagentVersion for the site to "
+                            "show; omitted locally, where there is no release to name")
     args = parser.parse_args()
 
     # EVERY PLUGIN IN ONE PASS. Chaining invocations would mean each reading the previous one's
@@ -106,6 +109,13 @@ def main() -> int:
               f"needs --plugin NAME=PATH; a 'url' entry must carry its hash in plugins.json.",
               file=sys.stderr)
         return 1
+
+    # CXAGENT'S OWN VERSION, WHICH IS NOT A PLUGIN'S. A plugin that did not change keeps its number
+    # across releases, so plugins[0].version answers "which csharp-lsp is this?" and never "which
+    # cxagent is this?" — the two agreed only until the first release that carried a plugin forward.
+    # Published as its own key so a reader cannot mistake one for the other.
+    if args.version:
+        catalog["cxagentVersion"] = args.version
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(catalog, indent=2) + "\n")
