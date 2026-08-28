@@ -6,6 +6,7 @@ Each has its own page with its download and settings.
 | plugin | what it does | needs | |
 | --- | --- | --- | --- |
 | **csharp-lsp** | Go-to-definition, find-references and diagnostics for C#, across project boundaries | a C# language server (`csharp-ls` by default) | [details](csharp-lsp/README.md) |
+| **calculator** | Arithmetic a model can trust — one tool takes a whole expression | nothing | [details](calculator/README.md) |
 
 ## Installing one
 

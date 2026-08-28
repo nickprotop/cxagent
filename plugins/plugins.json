@@ -106,6 +106,34 @@
         "server": "The language server command. Defaults to csharp-ls.",
         "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none, or [\"--features\",\"razor-support\"] to analyse .razor and .cshtml."
       }
+    },
+    {
+      "name": "calculator",
+      "displayName": "Calculator",
+      "version": "1.0.0",
+      "description": "Arithmetic a model can trust. One tool takes a whole expression and returns the exact result — a language model approximates arithmetic rather than computing it, and a calculation spread over several turns goes wrong somewhere in the middle.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/calculator",
+      "readme": "calculator/README.md",
+      "directory": "calculator",
+      "source": {
+        "kind": "release",
+        "checksums": "SHA256SUMS",
+        "sha256": null,
+        "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/calculator.zip"
+      },
+      "file": "calculator.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 2,
+        "platforms": ["any"]
+      },
+      "spawns": false,
+      "tools": [
+        { "name": "calc_eval", "gated": false }
+      ]
     }
   ]
 }

@@ -150,6 +150,49 @@ jobs:
           (cd plugin-build && zip -q ../plugin-out/csharp-lsp.zip \
              csharp-lsp.dll csharp-lsp.plugin.json README.md)
 
+      # THE SAME BUILD-OR-CARRY SCHEME AS csharp-lsp ABOVE, for the same reasons: an untouched
+      # plugin keeps its previous zip byte for byte because a rebuild embeds source paths and
+      # mtimes and would move the hash for identical source, and the inputs include the contract
+      # assembly because a change there alters the binary while leaving plugins/calculator/
+      # untouched.
+      - name: Build or carry forward the calculator plugin
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          SIDECAR=plugins/calculator/calculator.plugin.json
+          VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
+
+          mkdir -p plugin-out
+
+          PLUGIN_INPUTS="plugins/calculator/ cxagent.Plugins.Abstractions/"
+
+          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- $PLUGIN_INPUTS; then
+            echo "plugin unchanged since $PREV_TAG — carrying its zip forward."
+
+            if curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/calculator.zip" \
+                 -o plugin-out/calculator.zip; then
+              echo "carried forward from $PREV_TAG"
+              exit 0
+            fi
+
+            echo "no zip on $PREV_TAG — building instead."
+          fi
+
+          echo "building calculator $VERSION"
+
+          dotnet build plugins/calculator/calculator.csproj -c Release -o ./calc-build \
+            -p:Version="$VERSION"
+
+          # Jace.dll IS PART OF THE LOAD SET. Assembly.LoadFrom resolves the plugin's dependencies
+          # from the plugin's own folder, so a zip missing it produces a plugin that fails only
+          # when a user tries to load it — nothing else in this pipeline would notice.
+          test -f ./calc-build/calculator.dll
+          test -f ./calc-build/Jace.dll
+          test -f ./calc-build/calculator.plugin.json
+          test -f ./calc-build/README.md
+
+          (cd calc-build && zip -q ../plugin-out/calculator.zip \
+             calculator.dll Jace.dll calculator.plugin.json README.md)
+
       - name: Generate checksums
         run: |
           # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
@@ -163,8 +206,9 @@ jobs:
           cp install.sh install.ps1 uninstall.sh uninstall.ps1 release/
           chmod +x release/cxagent-* release/*.sh 2>/dev/null || true
 
-          # THE PLUGIN ZIP, built or carried forward by the step above.
+          # THE PLUGIN ZIPS, built or carried forward by the steps above.
           cp plugin-out/csharp-lsp.zip release/
+          cp plugin-out/calculator.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.
@@ -230,7 +274,15 @@ jobs:
             say so, and cxagent tells you it is there. Needs a C# language server:
             `dotnet tool install -g csharp-ls`.
 
-            Unzip both files into `~/.config/cxagent/plugins/` to install it by hand.
+            `calculator.zip` — exact arithmetic as one tool: a whole expression in, the exact
+            result out. Needs nothing, and is likewise **not enabled** until you say so.
+
+            To install one by hand, unzip it into its own folder under
+            `~/.config/cxagent/plugins/` — csharp-lsp ships three files, the calculator four.
+
+            **An installed csharp-lsp asks its load prompt once more after this update**: its
+            README now travels in the zip, so it joins the plugin's load set and the hash the
+            prompt shows covers it. That is the gate noticing a real change, not a fault.
 
             ## Changes
 

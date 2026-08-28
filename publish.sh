@@ -67,37 +67,64 @@ NEW_TAG="v$NEW_VERSION"
 # BEFORE THE TAG, WHICH IS THE POINT OF DOING IT HERE. Written after the tag — as CI would have to —
 # the tag itself would contain the old version, and anyone checking out v0.9.0 would find a plugin
 # claiming to be something else.
-PLUGIN_DIR="plugins/csharp-lsp"
-PLUGIN_SIDECAR="$PLUGIN_DIR/csharp-lsp.plugin.json"
-PLUGIN_VERSION=$(python3 -c "import json;print(json.load(open('$PLUGIN_SIDECAR'))['version'])")
-PLUGIN_CHANGED=false
+LSP_DIR="plugins/csharp-lsp"
+LSP_SIDECAR="$LSP_DIR/csharp-lsp.plugin.json"
+LSP_VERSION=$(python3 -c "import json;print(json.load(open('$LSP_SIDECAR'))['version'])")
+LSP_CHANGED=false
 
 if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "v0.0.0" ] \
-   || ! git diff --quiet "$LATEST_TAG" HEAD -- "$PLUGIN_DIR"; then
-    PLUGIN_CHANGED=true
+   || ! git diff --quiet "$LATEST_TAG" HEAD -- "$LSP_DIR"; then
+    LSP_CHANGED=true
+fi
+
+CALC_DIR="plugins/calculator"
+CALC_SIDECAR="$CALC_DIR/calculator.plugin.json"
+CALC_VERSION=$(python3 -c "import json;print(json.load(open('$CALC_SIDECAR'))['version'])")
+CALC_CHANGED=false
+
+if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "v0.0.0" ] \
+   || ! git diff --quiet "$LATEST_TAG" HEAD -- "$CALC_DIR"; then
+    CALC_CHANGED=true
+fi
+
+# ONE FLAG FOR THE SHARED MACHINERY. The bump, the prompt and the commit each happen once however
+# many plugins changed; which ones changed stays per-plugin above, so an untouched plugin is never
+# bumped along for the ride.
+ANY_PLUGIN_CHANGED=false
+if [ "$LSP_CHANGED" = true ] || [ "$CALC_CHANGED" = true ]; then
+    ANY_PLUGIN_CHANGED=true
 fi
 
 # THE BUMP HAPPENS BEFORE THE TESTS, so the suite validates exactly what will be pushed.
 # PluginCatalogTests pins the catalog entry to the sidecar: writing one without the other is a
 # failing build, and that is only useful if the tests run AFTER the write. Nothing is committed
 # yet — a failure here leaves an edited working tree and no history to unpick.
-if [ "$PLUGIN_CHANGED" = true ]; then
-    python3 - "$NEW_VERSION" <<'PYBUMP'
+if [ "$ANY_PLUGIN_CHANGED" = true ]; then
+    python3 - "$NEW_VERSION" "$LSP_CHANGED" "$CALC_CHANGED" <<'PYBUMP'
 import json, sys, collections
 
-version = sys.argv[1]
+version, lsp_changed, calc_changed = sys.argv[1:4]
 
-# BOTH FILES, ALWAYS TOGETHER — see the note above on why the tests are the check for this.
-sidecar_path = "plugins/csharp-lsp/csharp-lsp.plugin.json"
-sidecar = json.load(open(sidecar_path), object_pairs_hook=collections.OrderedDict)
-sidecar["version"] = version
-json.dump(sidecar, open(sidecar_path, "w"), indent=2)
-open(sidecar_path, "a").write("\n")
+# BOTH FILES, ALWAYS TOGETHER — see the note above on why the tests are the check for this. Only
+# the plugins that changed are bumped: an untouched one keeps its number, which is what keeps the
+# number meaning the plugin's contract.
+changed = []
+if lsp_changed == "true":
+    changed.append(("csharp-lsp", "plugins/csharp-lsp/csharp-lsp.plugin.json"))
+if calc_changed == "true":
+    changed.append(("calculator", "plugins/calculator/calculator.plugin.json"))
 
+for name, sidecar_path in changed:
+    sidecar = json.load(open(sidecar_path), object_pairs_hook=collections.OrderedDict)
+    sidecar["version"] = version
+    json.dump(sidecar, open(sidecar_path, "w"), indent=2)
+    open(sidecar_path, "a").write("\n")
+
+names = {name for name, _ in changed}
 catalog_path = "plugins/plugins.json"
 catalog = json.load(open(catalog_path), object_pairs_hook=collections.OrderedDict)
 for entry in catalog["plugins"]:
-    if entry.get("name") == "csharp-lsp":
+    if entry.get("name") in names:
         entry["version"] = version
 json.dump(catalog, open(catalog_path, "w"), indent=2)
 open(catalog_path, "a").write("\n")
@@ -122,7 +149,9 @@ echo "  cxagent Release: $NEW_TAG"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Previous: $LATEST_TAG"
 echo "  New:      $NEW_TAG ($BUMP_TYPE)"
-echo "  Plugin:   csharp-lsp $PLUGIN_VERSION$([ "$PLUGIN_CHANGED" = true ] && echo " -> $NEW_VERSION (changed)" || echo " (unchanged, carried forward)")"
+echo "  Plugins:"
+echo "    csharp-lsp $LSP_VERSION$([ "$LSP_CHANGED" = true ] && echo " -> $NEW_VERSION (changed)" || echo " (unchanged, carried forward)")"
+echo "    calculator $CALC_VERSION$([ "$CALC_CHANGED" = true ] && echo " -> $NEW_VERSION (changed)" || echo " (unchanged, carried forward)")"
 echo ""
 echo "  This tag publishes TWO things:"
 echo "    · GitHub release — six platform binaries, revocable"
@@ -133,8 +162,8 @@ echo ""
 if [ "$FORCE" = false ]; then
     # THE PROMPT NAMES THE COMMIT TOO. Answering yes pushes a version bump to master before the
     # tag is created, and a question that only mentions tagging hides that.
-    if [ "$PLUGIN_CHANGED" = true ]; then
-        read -p "Commit the plugin version bump to $NEW_VERSION, then create and push tag '$NEW_TAG'? [y/N] " -n 1 -r
+    if [ "$ANY_PLUGIN_CHANGED" = true ]; then
+        read -p "Commit the changed plugin versions to $NEW_VERSION, then create and push tag '$NEW_TAG'? [y/N] " -n 1 -r
     else
         read -p "Create and push tag '$NEW_TAG'? [y/N] " -n 1 -r
     fi
@@ -143,7 +172,7 @@ if [ "$FORCE" = false ]; then
         echo "Aborted."
         # THE BUMP IS ALREADY WRITTEN, uncommitted, because the tests had to see it. Leaving that
         # unexplained means the next run refuses over a dirty tree with no idea why.
-        if [ "$PLUGIN_CHANGED" = true ] && ! git diff --quiet plugins/; then
+        if [ "$ANY_PLUGIN_CHANGED" = true ] && ! git diff --quiet plugins/; then
             echo ""
             echo "  Note: the plugin version bump to $NEW_VERSION is in your working tree, uncommitted."
             echo "  Undo it with:  git checkout -- plugins/"
@@ -152,11 +181,11 @@ if [ "$FORCE" = false ]; then
     fi
 fi
 
-if [ "$PLUGIN_CHANGED" = true ] && ! git diff --quiet plugins/; then
-    git add plugins/csharp-lsp/csharp-lsp.plugin.json plugins/plugins.json
-    git commit -m "Set csharp-lsp version to $NEW_VERSION"
+if [ "$ANY_PLUGIN_CHANGED" = true ] && ! git diff --quiet plugins/; then
+    git add plugins/csharp-lsp/csharp-lsp.plugin.json plugins/calculator/calculator.plugin.json plugins/plugins.json
+    git commit -m "Set changed plugin versions to $NEW_VERSION"
     git push origin HEAD
-    echo "  ✓ plugin version set to $NEW_VERSION and pushed"
+    echo "  ✓ changed plugin versions set to $NEW_VERSION and pushed"
     BUMP_PUSHED=true
 fi
 
@@ -167,8 +196,8 @@ fi
 tag_failed() {
     echo ""
     echo "Error: tagging failed AFTER the version bump was pushed."
-    echo "  master now says csharp-lsp $NEW_VERSION, and $NEW_TAG does not exist."
-    echo "  Re-run this script: it will see the plugin as unchanged, keep $NEW_VERSION,"
+    echo "  master now has the changed plugins at $NEW_VERSION, and $NEW_TAG does not exist."
+    echo "  Re-run this script: it will see the plugins as unchanged, keep $NEW_VERSION,"
     echo "  and tag it — which is the state you wanted."
 }
 if [ "${BUMP_PUSHED:-false}" = true ]; then
