@@ -66,7 +66,7 @@
     {
       "name": "csharp-lsp",
       "displayName": "C# Language Server",
-      "version": "0.9.5",
+      "version": "0.9.6",
       "description": "Go-to-definition, find-references and diagnostics for C#, backed by a language server. Crosses project boundaries: a reference in a test project resolves into the project under test.",
       "publisher": "nickprotop",
       "license": "MIT",
@@ -90,9 +90,18 @@
       },
       "spawns": true,
       "tools": [
-        { "name": "csharp_definition", "gated": "dynamic" },
-        { "name": "csharp_references", "gated": "dynamic" },
-        { "name": "csharp_diagnostics", "gated": "dynamic" }
+        {
+          "name": "csharp_definition",
+          "gated": "dynamic"
+        },
+        {
+          "name": "csharp_references",
+          "gated": "dynamic"
+        },
+        {
+          "name": "csharp_diagnostics",
+          "gated": "dynamic"
+        }
       ],
       "requires": {
         "description": "A C# language server on PATH. csharp-ls is the default and needs no configuration.",
@@ -110,8 +119,8 @@
     {
       "name": "calculator",
       "displayName": "Calculator",
-      "version": "1.0.0",
-      "description": "Arithmetic a model can trust. One tool takes a whole expression and returns the exact result — a language model approximates arithmetic rather than computing it, and a calculation spread over several turns goes wrong somewhere in the middle.",
+      "version": "0.9.6",
+      "description": "Arithmetic a model can trust. One tool takes a whole expression and returns the exact result \u2014 a language model approximates arithmetic rather than computing it, and a calculation spread over several turns goes wrong somewhere in the middle.",
       "publisher": "nickprotop",
       "license": "MIT",
       "repository": "https://github.com/nickprotop/cxagent",
@@ -128,11 +137,16 @@
       "kind": "managed",
       "compatibility": {
         "pluginContract": 2,
-        "platforms": ["any"]
+        "platforms": [
+          "any"
+        ]
       },
       "spawns": false,
       "tools": [
-        { "name": "calc_eval", "gated": false }
+        {
+          "name": "calc_eval",
+          "gated": false
+        }
       ]
     }
   ]

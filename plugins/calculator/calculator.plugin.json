@@ -1,13 +1,13 @@
 {
   "pluginContract": 2,
   "name": "calculator",
-  "version": "1.0.0",
+  "version": "0.9.6",
   "spawns": false,
-  "instructions": "Use calc_eval instead of working arithmetic out yourself — it is exact where you approximate, and a long calculation done in your head goes wrong in the middle without showing it.\n\nCompose the WHOLE calculation into one expression: `(1847 * 0.0325) / 12`, not three calls with reasoning between them. That is what makes it worth calling at all.\n\n`^` is exponentiation and binds right, so 2^3^2 is 512, not 64.\n\nThere is no `log` — use log10, loge, or logn(value, base). Reaching for `log` is a refusal, not a guess at which base you meant.\n\nA refusal means there is no number, not that the call broke: division by zero and overflow come back as failures rather than as ∞, because ∞ carried into your next step becomes a wrong answer with no sign that it went wrong.\n\nResults are double-precision. For money, do not use this.",
+  "instructions": "Use calc_eval instead of working arithmetic out yourself \u2014 it is exact where you approximate, and a long calculation done in your head goes wrong in the middle without showing it.\n\nCompose the WHOLE calculation into one expression: `(1847 * 0.0325) / 12`, not three calls with reasoning between them. That is what makes it worth calling at all.\n\n`^` is exponentiation and binds right, so 2^3^2 is 512, not 64.\n\nThere is no `log` \u2014 use log10, loge, or logn(value, base). Reaching for `log` is a refusal, not a guess at which base you meant.\n\nA refusal means there is no number, not that the call broke: division by zero and overflow come back as failures rather than as \u221e, because \u221e carried into your next step becomes a wrong answer with no sign that it went wrong.\n\nResults are double-precision. For money, do not use this.",
   "tools": [
     {
       "name": "calc_eval",
-      "description": "Evaluates a mathematical expression exactly and returns the result. Takes one expression, however long — compose the whole calculation rather than calling repeatedly.",
+      "description": "Evaluates a mathematical expression exactly and returns the result. Takes one expression, however long \u2014 compose the whole calculation rather than calling repeatedly.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -16,7 +16,9 @@
             "description": "The expression, e.g. (1847 * 0.0325) / 12 or sqrt(144) + 2^10"
           }
         },
-        "required": ["expression"]
+        "required": [
+          "expression"
+        ]
       },
       "gated": false
     }
