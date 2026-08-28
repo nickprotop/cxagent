@@ -61,7 +61,7 @@ public class CatalogGeneratorTests
 
             var (exit, _, stderr) = Run(
                 "--catalog", Path.Combine(root, "plugins", "plugins.json"),
-                "--asset", asset,
+                "--plugin", $"csharp-lsp={asset}",
                 "--out", outPath);
 
             Assert.True(exit == 0, $"generator failed: {stderr}");
@@ -97,7 +97,7 @@ public class CatalogGeneratorTests
             var outPath = Path.Combine(dir, "catalog.json");
 
             Run("--catalog", Path.Combine(root, "plugins", "plugins.json"),
-                "--asset", asset, "--out", outPath);
+                "--plugin", $"csharp-lsp={asset}", "--out", outPath);
 
             var published = JsonDocument.Parse(File.ReadAllText(outPath)).RootElement;
             Assert.False(published.TryGetProperty("$comment", out _));
@@ -119,7 +119,7 @@ public class CatalogGeneratorTests
         {
             var (exit, _, stderr) = Run(
                 "--catalog", Path.Combine(root, "plugins", "plugins.json"),
-                "--asset", Path.Combine(dir, "nothing-here.zip"),
+                "--plugin", $"csharp-lsp={Path.Combine(dir, "nothing-here.zip")}",
                 "--out", Path.Combine(dir, "catalog.json"));
 
             Assert.Equal(1, exit);
