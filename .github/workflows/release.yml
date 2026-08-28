@@ -294,6 +294,26 @@ jobs:
           draft: false
           prerelease: false
 
+  # THE SITE, REBUILT SO THE CATALOG DESCRIBES THIS RELEASE. The catalog commits sha256: null and
+  # gets its hashes stamped from the release's own assets, so until the site is rebuilt the published
+  # catalog still points at the previous release's zips — a user installing a plugin gets the old
+  # version, or a hash mismatch if the asset moved.
+  #
+  # CALLED, NOT TRIGGERED. pages.yml cannot listen for `release: published` here: this workflow
+  # creates the release with the default GITHUB_TOKEN, and GitHub suppresses the events a workflow
+  # raises with that token, so nothing would ever fire. Calling it is the fix, and it keeps ONE
+  # definition of how the catalog is built rather than a copy that drifts from the original.
+  #
+  # NEEDS THE RELEASE JOB, because the assets it downloads have to exist first.
+
+  pages:
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+
   # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
   # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an
   # answer.

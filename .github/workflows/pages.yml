@@ -3,9 +3,14 @@ name: Pages
 # TWO TRIGGERS, ONE PATH. A release has fresh artifacts; a push to the site has none, and both
 # download the current release's asset rather than trusting anything cached -- so a typo fix and a
 # release publish identical catalogs. See the design doc, "Two triggers, one path".
+#
+# CALLED BY THE RELEASE, NOT TRIGGERED BY IT. A `release: published` trigger cannot fire here: the
+# release is created by release.yml using the default GITHUB_TOKEN, and GitHub suppresses the events
+# a workflow raises with that token so a workflow cannot trigger itself in a loop. The suppression
+# is silent -- the release succeeds, no Pages run appears, and the site keeps serving the previous
+# catalog until someone notices. release.yml calls this workflow directly instead.
 on:
-  release:
-    types: [published]
+  workflow_call:
   push:
     branches: [master]
     paths:
