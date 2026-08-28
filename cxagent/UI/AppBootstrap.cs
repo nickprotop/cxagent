@@ -530,7 +530,13 @@ public static class AppBootstrap
                 Gate = permissionGate,
                 GlobalInstructionsDir = paths.ConfigDir,
             },
-            permissionRules);
+            permissionRules,
+            // THE MANAGER OWNS THE PLUGIN ENTRIES ITS MUTATORS CHANGE, so it needs the resolution
+            // rather than only the sessions having one. Without it Config is a default with no
+            // plugins, and `/plugin disable x` answers "'x' is not a configured plugin" for a
+            // plugin that just loaded from that very entry — every session holds its own copy and
+            // the one place a change is applied holds none.
+            resolution);
 
         // WHAT THIS FRONT END OVERRIDES OR ADDS TO CORE'S SEEDING. Everything else acts on a
         // session or on the manager's own stores and is fully serviced in Core; these need a window
