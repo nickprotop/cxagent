@@ -69,71 +69,6 @@ if ! curl -fsSL "https://github.com/$REPO/releases/download/$TAG/uninstall.sh" -
 fi
 chmod +x "$INSTALL_DIR/cxagent-uninstall.sh"
 
-# THE csharp-lsp PLUGIN, INSTALLED BUT NOT CONFIGURED. cxagent reads config.json at startup and only
-# loads plugins named there, so dropping this in the plugins folder gives the user tools they can
-# TRY without this script deciding for them: cxagent announces it as present-but-unconfigured, and
-# `/plugin load csharp-lsp.dll` or a config entry turns it on.
-#
-# NOT WRITING CONFIG IS THE POINT. An installer that enabled a plugin would be enabling code the
-# user has not been asked about, and the load prompt — which shows a hash of the plugin's contents —
-# is the one place that question belongs.
-#
-# FROM THE RELEASE, PINNED TO $TAG, for the same reason the uninstaller above is: a plugin built
-# from a later commit than the binary it plugs into is a skew that surfaces as a puzzling failure.
-#
-# BEST EFFORT. A release predating the plugin has no such asset, and a failed optional download must
-# not fail an otherwise good install of cxagent itself.
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cxagent"
-PLUGIN_DIR="$CONFIG_DIR/plugins"
-
-if curl -fsSL "https://github.com/$REPO/releases/download/$TAG/csharp-lsp.zip" -o "/tmp/csharp-lsp-$$.zip" 2>/dev/null; then
-    # VERIFIED AGAINST THE RELEASE'S OWN SHA256SUMS. The release computes these from the artifacts
-    # it built, so a zip that does not match is one that changed between being built and being
-    # downloaded — the case worth refusing rather than unpacking into a folder cxagent loads from.
-    #
-    # A MISSING SHA256SUMS IS NOT A FAILURE: releases predating it exist, and refusing to install
-    # over an absent file would break them. What must never happen is unpacking a zip whose hash was
-    # available and DID NOT match — that is the branch below.
-    if curl -fsSL "https://github.com/$REPO/releases/download/$TAG/SHA256SUMS" -o "/tmp/csharp-lsp-sums-$$" 2>/dev/null        && command -v sha256sum > /dev/null 2>&1; then
-        EXPECTED=$(grep " csharp-lsp.zip$" "/tmp/csharp-lsp-sums-$$" 2>/dev/null | awk '{print $1}')
-        ACTUAL=$(sha256sum "/tmp/csharp-lsp-$$.zip" | awk '{print $1}')
-        if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "  ! csharp-lsp.zip failed its checksum — not installing the plugin."
-            rm -f "/tmp/csharp-lsp-$$.zip" "/tmp/csharp-lsp-sums-$$"
-            PLUGIN_CHECKSUM_FAILED=1
-        fi
-    fi
-    rm -f "/tmp/csharp-lsp-sums-$$"
-fi
-
-if [ -z "$PLUGIN_CHECKSUM_FAILED" ] && [ -f "/tmp/csharp-lsp-$$.zip" ]; then
-    # 0700, MATCHING WHAT cxagent ITSELF CREATES. The config directory holds config.json with API
-    # keys in it; creating a subdirectory of it under the caller's umask (commonly 0002 -> 0775)
-    # would leave it group- and world-traversable.
-    mkdir -p "$PLUGIN_DIR"
-    chmod 700 "$CONFIG_DIR" "$PLUGIN_DIR" 2>/dev/null || true
-
-    # A DIRECTORY OF ITS OWN. A plugin's identity is a hash over everything in its folder, and
-    # Assembly.LoadFrom resolves dependencies from that folder too — so two plugins sharing one are
-    # neither isolated nor separately identifiable. cxagent searches a plugins folder and its
-    # immediate subdirectories, so this loads exactly as a loose install did.
-    PLUGIN_HOME="$PLUGIN_DIR/csharp-lsp"
-
-    # AN EXISTING LOOSE COPY IS LEFT ALONE. The folder is searched before its subdirectories, so a
-    # loose csharp-lsp.dll would shadow whatever is written here — installing over it silently would
-    # leave the user running one copy and reading about another.
-    if [ -f "$PLUGIN_DIR/csharp-lsp.dll" ]; then
-        echo "  ! csharp-lsp is already installed directly in $PLUGIN_DIR."
-        echo "    Leaving it alone. Remove csharp-lsp.dll and csharp-lsp.plugin.json from there"
-        echo "    and re-run to move it into a directory of its own."
-    elif command -v unzip > /dev/null 2>&1; then
-        mkdir -p "$PLUGIN_HOME"
-        chmod 700 "$PLUGIN_HOME" 2>/dev/null || true
-        unzip -oq "/tmp/csharp-lsp-$$.zip" -d "$PLUGIN_HOME" && PLUGIN_INSTALLED=1
-    fi
-    rm -f "/tmp/csharp-lsp-$$.zip"
-fi
-
 # Ensure PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     SHELL_RC=""
@@ -161,12 +96,6 @@ echo ""
 echo "  Run:     cxagent"
 echo "  Remove:  cxagent-uninstall.sh"
 echo ""
-if [ -n "$PLUGIN_INSTALLED" ]; then
-    echo "  Also installed: the csharp-lsp plugin (C# code navigation)."
-    echo "  It is NOT enabled — cxagent will say so at startup and tell you how."
-    echo "  It needs a C# language server: csharp-ls (dotnet tool install -g csharp-ls)"
-    echo ""
-fi
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "  Note: Restart your shell or run:"
     echo "    source ~/.bashrc  (or ~/.zshrc)"

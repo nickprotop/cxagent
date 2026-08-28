@@ -25,6 +25,23 @@ public class CatalogGeneratorTests
             $"plugins/plugins.json not found walking up from '{AppContext.BaseDirectory}'.");
     }
 
+    /// <summary>
+    /// The release-sourced plugin names, read from the catalog itself rather than hardcoded.
+    /// The generator refuses to publish any release entry nobody stamped, so a hardcoded list
+    /// here goes stale the moment an entry is added — and these tests would then fail over a
+    /// plugin they never heard of instead of testing anything.
+    /// </summary>
+    private static string[] ReleasePlugins(string root)
+    {
+        var catalog = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(root, "plugins", "plugins.json")));
+        return catalog.RootElement.GetProperty("plugins").EnumerateArray()
+            .Where(e => e.TryGetProperty("source", out var source)
+                        && source.GetProperty("kind").GetString() == "release")
+            .Select(e => e.GetProperty("name").GetString()!)
+            .ToArray();
+    }
+
     private static (int Exit, string Stdout, string Stderr) Run(params string[] args)
     {
         var root = RepoRoot();
@@ -55,23 +72,27 @@ public class CatalogGeneratorTests
         var dir = Directory.CreateTempSubdirectory("catalog-gen-").FullName;
         try
         {
-            // EVERY RELEASE-SOURCED ENTRY NEEDS AN ASSET, or the generator refuses — which is
-            // its forgotten-plugin check doing its job. Different bytes per asset, so a stamp
-            // landing on the wrong entry cannot pass.
-            var assets = new Dictionary<string, string>
-            {
-                ["csharp-lsp"] = Path.Combine(dir, "csharp-lsp.zip"),
-                ["calculator"] = Path.Combine(dir, "calculator.zip"),
-            };
-            File.WriteAllText(assets["csharp-lsp"], "not really a zip, but it hashes the same way");
-            File.WriteAllText(assets["calculator"], "other bytes, so the two hashes differ");
+            // EVERY RELEASE-SOURCED ENTRY GETS AN ASSET, or the generator refuses — its
+            // forgotten-plugin check doing its job. Different bytes per asset, so a stamp landing
+            // on the wrong entry cannot pass.
+            var assets = ReleasePlugins(root)
+                .ToDictionary(name => name, name => Path.Combine(dir, $"{name}.zip"));
+            foreach (var (name, asset) in assets)
+                File.WriteAllText(asset, $"not really a zip, but {name}'s hashes the same way");
             var outPath = Path.Combine(dir, "catalog.json");
 
-            var (exit, _, stderr) = Run(
+            var args = new List<string>
+            {
                 "--catalog", Path.Combine(root, "plugins", "plugins.json"),
-                "--plugin", $"csharp-lsp={assets["csharp-lsp"]}",
-                "--plugin", $"calculator={assets["calculator"]}",
-                "--out", outPath);
+                "--out", outPath,
+            };
+            foreach (var (name, asset) in assets)
+            {
+                args.Add("--plugin");
+                args.Add($"{name}={asset}");
+            }
+
+            var (exit, _, stderr) = Run(args.ToArray());
 
             Assert.True(exit == 0, $"generator failed: {stderr}");
 
@@ -79,10 +100,12 @@ public class CatalogGeneratorTests
             foreach (var entry in published.GetProperty("plugins").EnumerateArray())
             {
                 var name = entry.GetProperty("name").GetString()!;
+                if (!assets.TryGetValue(name, out var asset)) continue;
+
                 var sha = entry.GetProperty("source").GetProperty("sha256").GetString();
 
                 // The expected value, computed independently of the generator.
-                using var stream = File.OpenRead(assets[name]);
+                using var stream = File.OpenRead(asset);
                 var expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream))
                     .ToLowerInvariant();
 
@@ -104,15 +127,24 @@ public class CatalogGeneratorTests
         var dir = Directory.CreateTempSubdirectory("catalog-gen-").FullName;
         try
         {
-            // One placeholder file serves both entries: this test is about the $comment, and
-            // the generator only hashes whatever path each --plugin names.
+            // One placeholder file serves every entry: this test is about the $comment, and the
+            // generator only hashes whatever path each --plugin names.
             var asset = Path.Combine(dir, "asset.zip");
             File.WriteAllText(asset, "x");
             var outPath = Path.Combine(dir, "catalog.json");
 
-            Run("--catalog", Path.Combine(root, "plugins", "plugins.json"),
-                "--plugin", $"csharp-lsp={asset}", "--plugin", $"calculator={asset}",
-                "--out", outPath);
+            var args = new List<string>
+            {
+                "--catalog", Path.Combine(root, "plugins", "plugins.json"),
+                "--out", outPath,
+            };
+            foreach (var name in ReleasePlugins(root))
+            {
+                args.Add("--plugin");
+                args.Add($"{name}={asset}");
+            }
+
+            Run(args.ToArray());
 
             var published = JsonDocument.Parse(File.ReadAllText(outPath)).RootElement;
             Assert.False(published.TryGetProperty("$comment", out _));
