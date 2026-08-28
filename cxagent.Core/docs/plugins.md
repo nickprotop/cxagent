@@ -246,6 +246,17 @@ needs is never really "cxagent 0.9.5"; it is "a host that understands `dynamic`"
 contract. A version is a proxy that can be satisfied by a build whose number is high enough but
 which dropped the feature.
 
+**A cxagent release does not invalidate your build.** `CxAgent.Core` freezes the `AssemblyVersion` a
+managed plugin binds to, so the reference you compiled against resolves against every later release;
+the release number rides on `FileVersion` and `InformationalVersion`, which the loader does not
+consult. Build once against any version, and the contract integer above is what decides whether you
+load — which is the guarantee an ABI plugin has always had for free, since a `.so` references nothing
+of ours at all.
+
+That freeze is why this section is true rather than aspirational: an assembly reference resolved by
+exact version would refuse your plugin with `Could not load file or assembly` *before* any of the
+checking described here happened, and say nothing about compatibility.
+
 It is read from the sidecar **before your assembly is loaded**, let alone constructed. That is the
 only placement worth having: loading an assembly is irreversible and a constructor is arbitrary
 code, so a check after either discards a result rather than preventing anything.
