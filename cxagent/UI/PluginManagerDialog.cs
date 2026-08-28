@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using CxAgent.Core.Sessions;
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
@@ -41,13 +43,39 @@ public static class PluginManagerDialog
     private static string? _projectDirectory;
 
     private static ListControl? _rail;
-    private static MarkupControl? _detail;
+    private static TabControl? _tabs;
+    private static MarkupControl? _detailHeader;
+    private static MarkupControl? _detailBody;
     private static MarkupControl? _age;
     private static PromptControl? _filter;
     private static HorizontalGridControl? _buttons;
     private static int _lastRailIndex;
 
+    // WHICH PLUGIN THE PANEL LAST SHOWED. The Settings tab is torn down and rebuilt on every
+    // selection change, and whether the user's place on it is kept depends on whether the plugin
+    // is still the same one — a rebuild for the SAME plugin (a save, an F5) must not throw the
+    // user back to Details, while moving to another plugin must.
+    private static string? _lastDetailName;
+
+    // THE FIELDS OF THE OPEN SETTINGS FORM, keyed for the save. Rebuilt with the tab; a save reads
+    // these rather than walking the control tree, because the tree's shape is a layout decision
+    // and the save must not break when the layout changes.
+    private static readonly List<(string Key, MultilineEditControl Editor)> _settingsFields = [];
+    private static MarkupControl? _settingsStatus;
+
+    // ONE MESSAGE THAT SURVIVES A REBUILD. A successful save re-reads everything, which tears the
+    // settings tab down — a status line set before the rebuild would be destroyed with it, so the
+    // outcome is parked here and rendered by the next build, once.
+    private static string? _settingsNote;
+
     private static IReadOnlyList<PluginRow> _rows = [];
+
+    // KEPT BESIDE THE ROWS, for the panel. A row carries what the RAIL needs; the panel also needs
+    // what only the gather knew — where an unconfigured plugin's files live (for its README) and
+    // each installed contract — and re-walking the disk per selection would repeat work Rebuild
+    // just did.
+    private static PluginManagerInputs? _inputs;
+    private static IReadOnlyList<string> _searchFolders = [];
 
     // KEPT ACROSS OPENS. The catalog changes on the publisher's schedule, not the user's; reopening
     // shows the last read immediately while a fresh fetch runs, instead of an empty AVAILABLE
@@ -120,8 +148,30 @@ public static class PluginManagerDialog
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
         grid.Place(_rail, 0, 0);
 
-        _detail = new MarkupControl([""]) { Wrap = true };
-        grid.Place(_detail, 0, 1);
+        // TWO TABS ONLY, Details and Settings — and Settings is added per selection, because for
+        // most rows it must not exist at all (see RebuildSettingsTab). A Tools tab was considered
+        // and rejected: three tools is a line, not a page, so gating lives in the Details facts.
+        _detailHeader = new MarkupControl([""]) { Wrap = true };
+        _detailBody = new MarkupControl([""]) { Wrap = true };
+
+        // ONE SCROLL FOR HEADER AND BODY TOGETHER: a README long enough to scroll should carry the
+        // identity lines up with it — a pinned header would spend six rows of a 40-row window
+        // repeating what the rail already shows beside it.
+        var detailScroll = new ScrollablePanelControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+        };
+        detailScroll.AddControl(_detailHeader);
+        detailScroll.AddControl(_detailBody);
+
+        _tabs = new TabControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+        };
+        _tabs.AddTab("Details", detailScroll);
+        grid.Place(_tabs, 0, 1);
 
         // WHERE THE USER LEFT IT. Window.Left/Top are settable (Window.cs:797, :929), so a manager
         // dragged aside or resized reopens where it was rather than jumping back to centre — the
@@ -174,6 +224,18 @@ public static class PluginManagerDialog
     {
         if (_window is null) return false;
 
+        // A SETTINGS FIELD MID-EDIT EATS THE FIRST ESCAPE. The global Escape is consulted before
+        // the active window ever sees the key (InputCoordinator.cs:130-134), so the editor's own
+        // Escape-exits-editing can never run — without this, Escape while typing a value discards
+        // the whole dialog, edits and all. One Escape leaves the field, the next closes. Tab cannot
+        // substitute: an editing MultilineEdit consumes Tab as indent, so Escape is the only way
+        // back out of a field to the Save button.
+        if (_window.FocusManager.FocusedControl is MultilineEditControl { IsEditing: true } editor)
+        {
+            editor.IsEditing = false;
+            return true;
+        }
+
         _window.Close();
         _window = null;
         return true;
@@ -195,12 +257,13 @@ public static class PluginManagerDialog
     private static void Rebuild()
     {
         var projectDirectory = _projectDirectory!;
-        var searchFolders = PluginDiscovery.SearchFolders(
+        _searchFolders = PluginDiscovery.SearchFolders(
             _manager!.Config.PluginPaths, projectDirectory, _paths!.ConfigDir);
 
-        _rows = PluginManagerRows.Build(PluginManagerState.Gather(
-            _manager.Config.Plugins, _session!.Plugins.LoadedPluginNames, searchFolders,
-            _catalog.Plugins, projectDirectory));
+        _inputs = PluginManagerState.Gather(
+            _manager.Config.Plugins, _session!.Plugins.LoadedPluginNames, _searchFolders,
+            _catalog.Plugins, projectDirectory);
+        _rows = PluginManagerRows.Build(_inputs);
 
         RefillRail();
         UpdateAgeLine();
@@ -356,12 +419,11 @@ public static class PluginManagerDialog
         if (_rail is null) return;
 
         // ClearItems raises this with -1 (ListControl.cs:807); indexing with it would throw
-        // mid-refill.
-        if (index < 0)
-        {
-            ShowDetail(null);
-            return;
-        }
+        // mid-refill. NOTHING IS TORN DOWN HERE: the refill re-selects immediately after, and a
+        // teardown in between forgets which tab the user was on — a save rebuilds the rail, and
+        // its user must land back on the Settings tab they pressed Save from. The genuinely empty
+        // rail is RefillRail's explicit ShowDetail(null), not this transient.
+        if (index < 0) return;
 
         // A HEADER IS NOT A ROW. IsEnabled would stop Enter activating it but does not stop the
         // arrows landing on it, so the cursor is nudged past in the direction it was going —
@@ -385,26 +447,39 @@ public static class PluginManagerDialog
         ShowDetail(_rail.Items[index].Tag as PluginRow);
     }
 
-    /// <summary>The right-hand panel: the selected row, said plainly.</summary>
+    /// <summary>The right-hand panel: the selected row, said plainly — identity, the facts that
+    /// differ by state, the body, the settings tab when one is earned, and the action row.</summary>
     private static void ShowDetail(PluginRow? row)
     {
-        if (_detail is null) return;
+        if (_detailHeader is null || _detailBody is null || _tabs is null) return;
 
         if (row is null)
         {
-            _detail.SetContent([""]);
+            _detailHeader.SetContent([""]);
+            _detailBody.SetContent([""]);
+            _tabs.RemoveTab("Settings");
+            _settingsFields.Clear();
+            _settingsStatus = null;
+            RebuildButtons(null);
+            _lastDetailName = null;
             return;
         }
 
         var lines = new List<string>
         {
             $"[bold]{MarkupParser.Escape(row.Catalog?.DisplayName ?? row.Name)}[/]",
-            "",
-            $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.State)}[/]",
         };
 
-        if (row.Folder is { } folder)
-            lines.Add($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(folder)}[/]");
+        if (row.Catalog is { } entry)
+        {
+            var identity = string.Join(" · ",
+                new[] { entry.Name, entry.Version, entry.License, entry.Publisher }
+                    .Where(part => part.Length > 0));
+            lines.Add($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(identity)}[/]");
+        }
+
+        lines.Add("");
+        lines.AddRange(FactLines(row));
 
         if (row.Detail is { } detail)
         {
@@ -412,6 +487,417 @@ public static class PluginManagerDialog
             lines.Add(MarkupParser.Escape(detail));
         }
 
-        _detail.SetContent(lines);
+        lines.Add("");
+        _detailHeader.SetContent(lines);
+
+        ShowBody(row);
+        RebuildSettingsTab(row);
+        RebuildButtons(row);
+        _lastDetailName = row.Name;
+    }
+
+    /// <summary>The aligned fact block: STATE, NEEDS, CONTRACT, TOOLS — each only when there is
+    /// something true to say, so an undocumented plugin shows a short block rather than empty
+    /// labels.</summary>
+    private static IEnumerable<string> FactLines(PluginRow row)
+    {
+        yield return Fact("STATE", StateLine(row));
+
+        if (row.Catalog is { RequiresDescription: { Length: > 0 } needs } entry)
+        {
+            yield return Fact("NEEDS", needs);
+            if (entry.RequiresInstall is { Length: > 0 } install)
+                yield return Continuation(install);
+
+            // ONLY WHEN THE DESCRIPTION DOES NOT ALREADY NAME IT — csharp-lsp's own description is
+            // "csharp-ls on PATH", and printing "default: csharp-ls" under that is a stutter.
+            if (entry.RequiresDefault is { Length: > 0 } fallback
+                && !needs.Contains(fallback, StringComparison.Ordinal))
+                yield return Continuation($"default: {fallback}");
+        }
+
+        if (ContractOf(row) is { } contract)
+            yield return Fact("CONTRACT", contract.ToString());
+
+        if (row.Catalog is { } catalogued && ToolsLine(catalogued.Tools) is { } tools)
+            yield return Fact("TOOLS", tools);
+    }
+
+    private static string Fact(string key, string value) =>
+        $"[{ColorScheme.MutedMarkup} bold]{key,-10}[/]{MarkupParser.Escape(value)}";
+
+    /// <summary>A fact's second line, indented under the value column so the key column stays a
+    /// column.</summary>
+    private static string Continuation(string value) =>
+        $"{new string(' ', 10)}[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(value)}[/]";
+
+    /// <summary>State · folder · what config says — the whole placement story in one line, because
+    /// each third can surprise independently: a loaded plugin can be disabled in config for the
+    /// next start, and a project copy can shadow a global one.</summary>
+    private static string StateLine(PluginRow row)
+    {
+        var parts = new List<string>();
+        if (row.State.Length > 0) parts.Add(row.State);
+        if (row.Folder is { } folder) parts.Add(folder);
+        if (row.Configured is { } config)
+            parts.Add(config.Enabled ? "enabled in config" : "disabled in config");
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : "not installed";
+    }
+
+    /// <summary>The installed sidecar's contract when there is one, else the catalog's claim —
+    /// the sidecar wins because it describes the binary actually on disk.</summary>
+    private static int? ContractOf(PluginRow row)
+    {
+        if (_inputs is { } inputs && inputs.InstalledContracts.TryGetValue(row.Name, out var installed))
+            return installed;
+
+        return row.Catalog is { PluginContract: > 0 } entry ? entry.PluginContract : null;
+    }
+
+    /// <summary>
+    /// The tool summary, one line — so gating is visible without opening anything. A user who never
+    /// looks further still learns whether these tools ask before running.
+    /// </summary>
+    private static string? ToolsLine(IReadOnlyList<CatalogTool> tools)
+    {
+        if (tools.Count == 0) return null;
+
+        var asks = tools.Count(t => string.Equals(t.Gated, "true", StringComparison.OrdinalIgnoreCase));
+        var decides = tools.Count(t => string.Equals(t.Gated, "dynamic", StringComparison.OrdinalIgnoreCase));
+        var never = tools.Count - asks - decides;
+
+        if (decides == tools.Count)
+            return tools.Count == 1 ? "1, decides per call whether to ask"
+                                    : $"{tools.Count}, all decide per call whether to ask";
+        if (asks == tools.Count)
+            return tools.Count == 1 ? "1, asks before running" : $"{tools.Count}, all ask before running";
+        if (never == tools.Count)
+            return tools.Count == 1 ? "1, never asks" : $"{tools.Count}, none ask before running";
+
+        var parts = new List<string>();
+        if (asks > 0) parts.Add($"{asks} ask first");
+        if (decides > 0) parts.Add($"{decides} decide per call");
+        if (never > 0) parts.Add($"{never} never ask");
+        return $"{tools.Count} · {string.Join(" · ", parts)}";
+    }
+
+    /// <summary>
+    /// The body, and it differs by state because the sources genuinely differ: an installed plugin
+    /// has its own README.md on disk beside the binary, an available one has only the catalog's
+    /// description — which is a real paragraph, not a stub.
+    ///
+    /// <para>THE CATALOG'S <c>readme</c> FIELD IS NOT USED. It holds a repo-relative path that
+    /// resolves against nothing published, so following it would render a 404 where documentation
+    /// should be.</para>
+    /// </summary>
+    private static void ShowBody(PluginRow row)
+    {
+        if (HomeOf(row) is { } home)
+        {
+            var readme = Path.Combine(home, "README.md");
+            try
+            {
+                if (File.Exists(readme))
+                {
+                    _detailBody!.SetMarkdown(File.ReadAllText(readme));
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // An unreadable README must not take the panel down — fall through to the
+                // description, which is what an install predating shipped READMEs shows anyway.
+            }
+        }
+
+        _detailBody!.SetMarkdown(row.Catalog?.Description ?? "");
+    }
+
+    /// <summary>Where this plugin's files live, or null when it is not on disk. Configured rows
+    /// resolve their entry-point file the same way a load would; unconfigured rows were found by
+    /// the gather, which already knows the folder it found them in.</summary>
+    private static string? HomeOf(PluginRow row) =>
+        row.Configured is { } config
+            ? PluginDiscovery.FindLoadSetDirectory(config.File, _searchFolders)
+            : _inputs?.Unconfigured.FirstOrDefault(u => u.Name == row.Name)?.Folder;
+
+    /// <summary>
+    /// Adds or removes the Settings tab for this row.
+    ///
+    /// <para>ABSENT ENTIRELY — NOT DISABLED — when the plugin is not configured or documents no
+    /// settings. A tab that cannot ever do anything costs a row of chrome to say nothing. Configured
+    /// is the bar, not merely on-disk: <see cref="SessionManager.SetPluginSettings"/> refuses a name
+    /// config does not hold, so a form for an unconfigured plugin would be a form whose Save can
+    /// never succeed.</para>
+    /// </summary>
+    private static void RebuildSettingsTab(PluginRow row)
+    {
+        // Read before the teardown moves it: whether the user was ON the settings tab, for the
+        // same plugin — a save's rebuild must put them back, a selection change must not.
+        var keepSettingsOpen = _tabs!.ActiveTabIndex == 1
+            && string.Equals(_lastDetailName, row.Name, StringComparison.Ordinal);
+
+        _tabs.RemoveTab("Settings");
+        _settingsFields.Clear();
+        _settingsStatus = null;
+
+        if (row.Configured is null || row.Catalog is not { } entry || entry.Settings.Count == 0)
+            return;
+
+        _tabs.AddTab("Settings", BuildSettingsContent(row, entry));
+        if (keepSettingsOpen) _tabs.SwitchToTab("Settings");
+    }
+
+    /// <summary>
+    /// The settings form: one labelled input per documented key with the catalog's own prose beside
+    /// it, and a Save — or, when the plugin is loaded anywhere, the reason there is no Save.
+    ///
+    /// <para>HAND-COMPOSED, NEVER <c>FormControl</c> — a generated form does not give the spacing
+    /// and alignment this deserves, so the fields are laid out in a grid deliberately.</para>
+    /// </summary>
+    private static GridControl BuildSettingsContent(PluginRow row, CatalogEntry entry)
+    {
+        var fields = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        fields.ColumnDefinitions.Add(GridLength.Star(1, min: 20));
+        fields.ColumnDefinitions.Add(GridLength.Star(1, min: 16));
+
+        var r = 0;
+        foreach (var (key, prose) in entry.Settings.OrderBy(s => s.Key, StringComparer.Ordinal))
+        {
+            fields.RowDefinitions.Add(GridLength.Auto());
+            fields.RowDefinitions.Add(GridLength.Auto());
+            fields.RowDefinitions.Add(GridLength.Cells(1));
+
+            fields.Place(new MarkupControl([$"[bold]{MarkupParser.Escape(key)}[/]"]), r, 0);
+
+            var editor = new MultilineEditControl(viewportHeight: 3)
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+            editor.SetContent(CurrentText(row, key));
+            fields.Place(editor, r + 1, 0);
+            _settingsFields.Add((key, editor));
+
+            // THE CATALOG'S OWN SENTENCE, beside the field it explains. Where a key's type matters
+            // the prose already says so — csharp-lsp's args entry reads "OmniSharp needs [\"-lsp\"]"
+            // — so the form never has to teach JSON itself.
+            fields.Place(
+                new MarkupControl([$"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(prose)}[/]"])
+                {
+                    Wrap = true,
+                },
+                r, 1, rowSpan: 2);
+
+            r += 3;
+        }
+
+        var scroll = new ScrollablePanelControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Fill,
+        };
+        scroll.AddControl(fields);
+
+        // The fields scroll; the status line and the Save row do not — a form long enough to
+        // scroll must not hide its own Save at the bottom of the scrollback.
+        var wrapper = new GridControl { VerticalAlignment = VerticalAlignment.Fill };
+        wrapper.ColumnDefinitions.Add(GridLength.Star(1));
+        wrapper.RowDefinitions.Add(GridLength.Star(1));
+        wrapper.RowDefinitions.Add(GridLength.Auto());
+        wrapper.RowDefinitions.Add(GridLength.Auto());
+        wrapper.Place(scroll, 0, 0);
+
+        _settingsStatus = new MarkupControl([TakeSettingsNote()]) { Wrap = true };
+        wrapper.Place(_settingsStatus, 1, 0);
+
+        // REFUSED WHILE LOADED IN ANY SESSION, not just this one. SetPluginSettings checks only its
+        // caller, so another session's copy would keep running on settings the file no longer holds
+        // and nothing would ever reconcile the two — a plugin reads its settings once, at Start.
+        // The refusal replaces Save rather than sitting beside a button that cannot work, and it
+        // names where the plugin is loaded so the user knows which session to unwire.
+        if (SessionHolding(row.Name) is { } holder)
+        {
+            var where = ReferenceEquals(holder, _session)
+                ? "this session" : $"another session ({holder.WorkingDirectory})";
+            wrapper.Place(new MarkupControl(
+                [$"[{ColorScheme.MutedMarkup}]loaded in {MarkupParser.Escape(where)} — a plugin "
+                 + $"reads its settings at start, so `/plugin unwire {MarkupParser.Escape(row.Name)}` "
+                 + "there first, then change them.[/]"])
+            {
+                Wrap = true,
+            }, 2, 0);
+        }
+        else
+        {
+            wrapper.Place(HorizontalGridControl.ButtonRow(
+                Controls.Button("  Save  ").OnClick((_, _) => SaveSettings(row, entry)).Build()), 2, 0);
+        }
+
+        return wrapper;
+    }
+
+    /// <summary>The one session with this plugin loaded, or null. Any session counts — the refusal
+    /// this feeds exists precisely because the mutator's own check stops at the caller.</summary>
+    private static Session? SessionHolding(string name) =>
+        _manager!.Sessions.FirstOrDefault(
+            s => s.Plugins.LoadedPluginNames.Contains(name, StringComparer.Ordinal));
+
+    /// <summary>The saved note, consumed. Rendered by the build that follows a save's rebuild —
+    /// setting a control before the rebuild would set one about to be torn down.</summary>
+    private static string TakeSettingsNote()
+    {
+        var note = _settingsNote;
+        _settingsNote = null;
+        return note is null ? "" : $"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(note)}[/]";
+    }
+
+    /// <summary>
+    /// A field's current text: a stored string shows bare, everything else as JSON — the mirror of
+    /// <see cref="ValueOf"/>. Prefilled quotes would teach the user to quote, and a quoted edit
+    /// round-trips to a string anyway; the one value this misreads is a stored string that itself
+    /// parses as JSON ("true"), the same corner typing one has.
+    /// </summary>
+    private static string CurrentText(PluginRow row, string key)
+    {
+        if (row.Configured?.Settings is not { ValueKind: JsonValueKind.Object } settings
+            || !settings.TryGetProperty(key, out var value))
+            return "";
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText();
+    }
+
+    /// <summary>
+    /// One field's text as the JSON value it means.
+    ///
+    /// <para>PARSED FIRST, QUOTED AS A FALLBACK. A settings block is handed to the plugin verbatim
+    /// and cxagent has no schema for it, so the form cannot know a key's type — but quoting
+    /// everything would turn csharp-lsp's `args` array into a string it cannot use, and refusing
+    /// anything unparseable would make a bare word an error. Try JSON, fall back to a string.</para>
+    /// </summary>
+    private static JsonNode? ValueOf(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0) return null;
+
+        try { return JsonNode.Parse(trimmed); }
+        catch (JsonException) { return JsonValue.Create(trimmed); }
+    }
+
+    /// <summary>
+    /// Applies the form through the same mutator every other door uses, then persists — mutate,
+    /// then persist, the app's half of the config boundary. Unlike load and unwire, a settings save
+    /// always changes a config entry, so syncing here cannot delete a hand-added one.
+    /// </summary>
+    private static void SaveSettings(PluginRow row, CatalogEntry entry)
+    {
+        var settings = new JsonObject();
+
+        // KEYS THE CATALOG DOES NOT DOCUMENT SURVIVE. The form edits what it shows; a user who
+        // hand-wrote an extra key into config.json must not lose it to a save that never displayed
+        // it.
+        if (row.Configured?.Settings is { ValueKind: JsonValueKind.Object } existing)
+            foreach (var property in existing.EnumerateObject())
+                if (!entry.Settings.ContainsKey(property.Name))
+                    settings[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+
+        foreach (var (key, editor) in _settingsFields)
+            if (ValueOf(editor.GetContent()) is { } value)
+                settings[key] = value;
+
+        // An emptied form clears the block rather than writing {} — the mutator's null is "no
+        // settings", which is what a user deleting every value means.
+        PluginChangeResult result;
+        if (settings.Count == 0)
+            result = _manager!.SetPluginSettings(_session!, row.Name, null);
+        else
+        {
+            // Disposing the document here is safe: SetPluginSettings clones before storing.
+            using var document = JsonDocument.Parse(settings.ToJsonString());
+            result = _manager!.SetPluginSettings(_session!, row.Name, document.RootElement);
+        }
+
+        if (result is PluginChangeResult.Refused refused)
+        {
+            // In place, not via the note: a refusal changes no state, so nothing rebuilds the tab
+            // and the user's edits stay exactly as typed.
+            _settingsStatus?.SetContent(
+                [$"[yellow]{MarkupParser.Escape(refused.Reason)}[/]"]);
+            return;
+        }
+
+        var failure = PluginConfigPersistence.TrySync(
+            Path.Combine(_paths!.ConfigDir, "config.json"), _manager!.Config.Plugins);
+
+        _settingsNote = failure ?? "saved";
+        Rebuild();
+    }
+
+    /// <summary>
+    /// Refills the sticky bottom row with the selected row's actions, then Close.
+    ///
+    /// <para>THE BUTTONS ACT ON THE SELECTED PLUGIN, so the row is rebuilt whenever the selection
+    /// moves — which is why it is refilled in place rather than being a grid cell whose control is
+    /// swapped: the sticky row is registered with the window once.</para>
+    /// </summary>
+    private static void RebuildButtons(PluginRow? row)
+    {
+        if (_buttons is null) return;
+
+        _buttons.ClearColumns();
+        foreach (var button in RowButtons(row)
+                     .Append(Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build()))
+        {
+            var column = new ColumnContainer(_buttons);
+            column.AddContent(button);
+            _buttons.AddColumn(column);
+        }
+    }
+
+    /// <summary>
+    /// Which actions this row can honestly offer. A button that cannot work is worse than its
+    /// absence — an Available row whose state says why it cannot install gets no install button,
+    /// and a contract-mismatched row gets no button at all, just its explanation: the remedy is a
+    /// newer build or a newer cxagent, and neither is in this dialog.
+    /// </summary>
+    private static IEnumerable<ButtonControl> RowButtons(PluginRow? row)
+    {
+        if (row is null) yield break;
+
+        switch (row.Section)
+        {
+            case PluginRowSection.Available:
+                if (row.State.Length == 0)
+                    yield return Controls.Button(" Install ").Build();
+                break;
+
+            case PluginRowSection.Updates:
+                yield return Controls.Button(" Update ").Build();
+                break;
+
+            case PluginRowSection.Installed:
+                // THE CALLING SESSION'S VIEW decides load/unwire — the same view the rail's state
+                // word renders, so the button never contradicts the row it sits under.
+                yield return _session!.Plugins.LoadedPluginNames.Contains(row.Name, StringComparer.Ordinal)
+                    ? Controls.Button(" Unwire ").Build()
+                    : Controls.Button(" Load ").Build();
+
+                if (row.Configured is { } config)
+                    yield return config.Enabled
+                        ? Controls.Button(" Disable ").Build()
+                        : Controls.Button(" Enable ").Build();
+
+                if (row.Folder is not null)
+                    yield return Controls.Button(" Uninstall ").Build();
+                break;
+
+            case PluginRowSection.NeedsAttention:
+                // Uninstall applies to a broken install — files on disk, or a config entry whose
+                // file is gone. It does not apply to a contract mismatch, where the files are fine.
+                if (!row.State.StartsWith("contract ", StringComparison.Ordinal)
+                    && (row.Folder is not null || row.Configured is not null))
+                    yield return Controls.Button(" Uninstall ").Build();
+                break;
+        }
     }
 }
