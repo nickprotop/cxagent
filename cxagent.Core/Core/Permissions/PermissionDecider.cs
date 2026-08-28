@@ -221,14 +221,18 @@ public sealed class PermissionDecider : IPermissionGate
         // they became shared by accident, so a second session would be judged against the first's
         // root and the first's mode. See PermissionRequest.Policy.
         //
-        // NULL FALLS BACK to the gate's own, which is the single-session path and every existing
-        // caller.
         // NO FALLBACK. The gate is one per process and holds no session, so a request that arrives
         // without a policy is one nobody can judge: there is no root to check a path against and no
         // edit mode to read. Refusing is the only honest answer — inventing one would decide a
         // question using another session's rules, which is the failure this whole split exists to
-        // end. Every production path stamps it (PermissionGatedExecutor); this is the guard for a
-        // caller that forgets.
+        // end.
+        //
+        // A CALLER THAT REACHES THE GATE DIRECTLY MUST STAMP ITSELF. Tool calls are stamped for
+        // free by PermissionGatedExecutor, but the plugin load gate (Session.RequestPluginLoad) and
+        // the manager's download question (PluginManagerDialog.AskDownloadAsync) call this method
+        // themselves and stamp their own request. Forgetting is not a loud failure: the refusal
+        // below returns a denial that looks exactly like the user saying no, so the question simply
+        // never appears. A new direct caller belongs in this list.
         // The test seam stands in for PermissionGatedExecutor, which stamps this in production.
         if (StampForTesting is not null && request.Policy is null)
             request = request with { Policy = StampForTesting };

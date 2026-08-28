@@ -1,6 +1,9 @@
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
+using CxAgent.Core.Commands;
+using CxAgent.Core.Permissions;
+using CxAgent.Core.Storage;
 using CxAgent.UI;
 using Xunit;
 
@@ -142,5 +145,107 @@ public class PluginInstallerTests : IDisposable
 
         Assert.IsType<InstallResult.Refused>(result);
         Assert.False(File.Exists(Path.Combine(_dir, "..", "escaped.dll")));
+    }
+
+    /// <summary>
+    /// THE DOWNLOAD QUESTION REACHES THE USER. The manager calls the gate directly rather than
+    /// through PermissionGatedExecutor, so it stamps its own request with the session's policy —
+    /// and a request arriving unstamped is refused by PermissionDecider before any prompt renders.
+    ///
+    /// <para>WHY THIS TEST LOOKS INDIRECT. AskDownloadAsync is private to the dialog and needs a
+    /// live session and window, so what is pinned here is the invariant it must satisfy: the same
+    /// PermissionKind.Http request, stamped the same way, survives the REAL decider and reaches the
+    /// prompt. Unstamped, the prompt is never called and the outcome is a denial indistinguishable
+    /// from the user saying no — which is exactly how this shipped broken while every unit test
+    /// passed.</para>
+    ///
+    /// <para>WithPrompt, NOT ForTesting: ForTesting sets StampForTesting, which patches the missing
+    /// policy and hides the defect. See McpToolsetTests for the same trap in the MCP path.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheDownloadQuestion_StampedAsTheManagerStampsIt_ReachesThePrompt()
+    {
+        var rules = new PermissionRulesStore(new AppPaths(_dir));
+        var asked = 0;
+        var notices = new List<Message>();
+        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+            (_, _, _) => { asked++; return Task.FromResult(PermissionChoice.Once); });
+
+        var request = new PermissionRequest(PermissionKind.Http,
+            "download 'calculator' 1.0.0 from https://example.invalid/calculator.zip",
+            AlwaysRule: null)
+        { Policy = new PermissionPolicy(_dir, rules, EditMode.AcceptEdits) };
+
+        var outcome = await gate.RequestAsync(request, CancellationToken.None);
+
+        Assert.True(outcome.Allowed);
+        Assert.Equal(1, asked);
+        Assert.DoesNotContain(notices, n => n.Text.Contains("no session policy"));
+    }
+
+    /// <summary>
+    /// THE SAME REQUEST UNSTAMPED IS REFUSED WITHOUT ASKING — the production defect, pinned so a
+    /// caller that stops stamping fails here rather than silently in a user's terminal.
+    /// </summary>
+    [Fact]
+    public async Task TheDownloadQuestion_Unstamped_IsRefusedWithoutAsking()
+    {
+        var rules = new PermissionRulesStore(new AppPaths(_dir));
+        var asked = 0;
+        var notices = new List<Message>();
+        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+            (_, _, _) => { asked++; return Task.FromResult(PermissionChoice.Once); });
+
+        var outcome = await gate.RequestAsync(
+            new PermissionRequest(PermissionKind.Http, "download 'calculator' 1.0.0",
+                AlwaysRule: null),
+            CancellationToken.None);
+
+        Assert.False(outcome.Allowed);
+        Assert.Equal(0, asked);
+        Assert.Contains(notices, n => n.Text.Contains("no session policy"));
+    }
+
+    /// <summary>The repository root, found by walking up from the test binary until plugins.json is
+    /// there — the same shape PluginCatalogTests uses.</summary>
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        for (var i = 0; i < 8 && dir is not null; i++)
+        {
+            if (File.Exists(Path.Combine(dir, "plugins", "plugins.json"))) return dir;
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        throw new InvalidOperationException(
+            $"plugins/plugins.json not found walking up from '{AppContext.BaseDirectory}'.");
+    }
+
+    /// <summary>
+    /// THE MANAGER STILL STAMPS ITS DOWNLOAD REQUEST. The two tests above pin the decider's half of
+    /// the contract; this pins the caller's, which is the half that actually broke — the dialog
+    /// asked the gate without a policy and every download was refused before the user saw anything.
+    ///
+    /// <para>READ FROM SOURCE, because AskDownloadAsync is private to a UI class that needs a live
+    /// session and window to construct. The alternative was no check at all on the one line whose
+    /// absence shipped the bug: a source assertion is coarse, but it fails the moment someone
+    /// deletes the stamp, and it names what to put back.</para>
+    /// </summary>
+    [Fact]
+    public void TheManagersDownloadRequest_CarriesTheSessionsPolicy()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(RepoRoot(), "cxagent", "UI", "PluginManagerDialog.cs"));
+
+        var call = source.IndexOf("PermissionKind.Http", StringComparison.Ordinal);
+        Assert.True(call >= 0, "PluginManagerDialog no longer asks for PermissionKind.Http.");
+
+        // The stamp sits within the request initialiser that follows the kind; a window is enough
+        // to tell "stamped" from "not stamped" without pinning the exact formatting.
+        var window = source[call..Math.Min(source.Length, call + 400)];
+        Assert.True(window.Contains("Policy = _session.Policy", StringComparison.Ordinal),
+            "The manager's download request must be stamped with the session's policy "
+          + "({ Policy = _session.Policy }); unstamped, PermissionDecider refuses it and the "
+          + "download question never reaches the user.");
     }
 }

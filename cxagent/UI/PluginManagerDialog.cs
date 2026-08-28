@@ -1311,10 +1311,18 @@ public static class PluginManagerDialog
         }
 
         _ws!.EnqueueOnUIThread(CloseForPrompt);
+        // STAMPED WITH THE SESSION'S POLICY, as the plugin load gate does for the same reason
+        // (Session.RequestPluginLoad). The gate holds no session of its own, so a request arriving
+        // without a policy has no root to check against and no edit mode to read: the decider
+        // refuses it outright rather than judge it by another session's rules. Every path that
+        // reaches the gate through the tool executor is stamped there; this one calls the gate
+        // directly and so must stamp itself, or the download question is refused before it is ever
+        // put to the user.
         var outcome = await gate.RequestAsync(
             new PermissionRequest(PermissionKind.Http,
                 $"download '{entry.Name}' {entry.Version} from {entry.DownloadUrl}",
-                AlwaysRule: null),
+                AlwaysRule: null)
+            { Policy = _session.Policy },
             CancellationToken.None);
         _ws.EnqueueOnUIThread(Reopen);
 
