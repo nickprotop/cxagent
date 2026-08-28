@@ -65,6 +65,9 @@ public static class PluginManagerDialog
     private static MarkupControl? _detailHeader;
     private static MarkupControl? _detailBody;
     private static MarkupControl? _age;
+
+    /// <summary>The status bar's left half — what the rail is currently showing.</summary>
+    private static MarkupControl? _status;
     private static PromptControl? _filter;
     private static HorizontalGridControl? _buttons;
     private static int _lastRailIndex;
@@ -150,11 +153,22 @@ public static class PluginManagerDialog
         // (MarketplaceBrowserDialog.cs:816, :921).
         //
         //  [ toolbar — filter · refresh · catalog age ]   StickyPosition.Top
-        //  [ rail          ][ detail                  ]   the grid: two columns, one row
-        //  [ [close]                                  ]   StickyPosition.Bottom
+        //  [ ───────────────────────────────────────── ]   a rule, so the chrome reads as chrome
+        //  [ rail  │ detail                            ]   the grid, split by a draggable splitter
+        //  [ ───────────────────────────────────────── ]
+        //  [ 4 plugins · 1 loaded    F5 · Esc  [Close] ]   StickyPosition.Bottom
         var toolbar = BuildToolbar();
         toolbar.StickyPosition = StickyPosition.Top;
         window.AddControl(toolbar);
+
+        // A LINE UNDER THE TOOLBAR, so the dialog-wide controls read as a band rather than as the
+        // first row of the list. Without it the filter and the rail's first heading sit in one
+        // undifferentiated column of text.
+        window.AddControl(new RuleControl
+        {
+            StickyPosition = StickyPosition.Top,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
 
         // TWO COLUMNS, ONE ROW. The rail is a fixed width with a floor so it stays readable when the
         // window is dragged narrow; the panel takes what is left.
@@ -196,6 +210,13 @@ public static class PluginManagerDialog
         _tabs.AddTab("Details", detailScroll);
         grid.Place(_tabs, 0, 1);
 
+        // A DRAGGABLE DIVIDER, not a drawn one. The splitter IS the line between rail and panel and
+        // the handle that moves it, so the two cannot disagree — and it honours the rail column's
+        // own minimum (GridSplitterResize.cs:30-44 clamps so neither track crosses its Min), which
+        // is why 24 cells is expressed there rather than defended here. Focusable as well as
+        // draggable, so a keyboard user can widen the rail for a long plugin name.
+        grid.AddColumnSplitterAfter(0);
+
         // WHERE THE USER LEFT IT. Window.Left/Top are settable (Window.cs:797, :929), so a manager
         // dragged aside or resized reopens where it was rather than jumping back to centre — the
         // dialog is opened repeatedly in one session, and a window that will not stay put is one the
@@ -206,10 +227,43 @@ public static class PluginManagerDialog
 
         // THE BUTTONS ACT ON THE SELECTED PLUGIN, so they are rebuilt whenever the selection moves —
         // which is why they are their own control rather than a grid cell whose contents change.
-        _buttons = HorizontalGridControl.ButtonRow(
-            Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build());
+        //
+        // CLOSE IS NOT AMONG THEM, deliberately. Three of these act on one plugin and closing acts
+        // on the dialog; sharing a row gave them equal weight and left no way to see the fourth was
+        // different in kind. It lives in the status bar below, which is the same split the toolbar
+        // already draws between dialog-wide and per-plugin.
+        _buttons = HorizontalGridControl.ButtonRow();
         _buttons.StickyPosition = StickyPosition.Bottom;
         window.AddControl(_buttons);
+
+        // A LINE ABOVE THE STATUS BAR, closing the frame the toolbar's rule opens.
+        window.AddControl(new RuleControl
+        {
+            StickyPosition = StickyPosition.Bottom,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
+
+        // THE STATUS BAR: what the rail is showing, and how to leave.
+        //
+        // ESC IS NAMED AND ALSO CLICKABLE. The key is the fast path and the button is the
+        // discoverable one — a status line that only said "Esc close" would strand a user reaching
+        // for a mouse, and a button alone would never teach the key.
+        // THE LABEL TAKES THE ROOM, THE BUTTON TAKES ITS SIZE. A ColumnContainer sizes to its
+        // content, so an unwidened label is clipped to whatever it happened to measure — the status
+        // text is the variable half and gets the remaining width explicitly.
+        _status = new MarkupControl([""]) { Wrap = false };
+
+        var statusBar = new HorizontalGridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
+        var statusColumn = new ColumnContainer(statusBar) { Width = width - 14 };
+        statusColumn.AddContent(_status);
+        statusBar.AddColumn(statusColumn);
+
+        var closeColumn = new ColumnContainer(statusBar);
+        closeColumn.AddContent(Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build());
+        statusBar.AddColumn(closeColumn);
+
+        statusBar.StickyPosition = StickyPosition.Bottom;
+        window.AddControl(statusBar);
 
         // F5 STAYS ON THE WINDOW: nothing global claims it, unlike Escape and F2, which are
         // consulted at the application level before this window ever sees a key
@@ -415,6 +469,30 @@ public static class PluginManagerDialog
 
         if (index >= 0) _rail.SelectedIndex = index;
         else ShowDetail(null);
+
+        UpdateStatus();
+    }
+
+    /// <summary>
+    /// What the rail is showing, and how to leave.
+    ///
+    /// <para>COUNTED FROM WHAT IS RENDERED, not from the unfiltered set: a user who has typed a
+    /// filter is asking about the rows in front of them, and a total that ignored the filter would
+    /// answer a question nobody asked. When a filter is hiding rows it says so, because a list that
+    /// silently omits things is one a user reads as complete.</para>
+    /// </summary>
+    private static void UpdateStatus()
+    {
+        if (_status is null) return;
+
+        var shown = PluginManagerRows.Filter(_rows, _filter?.Input);
+        var loaded = shown.Count(r => r.State.StartsWith("loaded", StringComparison.Ordinal));
+
+        var left = shown.Count == 1 ? "1 plugin" : $"{shown.Count} plugins";
+        if (loaded > 0) left += $" · {loaded} loaded";
+        if (shown.Count != _rows.Count) left += $" · {_rows.Count - shown.Count} hidden by filter";
+
+        _status.SetContent([$"[grey]{left}   ·   F5 refresh · Esc close[/]"]);
     }
 
     /// <summary>
@@ -907,9 +985,11 @@ public static class PluginManagerDialog
     {
         if (_buttons is null) return;
 
+        // NO CLOSE APPENDED HERE. These act on the selected plugin; closing acts on the dialog, and
+        // sharing a row gave them equal weight with no way to see the difference. Close lives in the
+        // status bar, beside the key that also does it.
         _buttons.ClearColumns();
-        foreach (var button in RowButtons(row)
-                     .Append(Controls.Button("  Close  ").OnClick((_, _) => CloseIfOpen()).Build()))
+        foreach (var button in RowButtons(row))
         {
             var column = new ColumnContainer(_buttons);
             column.AddContent(button);
