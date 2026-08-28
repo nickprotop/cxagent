@@ -72,7 +72,16 @@ public sealed class PluginInstaller(HttpClient? client = null)
         // EXTRACTED TO A TEMPORARY DIRECTORY FIRST, then moved. A half-extracted plugin directory
         // is a load set whose hash means nothing, and an archive that fails partway through would
         // leave exactly that.
-        var staging = Path.Combine(Path.GetTempPath(), "cxagent-install-" + Guid.NewGuid().ToString("N"));
+        //
+        // STAGED BESIDE THE DESTINATION, NOT IN THE SYSTEM TEMP DIRECTORY. Directory.Move is
+        // rename(2), which cannot cross filesystems: staging under Path.GetTempPath() fails with
+        // "Invalid cross-device link" whenever /tmp is a different mount from the config directory,
+        // which on Linux it usually is — /tmp a tmpfs and $HOME a real disk. Sharing the parent
+        // guarantees one filesystem, so the move stays the atomic swap this whole dance exists to
+        // get. A leading dot keeps a half-written directory out of the plugin search, which reads
+        // this folder's immediate subdirectories.
+        Directory.CreateDirectory(pluginsFolder);
+        var staging = Path.Combine(pluginsFolder, ".cxagent-install-" + Guid.NewGuid().ToString("N"));
         var destination = Path.Combine(pluginsFolder, entry.Name);
 
         try

@@ -251,4 +251,101 @@ public class PluginInstallerTests : IDisposable
           + "({ Policy = _session.Policy }); unstamped, PermissionDecider refuses it and the "
           + "download question never reaches the user.");
     }
+
+    /// <summary>
+    /// INSTALLING ONTO A DIFFERENT FILESYSTEM FROM THE SYSTEM TEMP DIRECTORY. This is the ordinary
+    /// case on Linux — /tmp is commonly a tmpfs while $HOME is a real disk — and it was broken:
+    /// staging under Path.GetTempPath() and finishing with Directory.Move meant rename(2) across
+    /// devices, which fails with "Invalid cross-device link". Every other test here passes because
+    /// its destination is itself under the system temp directory, so the move never crosses
+    /// anything, and neither did any manual test whose config directory was a scratch path in /tmp.
+    ///
+    /// <para>The install now stages beside its destination, so the two always share a filesystem.
+    /// Where no second filesystem exists this asserts nothing and says so — a vacuous pass on a
+    /// machine that cannot reproduce the bug is worth less than an honest no-op.</para>
+    /// </summary>
+    [Fact]
+    public async Task InstallingOntoAnotherFilesystemSucceeds()
+    {
+        var other = SecondFilesystemDir();
+        if (other is null) return;
+
+        var target = Path.Combine(other, "plugins-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var (zip, sha) = MakeZip();
+            var installer = new PluginInstaller(new HttpClient(new Serves(zip)));
+
+            var result = await installer.InstallAsync(Entry(sha), target, CancellationToken.None);
+
+            Assert.IsType<InstallResult.Installed>(result);
+            Assert.True(File.Exists(Path.Combine(target, "demo", "demo.dll")),
+                $"expected the plugin at {target}/demo — install returned: {result}");
+        }
+        finally
+        {
+            if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A writable directory on a filesystem OTHER than the one holding the system temp directory,
+    /// or null when this machine has none. /dev/shm and $HOME are the candidates on an ordinary
+    /// Linux box; both are skipped unless a probe directory can actually be created, because
+    /// /dev/shm can be mounted read-only and discovering that through an install failure would
+    /// blame the installer for the mount.
+    /// </summary>
+    private static string? SecondFilesystemDir()
+    {
+        if (!OperatingSystem.IsLinux()) return null;
+
+        var tempDevice = DeviceOf(Path.GetTempPath());
+        if (tempDevice is null) return null;
+
+        foreach (var candidate in new[]
+                 {
+                     "/dev/shm",
+                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                 })
+        {
+            if (string.IsNullOrEmpty(candidate) || !Directory.Exists(candidate)) continue;
+            if (DeviceOf(candidate) is not { } device || device == tempDevice) continue;
+
+            var probe = Path.Combine(candidate, "cxagent-fs-probe-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(probe);
+                Directory.Delete(probe);
+                return candidate;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+
+        return null;
+    }
+
+    /// <summary>The st_dev of a path, read through `stat`, or null if it cannot be determined.
+    /// .NET exposes no device id, and DriveInfo reports the root volume rather than the mount a
+    /// path actually sits on — which would call /tmp and $HOME the same filesystem.</summary>
+    private static string? DeviceOf(string path)
+    {
+        try
+        {
+            using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "stat",
+                ArgumentList = { "-c", "%d", path },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (proc is null) return null;
+            var output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit(5000);
+            return proc.ExitCode == 0 && output.Length > 0 ? output : null;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return null;
+        }
+    }
 }

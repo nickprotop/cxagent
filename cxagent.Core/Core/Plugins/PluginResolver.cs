@@ -124,7 +124,12 @@ public static class PluginResolver
 
             if (!Directory.Exists(folder)) continue;
 
+            // A DOT-PREFIXED SUBDIRECTORY IS NOT A PLUGIN. The installer stages an extraction in
+            // one, beside its destination so the final move cannot cross a filesystem; a hard kill
+            // mid-install leaves that directory behind, and resolving a plugin out of a half-written
+            // staging copy would load bytes no hash ever covered.
             foreach (var nested in Directory.EnumerateDirectories(folder)
+                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
                          .OrderBy(d => d, StringComparer.Ordinal))
                 if (File.Exists(Path.Combine(nested, file)))
                     return nested;

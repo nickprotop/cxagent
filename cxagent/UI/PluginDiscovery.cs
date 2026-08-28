@@ -84,7 +84,10 @@ public static class PluginDiscovery
 
             if (!Directory.Exists(folder)) continue;
 
+            // DOT-PREFIXED DIRECTORIES SKIPPED — the installer's staging area is one, and a plugin
+            // resolved out of a half-written extraction is bytes no hash covered. See PluginResolver.
             foreach (var nested in Directory.EnumerateDirectories(folder)
+                         .Where(d => !Path.GetFileName(d).StartsWith('.'))
                          .OrderBy(d => d, StringComparer.Ordinal))
                 if (File.Exists(Path.Combine(nested, file)))
                     return nested;
@@ -141,6 +144,7 @@ public static class PluginDiscovery
             // FindLoadSetDirectory: deeper is a plugin's own dependencies, not another plugin.
             var scanned = new List<string> { folder };
             scanned.AddRange(Directory.EnumerateDirectories(folder)
+                .Where(d => !Path.GetFileName(d).StartsWith('.'))
                 .OrderBy(d => d, StringComparer.Ordinal));
 
             foreach (var scan in scanned)

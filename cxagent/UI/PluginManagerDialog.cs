@@ -1105,6 +1105,16 @@ public static class PluginManagerDialog
 
     private static bool HasNote(PluginRow row) => _panelNote is { } note && note.Name == row.Name;
 
+    /// <summary>
+    /// How long a refusal may be before it goes to the panel instead of a toast.
+    ///
+    /// <para>A TOAST IS ONE LINE AND IT TRUNCATES. Sixty characters is what fits comfortably at the
+    /// narrowest terminal this dialog supports; past that the tail is cut, and a refusal's tail is
+    /// its reason. The threshold is deliberately conservative — a reason shown in full in the panel
+    /// costs a glance, a reason cut in half costs a debugging session.</para>
+    /// </summary>
+    private const int ToastableReasonLength = 60;
+
     private static void Toast(string text, NotificationSeverity severity) =>
         _ws!.ToastService.Show(text, severity);
 
@@ -1340,8 +1350,24 @@ public static class PluginManagerDialog
         {
             switch (result)
             {
-                case InstallResult.Refused(var reason):
+                // A SHORT REASON TOASTS; A LONG ONE GETS THE PANEL. A toast is one line of fixed
+                // width, so a refusal carrying an exception's own words is cut off mid-sentence —
+                // and the cut-off half is the half that says why. Losing it turns a diagnosable
+                // failure into "something invalid happened", which is unactionable at exactly the
+                // moment the user most needs to act.
+                case InstallResult.Refused(var reason) when reason.Length <= ToastableReasonLength:
                     Toast(reason, NotificationSeverity.Warning);
+                    break;
+
+                case InstallResult.Refused(var reason):
+                    _panelNote = (entry.Name, new[]
+                    {
+                        $"not installed — {entry.Name} could not be installed:",
+                        "",
+                        reason,
+                        "",
+                        "Nothing was written.",
+                    });
                     break;
 
                 case InstallResult.HashMismatch(var expected, var actual):
