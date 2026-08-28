@@ -163,4 +163,19 @@ public class PluginConfigPersistenceTests : IDisposable
         Assert.Equal("calculator.dll",
             Plugins().GetProperty("calculator").GetProperty("file").GetString());
     }
+    /// <summary>
+    /// A HAND-ADDED ENTRY IS WHAT THE DIFF WOULD EAT. Sync makes the file match memory, so an entry
+    /// a user typed into config.json mid-session — present in the file, absent from the live set —
+    /// is removed. That is correct for Sync and wrong as a REACTION to `/plugin load`, which changes
+    /// no entry: the caller must only sync after a verb that did. This pins the behaviour Sync has,
+    /// so the caller's narrowing has something to be narrow ABOUT.
+    /// </summary>
+    [Fact]
+    public void SyncRemovesAnEntryTheLiveSetDoesNotHave()
+    {
+        PluginConfigPersistence.Sync(ConfigPath,
+            new Dictionary<string, PluginConfig> { ["csharp-lsp"] = new("csharp-lsp.dll") });
+
+        Assert.False(Plugins().TryGetProperty("gone", out _));
+    }
 }

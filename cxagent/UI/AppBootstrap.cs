@@ -590,15 +590,22 @@ public static class AppBootstrap
         // holds and stopped, deliberately; making that outlive the process is ours, and this is the
         // one place that knows both the live set and where the file lives.
         //
-        // ONLY AFTER A CHANGE. A refused or reported command changed no entry, so writing then would
-        // rewrite the file to say what it already says. TrySync reports rather than throws, and the
-        // transcript writer marshals onto the UI thread itself, so nothing here can escape into the
-        // render loop.
+        // ONLY THE VERBS THAT CHANGE AN ENTRY, and `Changed` alone is not that test: `load` and
+        // `unwire` return it too (Session.cs:570, :596) while altering no config. Syncing after them
+        // would DELETE an entry a user hand-added to the file mid-session — it is in the file, it is
+        // not in the live set, and Sync's diff removes what memory does not have. A plugin the user
+        // typed into config.json, gone because they later typed `/plugin load` for something else.
+        //
+        // TrySync reports rather than throws, and the transcript writer marshals onto the UI thread
+        // itself, so nothing here can escape into the render loop.
         async Task PersistAfterPluginChange(Session session, string arguments)
         {
             var status = await session.RunPluginCommand(arguments, CancellationToken.None);
 
-            if (status is CommandStatus.Changed
+            var changesAnEntry = Core.Commands.PluginCommand.Parse(arguments)
+                is Core.Commands.PluginRequest.Enable or Core.Commands.PluginRequest.Disable;
+
+            if (status is CommandStatus.Changed && changesAnEntry
                 && PluginConfigPersistence.TrySync(
                        Path.Combine(paths.ConfigDir, "config.json"), manager.Config.Plugins) is { } failure)
                 transcript.Write(new Message(failure, Severity.Warning));
