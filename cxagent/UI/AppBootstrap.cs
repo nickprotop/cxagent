@@ -567,6 +567,35 @@ public static class AppBootstrap
                     mainWindow.RetireComposerHint();
                     return true;
                 });
+
+            // OVER CORE'S, /init's shape: call through, then add the front end's reaction — here,
+            // the config write Core deliberately does not do. FIRE AND FORGET like Core's own
+            // registration, because a load or an unwire is async and the dispatcher's synchronous
+            // contract cannot await either.
+            if (declared.Name == "/plugin")
+                manager.Commands.Register(declared, (session, arguments) =>
+                {
+                    _ = PersistAfterPluginChange(session, arguments);
+                    return true;
+                });
+        }
+
+        // MUTATE, THEN PERSIST — the app's half of the boundary. Core changed what this process
+        // holds and stopped, deliberately; making that outlive the process is ours, and this is the
+        // one place that knows both the live set and where the file lives.
+        //
+        // ONLY AFTER A CHANGE. A refused or reported command changed no entry, so writing then would
+        // rewrite the file to say what it already says. TrySync reports rather than throws, and the
+        // transcript writer marshals onto the UI thread itself, so nothing here can escape into the
+        // render loop.
+        async Task PersistAfterPluginChange(Session session, string arguments)
+        {
+            var status = await session.RunPluginCommand(arguments, CancellationToken.None);
+
+            if (status is CommandStatus.Changed
+                && PluginConfigPersistence.TrySync(
+                       Path.Combine(paths.ConfigDir, "config.json"), manager.Config.Plugins) is { } failure)
+                transcript.Write(new Message(failure, Severity.Warning));
         }
 
         // THE VERBS, NOT THE COMMAND. Core lists the servers it holds. These two are this process's

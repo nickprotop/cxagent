@@ -47,7 +47,14 @@ public static class PluginConfigWriter
             if (plugins[name] is JsonObject existing) existing["enabled"] = enabled;
         });
 
-    private static void Mutate(string configPath, Action<JsonObject> change)
+    /// <summary>
+    /// One read-modify-write over the whole plugins block.
+    ///
+    /// <para>INTERNAL, NOT PRIVATE, so a caller syncing MANY entries does it in one write.
+    /// Composing the public per-entry methods would rewrite the file once per plugin — several
+    /// atomic writes to express one change, each a window a crash can land in.</para>
+    /// </summary>
+    internal static void Mutate(string configPath, Action<JsonObject> change)
     {
         var root = File.Exists(configPath)
             ? JsonNode.Parse(File.ReadAllText(configPath))?.AsObject() ?? new JsonObject()
