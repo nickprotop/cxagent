@@ -35,22 +35,11 @@
          The library and the app share a tag — v0.3.5 produces both. -->
     <Version>0.0.0</Version>
 
-    <!-- FROZEN, AND IT IS THE PLUGIN CONTRACT THAT DEPENDS ON IT. A managed plugin compiles against
-         this assembly and binds to the AssemblyVersion it saw; .NET then resolves that by EXACT
-         match. Letting <Version> set it too meant every release minted a new binding identity, so a
-         plugin built for 0.9.5 was refused by 0.9.6 with "Could not load file or assembly" — before
-         PluginContract, the check that exists to answer compatibility, was ever read. Every release
-         broke every plugin, and said nothing useful about why.
-
-         An ABI plugin never had this problem: it is a .so with no reference to us, so the contract
-         integer is its only agreement. Freezing this gives a managed plugin the same guarantee.
-
-         FileVersion and InformationalVersion still carry the real release, so `dotnet pack`, NuGet
-         and a crash dump all report the tag. Only the loader's identity is pinned.
-
-         THIS NUMBER NEVER CHANGES. Compatibility is PluginContract.Version's job — an integer the
-         host checks and can explain. Bumping this would silently refuse every plugin again. -->
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <!-- NO AssemblyVersion PIN HERE, and that is the point of the contract assembly. A managed
+         plugin binds to CxAgent.Plugins.Abstractions, whose AssemblyVersion is frozen — so this one
+         is free to move with the release, and PluginContract.HostVersionOf can report a real
+         number. Pinning it too would make every assembly claim 1.0.0 and leave nothing able to say
+         which cxagent is running. -->
 
     <Authors>Nikolaos Protopapas</Authors>
     <Company>Nikolaos Protopapas</Company>

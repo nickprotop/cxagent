@@ -270,7 +270,10 @@ public static class PluginDiscovery
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
         public int HostContract => CxAgent.Core.Plugins.PluginContract.Version;
-        public string HostVersion => CxAgent.Core.Plugins.PluginContract.HostVersion;
+        // THIS ASSEMBLY'S VERSION, not the contract's — the contract's is frozen so a plugin's
+        // binding survives a release, and would report the same number forever.
+        public string HostVersion =>
+            CxAgent.Core.Plugins.PluginContract.HostVersionOf(typeof(PluginDiscovery).Assembly);
         public IPluginLogger Logger { get; } = new ReportingLogger(report);
         public CancellationToken Lifetime { get; } = CancellationToken.None;
 

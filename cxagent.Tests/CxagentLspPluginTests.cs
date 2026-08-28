@@ -52,7 +52,7 @@ public class CxagentLspPluginTests
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(settings);
         public int HostContract { get; } = hostContract < 0 ? PluginContract.Version : hostContract;
-        public string HostVersion => PluginContract.HostVersion;
+        public string HostVersion => PluginContract.HostVersionOf(GetType().Assembly);
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public List<int> RegisteredPids { get; } = [];

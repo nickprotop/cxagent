@@ -160,7 +160,11 @@ public static class PluginResolver
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
         public int HostContract => PluginContract.Version;
-        public string HostVersion => PluginContract.HostVersion;
+        // THIS ASSEMBLY'S VERSION, not the contract's. Core carries the release the workflow
+        // stamped; the contract assembly's own version is frozen so a plugin's binding survives a
+        // release, and asking it for a release number returns that frozen identity instead.
+        public string HostVersion =>
+            PluginContract.HostVersionOf(typeof(PluginResolver).Assembly);
         public IPluginLogger Logger { get; } = new ReportingLogger(report);
 
         // CANCELLED AT STOP, AND ONLY AT STOP — see IPluginContext.Lifetime's own doc. Nothing has

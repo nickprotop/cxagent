@@ -57,13 +57,15 @@ public static class PluginContract
     /// less precisely, and could be satisfied by a build that had dropped the very feature the
     /// plugin needed.</para>
     ///
-    /// <para>READ FROM THE ASSEMBLY, not restated. The release workflow stamps it from the git tag,
-    /// so a hardcoded copy here would be a second version to forget. A local build reports the
-    /// deliberately implausible 0.0.0 placeholder.</para>
+    /// <para>READ FROM THE CALLER'S ASSEMBLY, not this one. The release workflow stamps the host from
+    /// the git tag, so a hardcoded copy here would be a second version to forget — but THIS assembly
+    /// is the contract, and its own version is frozen so a plugin's binding survives a release. Ask
+    /// it for a release number and the answer is the frozen identity, which is true of nothing.
+    /// A local build reports the deliberately implausible 0.0.0 placeholder.</para>
     /// </summary>
-    public static string HostVersion =>
-        typeof(PluginContract).Assembly.GetName().Version is { } v
-            ? $"{v.Major}.{v.Minor}.{v.Build}"
-            : "0.0.0";
+    /// <param name="host">The host's own assembly — typically <c>Assembly.GetExecutingAssembly()</c>
+    /// from Core or the front end, both of which carry the release version.</param>
+    public static string HostVersionOf(System.Reflection.Assembly host) =>
+        host.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
 
 }

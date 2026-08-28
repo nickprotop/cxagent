@@ -28,7 +28,7 @@ public class ManagedPluginLoaderTests
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = JsonSerializer.SerializeToElement(new { });
         public int HostContract => PluginContract.Version;
-        public string HostVersion => PluginContract.HostVersion;
+        public string HostVersion => PluginContract.HostVersionOf(GetType().Assembly);
         public IPluginLogger Logger { get; } = new FakeLogger();
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public void RegisterChildProcess(int processId) { }
