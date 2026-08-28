@@ -370,4 +370,52 @@ public class PluginCommandTests : IDisposable
         Assert.Equal("csharp-lsp.dll", request.Target);
         Assert.Null(request.Settings);
     }
+
+    /// <summary>
+    /// ENABLE AND DISABLE TAKE A CONFIGURED NAME, never a path. A path names a file; enabling is a
+    /// change to a config ENTRY, and an entry is keyed by name — two names can share one binary, so
+    /// a path could not say which entry was meant.
+    /// </summary>
+    [Theory]
+    [InlineData("enable csharp-lsp", "csharp-lsp")]
+    [InlineData("enable  csharp-lsp  ", "csharp-lsp")]
+    public void EnableParsesTheName(string argument, string expected)
+    {
+        var request = PluginCommand.Parse(argument);
+
+        var enable = Assert.IsType<PluginRequest.Enable>(request);
+        Assert.Equal(expected, enable.Name);
+    }
+
+    [Fact]
+    public void DisableParsesTheName()
+    {
+        var disable = Assert.IsType<PluginRequest.Disable>(PluginCommand.Parse("disable csharp-lsp"));
+
+        Assert.Equal("csharp-lsp", disable.Name);
+    }
+
+    /// <summary>A verb with no name is unrecognised rather than a change to nothing.</summary>
+    [Theory]
+    [InlineData("enable")]
+    [InlineData("disable")]
+    public void TheVerbAloneIsUnrecognised(string argument)
+    {
+        var unrecognised = Assert.IsType<PluginRequest.Unrecognised>(PluginCommand.Parse(argument));
+
+        Assert.Equal(argument, unrecognised.Word);
+    }
+
+    /// <summary>
+    /// THE USAGE LINE NAMES EVERY VERB. It is the only place a user learns what /plugin accepts, so a
+    /// verb missing from it is a verb that effectively does not exist.
+    /// </summary>
+    [Fact]
+    public void TheUsageLineNamesEnableAndDisable()
+    {
+        Assert.Contains("enable", PluginCommand.Usage);
+        Assert.Contains("disable", PluginCommand.Usage);
+        Assert.Contains("load", PluginCommand.Usage);
+        Assert.Contains("unwire", PluginCommand.Usage);
+    }
 }

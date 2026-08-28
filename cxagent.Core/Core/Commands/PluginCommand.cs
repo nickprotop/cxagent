@@ -23,6 +23,21 @@ public abstract record PluginRequest
     /// <summary><c>/plugin unwire &lt;name&gt;</c>.</summary>
     public sealed record Unwire(string Name) : PluginRequest;
 
+    /// <summary>
+    /// <c>/plugin enable &lt;name&gt;</c> — flips <c>enabled</c> on a configured entry without
+    /// removing it.
+    ///
+    /// <para>A NAME, NEVER A PATH, unlike <see cref="Load"/>. Loading acts on a FILE and may be given
+    /// one that config never declared; enabling acts on a config ENTRY, and entries are keyed by name
+    /// — <c>config.sample.json</c> ships two names pointing at one binary, so a path could not say
+    /// which of them was meant.</para>
+    /// </summary>
+    public sealed record Enable(string Name) : PluginRequest;
+
+    /// <summary><c>/plugin disable &lt;name&gt;</c> — the same entry, the other way. A loaded plugin
+    /// is unwired: "off" that leaves the tools live is what a user reads as a broken button.</summary>
+    public sealed record Disable(string Name) : PluginRequest;
+
     /// <summary>A subcommand this command does not recognise.</summary>
     public sealed record Unrecognised(string Word) : PluginRequest;
 }
@@ -108,6 +123,16 @@ public static class PluginCommand
                 : new PluginRequest.Unwire(words[1]);
         }
 
+        if (verb.Equals("enable", StringComparison.OrdinalIgnoreCase))
+            return words.Length < 2
+                ? new PluginRequest.Unrecognised("enable")
+                : new PluginRequest.Enable(words[1]);
+
+        if (verb.Equals("disable", StringComparison.OrdinalIgnoreCase))
+            return words.Length < 2
+                ? new PluginRequest.Unrecognised("disable")
+                : new PluginRequest.Disable(words[1]);
+
         return new PluginRequest.Unrecognised(verb);
     }
 
@@ -172,4 +197,15 @@ public static class PluginCommand
     public static string DisabledRefusal(string name) =>
         $"plugin '{name}' is disabled in config.\n"
         + $"`/plugin load {name} --once` loads it for this session only.";
+
+    /// <summary>
+    /// Every verb this command accepts, in one string.
+    ///
+    /// <para>HERE RATHER THAN AT THE CALL SITE, because it was hardcoded inside the session's
+    /// unrecognised branch — so adding a verb meant remembering a string in another file, and the
+    /// one that told users what exists was the one most easily forgotten.</para>
+    /// </summary>
+    public const string Usage =
+        "Usage: /plugin [load <name|path> [--once] [{ settings }] | unwire <name> "
+      + "| enable <name> | disable <name>]";
 }

@@ -624,15 +624,58 @@ public sealed partial class Session
             case Commands.PluginRequest.Load(var target, var once, var inlineSettings):
                 return await RunLoadRequest(target, once, inlineSettings, configured, ct);
 
+            case Commands.PluginRequest.Enable(var enableName):
+                return ApplyPluginEntryChange(
+                    Manager?.SetPluginEnabled(this, enableName, enabled: true), enableName,
+                    $"plugin '{enableName}' enabled — it will load when you next start, "
+                  + $"or `/plugin load {enableName}` now.");
+
+            case Commands.PluginRequest.Disable(var disableName):
+                return ApplyPluginEntryChange(
+                    Manager?.SetPluginEnabled(this, disableName, enabled: false), disableName,
+                    $"plugin '{disableName}' disabled.");
+
             case Commands.PluginRequest.Unrecognised(var word):
-                Say(new Message($"Unknown: '{word}'.\n"
-                    + "Usage: /plugin [load <name|path> [--once] [{ settings }] | unwire <name>]",
+                Say(new Message($"Unknown: '{word}'.\n" + Commands.PluginCommand.Usage,
                     Severity.Warning));
                 return CommandStatus.Reported;
 
             default:
                 return CommandStatus.Unknown;
         }
+    }
+
+    /// <summary>
+    /// Says what a per-entry change did, and maps it to a status.
+    ///
+    /// <para>NULL MANAGER IS NOT A FAILURE TO EXPLAIN AWAY. A session opened without one has no
+    /// configured set to change — it is not a state a user reaches from a prompt, but the compiler
+    /// cannot know that, and a silent no-op would be worse than saying so.</para>
+    /// </summary>
+    private CommandStatus ApplyPluginEntryChange(
+        PluginChangeResult? result, string name, string success) =>
+        result switch
+        {
+            PluginChangeResult.Applied => Report(success, Severity.Info, CommandStatus.Changed),
+            // THE BUSY REFUSAL IS ALREADY SAID, by RefuseIfBusy (Session.cs:282-292), so repeating
+            // it here would warn twice for one refusal. It also gets CommandStatus.Refused rather
+            // than Reported — every sibling busy-path in this file does, the enum's own doc is
+            // "could not run now", and a caller awaiting this must tell "not now" from
+            // "no such plugin".
+            PluginChangeResult.Refused(var busy)
+                when busy.Contains("a turn is running", StringComparison.Ordinal)
+                => CommandStatus.Refused,
+
+            PluginChangeResult.Refused(var reason) =>
+                Report($"plugin '{name}': {reason}", Severity.Warning, CommandStatus.Reported),
+            _ => Report($"plugin '{name}': this session has no configured plugins to change.",
+                        Severity.Warning, CommandStatus.Reported),
+        };
+
+    private CommandStatus Report(string text, Severity severity, CommandStatus status)
+    {
+        Say(new Message(text, severity));
+        return status;
     }
 
     /// <summary>
