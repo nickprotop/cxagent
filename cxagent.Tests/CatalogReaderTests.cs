@@ -38,8 +38,12 @@ public class CatalogReaderTests : IDisposable
             "kind": "managed",
             "compatibility": { "pluginContract": 2, "platforms": ["any"] },
             "tools": [{ "name": "csharp_definition", "gated": "dynamic" }],
+            "settings": {
+              "server": "The language server command. Defaults to csharp-ls.",
+              "args": "Arguments for it. OmniSharp needs [\"-lsp\"]; csharp-ls needs none."
+            },
             "source": { "kind": "release", "sha256": "abc123", "latest": "https://example/csharp-lsp.zip" },
-            "requires": { "description": "csharp-ls on PATH", "install": "dotnet tool install -g csharp-ls" }
+            "requires": { "description": "csharp-ls on PATH", "default": "csharp-ls", "install": "dotnet tool install -g csharp-ls" }
           }]
         }
         """;
@@ -131,5 +135,66 @@ public class CatalogReaderTests : IDisposable
 
         Assert.Empty(catalog.Plugins);
         Assert.NotNull(catalog.Error);
+    }
+
+    /// <summary>
+    /// THE SETTINGS PROSE IS THE FORM'S LABELS. The manager shows one input per documented key with
+    /// this text beside it — cxagent cannot validate a plugin's settings, so what it CAN do is say
+    /// what the plugin's own catalog entry claims they mean.
+    /// </summary>
+    [Fact]
+    public async Task SettingsProseIsParsedPerKey()
+    {
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, Published)), CachePath);
+
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Equal("The language server command. Defaults to csharp-ls.", entry.Settings["server"]);
+        Assert.Equal(2, entry.Settings.Count);
+    }
+
+    /// <summary>An entry documenting no settings gets an empty map, never null — a caller renders a
+    /// form from it without checking.</summary>
+    [Fact]
+    public async Task AnEntryWithNoSettingsGetsAnEmptyMap()
+    {
+        var noSettings = Published.Replace("\"settings\"", "\"unusedSettings\"");
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, noSettings)), CachePath);
+
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Empty(entry.Settings);
+    }
+
+    /// <summary>
+    /// PER-RID SOURCES, FOR AN ABI PLUGIN. A native plugin ships one artifact per platform, so the
+    /// catalog offers a map; a row whose map has no entry for the running RID must say the plugin is
+    /// unavailable here rather than offering a button that cannot work.
+    /// </summary>
+    [Fact]
+    public async Task PerPlatformSourcesAreParsed()
+    {
+        var abi = Published.Replace(
+            "\"source\": {",
+            "\"sources\": { \"linux-x64\": { \"latest\": \"https://example/p-linux.zip\", \"sha256\": \""
+          + new string('a', 64) + "\" } }, \"unusedSource\": {");
+
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, abi)), CachePath);
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Equal("https://example/p-linux.zip", entry.Sources["linux-x64"]);
+    }
+
+    /// <summary>A single-source entry has no per-RID map, and that is not an error — most plugins are
+    /// managed and run anywhere.</summary>
+    [Fact]
+    public async Task AManagedEntryHasNoPerPlatformSources()
+    {
+        var reader = new CatalogReader(new HttpClient(new Canned(HttpStatusCode.OK, Published)), CachePath);
+
+        var entry = Assert.Single((await reader.ReadAsync(CancellationToken.None)).Plugins);
+
+        Assert.Empty(entry.Sources);
+        Assert.Equal("csharp-ls", entry.RequiresDefault);
     }
 }

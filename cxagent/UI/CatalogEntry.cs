@@ -32,7 +32,32 @@ public sealed record CatalogEntry(
     string? DownloadUrl,
     string? Sha256,
     string? RequiresDescription,
-    string? RequiresInstall);
+    string? RequiresInstall)
+{
+    /// <summary>
+    /// What each settings key means, by key — the catalog's own prose, empty when it documents none.
+    ///
+    /// <para>THE LABELS FOR A FORM cxagent CANNOT VALIDATE. A plugin's settings block is handed over
+    /// verbatim and the host has no schema for it; what it can do is show what the plugin's entry
+    /// says each key is for, beside the field that sets it.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Settings { get; init; } =
+        new Dictionary<string, string>();
+
+    /// <summary>The value <c>requires</c> suggests when the user has no preference, or null.</summary>
+    public string? RequiresDefault { get; init; }
+
+    /// <summary>
+    /// Download URL per runtime identifier, for a plugin shipping one artifact per platform. Empty
+    /// for a managed plugin, which has a single <see cref="DownloadUrl"/> and runs anywhere.
+    ///
+    /// <para>AN EMPTY MAP IS NOT "NO DOWNLOAD" — check <see cref="DownloadUrl"/> too. A map that is
+    /// populated but lacks the running RID IS "not available for this machine", which a caller must
+    /// say rather than offering an install that cannot work.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Sources { get; init; } =
+        new Dictionary<string, string>();
+}
 
 /// <summary>
 /// The catalog as read, and how it went.

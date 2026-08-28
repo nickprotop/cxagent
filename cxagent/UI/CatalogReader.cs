@@ -111,6 +111,30 @@ public sealed class CatalogReader
                             Str(t, "name") ?? "",
                             t.TryGetProperty("gated", out var g) ? g.ToString() : "false"));
 
+                // A MAP OF KEY -> PROSE, not a schema. The catalog documents what a setting is FOR; it
+                // does not describe its type, because cxagent never validates one.
+                var settings = new Dictionary<string, string>(StringComparer.Ordinal);
+                // `settingsBlock`, not `s` — the enclosing loop already declares `out var s` for the
+                // single `source` above, and reusing the name is CS0128.
+                if (p.TryGetProperty("settings", out var settingsBlock)
+                    && settingsBlock.ValueKind == JsonValueKind.Object)
+                    foreach (var field in settingsBlock.EnumerateObject())
+                        if (field.Value.ValueKind == JsonValueKind.String)
+                            settings[field.Name] = field.Value.GetString() ?? "";
+
+                var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (p.TryGetProperty("sources", out var many) && many.ValueKind == JsonValueKind.Object)
+                    foreach (var rid in many.EnumerateObject())
+                        if (rid.Value.ValueKind == JsonValueKind.Object
+                            && rid.Value.TryGetProperty("latest", out var url)
+                            && url.ValueKind == JsonValueKind.String)
+                            sources[rid.Name] = url.GetString() ?? "";
+
+                var requiresDefault = p.TryGetProperty("requires", out var req)
+                                      && req.ValueKind == JsonValueKind.Object
+                    ? Str(req, "default")
+                    : null;
+
                 entries.Add(new CatalogEntry(
                     Str(p, "name") ?? "",
                     Str(p, "displayName") ?? Str(p, "name") ?? "",
@@ -129,7 +153,12 @@ public sealed class CatalogReader
                     Str(source, "latest"),
                     Str(source, "sha256"),
                     Str(requires, "description"),
-                    Str(requires, "install")));
+                    Str(requires, "install"))
+                {
+                    Settings = settings,
+                    Sources = sources,
+                    RequiresDefault = requiresDefault
+                });
             }
 
             return entries;
