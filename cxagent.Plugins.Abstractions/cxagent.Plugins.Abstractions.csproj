@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591 is off under the same policy as CxAgent.Core: members whose name is the
+         documentation (JobResult.ExitCode, JobLogLevel.Error) need no ceremony. CS1574 is off for
+         a reason specific to this assembly: the contract's docs explain themselves by NAMING
+         runtime types — ManagedPluginLoader, PermissionRequest, ToolOutcome — that live on the
+         other side of the boundary this assembly exists to draw, so those crefs cannot resolve
+         here by design rather than by typo. -->
+    <NoWarn>$(NoWarn);CS1591;CS1574</NoWarn>
+    <AssemblyName>CxAgent.Plugins.Abstractions</AssemblyName>
+    <RootNamespace>CxAgent.Core</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>CxAgent.Plugins.Abstractions</PackageId>
+
+    <!-- THE PACKAGE VERSION IS THE CONTRACT NUMBER. A plugin author reading
+         Version="2.0.0" is reading the same fact their sidecar declares as
+         "pluginContract": 2, so the two compatibility signals are one signal said twice.
+         The release workflow passes -p:Version; this is the local placeholder. -->
+    <Version>2.0.0</Version>
+
+    <!-- FROZEN, AND NEVER BUMPED — not even at a contract change. This is the identity .NET
+         resolves by exact match, so moving it would refuse an old plugin at LOAD, before
+         PluginContract.Version — the check that exists to answer compatibility and can say why in
+         words — is ever read. One gate, and it is the one that explains itself. -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+
+    <Authors>Nikolaos Protopapas</Authors>
+    <Description>The contract a cxagent plugin implements: IPlugin, its manifest, and the job types a tool exchanges.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>

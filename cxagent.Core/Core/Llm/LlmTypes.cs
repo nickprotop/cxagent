@@ -3,8 +3,6 @@ using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Llm;
 
-public record ToolDefinition(string Name, string Description, JsonElement InputSchema);
-
 public record LlmUsage
 {
     public int InputTokens { get; init; }

@@ -112,6 +112,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- THE CONTRACT, WHICH A PLUGIN ALSO REFERENCES. One assembly defines IPlugin, so the host's
+         type check and the plugin's implementation are the same type — Assembly.LoadFrom gives two
+         copies of a duplicated interface distinct identities, and the cast would throw. -->
+    <ProjectReference Include="../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The resume buffer and the usage archive. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
 
