@@ -240,10 +240,13 @@ public class PluginInstallerTests : IDisposable
         var call = source.IndexOf("PermissionKind.Http", StringComparison.Ordinal);
         Assert.True(call >= 0, "PluginManagerDialog no longer asks for PermissionKind.Http.");
 
-        // The stamp sits within the request initialiser that follows the kind; a window is enough
-        // to tell "stamped" from "not stamped" without pinning the exact formatting.
+        // MATCHED AS A PATTERN, NOT A LITERAL. What must hold is that the request carries a
+        // Policy taken from the session; the field's name is not the contract, and pinning it
+        // verbatim would fail this test on a rename that broke nothing — a false alarm is how a
+        // check like this stops being believed.
         var window = source[call..Math.Min(source.Length, call + 400)];
-        Assert.True(window.Contains("Policy = _session.Policy", StringComparison.Ordinal),
+        Assert.True(
+            System.Text.RegularExpressions.Regex.IsMatch(window, @"Policy\s*=\s*\w*[Ss]ession\??\.Policy"),
             "The manager's download request must be stamped with the session's policy "
           + "({ Policy = _session.Policy }); unstamped, PermissionDecider refuses it and the "
           + "download question never reaches the user.");
