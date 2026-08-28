@@ -34,7 +34,7 @@ public static class Features
     /// <para>Independent of <see cref="ThemeSelection"/>: choosing a theme in config works whether or
     /// not the interactive picker is offered.</para>
     /// </summary>
-    public static readonly bool ThemePicker = false;
+    public static readonly bool ThemePicker = true;
 
     /// <summary>
     /// Whether a theme may be chosen at all — the <c>theme</c> key in config.json and the
