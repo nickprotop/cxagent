@@ -400,7 +400,15 @@ public static class PluginManagerDialog
         // BESIDE CONFIG, NOT IN A TEMP DIRECTORY: the cache is what lets the dialog open offline in
         // a later run, so it has to live somewhere that outlives the process and travels with the
         // rest of the app's state.
-        var reader = new CatalogReader(null, Path.Combine(_paths!.ConfigDir, "catalog-cache.json"));
+        // AN OVERRIDE, FOR POINTING AT A CATALOG THAT IS NOT THE PUBLISHED ONE. Testing the install
+        // path needs a catalog offering something this machine does not have, and the published one
+        // by definition offers what has already shipped. A variable rather than a rebuild, so the
+        // path can be exercised against a local file server without a source edit.
+        var url = Environment.GetEnvironmentVariable("CXAGENT_PLUGIN_CATALOG") is { Length: > 0 } custom
+            ? custom
+            : CatalogReader.PublishedUrl;
+
+        var reader = new CatalogReader(null, Path.Combine(_paths!.ConfigDir, "catalog-cache.json"), url);
         var read = await reader.ReadAsync(CancellationToken.None);
 
         // MARSHALLED, because ReadAsync resumes wherever its ConfigureAwait(false) left it —
