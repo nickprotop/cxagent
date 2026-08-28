@@ -32,20 +32,35 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", required=True, type=Path,
                        help="the committed plugins.json")
-    parser.add_argument("--asset", required=True, type=Path,
-                       help="the release artifact to hash")
     parser.add_argument("--out", required=True, type=Path,
                        help="where to write the published catalog")
-    parser.add_argument("--plugin", default="csharp-lsp",
-                       help="the entry whose source.sha256 this asset fills in")
+    parser.add_argument("--plugin", action="append", default=[], metavar="NAME=PATH",
+                       help="a catalog entry and the release artifact whose hash fills its "
+                            "source.sha256; repeat for each plugin")
     args = parser.parse_args()
+
+    # EVERY PLUGIN IN ONE PASS. Chaining invocations would mean each reading the previous one's
+    # output, so a failure partway leaves a half-stamped catalog already written — and this script
+    # exists to make that state impossible.
+    assets = {}
+    for pair in args.plugin:
+        name, _, path = pair.partition("=")
+        if not name or not path:
+            print(f"error: --plugin wants NAME=PATH, got '{pair}'.", file=sys.stderr)
+            return 1
+        assets[name] = Path(path)
+
+    if not assets:
+        print("error: no --plugin given; nothing to stamp.", file=sys.stderr)
+        return 1
 
     # LOUD, NOT NULL. A catalog published with sha256 still null looks exactly like the committed
     # file, so the one thing this script exists to add would be missing with nothing to show for it.
-    if not args.asset.is_file():
-        print(f"error: no artifact at '{args.asset}' -- refusing to publish a catalog "
-              f"without the hash it exists to carry.", file=sys.stderr)
-        return 1
+    for name, path in assets.items():
+        if not path.is_file():
+            print(f"error: no artifact at '{path}' for '{name}' -- refusing to publish a catalog "
+                  f"without the hash it exists to carry.", file=sys.stderr)
+            return 1
 
     catalog = json.loads(args.catalog.read_text(), object_pairs_hook=OrderedDict)
 
@@ -54,20 +69,46 @@ def main() -> int:
     # can do nothing with.
     catalog.pop("$comment", None)
 
-    digest = sha256_of(args.asset)
-    stamped = False
+    # A url ENTRY IS ALREADY PINNED. Stamping one would replace a hash the maintainer committed
+    # deliberately -- pinning a file this project does not control -- with the hash of whatever CI
+    # happened to be handed.
     for entry in catalog.get("plugins", []):
-        if entry.get("name") == args.plugin:
-            entry.setdefault("source", OrderedDict())["sha256"] = digest
-            stamped = True
+        name = entry.get("name")
+        if name in assets and (entry.get("source") or {}).get("kind") != "release":
+            print(f"error: '{name}' is not a 'release' entry; its sha256 is committed and must not "
+                  f"be overwritten.", file=sys.stderr)
+            return 1
 
-    if not stamped:
-        print(f"error: no catalog entry named '{args.plugin}'.", file=sys.stderr)
+    stamped = set()
+    for entry in catalog.get("plugins", []):
+        name = entry.get("name")
+        if name in assets:
+            digest = sha256_of(assets[name])
+            entry.setdefault("source", OrderedDict())["sha256"] = digest
+            stamped.add(name)
+            print(f"{name}: {digest}")
+
+    missing = set(assets) - stamped
+    if missing:
+        print(f"error: no catalog entry named {', '.join(sorted(missing))}.", file=sys.stderr)
+        return 1
+
+    # EVERY ENTRY LEAVES WITH A HASH, however it got one. An entry still null here is one a client
+    # cannot verify, which is the whole reason this script exists — but the two source kinds get
+    # there differently and only one of them is ours to stamp.
+    # AN ENTRY USING PER-RID `sources` HAS NO SINGLE `source.sha256` and is not unstamped — it
+    # carries a hash per platform. No such entry exists yet; the first ABI plugin would otherwise
+    # trip this check the day it is added.
+    unstamped = [e.get("name") for e in catalog.get("plugins", [])
+                 if "sources" not in e and (e.get("source") or {}).get("sha256") is None]
+    if unstamped:
+        print(f"error: {', '.join(unstamped)} would publish with a null sha256. A 'release' entry "
+              f"needs --plugin NAME=PATH; a 'url' entry must carry its hash in plugins.json.",
+              file=sys.stderr)
         return 1
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(catalog, indent=2) + "\n")
-    print(f"{args.plugin}: {digest}")
     return 0
 
 
