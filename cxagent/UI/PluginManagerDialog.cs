@@ -64,6 +64,13 @@ public static class PluginManagerDialog
     private static TabControl? _tabs;
     private static MarkupControl? _detailHeader;
     private static MarkupControl? _detailBody;
+    /// <summary>
+    /// The rail's starting width in cells. Wide enough for the longest plugin name plus its commonest
+    /// state on one line ("csharp-lsp-omnisharp" is 20, "disabled" 8) — the long NEEDS ATTENTION
+    /// reasons wrap to a second line, which is the right place to spend one. The splitter moves it.
+    /// </summary>
+    private const int RailCells = 34;
+
     private static MarkupControl? _age;
 
     /// <summary>The status bar's left half — what the rail is currently showing.</summary>
@@ -173,9 +180,18 @@ public static class PluginManagerDialog
         // TWO COLUMNS, ONE ROW. The rail is a fixed width with a floor so it stays readable when the
         // window is dragged narrow; the panel takes what is left.
         var grid = new GridControl { VerticalAlignment = VerticalAlignment.Fill };
-        grid.ColumnDefinitions.Add(GridLength.Cells(34, min: 24));
+        grid.ColumnDefinitions.Add(GridLength.Cells(RailCells, min: 24));
         grid.ColumnDefinitions.Add(GridLength.Star(1));
         grid.RowDefinitions.Add(GridLength.Star(1));
+
+        // A SECOND ROW FOR THE PANEL'S OWN ACTIONS. They act on the selected plugin, and the panel
+        // IS the selected plugin — so the panel's edge draws the boundary of what they affect. Sticky
+        // to the window they spanned the rail too, reading as dialog chrome rather than as buttons
+        // about one row, which is the same scope-invisibility that put Close among them.
+        //
+        // ONE CELL, NOT Auto: a HorizontalGridControl reports no intrinsic height from inside a grid
+        // cell, so an Auto track measures it as nothing and the row never appears.
+        grid.RowDefinitions.Add(GridLength.Cells(1));
 
         _rail = new ListControl
         {
@@ -183,7 +199,7 @@ public static class PluginManagerDialog
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        grid.Place(_rail, 0, 0);
+        grid.Place(_rail, 0, 0, rowSpan: 2);
 
         // TWO TABS ONLY, Details and Settings — and Settings is added per selection, because for
         // most rows it must not exist at all (see RebuildSettingsTab). A Tools tab was considered
@@ -208,7 +224,18 @@ public static class PluginManagerDialog
             VerticalAlignment = VerticalAlignment.Fill,
         };
         _tabs.AddTab("Details", detailScroll);
+        // UNDER THE PANEL, NOT THE WINDOW. These act on the selected plugin, so they sit inside the
+        // column that shows it — sticky to the window they spanned the rail as well, reading as
+        // chrome about the dialog rather than actions on one row.
+        //
+        // CLOSE IS NOT AMONG THEM, for the same reason: closing acts on the dialog, and sharing a
+        // row gave the two kinds equal weight with no way to tell them apart. It is in the status
+        // bar, beside the key that also does it.
+        //
+        // Rebuilt whenever the selection moves, which is why it is its own control.
+        _buttons = HorizontalGridControl.ButtonRow();
         grid.Place(_tabs, 0, 1);
+        grid.Place(_buttons, 1, 1);
 
         // A DRAGGABLE DIVIDER, not a drawn one. The splitter IS the line between rail and panel and
         // the handle that moves it, so the two cannot disagree — and it honours the rail column's
@@ -225,16 +252,6 @@ public static class PluginManagerDialog
 
         window.AddControl(grid);
 
-        // THE BUTTONS ACT ON THE SELECTED PLUGIN, so they are rebuilt whenever the selection moves —
-        // which is why they are their own control rather than a grid cell whose contents change.
-        //
-        // CLOSE IS NOT AMONG THEM, deliberately. Three of these act on one plugin and closing acts
-        // on the dialog; sharing a row gave them equal weight and left no way to see the fourth was
-        // different in kind. It lives in the status bar below, which is the same split the toolbar
-        // already draws between dialog-wide and per-plugin.
-        _buttons = HorizontalGridControl.ButtonRow();
-        _buttons.StickyPosition = StickyPosition.Bottom;
-        window.AddControl(_buttons);
 
         // A LINE ABOVE THE STATUS BAR, closing the frame the toolbar's rule opens.
         window.AddControl(new RuleControl
@@ -517,7 +534,7 @@ public static class PluginManagerDialog
             });
 
             foreach (var row in group)
-                rail.AddItem(new ListItem(RailText(row)) { Tag = row });
+                rail.AddItem(new ListItem(RailText(row, RailCells)) { Tag = row });
         }
     }
 
@@ -528,12 +545,28 @@ public static class PluginManagerDialog
     /// the longest states ("contract 3 · needs a newer cxagent", "loaded · 0.2.1 → 0.3.0") cannot
     /// share a line with any name without truncating the half the user came to read.</para>
     /// </summary>
-    private static string RailText(PluginRow row)
+    /// <summary>
+    /// One row: the name, and its state beside it when both fit.
+    ///
+    /// <para>HEIGHT IS THE SCARCE DIMENSION, so a second line is spent only when the width cannot
+    /// take the state — a terminal gives fewer rows than columns, and two lines per plugin halves
+    /// how many a user sees at once. Most states are short ("loaded", "disabled"); it is the
+    /// NEEDS ATTENTION reasons that are long, and those are the rows worth a second line.</para>
+    ///
+    /// <para>MEASURED AGAINST THE COLUMN, not a guess: the rail is <see cref="RailCells"/> wide and
+    /// the splitter can widen it, so a name that wraps today may fit after a drag.</para>
+    /// </summary>
+    private static string RailText(PluginRow row, int cells)
     {
         var name = MarkupParser.Escape(row.Name);
-        return row.State.Length == 0
-            ? name
-            : $"{name}\n  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(row.State)}[/]";
+        if (row.State.Length == 0) return name;
+
+        var state = MarkupParser.Escape(row.State);
+
+        // Two spaces between, and one cell of margin so the text never touches the splitter.
+        return row.Name.Length + 2 + row.State.Length <= cells - 1
+            ? $"{name}  [{ColorScheme.MutedMarkup}]{state}[/]"
+            : $"{name}\n  [{ColorScheme.MutedMarkup}]{state}[/]";
     }
 
     private static string Heading(PluginRowSection section) => section switch
