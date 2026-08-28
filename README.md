@@ -238,12 +238,13 @@ See [CONFIG.md](CONFIG.md#skills) for where they live and how shadowing works.
 
 Tools from a DLL you drop in a folder, without rebuilding cxagent.
 
-The one that ships is **csharp-lsp**: go-to-definition, find-references and diagnostics for C#,
-backed by a language server. It crosses project boundaries — a reference in a test project resolves
-into the project under test — which grep cannot do.
+Two ship: **csharp-lsp** — go-to-definition, find-references and diagnostics for C#, backed by a
+language server, crossing project boundaries as grep cannot — and **calculator**, which evaluates a
+whole arithmetic expression exactly in one call.
 
-`install.sh` puts it in your plugins folder and stops there. cxagent tells you it is present and
-leaves it alone:
+Neither is bundled with the installer. Both arrive through the plugin manager (**F2**), which
+downloads, verifies and unpacks into your plugins folder and stops there. cxagent tells you a plugin
+is present and leaves it alone:
 
 ```
 plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), not configured.

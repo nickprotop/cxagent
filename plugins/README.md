@@ -10,8 +10,9 @@ Each has its own page with its download and settings.
 
 ## Installing one
 
-`install.sh` places `csharp-lsp` in your config folder's `plugins/` automatically. Any plugin here
-can also be taken from a release by hand — see its own page for the asset name and the config entry.
+The plugin manager (**F2**) installs any plugin listed here into your config folder's `plugins/`,
+verifying its checksum on the way. Any plugin can also be taken from a release by hand — see its own
+page for the asset name and the config entry.
 
 **Installed is not enabled.** cxagent reports a plugin it finds but has no configuration for, and
 leaves it alone: loading runs code cxagent did not write, so it asks once, showing a hash of the
@@ -38,7 +39,7 @@ Each of those is searched **itself and one level down**, so a plugin in a direct
 **A directory of its own is the layout to prefer.** A plugin's identity is a hash over everything in
 its load-set folder, and .NET resolves its dependencies from that folder too, so two plugins sharing
 one are neither isolated from each other nor separately identifiable: installing or updating either
-one changes the other's hash and re-asks its load prompt. `install.sh` writes the nested layout, and
+one changes the other's hash and re-asks its load prompt. The manager writes the nested layout, and
 a loose plugin keeps working — cxagent says so at load rather than refusing it.
 
 A relative `pluginPaths` entry resolves against **the project directory**, not the config folder — so

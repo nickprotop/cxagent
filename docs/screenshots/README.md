@@ -185,8 +185,8 @@ cxagent can enforce on your behalf, so it says what the plugin will contribute â
 guidance to the model's instructions** â€” and covers its approval with a hash of the whole load set.
 Change a byte of it and this question comes back.
 
-Installing a plugin does not enable it. `install.sh` places `csharp-lsp` in the plugins folder and
-stops; cxagent reports that it is there and waits to be told.
+Installing a plugin does not enable it. The manager places it in the plugins folder and stops;
+cxagent reports that it is there and waits to be told.
 
 ![The LSP plugin working](14-plugin-lsp.png)
 

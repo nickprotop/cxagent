@@ -16,10 +16,10 @@ extension, rather than returning an empty result that reads as "nothing found he
 
 ## Install
 
-`install.sh` does this for you. By hand:
+The plugin manager (**F2**) does this for you. By hand:
 
 1. Download **`csharp-lsp.zip`** from the [latest release](https://github.com/nickprotop/cxagent/releases/latest).
-2. Unpack both files — `csharp-lsp.dll` and `csharp-lsp.plugin.json` — into a directory of their
+2. Unpack all three files — `csharp-lsp.dll`, `csharp-lsp.plugin.json` and `README.md` — into a directory of their
    own inside your plugins folder, `csharp-lsp/` alongside the other, so its hash describes only
    this plugin:
    - Linux / macOS: `~/.config/cxagent/plugins/csharp-lsp/`

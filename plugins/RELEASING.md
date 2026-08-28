@@ -139,11 +139,10 @@ assembly is loaded, so a zip missing it produces a plugin that cannot load and c
 The README is optional at the source but ships whenever present, so the plugin manager can render a
 plugin's own documentation from disk.
 
-**4. The installer**, in `install.sh`, if it should be installed by default. Download from the
-release pinned to `$TAG` — a plugin built from a later commit than the binary it plugs into is a
-skew that surfaces as a puzzling failure — and keep it best-effort, so an older release without the
-asset still installs cxagent itself. Note that `install.sh` installs named plugins, not the whole
-catalog: a plugin can be in the catalog and left for the user to fetch.
+**4. Nothing in the installer.** `install.sh` installs cxagent and no plugin at all. A plugin
+reaches a machine through the manager, which reads the catalog, verifies the checksum and unpacks —
+so a catalog entry is the whole of "shipping" it, and one route means one set of behaviours to get
+right rather than two that can disagree.
 
 **5. Nothing else.** In particular, do not add a config entry anywhere. An installer that enabled a
 plugin would be enabling code the user was never asked about; cxagent reports it as
