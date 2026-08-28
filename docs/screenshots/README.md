@@ -178,6 +178,36 @@ are what the session did.
 
 ## Plugins
 
+![The plugin manager, listing what the catalog offers](18-plugin-marketplace.png)
+
+**F2** opens the manager. The list is read from a catalog published on the web, so what a machine can
+install is whatever has been released rather than whatever shipped with the binary — no plugin is
+bundled with the installer. Each entry carries the version, the licence, the publisher, the contract
+it was built against, and how many tools it adds. `TOOLS 1, never asks` is a promise the manifest
+makes and the load gate later repeats: this plugin's tool does not stop to ask permission, because it
+reads nothing and reaches nowhere.
+
+![The download permission prompt, naming the release URL](19-plugin-download.png)
+
+Installing asks first, and the question names the file it is about to fetch. There is deliberately no
+**Always allow** here, though other prompts offer one: a standing rule for plugin downloads has no
+honest scope — "any download from github.com" would pre-approve every future plugin, and the exact
+URL is useless because the next version has a different one.
+
+What arrives is checked against the catalog's `sha256` before anything is written. A mismatch means
+the catalog and the release disagree, and cxagent installs neither.
+
+![Two plugins installed and loaded, from the catalog](20-plugin-installed.png)
+
+Two plugins, each in a directory of its own. The layout is not cosmetic: a plugin's identity is a
+hash over everything in its folder, and .NET resolves a plugin's dependencies from that folder too,
+so two plugins sharing one directory would be neither isolated nor separately identifiable —
+installing either would change the other's hash and re-ask its load prompt.
+
+`loaded, not configured` is both halves of the truth. The plugin is answering tool calls right now,
+and nothing in `config.json` names it, so the next session starts without it. Adding it to the config
+is a separate, explicit step.
+
 ![Loading a plugin](15-plugin-load.png)
 
 A plugin is a DLL cxagent did not ship, loaded into this session. The prompt is the only boundary
@@ -185,8 +215,8 @@ cxagent can enforce on your behalf, so it says what the plugin will contribute �
 guidance to the model's instructions** — and covers its approval with a hash of the whole load set.
 Change a byte of it and this question comes back.
 
-Installing a plugin does not enable it. The manager places it in the plugins folder and stops;
-cxagent reports that it is there and waits to be told.
+This is a different question from the install above, and it is asked separately on purpose: one
+consents to fetching bytes, this one consents to running them.
 
 ![The LSP plugin working](14-plugin-lsp.png)
 
