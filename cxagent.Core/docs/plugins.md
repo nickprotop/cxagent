@@ -36,10 +36,11 @@ everywhere cxagent does:
 
 ```xml
 <ItemGroup>
-  <!-- Private="false": the host process already has CxAgent.Core loaded, and the plugin resolves it
-       from there at run time. Without this the DLL ships beside every copy of your plugin for no
-       reason, and a version that disagrees with the host's is a bug waiting to happen. -->
-  <ProjectReference Include="path/to/cxagent.Core.csproj" Private="false" />
+  <!-- EXCLUDEASSETS RUNTIME: the host process already has this assembly loaded and the plugin binds to
+       the host's copy. Ship your own beside the plugin and Assembly.LoadFrom gives it a DIFFERENT
+       type identity — so the host's `is IPlugin` check fails on a class that plainly implements it,
+       and the cast throws at load. In-repo, a ProjectReference with Private="false" does the same. -->
+  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="2.0.0" ExcludeAssets="runtime" />
 </ItemGroup>
 
 <ItemGroup>
@@ -47,13 +48,13 @@ everywhere cxagent does:
 </ItemGroup>
 ```
 
-A consumer outside this repo writes `<PackageReference Include="CxAgent.Core" Version="…" />` with
-the same `Private="false"`.
+**The contract, not the runtime.** That package carries `IPlugin`, `IPluginContext`,
+`PluginManifest`, `IAgentTool` and the job types a tool exchanges — and nothing else, so your project
+does not compile against an agent runtime, its database and its HTTP stack to implement seven
+interfaces. Referencing `CxAgent.Core` also works and always did; it just brings all of that with it.
 
-**Reference `CxAgent.Plugins.Abstractions`, not `CxAgent.Core`.** It carries the contract —
-`IPlugin`, `IPluginContext`, `PluginManifest`, `IAgentTool` and the job types a tool exchanges — and
-nothing else, so your project does not compile against the agent runtime to implement seven
-interfaces. Its package version IS the contract number: `2.0.0` is `"pluginContract": 2`.
+**Its version IS the contract number.** `2.0.0` is `"pluginContract": 2` — the same fact your sidecar
+declares, so there is one number to keep straight rather than two.
 
 What ships is two files: your DLL and its sidecar.
 
