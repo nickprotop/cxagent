@@ -134,8 +134,10 @@ Copy the one whose `source` shape matches what you are adding.
 `RuntimeIdentifier` is portable MSIL, so it needs ONE build, not a matrix entry — six RIDs would
 upload six identical files. Build rather than publish (`Private="false"` keeps `CxAgent.Core` out of
 the output, and a publish would pull in its whole dependency tree), then zip the DLL with its
-sidecar. They must ship together: the sidecar is read before the assembly is loaded, so a zip
-missing it produces a plugin that cannot load and cannot be described.
+sidecar and its `README.md`. The DLL and sidecar must ship together: the sidecar is read before the
+assembly is loaded, so a zip missing it produces a plugin that cannot load and cannot be described.
+The README is optional at the source but ships whenever present, so the plugin manager can render a
+plugin's own documentation from disk.
 
 **4. The installer**, in `install.sh`, if it should be installed by default. Download from the
 release pinned to `$TAG` — a plugin built from a later commit than the binary it plugs into is a

@@ -56,7 +56,14 @@ interfaces. Referencing `CxAgent.Core` also works and always did; it just brings
 **Its version IS the contract number.** `2.0.0` is `"pluginContract": 2` — the same fact your sidecar
 declares, so there is one number to keep straight rather than two.
 
-What ships is two files: your DLL and its sidecar.
+What ships is three files: your DLL, its sidecar, and `README.md`.
+
+**The README is read by the plugin manager**, rendered as markdown beside your plugin's entry — so it
+is a user's documentation, not a maintainer's note. It is optional: a plugin without one shows its
+catalog description instead.
+
+**It is inside the load set**, so its bytes are covered by the hash the approval prompt shows.
+Editing it changes that hash and the user is asked again, exactly as changing the binary would be.
 
 ## The lifecycle
 

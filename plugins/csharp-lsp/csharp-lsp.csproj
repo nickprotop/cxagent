@@ -25,6 +25,11 @@
     <!-- The sidecar sits beside the built DLL, exactly like the test fixtures' PreserveNewest copy —
          PluginDiscovery reads assemblyPath with ".plugin.json" swapped in for the extension. -->
     <None Include="csharp-lsp.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- THE README SHIPS WITH THE PLUGIN, so the manager can show a plugin's own documentation from
+         disk. The catalog cannot supply it: its `readme` is a repo-relative path that resolves
+         against nothing published, and the site publishes catalog.json and four rendered docs only. -->
+    <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

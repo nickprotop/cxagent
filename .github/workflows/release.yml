@@ -141,7 +141,14 @@ jobs:
           # zip missing it produces a plugin that cannot load and cannot be described.
           test -f ./plugin-build/csharp-lsp.dll
           test -f ./plugin-build/csharp-lsp.plugin.json
-          (cd plugin-build && zip -q ../plugin-out/csharp-lsp.zip csharp-lsp.dll csharp-lsp.plugin.json)
+
+          # THE README TRAVELS TOO, so an installed plugin carries its own documentation. The manager
+          # renders it from disk; the catalog cannot supply one, and a plugin whose docs live only in
+          # a repository is a plugin a user reads about by leaving cxagent.
+          test -f ./plugin-build/README.md
+
+          (cd plugin-build && zip -q ../plugin-out/csharp-lsp.zip \
+             csharp-lsp.dll csharp-lsp.plugin.json README.md)
 
       - name: Generate checksums
         run: |
