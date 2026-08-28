@@ -13,8 +13,8 @@ a readable directory exposes the file listing even when the file itself is locke
 made before that was enforced is repaired on the next launch rather than staying loose.
 
 There is no config file until you make one. [`config.sample.json`](config.sample.json) documents every
-key inline, including what each one's absence means. F5 in the app edits providers without touching
-the file by hand.
+key inline, including what each one's absence means. On a first run with no config, cxagent walks you
+through making one; after that this file is yours to edit.
 
 ---
 
@@ -374,8 +374,8 @@ and may carry `headers`. Optional per server: `enabled` (default true), `cwd`, `
 A server's own usage instructions, when it sends any, are appended to the system prompt **attributed
 to it by name**, so the model can tell that advice apart from cxagent's own.
 
-`/mcp reload` re-reads this block and reconnects, for a file you edited by hand. Saving in Settings
-(F5) does it for you when the block changed. Either way, adding a server does not need a restart.
+`/mcp reload` re-reads this block and reconnects, for a file you edited by hand — which is what makes
+an `mcp` change take effect without restarting. Adding a server does not need a restart.
 `/mcp login <server>` runs OAuth for a server that returned 401 and stores the token at `0600`,
 never in the config file.
 

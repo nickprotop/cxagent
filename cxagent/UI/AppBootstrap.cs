@@ -374,10 +374,6 @@ public static class AppBootstrap
         using var cts = new CancellationTokenSource();
 
 
-        // The currently-open consolidated Settings dialog, or null when none is open. Captured by the
-        // Escape global shortcut (routes Escape to Cancel while a dialog is open) and by
-        // OpenSettingsAsync (reentrancy: a second F5/F7/F8 press selects a page in this instance rather
-        // than opening a second dialog). Cleared in OpenSettingsAsync's `finally` — see its comment.
 
 
 
@@ -1345,15 +1341,8 @@ public static class AppBootstrap
                     session.CancelTurn();
             });
 
-        // MainWindow stays independent of SettingsDialog/SetupWizard; AppBootstrap supplies the flow
-        // via these seams. F5/F7/F8 all route through the ONE consolidated handler below, differing
-        // only in which page they land on and (F5 only) whether an absent/invalid config runs the
-        // setup wizard instead of opening the dialog — see SettingsEntry.Classify.
+        // MainWindow stays independent of SetupWizard; AppBootstrap supplies the flow via these seams.
 
-        // Holds the currently-open SettingsDialog instance, if any — read by the Escape handler above
-        // and by OpenSettingsAsync's reentrancy check just below. Null whenever no dialog is open;
-        // OpenSettingsAsync's `finally` is what guarantees that, so Escape is never left pointed at a
-        // closed dialog.
         // THE WIZARD IS FIRST-RUN ONLY. There is deliberately no settings dialog beside it: config
         // is not applied in place, so such a dialog would write a file and ask for a restart —
         // hundreds of lines of editor for a job a text editor does better, over a file the user can

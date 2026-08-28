@@ -338,7 +338,7 @@ the argument wins when both are present.
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
-| `F5` | Settings |
+| `F9` | Theme |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |
 

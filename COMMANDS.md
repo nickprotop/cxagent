@@ -71,8 +71,10 @@ The conversation is kept. Sub-agents use this too unless their type names anothe
 Smaller window than before (212k → 32k); long conversations will compact sooner.
 ```
 
-**Not persisted**, like `/mode`. Config is Settings' job (F5), which is also where you add a provider
-or edit an API key. `cxagent --model <name>` starts a session on one without touching config.
+**Not persisted**, like `/mode`. Adding a provider or editing an API key means editing
+`config.json` — there is deliberately no in-app editor, because config is read at startup and an
+editor would write a file and ask you to restart. `cxagent --model <name>` starts a session on one
+without touching config.
 
 Declined while a turn is running: re-wiring replaces the agent that turn is writing into.
 
@@ -254,8 +256,8 @@ with the reason, because a server that silently never appears is indistinguishab
 configured.
 
 `/mcp reload` re-reads `config.json` from disk and reconnects — for a config file you edited by
-hand. Saving in Settings (F5) reloads them for you when the block changed. Adding a server does not need a
-restart. `/mcp login <server>` runs the OAuth flow for a server that returned 401, opening a browser
+hand — it is what makes an `mcp` edit take effect without restarting. Adding a server does not need
+a restart. `/mcp login <server>` runs the OAuth flow for a server that returned 401, opening a browser
 and storing the token at `0600`, never in the config file.
 
 ---

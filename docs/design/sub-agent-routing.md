@@ -78,7 +78,7 @@ because throwing would happen at spawn time, minutes into a session.
 rather than being rejected. It has no provider, so it inherits the parent's — which is what makes a
 bare spawn ordinary rather than a special case.
 
-**The catalog is rebuilt on every re-wire.** `WireRunner` constructs it per F5/F7 provider change, so
+**The catalog is rebuilt on every re-wire.** `WireRunner` constructs it per provider change, so
 a type re-resolves its instance against the *new* registry. Otherwise a type would keep pointing at a
 provider the session no longer uses.
 
