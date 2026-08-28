@@ -765,10 +765,6 @@ public sealed class MainWindow : IDisposable
         // only discovery surface for these, so an entry here that isn't bound there is a dead key.
         // F-keys (not Ctrl+letter) because several Ctrl combos are indistinguishable from Enter/
         // Backspace/Tab at the byte level; see the comment on the registrations.
-        // F2 ONLY IN FAN-OUT, for the same reason as F6. It clears the composer and focuses it —
-        // and in single-agent mode the composer is ALREADY cleared on submit and already holds
-        // focus, so the key does nothing observable. In fan-out focus can legitimately be sitting in
-        // a job block, and F2 is the way back.
         // THE STATUS BAR IS TWO THINGS: where you are, and how to leave. Six shortcuts along here
         // make a menu rather than a status bar, and every one of them is a key the user either knows
         // or will find in Help. All the keys WORK regardless of whether they are advertised here;

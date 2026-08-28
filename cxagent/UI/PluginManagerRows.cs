@@ -142,6 +142,21 @@ public static class PluginManagerRows
     }
 
     /// <summary>
+    /// The rows whose name or state matches, case-insensitively. Empty text matches everything.
+    ///
+    /// <para>A SECTION WITH NOTHING LEFT IS NOT RENDERED — the caller drops a header with no rows
+    /// under it, so filtering never leaves a heading standing over nothing.</para>
+    /// </summary>
+    public static IReadOnlyList<PluginRow> Filter(IReadOnlyList<PluginRow> rows, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return rows;
+
+        return [.. rows.Where(r =>
+            r.Name.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || r.State.Contains(text, StringComparison.OrdinalIgnoreCase))];
+    }
+
+    /// <summary>
     /// The running machine's identifier, for matching a catalog entry's per-RID sources.
     ///
     /// <para>NOT A GUESS FROM THE OS: RuntimeInformation.RuntimeIdentifier is what the publish that

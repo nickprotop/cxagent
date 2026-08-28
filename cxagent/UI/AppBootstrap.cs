@@ -624,6 +624,16 @@ public static class AppBootstrap
                 Completes: false, Values: ValueSources.McpServers),
             (session, arguments) => { _ = session; _ = mcpCommand.HandleAsync(arguments); return true; });
 
+        // THE VERB IS THE FRONT END'S, because a browser is not a word Core has. A headless embedder
+        // does not register it and /plugin still lists, loads and unwires.
+        manager.Commands.RegisterVerb("/plugin",
+            new CommandArgument("browse", "open the plugin manager"),
+            (s, _) =>
+            {
+                PluginManagerDialog.Show(system, window, manager, s, paths, s.WorkingDirectory);
+                return true;
+            });
+
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
         // command Core ships but can never service is one every consumer advertises and none can
         // run. Declaring it beside the handler keeps the two from drifting.
@@ -1250,6 +1260,22 @@ public static class AppBootstrap
         // keyboard does nothing and I cannot tell why". That is not a cost the user can debug.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusComposer);
 
+        // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
+        // before the active window (InputCoordinator.cs:130-134) — a window.KeyPressed handler for a
+        // key registered here would be dead code, which is also why the dialog's own Escape lives in
+        // the handler above rather than on its window.
+        //
+        // Func<bool>, NOT Action: an Action overload is wrapped to always report the key consumed,
+        // and this handler must be able to decline. It never does today — F2 either opens or closes
+        // — but the toggle is what stops a second Show clobbering the first dialog's state.
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2, () =>
+        {
+            if (PluginManagerDialog.CloseIfOpen()) return true;
+
+            PluginManagerDialog.Show(system, window, manager, session, paths, session.WorkingDirectory);
+            return true;
+        });
+
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows
         // what is installed, and pinning three of them to three keys would go stale the moment a
@@ -1363,24 +1389,32 @@ public static class AppBootstrap
         system.RegisterGlobalShortcut(ConsoleModifiers.Alt, ConsoleKey.LeftArrow,
             () => mainWindow.TryQuestionBack());
 
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape,
-            () =>
+        // Func<bool>, NOT Action: the Action overload is wrapped to always report the key consumed
+        // (ConsoleWindowSystem.cs:1878-1879), and this handler must be able to yield to a dialog.
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape, () =>
             {
+                // A DIALOG OWNS ESCAPE WHILE IT IS UP. Globals are consulted before the active window
+                // (InputCoordinator.cs:130-134), so without this the plugin manager could not be
+                // dismissed with Escape at all — and worse, the key would reach the branches below and
+                // cancel a running turn, which is not remotely what the user asked for.
+                if (PluginManagerDialog.CloseIfOpen()) return true;
+
                 // A QUESTION FIRST, BEFORE ANYTHING ELSE. Escape while the model is asking means
                 // "I am not answering that" — not "throw away the run". Making the only exit from a
                 // dialog be cancelling the turn would put the user's work behind their reluctance to
                 // answer, so the question is skipped and the model proceeds on its own judgement.
-                if (mainWindow.TrySkipQuestion()) return;
+                if (mainWindow.TrySkipQuestion()) return true;
 
                 // A PERMISSION PROMPT NEXT, for the same reason and with the same shape: Escape
                 // answers it "no" and the run continues. Falling through to CancelTurn below would
                 // do both — a prompt only exists mid-turn, and cancelling fires the gate's
                 // registration, which resolves the prompt as Deny anyway. The key would then deny
                 // AND destroy the run, when Deny is a real answer the model can adapt to.
-                if (mainWindow.TryDenyPermission()) return;
+                if (mainWindow.TryDenyPermission()) return true;
 
                 if (EscapeRouting.For(session.IsBusy) is EscapeTarget.CancelTurn)
                     session.CancelTurn();
+                return true;
             });
 
         // MainWindow stays independent of SetupWizard; AppBootstrap supplies the flow via these seams.

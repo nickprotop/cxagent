@@ -213,4 +213,33 @@ public class PluginManagerRowsTests
 
         Assert.Equal(["alpha", "zebra", "beta"], rows.Select(r => r.Name).ToArray());
     }
+
+    /// <summary>THE FILTER SEARCHES EVERY SECTION AT ONCE — the argument for one grouped rail
+    /// rather than tabs. A name substring narrows installed and available rows alike.</summary>
+    [Fact]
+    public void FilterNarrowsByNameAcrossSections()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["lsp-host"] = new("h.dll") },
+            catalog: [Entry("csharp-lsp"), Entry("unrelated")]));
+
+        var hits = PluginManagerRows.Filter(rows, "lsp");
+
+        Assert.Equal(2, hits.Count);
+        Assert.Contains(hits, r => r.Section == PluginRowSection.Installed);
+        Assert.Contains(hits, r => r.Section == PluginRowSection.Available);
+    }
+
+    /// <summary>Empty text matches everything, so clearing the filter box restores the full rail
+    /// rather than an empty one.</summary>
+    [Fact]
+    public void FilterWithEmptyTextReturnsEverything()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll") },
+            catalog: [Entry("q")]));
+
+        Assert.Same(rows, PluginManagerRows.Filter(rows, ""));
+        Assert.Same(rows, PluginManagerRows.Filter(rows, null));
+    }
 }
