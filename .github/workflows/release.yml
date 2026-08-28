@@ -305,6 +305,11 @@ jobs:
   # definition of how the catalog is built rather than a copy that drifts from the original.
   #
   # NEEDS THE RELEASE JOB, because the assets it downloads have to exist first.
+  #
+  # AND THE github-pages ENVIRONMENT MUST ALLOW TAGS. Its deployment branch policy gates the deploy
+  # before any step runs, so a policy listing only `master` fails this job on a tag with an empty
+  # step list and no error text — the build succeeds, the deploy is refused, and the site silently
+  # keeps the previous catalog. A `v*` tag policy is what makes this job able to publish at all.
 
   pages:
     needs: release
