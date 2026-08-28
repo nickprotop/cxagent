@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A MANAGED PLUGIN IS A PLAIN LIBRARY ManagedPluginLoader loads by path (Assembly.LoadFrom),
+       not an executable — the same shape csharp-lsp takes. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>clone-finder</AssemblyName>
+    <RootNamespace>CxAgent.Plugins.CloneFinder</RootNamespace>
+  </PropertyGroup>
+
+  <!-- THE TEST PROJECT IS NESTED UNDER tests/, SO ITS SOURCE MUST BE EXCLUDED HERE. An SDK project
+       globs **/*.cs beneath itself, which would otherwise sweep TokenizerTests.cs into this
+       library too — the same duplicate-compile hazard cxagent.Tests.csproj calls out for its own
+       nested fixtures. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE CONTRACT, NOT THE RUNTIME. Private="false" stays: the host loads this assembly and the
+         plugin must bind to the host's copy, because Assembly.LoadFrom gives a shipped duplicate a
+         distinct type identity and the host's `is IPlugin` check would fail. -->
+    <ProjectReference Include="../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>
