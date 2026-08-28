@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A MANAGED PLUGIN IS A PLAIN LIBRARY ManagedPluginLoader loads by path (Assembly.LoadFrom),
+       not an executable — the same shape csharp-lsp takes. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>calculator</AssemblyName>
+    <RootNamespace>CxAgent.Plugins.Calculator</RootNamespace>
+  </PropertyGroup>
+
+  <!-- THE TEST PROJECT IS NESTED UNDER tests/, SO ITS SOURCE MUST BE EXCLUDED HERE. An SDK project
+       globs **/*.cs beneath itself, which would otherwise sweep EvaluatorTests.cs into this
+       library too — the same duplicate-compile hazard cxagent.Tests.csproj calls out for its own
+       nested fixtures. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE CONTRACT, NOT THE RUNTIME. Private="false" stays: the host loads this assembly and the
+         plugin must bind to the host's copy, because Assembly.LoadFrom gives a shipped duplicate a
+         distinct type identity and the host's `is IPlugin` check would fail. -->
+    <ProjectReference Include="../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- JACE SHIPS BESIDE THE PLUGIN, and this is the first plugin with a dependency at all.
+         Assembly.LoadFrom resolves a plugin's dependencies from its containing folder, so Jace.dll
+         must be in the zip — and it is therefore inside the load set the approval hash covers,
+         which is correct: a Jace version bump changes what runs and the user is asked again. -->
+    <PackageReference Include="Jace" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="calculator.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

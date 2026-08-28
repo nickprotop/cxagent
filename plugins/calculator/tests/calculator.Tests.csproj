@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A PLUGIN OWNS ITS TESTS. cxagent.Tests deliberately does not compile against a plugin's types
+       (see its own comment at :50-57), so the alternative to this project is either testing a pure
+       function through a loaded plugin host, or making the core suite a plugin registry. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>CxAgent.Plugins.Calculator.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../calculator.csproj" />
+  </ItemGroup>
+
+  <!-- Match cxagent.Tests' versions exactly; a second xUnit major in one solution is a day lost. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

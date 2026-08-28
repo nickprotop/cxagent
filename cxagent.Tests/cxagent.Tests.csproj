@@ -56,6 +56,8 @@
          reason: the reference orders the build, it does not hand over types. -->
     <ProjectReference Include="../plugins/csharp-lsp/csharp-lsp.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/calculator/calculator.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- THE PLUGIN'S OWN OUTPUT, COPIED BESIDE THE TESTS. ReferenceOutputAssembly="false" above stops
