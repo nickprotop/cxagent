@@ -79,6 +79,11 @@ public sealed class PluginRegistry
     public static readonly TimeSpan DefaultStopTimeout = TimeSpan.FromSeconds(10);
 
     private readonly List<LoadedPlugin> _plugins = [];
+
+    // BESIDE _plugins, NOT A FLAG ON LoadedPlugin: UnwireAsync removes the LoadedPlugin record,
+    // and the fact recorded here has to outlive exactly that removal.
+    private readonly HashSet<string> _everLoaded = new(StringComparer.Ordinal);
+
     private readonly object _gate = new();
     private readonly TimeSpan _stopTimeout;
     private ChildProcessStore? _childProcesses;
@@ -139,6 +144,7 @@ public sealed class PluginRegistry
             }
 
             _plugins.Add(new LoadedPlugin(plugin, manifest));
+            _everLoaded.Add(manifest.Name);
             return new PluginLoadResult.Loaded();
         }
     }
@@ -195,6 +201,19 @@ public sealed class PluginRegistry
     public IReadOnlyList<string> LoadedPluginNames
     {
         get { lock (_gate) return _plugins.Select(p => p.Manifest.Name).ToList(); }
+    }
+
+    /// <summary>
+    /// Every plugin name this registry has loaded, including ones since unwired.
+    ///
+    /// <para>UNWIRE IS NOT UNLOAD. The managed loader deliberately uses no AssemblyLoadContext
+    /// (<see cref="ManagedPluginLoader"/>'s own doc), so an assembly stays resident for the
+    /// process's life once loaded — and on Windows its FILE stays locked with it. A caller
+    /// deleting a plugin's files needs to know it was ever here, not whether it is here now.</para>
+    /// </summary>
+    public IReadOnlySet<string> EverLoadedNames
+    {
+        get { lock (_gate) return new HashSet<string>(_everLoaded, StringComparer.Ordinal); }
     }
 
     /// <summary>

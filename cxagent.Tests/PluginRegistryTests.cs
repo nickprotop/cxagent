@@ -353,6 +353,21 @@ public class PluginRegistryTests : IDisposable
         Assert.Empty(registry.CurrentTools());
     }
 
+    /// <summary>Unwire deregisters without unloading — the managed loader uses no
+    /// AssemblyLoadContext — so the name must survive in EverLoadedNames: an uninstall consulting
+    /// only current state would delete a file this process still holds open on Windows.</summary>
+    [Fact]
+    public async Task AnUnwiredPluginStaysInEverLoadedNames()
+    {
+        var registry = new PluginRegistry();
+        registry.Load(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), isNameTaken: _ => false);
+
+        Assert.True(await registry.UnwireAsync("lsp-rust", CancellationToken.None));
+
+        Assert.DoesNotContain("lsp-rust", registry.LoadedPluginNames);
+        Assert.Contains("lsp-rust", registry.EverLoadedNames);
+    }
+
     [Fact]
     public async Task UnwiringAPluginThatIsNotLoadedReturnsFalse()
     {
