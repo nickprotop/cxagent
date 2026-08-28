@@ -242,4 +242,25 @@ public class PluginManagerRowsTests
         Assert.Same(rows, PluginManagerRows.Filter(rows, ""));
         Assert.Same(rows, PluginManagerRows.Filter(rows, null));
     }
+
+    /// <summary>
+    /// LOADED BUT NEVER CONFIGURED — what the manager's own [load now] leaves behind, since
+    /// installing does not write config. The row has to carry both facts: it is answering tool
+    /// calls right now, and nothing will bring it back next session.
+    ///
+    /// <para>Saying only "not configured" describes a running plugin as inert, and the
+    /// unconfigured branch claims the name before the loaded-by-path pass can correct it — so the
+    /// omission is invisible except in the button set.</para>
+    /// </summary>
+    [Fact]
+    public void AnUnconfiguredPluginThatIsLoadedSaysSo()
+    {
+        var rows = PluginManagerRows.Build(Inputs(
+            loaded: ["found"],
+            unconfigured: [new PluginDiscovery.UnconfiguredPlugin("found", "found.dll", "/p/found", 3)]));
+
+        var row = Row(rows, "found");
+        Assert.Equal(PluginRowSection.Installed, row.Section);
+        Assert.Equal("loaded, not configured", row.State);
+    }
 }
