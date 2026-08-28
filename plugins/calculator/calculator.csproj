@@ -10,6 +10,13 @@
     <IsPackable>false</IsPackable>
     <AssemblyName>calculator</AssemblyName>
     <RootNamespace>CxAgent.Plugins.Calculator</RootNamespace>
+
+    <!-- A CLASS LIBRARY DOES NOT COPY ITS PACKAGE DEPENDENCIES BY DEFAULT — that copy only happens
+         for an executable's own apphost build, and this project is neither (see the note on
+         IPlugin above). Without this, Jace.dll stays in the NuGet cache and never reaches
+         bin/, so Assembly.LoadFrom's directory-relative probe finds nothing beside calculator.dll
+         wherever the plugin is actually loaded from. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <!-- THE TEST PROJECT IS NESTED UNDER tests/, SO ITS SOURCE MUST BE EXCLUDED HERE. An SDK project

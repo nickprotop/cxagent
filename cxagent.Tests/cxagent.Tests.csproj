@@ -72,6 +72,14 @@
           DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
+  <!-- SAME REASON AS CopyCsharpLspPlugin, PLUS THE DEPENDENCY ITSELF. calculator is the first
+       managed plugin with a NuGet package of its own, and Assembly.LoadFrom resolves Jace.dll from
+       calculator.dll's own folder — so the test copy has to carry both, not just the plugin. -->
+  <Target Name="CopyCalculatorPlugin" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/calculator.dll;$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/Jace.dll"
+          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+
   <ItemGroup>
 
     <!-- THE REAL HOST PROCESS, launched as a subprocess by AbiPluginHostTests exactly as Task 9c's
