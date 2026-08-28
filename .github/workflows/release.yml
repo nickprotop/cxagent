@@ -105,7 +105,15 @@ jobs:
 
           mkdir -p plugin-out
 
-          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- plugins/csharp-lsp/; then
+          # WHAT THE PLUGIN IS BUILT FROM, NOT ONLY WHAT IT IS. The carry-forward exists so an
+          # untouched plugin keeps a stable hash — a rebuild embeds source paths and mtimes, so
+          # identical source produces a different zip. But the plugin binds to the contract
+          # assembly, and a change THERE changes the binary while leaving plugins/csharp-lsp/
+          # untouched. Carrying forward across that ships a plugin built against an assembly this
+          # release no longer has.
+          PLUGIN_INPUTS="plugins/csharp-lsp/ cxagent.Plugins.Abstractions/"
+
+          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- $PLUGIN_INPUTS; then
             echo "plugin unchanged since $PREV_TAG — carrying its zip forward."
 
             # THE SAME BYTES, NOT A REBUILD. A rebuild would produce a different hash for identical
