@@ -50,6 +50,11 @@ everywhere cxagent does:
 A consumer outside this repo writes `<PackageReference Include="CxAgent.Core" Version="…" />` with
 the same `Private="false"`.
 
+**Reference `CxAgent.Plugins.Abstractions`, not `CxAgent.Core`.** It carries the contract —
+`IPlugin`, `IPluginContext`, `PluginManifest`, `IAgentTool` and the job types a tool exchanges — and
+nothing else, so your project does not compile against the agent runtime to implement seven
+interfaces. Its package version IS the contract number: `2.0.0` is `"pluginContract": 2`.
+
 What ships is two files: your DLL and its sidecar.
 
 ## The lifecycle

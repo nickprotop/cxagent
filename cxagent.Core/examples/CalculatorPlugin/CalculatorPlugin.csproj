@@ -11,15 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- A PROJECT REFERENCE SO THE EXAMPLE MOVES WITH THE API. A consumer writes
-         <PackageReference Include="CxAgent.Core" Version="…" /> instead; referencing the project
-         here means a breaking change to the surface breaks this build rather than being discovered
-         after a release. -->
-    <!-- Private="false": the host process already has CxAgent.Core loaded and the plugin resolves
-         it from there at run time. Without it, CxAgent.Core.dll is copied beside every build of the
-         plugin — dead weight in anything you ship, and a second copy that can disagree with the
-         host's version. -->
-    <ProjectReference Include="../../cxagent.Core.csproj" Private="false" />
+    <!-- THE CONTRACT, NOT THE RUNTIME. Implementing IPlugin needs seven types; referencing
+         cxagent.Core to get them pulled in Sqlite, AngleSharp and the LLM providers as well.
+         Private="false" stays: the host loads this assembly and the plugin must bind to the host's
+         copy, because Assembly.LoadFrom gives a shipped duplicate a distinct type identity and the
+         host's `is IPlugin` check would fail. -->
+    <ProjectReference Include="../../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,12 +13,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- REFERENCE ONLY, NOT COPIED. The host process (cxagent) already carries CxAgent.Core in its
-         own bin — copying a second copy here would give the loader two different Assembly identities
-         for the same types (IPlugin, JobResult, ...) and every interface check would fail across the
-         boundary. PluginDiscovery loads this plugin's DLL into the SAME process, so it must bind
-         against the host's already-loaded copy rather than ship its own. -->
-    <ProjectReference Include="../../cxagent.Core/cxagent.Core.csproj" Private="false" />
+    <!-- THE CONTRACT, NOT THE RUNTIME. Implementing IPlugin needs seven types; referencing
+         cxagent.Core to get them pulled in Sqlite, AngleSharp and the LLM providers as well.
+         Private="false" stays: the host loads this assembly and the plugin must bind to the host's
+         copy, because Assembly.LoadFrom gives a shipped duplicate a distinct type identity and the
+         host's `is IPlugin` check would fail. -->
+    <ProjectReference Include="../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
