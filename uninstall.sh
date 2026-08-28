@@ -36,8 +36,8 @@ echo "✓ cxagent uninstalled."
 
 # WHAT IS DELIBERATELY LEFT. The config directory holds config.json with API keys in it, session
 # history and logs — deleting that on an uninstall would destroy work nobody asked to lose, and a
-# reinstall would start from nothing. The csharp-lsp plugin install.sh places there is left for the
-# same reason: it lives inside that directory. Say so, because a user who installed a plugin
+# reinstall would start from nothing. Any plugin installed through the manager lives inside that
+# directory and is left for the same reason. Say so, because a user who installed a plugin
 # reasonably expects uninstall to mention it.
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cxagent"
 if [ -d "$CONFIG_DIR" ]; then
