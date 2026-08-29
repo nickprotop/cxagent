@@ -369,7 +369,19 @@ public static class SystemPrompt
         {
             sb.AppendLine("A sub-agent's report is a claim, not a verification. If it says the build "
                         + "passes, the build is not verified until you have seen the output "
-                        + "yourself.");
+                        + "yourself — or until a `test` agent has, whose whole job is reading what "
+                        + "the command actually printed rather than what it hoped for.");
+            sb.AppendLine();
+
+            // THE SANCTIONED MOVE, not just the doubt. The line above tells a parent not to believe
+            // a builder; without this it has nothing to DO about that except run the command itself,
+            // which is the reading it delegated to avoid. Naming the type turns a warning into an
+            // action. A builder cannot fill this role for its own edits — a run reporting on itself
+            // is the claim, not the check.
+            sb.AppendLine("So a builder is followed by a `test` agent: the project's own suite, or a "
+                        + "plain build where there is no suite. If neither exists, say in your "
+                        + "answer that nothing verified the change rather than leaving silence to "
+                        + "read as success.");
             sb.AppendLine();
 
             // THE MECHANISM, STATED outright rather than trusting a model to infer that several
