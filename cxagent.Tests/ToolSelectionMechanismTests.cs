@@ -139,6 +139,67 @@ public class ToolSelectionMechanismTests
         }
     }
 
+    /// <summary>
+    /// A PLAN AT THE WRONG PATH IS REPORTED, NOT DENIED. Two planners in one measured session each
+    /// wrote a real 303-line plan to REFACTOR_PLAN.md at the repository root; the parent was told
+    /// "there is no plan", re-spawned the planner, and got the same choice again. The work existed
+    /// both times.
+    /// </summary>
+    [Fact]
+    public void APlanWrittenToTheWrongPathIsNamedRatherThanDeclaredMissing()
+    {
+        var dir = Directory.CreateTempSubdirectory("strayplan-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "REFACTOR_PLAN.md"), "# a real plan, wrong place");
+
+            var provider = new Recording();
+            var spawner = new SubAgentSpawner(
+                FactoryWith(null, provider, workingDir: dir), PlannerCatalog());
+
+            var answer = AnswerReturnedToParent(spawner, provider);
+
+            Assert.Contains("REFACTOR_PLAN.md", answer, StringComparison.Ordinal);
+            Assert.DoesNotContain("There is no plan", answer, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>Nothing written anywhere still reads as nothing written — the stray-plan lookup must
+    /// not invent a plan out of a repository's ordinary markdown.</summary>
+    [Fact]
+    public void NoPlanAnywhereIsStillReportedAsNoPlan()
+    {
+        var dir = Directory.CreateTempSubdirectory("noplan-").FullName;
+        try
+        {
+            var provider = new Recording();
+            var spawner = new SubAgentSpawner(
+                FactoryWith(null, provider, workingDir: dir), PlannerCatalog());
+
+            Assert.Contains("There is no plan", AnswerReturnedToParent(spawner, provider),
+                StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>Spawns a planner and returns the text handed back to the PARENT — which is where the
+    /// plan-file outcome is appended.</summary>
+    private static string AnswerReturnedToParent(SubAgentSpawner spawner, Recording provider)
+    {
+        var result = spawner.TryInvokeAsync(
+            new ToolCall
+            {
+                Id = "c",
+                Name = Tool.Agent,
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { description = "plan it", prompt = "plan it", type = "planner" }),
+            },
+            onChild: null, CancellationToken.None).GetAwaiter().GetResult();
+
+        return result ?? "";
+    }
+
     private static AgentTypeCatalog PlannerCatalog() =>
         new(new Dictionary<string, AgentTypeConfig>(), null);
 

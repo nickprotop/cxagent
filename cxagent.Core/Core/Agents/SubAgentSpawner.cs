@@ -350,6 +350,32 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     }
 
     /// <summary>
+    /// A markdown file written into the working directory root during this run that is not where a
+    /// plan was asked for — the planner's own choice of name.
+    ///
+    /// <para>THE ROOT ONLY, AND RECENT ONLY. A repository is full of markdown; what distinguishes a
+    /// stray plan is that it appeared while this child ran, at the top level, where the names
+    /// planners reach for live. Searching deeper would start proposing READMEs. Nothing is read
+    /// here — the parent is handed a path and decides for itself.</para>
+    /// </summary>
+    private string? StrayPlan()
+    {
+        var root = _factory.WorkingDir;
+        if (string.IsNullOrWhiteSpace(root)) return null;
+
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddMinutes(-15);
+            return new DirectoryInfo(root).GetFiles("*.md", SearchOption.TopDirectoryOnly)
+                .Where(f => f.LastWriteTimeUtc >= cutoff && f.Length > 0)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault()?.Name;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>
     /// Whether a child under this selection would be offered a write tool.
     ///
     /// <para>A SYNTHETIC APPLY against a two-element set: the child does not exist yet, and Apply
@@ -395,8 +421,15 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         if (!WritesAPlan(type) || !canWrite) return context;
         planPath = PlanPathFor(label);
 
+        // THE PATH REPEATED, AND THE ALTERNATIVE NAMED AND REFUSED. Told once, politely, two
+        // planners in one session both ignored it and wrote /tmp/<repo>/REFACTOR_PLAN.md instead —
+        // independently, which makes that filename a prior strong enough to beat an instruction the
+        // model did read. So the wrong answer is named: a rule that says what NOT to write is
+        // checkable against the path in hand, where "that exact path" only reads as emphasis.
         var line = $"Write your plan file to `{planPath}` — that exact path, relative to the working "
-                 + "directory. The parent reads that file; it does not read this answer for the plan.";
+                 + "directory. The parent reads that file; it does not read this answer for the plan."
+                 + $"\n\nNOT a name of your own choosing. Not REFACTOR_PLAN.md, not PLAN.md, not the "
+                 + $"repository root: `{planPath}` or the plan is lost, however good it is.";
         return string.IsNullOrWhiteSpace(context) ? line : context + "\n\n" + line;
     }
 
@@ -420,11 +453,21 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
             or ArgumentException or NotSupportedException) { written = false; }
 
-        return written
-            ? text + $"\n\n[cxagent] plan file: {planPath}"
-            : text + $"\n\n[cxagent] NO PLAN FILE was written at {planPath}. There is no plan. Do "
-                   + "not build from the text above, and do not write a plan yourself from it — send "
-                   + "the planner again, telling it the previous run wrote nothing.";
+        if (written) return text + $"\n\n[cxagent] plan file: {planPath}";
+
+        // A PLAN AT THE WRONG PATH IS STILL A PLAN. Measured: two planners in one session each wrote
+        // a real 303-line plan to REFACTOR_PLAN.md at the repository root, and the parent was told
+        // "there is no plan" — true of the path it asked for, false about the work. It re-spawned
+        // the planner, which made the same choice again. Naming what was found turns a wasted run
+        // into a usable one, and the parent still learns the path was ignored.
+        if (StrayPlan() is { } stray)
+            return text + $"\n\n[cxagent] NO PLAN FILE at {planPath}, but the planner wrote "
+                        + $"`{stray}` instead. Read that, and point a builder at that path — the "
+                        + "planner ignored the path it was given, so it is not where you asked.";
+
+        return text + $"\n\n[cxagent] NO PLAN FILE was written at {planPath}. There is no plan. Do "
+                    + "not build from the text above, and do not write a plan yourself from it — send "
+                    + "the planner again, telling it the previous run wrote nothing.";
     }
 
     private static string? Read(ToolCall call, string name) =>
