@@ -794,6 +794,36 @@ public class SystemPromptTests
     }
 
     /// <summary>
+    /// THE TASK LIST IS NAMED, because nothing else names it at the moment it would help. The list
+    /// renders nothing while empty, so an agent that has never written one has no task-list message
+    /// in its context and only a schema entry to go on — and a schema entry is not read the way an
+    /// instruction is. Measured on one task: one run opened a list and worked through it, another
+    /// never called the tool, lost track of which agents it had dispatched, and re-ran a finished
+    /// pipeline from the start.
+    /// </summary>
+    [Fact]
+    public void Build_WhenItCanPlan_NamesTheTaskListTool()
+    {
+        var p = SystemPrompt.Build(Context() with { CanPlan = true });
+
+        Assert.Contains("todowrite", p, StringComparison.Ordinal);
+        Assert.Contains("delegated", p, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// And says nothing when the tool was withheld. A selection can drop todowrite, and telling an
+    /// agent to keep a list it cannot write is the same defect as offering a read-only agent
+    /// write_file — which is why the block above it deliberately names no tool at all.
+    /// </summary>
+    [Fact]
+    public void Build_WhenItCannotPlan_DoesNotMentionTheTaskListTool()
+    {
+        var p = SystemPrompt.Build(Context() with { CanPlan = false });
+
+        Assert.DoesNotContain("todowrite", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// THE PROMPT HAS TO SAY THE TOOL EXISTS. On the first drive of question the model hit a
     /// genuinely ambiguous request, wrote "Which one should I change?" as its FINAL MESSAGE, and
     /// ended the turn — which reads as an answer, is not one, and costs the user a turn to repair.

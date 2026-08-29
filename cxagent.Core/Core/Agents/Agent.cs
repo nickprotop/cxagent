@@ -1098,6 +1098,7 @@ public sealed class Agent
                     // Gated the same way, and false for a child by construction — _askUser is null
                     // for a sub-agent whatever the caller passed.
                     CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),
+                    CanPlan = SelectionAllows(Jobs.Tool.TodoWrite, turnTools),
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))

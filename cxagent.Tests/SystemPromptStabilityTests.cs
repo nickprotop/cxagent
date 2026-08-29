@@ -51,7 +51,33 @@ public class SystemPromptStabilityTests
         ],
         CanSpawn = true,
         CanAskUser = true,
+        CanPlan = true,
     };
+
+    /// <summary>
+    /// THE TASK-LIST PARAGRAPH DOES NOT MOVE UNDER A RUNNING CONVERSATION. It is gated on CanPlan,
+    /// which is recomputed every turn from the turn's tool selection — so a flag that flickered
+    /// would rewrite the system message mid-conversation and reprocess the whole context cold. On a
+    /// measured drive a 134-character change at turn 82 cost 67,367 tokens; this paragraph is
+    /// longer than that.
+    ///
+    /// <para>Stable for one reason: the selection is a fact about the session, not about the turn.
+    /// The assertion is on BYTES rather than on the flag, because what the cache sees is bytes.</para>
+    /// </summary>
+    [Fact]
+    public void TheTaskListParagraphIsStableAcrossTurns()
+    {
+        var withPlan = SystemPrompt.Build(Populated() with { CanPlan = true });
+        var again = SystemPrompt.Build(Populated() with { CanPlan = true });
+
+        Assert.Equal(withPlan, again);
+
+        // AND WITHDRAWING IT IS A REAL REWRITE, which is the cost being guarded: if a selection ever
+        // drops todowrite mid-session, this difference is what the provider reprocesses. Asserted so
+        // that whoever makes CanPlan turn-dependent sees the price in a failing test.
+        var without = SystemPrompt.Build(Populated() with { CanPlan = false });
+        Assert.NotEqual(withPlan, without);
+    }
 
     /// <summary>
     /// The same facts twice must give the same bytes. A hash-ordered set or a clock read anywhere in

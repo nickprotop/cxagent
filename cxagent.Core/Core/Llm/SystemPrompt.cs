@@ -96,6 +96,18 @@ public readonly record struct SystemPromptContext(
     /// noise, and noise in a system prompt is what teaches a model to skim it.</para>
     /// </summary>
     public bool CanAskUser { get; init; }
+
+    /// <summary>
+    /// True when this agent has the task-list tool.
+    ///
+    /// <para>Gated like the two above, and for a second reason as well: the list RENDERS NOTHING
+    /// while it is empty, so an agent that has never written one has no task-list message in its
+    /// context and nothing anywhere reminds it the tool exists. The schema entry is the only signal,
+    /// and a schema entry is not read the way an instruction is — measured, one drive opened a list
+    /// and worked through it while another on the same task never called the tool at all, lost track
+    /// of what it had already dispatched, and re-ran a finished pipeline from the start.</para>
+    /// </summary>
+    public bool CanPlan { get; init; }
 }
 
 /// <summary>
@@ -157,6 +169,22 @@ public static class SystemPrompt
         sb.AppendLine("Search before you assume. Read the files around the one you are changing — "
                     + "their imports say which libraries this project actually uses.");
         sb.AppendLine();
+        // NAMED HERE BECAUSE NOTHING ELSE NAMES IT. The task list renders nothing while it is empty,
+        // so an agent that has not written one never sees a task-list message and has only the tool
+        // schema to go on. That is enough for some drives and not others: measured on one task, one
+        // run opened a list and worked through it, and another never called the tool, lost track of
+        // which agents it had already dispatched, and re-ran a finished pipeline from the beginning.
+        // GATED, unlike the paragraphs around it, because todowrite can be withheld by a selection —
+        // the same reason the block above names no tool at all.
+        if (ctx.CanPlan)
+        {
+            sb.AppendLine("For work with several steps — especially work you are handing to other "
+                        + "agents — write the steps down with todowrite and keep them current. A "
+                        + "step you delegated is one you will not remember by the time its answer "
+                        + "arrives, and the list is what tells you which of them are already done.");
+            sb.AppendLine();
+        }
+
         sb.AppendLine("Independent tool calls can go in one turn. Reading three files is one round "
                     + "trip, not three.");
         sb.AppendLine();
