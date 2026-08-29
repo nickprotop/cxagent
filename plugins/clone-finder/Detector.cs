@@ -133,10 +133,68 @@ public static class Detector
 
         // Buckets iterate in hash order, which is no order at all; sort so the same corpus
         // always yields the same report.
-        return clones
+        return Deduplicate(clones)
             .OrderBy(c => c.Places[0].Path, StringComparer.Ordinal)
             .ThenBy(c => c.Places[0].StartLine)
             .ToList();
+    }
+
+    /// <summary>Reports one finding once, not once per extent. When copies of a block differ
+    /// slightly in length, each length forms its own group with its own place subset — the
+    /// shorter extent matched everywhere, longer extents matched only where the longer copies
+    /// live — and every subset extends to a maximal block of its own. Without this pass the same
+    /// duplicated region surfaces as several rows whose place counts differ by two or three, and
+    /// on a large corpus those restatements outnumber the findings.</summary>
+    private static List<Clone> Deduplicate(List<Clone> clones)
+    {
+        // Coverage (lines x places) picks the survivor of each family: of all the extents
+        // describing one region, the one that accounts for the most duplicated source wins.
+        var ordered = clones
+            .OrderByDescending(c => c.Lines * c.Places.Count)
+            .ThenBy(c => c.Places[0].Path, StringComparer.Ordinal)
+            .ThenBy(c => c.Places[0].StartLine)
+            .ToList();
+
+        var kept = new List<Clone>();
+        foreach (var candidate in ordered)
+        {
+            if (!kept.Any(keeper => Subsumes(keeper, candidate)))
+                kept.Add(candidate);
+        }
+        return kept;
+    }
+
+    /// <summary>A candidate is a restatement when MORE THAN HALF of its places are mostly (over
+    /// half their span) covered by the keeper's places. The majority test is what separates the
+    /// two real shapes: a length variant of the keeper has nearly all its places covered and
+    /// dies; a short block with its own population — appearing in many places the long block
+    /// containing it does not — has mostly uncovered places and survives as its own finding.
+    /// The known limit: a candidate contributing only a small minority of novel places loses
+    /// them along with the restated majority, because there is no way to keep the novel places
+    /// without either reporting the restatement too or attaching them to a keeper whose extent
+    /// they do not have.</summary>
+    private static bool Subsumes(Clone keeper, Clone candidate)
+    {
+        // Covered means over half the candidate place's lines lie inside one keeper place —
+        // exact containment is too strict, because a variant's places run a couple of lines
+        // past the keeper's at one end or the other.
+        static bool Covered(Occurrence p, Clone keeper) => keeper.Places.Any(q =>
+            q.Path == p.Path &&
+            (Math.Min(p.EndLine, q.EndLine) - Math.Max(p.StartLine, q.StartLine) + 1) * 2
+                > p.EndLine - p.StartLine + 1);
+
+        int covered = 0;
+        int remaining = candidate.Places.Count;
+        foreach (var place in candidate.Places)
+        {
+            if (Covered(place, keeper)) covered++;
+            remaining--;
+            // The verdict is often decided long before the last place; both bounds matter on a
+            // corpus where this runs millions of times.
+            if (covered * 2 > candidate.Places.Count) return true;
+            if ((covered + remaining) * 2 <= candidate.Places.Count) return false;
+        }
+        return covered * 2 > candidate.Places.Count;
     }
 
     /// <summary>Polynomial hash over the window's token texts. Only a grouping key, never proof

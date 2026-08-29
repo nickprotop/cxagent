@@ -125,4 +125,50 @@ public class DetectorTests
         Assert.Equal(6, clone.Lines);
         Assert.All(clone.Places, p => Assert.Equal(clone.Lines, p.EndLine - p.StartLine + 1));
     }
+
+    /// <summary>When some copies carry a couple of extra shared lines, the region is still ONE
+    /// finding — not one row for the short extent everywhere plus another for the long extent
+    /// where the long copies live. The place counts differing between such rows is the tell that
+    /// they restate each other.</summary>
+    [Fact]
+    public void ALongerVariantInSomeCopiesDoesNotSplitTheFinding()
+    {
+        var longer = Block + "\nGrandTotal = Total + 1;\nPublish(GrandTotal);";
+
+        var clones = Detector.Find(
+            [Source("a.cs", longer), Source("b.cs", longer),
+             Source("c.cs", Block), Source("d.cs", Block), Source("e.cs", Block)],
+            new CloneQuery(MinLines: 5, MinTokens: 50));
+
+        var clone = Assert.Single(clones);
+        Assert.Equal(5, clone.Places.Count);
+    }
+
+    /// <summary>A short block with its OWN population is a separate finding from a long block
+    /// that happens to contain it: the extra places are information the long clone does not
+    /// carry, so deduplication must keep both.</summary>
+    [Fact]
+    public void AShorterBlockWithManyMorePlacesIsItsOwnFinding()
+    {
+        var tail = string.Join("\n",
+            "if (Total > limit) { Flush(buffer); }",
+            "var report = Render(Total, width);",
+            "Store(report, destination);",
+            "if (report.Length == 0) { throw Fail(); }",
+            "Publish(report, channel);",
+            "buffer.Clear();",
+            "Log(report);",
+            "return report;");
+        var longBlock = Block + "\n" + tail;
+
+        var clones = Detector.Find(
+            [Source("a.cs", longBlock), Source("b.cs", longBlock),
+             Source("c.cs", Block), Source("d.cs", Block), Source("e.cs", Block),
+             Source("f.cs", Block), Source("g.cs", Block), Source("h.cs", Block)],
+            new CloneQuery(MinLines: 5, MinTokens: 50));
+
+        Assert.Equal(2, clones.Count);
+        Assert.Contains(clones, c => c.Places.Count == 8 && c.Lines == 6);
+        Assert.Contains(clones, c => c.Places.Count == 2 && c.Lines == 14);
+    }
 }
