@@ -58,6 +58,8 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/calculator/calculator.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/clone-finder/clone-finder.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- THE PLUGIN'S OWN OUTPUT, COPIED BESIDE THE TESTS. ReferenceOutputAssembly="false" above stops
@@ -77,6 +79,14 @@
        calculator.dll's own folder — so the test copy has to carry both, not just the plugin. -->
   <Target Name="CopyCalculatorPlugin" AfterTargets="Build">
     <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/calculator.dll;$(MSBuildProjectDirectory)/../plugins/calculator/bin/$(Configuration)/net10.0/Jace.dll"
+          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+
+  <!-- SAME REASON AS CopyCsharpLspPlugin: the reference above orders the build but hands over no
+       types, so the DLL CloneFinderPluginTests loads must be copied by name. Only the plugin
+       itself — clone-finder has no package dependency, so unlike calculator nothing rides along. -->
+  <Target Name="CopyCloneFinderPlugin" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../plugins/clone-finder/bin/$(Configuration)/net10.0/clone-finder.dll"
           DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 

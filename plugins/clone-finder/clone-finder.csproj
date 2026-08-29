@@ -29,4 +29,9 @@
     <ProjectReference Include="../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="clone-finder.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
