@@ -193,6 +193,46 @@ jobs:
           (cd calc-build && zip -q ../plugin-out/calculator.zip \
              calculator.dll Jace.dll calculator.plugin.json README.md)
 
+      # THE SAME BUILD-OR-CARRY SCHEME, and the third plugin to use it. At the fourth this becomes
+      # a matrix; three near-identical blocks is still cheaper to read than a loop whose comments
+      # would have to describe every plugin at once.
+      - name: Build or carry forward the clone-finder plugin
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          SIDECAR=plugins/clone-finder/clone-finder.plugin.json
+          VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
+
+          mkdir -p plugin-out
+
+          PLUGIN_INPUTS="plugins/clone-finder/ cxagent.Plugins.Abstractions/"
+
+          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- $PLUGIN_INPUTS; then
+            echo "plugin unchanged since $PREV_TAG — carrying its zip forward."
+
+            if curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/clone-finder.zip" \
+                 -o plugin-out/clone-finder.zip; then
+              echo "carried forward from $PREV_TAG"
+              exit 0
+            fi
+
+            echo "no zip on $PREV_TAG — building instead."
+          fi
+
+          echo "building clone-finder $VERSION"
+
+          dotnet build plugins/clone-finder/clone-finder.csproj -c Release -o ./clone-build \
+            -p:Version="$VERSION"
+
+          # THREE FILES, NOT FOUR. This plugin takes no NuGet dependency, so unlike the calculator
+          # there is no third-party assembly to ship beside it — and the assertions below are what
+          # catch a sidecar or README that stopped being copied, which no test would notice.
+          test -f ./clone-build/clone-finder.dll
+          test -f ./clone-build/clone-finder.plugin.json
+          test -f ./clone-build/README.md
+
+          (cd clone-build && zip -q ../plugin-out/clone-finder.zip \
+             clone-finder.dll clone-finder.plugin.json README.md)
+
       - name: Generate checksums
         run: |
           # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
@@ -209,6 +249,7 @@ jobs:
           # THE PLUGIN ZIPS, built or carried forward by the steps above.
           cp plugin-out/csharp-lsp.zip release/
           cp plugin-out/calculator.zip release/
+          cp plugin-out/clone-finder.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.

@@ -55,7 +55,8 @@ jobs:
           # THE ASSETS A USER WOULD ACTUALLY GET. Hashing anything else -- a local build, a previous
           # release -- would publish a value that does not match what the download URL serves.
           gh release download --repo "${GITHUB_REPOSITORY}" \
-              --pattern csharp-lsp.zip --pattern calculator.zip --dir _artifact
+              --pattern csharp-lsp.zip --pattern calculator.zip \
+              --pattern clone-finder.zip --dir _artifact
 
       - name: Generate the catalog
         env:
@@ -74,6 +75,7 @@ jobs:
               --catalog plugins/plugins.json \
               --plugin csharp-lsp=_artifact/csharp-lsp.zip \
               --plugin calculator=_artifact/calculator.zip \
+              --plugin clone-finder=_artifact/clone-finder.zip \
               --version "$VERSION" \
               --out _site/catalog.json
 

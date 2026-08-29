@@ -148,6 +148,39 @@
           "gated": false
         }
       ]
+    },
+    {
+      "name": "clone-finder",
+      "displayName": "Clone Finder",
+      "version": "1.0.0",
+      "description": "Duplicated code found without reading the repository. One tool returns the duplicated blocks ranked by size, each as locations plus a couple of lines to recognise it by \u2014 so finding duplication costs a call rather than the context the refactor then needs.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/clone-finder",
+      "readme": "clone-finder/README.md",
+      "directory": "clone-finder",
+      "source": {
+        "kind": "release",
+        "checksums": "SHA256SUMS",
+        "sha256": null,
+        "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/clone-finder.zip"
+      },
+      "file": "clone-finder.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 2,
+        "platforms": [
+          "any"
+        ]
+      },
+      "spawns": false,
+      "tools": [
+        {
+          "name": "find_clones",
+          "gated": false
+        }
+      ]
     }
   ]
 }

@@ -71,7 +71,7 @@ NEW_TAG="v$NEW_VERSION"
 # the name alone derives every path below. The change decisions feed ONE commit and ONE prompt:
 # a copy of this block per plugin would leave those deciding between changed/unchanged combinations
 # by hand, which is where a plugin silently ships with an unbumped version.
-PLUGINS="csharp-lsp calculator"
+PLUGINS="csharp-lsp calculator clone-finder"
 
 declare -A PLUGIN_VERSION
 CHANGED_PLUGINS=""
