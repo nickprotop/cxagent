@@ -11,6 +11,14 @@ public record CloneSource(string Path, IReadOnlyList<Token> Tokens, string Text 
 /// <summary>Where one copy of a clone lives, in 1-based source lines.</summary>
 public record Occurrence(string Path, int StartLine, int EndLine);
 
+/// <summary>The floors a block must clear to be reported — BOTH apply, which is what working
+/// clone detectors converge on (jscpd gates on min-lines and min-tokens together; PMD-CPD's whole
+/// threshold is tokens). Each floor catches what the other admits: a line floor alone reports any
+/// short statements that fold to one token shape and land on enough lines — assertion-heavy test
+/// code is made of little else — and a token floor alone reports a dense one-liner pasted twice.
+/// The defaults follow jscpd's.</summary>
+public record CloneQuery(int MinLines = 6, int MinTokens = 50);
+
 /// <summary>A repeated block: the lines it spans, every place it occurs, and a few lines of the
 /// original source to recognise it by. Three copies are one Clone with three Places, never three
 /// pairwise findings — the report exists to save context, not to spend it restating one fact.</summary>
@@ -25,13 +33,13 @@ public static class Detector
     /// duration of one Find call.</summary>
     private readonly record struct Pos(int Source, int Start);
 
-    public static IReadOnlyList<Clone> Find(IReadOnlyList<CloneSource> sources, int minLines)
+    public static IReadOnlyList<Clone> Find(IReadOnlyList<CloneSource> sources, CloneQuery query)
     {
-        // The window is measured in TOKENS but sized from the LINE threshold: a block worth
-        // reporting carries at least one token per line it spans, so minLines tokens never
-        // overshoot the smallest reportable clone. (A block stretched to minLines lines by blank
-        // lines alone can slip under this; that block is below the interesting size anyway.)
-        int window = Math.Max(1, minLines);
+        // The seed window IS the token floor: a repeat shorter than MinTokens never forms a
+        // window, so every candidate downstream clears the floor by construction. Sizing the
+        // window from the line floor instead would seed a group for every pair of statements
+        // that normalise to the same few-token shape, and the report would drown in them.
+        int window = Math.Max(1, query.MinTokens);
 
         // Pass 1 — hash every window and bucket the positions by hash.
         var buckets = new Dictionary<int, List<Pos>>();
@@ -79,6 +87,25 @@ public static class Detector
                 string key = string.Join(";", resolved.Select(p => $"{p.Source}:{p.Start}:{extent.Length}"));
                 if (!reported.Add(key)) continue;
 
+                // Places that overlap each other inside one file mean the text matches itself at
+                // a shift smaller than its own length — it is a stack of some smaller repeating
+                // unit, the shape a run of near-identical short statements takes. The honest
+                // finding is that unit, and the unit must clear the floors on its own; reporting
+                // the stack would flag every such run in every file as duplication. Every place
+                // shares one length, so only the nearest same-file neighbour can overlap, and the
+                // sort above puts it adjacent.
+                bool periodic = false;
+                for (int i = 1; i < resolved.Count; i++)
+                {
+                    if (resolved[i].Source == resolved[i - 1].Source &&
+                        resolved[i].Start < resolved[i - 1].Start + extent.Length)
+                    {
+                        periodic = true;
+                        break;
+                    }
+                }
+                if (periodic) continue;
+
                 var occurrences = resolved
                     .Select(p =>
                     {
@@ -90,11 +117,14 @@ public static class Detector
                     })
                     .ToList();
 
-                // Line count is presentation-dependent — a reformatted copy spans fewer lines
-                // than its twin — so both the threshold and the reported size use the largest
-                // copy: squeezing one occurrence onto fewer lines must not hide the block.
-                int lines = occurrences.Max(o => o.EndLine - o.StartLine + 1);
-                if (lines < minLines) continue;
+                // Line span is presentation, not substance: the same tokens spread over extra
+                // lines by formatting or interleaved blank lines are not a bigger finding. The
+                // reported size and the floor both use the SMALLEST copy, so a single sparse
+                // place can neither drag a group of fragments past the floor nor advertise a
+                // span most of the places do not cover — every reported place genuinely spans
+                // at least MinLines lines.
+                int lines = occurrences.Min(o => o.EndLine - o.StartLine + 1);
+                if (lines < query.MinLines) continue;
 
                 clones.Add(new Clone(lines, occurrences,
                     Fingerprint(sources[resolved[0].Source], occurrences[0])));

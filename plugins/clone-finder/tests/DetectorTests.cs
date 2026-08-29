@@ -22,7 +22,7 @@ public class DetectorTests
     public void AnIdenticalBlockInTwoFilesIsOneClone()
     {
         var clones = Detector.Find(
-            [Source("a.cs", Block), Source("b.cs", Block)], minLines: 5);
+            [Source("a.cs", Block), Source("b.cs", Block)], new CloneQuery(MinLines: 5, MinTokens: 50));
 
         var clone = Assert.Single(clones);
         Assert.Equal(2, clone.Places.Count);
@@ -37,7 +37,7 @@ public class DetectorTests
         var renamed = Block.Replace("raw", "output").Replace("lines", "rows");
 
         var clones = Detector.Find(
-            [Source("a.cs", Block), Source("b.cs", renamed)], minLines: 5);
+            [Source("a.cs", Block), Source("b.cs", renamed)], new CloneQuery(MinLines: 5, MinTokens: 50));
 
         Assert.Single(clones);
     }
@@ -49,7 +49,7 @@ public class DetectorTests
         var altered = Block.Replace("!= 0", "!= 1");
 
         var clones = Detector.Find(
-            [Source("a.cs", Block), Source("b.cs", altered)], minLines: 6);
+            [Source("a.cs", Block), Source("b.cs", altered)], new CloneQuery(MinLines: 6, MinTokens: 50));
 
         Assert.Empty(clones);
     }
@@ -58,7 +58,7 @@ public class DetectorTests
     public void BlocksShorterThanTheMinimumAreNotReported()
     {
         var clones = Detector.Find(
-            [Source("a.cs", "x = 1;"), Source("b.cs", "y = 1;")], minLines: 6);
+            [Source("a.cs", "x = 1;"), Source("b.cs", "y = 1;")], new CloneQuery(MinLines: 6, MinTokens: 50));
 
         Assert.Empty(clones);
     }
@@ -69,7 +69,7 @@ public class DetectorTests
     public void ThreeCopiesAreOneCloneWithThreePlaces()
     {
         var clones = Detector.Find(
-            [Source("a.cs", Block), Source("b.cs", Block), Source("c.cs", Block)], minLines: 5);
+            [Source("a.cs", Block), Source("b.cs", Block), Source("c.cs", Block)], new CloneQuery(MinLines: 5, MinTokens: 50));
 
         var clone = Assert.Single(clones);
         Assert.Equal(3, clone.Places.Count);
@@ -81,7 +81,7 @@ public class DetectorTests
     public void OverlappingMatchesMergeIntoOneBlock()
     {
         var clones = Detector.Find(
-            [Source("a.cs", Block), Source("b.cs", Block)], minLines: 5);
+            [Source("a.cs", Block), Source("b.cs", Block)], new CloneQuery(MinLines: 5, MinTokens: 50));
 
         var clone = Assert.Single(clones);
         Assert.All(clone.Places, p => Assert.True(p.EndLine > p.StartLine));
@@ -91,9 +91,38 @@ public class DetectorTests
     [Fact]
     public void DuplicationWithinASingleFileIsFound()
     {
-        var clones = Detector.Find([Source("a.cs", Block + "\n" + Block)], minLines: 5);
+        var clones = Detector.Find([Source("a.cs", Block + "\n" + Block)], new CloneQuery(MinLines: 5, MinTokens: 50));
 
         var clone = Assert.Single(clones);
         Assert.Equal(2, clone.Places.Count);
+    }
+
+    [Fact]
+    public void RepetitiveShortStatementsAreNotClones()
+    {
+        // The shape every real test file has: many short calls that normalise identically once
+        // identifiers fold. Reporting these is what made a 62-file repo return 722 "clones".
+        var repetitive = string.Join("\n", Enumerable.Range(0, 40)
+            .Select(i => $"Assert.Equal(expected{i}, actual{i});"));
+
+        var clones = Detector.Find(
+            [Source("a.cs", repetitive), Source("b.cs", repetitive)],
+            new CloneQuery(MinLines: 6, MinTokens: 50));
+
+        Assert.Empty(clones);
+    }
+
+    /// <summary>Lines is the span the places actually cover — not a token count, not the span of
+    /// one outlier place.</summary>
+    [Fact]
+    public void LinesReportsTheSpanThePlacesActuallyCover()
+    {
+        var clones = Detector.Find(
+            [Source("a.cs", Block), Source("b.cs", Block)], new CloneQuery(MinLines: 5, MinTokens: 50));
+
+        // Block is six source lines, and every place covers all of them.
+        var clone = Assert.Single(clones);
+        Assert.Equal(6, clone.Lines);
+        Assert.All(clone.Places, p => Assert.Equal(clone.Lines, p.EndLine - p.StartLine + 1));
     }
 }
