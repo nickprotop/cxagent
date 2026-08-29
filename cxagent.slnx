@@ -9,6 +9,8 @@
   <Project Path="cxagent.Tests/fixtures/cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
   <Project Path="plugins/calculator/calculator.csproj" />
   <Project Path="plugins/calculator/tests/calculator.Tests.csproj" />
+  <Project Path="plugins/clone-finder/clone-finder.csproj" />
+  <Project Path="plugins/clone-finder/tests/clone-finder.Tests.csproj" />
   <Project Path="plugins/csharp-lsp/csharp-lsp.csproj" />
   <Project Path="cxagent.PluginHost/cxagent.PluginHost.csproj" />
   <Project Path="cxagent/cxagent.csproj" />
