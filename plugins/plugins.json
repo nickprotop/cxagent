@@ -152,7 +152,7 @@
     {
       "name": "clone-finder",
       "displayName": "Clone Finder",
-      "version": "1.0.0",
+      "version": "0.9.8",
       "description": "Duplicated code found without reading the repository. One tool returns the duplicated blocks ranked by size, each as locations plus a couple of lines to recognise it by \u2014 so finding duplication costs a call rather than the context the refactor then needs.",
       "publisher": "nickprotop",
       "license": "MIT",
