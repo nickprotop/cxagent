@@ -171,4 +171,58 @@ public class DetectorTests
         Assert.Contains(clones, c => c.Places.Count == 8 && c.Lines == 6);
         Assert.Contains(clones, c => c.Places.Count == 2 && c.Lines == 14);
     }
+
+    /// <summary>One stretch of text duplicated at several locations gets sliced into pairwise
+    /// clones with shifted, overlapping places — here the block in both files and the bare
+    /// sub-block matched against a second copy in one of them. Overlapping blocks in the SAME
+    /// files are one finding, not two rows three lines apart.</summary>
+    [Fact]
+    public void AShiftedSubBlockInTheSameFilesIsTheSameFinding()
+    {
+        var header = """
+            int width = Measure(kind);
+            if (width < 0)
+            {
+            }
+            """;
+        var separator = "var gap = width - 2";
+
+        var clones = Detector.Find(
+            [Source("a.cs", header + "\n" + Block),
+             Source("b.cs", header + "\n" + Block + "\n" + separator + "\n" + Block)],
+            new CloneQuery(MinLines: 5, MinTokens: 50));
+
+        var clone = Assert.Single(clones);
+        Assert.Equal(2, clone.Places.Count);
+        Assert.Equal(10, clone.Lines);
+    }
+
+    /// <summary>The overlap-merge must not swallow a sub-block whose own population dwarfs the
+    /// containing block's: eight standalone copies are a fact the two long copies cannot
+    /// tell.</summary>
+    [Fact]
+    public void ASubBlockInEightMoreFilesSurvivesTheContainingBlock()
+    {
+        var tail = string.Join("\n",
+            "if (Total > limit) { Flush(buffer); }",
+            "var report = Render(Total, width);",
+            "Store(report, destination);",
+            "if (report.Length == 0) { throw Fail(); }",
+            "Publish(report, channel);",
+            "buffer.Clear();",
+            "Log(report);",
+            "return report;");
+        var longBlock = Block + "\n" + tail;
+
+        var clones = Detector.Find(
+            [Source("a.cs", longBlock), Source("b.cs", longBlock),
+             Source("c.cs", Block), Source("d.cs", Block), Source("e.cs", Block),
+             Source("f.cs", Block), Source("g.cs", Block), Source("h.cs", Block),
+             Source("i.cs", Block), Source("j.cs", Block)],
+            new CloneQuery(MinLines: 5, MinTokens: 50));
+
+        Assert.Equal(2, clones.Count);
+        Assert.Contains(clones, c => c.Places.Count == 10 && c.Lines == 6);
+        Assert.Contains(clones, c => c.Places.Count == 2 && c.Lines == 14);
+    }
 }

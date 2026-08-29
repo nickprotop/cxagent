@@ -164,17 +164,23 @@ public static class Detector
         return kept;
     }
 
-    /// <summary>A candidate is a restatement when MORE THAN HALF of its places are mostly (over
-    /// half their span) covered by the keeper's places. The majority test is what separates the
-    /// two real shapes: a length variant of the keeper has nearly all its places covered and
-    /// dies; a short block with its own population — appearing in many places the long block
-    /// containing it does not — has mostly uncovered places and survives as its own finding.
-    /// The known limit: a candidate contributing only a small minority of novel places loses
-    /// them along with the restated majority, because there is no way to keep the novel places
-    /// without either reporting the restatement too or attaching them to a keeper whose extent
-    /// they do not have.</summary>
+    /// <summary>A candidate is a restatement when AT LEAST HALF of its places are mostly (over
+    /// half their span) covered by the keeper's places — unless the candidate has at least twice
+    /// the keeper's places, in which case it is its own finding however much it overlaps: a
+    /// short block appearing in far more places than the long block containing it says something
+    /// the long clone does not, and no overlap makes that redundant.
+    ///
+    /// Half, not a majority: the same stretch of text duplicated at several locations gets
+    /// sliced into pairwise clones whose place sets overlap at only one location each — a
+    /// two-place candidate sharing one place with a stronger clone is that clone's region told
+    /// again from a different pairing, not new duplication. The known limit is the same trade at
+    /// this threshold: the candidate's novel places (the other half) go down with the restated
+    /// ones, because keeping them would mean either reporting the restatement too or attaching
+    /// them to a keeper whose extent they do not actually match.</summary>
     private static bool Subsumes(Clone keeper, Clone candidate)
     {
+        if (candidate.Places.Count >= 2 * keeper.Places.Count) return false;
+
         // Covered means over half the candidate place's lines lie inside one keeper place —
         // exact containment is too strict, because a variant's places run a couple of lines
         // past the keeper's at one end or the other.
@@ -191,10 +197,10 @@ public static class Detector
             remaining--;
             // The verdict is often decided long before the last place; both bounds matter on a
             // corpus where this runs millions of times.
-            if (covered * 2 > candidate.Places.Count) return true;
-            if ((covered + remaining) * 2 <= candidate.Places.Count) return false;
+            if (covered * 2 >= candidate.Places.Count) return true;
+            if ((covered + remaining) * 2 < candidate.Places.Count) return false;
         }
-        return covered * 2 > candidate.Places.Count;
+        return covered * 2 >= candidate.Places.Count;
     }
 
     /// <summary>Polynomial hash over the window's token texts. Only a grouping key, never proof
