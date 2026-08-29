@@ -233,6 +233,26 @@ system prompt saying what its individual tool descriptions cannot — here, that
 and which file types it serves. A plugin that declares *no* tools and only that block is a valid
 plugin too.
 
+![Three plugins installed, with clone-finder's README rendered](21-clone-finder.png)
+
+A second plugin, and a different reason to have one. `clone-finder` answers "where is the duplicated
+code" in a single call, because the alternative is reading forty files to notice that three of them
+share a block — and that reading is the context the refactor then needs.
+
+The Details pane renders the plugin's own README from disk, so what a tool returns can be read
+before deciding to install it. Here that includes a sample report: locations and a two-line
+fingerprint per finding, never the duplicated block itself. Printing the block would spend the
+context the tool exists to save.
+
+![The model acting on what clone-finder found](22-clone-finder-working.png)
+
+The same session using it. One call returned the duplication in a 62-file repository; the model
+names the two worst findings — `10L ×5` and `22L ×2`, with their files — and reads only the line
+ranges the report pointed at rather than hunting for them.
+
+Note the panel: **workers 26,751 · this agent 47,280**. Delegated work is accounted separately from
+the parent's own, which is the number that says whether the delegation paid.
+
 ---
 
 ## A second project, and a worker's receipts
