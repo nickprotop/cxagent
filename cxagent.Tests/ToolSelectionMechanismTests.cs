@@ -102,12 +102,51 @@ public class ToolSelectionMechanismTests
         Assert.Contains("plans/", PromptGivenToChild(spawner, provider));
     }
 
+    /// <summary>
+    /// TWO PLANNERS WITH ONE LABEL GET TWO PATHS. Slugging the label separates planners the parent
+    /// labelled differently; it does nothing for the case a parent actually produces when it splits
+    /// one job in two and describes both the same way. Both were then told to write one file, both
+    /// did, and the survivor was whichever finished last — a whole planner run lost with no error
+    /// anywhere, which is the failure the slug was introduced to prevent.
+    /// </summary>
+    [Fact]
+    public void ASecondPlannerWithTheSameLabelGetsItsOwnPath()
+    {
+        var dir = Directory.CreateTempSubdirectory("planpath-").FullName;
+        try
+        {
+            var provider = new Recording();
+            var spawner = new SubAgentSpawner(
+                FactoryWith(null, provider, workingDir: dir), PlannerCatalog());
+
+            var first = PromptGivenToChild(spawner, provider);
+            Assert.Contains("plans/plan-it.md", first, StringComparison.Ordinal);
+
+            // THE FIRST PLANNER'S FILE NOW EXISTS, which is what a running planner leaves behind
+            // before the second is spawned.
+            Directory.CreateDirectory(Path.Combine(dir, "plans"));
+            File.WriteAllText(Path.Combine(dir, "plans", "plan-it.md"), "the first plan");
+
+            var second = PromptGivenToChild(spawner, provider);
+
+            Assert.Contains("plans/plan-it-2.md", second, StringComparison.Ordinal);
+            Assert.Equal("the first plan",
+                File.ReadAllText(Path.Combine(dir, "plans", "plan-it.md")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     private static AgentTypeCatalog PlannerCatalog() =>
         new(new Dictionary<string, AgentTypeConfig>(), null);
 
-    private static SubAgentFactory FactoryWith(ToolSelection? selection, Recording provider) =>
+    private static SubAgentFactory FactoryWith(
+        ToolSelection? selection, Recording provider, string? workingDir = null) =>
         new(new SubAgentFactory.SubAgentRuntime
         {
+            WorkingDir = workingDir,
             Provider = provider,
             Executors = JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),

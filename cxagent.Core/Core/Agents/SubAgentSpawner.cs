@@ -87,12 +87,6 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         batching them sends it to build from nothing. Send the planner, wait for the file it names,
         then send the builder to that path.
 
-        AND PREFER THAT PAIR OVER DECIDING THE EDITS YOURSELF. Working the change out here and
-        handing finished code to a builder is the cheaper path and usually the worse one: a planner
-        reads the code as it is now rather than as you remember it, orders the steps so the build
-        survives each one, and names what is most likely to be wrong — from a context spent on
-        nothing else. Read enough to brief it well, put that in context, and let it do the design.
-
         Give them non-overlapping work. Two agents told to edit the same file will both edit it, and
         neither will know the other did.
 
@@ -314,8 +308,15 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// <para>NOT A FIXED NAME: two planners in one session would overwrite each other, and the
     /// second one's parent would read the first one's plan without either noticing. The label is
     /// slugged rather than hashed so the file is still recognisable in ./plans/ afterwards.</para>
+    ///
+    /// <para>AND A TAKEN NAME GETS A SUFFIX, because slugging the label only separates planners the
+    /// parent chose to label differently. Two planners spawned with one label — which is what a
+    /// parent writes when it splits one job in two — slug identically, and then the pair the
+    /// paragraph above exists to keep apart overwrite each other after all: both are told to write
+    /// the same file, both do, and the survivor is whichever finished last. The loser's run is
+    /// spent and its plan is gone with no error anywhere.</para>
     /// </summary>
-    private static string PlanPathFor(string? label)
+    private string PlanPathFor(string? label)
     {
         var slug = new string((label ?? "plan")
             .Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-')
@@ -325,7 +326,27 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             slug = slug.Replace("--", "-", StringComparison.Ordinal);
         if (slug.Length == 0) slug = "plan";
         if (slug.Length > 48) slug = slug[..48].TrimEnd('-');
-        return $"plans/{slug}.md";
+
+        // CLAIMED BY EXISTENCE, not by a counter: the spawner holds no list of paths it has handed
+        // out, and a planner still running has already created its file. Bounded because an
+        // unbounded search over a directory nobody is cleaning would hang the spawn; past the
+        // ceiling the collision is accepted rather than the spawn refused, since a lost plan is a
+        // smaller failure than a parent that cannot delegate at all.
+        var candidate = $"plans/{slug}.md";
+        for (var n = 2; n <= 20 && PlanFileExists(candidate); n++)
+            candidate = $"plans/{slug}-{n}.md";
+        return candidate;
+    }
+
+    /// <summary>Whether something is already at this path, resolved the same way the outcome check
+    /// resolves it — a relative path means nothing without the working directory.</summary>
+    private bool PlanFileExists(string relative)
+    {
+        var full = _factory.WorkingDir is { Length: > 0 } root
+            ? Path.Combine(root, relative) : relative;
+        try { return File.Exists(full); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException) { return false; }
     }
 
     /// <summary>
@@ -367,7 +388,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// <param name="type">The child's type — only a plan-writing one gets a path.</param>
     /// <param name="label">The child's short name, used to build a readable filename.</param>
     /// <param name="planPath">Where the plan should be written, or null when the child cannot write.</param>
-    private static string? WithPlanPath(string? context, AgentType type, string? label,
+    private string? WithPlanPath(string? context, AgentType type, string? label,
         bool canWrite, out string? planPath)
     {
         planPath = null;
