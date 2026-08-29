@@ -55,6 +55,21 @@ public class ReportTests
         Assert.True(rendered.Split('\n').Length < 20);
     }
 
+    /// <summary>THE PLACE LIST IS CAPPED. A 29-place finding needs to say it is everywhere and
+    /// where to start, not name all 29 — listed in full, the top findings alone would spend the
+    /// context the report exists to save.</summary>
+    [Fact]
+    public void APlaceListBeyondTheCapBecomesACount()
+    {
+        var paths = Enumerable.Range(0, 30).Select(i => $"p{i:00}.cs").ToArray();
+
+        var rendered = Report.Render([Clone(15, paths)], maxResults: 20, belowMinimum: 0);
+
+        Assert.Contains("p02.cs", rendered);        // the third place is still named...
+        Assert.DoesNotContain("p03.cs", rendered);  // ...the fourth is not
+        Assert.Contains("27 more places", rendered);
+    }
+
     [Fact]
     public void NoClonesSaysSoPlainly()
     {
