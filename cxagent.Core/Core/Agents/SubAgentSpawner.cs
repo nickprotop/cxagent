@@ -82,6 +82,17 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         parts of the repository are independent. A search and then a fix that depends on what the
         search found are not — those are two turns, not two agents.
 
+        A PLANNER AND THE BUILDER THAT CARRIES OUT ITS PLAN ARE TWO TURNS, NOT TWO AGENTS IN ONE
+        MESSAGE. The builder needs a plan that does not exist while the planner is still running, so
+        batching them sends it to build from nothing. Send the planner, wait for the file it names,
+        then send the builder to that path.
+
+        AND PREFER THAT PAIR OVER DECIDING THE EDITS YOURSELF. Working the change out here and
+        handing finished code to a builder is the cheaper path and usually the worse one: a planner
+        reads the code as it is now rather than as you remember it, orders the steps so the build
+        survives each one, and names what is most likely to be wrong — from a context spent on
+        nothing else. Read enough to brief it well, put that in context, and let it do the design.
+
         Give them non-overlapping work. Two agents told to edit the same file will both edit it, and
         neither will know the other did.
 
