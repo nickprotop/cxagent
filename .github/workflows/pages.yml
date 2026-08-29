@@ -58,7 +58,63 @@ jobs:
               --pattern csharp-lsp.zip --pattern calculator.zip \
               --pattern clone-finder.zip --dir _artifact
 
+      # A PLUGIN THAT HAS NOT SHIPPED YET IS NOT A BROKEN BUILD. The catalog entry lands on master
+      # in one commit and the zip appears on the NEXT release, so between the two every Pages run
+      # fails on an artifact that is missing exactly as expected — and a red that is expected is a
+      # red nobody reads. The site keeps the catalog it already has, which stays TRUE: it describes
+      # what is downloadable right now.
+      #
+      # ASKED OF THE RELEASE, NOT OF THE VERSION. A carried-forward plugin keeps an old version
+      # number while its zip is very much on the current release, so comparing versions calls a
+      # shipped plugin unshipped. What actually answers the question is whether the release lists
+      # the asset: present but undownloaded is a broken run, absent entirely is a plugin still
+      # waiting for its release.
+      - name: Check every catalogued plugin actually shipped
+        id: shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view --repo "${GITHUB_REPOSITORY}" --json assets \
+              -q '.assets[].name' > /tmp/release-assets.txt
+          echo "assets on the current release:"; sed 's/^/  /' /tmp/release-assets.txt
+
+          MISSING=$(python3 - <<'PYCHECK'
+          import json
+          from pathlib import Path
+
+          on_release = set(Path("/tmp/release-assets.txt").read_text().split())
+          unshipped, broken = [], []
+
+          for entry in json.load(open("plugins/plugins.json"))["plugins"]:
+              if entry.get("source", {}).get("kind") != "release":
+                  continue
+              name = entry["name"]
+              if Path(f"_artifact/{name}.zip").is_file():
+                  continue
+              # LISTED BUT NOT DOWNLOADED is a failure of this run; NOT LISTED AT ALL is a plugin
+              # whose release has not happened yet.
+              (broken if f"{name}.zip" in on_release else unshipped).append(name)
+
+          if broken:
+              print("BROKEN:" + ",".join(broken))
+          elif unshipped:
+              print("UNSHIPPED:" + ",".join(unshipped))
+          PYCHECK
+          )
+
+          case "$MISSING" in
+            BROKEN:*)
+              echo "::error::the release lists ${MISSING#BROKEN:} but the download did not produce it"
+              exit 1 ;;
+            UNSHIPPED:*)
+              echo "::notice::${MISSING#UNSHIPPED:} is not on the current release yet — the site keeps its existing catalog until one ships it."
+              echo "skip=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "every catalogued plugin has its artifact." ;;
+          esac
+
       - name: Generate the catalog
+        if: steps.shipped.outputs.skip != 'true'
         env:
           # `gh release view` below needs it; the download step's env does not reach this step.
           GH_TOKEN: ${{ github.token }}
@@ -79,7 +135,10 @@ jobs:
               --version "$VERSION" \
               --out _site/catalog.json
 
+      # NOTHING TO PUBLISH IF THE CATALOG WAS SKIPPED. Uploading here would deploy a site whose
+      # catalog.json is missing entirely — worse than the stale-but-true one already live.
       - uses: actions/upload-pages-artifact@v3
+        if: steps.shipped.outputs.skip != 'true'
         with:
           path: _site
 
