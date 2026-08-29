@@ -100,16 +100,11 @@ public sealed class Agent
     public string Id { get; } = Helpers.UlidGenerator.NewId();
 
     /// <summary>
-    /// The last build and test verdicts, and the turn counter — session state, NOT per-prompt state.
+    /// The turn counter — session state, NOT per-prompt state.
     ///
-    /// <para>These were locals in the turn loop, so they reset on every user message. A broken build
-    /// is not forgotten because the user typed again: the tree is still broken, and the gate that
-    /// catches it has to see the verdict that outlived the prompt. <c>_turn</c> is monotonic for the
-    /// same reason the id is stable — log turn numbers that restart at 000 on each message make one
-    /// session's diagnostics unreadable.</para>
+    /// <para>Monotonic for the same reason the id is stable: log turn numbers that restart at 000 on
+    /// each message make one session's diagnostics unreadable.</para>
     /// </summary>
-    private string? _lastBuild;
-    private string? _lastTest;
     private int _turn;
 
     /// <summary>
@@ -1222,12 +1217,6 @@ public sealed class Agent
         // away, and threading it through every call between would touch unrelated paths.
         _offeredNames = [.. tools.Select(t => t.Name)];
 
-        var wrote = false;
-        var challenges = 0;
-
-        // The last build and test verdicts are FIELDS (_lastBuild/_lastTest), not locals: see their
-        // declaration. A broken build outlives the prompt that broke it.
-
         // Identical (call, arguments, result) triples seen this request, for stuck detection below.
         // Per-request deliberately: a new user message is a genuine perturbation, and carrying the
         // counts across it would nudge about repeats the user has already redirected.
@@ -1482,50 +1471,6 @@ public sealed class Agent
                 // one it was never told about — a real refusal ("I can't do that because…") would not
                 // use it, so the string match catches only the model that guessed.
                 //
-                // Two ways a change request can finish badly, and they need different words: nothing
-                // was written at all, or something was written that does not build.
-                var brokenBuild = wrote && _lastBuild is not null && BuildFailed(_lastBuild);
-                var brokenTest = wrote && _lastTest is not null && BuildFailed(_lastTest);
-                var broken = brokenBuild || brokenTest;
-
-                // NO "YOU DIDN'T WRITE ANYTHING" CHALLENGE. There was one, and it was removed: it
-                // fired when the prompt contained any of seventeen common verbs — "add ", "fix ",
-                // "change ", "update " — and no file had been written. That is a substring match on
-                // ordinary English, so it challenged questions. Measured against eight realistic
-                // prompts, SIX were false positives: "why does the compressor add a summary?",
-                // "what would you change about this design?", "who calls update on the panel?".
-                // Each cost up to three wasted turns and then an error on screen telling the user
-                // their question had failed.
-                //
-                // The failure it was built for (describing an edit instead of making one) is
-                // addressed where it belongs, in the system prompt: "USE THEM ... Text in a message
-                // changes nothing."
-                //
-                // The BROKEN BUILD check below is deliberately kept. It is not a guess about intent:
-                // a build actually ran and actually failed, and that is a fact about the tree rather
-                // than an inference from the wording of a prompt.
-                if (broken && challenges < MaxChallenges)
-                {
-                    challenges++;
-                    messages.Add(new ChatMessage
-                    {
-                        Role = "user",
-                        // The FAILING one's output, and the build first when both are red: a test
-                        // failure reported against a tree that does not compile is noise.
-                        Content = BrokenBuildChallenge(brokenBuild ? _lastBuild! : _lastTest!),
-                        Timestamp = DateTimeOffset.UtcNow,
-                    });
-                    continue;
-                }
-
-                // A BROKEN BUILD IS A FAILED REQUEST. Measured live: a correct diagnosis, a patch that
-                // did not compile, "Build FAILED" in the transcript, and a confident success summary
-                // in the same turn.
-                if (broken)
-                    _sink.Said(new Message(
-                        "changes were written but the build did not succeed. The last build or test "
-                        + "run reported a failure and it was not resolved.", Severity.Error));
-
                 // The answer, either way. It is already ON SCREEN — it streamed into the turn opened
                 // above — so this is for the caller's transcript, and it is returned rather than
                 // pushed onto a list the agent was handed.
@@ -1620,8 +1565,6 @@ public sealed class Agent
                 // cheaper guarantee than locking six mutation sites and hoping the list stays at six.
                 void Record(ToolCall call, string result)
                 {
-                    if (IsWrite(call.Name) && !LooksLikeFailure(result)) wrote = true;
-
                     // STUCK: the same call returning the same result, over and over. Measured on one
                     // drive that produced nothing in 42 calls — MarkupParser.cs was READ six times and
                     // SEARCHED five times, each returning what it had already returned. A model in that
@@ -1669,11 +1612,6 @@ public sealed class Agent
                     //
                     // Two slots, not one. A build and a test answer different questions, and folding
                     // them together lets the answer to one erase the answer to the other — see lastTest.
-                    if (call.Name == "run_shell" && LooksLikeBuildOrTest(call))
-                    {
-                        if (LooksLikeTest(call)) _lastTest = result;
-                        else _lastBuild = result;
-                    }
 
                     messages.Add(new ChatMessage
                     {
@@ -2493,10 +2431,21 @@ public sealed class Agent
         }
 
         // THE STRING, once, for everything below that reasons about the text the model was told —
-        // failure sniffing, the error message, the envelope's state, the recorded length.
+        // the error message, the envelope's state, the recorded length.
         var result = outcome.Text;
-        var failed = LooksLikeFailure(result);
-        job.State = failed ? JobState.Failed : JobState.Succeeded;
+
+        // A REFUSAL IS THE ONLY FAILURE THIS CAN SEE. The gate set PermissionDenied, so that is a
+        // fact rather than a reading of the answer; a call that never ran did not succeed, and the
+        // badge says auto-denied off this state.
+        //
+        // EVERYTHING ELSE THAT FINISHED, SUCCEEDED. A run that threw or was cancelled never reaches
+        // here — those paths rethrow above — so what is left is a child that finished and answered,
+        // and what the answer MEANS is the reader's to judge. Sniffing it for failure words marked a
+        // planner failed for writing "tuple deconstruction is required", and marked an explorer
+        // failed for the confident negative its own briefing asks it to report.
+        job.State = outcome.Result?.PermissionDenied == true
+            ? JobState.Failed
+            : JobState.Succeeded;
         job.CompletedAt = DateTimeOffset.UtcNow;
 
         // A FINISHED CHILD'S HEADER STATES THE COST, not its last live tick. While running, the
@@ -2517,7 +2466,7 @@ public sealed class Agent
             var (spentIn, spentOut) = spawned?.Agent.Spend ?? (0, 0);
             var cost = spentIn + spentOut > 0 ? $" · {spentIn + spentOut:N0} tokens" : "";
 
-            job.ProgressMessage = $"{(failed ? "failed" : "done")} · {duration}{cost}";
+            job.ProgressMessage = $"done · {duration}{cost}";
 
             // AND THE FULL ACCOUNT IN THE BODY, which survives the row being collapsed and is what
             // a run is read back from later. The live turn counter is replaced rather than joined:
@@ -2573,7 +2522,7 @@ public sealed class Agent
                     // seen live: an explore child burned all 30 turns hunting a JSON schema that is
                     // not published anywhere — is neither. Recording it as "completed" would put a
                     // wasted run in the success column, which is exactly the run worth finding later.
-                    Outcome: SubAgentEnvelope.StateOf(result) ?? (failed ? "failed" : "completed"),
+                    Outcome: SubAgentEnvelope.StateOf(result) ?? "completed",
                     StartedAt: started,
                     DurationMs: (long)took.TotalMilliseconds)
                 {
@@ -2604,14 +2553,14 @@ public sealed class Agent
         // never had a result to start from. Output stays the returned text there, exactly as before.
         job.Result = (outcome.Result ?? new JobResult
         {
-            Success = !failed,
+            Success = true,
             Output = new Dictionary<string, object?> { ["content"] = result },
         }) with
         {
-            Success = !failed,
-            ExitCode = failed ? -1 : 0,
+            Success = true,
+            ExitCode = 0,
             Duration = DateTimeOffset.UtcNow - started,
-            ErrorMessage = failed ? result : null,
+            ErrorMessage = null,
         };
         _jobs.ToolUpdated(job);
 
@@ -2633,7 +2582,7 @@ public sealed class Agent
             // job.Result is built from a few lines above — so the word here and the row on screen
             // cannot disagree.
             Outcome: outcome.Result?.PermissionDenied == true ? "denied"
-                : failed ? "failed" : "succeeded",
+                : "succeeded",
             DurationMs: (long)(DateTimeOffset.UtcNow - started).TotalMilliseconds,
             ResultChars: result.Length,
             StartedAt: started)
@@ -2864,8 +2813,6 @@ public sealed class Agent
         + "- Recommendations for what should be done next\n\n"
         + "Any attempt to use tools is a critical violation. Respond with text ONLY.";
 
-    private const int MaxChallenges = 3;
-
     /// <summary>
     /// Identical repeats of one (call, arguments, result) before the model is told; twice that many
     /// before the request is ended. Three is high enough that a legitimate re-read after changing
@@ -2883,114 +2830,7 @@ public sealed class Agent
     /// misreports would otherwise never let the goal end.</summary>
     private const int MaxToolUseMismatches = 2;
 
-    /// <summary>
-    /// Whether a tool result reads as a failure. ToolBindings never throws — every failure comes
-    /// back as a STRING — so "did that write land" cannot be answered by exception handling. Matched
-    /// on the two shapes the executors actually produce.
-    /// </summary>
-    /// <remarks>
-    /// THIS CATCHES MCP RESULTS TOO, and that is intended rather than incidental.
-    /// <see cref="Core.Mcp.McpClient.CallToolAsync"/> returns an <c>isError</c> result as text
-    /// beginning "error: ", so a failed third-party tool marks its job row failed and shows red —
-    /// which is what the user should see. The cost of the heuristic is a server whose SUCCESSFUL
-    /// output happens to start with "error" being mislabelled; that is a cosmetic row state, not a
-    /// behaviour change, and the model reads the text either way.
-    /// </remarks>
-    private static bool LooksLikeFailure(string result) =>
-        result.StartsWith("error", StringComparison.OrdinalIgnoreCase)
-        || result.Contains("was not found", StringComparison.Ordinal)
-        || result.Contains("is required", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Whether a shell call was a BUILD or TEST run — the commands whose result says whether the
-    /// edits actually work.
-    ///
-    /// <para>Matched on the command text, which is the only signal available: run_shell is one tool
-    /// and every toolchain looks different through it. Deliberately narrow — a command that is not
-    /// recognised simply does not update the verdict, which fails safe (the goal is judged on the
-    /// last build it DID run, or on nothing at all).</para>
-    /// </summary>
-    /// <summary>
-    /// Whether a shell call is running TESTS specifically, as opposed to compiling.
-    ///
-    /// <para>Both are gates on a finished goal, but they must be remembered separately: a rebuild
-    /// after a failing test run would otherwise overwrite the failure with a success and let the
-    /// goal finish red. Deliberately a subset of <see cref="LooksLikeBuildOrTest"/> — anything that
-    /// is not recognisably a test run is treated as a build, so a new verb defaults to the stricter
-    /// reading rather than being silently ignored.</para>
-    /// </summary>
-    private static bool LooksLikeTest(ToolCall call)
-    {
-        var cmd = TryGetArgument(call, "command");
-        if (string.IsNullOrEmpty(cmd)) return false;
-
-        ReadOnlySpan<string> verbs =
-        [
-            "dotnet test", "cargo test", "go test",
-            "npm test", "yarn test", "pnpm test", "pytest", "vitest", "jest",
-        ];
-        foreach (var v in verbs)
-            if (cmd.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
-
-    private static bool LooksLikeBuildOrTest(ToolCall call)
-    {
-        var cmd = TryGetArgument(call, "command");
-        if (string.IsNullOrEmpty(cmd)) return false;
-
-        ReadOnlySpan<string> verbs =
-        [
-            "dotnet build", "dotnet test", "msbuild",
-            "cargo build", "cargo test", "cargo check",
-            "go build", "go test",
-            "npm run build", "npm test", "yarn build", "yarn test", "pnpm build", "pnpm test",
-            "make", "cmake --build", "gradle", "mvn ", "pytest", "tsc",
-        ];
-        foreach (var v in verbs)
-            if (cmd.Contains(v, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
-
-    /// <summary>
-    /// Whether a build/test result reads as a failure.
-    ///
-    /// <para>Exit code would be the honest signal, but it does not survive: ToolBindings renders a
-    /// shell result as text, and a non-zero exit already arrives prefixed "error:". Both forms are
-    /// matched, plus the phrases the major toolchains print, because a command that fails INSIDE a
-    /// pipeline (`… | tail -30`) exits 0 and only says so in its output — which is exactly how the
-    /// live failure was invisible: `dotnet build … 2>&amp;1 | tail -30` returned success while its
-    /// text said "Build FAILED".</para>
-    /// </summary>
-    private static bool BuildFailed(string result)
-    {
-        if (result.StartsWith("error", StringComparison.OrdinalIgnoreCase)) return true;
-
-        ReadOnlySpan<string> markers =
-        [
-            "Build FAILED", "error CS", "error MSB",
-            "Failed!", "FAILED", "Test Run Failed",
-            "error[E", "error: could not compile",
-            "npm ERR!", "Compilation failed", "SyntaxError", "cannot find symbol",
-        ];
-        foreach (var m in markers)
-            if (result.Contains(m, StringComparison.Ordinal)) return true;
-        return false;
-    }
-
-    /// <summary>
-    /// The nudge for a goal whose edits do not build. Carries the build OUTPUT, because the model
-    /// has already seen it once and moved on — repeating the fact without the detail would earn the
-    /// same shrug.
-    /// </summary>
-    private static string BrokenBuildChallenge(string buildResult)
-    {
-        var detail = buildResult.Length > 1500 ? buildResult[..1500] + "…" : buildResult;
-        return "The build is broken. Your changes were written, but the last build or test run "
-             + "failed and you stopped without fixing it — a change that does not compile is not a "
-             + "finished change. Fix it now, or revert your edits and say plainly why it cannot be "
-             + "done.\n\nThe failing output was:\n" + detail;
-    }
 
     /// <summary>One argument of a tool call as a string, or null when absent or not a string.</summary>
     private static string? TryGetArgument(ToolCall call, string name)

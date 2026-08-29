@@ -32,6 +32,14 @@ public class AgentChallengeTests
     private static LlmResponse Prose(string text) =>
         new() { Text = text, ToolCalls = [], Usage = new LlmUsage() };
 
+    // NO BUILD VERDICT ANY MORE, and two tests went with it: one pinned a broken build failing the
+    // goal, the other pinned a failing test surviving a later passing build. Both described real
+    // incidents — an agent whose patch did not compile reporting success in the same turn — and the
+    // machinery that caught them read `error CS`, `Build FAILED` and a list of build verbs out of
+    // shell output. Predicting what a toolchain prints is the same unbounded game as predicting what
+    // a model says, and the model is told the build output either way; whoever reads the run decides
+    // what it meant. What remains below is every test about a goal COMPLETING, which is unaffected.
+
     [Fact]
     public async Task AnExplicitCANNOTEndsTheGoalWithoutFurtherChallenges()
     {
@@ -79,34 +87,6 @@ public class AgentChallengeTests
     };
 
     [Fact]
-    public async Task AWrittenEditThatDoesNotBuildFAILSRatherThanCompleting()
-    {
-        // THE LIVE FAILURE. An agent found the bug, wrote a correct diagnosis, and its patch did not
-        // compile (`error CS1612`). "Build FAILED" is in the transcript, and it reported success in
-        // the same turn. `wrote` was true, so the no-write gate saw nothing wrong -- this is the one
-        // that has to catch it.
-        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            var f = Path.Combine(dir, "x.cs");
-            File.WriteAllText(f, "old");
-
-            var provider = new MockLlmProvider();
-            provider.EnqueueResponse(Write(f, "new"));
-            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null; exit 1"));  // fails, invokes nothing
-            for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
-
-            var sink = new RecordingSink();
-            await Build(provider, sink).SendAsync("fix the parser bug",
-                CancellationToken.None);
-
-            Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
-        }
-        finally { Directory.Delete(dir, recursive: true); }
-    }
-
-    [Fact]
     public async Task ABuildThatWasFIXEDAfterFailingStillCompletes()
     {
         // The verdict is the LAST build, not any build. A model that breaks the tree, notices, fixes
@@ -143,38 +123,6 @@ public class AgentChallengeTests
                 CancellationToken.None);
 
             Assert.Empty(sink.Errors);
-        }
-        finally { Directory.Delete(dir, recursive: true); }
-    }
-
-    [Fact]
-    public async Task APassingBuildDoesNotEraseAFailingTEST()
-    {
-        // THE LIVE FAILURE, from a drive against a ConsoleEx clone. The agent fixed a bug, wrote a
-        // test, ran `dotnet test` (1 failed), then rebuilt the test project to keep iterating — and
-        // that BUILD SUCCEEDED. One slot held both verdicts, so the passing build overwrote the
-        // failing test, the gate saw a clean tree, and the goal reported done with its own new test
-        // red. Exactly the "run says done, disk says otherwise" failure this gate exists to stop.
-        var dir = Path.Combine(Path.GetTempPath(), "cxa-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            var f = Path.Combine(dir, "x.cs");
-            File.WriteAllText(f, "old");
-
-            var provider = new MockLlmProvider();
-            provider.EnqueueResponse(Write(f, "new"));
-            provider.EnqueueResponse(ShellCall("echo 'dotnet test' >/dev/null; exit 1"));
-            // A CLEAN BUILD AFTERWARDS. Exits 0 and prints no failure marker, so on its own it is a
-            // passing verdict — it must not be allowed to answer for the test run.
-            provider.EnqueueResponse(ShellCall("echo 'dotnet build' >/dev/null"));
-            for (var i = 0; i < 6; i++) provider.EnqueueResponse(Prose("The fix is complete."));
-
-            var sink = new RecordingSink();
-            await Build(provider, sink).SendAsync("fix the parser bug",
-                CancellationToken.None);
-
-            Assert.Contains(sink.Errors, e => e.Contains("build did not succeed", StringComparison.OrdinalIgnoreCase));
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
