@@ -85,7 +85,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         A PLANNER AND THE BUILDER THAT CARRIES OUT ITS PLAN ARE TWO TURNS, NOT TWO AGENTS IN ONE
         MESSAGE. The builder needs a plan that does not exist while the planner is still running, so
         batching them sends it to build from nothing. Send the planner, wait for the file it names,
-        then send the builder to that path.
+        then send the builder to that path. Give it the PATH, not your own account of the plan: a
+        specification you write into the builder's prompt is the planner's run spent and discarded,
+        and it is your transcription the builder then follows rather than the plan — measured, a
+        parent that wrote its own got three types wrong and the builder implemented all three.
 
         Give them non-overlapping work. Two agents told to edit the same file will both edit it, and
         neither will know the other did.
