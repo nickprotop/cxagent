@@ -993,7 +993,10 @@ public static class AppBootstrap
             foreach (var plugin in found)
                 transcript.Write(new Message(
                     $"plugin '{plugin.Name}' found in {plugin.Folder} ({plugin.ToolCount} tool(s)), "
-                    + "not configured. Add it under \"plugins\" in config.json:\n"
+                    // WHAT IS LOST RATHER THAN WHAT IS MISSING — "not configured" reads as
+                    // misconfigured, which this plugin is not: it is installed and fine, and what
+                    // it lacks is automatic loading. Same wording as the manager's row.
+                    + "no auto load. Add it under \"plugins\" in config.json:\n"
                     + $"    \"{plugin.Name}\": {{ \"file\": \"{plugin.File}\" }}\n"
                     // CONFIG FIRST, THE COMMAND SECOND AND HEDGED. A /plugin load carries no
                     // settings — there is nowhere for them to come from when config does not name

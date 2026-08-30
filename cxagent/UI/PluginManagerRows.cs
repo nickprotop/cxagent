@@ -105,15 +105,23 @@ public static class PluginManagerRows
             // Gather reads sidecars for UNCONFIGURED plugins too, so this branch is reachable —
             // it would be dead if contracts were only collected for configured entries.
 
+            // WHAT IS LOST, NOT WHAT IS ABSENT. This said "not configured", which reads as
+            // misconfigured — a fault in a plugin that is installed and perfectly fine. What the
+            // user actually lacks is automatic loading, so the row names that.
+            //
+            // NOT "disabled", WHICH IS A DIFFERENT STATE. A configured plugin with `enabled: false`
+            // renders as "disabled"; borrowing the word here would give two unrelated situations
+            // one name — one where config says no, one where config says nothing.
+            //
             // LOADED IS PART OF THE TRUTH EVEN HERE. A plugin loaded from the manager or by
-            // `/plugin load` is running while config never named it, so "not configured" alone
-            // describes a plugin that is answering tool calls as though it were inert — and this
-            // branch claims the name, so the loaded-by-path pass below never gets to correct it.
-            // Both facts, because either alone misleads: the user needs to know it is running now
-            // AND that nothing will bring it back next session.
-            var state = inputs.Loaded.Contains(found.Name) ? "loaded, not configured" : "not configured";
+            // `/plugin load` is running while config never named it, so the absence alone describes
+            // a plugin that is answering tool calls as though it were inert — and this branch claims
+            // the name, so the loaded-by-path pass below never gets to correct it. Both facts,
+            // because either alone misleads: it is running NOW, and nothing brings it back next
+            // session.
+            var state = inputs.Loaded.Contains(found.Name) ? "loaded, no auto load" : "no auto load";
 
-            // A CONTRACT PROBLEM OUTRANKS "not configured": configuring it would not make it load.
+            // A CONTRACT PROBLEM OUTRANKS THIS: adding a config entry would not make it load.
             rows.Add(Mismatch(contract) is { } why
                 ? new PluginRow(found.Name, PluginRowSection.NeedsAttention, why, Catalog: entry, Folder: Folder(found.Name, inputs))
                 : new PluginRow(found.Name, PluginRowSection.Installed, state,

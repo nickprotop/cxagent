@@ -204,7 +204,7 @@ hash over everything in its folder, and .NET resolves a plugin's dependencies fr
 so two plugins sharing one directory would be neither isolated nor separately identifiable —
 installing either would change the other's hash and re-ask its load prompt.
 
-`loaded, not configured` is both halves of the truth. The plugin is answering tool calls right now,
+`loaded, no auto load` is both halves of the truth. The plugin is answering tool calls right now,
 and nothing in `config.json` names it, so the next session starts without it. Adding it to the config
 is a separate, explicit step.
 

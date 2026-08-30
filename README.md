@@ -247,7 +247,7 @@ downloads, verifies and unpacks into your plugins folder and stops there. cxagen
 is present and leaves it alone:
 
 ```
-plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), not configured.
+plugin 'csharp-lsp' found in ~/.config/cxagent/plugins (3 tool(s)), no auto load.
 ```
 
 Turn it on for one session, with no file to edit:

@@ -69,7 +69,7 @@ public class PluginManagerRowsTests
 
         var row = Row(rows, "found");
         Assert.Equal(PluginRowSection.Installed, row.Section);
-        Assert.Equal("not configured", row.State);
+        Assert.Equal("no auto load", row.State);
     }
 
     /// <summary>A configured plugin whose file is gone cannot load, so it needs the user.</summary>
@@ -248,7 +248,7 @@ public class PluginManagerRowsTests
     /// installing does not write config. The row has to carry both facts: it is answering tool
     /// calls right now, and nothing will bring it back next session.
     ///
-    /// <para>Saying only "not configured" describes a running plugin as inert, and the
+    /// <para>Saying only that it will not auto load describes a running plugin as inert, and the
     /// unconfigured branch claims the name before the loaded-by-path pass can correct it — so the
     /// omission is invisible except in the button set.</para>
     /// </summary>
@@ -261,6 +261,6 @@ public class PluginManagerRowsTests
 
         var row = Row(rows, "found");
         Assert.Equal(PluginRowSection.Installed, row.Section);
-        Assert.Equal("loaded, not configured", row.State);
+        Assert.Equal("loaded, no auto load", row.State);
     }
 }
