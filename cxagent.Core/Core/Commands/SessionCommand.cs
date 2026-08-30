@@ -25,10 +25,27 @@ namespace CxAgent.Core.Commands;
 /// nowhere a user could find them. A command that takes arguments and one that does not also looked
 /// identical in the list, which is the discovery half of the same gap.</para>
 /// </param>
+/// <param name="TellTheModel">
+/// Whether the model is told this command exists.
+///
+/// <para>FALSE FOR ALMOST EVERYTHING, and that is the point. A command the USER drives —
+/// <c>/clear</c>, <c>/stats</c>, <c>/model</c> — is not the model's business: naming it costs
+/// tokens in every request of every session to enable a suggestion nobody asked for. The whole
+/// table was once in the system prompt for that reason and earned nothing.</para>
+///
+/// <para>TRUE FOR A COMMAND THAT ANSWERS A DEAD END THE MODEL WALKS INTO. A password prompt, a
+/// login, an interactive rebase: the model tries, cannot proceed, and the useful reply names the
+/// command that can. It has to know the name to say it.</para>
+///
+/// <para>DECLARED BY THE COMMAND, NOT LISTED IN THE PROMPT, so a host that services an interactive
+/// shell as <c>/shell</c> and one that calls it <c>/my_shell</c> both work without cxagent knowing
+/// either name. The prompt renders what was registered; nothing hardcodes a vocabulary.</para>
+/// </param>
 public readonly record struct SessionCommand(
     string Name,
     string Summary,
-    IReadOnlyList<CommandArgument>? Arguments = null)
+    IReadOnlyList<CommandArgument>? Arguments = null,
+    bool TellTheModel = false)
 {
     /// <summary>Never null, so every consumer can enumerate without a guard.</summary>
     public IReadOnlyList<CommandArgument> Args => Arguments ?? [];

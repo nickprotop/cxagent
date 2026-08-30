@@ -138,18 +138,36 @@ public class SystemPromptTests
     }
 
     /// <summary>
-    /// The model cannot run the slash commands — the app intercepts them before a turn starts — but
-    /// it should know they exist, so it can tell a user to run /compress when the context is tight
-    /// rather than answering a typed "/help" as if it were prose.
+    /// NO COMMANDS UNLESS ONE ASKED. The prompt once named /help, /clear, /compress, /mcp and /exit
+    /// unconditionally, costing tokens in every request of every session so the model could suggest
+    /// what the USER drives anyway — and going stale as the table grew to eleven while the paragraph
+    /// kept naming five.
     /// </summary>
     [Fact]
-    public void Build_NamesTheCommandsTheAppHandles()
+    public void Build_SaysNothingAboutCommandsWhenNoneAskedToBeNamed()
     {
         var p = Build();
 
-        Assert.Contains("/compress", p, StringComparison.Ordinal);
-        Assert.Contains("/help", p, StringComparison.Ordinal);
-        Assert.Contains("cannot run them", p, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("The user's commands", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("/compress", p, StringComparison.Ordinal);
+        Assert.DoesNotContain("/help", p, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AND THE ONE THAT ASKED IS NAMED WITH ITS SUMMARY. A command earns this by answering a dead
+    /// end the model walks into — something needing a real terminal — which it can only suggest if
+    /// it knows the name. The host chooses that name, so nothing here hardcodes one.
+    /// </summary>
+    [Fact]
+    public void Build_NamesACommandThatAskedToBeNamed()
+    {
+        var p = SystemPrompt.Build(Context() with
+        {
+            ModelFacingCommands = [("/my_shell", "open a terminal for an interactive command")],
+        });
+
+        Assert.Contains("/my_shell", p, StringComparison.Ordinal);
+        Assert.Contains("open a terminal for an interactive command", p, StringComparison.Ordinal);
     }
 
     /// <summary>Every turn is a round trip to a local model, so three serial reads cost three
@@ -456,13 +474,16 @@ public class SystemPromptTests
     {
         var child = Child();
 
-        Assert.DoesNotContain("/clear", child, StringComparison.Ordinal);
-        Assert.DoesNotContain("/compress", child, StringComparison.Ordinal);
-        Assert.DoesNotContain("/exit", child, StringComparison.Ordinal);
         Assert.DoesNotContain("The user's commands", child, StringComparison.Ordinal);
 
-        // The parent still gets them: this is a difference between the two prompts, not a deletion.
-        Assert.Contains("/clear", Parent(), StringComparison.Ordinal);
+        // AND NOT EVEN ONE THAT ASKED. A child has no user to type a command and no composer to
+        // type it into, so the exclusion is not about which commands — it is about the reader.
+        var childToldOfOne = SystemPrompt.Build(Context() with
+        {
+            IsSubAgent = true,
+            ModelFacingCommands = [("/my_shell", "open a terminal")],
+        });
+        Assert.DoesNotContain("/my_shell", childToldOfOne, StringComparison.Ordinal);
     }
 
     /// <summary>

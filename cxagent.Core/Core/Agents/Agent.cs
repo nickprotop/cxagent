@@ -168,6 +168,19 @@ public sealed class Agent
     private readonly Skills.SkillLoader _skills;
 
     /// <summary>
+    /// The commands this host wants the model to know about, read fresh each turn.
+    ///
+    /// <para>A CALLBACK, NOT A LIST. Commands are registered after an agent exists — the app
+    /// overrides several of Core's and adds its own — so a snapshot taken in the constructor would
+    /// describe a table that had not finished being built.</para>
+    ///
+    /// <para>NULL FOR A SUB-AGENT, WHICH IS THE POINT. A child has no user and no composer, so no
+    /// command can ever be relevant to it. Not a filter it is asked to apply: a thing it was never
+    /// given, the same way <c>_askUser</c> is null rather than gated.</para>
+    /// </summary>
+    private readonly Func<IReadOnlyList<(string Name, string Summary)>>? _modelFacingCommands;
+
+    /// <summary>
     /// This agent's own plan. State rather than a tool result, so compaction cannot delete it — see
     /// <see cref="TodoList"/>.
     /// </summary>
@@ -841,6 +854,7 @@ public sealed class Agent
         IReadOnlyList<Jobs.IAgentTool>? agentTools = null,
         Func<IReadOnlyList<Jobs.IAgentTool>>? dynamicTools = null,
         Func<IReadOnlyList<Plugins.PluginInstructions>>? pluginInstructions = null,
+        Func<IReadOnlyList<(string Name, string Summary)>>? modelFacingCommands = null,
         Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null)
@@ -936,6 +950,7 @@ public sealed class Agent
                 ? new Skills.SkillCatalogResult([], [], null)
                 : Skills.SkillCatalog.Find(cwd, _globalInstructionsDir);
         });
+        _modelFacingCommands = modelFacingCommands;
         _isSubAgent = isSubAgent;
         _briefing = string.IsNullOrWhiteSpace(briefing) ? null : briefing.Trim();
         _provider = provider;
@@ -1099,6 +1114,7 @@ public sealed class Agent
                     // for a sub-agent whatever the caller passed.
                     CanAskUser = _askUser is not null && SelectionAllows(Jobs.Tool.AskUser, turnTools),
                     CanPlan = SelectionAllows(Jobs.Tool.TodoWrite, turnTools),
+                    ModelFacingCommands = _modelFacingCommands?.Invoke() ?? [],
                 })
                 // AFTER the general prompt, so a project can override it.
                 + ProjectInstructions.Render(ProjectInstructions.Find(cwd, _globalInstructionsDir))

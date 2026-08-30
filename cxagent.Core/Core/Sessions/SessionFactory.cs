@@ -264,6 +264,11 @@ internal static class SessionFactory
                 AgentTools = agentTools,
                 DynamicTools = dynamicTools,
                 PluginInstructions = session.Plugins.InstructionsForPrompt,
+
+                // THE HOST'S OWN AGENT ONLY, like AskUser above and for the same reason: a child has
+                // no user to type a command. SubAgentRuntime carries no such property at all, so the
+                // exclusion is a compile error rather than a rule someone must remember.
+                ModelFacingCommands = ports.ModelFacingCommands,
                 ToolSelection = toolSelection,
             },
             ports.Observer,

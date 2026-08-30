@@ -482,6 +482,13 @@ public sealed class AgentHost : IDisposable
         /// tools rather than lagging a turn behind them.</summary>
         public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
 
+        /// <summary>
+        /// The commands a host wants named to the model, or null for none — which is the default and
+        /// the normal case. See <c>SessionCommand.TellTheModel</c>: almost every command is the
+        /// user's to drive, and listing those costs tokens to enable a suggestion nobody wanted.
+        /// </summary>
+        public Func<IReadOnlyList<(string Name, string Summary)>>? ModelFacingCommands { get; init; }
+
         /// <summary>The session's tool selection (S1 composed with S2), or null for no opinion.
         /// A per-request selection is passed to <see cref="RunAsync"/> and composed onto it.</summary>
         public Jobs.ToolSelection? ToolSelection { get; init; }
@@ -669,6 +676,10 @@ public sealed class AgentHost : IDisposable
             agentTools: _runtime.AgentTools,
             dynamicTools: _runtime.DynamicTools,
             pluginInstructions: _runtime.PluginInstructions,
+
+            // ONLY HERE, NEVER ON A CHILD. SubAgentFactory does not pass this and must not: a
+            // sub-agent has no user to type a command and no composer to type it into.
+            modelFacingCommands: _runtime.ModelFacingCommands,
             toolSelection: _runtime.ToolSelection,
             policy: _runtime.Policy,
             classifier: _runtime.Classifier)

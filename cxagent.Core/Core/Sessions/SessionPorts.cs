@@ -33,6 +33,23 @@ public sealed record SessionPorts
     public AskUser? Ask { get; init; }
 
     /// <summary>
+    /// The commands this host wants the model told about, or null for none — the default, and what
+    /// almost every host should pass.
+    ///
+    /// <para>A CALLBACK, because commands are registered after a session is wired: the app overrides
+    /// several of Core's and adds its own, so a list captured here would describe a half-built table.
+    /// </para>
+    ///
+    /// <para>WHAT EARNS A PLACE is <c>SessionCommand.TellTheModel</c>: a command answering a dead end
+    /// the model walks into, not one the user drives. See its own documentation for why the whole
+    /// table was removed from the prompt rather than kept up to date.</para>
+    ///
+    /// <para>NEVER REACHES A CHILD. AgentHost passes this to its own agent only; SubAgentFactory
+    /// does not carry it, because a sub-agent has no user to type a command.</para>
+    /// </summary>
+    public Func<IReadOnlyList<(string Name, string Summary)>>? ModelFacingCommands { get; init; }
+
+    /// <summary>
     /// Tools this embedder supplies, offered to the model alongside the built-ins. Empty by default.
     ///
     /// <para>PER SESSION, like everything else here, and for the sharpest version of the reason:

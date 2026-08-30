@@ -734,6 +734,16 @@ public static class AppBootstrap
                     Tools = [],
                     Ask = mainWindow.AskQuestionAsync,
 
+                    // WHAT THE MODEL IS TOLD IT CAN SUGGEST, read per turn from the registry as it
+                    // actually stands — after this app has overridden Core's declarations and added
+                    // its own. Almost nothing qualifies: a command declares TellTheModel only when
+                    // it answers something the model cannot do itself, so today this is empty and
+                    // the prompt renders no command section at all.
+                    ModelFacingCommands = () =>
+                        [.. manager.Commands.All
+                            .Where(c => c.TellTheModel)
+                            .Select(c => (c.Name, c.Summary))],
+
                     // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the
                     // session half of the decision, and passing it is what stops a second session
                     // being judged against this one's folder.

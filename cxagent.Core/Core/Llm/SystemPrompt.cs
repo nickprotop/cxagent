@@ -108,6 +108,19 @@ public readonly record struct SystemPromptContext(
     /// of what it had already dispatched, and re-ran a finished pipeline from the start.</para>
     /// </summary>
     public bool CanPlan { get; init; }
+
+    /// <summary>
+    /// The commands that asked to be named to the model — name and one-line summary each.
+    ///
+    /// <para>EMPTY IS THE NORMAL CASE and renders nothing: almost every command is the user's to
+    /// drive, and a prompt listing them buys a suggestion nobody wanted at the cost of tokens in
+    /// every request. See <c>SessionCommand.TellTheModel</c> for what earns a line.</para>
+    ///
+    /// <para>NAME AND SUMMARY, NOT THE COMMAND RECORD. The prompt needs two strings; taking the
+    /// record would let its argument list and dispatch details leak into a rendering that has no
+    /// use for them.</para>
+    /// </summary>
+    public IReadOnlyList<(string Name, string Summary)> ModelFacingCommands { get; init; } = [];
 }
 
 /// <summary>
@@ -414,22 +427,33 @@ public static class SystemPrompt
         // THE MODEL CANNOT RUN THESE — the app intercepts them before a turn starts. It is told
         // about them so it can point the user at one, and so a "/help" typed at it is recognised as
         // a command the app handles rather than answered as prose.
-        // DROPPED FOR A CHILD — the one block that is actively WRONG rather than merely unhelpful.
-        // It names /help, /clear, /compress, /mcp and /exit to an agent with no user and no composer,
-        // instructing it to suggest commands to someone who will never see them.
-        if (!ctx.IsSubAgent)
+        // ONLY THE COMMANDS THAT SAID SO, and almost none do. This block once named five commands
+        // unconditionally — /help, /clear, /compress, /mcp, /exit — which cost tokens in every
+        // request of every session so the model could suggest things the USER drives anyway. It also
+        // went stale: the table grew to eleven and the paragraph kept naming five, so the model could
+        // not mention the six it had never heard of.
+        //
+        // A COMMAND EARNS ITS LINE BY DECLARING TellTheModel, which is true for one kind: the
+        // command that answers a dead end the model walks into. It tries a thing needing a terminal,
+        // cannot proceed, and the useful reply names what can — which it must know to say.
+        //
+        // RENDERED FROM WHAT WAS REGISTERED, so a host servicing an interactive shell as /shell and
+        // one calling it /my_shell both work with nothing hardcoded here.
+        //
+        // DROPPED FOR A CHILD, which has no user and no composer: naming a command to an agent whose
+        // reader will never see it is instruction about machinery it cannot reach.
+        //
+        // SORTED BY NAME. The registry is a dictionary and its order is not promised; an order that
+        // shifted between runs would rewrite this prompt and reprocess every cached token behind it.
+        if (!ctx.IsSubAgent && ctx.ModelFacingCommands.Count > 0)
         {
-        sb.AppendLine("# The user's commands");
-        sb.AppendLine();
-        // /mcp is listed unconditionally, like the rest: it is a real command for every user
-        // whether or not they have servers, and it is the answer to "a tool I expected is missing" —
-        // which the model is the first to notice. Naming it only when servers exist would hide it in
-        // exactly the case where the user has configured one that failed to start.
-        sb.AppendLine("The app handles these itself, before you see anything: /help, /clear, "
-                    + "/compress (summarise the conversation to free room), "
-                    + "/mcp (list MCP servers and why any failed), /exit. You cannot run "
-                    + "them — mention one only to suggest it.");
-        sb.AppendLine();
+            sb.AppendLine("# The user's commands");
+            sb.AppendLine();
+            sb.AppendLine("You cannot run these — the app does, when the user types them. Name one "
+                        + "when it is the answer to something you cannot do yourself:");
+            foreach (var (name, summary) in ctx.ModelFacingCommands.OrderBy(c => c.Name, StringComparer.Ordinal))
+                sb.AppendLine($"- `{name}` — {summary}");
+            sb.AppendLine();
         }
 
         // REPLACED FOR A CHILD, not appended to. Everything below addresses a HUMAN READING A
