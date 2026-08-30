@@ -19,6 +19,11 @@ on:
       - 'COMMANDS.md'
       - 'CONFIG.md'
       - 'cxagent.Core/docs/plugins.md'
+      # THE WALKTHROUGH AND ITS IMAGES. render_docs.py renders four documents and this list named
+      # three, so an edit to the walkthrough — or a new screenshot in it — published only when some
+      # OTHER trigger happened to fire. The screenshots reached the site at all because the commit
+      # adding them also touched plugins.json.
+      - 'docs/screenshots/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
