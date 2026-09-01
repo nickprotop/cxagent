@@ -107,10 +107,6 @@
         <div class="exp-shot"><a href="screenshots/session-lsp-worker.png" title="Open the full-size capture"><img src="screenshots/session-lsp-worker.png" alt="A worker calling language-server tools, with a table of every call and its duration" loading="lazy"></a></div>
         <div class="exp-text"><h3>The same session, one worker open</h3><p>Every collapsed worker expands into what it actually did: fifty-two calls across six tools in under four seconds, each with its arguments and its duration. Some are <code>csharp_definition</code> — a plugin's tools, sitting among the built-in ones with nothing to tell them apart.</p><p class="exp-aside">You are not asked to trust a summary of the work. The work is there.</p></div>
       </div>
-      <div class="exp-pane" role="tabpanel" id="pane-23-shell-terminal" aria-labelledby="tab-23-shell-terminal">
-        <div class="exp-shot"><a href="screenshots/23-shell-terminal.png" title="Open the full-size capture"><img src="screenshots/23-shell-terminal.png" alt="A shell running in a window over the session, with its own toolbar" loading="lazy"></a></div>
-        <div class="exp-text"><h3>A terminal, for what a tool cannot do</h3><p>A captured stream has nothing to type into, so a <code>sudo</code> password or a <code>git rebase -i</code> is where an agent stops and hands the job back. <code>/shell</code> opens a real PTY in a window over the session — the colours are the giveaway, since <code>ls</code> emits them only when it believes it is talking to a terminal.</p><p class="exp-aside">Afterwards the agent is told what happened, queued rather than delivered into a turn of its own — so it does not start talking while you are still reading.</p></div>
-      </div>
       <div class="exp-pane" role="tabpanel" id="pane-01-trust" aria-labelledby="tab-01-trust">
         <div class="exp-shot"><img src="screenshots/01-trust.png" alt="Trusting a folder"></div>
         <div class="exp-text"><h3>Trusting a folder</h3><p>The first question of the first session. Reads and writes inside this folder stop asking; anything that writes elsewhere, and every shell command, still stops.</p></div>
@@ -142,6 +138,10 @@
       <div class="exp-pane" role="tabpanel" id="pane-14-plugin-lsp" aria-labelledby="tab-14-plugin-lsp">
         <div class="exp-shot"><img src="screenshots/14-plugin-lsp.png" alt="A plugin resolving a reference"></div>
         <div class="exp-text"><h3>A plugin resolving a reference</h3><p><code>csharp_definition</code> resolves a reference in a test project to its declaration in the project under test — across a boundary grep cannot cross. The first call pays to index; everything after is answered from a warm index.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-23-shell-terminal" aria-labelledby="tab-23-shell-terminal">
+        <div class="exp-shot"><a href="screenshots/23-shell-terminal.png" title="Open the full-size capture"><img src="screenshots/23-shell-terminal.png" alt="A shell running in a window over the session, with its own toolbar" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A terminal, for what a tool cannot do</h3><p>A captured stream has nothing to type into, so a <code>sudo</code> password or a <code>git rebase -i</code> is where an agent stops and hands the job back. <code>/shell</code> opens a real PTY in a window over the session — the colours are the giveaway, since <code>ls</code> emits them only when it believes it is talking to a terminal.</p><p class="exp-aside">Afterwards the agent is told what happened, queued rather than delivered into a turn of its own — so it does not start talking while you are still reading.</p></div>
       </div>
       </div>
     </div>
