@@ -255,6 +255,34 @@ the parent's own, which is the number that says whether the delegation paid.
 
 ---
 
+## A terminal, for the things a tool cannot do
+
+![A shell running inside the session, with its own toolbar](23-shell-terminal.png)
+
+`run_shell` runs a command and reads what it printed. That covers most of what an agent needs and
+none of what needs a person: a `sudo` password, `gcloud auth login`, `git rebase -i`. There is
+nothing to type into behind a captured stream.
+
+`/shell` opens a real PTY in a window over the session. The colours are the giveaway — `ls` emits
+them only when it believes it is talking to a terminal, so this is a child process that called
+`isatty()` and got the truth. The session is still running behind it.
+
+The toolbar is the window's own: whether the output goes back to the model, the status, and an
+explicit Close. A bare `/shell` defaults to **not** sending anything, because a shell you opened for
+yourself is a convenience rather than a channel to the agent.
+
+![The model answering from a transcript of the terminal](24-shell-transcript.png)
+
+The same session afterwards. The agent knows `ls -alF` was run and that the trailing `exit` closed
+the shell — from a terminal it never touched and cannot drive.
+
+Note the turn counter: **1 turn, 0 tool calls**. The transcript is queued, not delivered into a turn
+of its own. Someone who has just closed a terminal may be reading it, or thinking, or gone, and an
+agent that starts talking into that — or starts fixing a failure nobody asked it to fix — is worse
+than one that waits. It arrives with whatever you say next.
+
+---
+
 ## A second project, and a worker's receipts
 
 ![A session exploring a codebase, with two finished workers and the panel showing what it cost](session-overview.png)

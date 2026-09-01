@@ -96,6 +96,7 @@
       <button type="button" class="exp-item" role="tab" id="tab-12-stats" aria-controls="pane-12-stats"><span class="exp-icon">&#128176;</span><span>Cost</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-15-plugin-load" aria-controls="pane-15-plugin-load"><span class="exp-icon">&#128268;</span><span>Plugin load</span></button>
       <button type="button" class="exp-item" role="tab" id="tab-14-plugin-lsp" aria-controls="pane-14-plugin-lsp"><span class="exp-icon">&#128270;</span><span>Plugin at work</span></button>
+      <button type="button" class="exp-item" role="tab" id="tab-23-shell-terminal" aria-controls="pane-23-shell-terminal"><span class="exp-icon">&#128421;&#65039;</span><span>A real terminal</span></button>
       </div>
       <div class="exp-body" id="panels">
       <div class="exp-pane" role="tabpanel" id="pane-session-overview" aria-labelledby="tab-session-overview">
@@ -105,6 +106,10 @@
       <div class="exp-pane" role="tabpanel" id="pane-session-lsp-worker" aria-labelledby="tab-session-lsp-worker">
         <div class="exp-shot"><a href="screenshots/session-lsp-worker.png" title="Open the full-size capture"><img src="screenshots/session-lsp-worker.png" alt="A worker calling language-server tools, with a table of every call and its duration" loading="lazy"></a></div>
         <div class="exp-text"><h3>The same session, one worker open</h3><p>Every collapsed worker expands into what it actually did: fifty-two calls across six tools in under four seconds, each with its arguments and its duration. Some are <code>csharp_definition</code> — a plugin's tools, sitting among the built-in ones with nothing to tell them apart.</p><p class="exp-aside">You are not asked to trust a summary of the work. The work is there.</p></div>
+      </div>
+      <div class="exp-pane" role="tabpanel" id="pane-23-shell-terminal" aria-labelledby="tab-23-shell-terminal">
+        <div class="exp-shot"><a href="screenshots/23-shell-terminal.png" title="Open the full-size capture"><img src="screenshots/23-shell-terminal.png" alt="A shell running in a window over the session, with its own toolbar" loading="lazy"></a></div>
+        <div class="exp-text"><h3>A terminal, for what a tool cannot do</h3><p>A captured stream has nothing to type into, so a <code>sudo</code> password or a <code>git rebase -i</code> is where an agent stops and hands the job back. <code>/shell</code> opens a real PTY in a window over the session — the colours are the giveaway, since <code>ls</code> emits them only when it believes it is talking to a terminal.</p><p class="exp-aside">Afterwards the agent is told what happened, queued rather than delivered into a turn of its own — so it does not start talking while you are still reading.</p></div>
       </div>
       <div class="exp-pane" role="tabpanel" id="pane-01-trust" aria-labelledby="tab-01-trust">
         <div class="exp-shot"><img src="screenshots/01-trust.png" alt="Trusting a folder"></div>
@@ -185,6 +190,14 @@
     </div>
     <div class="u-item">
       <div class="u-num">06</div>
+      <p class="u-title">There is a real terminal when one is needed</p>
+      <p class="u-body">A captured stream has nothing to type into, so a password prompt or an
+      interactive rebase is where most agents hand the job back. <code>/shell</code> opens a PTY in
+      a window over the session; what happened there reaches the model afterwards, queued rather
+      than delivered into a turn of its own.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">07</div>
       <p class="u-title">It comes in several colours</p>
       <p class="u-body">A theme is a startup flag, a config key, or a picker in the status bar —
       <code>--theme &lt;name&gt;</code>, and <code>cxagent --help</code> lists what is installed. The
