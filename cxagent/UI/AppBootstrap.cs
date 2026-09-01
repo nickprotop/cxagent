@@ -1352,6 +1352,31 @@ public static class AppBootstrap
         sys.ThemeStateService.SwitchTheme(name);
         win.SetThemeLabel(name);
         win.FocusComposer();   // hand the keyboard back to where the user was
+
+        // REMEMBERED, because `theme` is already read at startup: without this the key exists,
+        // is honoured, and is never written — so choosing a theme with F9 lasts exactly as long
+        // as the process, which reads as a picker that does not work rather than one that is
+        // deliberately temporary.
+        //
+        // SAID WHEN IT FAILS, not swallowed. A read-only config or a full disk means the next
+        // start comes up in the old theme, and a user who was told nothing concludes the picker
+        // is broken rather than that the file could not be written.
+        //
+        // A TOAST, NOT A TRANSCRIPT ROW. Choosing a theme is not part of the conversation, and a
+        // row about a config write would sit in the log between the model's turns forever. This is
+        // chrome reporting on chrome, so it belongs where the plugin manager's own failures go.
+        try
+        {
+            PluginConfigWriter.SetTheme(Path.Combine(paths.ConfigDir, "config.json"), name);
+        }
+        catch (Exception ex)
+        {
+            // THE REASON, TRIMMED TO WHAT A TOAST SHOWS. One line truncates around sixty
+            // characters, and a message cut mid-sentence loses exactly the part that says why —
+            // so the sentence is short by construction rather than by luck.
+            sys.ToastService.Show($"theme not saved: {ex.Message}",
+                SharpConsoleUI.Core.NotificationSeverity.Warning);
+        }
     };
 
     // THE CARET FOLLOWS THE OVERLAY. Opening the list takes the composer out of editing mode so

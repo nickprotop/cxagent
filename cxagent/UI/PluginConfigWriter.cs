@@ -48,6 +48,16 @@ public static class PluginConfigWriter
         });
 
     /// <summary>
+    /// Remembers the chosen theme, so it survives a restart.
+    ///
+    /// <para>THE KEY THE READER ALREADY LOOKS FOR. <c>theme</c> is read at startup and applied
+    /// before the window is built; nothing wrote it back, so a theme picked with F9 lasted exactly
+    /// as long as the process and the picker looked broken rather than deliberately temporary.</para>
+    /// </summary>
+    public static void SetTheme(string configPath, string theme)
+        => MutateRoot(configPath, root => root["theme"] = theme);
+
+    /// <summary>
     /// One read-modify-write over the whole plugins block.
     ///
     /// <para>INTERNAL, NOT PRIVATE, so a caller syncing MANY entries does it in one write.
@@ -55,21 +65,40 @@ public static class PluginConfigWriter
     /// atomic writes to express one change, each a window a crash can land in.</para>
     /// </summary>
     internal static void Mutate(string configPath, Action<JsonObject> change)
+        => MutateRoot(configPath, root =>
+        {
+            // CREATED WHEN ABSENT, which is the common case: a config from the setup wizard has
+            // providers, classifier, mcp, agents and orchestrator, and nothing has ever written a
+            // plugins block.
+            if (root["plugins"] is not JsonObject plugins)
+            {
+                plugins = new JsonObject();
+                root["plugins"] = plugins;
+            }
+
+            change(plugins);
+        });
+
+    /// <summary>
+    /// One read-modify-write over the WHOLE document, for a key that is not inside the plugins
+    /// block.
+    ///
+    /// <para>THE SAME WRITE, not a second one. Atomicity and the 0600 mode are properties of how
+    /// this file is saved rather than of what is being changed, and a second writer that got either
+    /// wrong would leave a world-readable config or a truncated one — the failures this method
+    /// already handles.</para>
+    ///
+    /// <para>READ-MODIFY-WRITE, so a key nobody here knows about survives: config.json is a file
+    /// people hand-edit, and a save that serialised only what cxagent models would silently delete
+    /// the rest.</para>
+    /// </summary>
+    internal static void MutateRoot(string configPath, Action<JsonObject> change)
     {
         var root = File.Exists(configPath)
             ? JsonNode.Parse(File.ReadAllText(configPath))?.AsObject() ?? new JsonObject()
             : new JsonObject();
 
-        // CREATED WHEN ABSENT, which is the common case: a config from the setup wizard has
-        // providers, classifier, mcp, agents and orchestrator, and nothing has ever written a
-        // plugins block.
-        if (root["plugins"] is not JsonObject plugins)
-        {
-            plugins = new JsonObject();
-            root["plugins"] = plugins;
-        }
-
-        change(plugins);
+        change(root);
 
         // ATOMIC, like ProviderConfigWriter: a config half-written by an interrupted save is one
         // cxagent will refuse to start from.
