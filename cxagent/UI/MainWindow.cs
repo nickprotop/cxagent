@@ -1555,11 +1555,10 @@ public sealed class MainWindow : IDisposable
     public void ShowThemeItem(string themeName, Action onClick)
     {
         if (_themeItem is not null) return;   // idempotent, like ShowComposerHint
-        // "Theme F9" GOES IN THE SHORTCUT SLOT so the separator lands after the key rather than
-        // after the word — the item reads "Theme F9: cxagent". The slot is parsed as MARKUP
-        // (StatusBarControl renders item.Shortcut through MarkupParser), which is what lets "Theme"
-        // be ordinary text while F9 keeps the shortcut colour beside it.
-        _themeItem = StatusBar.AddLeft($"[{ColorScheme.MutedMarkup}]Theme[/] F9", themeName, onClick);
+        // THE KEY, THEN WHAT IT DOES — "F9:Theme" — which is the shape F2 and F3 already use. The
+        // value moves into the label beside it, so the bar reads as one column of keys rather than
+        // one item that names its key first and another that buries it after a word.
+        _themeItem = StatusBar.AddLeft("F9", $"Theme {themeName}", onClick);
     }
 
     /// <summary>
@@ -1591,7 +1590,8 @@ public sealed class MainWindow : IDisposable
     /// <param name="themeName">The newly active theme's name.</param>
     public void SetThemeLabel(string themeName)
     {
-        if (_themeItem is not null) _themeItem.Label = themeName;
+        // THE WHOLE LABEL, since it carries the word as well as the value — see ShowThemeItem.
+        if (_themeItem is not null) _themeItem.Label = $"Theme {themeName}";
     }
 
     /// <summary>
