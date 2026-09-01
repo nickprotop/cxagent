@@ -1,5 +1,19 @@
 using CxAgent.UI;
 
+// THE PTY SHIM RUNS BEFORE ANYTHING ELSE, INCLUDING THE CRASH HANDLERS BELOW. A terminal window
+// spawns this same executable with `--pty-shim <fd> <exe> [args]`, and the shim's whole job is to
+// make the slave PTY its controlling terminal and then `execvp` the target — replacing this process
+// image. Nothing that runs first can be allowed to matter, because none of it survives the exec.
+//
+// It has to come before the argument parser, not inside it: `--pty-shim` is not a cxagent flag, and
+// CommandLine rejects it as an unknown argument with exit 2. A terminal would then spawn a second
+// cxagent that prints usage to the PTY instead of the shell the user asked for.
+//
+// RunIfShim returns false off Linux and for any other argument list, so this costs one comparison
+// on every normal start. The 127 is unreachable in practice — a successful execvp never returns —
+// so it only reports a shim whose exec failed, using the shell's own "command not found" code.
+if (SharpConsoleUI.PtyShim.RunIfShim(args)) return 127;
+
 // LAST-RESORT CRASH LOG. Without this, a crash in a background task makes the process VANISH with
 // nothing written down: no goal-terminal line, no error, tokens frozen, the TUI frame still painted
 // on a terminal whose owner is gone. Observed live, it reads as a hang — twenty minutes before a
