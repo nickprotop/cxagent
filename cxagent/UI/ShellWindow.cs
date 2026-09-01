@@ -79,11 +79,16 @@ internal static class ShellWindow
         var status = Controls.Label(interactive ? "  shell  " : "  running…  ");
         var close = new ButtonBuilder().WithText(" Close ").Build();
 
+        // PINNED TO THE BOTTOM so the terminal above it takes the remaining height. Left to scroll
+        // with the content, the toolbar is pushed out of view by the first screenful of output —
+        // and the send-back toggle is worthless if it cannot be reached once there is output to
+        // decide about.
         var toolbar = new HorizontalGridBuilder()
             .Column(c => c.Add(sendBack))
             .Column(c => c.Add(status))
             .Column(c => c.Add(close))
             .Build();
+        toolbar.StickyPosition = StickyPosition.Bottom;
 
         var window = new WindowBuilder(system)
             .WithTitle(interactive ? "  Terminal" : $"  Terminal — {command}")
@@ -94,6 +99,15 @@ internal static class ShellWindow
             .AddControl(terminal)
             .AddControl(toolbar)
             .Build();
+
+        // BUILT IS NOT SHOWN. WindowBuilder.Build constructs a window; the window system does not
+        // know it exists until it is added, so without this the PTY spawns, the child runs and
+        // nothing is ever drawn — a terminal that works perfectly and is invisible.
+        //
+        // ACTIVATED, which AddWindow does by default: the user opened this to TYPE INTO it, and a
+        // terminal that appears behind the session window would take their first keystrokes
+        // somewhere else.
+        system.AddWindow(window);
 
         _open = window;
 
