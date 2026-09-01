@@ -1495,6 +1495,20 @@ public sealed class MainWindow : IDisposable
             _modeLine.SetContent([ModeLineText(_mode, ModelLabel)]);
         }
 
+        // THE TWO GRIPS, which are the accent rather than a surface. Both captured ColorScheme.Grip
+        // by value when they were built, so a theme switch left the user's marks in the OUTGOING
+        // theme's accent — the one piece of chrome whose whole job is to track the active colour,
+        // showing the colour that is no longer active.
+        //
+        // THE RAIL IS A PROPERTY, THE COMPOSER'S IS MARKUP. The rail takes a Color and re-colours by
+        // assignment; the grip's colour is baked into the text of each row, so like the mode line
+        // above it the content has to be regenerated rather than re-coloured.
+        Chat.MessageRailColor = ColorScheme.Grip;
+        if (_promptGrip is not null)
+            _promptGrip.SetContent([.. Enumerable.Repeat(
+                $"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
+                PromptRows + 1)]);
+
         // The session panel captured its own surfaces the same way this window did.
         ApplyRoleStyles();   // each style captured its Background by value
         SessionPanel.ReapplyTheme();

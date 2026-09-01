@@ -115,6 +115,15 @@ internal static class ShellWindow
                       Math.Max(system.DesktopDimensions.Height - 6, 20))
             .Centered()
             .Closable(true)
+            // THE THEME'S ACCENT, NOT THE LIBRARY'S. A window that sets no border colour falls
+            // through to the theme default — Cyan1 in ModernGrayTheme — which is a bright cyan
+            // against cxagent's amber chrome and reads as a window from another application.
+            //
+            // Inactive stays muted so the terminal recedes when the session has focus, which is the
+            // same distinction the border already draws; only the colours are now ours.
+            .WithActiveBorderColor(ColorScheme.AccentRgb)
+            .WithInactiveBorderColor(ColorScheme.Separator)
+            .WithBackgroundColor(ColorScheme.ChatSurface)
             // NOT MINIMIZABLE. A minimised terminal is a running child with no way back to it that
             // the user is likely to find, and the one-window-at-a-time rule then refuses the next
             // /shell because of a window they cannot see. Closing is the way out, and it asks first
