@@ -1562,6 +1562,27 @@ public sealed class MainWindow : IDisposable
         _themeItem = StatusBar.AddLeft($"[{ColorScheme.MutedMarkup}]Theme[/] F9", themeName, onClick);
     }
 
+    /// <summary>
+    /// Puts the plugin manager beside the theme item, at the left of the status bar.
+    ///
+    /// <para>AFTER CONSTRUCTION, for the reason <see cref="ShowThemeItem"/> gives: adding a
+    /// status-bar item during BuildWindow hangs on a relayout that has no render tick to join.</para>
+    ///
+    /// <para>THE SAME SHAPE AS THE THEME ITEM — the key in the shortcut slot so the separator lands
+    /// after it, and a click that runs what the key runs. Two ways to reach one thing, never two
+    /// implementations of it: a click that opened the dialog by a different path is one that can
+    /// drift from what F2 does.</para>
+    /// </summary>
+    /// <param name="onClick">Invoked when the item is clicked — the same toggle F2 uses.</param>
+    public void ShowPluginItem(Action onClick)
+    {
+        if (_pluginItem is not null) return;   // idempotent, like the theme item
+
+        _pluginItem = StatusBar.AddLeft($"[{ColorScheme.MutedMarkup}]Plugins[/] F2", "", onClick);
+    }
+
+    private StatusBarItem? _pluginItem;
+
     /// <summary>Re-labels the theme item after a switch. No-op before it is shown.</summary>
     /// <param name="themeName">The newly active theme's name.</param>
     public void SetThemeLabel(string themeName)

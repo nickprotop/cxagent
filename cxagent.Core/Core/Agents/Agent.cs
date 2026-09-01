@@ -825,6 +825,12 @@ public sealed class Agent
     /// a plugin's instructions arrive with its tools and leave with them. Null when nothing supplies
     /// plugins.
     /// </param>
+    /// <param name="modelFacingCommands">
+    /// The slash commands this agent may name to the user, as name-and-summary pairs — the ones that
+    /// declared <c>TellTheModel</c>. Null when the host offers none, which is the usual case: a
+    /// command the USER drives is not the model's business, and naming it costs tokens in every
+    /// request to enable a suggestion nobody asked for.
+    /// </param>
     /// <param name="toolSelection">
     /// Which tools this agent is offered, or null for all of them. See <see cref="Jobs.ToolSelection"/>.
     /// </param>

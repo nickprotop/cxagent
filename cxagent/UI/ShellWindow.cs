@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Sessions;
 using SharpConsoleUI;
@@ -34,7 +35,14 @@ internal static class ShellWindow
     /// <c>PlatformNotSupportedException</c> on macOS. The command is not registered where this is
     /// false, and since the system prompt renders only what was registered, the model never hears of
     /// a command that could only fail.</para>
+    ///
+    /// <para>A GUARD THE COMPILER UNDERSTANDS. As a bare bool the analyser cannot follow it, so
+    /// every call behind the guard warns that it is reachable on all platforms; the attribute says
+    /// a true result means those two, which is what makes <see cref="Open"/> callable without
+    /// suppressing anything.</para>
     /// </summary>
+    [SupportedOSPlatformGuard("linux")]
+    [SupportedOSPlatformGuard("windows")]
     public static bool IsSupported => OperatingSystem.IsLinux() || OperatingSystem.IsWindows();
 
     /// <summary>
@@ -59,6 +67,8 @@ internal static class ShellWindow
     /// <summary>
     /// Opens a terminal running <paramref name="command"/>, or an interactive shell when it is empty.
     /// </summary>
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("windows")]
     public static void Open(ConsoleWindowSystem system, MainWindow main, Session session,
                             string command)
     {
@@ -240,6 +250,8 @@ internal static class ShellWindow
     ///
     /// <para>APP-MODAL, NOT PARENTED, for the same reason.</para>
     /// </summary>
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("windows")]
     private static void AskThenClose(ConsoleWindowSystem system, Window window,
                                      TerminalControl terminal, string command)
     {
@@ -335,6 +347,8 @@ internal static class ShellWindow
     /// <para>SWALLOWED, because the child may have exited between the question and the answer, and
     /// a race that the user resolved by waiting is not an error to report.</para>
     /// </summary>
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("windows")]
     private static void Kill(TerminalControl terminal)
     {
         try { Process.GetProcessById(terminal.ProcessId).Kill(entireProcessTree: true); }
@@ -349,6 +363,8 @@ internal static class ShellWindow
     /// a failure nobody asked it to fix — is worse than one that waits. The model sees it when they
     /// next say something.</para>
     /// </summary>
+    [SupportedOSPlatform("linux")]
+    [SupportedOSPlatform("windows")]
     private static void Report(Session session, TerminalControl terminal, string command, bool send)
     {
         if (!send) return;

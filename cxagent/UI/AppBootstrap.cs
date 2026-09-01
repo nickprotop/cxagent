@@ -660,7 +660,12 @@ public static class AppBootstrap
                     TellTheModel: true),
                 (session, arguments) =>
                 {
-                    ShellWindow.Open(system, mainWindow, session, arguments);
+                    // CHECKED AGAIN INSIDE THE HANDLER, not because it can change but because this
+                    // is a lambda: the platform guard on the registration above cannot be followed
+                    // into a closure, so without this the call reads as reachable everywhere.
+                    if (ShellWindow.IsSupported)
+                        ShellWindow.Open(system, mainWindow, session, arguments);
+
                     return true;
                 });
 
@@ -1304,13 +1309,20 @@ public static class AppBootstrap
         // Func<bool>, NOT Action: an Action overload is wrapped to always report the key consumed,
         // and this handler must be able to decline. It never does today — F2 either opens or closes
         // — but the toggle is what stops a second Show clobbering the first dialog's state.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2, () =>
+        // ONE TOGGLE, TWO WAYS IN. The key and the status-bar item run this same local function, so
+        // a click cannot drift from what F2 does — a second call site that opened the dialog its own
+        // way is a second place for the close-if-open rule to be forgotten.
+        bool TogglePluginManager()
         {
             if (PluginManagerDialog.CloseIfOpen()) return true;
 
             PluginManagerDialog.Show(system, window, manager, session, paths, session.WorkingDirectory);
             return true;
-        });
+        }
+
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2,
+            () => TogglePluginManager());
+
 
         // F9 OPENS THE THEME LIST, and the item at the left of the status bar opens the same one on a
         // click. One key for the whole registry rather than a key per theme: the list already knows
@@ -1413,9 +1425,15 @@ public static class AppBootstrap
     }
     win.ShowThemeItem(
         sys.ThemeStateService.CurrentTheme.Name ?? CxAgentTheme.Name, ToggleThemePicker);
+
         }
 
         if (Features.ThemePicker) WireThemePicker();
+
+        // AFTER THE THEME ITEM, because AddLeft appends and that is the order they read in — but
+        // OUTSIDE the theme feature's own branch, since the plugin manager does not stop existing
+        // when the theme picker is turned off. It simply moves to the left end.
+        mainWindow.ShowPluginItem(() => TogglePluginManager());
 
         // NO "DIAGNOSE THE FOCUSED JOB" KEY. Such a key would resolve its target through
         // FocusedJobId(), which walks the focus path for a JobBlockControl — and those are created

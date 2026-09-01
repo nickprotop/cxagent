@@ -38,6 +38,8 @@ but not completed.
 | `/sessions` | Earlier conversations in this folder |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
+| `/shell` | Open a terminal you can type in — Linux and Windows |
+| `/shell <command>` | Run one command in it, and tell the agent what happened |
 | `/exit` | Quit |
 
 ---
@@ -444,6 +446,63 @@ Thirty days rather than the week this started with. Seven was right when these r
 invisible crash buffer, where nothing was lost by dropping one because nobody could name it. They
 are now a listing you read and an id you resume by, which makes the question *how far back would
 someone look* rather than *how long until a crash is stale*.
+
+---
+
+## `/shell`
+
+`run_shell` runs a command and reads what it printed. That covers everything except what needs a
+person: a `sudo` password, `gcloud auth login`, `git rebase -i`, an installer that paints a screen.
+There is nothing to type into behind a captured stream, so the agent reaches that wall and hands the
+job back.
+
+`/shell` opens a real terminal in a window over the session — a PTY, so a program that checks
+`isatty()` gets the truth and behaves as it would anywhere else.
+
+```
+/shell sudo apt install foo
+/shell git rebase -i HEAD~3
+/shell                        # just a shell, nothing sent back
+```
+
+**The command runs through your own shell** — `$SHELL -c` on Linux, `%ComSpec% /c` on Windows — so
+`&&`, pipes, globs and `~` all mean what you expect. The exit code is still the command's.
+
+**The window stays open when the command finishes.** The last screen is usually the answer, and
+closing on exit would destroy it. A bare `/shell` is the opposite: typing `exit` is asking to leave,
+so the window goes.
+
+**Closing while something is still running asks first.** Confirmed, the command is stopped and what
+it printed so far is what gets captured — reported as partial, with no exit code.
+
+**The toolbar decides what the agent is told.** `send output back` is on for `/shell <command>` and
+off for a bare `/shell`, because a shell you opened for yourself is a convenience rather than a
+channel to the model. Secrets you type are your own business: there is no filter, because one that
+caught most of them would teach you to trust it for the rest.
+
+**What comes back does not start a turn.** The transcript and exit code are queued and arrive with
+whatever you say next:
+
+```
+[cxagent] the user ran a command in a terminal: sudo apt install foo
+Exited 0. What they saw:
+  ...
+  [... 847 lines not shown ...]
+  Setting up foo (2.4.1-1) ...
+```
+
+You may be reading the output, thinking, or gone — an agent that starts talking into that, or starts
+fixing a failure nobody asked it to fix, is worse than one that waits. Long output is trimmed from
+the middle at 8,000 characters, keeping both ends, since that is where the command and its outcome
+are.
+
+**No permission prompt**, unlike `run_shell`. You read the command line, typed it and pressed enter;
+asking again teaches the reflexive approval a permission system cannot survive. The terminal shows
+exactly what is running, live, which no dialog does.
+
+**Linux and Windows only.** The terminal control has no macOS backend yet, so there the command is
+not registered at all — and because the model is told only about commands that were registered, it
+never suggests one that could not work.
 
 ---
 
