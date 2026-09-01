@@ -221,9 +221,13 @@ internal static class ShellWindow
 
         async Task Ask()
         {
+            // NO PARENT, deliberately. Parenting the dialog to the terminal window makes it a modal
+            // OF the very window "Stop it" then closes — and a modal whose parent is destroyed
+            // underneath it stays on screen needing a second dismissal. It is a question ABOUT the
+            // terminal, not a window belonging to it.
             if (!await Dialogs.ConfirmAsync(system, "Still running",
                     $"{what} is still running. Stop it?", ok: "Stop it", cancel: "Keep running",
-                    severity: NotificationSeverityEnum.Warning, parent: window))
+                    severity: NotificationSeverityEnum.Warning))
             {
                 // KEPT RUNNING MEANS BACK TO TYPING. Dismissing the dialog returns focus to the
                 // window, not to the control inside it the user was working in — so a password
@@ -233,22 +237,14 @@ internal static class ShellWindow
                 return;
             }
 
-            // KILL NOW; CLOSE A FULL HOP LATER. The dialog's task is a plain
-            // TaskCompletionSource completed inside the button's Click handler, so THIS
-            // continuation resumes inline on the UI thread — before the library has even scheduled
-            // the close of its own modal. Enqueuing once would therefore put this window's close
-            // AHEAD of the modal's, tearing down the parent the modal is closing against: the
-            // dialog stays on screen and needs a second press to go.
-            //
-            // The queue is FIFO and drained per loop iteration, so enqueuing from inside an
-            // enqueued action lands one full iteration later — after the modal's close has run,
-            // whichever order the two were scheduled in.
-            //
-            // The kill does not wait: stopping the command is what the user asked for, and it is
-            // safe while the dialog is still up because it touches the child, not the window.
-            Kill(terminal);
+            // ON THE UI THREAD, because this continuation can resume off it — the dialog's
+            // completion is a plain TaskCompletionSource, so where this runs is not guaranteed.
+            // Closing a window from the wrong thread races the render loop.
             system.EnqueueOnUIThread(() =>
-                system.EnqueueOnUIThread(() => window.Close(force: true)));
+            {
+                Kill(terminal);
+                window.Close(force: true);
+            });
         }
     }
 
