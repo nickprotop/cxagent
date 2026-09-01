@@ -47,6 +47,16 @@ internal static class ShellWindow
     private static Window? _open;
 
     /// <summary>
+    /// The confirmation currently on screen, or null.
+    ///
+    /// <para>ONE QUESTION AT A TIME. <c>OnClosing</c> fires on EVERY close attempt — the title-bar
+    /// X, the toolbar button, a forced close — and each one that finds a running command would open
+    /// its own dialog. Clicking Stop on the second closes the second; the first is still there,
+    /// still live, still asking, which reads as a dialog that refuses to close.</para>
+    /// </summary>
+    private static Window? _asking;
+
+    /// <summary>
     /// Opens a terminal running <paramref name="command"/>, or an interactive shell when it is empty.
     /// </summary>
     public static void Open(ConsoleWindowSystem system, MainWindow main, Session session,
@@ -174,8 +184,11 @@ internal static class ShellWindow
             // question nobody can answer.
             if (interactive || terminal.IsDisposed || e.Force) return;
 
+            // ALREADY ASKING. A second close attempt while the question is up must not stack a
+            // second copy of it — it must simply be refused, leaving the one the user is looking at
+            // to decide the outcome.
             e.Allow = false;
-            AskThenClose(system, window, terminal, command);
+            if (_asking is null) AskThenClose(system, window, terminal, command);
         };
 
         window.OnClosed += (_, _) =>
@@ -185,6 +198,7 @@ internal static class ShellWindow
             // leaves anything it started behind, so the tree goes explicitly.
             if (!terminal.IsDisposed) Kill(terminal);
             _open = null;
+            _asking = null;
         };
 
         terminal.ProcessExited += (_, _) => system.EnqueueOnUIThread(() =>
@@ -234,6 +248,9 @@ internal static class ShellWindow
         Window? dialog = null;
         void Close()
         {
+            // CLEARED FIRST, so a close attempt arriving while this runs is not refused by a guard
+            // pointing at a window that is already going.
+            _asking = null;
             if (dialog is not null) system.CloseWindow(dialog, activateParent: true, force: true);
         }
 
@@ -262,7 +279,9 @@ internal static class ShellWindow
                 .OnClick((_, _) => { Close(); Kill(terminal); window.Close(force: true); }))
             .AddButton(new ButtonBuilder()
                 .WithText("Keep running")
-                .WithColorRole(ColorRole.Default)
+                // AFFIRMATIVE. This is the safe answer — the command keeps working — so it reads
+                // as the good outcome beside a red Stop rather than as inert chrome.
+                .WithColorRole(ColorScheme.Affirmative)
                 // BACK TO TYPING. Dismissing returns focus to the window, not to the control the
                 // user was working in — so a password prompt they nearly abandoned would sit there
                 // ignoring the keyboard.
@@ -298,6 +317,7 @@ internal static class ShellWindow
             .AddControl(toolbar.StickyBottom().Build())
             .Build();
 
+        _asking = dialog;
         system.AddWindow(dialog);
     }
 
