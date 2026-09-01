@@ -115,6 +115,11 @@ internal static class ShellWindow
                       Math.Max(system.DesktopDimensions.Height - 6, 20))
             .Centered()
             .Closable(true)
+            // NOT MINIMIZABLE. A minimised terminal is a running child with no way back to it that
+            // the user is likely to find, and the one-window-at-a-time rule then refuses the next
+            // /shell because of a window they cannot see. Closing is the way out, and it asks first
+            // when something is still running.
+            .Minimizable(false)
             .AddControl(toolbar)
             .AddControl(rule)
             .AddControl(terminal)
