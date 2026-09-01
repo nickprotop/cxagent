@@ -8,6 +8,7 @@ using SharpConsoleUI.Controls.Terminal;
 using SharpConsoleUI.Dialogs;
 using SharpConsoleUI.Parsing;
 using SharpConsoleUI.Layout;
+using SharpConsoleUI.Themes;
 using SharpConsoleUI.Core;
 
 namespace CxAgent.UI;
@@ -211,41 +212,93 @@ internal static class ShellWindow
     /// <para>A CONFIRMATION IS CHEAP AND AN ACCIDENTAL CLOSE MID-INSTALL IS NOT. The question names
     /// the command, because a window that has scrolled is not self-evidently the one the user
     /// started.</para>
+    ///
+    /// <para>BUILT HERE RATHER THAN THROUGH <c>Dialogs.ConfirmAsync</c>, following what
+    /// <see cref="PluginManagerDialog"/> and cratis-cli's workbench both do. The shared helper owns
+    /// a window lifecycle this caller does not control: it resolves through a TaskCompletionSource
+    /// and closes its own modal on a schedule anything else closing a window has to race. Two
+    /// buttons whose handlers do the work directly have no ordering to get wrong.</para>
+    ///
+    /// <para>THE DIALOG CLOSES BEFORE THE ACTION RUNS, which is the rule that makes this correct
+    /// rather than merely simpler — the same contract cratis names <c>CloseOnAction</c>. Acting
+    /// first means closing the terminal window while its modal is still up, and a modal whose
+    /// window goes out from under it stays on screen needing a second dismissal.</para>
+    ///
+    /// <para>APP-MODAL, NOT PARENTED, for the same reason.</para>
     /// </summary>
     private static void AskThenClose(ConsoleWindowSystem system, Window window,
                                      TerminalControl terminal, string command)
     {
-        var what = string.IsNullOrWhiteSpace(command) ? "The shell" : $"`{command}`";
+        var what = string.IsNullOrWhiteSpace(command) ? "The shell" : command.Trim();
 
-        _ = Ask();
-
-        async Task Ask()
+        Window? dialog = null;
+        void Close()
         {
-            // NO PARENT, deliberately. Parenting the dialog to the terminal window makes it a modal
-            // OF the very window "Stop it" then closes — and a modal whose parent is destroyed
-            // underneath it stays on screen needing a second dismissal. It is a question ABOUT the
-            // terminal, not a window belonging to it.
-            if (!await Dialogs.ConfirmAsync(system, "Still running",
-                    $"{what} is still running. Stop it?", ok: "Stop it", cancel: "Keep running",
-                    severity: NotificationSeverityEnum.Warning))
-            {
-                // KEPT RUNNING MEANS BACK TO TYPING. Dismissing the dialog returns focus to the
-                // window, not to the control inside it the user was working in — so a password
-                // prompt they nearly abandoned would sit there ignoring the keyboard.
-                system.EnqueueOnUIThread(() =>
-                    window.FocusManager.SetFocus(terminal, FocusReason.Programmatic));
-                return;
-            }
-
-            // ON THE UI THREAD, because this continuation can resume off it — the dialog's
-            // completion is a plain TaskCompletionSource, so where this runs is not guaranteed.
-            // Closing a window from the wrong thread races the render loop.
-            system.EnqueueOnUIThread(() =>
-            {
-                Kill(terminal);
-                window.Close(force: true);
-            });
+            if (dialog is not null) system.CloseWindow(dialog, activateParent: true, force: true);
         }
+
+        // ESCAPED: the command is the user's own text in a markup-rendered control, and a bracket
+        // in it would be eaten as a colour tag.
+        var body = Controls.Markup()
+            .AddEmptyLine()
+            .AddLine($"  [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(what)}[/] is still running.")
+            .AddEmptyLine()
+            .AddLine($"  [{ColorScheme.MutedMarkup}]Stopping it ends the command and closes the terminal.[/]")
+            .AddEmptyLine()
+            .Build();
+
+        var rule = Controls.RuleBuilder()
+            .WithColorRole(ColorScheme.Caution)
+            .WithBorderStyle(BorderStyle.Single)
+            .StickyBottom()
+            .Build();
+
+        var toolbar = Controls.Toolbar()
+            .WithSpacing(2)
+            .WithAlignment(HorizontalAlignment.Center)
+            .AddButton(new ButtonBuilder()
+                .WithText("Stop it")
+                .WithColorRole(ColorScheme.Destructive)
+                .OnClick((_, _) => { Close(); Kill(terminal); window.Close(force: true); }))
+            .AddButton(new ButtonBuilder()
+                .WithText("Keep running")
+                .WithColorRole(ColorRole.Default)
+                // BACK TO TYPING. Dismissing returns focus to the window, not to the control the
+                // user was working in — so a password prompt they nearly abandoned would sit there
+                // ignoring the keyboard.
+                .OnClick((_, _) =>
+                {
+                    Close();
+                    window.FocusManager.SetFocus(terminal, FocusReason.Programmatic);
+                }));
+
+        dialog = new WindowBuilder(system)
+            .WithTitle(" Still running ")
+            .WithSize(64, 11)
+            .Centered()
+            .AsModal()
+            .WithBackgroundColor(ColorScheme.ChatSurface)
+            .WithBorderStyle(BorderStyle.Rounded)
+            .WithBorderColor(ColorScheme.AccentRgb)
+            .Resizable(false)
+            .Minimizable(false)
+            .Maximizable(false)
+            // ESCAPE CANCELS, never stops. The safe answer is the one a reflex reaches, so a key
+            // pressed to dismiss a surprise cannot kill a running install.
+            .OnKeyPressed((_, e) =>
+            {
+                if (e.KeyInfo.Key != ConsoleKey.Escape) return;
+
+                Close();
+                window.FocusManager.SetFocus(terminal, FocusReason.Programmatic);
+                e.Handled = true;
+            })
+            .AddControl(body)
+            .AddControl(rule)
+            .AddControl(toolbar.StickyBottom().Build())
+            .Build();
+
+        system.AddWindow(dialog);
     }
 
     /// <summary>
