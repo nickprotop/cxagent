@@ -208,6 +208,28 @@ public sealed partial class Session
             }
         }
 
+        // WHAT THE APP HAS TO SAY GOES FIRST, and only once the text is known to be heading for
+        // the model. Taking it above the command branch would destroy it: prepending turns "/clear"
+        // into prose that no longer starts with a slash, so the command silently becomes a message
+        // AND the transcript goes with it into a turn the user never asked for.
+        //
+        // A COMMAND THEREFORE LEAVES IT QUEUED, which is right rather than merely safe — /clear and
+        // /stats are not the user speaking to the model, so there is nothing yet for the transcript
+        // to arrive ahead of. It waits for something that is.
+        //
+        // FIRST IN THE TEXT because it describes what already happened: the terminal closed before
+        // this was typed, and a reply that answers the question while ignoring the event preceding
+        // it reads as though the event never occurred.
+        //
+        // ECHOED AS THE USER'S WORDS ALONE, via the echo parameter that exists for exactly this —
+        // /init sends a briefing and displays "/init" so the log does not attribute to someone words
+        // they never typed. A transcript they did not write is the same problem.
+        if (TakeInjected() is { Length: > 0 } injected)
+        {
+            echo ??= text;
+            text = injected + "\n\n" + text;
+        }
+
         return SubmitRaw(text, echo, tools);
     }
 

@@ -99,6 +99,69 @@ public sealed partial class Session
         if (taken is { Length: > 0 }) Cancelled?.Invoke(taken);
     }
 
+    /// <summary>
+    /// What the APP has to tell the model, not yet delivered.
+    ///
+    /// <para>A SECOND QUEUE, NOT <see cref="_pending"/>, because the two are answered differently by
+    /// the same subscribers. <see cref="Cancelled"/> puts the steer queue BACK IN THE COMPOSER to be
+    /// edited, and <see cref="Pending"/> draws it as the user's own queued block — both correct for
+    /// something the user typed, both wrong for a terminal transcript they cannot edit and did not
+    /// write. Sharing one queue would make every subscriber ask which kind it was holding, which is
+    /// the reconstruction the Drained/Cancelled split already exists to prevent.</para>
+    ///
+    /// <para>ITS OWN GATE for the same reason the steer queue has one: injection happens on whatever
+    /// thread finished the work — a PTY read thread at process exit — while the take happens on the
+    /// submitting thread.</para>
+    /// </summary>
+    private string? _injected;
+    private readonly object _injectedGate = new();
+
+    /// <summary>
+    /// Gives the model something the APP knows and it does not — a terminal's transcript, a job that
+    /// finished, a plugin's late result — delivered ahead of the user's next message.
+    ///
+    /// <para>IT DOES NOT START A TURN, and that is the whole point. The person who just closed a
+    /// terminal window may be reading it, thinking, or gone; an agent that begins talking into that
+    /// silence — or begins fixing a failure nobody asked it to fix — is worse than one that waits.
+    /// So this queues, and <see cref="Submit"/> delivers when the user next says something.</para>
+    ///
+    /// <para>THE COST, ACCEPTED: a user who never speaks again never delivers it. The text is still
+    /// on their screen where it was produced; only the model misses it, and a model that missed a
+    /// transcript is a smaller harm than one that woke up and acted on it uninvited.</para>
+    ///
+    /// <para>NAMES NO CALLER. /shell is the first, not the only: a background job's result and a
+    /// plugin finishing late are the same shape, and each inventing its own door is how a codebase
+    /// ends up with three.</para>
+    ///
+    /// <para>APPENDS, like <see cref="Steer"/>: two things that happened before the user spoke are
+    /// both worth saying, and the blank line keeps them legible as separate events rather than one
+    /// run-on report.</para>
+    /// </summary>
+    public void Inject(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        lock (_injectedGate)
+            _injected = string.IsNullOrEmpty(_injected) ? text : _injected + "\n\n" + text;
+    }
+
+    /// <summary>
+    /// Takes what the app has to say and clears it, so it is delivered exactly once.
+    ///
+    /// <para>NO EVENT, unlike <see cref="TakePendingSteer"/>. Nothing on screen stands in for this
+    /// while it waits — it was never drawn as a queued block — so there is nothing to remove when it
+    /// goes.</para>
+    /// </summary>
+    public string? TakeInjected()
+    {
+        lock (_injectedGate)
+        {
+            var taken = _injected;
+            _injected = null;
+            return taken;
+        }
+    }
+
     /// <summary>What is waiting, or null. For the UI to render — takes nothing.</summary>
     public string? PendingSteer
     {
