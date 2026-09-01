@@ -641,6 +641,29 @@ public static class AppBootstrap
             new SessionCommand("/exit", "quit cxagent"),
             (_, _) => { cts.Cancel(); system.Shutdown(); return true; });
 
+        // /exit's REASON: a library cannot open a window in its host, so this is declared beside the
+        // handler that can service it rather than in a table every consumer advertises.
+        //
+        // REGISTERED ONLY WHERE IT CAN WORK. TerminalControl throws on macOS, and because the prompt
+        // renders only what was registered, a command absent here is one the model never hears of
+        // and so never suggests — no sentence to contradict, no capability advertised that fails.
+        //
+        // THE ONE COMMAND THE MODEL IS TOLD ABOUT. TellTheModel exists for exactly this case: a dead
+        // end the model walks into — a password prompt, a login, an interactive rebase — where the
+        // useful reply names the command that can get past it. It cannot name what it was never
+        // given.
+        if (ShellWindow.IsSupported)
+            manager.Commands.Register(
+                new SessionCommand("/shell",
+                    "run a command in a real terminal you can type into",
+                    [new CommandArgument("<command>", "the command line to run", Completes: false)],
+                    TellTheModel: true),
+                (session, arguments) =>
+                {
+                    ShellWindow.Open(system, mainWindow, session, arguments);
+                    return true;
+                });
+
         void WireRunner(ResolvedConfig res)
         {
             if (!res.HasProvider) return;
