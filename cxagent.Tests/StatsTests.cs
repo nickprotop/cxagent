@@ -18,8 +18,8 @@ public class StatsTests
         new(id, dir, model, "fan-out", input, output, sub, turns, Ago(2), Ago(1));
 
     private static RunRecord R(string id, string type, int input, int output, int turns,
-        string outcome = "completed") =>
-        new(id, "parent", type, "qwen3.6-35b.gguf", input, output, turns, 4, outcome,
+        string outcome = "completed", string? model = "qwen3.6-35b.gguf") =>
+        new(id, "parent", type, model, input, output, turns, 4, outcome,
             Ago(1), 60_000, "/home/nick/source/cxgpu");
 
     private static ToolCallRecord C(string id, string tool, int chars, string outcome = "succeeded") =>
@@ -107,6 +107,49 @@ public class StatsTests
         Assert.Equal(1, explore.Capped);
         Assert.Equal(1, explore.Failed);
         Assert.Equal(15.0, explore.AvgTurns, 1);
+    }
+
+    /// <summary>
+    /// A TYPE'S SPEND, SPLIT BY THE MODEL THAT SPENT IT. A type can be bound to its own provider,
+    /// so "workers spent 1.2M" and "openrouter cost $0.62" are two true numbers that never meet:
+    /// neither says what the planner cost. The runs table has carried type and model together all
+    /// along; this is the join that makes a mixed local/hosted setup readable.
+    /// </summary>
+    [Fact]
+    public void ByType_SplitsATypeByTheModelsThatRanIt()
+    {
+        var rows = StatsQuery.ByType([
+            R("r1", "planner", 30_000, 2_000, 6, model: "openrouter/claude"),
+            R("r2", "planner", 10_000, 1_000, 4, model: "openrouter/claude"),
+            R("r3", "planner", 500, 50, 2, model: "qwen3.6-35b.gguf"),
+        ]);
+
+        var planner = Assert.Single(rows);
+        Assert.Equal(43_550, planner.Tokens);
+
+        // COSTLIEST FIRST, like every other list here.
+        Assert.Equal("openrouter/claude", planner.Models[0].ModelId);
+        Assert.Equal(43_000, planner.Models[0].Tokens);
+        Assert.Equal(2, planner.Models[0].Runs);
+        Assert.Equal("qwen3.6-35b.gguf", planner.Models[1].ModelId);
+        Assert.Equal(550, planner.Models[1].Tokens);
+    }
+
+    /// <summary>
+    /// A RUN THAT NAMED NO MODEL IS LEFT OUT OF THE SPLIT, not bucketed as "unknown" — which would
+    /// invent a model. The type's own total still counts it, so nothing goes missing.
+    /// </summary>
+    [Fact]
+    public void ByType_LeavesRunsWithNoModelOutOfTheSplit()
+    {
+        var rows = StatsQuery.ByType([
+            R("r1", "explore", 100, 10, 3, model: null),
+            R("r2", "explore", 200, 20, 3, model: "qwen3.6-35b.gguf"),
+        ]);
+
+        var explore = Assert.Single(rows);
+        Assert.Equal(330, explore.Tokens);
+        Assert.Equal(220, Assert.Single(explore.Models).Tokens);
     }
 
     [Fact]

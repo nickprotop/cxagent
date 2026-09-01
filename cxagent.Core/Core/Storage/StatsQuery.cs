@@ -75,8 +75,27 @@ public sealed record ModelStat(string Model, int InputTokens, int OutputTokens, 
 /// under "completed" that is an invisible waste; named, it is the signal that a briefing needs a
 /// give-up clause.
 /// </param>
+/// <param name="Models">
+/// What each model spent on this type, costliest first — empty when no run recorded one.
+///
+/// <para>THE PAIR THAT MAKES A MIXED SETUP READABLE. A type can be bound to its own provider
+/// (<c>"planner": { "provider": "openrouter" }</c>), so "workers spent 1.2M" and "openrouter cost
+/// $0.62" are two true numbers that do not meet: neither says what the planner cost. The runs table
+/// has carried both facts per run all along — this is the join.</para>
+///
+/// <para>A LIST, NOT ONE MODEL. A type is not bound to one forever: the session's model changes,
+/// config changes, and a type with no provider of its own inherits whatever the session had. Runs
+/// under two models are two rows, not an average of a thing that never happened.</para>
+/// </param>
 public sealed record TypeStat(
-    string Type, int Runs, int Tokens, double AvgTurns, int Failed, int Capped, long AvgDurationMs);
+    string Type, int Runs, int Tokens, double AvgTurns, int Failed, int Capped, long AvgDurationMs,
+    IReadOnlyList<ModelSpend> Models);
+
+/// <summary>What one model spent inside one agent type.</summary>
+/// <param name="ModelId">The model as the provider names it.</param>
+/// <param name="Tokens">In and out together, across every run of this type on that model.</param>
+/// <param name="Runs">How many of the type's runs were on it.</param>
+public sealed record ModelSpend(string ModelId, int Tokens, int Runs);
 
 /// <summary>
 /// One tool's record. The answer to "what is actually filling my context".
@@ -188,7 +207,15 @@ public static class StatsQuery
                 g.Average(r => (double)r.Turns),
                 g.Count(r => r.Outcome == "failed" || r.Outcome == "error"),
                 g.Count(r => r.Outcome == "capped"),
-                (long)g.Average(r => (double)r.DurationMs)))
+                (long)g.Average(r => (double)r.DurationMs),
+                // ONLY RUNS THAT NAMED A MODEL. A null model_id is an older row or a provider that
+                // reported none; bucketing those under "unknown" would invent a model, and dropping
+                // them silently is right because the type's own total above still counts them.
+                [.. g.Where(r => !string.IsNullOrWhiteSpace(r.ModelId))
+                     .GroupBy(r => r.ModelId!)
+                     .Select(m => new ModelSpend(
+                         m.Key, m.Sum(r => r.InputTokens + r.OutputTokens), m.Count()))
+                     .OrderByDescending(m => m.Tokens)]))
             .OrderByDescending(t => t.Tokens)];
 
     /// <summary>

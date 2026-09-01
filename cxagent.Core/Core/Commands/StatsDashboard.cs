@@ -312,6 +312,18 @@ public static class StatsDashboard
                 rows.AppendLine($"  {Pad(t.Type, 12)}{Pad(t.Runs.ToString(), 6)}"
                             + $"{Pad(Compact(t.Tokens), 9)}{Pad(DisplayNumber.Fixed(t.AvgTurns, 1), 11)}{outcome}");
                 rows.AppendLine($"  {new string(' ', 12)}{Bar(t.Tokens / max, 18)}");
+
+                // WHICH MODEL RAN IT, indented under the type. A type can be bound to its own
+                // provider, so this is where "is my planner worth what it costs" becomes answerable:
+                // the type's tokens above, split by the model that actually spent them.
+                //
+                // SHOWN ONLY WHEN IT SAYS SOMETHING. One model under a type repeats what the row
+                // above already implies for a single-provider setup — the split earns its two lines
+                // when the type ran under more than one, which is exactly the mixed case.
+                if (t.Models.Count > 1)
+                    foreach (var m in t.Models)
+                        rows.AppendLine($"  {new string(' ', 12)}{Pad(Short(m.ModelId), 24)}"
+                                    + $"{Pad(Compact(m.Tokens), 9)}{m.Runs} run(s)");
             }
             AppendDrawn(sb, rows);
         }
