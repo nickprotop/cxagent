@@ -634,6 +634,21 @@ public static class AppBootstrap
                 return true;
             });
 
+        // THE VERB IS THE FRONT END'S, like `browse` above it: fetching from the published catalog
+        // needs an HTTP permission prompt and a transcript to answer into, neither of which Core has.
+        // A headless embedder registers neither and /plugin still lists, loads and unwires.
+        //
+        // THE NAME IS NOT COMPLETED. The popup offers the verb and stops — completing from the
+        // INSTALLED set would be exactly backwards for a command whose purpose is fetching one you
+        // do not have, and offering the whole catalog would put a network read behind a keystroke.
+        {
+            var pluginGet = new PluginGetCommand(system, mainWindow, paths);
+            manager.Commands.RegisterVerb("/plugin",
+                new CommandArgument("get <name>", "download a plugin from the catalog",
+                    Completes: false),
+                (s, arguments) => { _ = pluginGet.HandleAsync(s, arguments); return true; });
+        }
+
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
         // command Core ships but can never service is one every consumer advertises and none can
         // run. Declaring it beside the handler keeps the two from drifting.
