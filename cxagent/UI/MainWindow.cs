@@ -1578,7 +1578,11 @@ public sealed class MainWindow : IDisposable
     {
         if (_pluginItem is not null) return;   // idempotent, like the theme item
 
-        _pluginItem = StatusBar.AddLeft($"[{ColorScheme.MutedMarkup}]Plugins[/] F2", "", onClick);
+        // THE KEY FIRST, unlike the theme item beside it, and the difference is the value. "Theme
+        // F9: cxagent" names a setting and then reports it, so the key belongs with the word it
+        // qualifies. This item has nothing to report — it is a way in, not a readout — so it reads
+        // as the key and what the key does.
+        _pluginItem = StatusBar.AddLeft("F2", "Plugins", onClick);
     }
 
     private StatusBarItem? _pluginItem;
