@@ -153,6 +153,18 @@ it.</p>
 
     var body = el("div", "plugin-detail");
 
+    // THE INSTALL LINE FIRST, because it is what a reader who has decided came here for. Everything
+    // below it — requirements, tools, provenance — is what they read to decide.
+    if (p.name) {
+      var get = el("p", "plugin-get");
+      get.appendChild(el("strong", null, "Install "));
+      get.appendChild(document.createTextNode("type this in cxagent:"));
+      body.appendChild(get);
+      var cmd = el("pre");
+      cmd.appendChild(el("code", null, "/plugin get " + p.name));
+      body.appendChild(cmd);
+    }
+
     if (p.requires) {
       var req = el("p");
       req.appendChild(el("strong", null, "Requires "));

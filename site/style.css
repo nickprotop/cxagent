@@ -630,6 +630,14 @@ main > blockquote,
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* UNCLAMPED WHEN OPEN, which is what makes the claim above true. Expanding a row reveals its
+   requirements, tools and metadata but left the blurb clamped, so the full sentence was not one
+   click away — it was nowhere on the page. */
+.plugin-row[open] .plugin-blurb {
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
+}
 .plugin-facts {
   grid-area: facts;
   font-family: var(--font-mono);
