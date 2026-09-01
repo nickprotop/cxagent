@@ -6,6 +6,8 @@ using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Controls.Terminal;
 using SharpConsoleUI.Dialogs;
+using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Layout;
 using SharpConsoleUI.Core;
 
 namespace CxAgent.UI;
@@ -91,9 +93,20 @@ internal static class ShellWindow
             .Build();
         toolbar.StickyPosition = StickyPosition.Top;
 
-        // THE RULE IS PART OF THE HEADER, so it must be sticky too — a separator that
-        // scrolled away would leave the toolbar floating on top of the output.
-        var rule = Controls.Separator();
+        // THE RULE CARRIES THE COMMAND, which is the only place on screen that still says what was
+        // run once output has scrolled: the title bar is truncated by the window chrome and the
+        // command's own echo is gone with the first screenful. A bare shell has no command, so it
+        // gets a plain separator rather than a label saying nothing.
+        //
+        // ESCAPED, because the title is parsed as markup and a command line is full of brackets —
+        // `ls [a-z]*` would lose "[a-z]" to a colour tag that does not exist, or throw.
+        //
+        // STICKY LIKE THE TOOLBAR: a separator that scrolled away would leave the controls floating
+        // on top of the output.
+        var rule = interactive
+            ? Controls.Separator()
+            : Controls.Rule($"[{ColorScheme.MutedMarkup}]{MarkupParser.Escape(command.Trim())}[/]");
+        rule.TitleAlignment = TextJustification.Left;
         rule.StickyPosition = StickyPosition.Top;
 
         var window = new WindowBuilder(system)
@@ -157,6 +170,16 @@ internal static class ShellWindow
             // and disposal is where the wait that produces ExitCode happens.
             status.SetContent([terminal.ExitCode is { } c ? $"  exited {c}  " : "  exited  "]);
             Report(session, terminal, command, sendBack.Checked);
+
+            // TYPING `exit` IS ASKING TO LEAVE, so a bare shell closes its window — keeping it would
+            // ignore an explicit instruction and leave a dead terminal to dismiss by hand.
+            //
+            // A COMMAND'S WINDOW STAYS, which is the opposite case rather than an inconsistency: the
+            // user never asked to leave, they asked to see a result, and the last screen IS that
+            // result. Closing would destroy it and race their eye to do it.
+            //
+            // AFTER Report, so the transcript is collected before the window goes.
+            if (interactive) window.Close(force: true);
         });
     }
 
