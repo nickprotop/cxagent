@@ -233,18 +233,22 @@ internal static class ShellWindow
                 return;
             }
 
-            // BEHIND THE DIALOG'S OWN CLOSE, not racing it. ConfirmAsync completes its task on the
-            // button press and only THEN enqueues closing its modal; closing this window straight
-            // from the continuation destroys the modal's parent while that close is still queued,
-            // and the dialog is left on screen with nothing able to dismiss it.
+            // KILL NOW; CLOSE A FULL HOP LATER. The dialog's task is a plain
+            // TaskCompletionSource completed inside the button's Click handler, so THIS
+            // continuation resumes inline on the UI thread — before the library has even scheduled
+            // the close of its own modal. Enqueuing once would therefore put this window's close
+            // AHEAD of the modal's, tearing down the parent the modal is closing against: the
+            // dialog stays on screen and needs a second press to go.
             //
-            // Enqueuing puts this after the one already in the queue, so the modal goes first and
-            // the window it was modal to goes second.
+            // The queue is FIFO and drained per loop iteration, so enqueuing from inside an
+            // enqueued action lands one full iteration later — after the modal's close has run,
+            // whichever order the two were scheduled in.
+            //
+            // The kill does not wait: stopping the command is what the user asked for, and it is
+            // safe while the dialog is still up because it touches the child, not the window.
+            Kill(terminal);
             system.EnqueueOnUIThread(() =>
-            {
-                Kill(terminal);
-                window.Close(force: true);
-            });
+                system.EnqueueOnUIThread(() => window.Close(force: true)));
         }
     }
 
