@@ -134,6 +134,14 @@ internal static class ShellWindow
         // somewhere else.
         system.AddWindow(window);
 
+        // THE TERMINAL TAKES THE FOCUS, not the toolbar. The window opens with three focusable
+        // things in it and the first one wins by default — so without this the user's first
+        // keystrokes go to the send-back checkbox instead of the shell they opened this to type
+        // into, and a space bar toggles the transcript off rather than reaching the command.
+        //
+        // AFTER AddWindow, because the focus manager belongs to a window the system knows about.
+        window.FocusManager.SetFocus(terminal, FocusReason.Programmatic);
+
         _open = window;
 
         // THE BUTTON AND THE WINDOW'S OWN X ARE ONE PATH. Both raise OnClosing, so the confirmation
@@ -207,7 +215,14 @@ internal static class ShellWindow
             if (!await Dialogs.ConfirmAsync(system, "Still running",
                     $"{what} is still running. Stop it?", ok: "Stop it", cancel: "Keep running",
                     severity: NotificationSeverityEnum.Warning, parent: window))
+            {
+                // KEPT RUNNING MEANS BACK TO TYPING. Dismissing the dialog returns focus to the
+                // window, not to the control inside it the user was working in — so a password
+                // prompt they nearly abandoned would sit there ignoring the keyboard.
+                system.EnqueueOnUIThread(() =>
+                    window.FocusManager.SetFocus(terminal, FocusReason.Programmatic));
                 return;
+            }
 
             // BEHIND THE DIALOG'S OWN CLOSE, not racing it. ConfirmAsync completes its task on the
             // button press and only THEN enqueues closing its modal; closing this window straight
