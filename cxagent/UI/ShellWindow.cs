@@ -79,16 +79,22 @@ internal static class ShellWindow
         var status = Controls.Label(interactive ? "  shell  " : "  running…  ");
         var close = new ButtonBuilder().WithText(" Close ").Build();
 
-        // PINNED TO THE BOTTOM so the terminal above it takes the remaining height. Left to scroll
-        // with the content, the toolbar is pushed out of view by the first screenful of output —
-        // and the send-back toggle is worthless if it cannot be reached once there is output to
-        // decide about.
+        // PINNED TO THE TOP, above a rule that separates it from the terminal. Left to scroll with
+        // the content it would be pushed out of view by the first screenful of output — and the
+        // send-back toggle is worthless if it cannot be reached once there is output worth deciding
+        // about. Above rather than below because the controls belong to the WINDOW, not to the
+        // output: a toolbar under a stream of text reads as the last line the command printed.
         var toolbar = new HorizontalGridBuilder()
             .Column(c => c.Add(sendBack))
             .Column(c => c.Add(status))
             .Column(c => c.Add(close))
             .Build();
-        toolbar.StickyPosition = StickyPosition.Bottom;
+        toolbar.StickyPosition = StickyPosition.Top;
+
+        // THE RULE IS PART OF THE HEADER, so it must be sticky too — a separator that
+        // scrolled away would leave the toolbar floating on top of the output.
+        var rule = Controls.Separator();
+        rule.StickyPosition = StickyPosition.Top;
 
         var window = new WindowBuilder(system)
             .WithTitle(interactive ? "  Terminal" : $"  Terminal — {command}")
@@ -96,8 +102,9 @@ internal static class ShellWindow
                       Math.Max(system.DesktopDimensions.Height - 6, 20))
             .Centered()
             .Closable(true)
-            .AddControl(terminal)
             .AddControl(toolbar)
+            .AddControl(rule)
+            .AddControl(terminal)
             .Build();
 
         // BUILT IS NOT SHOWN. WindowBuilder.Build constructs a window; the window system does not
@@ -117,17 +124,32 @@ internal static class ShellWindow
 
         window.OnClosing += (_, e) =>
         {
-            // NOTHING RUNNING MEANS NOTHING TO ASK. After `-c` finishes the shell has already exited,
-            // so closing is unconditional and the real exit code is what gets reported.
-            if (terminal.IsDisposed || e.Force) return;
+            // THE QUESTION IS ABOUT LOSING WORK, NOT ABOUT A LIVE PROCESS. Three cases, and only one
+            // of them is worth interrupting someone for:
+            //
+            // - a command that has finished: the shell exited with it, so there is nothing to stop
+            // - a BARE /shell: a prompt is waiting, which is "running" only in the sense that bash is
+            //   alive. Nothing is in flight, nobody typed anything that could be half-done, and
+            //   asking teaches the reflexive approval a confirmation is supposed to be worth reading
+            // - a command still going: an apt install killed halfway is a real loss, and this is the
+            //   case the confirmation exists for
+            //
+            // A FORCED CLOSE CANNOT BE CANCELLED: ignoring Force would hang shutdown behind a
+            // question nobody can answer.
+            if (interactive || terminal.IsDisposed || e.Force) return;
 
-            // A FORCED CLOSE CANNOT BE CANCELLED and is handled above: ignoring Force here would hang
-            // shutdown behind a question nobody can answer.
             e.Allow = false;
             AskThenClose(system, window, terminal, command);
         };
 
-        window.OnClosed += (_, _) => _open = null;
+        window.OnClosed += (_, _) =>
+        {
+            // KILLED WHETHER OR NOT WE ASKED. A bare /shell closes without a question, but bash is
+            // still there: closing the master fd hangs up an interactive shell in the usual case and
+            // leaves anything it started behind, so the tree goes explicitly.
+            if (!terminal.IsDisposed) Kill(terminal);
+            _open = null;
+        };
 
         terminal.ProcessExited += (_, _) => system.EnqueueOnUIThread(() =>
         {
@@ -159,8 +181,18 @@ internal static class ShellWindow
                     severity: NotificationSeverityEnum.Warning, parent: window))
                 return;
 
-            Kill(terminal);
-            window.Close(force: true);
+            // BEHIND THE DIALOG'S OWN CLOSE, not racing it. ConfirmAsync completes its task on the
+            // button press and only THEN enqueues closing its modal; closing this window straight
+            // from the continuation destroys the modal's parent while that close is still queued,
+            // and the dialog is left on screen with nothing able to dismiss it.
+            //
+            // Enqueuing puts this after the one already in the queue, so the modal goes first and
+            // the window it was modal to goes second.
+            system.EnqueueOnUIThread(() =>
+            {
+                Kill(terminal);
+                window.Close(force: true);
+            });
         }
     }
 
