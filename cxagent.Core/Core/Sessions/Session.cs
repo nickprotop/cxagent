@@ -621,8 +621,8 @@ public sealed partial class Session
             case Commands.PluginRequest.Unwire(var name):
                 return await UnwirePluginAsync(name, ct);
 
-            case Commands.PluginRequest.Load(var target, var once, var inlineSettings):
-                return await RunLoadRequest(target, once, inlineSettings, configured, ct);
+            case Commands.PluginRequest.Load(var target, var inlineSettings):
+                return await RunLoadRequest(target, inlineSettings, configured, ct);
 
             case Commands.PluginRequest.Enable(var enableName):
                 return ApplyPluginEntryChange(
@@ -688,17 +688,20 @@ public sealed partial class Session
     /// the assembly first and refusing afterward would already have run arbitrary code the config
     /// said not to.</para>
     /// </summary>
-    private async Task<CommandStatus> RunLoadRequest(string target, bool once, string? inlineSettings,
+    private async Task<CommandStatus> RunLoadRequest(string target, string? inlineSettings,
         IReadOnlyDictionary<string, PluginConfig> configured, CancellationToken ct)
     {
-        // enabled:false IS CONFIGURATION; the load prompt below is APPROVAL — they answer different
-        // questions, so --once overriding the first must not skip the second. See
-        // Commands.PluginCommand.DisabledRefusal's own doc for why the refusal names the flag.
-        if (configured.TryGetValue(target, out var config) && !config.Enabled && !once)
-        {
-            Say(new Message(Commands.PluginCommand.DisabledRefusal(target), Severity.Warning));
-            return CommandStatus.Reported;
-        }
+        // `enabled` MEANS AUTO-LOAD, AND ONLY THAT. It decides whether startup loads this plugin;
+        // it does not forbid loading one by hand. The two readings were one field, so a plugin
+        // switched off for auto-load could not be tried for a single session without a flag — and
+        // the UI had a button for each axis while the config axis silently vetoed the other.
+        //
+        // NOTHING IS LOST BY DROPPING THE REFUSAL. The load prompt below is the real boundary: an
+        // approval carrying a hash of the whole load set, asked every time. Config saying "not at
+        // startup" was never the thing protecting anyone from unwanted code.
+        //
+        // A USER WHO MEANS "NEVER LOAD THIS" removes the entry or uninstalls it, which says so
+        // without a second meaning attached to a field named for something else.
 
         var projectDirectory = WorkingDirectory;
         var configDir = Services?.GlobalInstructionsDir ?? projectDirectory;

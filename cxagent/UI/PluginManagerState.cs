@@ -44,7 +44,14 @@ public static class PluginManagerState
 
             folders[name] = LabelFor(home, searchFolders, projectDirectory);
 
-            var sidecar = Path.Combine(home, Path.GetFileNameWithoutExtension(file) + ".plugin.json");
+            // BESIDE THE DLL, WHICH IS NOT ALWAYS `home`. A config entry may carry a subdirectory —
+            // "clone-finder/clone-finder.dll" is what an install through the manager writes — and
+            // FindLoadSetDirectory then returns the SEARCH FOLDER, because the file was found by
+            // combining the two. Joining the sidecar's name onto `home` looks a level too high and
+            // finds nothing, so a plugin that loaded perfectly reports "no usable manifest".
+            var dll = Path.Combine(home, file);
+            var sidecar = Path.Combine(Path.GetDirectoryName(dll) ?? home,
+                                       Path.GetFileNameWithoutExtension(file) + ".plugin.json");
             if (!File.Exists(sidecar)) { unreadable.Add(name); continue; }
 
             try

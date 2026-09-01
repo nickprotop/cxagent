@@ -10,15 +10,12 @@ public abstract record PluginRequest
     /// <summary>Bare <c>/plugin</c> — list every configured plugin and anything loaded by path.</summary>
     public sealed record List : PluginRequest;
 
-    /// <summary><c>/plugin load &lt;name|path&gt;</c>, with <paramref name="Once"/> set when
-    /// <c>--once</c> followed it.</summary>
+    /// <summary><c>/plugin load &lt;name|path&gt;</c>.</summary>
     /// <param name="Target">The plugin to load — a configured name, a bare filename searched the
     /// plugin folders, or a path.</param>
-    /// <param name="Once">Whether <c>--once</c> was given, overriding <c>enabled:false</c> for this
-    /// session only.</param>
     /// <param name="Settings">Inline settings written after the target as a JSON object, or null
     /// when none were given — see <see cref="PluginCommand.Parse"/>.</param>
-    public sealed record Load(string Target, bool Once, string? Settings = null) : PluginRequest;
+    public sealed record Load(string Target, string? Settings = null) : PluginRequest;
 
     /// <summary><c>/plugin unwire &lt;name&gt;</c>.</summary>
     public sealed record Unwire(string Name) : PluginRequest;
@@ -105,15 +102,16 @@ public static class PluginCommand
 
             var headWords = head.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-            // --ONCE MAY APPEAR ANYWHERE AFTER THE TARGET, not just last — a user editing a typed
-            // command should not have the flag's position matter to whether it is recognised.
-            var once = headWords.Skip(2).Any(w => w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase));
+            // --once IS STILL ACCEPTED AND IGNORED. `enabled` means auto-load only, so there is no
+            // refusal left for it to override — but it was documented, and a command that suddenly
+            // rejects a flag someone has in their notes is a worse answer than one that quietly
+            // does what they wanted anyway.
             var rest = headWords.Skip(1)
                 .Where(w => !w.Equals(OnceFlag, StringComparison.OrdinalIgnoreCase)).ToList();
 
             return rest.Count == 0
                 ? new PluginRequest.Unrecognised("load")
-                : new PluginRequest.Load(string.Join(' ', rest), once, settings);
+                : new PluginRequest.Load(string.Join(' ', rest), settings);
         }
 
         if (verb.Equals("unwire", StringComparison.OrdinalIgnoreCase))

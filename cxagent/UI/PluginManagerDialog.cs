@@ -76,7 +76,11 @@ public static class PluginManagerDialog
     /// <summary>The status bar's left half — what the rail is currently showing.</summary>
     private static MarkupControl? _status;
     private static PromptControl? _filter;
-    private static HorizontalGridControl? _buttons;
+    // A TOOLBAR, NOT A BUTTON GRID. HorizontalGridControl places its columns flush, so the actions
+    // ran together as one unbroken bar — "DeactivateDisable auto-loadUninstall" — with nothing to
+    // say where one target ends and the next begins. A toolbar spaces its items, which is the
+    // whole difference between a row of buttons and a row that can be read.
+    private static ToolbarControl? _buttons;
     private static int _lastRailIndex;
 
     // WHICH PLUGIN THE PANEL LAST SHOWED. The Settings tab is torn down and rebuilt on every
@@ -189,8 +193,12 @@ public static class PluginManagerDialog
         // to the window they spanned the rail too, reading as dialog chrome rather than as buttons
         // about one row, which is the same scope-invisibility that put Close among them.
         //
-        // ONE CELL, NOT Auto: a HorizontalGridControl reports no intrinsic height from inside a grid
-        // cell, so an Auto track measures it as nothing and the row never appears.
+        // A RULE ABOVE THEM, in the same grey the settings hint uses, so the actions read as chrome
+        // separated from the panel rather than as the last line of it.
+        //
+        // ONE CELL EACH, NOT Auto: a control reports no intrinsic height from inside a grid cell, so
+        // an Auto track measures it as nothing and the row never appears.
+        grid.RowDefinitions.Add(GridLength.Cells(1));
         grid.RowDefinitions.Add(GridLength.Cells(1));
 
         _rail = new ListControl
@@ -199,7 +207,10 @@ public static class PluginManagerDialog
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         _rail.SelectedIndexChanged += OnRailSelectionChanged;
-        grid.Place(_rail, 0, 0, rowSpan: 2);
+        // SPANS EVERY ROW, so the rail runs the full height beside the panel, its rule and the
+        // action row — a span short of the last row leaves the rail's column ending above the
+        // buttons with a gap no border explains.
+        grid.Place(_rail, 0, 0, rowSpan: 3);
 
         // TWO TABS ONLY, Details and Settings — and Settings is added per selection, because for
         // most rows it must not exist at all (see RebuildSettingsTab). A Tools tab was considered
@@ -233,9 +244,14 @@ public static class PluginManagerDialog
         // bar, beside the key that also does it.
         //
         // Rebuilt whenever the selection moves, which is why it is its own control.
-        _buttons = HorizontalGridControl.ButtonRow();
+        _buttons = new ToolbarControl
+        {
+            ItemSpacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
         grid.Place(_tabs, 0, 1);
-        grid.Place(_buttons, 1, 1);
+        grid.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 1, 1);
+        grid.Place(_buttons, 2, 1);
 
         // A DRAGGABLE DIVIDER, not a drawn one. The splitter IS the line between rail and panel and
         // the handle that moves it, so the two cannot disagree — and it honours the rail column's
@@ -482,9 +498,17 @@ public static class PluginManagerDialog
     {
         if (_rail is null) return;
 
+        // THE RAIL FIRST, THEN THE LAST PLUGIN SHOWN. On a refresh the rail still holds the
+        // selection, so it is read straight off. On an OPEN it is empty — the control is new — and
+        // without the fallback the dialog reopens on the first row, which is what makes an action
+        // that closes and reopens it (a permission prompt does exactly that) lose the user's place
+        // in a list where they had just chosen something.
+        //
+        // _lastDetailName SURVIVES BECAUSE IT IS STATIC and is cleared only when there is no row to
+        // show at all, so it still names whatever was selected when the window went away.
         var keep = _rail.SelectedIndex >= 0 && _rail.SelectedIndex < _rail.Items.Count
             ? (_rail.Items[_rail.SelectedIndex].Tag as PluginRow)?.Name
-            : null;
+            : _lastDetailName;
 
         FillRail(_rail, PluginManagerRows.Filter(_rows, _filter?.Input));
 
@@ -720,8 +744,19 @@ public static class PluginManagerDialog
         var parts = new List<string>();
         if (row.State.Length > 0) parts.Add(row.State);
         if (row.Folder is { } folder) parts.Add(folder);
-        if (row.Configured is { } config)
-            parts.Add(config.Enabled ? "enabled in config" : "disabled in config");
+        // WHAT THE ENTRY SAYS, NOT "enabled"/"disabled". `enabled` decides auto-load and nothing
+        // else — it no longer forbids a hand load — so calling the plugin "disabled" describes a
+        // veto that does not exist.
+        //
+        // AND SAID FOR AN UNCONFIGURED PLUGIN TOO. Having no entry is a different situation from
+        // having one that says no, and the line went silent on exactly the case where "there is no
+        // entry" is what the reader needs — leaving two different rows reading identically.
+        // Folder is the "it is on disk here" fact, so it is also the test for whether a config
+        // line is worth printing: a catalog-only row has nothing to say about config yet.
+        if (row.Folder is not null)
+            parts.Add(row.Configured is { } config
+                ? config.Enabled ? "in config, auto-load" : "in config, no auto-load"
+                : "not in config");
 
         return parts.Count > 0 ? string.Join(" · ", parts) : "not installed";
     }
@@ -831,8 +866,8 @@ public static class PluginManagerDialog
     }
 
     /// <summary>
-    /// The settings form: one labelled input per documented key with the catalog's own prose beside
-    /// it, and a Save — or, when the plugin is loaded anywhere, the reason there is no Save.
+    /// The settings form: one labelled input per documented key with the catalog's own prose under
+    /// it, a Save, and — while the plugin is active — the reason Save will refuse.
     ///
     /// <para>HAND-COMPOSED, NEVER <c>FormControl</c> — a generated form does not give the spacing
     /// and alignment this deserves, so the fields are laid out in a grid deliberately.</para>
@@ -840,27 +875,38 @@ public static class PluginManagerDialog
     private static GridControl BuildSettingsContent(PluginRow row, CatalogEntry entry)
     {
         var fields = new GridControl { HorizontalAlignment = HorizontalAlignment.Stretch };
-        fields.ColumnDefinitions.Add(GridLength.Star(1, min: 20));
-        fields.ColumnDefinitions.Add(GridLength.Star(1, min: 16));
+        // ONE COLUMN, READ DOWNWARDS: name, what it is for, then the box you type in. Two equal
+        // columns gave the description as much width as the editor and floated it top-right, so a
+        // sentence sat level with a label while the field it explained was somewhere to the left —
+        // the eye had to cross the dialog to pair them up.
+        fields.ColumnDefinitions.Add(GridLength.Star(1, min: 24));
 
         var r = 0;
-        foreach (var (key, prose) in entry.Settings.OrderBy(s => s.Key, StringComparer.Ordinal))
+        // THE AUTHOR'S ORDER, NOT THE ALPHABET. A manifest lists its settings in the order they
+        // matter — csharp-lsp declares `server` then `args`, because you choose a server and then
+        // pass arguments TO it — and sorting by name reversed exactly that pair. Nobody reads a
+        // settings form alphabetically; they read it as the order the author put things in.
+        foreach (var (key, prose) in entry.Settings)
         {
-            fields.RowDefinitions.Add(GridLength.Auto());
-            fields.RowDefinitions.Add(GridLength.Auto());
-            fields.RowDefinitions.Add(GridLength.Cells(1));
+            fields.RowDefinitions.Add(GridLength.Auto());   // name
+            fields.RowDefinitions.Add(GridLength.Auto());   // what it is for
+            fields.RowDefinitions.Add(GridLength.Auto());   // the field
+            fields.RowDefinitions.Add(GridLength.Cells(1)); // a blank line before the next
 
             fields.Place(new MarkupControl([$"[bold]{MarkupParser.Escape(key)}[/]"]), r, 0);
 
-            var editor = new MultilineEditControl(viewportHeight: 3)
+            // TWO LINES, NOT THREE. These values are a command name or a short JSON array; a
+            // taller box reads as a text area waiting for a paragraph and pushes the second field
+            // off the screen. It still scrolls when a value is longer.
+            var editor = new MultilineEditControl(viewportHeight: 2)
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
             };
             editor.SetContent(CurrentText(row, key));
-            fields.Place(editor, r + 1, 0);
+            fields.Place(editor, r + 2, 0);
             _settingsFields.Add((key, editor));
 
-            // THE CATALOG'S OWN SENTENCE, beside the field it explains. Where a key's type matters
+            // THE CATALOG'S OWN SENTENCE, under the name it explains. Where a key's type matters
             // the prose already says so — csharp-lsp's args entry reads "OmniSharp needs [\"-lsp\"]"
             // — so the form never has to teach JSON itself.
             fields.Place(
@@ -868,9 +914,9 @@ public static class PluginManagerDialog
                 {
                     Wrap = true,
                 },
-                r, 1, rowSpan: 2);
+                r + 1, 0);
 
-            r += 3;
+            r += 4;
         }
 
         var scroll = new ScrollablePanelControl
@@ -884,36 +930,69 @@ public static class PluginManagerDialog
         // scroll must not hide its own Save at the bottom of the scrollback.
         var wrapper = new GridControl { VerticalAlignment = VerticalAlignment.Fill };
         wrapper.ColumnDefinitions.Add(GridLength.Star(1));
-        wrapper.RowDefinitions.Add(GridLength.Star(1));
-        wrapper.RowDefinitions.Add(GridLength.Auto());
-        wrapper.RowDefinitions.Add(GridLength.Auto());
+        wrapper.RowDefinitions.Add(GridLength.Star(1));   // the fields, which scroll
+        wrapper.RowDefinitions.Add(GridLength.Auto());     // the status line
+        wrapper.RowDefinitions.Add(GridLength.Auto());     // Save
+        wrapper.RowDefinitions.Add(GridLength.Auto());     // a rule opening the hint
+        wrapper.RowDefinitions.Add(GridLength.Auto());     // why Save will refuse, when it will
         wrapper.Place(scroll, 0, 0);
 
         _settingsStatus = new MarkupControl([TakeSettingsNote()]) { Wrap = true };
         wrapper.Place(_settingsStatus, 1, 0);
 
-        // REFUSED WHILE LOADED IN ANY SESSION, not just this one. SetPluginSettings checks only its
-        // caller, so another session's copy would keep running on settings the file no longer holds
-        // and nothing would ever reconcile the two — a plugin reads its settings once, at Start.
+        // WARNED ABOUT WHILE LOADED IN ANY SESSION, not just this one. SetPluginSettings checks
+        // only its caller, so another session's copy would keep running on settings the file no
+        // longer holds and nothing would reconcile the two — a plugin reads its settings once, at
+        // Start. Core refuses the same-session case itself; this says so before the press.
         // The refusal replaces Save rather than sitting beside a button that cannot work, and it
         // names where the plugin is loaded so the user knows which session to unwire.
+        // THE BUTTON IS ALWAYS THERE, and the hint says when it will refuse. Removing it left a
+        // form whose fields invite typing and whose work cannot be committed — the user edits, then
+        // looks for the button that was there a moment ago. A control that exists and explains
+        // itself beats one that vanishes.
+        //
+        // SAFE BECAUSE CORE REFUSES ANYWAY: SetPluginSettings checks the calling session's loaded
+        // set and returns Refused with its own reason (SessionManager.cs:556), so a press while
+        // active reports that rather than writing something the running plugin would never read.
         if (SessionHolding(row.Name) is { } holder)
         {
             var where = ReferenceEquals(holder, _session)
                 ? "this session" : $"another session ({holder.WorkingDirectory})";
+            // THE BUTTON THAT IS ON SCREEN, not a command. Deactivate is in the action row below
+            // this message and does exactly what is being asked for; naming `/plugin unwire`
+            // instead sent the user to the composer for something a button beside them does — and
+            // named it with the old vocabulary, which no longer appears anywhere in this dialog.
+            //
+            // ANOTHER SESSION IS THE EXCEPTION: no button here reaches it, so that case still has
+            // to name the command and where to run it.
+            // NO "BELOW": this hint sits under Save, while Deactivate is in the dialog's own
+            // action row at the bottom. A direction that points at the wrong place is worse than
+            // none, so the button is named and left to be found.
+            var remedy = ReferenceEquals(holder, _session)
+                ? "press Deactivate, then save."
+                : "deactivate it there first.";
+
+            // FENCED ABOVE AND BELOW, both rules in the hint's own grey — it is an aside about this
+            // tab, and without the pair it reads as a caption belonging to whatever it touches.
+            wrapper.Place(new RuleControl { Color = ColorScheme.MutedRgb }, 3, 0);
+
             wrapper.Place(new MarkupControl(
-                [$"[{ColorScheme.MutedMarkup}]loaded in {MarkupParser.Escape(where)} — a plugin "
-                 + $"reads its settings at start, so `/plugin unwire {MarkupParser.Escape(row.Name)}` "
-                 + "there first, then change them.[/]"])
+                [$"[{ColorScheme.MutedMarkup}]Active in {MarkupParser.Escape(where)}. A plugin reads "
+                 + $"its settings once, when it starts — {remedy}[/]"])
             {
                 Wrap = true,
-            }, 2, 0);
+            }, 4, 0);
+
         }
-        else
-        {
-            wrapper.Place(HorizontalGridControl.ButtonRow(
-                Controls.Button("  Save  ").OnClick((_, _) => SaveSettings(row, entry)).Build()), 2, 0);
-        }
+
+        // A TOOLBAR HERE TOO, so a second button added later is spaced like the action row rather
+        // than flush against Save.
+        var saveRow = new ToolbarControl { ItemSpacing = 2, HorizontalAlignment = HorizontalAlignment.Center };
+        saveRow.AddItem(Controls.Button("  Save  ").OnClick((_, _) => SaveSettings(row, entry)).Build());
+        wrapper.Place(saveRow, 2, 0);
+
+        // NO RULE AT THE FOOT. The dialog draws one above its action row, so a second here would
+        // put two lines between the same two things.
 
         return wrapper;
     }
@@ -1029,13 +1108,9 @@ public static class PluginManagerDialog
         // NO CLOSE APPENDED HERE. These act on the selected plugin; closing acts on the dialog, and
         // sharing a row gave them equal weight with no way to see the difference. Close lives in the
         // status bar, beside the key that also does it.
-        _buttons.ClearColumns();
+        _buttons.Clear();
         foreach (var button in RowButtons(row))
-        {
-            var column = new ColumnContainer(_buttons);
-            column.AddContent(button);
-            _buttons.AddColumn(column);
-        }
+            _buttons.AddItem(button);
     }
 
     /// <summary>
@@ -1059,33 +1134,82 @@ public static class PluginManagerDialog
                         .OnClick((_, _) => _ = InstallFlowAsync(row)).Build();
                 break;
 
+            // UPDATES IS A FACT ABOUT AN INSTALLED PLUGIN, NOT A KIND OF PLUGIN. A newer version
+            // existing changes nothing about what the row can do — it is installed, it may be
+            // active or not, configured or not — so this case adds Update and then falls into
+            // Installed for the rest. Returning only Update stripped every other action from a
+            // perfectly working plugin, which is how an update that could not run left the user
+            // with no button that could.
             case PluginRowSection.Updates:
-                if (!HasNote(row))
+            case PluginRowSection.Installed:
+                if (row.Section == PluginRowSection.Updates && !HasNote(row))
                     yield return Controls.Button(" Update ")
                         .OnClick((_, _) => _ = UpdateFlowAsync(row)).Build();
-                break;
 
-            case PluginRowSection.Installed:
-                // THE CALLING SESSION'S VIEW decides load/unwire — the same view the rail's state
-                // word renders, so the button never contradicts the row it sits under.
+                // THE CALLING SESSION'S VIEW decides which of the two shows — the same view the
+                // rail's state word renders, so the button never contradicts the row it sits under.
+                //
+                // WHETHER THE PLUGIN IS IN EFFECT, which is the fact that actually changes: its
+                // tools are offered to the model, or they are not. "Unwire" is this loader's own
+                // vocabulary and means nothing to a reader.
+                //
+                // NOT "UNLOAD", WHICH WOULD BE FALSE. The managed loader uses no
+                // AssemblyLoadContext (PluginRegistry.EverLoadedNames), so the assembly stays
+                // resident for the life of the process and its file stays held — a button promising
+                // to unload is contradicted by the very next thing a user tries, Update, refused
+                // because the file is still held. Activate says nothing about residency, so nothing
+                // it claims can be falsified by that.
                 yield return _session!.Plugins.LoadedPluginNames.Contains(row.Name, StringComparer.Ordinal)
-                    ? Controls.Button(" Unwire ")
-                        .OnClick((_, _) => _ = RunAsync($"unwire {row.Name}", $"'{row.Name}' unwired"))
+                    ? Controls.Button(" Deactivate ")
+                        .OnClick((_, _) => _ = RunAsync($"unwire {row.Name}",
+                            $"'{row.Name}' deactivated for this session"))
                         .Build()
-                    : Controls.Button(" Load ")
-                        .OnClick((_, _) => _ = LoadAsync(LoadArgument(row), $"'{row.Name}' loaded"))
+                    : Controls.Button(" Activate ")
+                        .OnClick((_, _) => _ = LoadAsync(LoadArgument(row),
+                            $"'{row.Name}' activated for this session"))
                         .Build();
 
+                // TWO AXES, NAMED APART. Activate/Deactivate is THIS SESSION — is the plugin in
+                // effect right now. These two are CONFIG — does it come back next time. Bare
+                // "Enable"/"Disable" read as the first axis while controlling the second, so a row
+                // showing "loaded" beside "Disable" implied the button would stop it; naming the
+                // object — auto-load — puts each verb on its own axis.
+                //
+                // A VERB, NOT A STATE. "Auto load" describes a condition; a button says what
+                // pressing it does, which is what every other label here already did.
+                //
+                // THE COMMAND VERBS ARE UNCHANGED. /plugin enable is Core's published surface and
+                // people have typed it; only these labels move.
                 if (row.Configured is { } config)
                     yield return config.Enabled
-                        ? Controls.Button(" Disable ")
+                        ? Controls.Button(" Disable auto-load ")
                             .OnClick((_, _) => _ = RunAsync($"disable {row.Name}",
-                                $"'{row.Name}' disabled — config.json updated"))
+                                $"'{row.Name}' will not load at start — config.json updated"))
                             .Build()
-                        : Controls.Button(" Enable ")
+                        : Controls.Button(" Enable auto-load ")
                             .OnClick((_, _) => _ = RunAsync($"enable {row.Name}",
-                                $"'{row.Name}' enabled — config.json updated"))
+                                $"'{row.Name}' will load at start — config.json updated"))
                             .Build();
+
+                // GAP A: A DISCOVERED PLUGIN HAD NO WAY TO BECOME CONFIGURED. Its row said "no auto
+                // load" and offered nothing that changed it — the only route was the menu that
+                // appears once, right after an install, and never again. AddToConfig already
+                // existed; it was simply unreachable from the row it applies to.
+                // ITS FILE, NOT ITS CATALOG ENTRY. A discovered plugin may be a local build the
+                // catalog has never heard of, and gating this on a catalog entry would leave
+                // exactly those rows — the ones most likely to be someone's own work — with no way
+                // to be configured. FileOf resolves the entry point for a configured row from
+                // config and for a discovered one from the sidecar the gather already read.
+                // "ADD TO CONFIG", NOT "ENABLE AUTO-LOAD". The other button flips a flag on an
+                // entry that exists; this one CREATES the entry, and the row beside it says "not in
+                // config" — so the label answers what the row reports rather than describing a
+                // setting there is nothing yet to set. The effect is the same, and auto-load is
+                // what an entry means, but a user reading "enable" for a plugin config has never
+                // heard of is being told a state changed rather than a line was written.
+                if (row.Configured is null && FileOf(row) is { } discoveredFile)
+                    yield return Controls.Button(" Add to config ")
+                        .OnClick((_, _) => AddToConfig(row.Name, discoveredFile))
+                        .Build();
 
                 if (row.Folder is not null)
                     yield return Controls.Button(" Uninstall ")
@@ -1093,10 +1217,14 @@ public static class PluginManagerDialog
                 break;
 
             case PluginRowSection.NeedsAttention:
-                // Uninstall applies to a broken install — files on disk, or a config entry whose
-                // file is gone. It does not apply to a contract mismatch, where the files are fine.
-                if (!row.State.StartsWith("contract ", StringComparison.Ordinal)
-                    && (row.Folder is not null || row.Configured is not null))
+                // GAP B: A CONTRACT MISMATCH LEFT THE ROW WITH NOTHING AT ALL. Uninstall was
+                // withheld because "the files are fine" — true, and beside the point: a plugin this
+                // host can never run is one a user may well want gone, and offering no action makes
+                // the dialog a place where a problem is displayed and cannot be acted on. The files
+                // being intact is a reason not to uninstall BY DEFAULT, not a reason to refuse.
+                //
+                // It is still last among the buttons, so it is not the first thing a hand lands on.
+                if (row.Folder is not null || row.Configured is not null)
                     yield return Controls.Button(" Uninstall ")
                         .OnClick((_, _) => _ = UninstallFlowAsync(row)).Build();
                 break;
@@ -1184,8 +1312,28 @@ public static class PluginManagerDialog
     /// <summary>What /plugin load takes for this row: a configured NAME resolves through config,
     /// but an unconfigured plugin's name means nothing to the resolver — its bare FILENAME is what
     /// the search folders are scanned for.</summary>
-    private static string LoadArgument(PluginRow row) =>
-        row.Configured is not null ? $"load {row.Name}" : $"load {FileOf(row) ?? row.Name}";
+    /// <summary>
+    /// What to send to <c>/plugin load</c> for this row.
+    ///
+    /// <para><c>--once</c> WHEN CONFIG SAYS NO. Core refuses to load a plugin whose entry is
+    /// <c>enabled: false</c> unless the flag is given, and that is right for a typed command: the
+    /// user should have to say they mean it. Here the button is Activate — a this-session action
+    /// sitting beside its own Enable auto-load — so pressing it IS saying they mean it, and
+    /// withholding the flag turned a deliberate press into an error that named a flag no button
+    /// mentions.</para>
+    ///
+    /// <para>IT DOES NOT WRITE CONFIG. Activating a disabled plugin leaves it disabled, so it is
+    /// gone again next start — which is what "for this session" means and what the other button is
+    /// there to change.</para>
+    /// </summary>
+    private static string LoadArgument(PluginRow row)
+    {
+        var once = row.Configured is { Enabled: false } ? " --once" : "";
+
+        return row.Configured is not null
+            ? $"load {row.Name}{once}"
+            : $"load {FileOf(row) ?? row.Name}";
+    }
 
     /// <summary>The entry-point filename this row resolves to — config's word for a configured
     /// row, the sidecar's for one the gather found on disk.</summary>
@@ -1497,14 +1645,29 @@ public static class PluginManagerDialog
             ? "this session"
             : $"another session ({holder.WorkingDirectory})";
 
+        // A RESTART ALONE IS NOT THE REMEDY WHEN IT AUTO-LOADS. An enabled plugin is loaded again
+        // during startup, so it is held before the dialog can be opened — "restart, then update"
+        // sends the user round a loop that cannot terminate. Disabling first is what breaks it, and
+        // the note has to say so or the advice is wrong for exactly the plugins most likely to hit
+        // it: the ones someone uses enough to have configured.
+        var autoLoads = _manager.Config.Plugins.TryGetValue(name, out var cfg) && cfg.Enabled;
+
         _ws!.EnqueueOnUIThread(() =>
         {
-            _panelNote = (name, new[]
-            {
-                $"'{name}' was loaded in {where}, so its file is held until cxagent exits.",
-                "",
-                $"Restart cxagent, then {verb}.",
-            });
+            _panelNote = (name, autoLoads
+                ? new[]
+                {
+                    $"'{name}' was loaded in {where}, so its file is held until cxagent exits.",
+                    "",
+                    "config.json auto-loads it, so restarting loads it again and holds it again.",
+                    $"Disable it here, restart cxagent, {verb}, then enable it.",
+                }
+                : new[]
+                {
+                    $"'{name}' was loaded in {where}, so its file is held until cxagent exits.",
+                    "",
+                    $"Restart cxagent, then {verb}.",
+                });
             Rebuild();
         });
         return true;
@@ -1549,9 +1712,18 @@ public static class PluginManagerDialog
 
     /// <summary>The "[add to config]" offer after an install: the entry, enabled, with no settings
     /// — the Settings tab exists for those once the row is configured.</summary>
-    private static void AddToConfig(CatalogEntry entry)
+    private static void AddToConfig(CatalogEntry entry) => AddToConfig(entry.Name, entry.File);
+
+    /// <summary>
+    /// Writes a config entry so this plugin loads at every start.
+    ///
+    /// <para>NAME AND FILE, NOT A CATALOG ENTRY, so a plugin found on disk that the catalog never
+    /// listed — a local build — can be configured like any other. The install menu still passes an
+    /// entry; that overload just unpacks it.</para>
+    /// </summary>
+    private static void AddToConfig(string name, string file)
     {
-        if (_manager!.AddPlugin(_session!, entry.Name, new PluginConfig(entry.File))
+        if (_manager!.AddPlugin(_session!, name, new PluginConfig(file))
             is PluginChangeResult.Refused refused)
         {
             Toast(refused.Reason, NotificationSeverity.Warning);
@@ -1560,7 +1732,7 @@ public static class PluginManagerDialog
         }
 
         var failure = PluginConfigPersistence.TrySync(ConfigPath(), _manager.Config.Plugins);
-        Toast(failure ?? $"'{entry.Name}' added to config.json — it loads at every start",
+        Toast(failure ?? $"'{name}' added to config.json — it loads at every start",
             failure is null ? NotificationSeverity.Success : NotificationSeverity.Warning);
         Rebuild();
     }

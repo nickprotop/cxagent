@@ -170,12 +170,18 @@ public class PluginCommandTests : IDisposable
         Assert.Contains(sink.Notices, t => t.Contains("does-not-exist", StringComparison.Ordinal));
     }
 
-    // ---- A disabled plugin refuses, and names --once --------------------------------------------
+    // ---- `enabled` means auto-load, and only that -----------------------------------------------
 
-    /// <summary>A disabled plugin refuses, and the refusal names --once. A gate whose exception is
-    /// undiscoverable is a gate with no exception.</summary>
+    /// <summary>
+    /// A plugin whose config says no auto-load STILL LOADS when asked by hand. `enabled` decides
+    /// what startup loads; it is not a veto on loading one deliberately — the two readings were one
+    /// field, so switching a plugin off for startup also made it impossible to try for a session.
+    ///
+    /// <para>NOTHING IS UNGUARDED BY THIS: the load prompt is the real boundary, an approval
+    /// carrying a hash of the whole load set, and it is asked here as it is for any other load.</para>
+    /// </summary>
     [Fact]
-    public async Task LoadingADisabledPluginRefusesAndNamesTheFlag()
+    public async Task LoadingAPluginWithoutAutoLoadStillLoadsIt()
     {
         DropFixture(_dir, "well-formed.dll");
         var plugins = new Dictionary<string, PluginConfig>
@@ -187,18 +193,17 @@ public class PluginCommandTests : IDisposable
 
         var status = await session.RunPluginCommand("load well-formed", CancellationToken.None);
 
-        Assert.Equal(CommandStatus.Reported, status);
-        Assert.Empty(session.Plugins.CurrentTools());
-        Assert.Contains(sink.Notices, t => t.Contains("disabled", StringComparison.OrdinalIgnoreCase)
-            && t.Contains("--once", StringComparison.Ordinal));
+        Assert.Equal(CommandStatus.Changed, status);
+        Assert.Contains("wf_tool", session.Plugins.CurrentTools().Select(t => t.Definition.Name));
+        Assert.DoesNotContain(sink.Notices, t => t.Contains("--once", StringComparison.Ordinal));
     }
 
-    // ---- --once loads a disabled plugin, and STILL ASKS ------------------------------------------
+    // ---- a load without auto-load STILL ASKS -----------------------------------------------------
 
-    /// <summary>--once loads it, and STILL ASKS. enabled:false is configuration; the prompt is
-    /// approval. Overriding the first must not bypass the second.</summary>
+    /// <summary>Loading it still asks. Config never was the approval; the prompt is, and dropping
+    /// the enabled-false refusal must not have taken the prompt with it.</summary>
     [Fact]
-    public async Task OnceLoadsADisabledPluginAndStillAsks()
+    public async Task LoadingWithoutAutoLoadStillAsks()
     {
         DropFixture(_dir, "well-formed.dll");
         var plugins = new Dictionary<string, PluginConfig>
@@ -273,7 +278,7 @@ public class PluginCommandTests : IDisposable
     /// <summary>And it does not persist: the override is the session's, config is untouched, so a
     /// fresh session sees the plugin disabled again.</summary>
     [Fact]
-    public async Task OnceDoesNotOutliveTheSession()
+    public async Task LoadingAPluginNeverWritesItsConfig()
     {
         DropFixture(_dir, "well-formed.dll");
         var plugins = new Dictionary<string, PluginConfig>
@@ -302,9 +307,11 @@ public class PluginCommandTests : IDisposable
             AgentMode.Single);
         var secondStatus = await second.RunPluginCommand("load well-formed", CancellationToken.None);
 
-        Assert.Equal(CommandStatus.Reported, secondStatus);
-        Assert.Empty(second.Plugins.CurrentTools());
-        Assert.Contains(secondSink.Notices, t => t.Contains("disabled", StringComparison.OrdinalIgnoreCase));
+        // LOADING DOES NOT WRITE CONFIG. Each session loads it because it was asked to, and the
+        // entry still says no auto-load afterwards — so nothing about a hand load leaks into what
+        // the next start does. That separation is the whole point of the two axes.
+        Assert.Equal(CommandStatus.Changed, secondStatus);
+        Assert.False(resolution.Plugins["well-formed"].Enabled);
     }
 
     // ---- The listing shows three states, not two --------------------------------------------------
@@ -345,19 +352,21 @@ public class PluginCommandTests : IDisposable
 
         Assert.Equal("csharp-lsp", request.Target);
         Assert.Equal("""{ "server": "csharp ls", "args": [] }""", request.Settings);
-        Assert.False(request.Once);
     }
 
-    /// <summary>--once and inline settings compose: the flag is read from the words BEFORE the
-    /// brace, so it cannot be confused with anything inside the settings object.</summary>
+    /// <summary>
+    /// --once is accepted and ignored. `enabled` means auto-load only, so there is no refusal left
+    /// for the flag to override — but it was documented, and a command that started rejecting a
+    /// flag someone has in their notes would be a worse answer than one that does what they meant.
+    /// It must still not be mistaken for the target or leak into the settings.
+    /// </summary>
     [Fact]
-    public void OnceAndInlineSettingsComposeInEitherOrder()
+    public void OnceIsAcceptedAndIgnored()
     {
         var request = Assert.IsType<PluginRequest.Load>(
             PluginCommand.Parse("""load csharp-lsp --once { "server": "x" }"""));
 
         Assert.Equal("csharp-lsp", request.Target);
-        Assert.True(request.Once);
         Assert.Equal("""{ "server": "x" }""", request.Settings);
     }
 

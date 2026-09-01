@@ -119,7 +119,13 @@ public static class PluginManagerRows
             // the name, so the loaded-by-path pass below never gets to correct it. Both facts,
             // because either alone misleads: it is running NOW, and nothing brings it back next
             // session.
-            var state = inputs.Loaded.Contains(found.Name) ? "loaded, no auto load" : "no auto load";
+            // "NOT IN CONFIG", NOT "no auto load". The two are different situations that had the
+            // same words: a configured plugin says no auto load because its entry says so, and has
+            // a button to change it; this one has NO ENTRY, so the fact worth reporting is the
+            // absence — which is also what its button (Add to config) answers.
+            var state = inputs.Loaded.Contains(found.Name)
+                ? "active, not in config"
+                : "not in config";
 
             // A CONTRACT PROBLEM OUTRANKS THIS: adding a config entry would not make it load.
             rows.Add(Mismatch(contract) is { } why
@@ -133,8 +139,17 @@ public static class PluginManagerRows
         // running, which is the one thing this dialog must never do.
         foreach (var name in inputs.Loaded)
             if (placed.Add(name))
-                rows.Add(new PluginRow(name, PluginRowSection.Installed, "loaded",
-                                       Folder: Folder(name, inputs)));
+            {
+                // GAP C: SAY WHY THIS ROW IS DIFFERENT. Loaded from an explicit path, it sits in no
+                // search folder, so there is nothing for Uninstall to remove and no config entry to
+                // edit — the row legitimately has fewer buttons than a plugin that looks identical
+                // beside it. A bare "loaded" left that unexplained; naming the origin is what turns
+                // a missing button into an understood one.
+                var home = Folder(name, inputs);
+                rows.Add(new PluginRow(name, PluginRowSection.Installed,
+                                       home is null ? "active from a path, not in config" : "active",
+                                       Folder: home));
+            }
 
         foreach (var entry in inputs.Catalog)
         {
@@ -203,7 +218,16 @@ public static class PluginManagerRows
         if (Mismatch(contract) is { } why)
             return new PluginRow(name, PluginRowSection.NeedsAttention, why, Catalog: entry, Configured: config);
 
-        var state = isLoaded ? "loaded" : config.Enabled ? "declared, not loaded" : "disabled";
+        // THE SAME TWO AXES THE BUTTONS NAME. "loaded" / "declared, not loaded" / "disabled" mixed
+        // them: the first two describe whether the plugin is in effect, the third describes config
+        // and says nothing about whether it is active — so a plugin with `enabled: false` that was
+        // activated by hand this session read as "disabled" while it was answering tool calls.
+        //
+        // ACTIVE IS ALWAYS SAID FIRST, because it is what is true NOW; auto-load is added only when
+        // it is off, since loading at every start is the ordinary case and a row that said so on
+        // every line would be noise.
+        var state = isLoaded ? "active" : "not active";
+        if (!config.Enabled) state += ", no auto load";
 
         // ORDINAL, AND BOTH NUMBERS. A sidecar version is whatever an author wrote, so semver
         // parsing would have to decide what to do with one that is not — and a locally built plugin

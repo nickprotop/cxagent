@@ -51,9 +51,9 @@ public class PluginManagerRowsTests
             },
             loaded: ["running"]));
 
-        Assert.Equal("loaded", Row(rows, "running").State);
-        Assert.Equal("declared, not loaded", Row(rows, "idle").State);
-        Assert.Equal("disabled", Row(rows, "off").State);
+        Assert.Equal("active", Row(rows, "running").State);
+        Assert.Equal("not active", Row(rows, "idle").State);
+        Assert.Equal("not active, no auto load", Row(rows, "off").State);
         Assert.All(rows, r => Assert.Equal(PluginRowSection.Installed, r.Section));
     }
 
@@ -69,7 +69,9 @@ public class PluginManagerRowsTests
 
         var row = Row(rows, "found");
         Assert.Equal(PluginRowSection.Installed, row.Section);
-        Assert.Equal("no auto load", row.State);
+        // THE ABSENCE, NOT THE SYMPTOM: no entry is a different situation from an entry that says
+        // no auto-load, and the button beside it (Add to config) answers this one.
+        Assert.Equal("not in config", row.State);
     }
 
     /// <summary>A configured plugin whose file is gone cannot load, so it needs the user.</summary>
@@ -127,7 +129,7 @@ public class PluginManagerRowsTests
     /// <summary>A disabled plugin with an update stays disabled in the words, and moves to
     /// UPDATES — the section is about the update; the state still shows.</summary>
     [Fact]
-    public void ADisabledPluginWithAnUpdateKeepsSayingDisabled()
+    public void ADisabledPluginWithAnUpdateStillSaysItWillNotAutoLoad()
     {
         var rows = PluginManagerRows.Build(Inputs(
             configured: new Dictionary<string, PluginConfig> { ["p"] = new("p.dll", Enabled: false) },
@@ -136,7 +138,7 @@ public class PluginManagerRowsTests
 
         var row = Row(rows, "p");
         Assert.Equal(PluginRowSection.Updates, row.Section);
-        Assert.Contains("disabled", row.State);
+        Assert.Contains("no auto load", row.State);
     }
 
     /// <summary>
@@ -261,6 +263,6 @@ public class PluginManagerRowsTests
 
         var row = Row(rows, "found");
         Assert.Equal(PluginRowSection.Installed, row.Section);
-        Assert.Equal("loaded, no auto load", row.State);
+        Assert.Equal("active, not in config", row.State);
     }
 }

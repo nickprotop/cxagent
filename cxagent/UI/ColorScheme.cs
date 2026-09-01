@@ -240,6 +240,18 @@ public static class ColorScheme
             : "grey50";
 
 
+    /// <summary>
+    /// Muted as a Color, for a control that takes one rather than markup — a rule, a border.
+    ///
+    /// <para>THE SAME MIX AS <see cref="MutedMarkup"/>, EXPRESSED ONCE. A caller computing its own
+    /// blend would drift from the text it is meant to match the moment either changes, and "the
+    /// same grey as the hint" is exactly the promise a second literal breaks.</para>
+    /// </summary>
+    public static Color MutedRgb =>
+        _theme is { } theme
+            ? PaletteColors.Mix(theme.WindowForegroundColor, theme.WindowBackgroundColor, 0.55)
+            : new Color(0x80, 0x80, 0x80);
+
     /// <summary>The accent, as markup. Kept beside <see cref="Accent"/> so the two cannot drift.</summary>
     public static string AccentMarkup => Markup(Accent, "cyan1");
 
