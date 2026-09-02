@@ -202,6 +202,56 @@ public sealed class MainWindow : IDisposable
     /// <summary>Rule, prompt and mode line as ONE grid cell — see the comment at its construction.</summary>
     private GridControl _composer = null!;
 
+    /// <summary>The status bar and its rule, in their own main-grid row below the tabs.</summary>
+    private GridControl _statusStrip = null!;
+
+    /// <summary>The chat tab's content: the transcript, and the composer under it.</summary>
+    private GridControl _chatTab = null!;
+
+    /// <summary>
+    /// The row that says an answer is waiting in the chat tab, shown on every other tab.
+    ///
+    /// <para>THE COMPOSER LIVES IN THE CHAT TAB, and the permission gate and the question tool both
+    /// swap themselves INTO it. So a question raised while the user is in a shell is off screen —
+    /// and a prompt that blocks the turn while being invisible is the worst of both. This is what
+    /// tells them, without dragging them out of what they were doing.</para>
+    ///
+    /// <para>ONE STRIP, NOT ONE PER TAB. It lives in the main grid beneath the tabs, so a tab added
+    /// later gets it for free rather than having to remember to build one.</para>
+    /// </summary>
+    private GridControl _waitingBar = null!;
+
+    /// <summary>Whether something is waiting for an answer in the chat tab.</summary>
+    private bool _waiting;
+
+    /// <summary>
+    /// The tabs. The transcript is tab zero and the only one until something opens another.
+    ///
+    /// <para>NO HEADER AT ONE TAB. <c>ShowTabHeader = false</c> makes <c>TabHeaderHeight</c> report
+    /// 0 — not a blank row, no row — so a session that never opens a shell is pixel-identical to one
+    /// with no tabs at all. The chrome appears when it is earned.</para>
+    ///
+    /// <para>TAB ZERO IS NOT CLOSABLE. The conversation is the app; a close button on it would offer
+    /// to remove the thing everything else hangs off.</para>
+    /// </summary>
+    public TabControl Tabs { get; } = new()
+    {
+        ShowTabHeader = false,
+
+        // NOT A FOCUS STOP. TabControl.CanReceiveFocus is true whenever it holds a tab, and
+        // HorizontalGridControl.CollectFocusableContent puts a header container FIRST, ahead of its
+        // content — so the strip took the front of the tab order even while ShowTabHeader hid it,
+        // and a click that focused the composer lost focus to a header that is not on screen.
+        //
+        // Re-enabled with the header in AddTab: once the strip is drawn it is a real target, and
+        // Left/Right on it change tabs.
+        IsEnabled = false,
+
+        HeaderStyle = TabHeaderStyle.Separator,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        VerticalAlignment = VerticalAlignment.Fill,
+    };
+
     /// <summary>
     /// Rows the composer occupies: the separator above the card, the prompt's viewport
     /// (<see cref="PromptRows"/>), the mode line, the separator above the status bar, and the status
@@ -210,9 +260,118 @@ public sealed class MainWindow : IDisposable
     /// is simply not drawn. That is how the status bar vanished when the second separator landed:
     /// four rows of content in three rows of space, and the last one fell off the bottom.
     /// </summary>
+    /// <summary>
+    /// Adds a tab and reveals the header, which stays hidden while the chat tab is alone.
+    ///
+    /// <para>ONE PLACE THAT SETS <c>ShowTabHeader</c>, paired with <see cref="CloseTab"/>. A caller
+    /// that added a tab without it would get a tab nobody can reach — the strip is the only way to
+    /// see that a second one exists.</para>
+    /// </summary>
+    public void AddTab(string title, IWindowControl content, bool closable = true)
+    {
+        Tabs.AddTab(title, content, closable);
+
+        // THE HEADER BECOMES REAL TOGETHER: drawn and focusable, or neither. An invisible strip that
+        // is still a Tab stop is a place focus can land with nothing to show for it.
+        Tabs.ShowTabHeader = Tabs.TabCount > 1;
+        Tabs.IsEnabled = Tabs.ShowTabHeader;
+        Tabs.ActiveTabIndex = Tabs.TabCount - 1;
+    }
+
+    /// <summary>Removes a tab and hides the header again when the chat tab is left alone.</summary>
+    public void CloseTab(int index)
+    {
+        Tabs.RemoveTab(index);
+        Tabs.ShowTabHeader = Tabs.TabCount > 1;
+        Tabs.IsEnabled = Tabs.ShowTabHeader;
+    }
+
+    /// <summary>
+    /// Shows the status strip unless a prompt is on screen and taking the bottom of the window.
+    ///
+    /// <para>HIDDEN ONLY WHERE THE PROMPT IS. Every key the strip advertises is inert while a
+    /// question is up — which is why it is removed at all — but that is true on the CHAT tab, where
+    /// the question is. A prompt raised while the user is in a shell tab is not visible there and
+    /// its keys still work, so hiding the strip would remove live information to make room for
+    /// something that is not being shown.</para>
+    ///
+    /// <para>THE ROW GOES WITH IT. A hidden control still holds a fixed row, so the question would
+    /// end two rows above the bottom with a blank band under it.</para>
+    /// </summary>
+    private void RefreshStatusStrip()
+    {
+        var hide = _activePrompt is not null && Tabs.ActiveTabIndex == 0;
+
+        StatusBar.Visible = !hide;
+        _statusRule.Visible = !hide;
+        _mainGrid.RowDefinitions[2] = hide ? GridLength.Cells(0) : GridLength.Cells(StatusRows);
+    }
+
+    /// <summary>
+    /// Records that something is waiting for an answer, and shows or hides the bar accordingly.
+    /// </summary>
+    private void SetWaiting(bool waiting)
+    {
+        _waiting = waiting;
+        RefreshWaitingBar();
+    }
+
+    /// <summary>
+    /// Shows the bar only when a prompt is up AND the user is not looking at it.
+    ///
+    /// <para>CALLED ON BOTH AXES — when a prompt comes or goes, and when the tab changes — because
+    /// either can make it wrong. Switching to Chat while a question waits must clear the bar as
+    /// surely as answering it does.</para>
+    ///
+    /// <para>THE ROW COLLAPSES WITH IT. A hidden control still holds a fixed row, so leaving the row
+    /// at its height would cost two blank lines above the status bar for the whole session to
+    /// announce something that is almost never true.</para>
+    ///
+    /// <para>THE CHAT TAB IS MARKED TOO. The bar says an answer is wanted; the marker says WHERE,
+    /// and it survives the user scrolling whatever they are reading.</para>
+    /// </summary>
+    private void RefreshWaitingBar()
+    {
+        var show = _waiting && Tabs.ActiveTabIndex != 0;
+
+        _waitingBar.Visible = show;
+        // TWO CELLS: the rule and the message. The row has to name what the bar draws, or the last
+        // of it falls off — the same fixed-cell-count rule the composer and status strip follow.
+        _mainGrid.RowDefinitions[1] = show ? GridLength.Cells(2) : GridLength.Cells(0);
+
+        if (Tabs.TabCount > 0)
+            Tabs.SetTabTitle(0, _waiting ? "Chat •" : "Chat");
+    }
+
+    /// <summary>
+    /// Switches to the conversation and puts the caret back in the composer.
+    ///
+    /// <para>BOTH, NOT JUST THE TAB. The composer belongs to this tab; arriving on it with focus
+    /// still in a terminal would leave the user looking at the prompt and typing into the shell.</para>
+    /// </summary>
+    public void ShowChatTab()
+    {
+        Tabs.ActiveTabIndex = 0;
+        FocusComposer();
+    }
+
     /// <summary>Internal, not private: CommandMenu anchors its portal just above the composer, and
     /// that arithmetic needs the composer's height.</summary>
-    internal const int ComposerRows = PromptRows + 4;
+    ///
+    /// <para>PLUS TWO, NOT FOUR: the rule above the prompt, and the prompt itself. The status bar
+    /// and its own rule are a separate strip below this one — see <see cref="StatusRows"/> — so a
+    /// prompt that swaps into the composer cannot resize them out of existence.</para>
+    internal const int ComposerRows = PromptRows + 2;
+
+    /// <summary>
+    /// The status strip: its rule, and the bar.
+    ///
+    /// <para>ITS OWN ROW IN THE MAIN GRID, because it reports on the SESSION rather than on the
+    /// composer — the theme, the plugin key, the context percentage — and none of that should
+    /// disappear because something happened to the prompt. The same fixed-cell-count rule applies
+    /// as above: a control added to that strip without raising this number is simply not drawn.</para>
+    /// </summary>
+    internal const int StatusRows = 2;
 
     /// <summary>
     /// What the empty composer says.
@@ -712,11 +871,13 @@ public sealed class MainWindow : IDisposable
             // AUTO for the prompt box's row, not a fixed height: a permission prompt takes its
             // place there and is as tall as its question. The prompt box itself pins its own two
             // rows, so Auto still resolves to exactly PromptRows + 1 in the ordinary case.
-            .Rows(GridLength.Cells(1), GridLength.Auto(), GridLength.Cells(1), GridLength.Auto())
+            // THE STATUS BAR IS NOT IN HERE. It reports on the SESSION — the theme, the plugin
+            // key, the context percentage — none of which belong to the composer, and all of which
+            // must stay on screen when the composer does not. Keeping them in one grid meant a
+            // composer that moves takes the shortcut hints and the token readout with it.
+            .Rows(GridLength.Cells(1), GridLength.Auto())
             .Place(_composerRule, 0, 0)
             .Place(_promptBox, 1, 0)
-            .Place(_statusRule, 2, 0)
-            .Place(StatusBar, 3, 0)
             .WithAlignment(HorizontalAlignment.Stretch)
             // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
             // taller than the composer — and when it is, that is the defect: a row measuring six rows
@@ -746,6 +907,98 @@ public sealed class MainWindow : IDisposable
         // ScrollablePanel has none — it fills whatever it is given. The measure never resolved and
         // the window painted its background with NO TEXT AT ALL. Measured on one build: 0 lines
         // with Auto, 22 with a fixed width.
+        // THE WAITING BAR, between the tabs and the status strip. Hidden until a prompt is up AND
+        // the user is somewhere other than the chat tab — on the chat tab the prompt is on screen and
+        // a bar saying so would be noise.
+        //
+        // IT DOES NOT SAY WHAT THE QUESTION IS. A permission request runs several lines, and a
+        // security question truncated into one row is how people approve what they did not read.
+        var go = new ButtonBuilder()
+            .WithText(" Go ")
+            .WithColorRole(ColorScheme.Accent)
+            // SWITCHES AND FOCUSES IN ONE PRESS. Landing on the tab but not the prompt would need a
+            // second key to answer a question that is already blocking the turn.
+            .OnClick((_, _) => ShowChatTab())
+            .Build();
+
+        // LEFT, LIKE THE STATUS BAR UNDER IT. The two are neighbouring rows of chrome at the foot
+        // of the window, and a centred row above a left-aligned one reads as a different kind of
+        // thing that happens to be floating there. Aligned, the bar is plainly a temporary line
+        // above the permanent one.
+        var waitingRow = new ToolbarControl
+        {
+            ItemSpacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        waitingRow.AddItem(new MarkupControl(
+            [$"[{ColorScheme.CautionMarkup}]cxagent is waiting for an answer in Chat[/]"]));
+        waitingRow.AddItem(go);
+
+        // A RULE ABOVE IT, closing the bar off from the tab content. Without one the message runs
+        // straight into whatever the tab was showing — on a shell, into the last line of output,
+        // where it reads as something the command printed.
+        //
+        // ITS OWN RULE, EVEN THOUGH THE STATUS STRIP DRAWS ONE. The strip's rule separates the strip
+        // from what is above it, which is this bar; this one separates the bar from the tab. Two
+        // boundaries because there are two things to bound, and they only look adjacent because the
+        // bar between them is a single row.
+        _waitingBar = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Cells(1), GridLength.Cells(1))
+            .Place(new RuleControl { Color = ColorScheme.MutedRgb }, 0, 0)
+            .Place(waitingRow, 1, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+        _waitingBar.Visible = false;
+
+        // THE STATUS BAR'S OWN STRIP, below everything. Its rule travels with it: the line marks
+        // where the session's readout begins, so a rule left behind in the composer would draw a
+        // boundary above the wrong thing.
+        _statusStrip = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Cells(1), GridLength.Auto())
+            .Place(_statusRule, 0, 0)
+            .Place(StatusBar, 1, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
+        // TAB ZERO, BEFORE THE GRID IS BUILT. The control has to have its content when it is
+        // measured, or the first layout runs against an empty container and the transcript is drawn
+        // into nothing.
+        //
+        // NOT CLOSABLE — isClosable defaults false, and it is left that way deliberately: the
+        // conversation is the app, and a close button on it offers to remove what everything else
+        // hangs off.
+        // THE CHAT TAB IS THE TRANSCRIPT AND THE COMPOSER. They are one surface — a conversation
+        // you read and the place you answer it — so a shell tab gets the full height rather than a
+        // prompt hanging under it, where the next keystroke belongs to neither clearly.
+        //
+        // STAR THEN CELLS, the same split the main grid used while these were siblings: the
+        // transcript takes what is left, the composer is exactly what it draws. An Auto row here
+        // would hand the transcript's ScrollablePanel an intrinsic measure, which is the shape that
+        // once painted 0 lines of text.
+        _chatTab = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Star(1), GridLength.Cells(ComposerRows))
+            .Place(Chat, 0, 0)
+            .Place(_composer, 1, 0)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
+        Tabs.AddTab("Chat", _chatTab);
+
+        // THE BAR FOLLOWS THE TAB, not only the prompt: arriving at Chat while a question waits must
+        // clear it, and leaving Chat while one waits must raise it.
+        Tabs.TabChanged += (_, _) =>
+        {
+            RefreshWaitingBar();
+
+            // AND THE STRIP: whether a prompt is hiding it depends on which tab is showing, so
+            // switching tabs changes the answer as surely as raising or answering one does.
+            RefreshStatusStrip();
+        };
+
         _mainGrid = Controls.Grid()
             .Columns(GridLength.Star(1), GridLength.Cells(SessionPanel.WidthFor(_system.DesktopDimensions.Width)))
             // THE COMPOSER'S ROW IS NAMED, not Auto. Auto measured it at ~11 rows for 5 rows of
@@ -753,10 +1006,22 @@ public sealed class MainWindow : IDisposable
             // the chat's Star(1) row ends where this row begins, so those rows belonged to neither
             // pane and simply went blank. Cells(ComposerRows) makes the row exactly what the
             // composer draws: the prompt's viewport, the mode line, the status bar.
-            .Rows(GridLength.Star(1), GridLength.Cells(ComposerRows))
-            .Place(Chat, 0, 0)
-            .Place(_composer, 1, 0)
-            .Place(SessionPanel.Control, 0, 1, rowSpan: 2)
+            // TWO ROWS: the tabs, and the status strip under them. The composer is INSIDE the chat
+            // tab now, so it is not a sibling here — only the strip stays global, because it reports
+            // on the session rather than the conversation and must survive switching away from it.
+            // THREE ROWS: the tabs, the waiting bar, the status strip. The bar's row is Cells(0)
+            // until something waits — a hidden control still holds a fixed row, and two blank lines
+            // above the status bar would be a permanent cost for a rare event.
+            .Rows(GridLength.Star(1), GridLength.Cells(0), GridLength.Cells(StatusRows))
+            // THE TABS TAKE THE TRANSCRIPT'S PLACE, and the transcript becomes their first tab. The
+            // row is unchanged — Star(1), a definite share — because that is what the transcript
+            // needed and the reason is recorded above: an Auto track measured a ScrollablePanel at
+            // nothing and painted 0 lines of text. A container that sizes its content inherits that
+            // hazard, so it gets the same definite row rather than being measured intrinsically.
+            .Place(Tabs, 0, 0)
+            .Place(_waitingBar, 1, 0)
+            .Place(_statusStrip, 2, 0)
+            .Place(SessionPanel.Control, 0, 1, rowSpan: 3)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -1029,12 +1294,22 @@ public sealed class MainWindow : IDisposable
         _composer.ReplaceControl(_promptBox, prompt);
         _activePrompt = prompt;
 
+        // RAISED HERE, CLEARED IN RestoreComposer. Every prompt — a permission request, a question
+        // tool call, each step of a multi-step question — passes through this pair, so a caller
+        // added later gets the bar without knowing it exists. Wiring it per-caller would make that
+        // future one silently invisible, which is the failure the bar is being built to prevent.
+        SetWaiting(true);
+
         // AND LET THE ROW GROW. The composer's row in the main grid is a fixed Cells(ComposerRows) —
         // that is what closed the dead band between the transcript and the prompt — but a permission
         // prompt is taller than the composer, and a fixed row would clip the question just as the
         // fixed prompt row did. Auto for as long as the prompt is up; restored on the way out, so
         // the band cannot come back.
-        _mainGrid.RowDefinitions[1] = GridLength.Auto();
+        // THE CHAT TAB'S OWN ROW, not the main grid's. The composer lives inside the tab now, so
+        // the row that has to grow for a taller-than-usual prompt is the one holding it there —
+        // resizing the main grid's row 1 would stretch the STATUS STRIP instead, and row 2 no longer
+        // exists at all.
+        _chatTab.RowDefinitions[1] = GridLength.Auto();
 
         ElevatePrompt(prompt);
 
@@ -1042,8 +1317,7 @@ public sealed class MainWindow : IDisposable
         // key it advertises is inert until the prompt is answered, so a dimmed row still shows the
         // user four shortcuts that will not respond. Removing it also gives the question the bottom
         // of the screen to itself.
-        StatusBar.Visible = false;
-        _statusRule.Visible = false;   // or the rule would sit above nothing
+        RefreshStatusStrip();
 
         // MOVE FOCUS INTO THE PROMPT. Without this the buttons were mouse-only: ReplaceControl swaps
         // the composer OUT of the grid but focus stays on that removed control, and ButtonControl's
@@ -1315,8 +1589,10 @@ public sealed class MainWindow : IDisposable
     {
         if (ReferenceEquals(_activePrompt, prompt))
         {
+            SetWaiting(false);
             _composer.ReplaceControl(prompt, _promptBox);
-            _mainGrid.RowDefinitions[1] = GridLength.Cells(ComposerRows);
+            _chatTab.RowDefinitions[1] = GridLength.Cells(ComposerRows);
+            RefreshStatusStrip();
             _activePrompt = null;
 
             // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape

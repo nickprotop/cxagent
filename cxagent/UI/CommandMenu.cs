@@ -515,10 +515,13 @@ public sealed class CommandMenu
         // more than MaxRows — past that the list needs scrolling, which is a different control.
         var height = Math.Min(_shown.Count, Math.Min(MaxRows, Math.Max(1, _system.DesktopDimensions.Height / 3)));
 
-        // SITS DIRECTLY ON THE SEPARATOR, no gap. ComposerRows already counts the prompt, its mode
-        // line, the status bar AND the separator row above them, so the first free row is exactly
-        // that subtraction — the extra -1 that was here left a blank line between the two.
-        var bottom = _system.DesktopDimensions.Height - MainWindow.ComposerRows;
+        // SITS DIRECTLY ON THE SEPARATOR, no gap. What is below the menu is everything the window
+        // reserves at its foot — the composer's rows AND the status strip's, which are two separate
+        // main-grid rows now. Subtracting only the composer's leaves the menu overlapping the strip
+        // by exactly the strip's height, which is the shape of this bug: a portal drawn two rows too
+        // low, sitting on the prompt it is meant to float above.
+        var bottom = _system.DesktopDimensions.Height
+                   - MainWindow.ComposerRows - MainWindow.StatusRows;
 
         return new System.Drawing.Rectangle(1, Math.Max(0, bottom - height), width, height);
     }

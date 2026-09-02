@@ -678,7 +678,15 @@ public static class AppBootstrap
                     // CHECKED AGAIN INSIDE THE HANDLER, not because it can change but because this
                     // is a lambda: the platform guard on the registration above cannot be followed
                     // into a closure, so without this the call reads as reachable everywhere.
-                    if (ShellWindow.IsSupported)
+                    if (!ShellWindow.IsSupported) return true;
+
+                    // A COMMAND GETS A WINDOW, A BARE SHELL GETS A TAB. The two were never the same
+                    // thing: a command is transient — it appears, shows a result, you dismiss it —
+                    // and a bare shell is a workspace you leave running and come back to. Switching
+                    // away from a tab is not closing it, which is the whole reason it wants one.
+                    if (string.IsNullOrWhiteSpace(arguments))
+                        ShellTab.Open(system, mainWindow, session);
+                    else
                         ShellWindow.Open(system, mainWindow, session, arguments);
 
                     return true;
@@ -1329,7 +1337,11 @@ public static class AppBootstrap
         //
         // A KEY THAT IS USUALLY UNNECESSARY IS STILL WORTH HAVING when the failure it covers is "the
         // keyboard does nothing and I cannot tell why". That is not a cost the user can debug.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.FocusComposer);
+        // SHOWCHATTAB, NOT FOCUSCOMPOSER. The composer belongs to the chat tab, so reaching it
+        // means going there — focusing a control on a tab that is not showing leaves the caret
+        // somewhere invisible while the keys still land in the terminal. This is the one key that
+        // always gets you back to the conversation.
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.ShowChatTab);
 
         // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
         // before the active window (InputCoordinator.cs:130-134) — a window.KeyPressed handler for a
