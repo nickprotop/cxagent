@@ -73,8 +73,22 @@ public sealed class CommandMenu
 
     private IReadOnlyList<Row> _shown = [];
     private int _selected;
-    /// <summary>Most rows the menu will show. Past this the list wants scrolling, which this is not.</summary>
+    /// <summary>Most rows the menu DRAWS at once. The list itself may be longer — Render windows
+    /// around the selection, so arrowing past this scrolls rather than running off the end.</summary>
     private const int MaxRows = 10;
+
+    /// <summary>
+    /// Most paths an <c>@</c> collects before it stops looking.
+    ///
+    /// <para>NOT <see cref="MaxRows"/>, WHICH IS A DRAWING CAP. Reusing it here meant the walk
+    /// stopped after ten paths and a repository's other few thousand were simply absent — with the
+    /// ten chosen by directory order, so the file being typed was usually not among them. The menu
+    /// scrolls; what it can scroll THROUGH is this.</para>
+    ///
+    /// <para>Still bounded, because the recursive case is the one with the least typed and a walk
+    /// with no cap is one that reads an entire disk for a two-character prefix.</para>
+    /// </summary>
+    private const int MaxPaths = 200;
 
     private bool _suppressUntilEdit;
     private int _rowsWhenOpened;
@@ -273,7 +287,7 @@ public sealed class CommandMenu
             {
                 await Task.Delay(DebounceMs, cts.Token);
 
-                var hits = PathCompletions.Find(root, prefix, MaxRows);
+                var hits = PathCompletions.Find(root, prefix, MaxPaths);
                 if (cts.Token.IsCancellationRequested) return;
 
                 // ONTO THE UI THREAD TO DRAW. Everything above this line touches the filesystem and
