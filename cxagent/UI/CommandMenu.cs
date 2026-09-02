@@ -80,6 +80,16 @@ public sealed class CommandMenu
     private int _rowsWhenOpened;
     private string _chosenText = string.Empty;
 
+    /// <summary>
+    /// The <c>@</c> reference this menu is completing, or null when it is showing commands.
+    ///
+    /// <para>THE MODE IS A FIELD BECAUSE THE COMPLETION DIFFERS, not the presentation. A command row
+    /// replaces the whole composer — the command IS the line. An <c>@</c> row is mid-sentence, so it
+    /// splices, and a Chosen handler that could not tell them apart would delete everything the user
+    /// had written in front of the reference.</para>
+    /// </summary>
+    private AtToken? _at;
+
     public CommandMenu(ConsoleWindowSystem system, Window window, IWindowControl owner)
     {
         _system = system;
@@ -103,6 +113,23 @@ public sealed class CommandMenu
     /// only the table's own arguments, which is every command that has not had a verb registered.
     /// </summary>
     public CommandRegistry? Registry { get; set; }
+
+    /// <summary>
+    /// What a relative <c>@</c> path is relative to — the session's working directory.
+    ///
+    /// <para>Null disables <c>@</c> entirely, which is what a host that never sets it gets: the
+    /// menu keeps working for commands and never offers a path.</para>
+    /// </summary>
+    public string? Root { get; set; }
+
+    /// <summary>
+    /// Where the caret is in the composer.
+    ///
+    /// <para>A FUNC, NOT AN INT, because the caret moves without the text changing — an arrow key
+    /// out of a reference must close the menu, and a value captured at wiring time would never know.
+    /// </para>
+    /// </summary>
+    public Func<int>? Caret { get; set; }
 
     /// <summary>Whether the menu is currently on screen.</summary>
     public bool IsOpen => _portal is not null;
@@ -134,6 +161,18 @@ public sealed class CommandMenu
             if (text == _chosenText) return;
             _suppressUntilEdit = false;
         }
+
+        // THE @ BRANCH IS ANCHORED TO THE CARET, the slash branch to the start of the text, so the
+        // two cannot both match and their order is not a precedence question.
+        if (Root is { Length: > 0 } root && Caret is { } caret
+            && AtToken.At(text, caret()) is { } at)
+        {
+            _at = at;
+            ShowPaths(root, at);
+            return;
+        }
+
+        _at = null;
 
         if (!text.StartsWith('/') || text.Contains('\n'))
         {
@@ -180,6 +219,91 @@ public sealed class CommandMenu
                 c.Name))];
         }
 
+        Render(matches);
+    }
+
+    /// <summary>
+    /// The composer's text with an <c>@</c> reference replaced by the path chosen for it.
+    ///
+    /// <para>THE TAIL SURVIVES. Someone completing a reference in the middle of a written sentence
+    /// keeps everything after the caret — a splice that took only the head would silently truncate
+    /// what they had already typed past it.</para>
+    /// </summary>
+    /// <remarks>Public and static so it is testable without a portal — the same seam
+    /// <see cref="CompletionFor"/> uses.</remarks>
+    public static string Splice(string text, AtToken at, string path)
+    {
+        var caret = Math.Clamp(at.Start + 1 + at.Prefix.Length, 0, text.Length);
+        var head = text[..Math.Clamp(at.Start, 0, text.Length)];
+
+        return head + path + text[caret..];
+    }
+
+    /// <summary>How long typing must pause before a walk starts. Keystrokes arrive faster than a
+    /// filesystem walk finishes, so without this every character starts one and the composer stutters
+    /// under its own completion. Short enough to feel immediate, long enough that a typed word costs
+    /// one walk rather than five.</summary>
+    private const int DebounceMs = 120;
+
+    private CancellationTokenSource? _walk;
+
+    /// <summary>
+    /// Offers the paths matching an <c>@</c> reference.
+    ///
+    /// <para>OFF THE UI THREAD, ALWAYS. A synchronous walk freezes the composer while someone is
+    /// typing into it — the one outcome worse than a slow menu — and the tree being walked is
+    /// whatever repository they opened, which nobody promised was small.</para>
+    ///
+    /// <para>CANCELLED BY THE NEXT KEYSTROKE. A walk whose token is cancelled has its result dropped
+    /// rather than rendered: it describes a prefix the user has already moved past, and drawing it
+    /// would make the menu flicker between two answers.</para>
+    /// </summary>
+    private void ShowPaths(string root, AtToken at)
+    {
+        _walk?.Cancel();
+        _walk?.Dispose();
+        var cts = new CancellationTokenSource();
+        _walk = cts;
+
+        var prefix = at.Prefix;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(DebounceMs, cts.Token);
+
+                var hits = PathCompletions.Find(root, prefix, MaxRows);
+                if (cts.Token.IsCancellationRequested) return;
+
+                // ONTO THE UI THREAD TO DRAW. Everything above this line touches the filesystem and
+                // nothing else; everything below touches controls, which belong to the render loop.
+                _system.EnqueueOnUIThread(() =>
+                {
+                    // CHECKED AGAIN HERE: the token can be cancelled between the check above and
+                    // this running, and a stale render is exactly what cancelling is for.
+                    if (cts.Token.IsCancellationRequested) return;
+
+                    Render([.. hits.Select(h => new Row(
+                        h.Display, h.IsDirectory ? "directory" : "file", h.Path))]);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // The ordinary path: another keystroke arrived during the debounce.
+            }
+        }, cts.Token);
+    }
+
+    /// <summary>
+    /// Puts <paramref name="matches"/> on screen — opening, refilling or closing the portal.
+    ///
+    /// <para>SHARED BY BOTH MODES. Commands and paths differ in where their rows come from and
+    /// nothing else; a second copy of the reopen-on-row-count rule below would be a second place for
+    /// the clipped-buffer bug to come back.</para>
+    /// </summary>
+    private void Render(IReadOnlyList<Row> matches)
+    {
         if (matches.Count == 0)
         {
             // Nothing matches: close rather than show an empty box. The unknown-command reply on
@@ -270,9 +394,31 @@ public sealed class CommandMenu
                 // list, having to type a character and delete it to summon one. Suppression exists
                 // for a COMPLETE command — "/help" — where the next Enter belongs to the submit path
                 // and reopening would capture it.
-                _suppressUntilEdit = !picked.Completion.EndsWith(' ');
-                _chosenText = picked.Completion;
-                Chosen?.Invoke(this, picked.Completion);
+                // AN @ ROW SPLICES; A COMMAND ROW REPLACES. A command IS the line, so replacing the
+                // composer is right for it. An @ reference sits mid-sentence — "fix the bug in
+                // @Shell" — and replacing there would delete every word in front of it. The two are
+                // told apart by the mode this menu is in, which is the reason it is a field.
+                //
+                // A DIRECTORY LEAVES THE MENU OPEN because its completion ends in a separator, which
+                // is the same rule "/mcp show " already follows: a completion that is not finished
+                // should offer what comes next rather than making the user summon it.
+                // THE @ SURVIVES A DIRECTORY, and goes on a file. Descending needs the marker: a
+                // completion that dropped it would leave "look at src/UI/" — plain text with no
+                // reference in it — and the menu would have nothing to reopen on. Keeping it while
+                // the path is unfinished is what makes "@src" → "@src/UI/" → "@src/UI/File.cs" one
+                // continuous act rather than three separate ones.
+                //
+                // It is removed on a FILE because the reference is then complete, and what the model
+                // receives must be an ordinary path in an ordinary sentence.
+                var text = _at is { } at
+                    ? Splice(Composer?.Input ?? string.Empty, at,
+                             picked.Completion.EndsWith('/') ? "@" + picked.Completion
+                                                             : picked.Completion)
+                    : picked.Completion;
+
+                _suppressUntilEdit = !text.EndsWith(' ') && !text.EndsWith('/');
+                _chosenText = text;
+                Chosen?.Invoke(this, text);
                 return true;
 
             default:

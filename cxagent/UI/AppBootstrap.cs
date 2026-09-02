@@ -1094,6 +1094,21 @@ public static class AppBootstrap
             // THE SAME LOOKUP DISPATCH USES, so a verb this process registers — /stats clear —
             // appears here at the moment it becomes real, not from a second copy of the table.
             Registry = manager.Commands,
+
+            // WHAT AN @ PATH IS RELATIVE TO. The session's own folder, so a completed reference
+            // reads the way the user would have typed it and means the same thing to the model.
+            Root = session.WorkingDirectory,
+
+            // THE END OF THE TEXT, NOT THE TRUE CARET — and this is a limitation worth naming rather
+            // than hiding. PromptControl keeps its caret index private (CurrentCursorPosition), so a
+            // host cannot ask where it is; what is reachable is the text itself.
+            //
+            // It is right for the case that matters: someone typing "@Sh" is typing at the end, and
+            // that is where a completion is being asked for. It is wrong for one case — moving the
+            // caret back INTO an earlier @ reference and expecting the menu to reopen there — which
+            // gets no menu instead of a wrong one. Exposing the caret upstream would fix it; until
+            // then, failing closed is the honest half.
+            Caret = () => (mainWindow.Input.Input ?? string.Empty).Length,
         };
         commandMenu.Chosen += (_, completion) =>
         {
