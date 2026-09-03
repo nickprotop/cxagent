@@ -609,6 +609,11 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     public int RefreshRunningHeadersNow()
     {
+        // THE TURN'S ROW TICKS TOO. Its header carries a clock and the call in flight, and both are
+        // pure projections of the moment they were rendered — so they freeze unless something
+        // re-renders them, which is the same reason the worker row's body is driven from here.
+        PaintTurnRow();
+
         var refreshed = 0;
 
         foreach (var job in _known.Values)
@@ -684,7 +689,22 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam: the header label is a pure projection of the job.</summary>
 
     /// <summary>Every job belongs in the transcript — no job type is filtered out.</summary>
-    private static bool ShouldShow(Job job) => true;
+    /// <summary>
+    /// Whether this job gets a transcript row of its own.
+    ///
+    /// <para>THE TURN'S ROW CARRIES THE REST. A turn that reads four files and greps twice used to
+    /// put six messages on screen, each one line of header over an empty body, and the answer that
+    /// followed started a screen further down. Those calls are now rows in one table — see
+    /// <see cref="IsFolded"/> for what qualifies and what does not.</para>
+    ///
+    /// <para>A FOLDED JOB CAN STILL GAIN A ROW LATER. This is read again on every update, so a call
+    /// that is refused or fails stops being folded at that moment and ToolUpdated's adopt path
+    /// creates the line it never had.</para>
+    /// </summary>
+    private static bool ShouldShow(Job job) => !IsFolded(job);
+
+    /// <summary>Test seam: a pure decision whose effect is only visible through a transcript.</summary>
+    public static bool ShouldShowForTest(Job job) => ShouldShow(job);
 
     public static string AuthorForTest(Job job) => AuthorFor(job);
 
@@ -1211,6 +1231,24 @@ public sealed class InlineJobSink : IToolObserver
     private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo";
 
     /// <summary>
+    /// Whether this row's working folds into the turn's one row instead of taking a line of its own.
+    ///
+    /// <para>THE WORKING FOLDS; THE ANSWER DOES NOT. A tool's bulky output is an echo of what the
+    /// model already has — the file says so three times — and six echoes push the conversation off
+    /// screen. A worker's report and a todo list ARE the point of their rows, so folding one into a
+    /// count would delete a feature rather than summarise it.</para>
+    ///
+    /// <para>A REFUSAL AND A FAILURE KEEP THEIR ROW. The reader answered the refusal themselves a
+    /// moment ago; making their own decision harder to find than it was is the one regression this
+    /// design must not ship. A failure is the same shape of thing — the row nobody wants folded is
+    /// exactly the row that went wrong.</para>
+    /// </summary>
+    private static bool IsFolded(Job job) =>
+        !IsTheAnswer(job)
+        && job.State is not JobState.Failed
+        && job.Result?.PermissionDenied != true;
+
+    /// <summary>
     /// Whether this row collapses to one line. Two ways to qualify, and the SECOND is the one the
     /// user found by looking at a real transcript:
     ///
@@ -1290,10 +1328,319 @@ public sealed class InlineJobSink : IToolObserver
     /// ids are children, which is exactly the knowledge the forwarding design refuses to centralise
     /// — and the parent's own list is bounded by the session, not by the number of workers.</para>
     /// </summary>
+    /// <summary>
+    /// Where the turn on screen starts in <see cref="_workerCalls"/>, and whose list it is.
+    ///
+    /// <para>A POSITION, NOT A COPY. The parent's list is append-only for the session — the only
+    /// removals target a CHILD's id at its terminal transition — so a turn's calls are the ones
+    /// after the count the list held when the turn began. Copying at each boundary would leave two
+    /// records of the same calls, free to disagree.</para>
+    /// </summary>
+    private (string? AgentId, int From)? _turn;
+
+    /// <summary>
+    /// Which agent this session's own turns belong to, learned from the first call it files.
+    ///
+    /// <para>LEARNED RATHER THAN PASSED IN. The composition root has no agent id to hand over — the
+    /// host that owns one is built later and replaced on a re-wire — and a parameter threaded down
+    /// for this would be a second source for a fact the calls already carry. The first call after a
+    /// turn opens IS the parent's, because a child cannot call anything before its spawn does.</para>
+    /// </summary>
+    private string? _parentAgentId;
+
+    /// <summary>
+    /// Opens a turn's scope. Its calls are whatever this agent files from now on.
+    ///
+    /// <para>NOT MARSHALLED, for the reason <see cref="RecordToolCall"/> gives: this records a
+    /// position and touches no control.</para>
+    /// </summary>
+    public void TurnBegan(string? agentId = null)
+    {
+        // THE PREVIOUS TURN'S ROW IS SETTLED FIRST. A new user message is what ends the turn before
+        // it — the session raises no "turn over" of its own, and the assistant's own boundaries
+        // bracket a single model round rather than the whole turn. Settling here means the outgoing
+        // row loses its spinner and its in-flight call at the moment it stops being live.
+        if (_turn is not null) TurnEnded();
+
+        var id = agentId ?? _parentAgentId;
+        if (id is null)
+        {
+            // NO ID YET, SO THE TURN OPENS EMPTY. The first call of the session names the agent, and
+            // TurnCalls reads the mark then — a scope that started at "nothing recorded" is exactly
+            // right for an agent that has recorded nothing.
+            _turn = (null, 0);
+            return;
+        }
+
+        var calls = _workerCalls.GetOrAdd(id, _ => new List<ToolCallReport>());
+        int from;
+        lock (calls) from = calls.Count;
+
+        _turn = (id, from);
+    }
+
+    /// <summary>
+    /// One model round finished: settle its row and open a fresh scope for whatever comes next.
+    ///
+    /// <para>A ROW PER ANSWER RATHER THAN PER TURN. A turn is often several rounds — work, speak,
+    /// work again — and one row spanning all of them would put calls made before a paragraph and
+    /// after it in the same table, below prose the reader has already gone past.</para>
+    ///
+    /// <para>THE SCOPE REOPENS IMMEDIATELY, on the same agent, so the next round's first call has a
+    /// scope waiting rather than falling outside every one — which is what happens when a boundary
+    /// only ever closes.</para>
+    /// </summary>
+    public void RoundEnded()
+    {
+        if (_turn is not { } turn) return;
+
+        TurnEnded();
+        TurnBegan(turn.AgentId);
+    }
+
+    /// <summary>Closes the turn's scope. Its row stays on screen; nothing more joins it.</summary>
+    public void TurnEnded()
+    {
+        // THE LAST PAINT BEFORE THE SCOPE CLOSES. The row is drawn from TurnCalls, which goes empty
+        // the moment _turn is null — so a settle that cleared the scope first would leave the header
+        // reading whatever the last tick happened to catch, with the in-flight call still named on a
+        // turn that has stopped.
+        // THE FINAL PAINT IS ENQUEUED; THE SCOPE CLOSES HERE. Splitting them this way keeps the
+        // scope's lifetime synchronous with the turn's — a unit test has no UI loop to drain the
+        // enqueue, and a scope that only closed inside one would stay open for the next turn.
+        //
+        // THE ROW IS READ BEFORE THE CLEAR, so the enqueued paint has the calls it is drawing even
+        // though _turn is null by the time it runs.
+        var settling = _turnRow;
+        var final = TurnRowSettledForTest();
+
+        _turn = null;
+        _turnRow = null;
+
+        if (settling is { } id && final is { Header: { } header, Body: { } body })
+            _system.EnqueueOnUIThread(() =>
+            {
+                _chat.SetHeader(id, header);
+                _chat.UpdateMessage(id, body);
+                if (final.Value.Opens) _chat.SetExpanded(id, true);
+            });
+    }
+
+    /// <summary>
+    /// The turn's final header and body, and whether the row opens itself.
+    ///
+    /// <para>OPENED WHEN SOMETHING WENT WRONG. An ordinary turn's working is an echo and stays
+    /// folded; a turn holding a refusal or a failure is the one whose working is worth reading, and
+    /// the reader should not go looking for the decision they just made.</para>
+    ///
+    /// <para>Computed while the scope is still open, so the caller can close it and still paint.</para>
+    /// </summary>
+    public (string Header, string Body, bool Opens)? TurnRowSettledForTest()
+    {
+        if (TurnRowBody() is not { } body) return null;
+
+        return (TurnRowHeader() ?? string.Empty, body,
+            TurnCalls().Any(c => c.Outcome is "denied" or "failed"));
+    }
+
+    /// <summary>The message this turn's calls are drawn on, once it has any.</summary>
+    private SharpConsoleUI.Controls.ChatMessageId? _turnRow;
+
+    /// <summary>
+    /// Draws or redraws the turn's row. Must be on the UI thread.
+    ///
+    /// <para>CREATED AT THE FIRST CALL, NOT AT THE TURN'S START. A conversational turn calls nothing
+    /// and gets no row, so the feature costs nothing where there is nothing to show.</para>
+    ///
+    /// <para>UpdateMessage AND SetHeader, never ToolUpdated: this changes what is behind the expand
+    /// without touching whether it is open, or a tick would re-open a row the reader shut, once a
+    /// second, forever. The same distinction the worker row's live body is built on.</para>
+    /// </summary>
+    private void PaintTurnRow()
+    {
+        if (TurnRowBody() is not { } body) return;
+
+        DrawTurnRow(TurnRowHeader() ?? string.Empty, body);
+    }
+
+    /// <summary>
+    /// Puts a header and body on the turn's row, creating it if this is the first call. Must be on
+    /// the UI thread.
+    ///
+    /// <para>TAKES THE STRINGS RATHER THAN READING THE SCOPE, because its callers compute them at
+    /// different moments: the tick reads a live turn, and the settle reads one that is about to
+    /// close. A method that read the scope itself would be right for one caller and racy for the
+    /// other.</para>
+    /// </summary>
+    private void DrawTurnRow(string header, string body)
+    {
+        _turnRow ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
+
+        _chat.SetHeader(_turnRow.Value, header);
+        _chat.UpdateMessage(_turnRow.Value, body);
+    }
+
+
+    /// <summary>
+    /// The turn's final paint: no spinner, no in-flight row, and the out column back.
+    ///
+    /// <para>OPENED WHEN SOMETHING WENT WRONG. An ordinary turn's working is an echo and stays
+    /// folded; a turn that contains a refusal or a failure is the one whose working is worth
+    /// reading, and the reader should not have to go looking for what they already answered.</para>
+    /// </summary>
+    private void SettleTurnRow()
+    {
+        if (_turnRow is not { } id) return;
+        if (TurnRowBody() is not { } body) return;
+
+        _chat.SetHeader(id, TurnRowHeader() ?? string.Empty);
+        _chat.UpdateMessage(id, body);
+
+        if (TurnCalls().Any(c => c.Outcome is "denied" or "failed"))
+            _chat.SetExpanded(id, true);
+    }
+
+    /// <summary>The calls this turn has made, oldest first, or empty outside a turn.</summary>
+    private IReadOnlyList<ToolCallReport> TurnCalls()
+    {
+        if (_turn is not { } turn) return [];
+
+        var id = turn.AgentId ?? _parentAgentId;
+        if (id is null || !_workerCalls.TryGetValue(id, out var calls)) return [];
+
+        lock (calls) return turn.From >= calls.Count ? [] : calls[turn.From..];
+    }
+
+    /// <summary>Test seam: the turn's slice, which is otherwise only visible through a row.</summary>
+    public IReadOnlyList<ToolCallReport> TurnCallsForTest() => TurnCalls();
+
+    /// <summary>
+    /// The turn row's body: the same table a worker's row carries, over this turn's calls.
+    ///
+    /// <para>NO CAPTION AND NO RULE ABOVE IT, which is the one place this differs from a worker's
+    /// body. A child reports prose and that sits above the table; the parent's prose is the
+    /// assistant message that follows this row, already on screen. An absence, not a second
+    /// design.</para>
+    ///
+    /// <para>Null when the turn has called nothing — a conversational turn adds no row at all.</para>
+    /// </summary>
+    private string? TurnRowBody()
+    {
+        var calls = TurnCalls();
+        if (calls.Count == 0) return null;
+
+        var table = Timetable(calls, InFlightOfTurn() is { } running ? new LiveRun(running) : null);
+
+        // THE SUMMARY LINE IS DROPPED HERE BECAUSE THE HEADER IS IT. Timetable leads with the summary
+        // so a worker's expanded row reads as a whole; this row shows the same text on the line above
+        // the expand, and printing it twice makes the reader check whether the two agree.
+        //
+        // AND WHAT IS LEFT KEEPS ITS LEADING BLANK LINE. A collapsed row previews its body's first
+        // line, which for a worker is the prose it reported and here would be `|   | tool | target |`
+        // — markdown scaffolding shown as text, beside an "expand…" offering to reveal the rest of
+        // it. A blank first line previews as nothing, which is what a row whose whole content is a
+        // table should show before it is opened.
+        var body = table.Split('\n', 2);
+        return body.Length == 2 ? "\n" + body[1].TrimStart('\n') : string.Empty;
+    }
+
+    /// <summary>The summary line the header shows: the table's own first line, so they cannot
+    /// disagree about what they are counting.</summary>
+    private string? TurnSummary()
+    {
+        var calls = TurnCalls();
+        if (calls.Count == 0) return null;
+
+        return Timetable(calls, InFlightOfTurn() is { } running ? new LiveRun(running) : null)
+            .Split('\n')[0];
+    }
+
+    /// <summary>
+    /// The turn row's header: the table's own first line, and what is running right now.
+    ///
+    /// <para>TAKEN FROM THE TABLE RATHER THAN COMPOSED, so the count in the header and the rows
+    /// below it cannot disagree — the summary IS the table's first line.</para>
+    /// </summary>
+    private string? TurnRowHeader()
+    {
+        if (TurnSummary() is not { } summary) return null;
+
+        // AND WHAT IS RUNNING. The per-call rows this replaces each named a tool and its argument as
+        // it happened, and a reader watching a long turn is watching for exactly that: six calls in,
+        // a header that only counts says nothing about which file is being read. It drops off the
+        // moment the call lands, replaced by the next.
+        if (InFlightOfTurn() is { } running && InFlightLabel(running) is { Length: > 0 } label)
+            summary += $" · {label}";
+
+        return summary;
+    }
+
+    /// <summary>
+    /// The turn's one running call, or null.
+    ///
+    /// <para>THE FIRST NON-TERMINAL JOB, not the last: a turn runs its calls one at a time, so there
+    /// is at most one — the same reasoning the worker row's in-flight lookup uses.</para>
+    /// </summary>
+    private Job? InFlightOfTurn() =>
+        _turn is null ? null : _known.Values.FirstOrDefault(j => !IsTerminal(j.State) && IsFolded(j));
+
+    /// <summary>
+    /// "read_file Agent.cs" for the header — the tool and what it is acting on.
+    ///
+    /// <para>THE SAME SPLIT <see cref="InFlightRow"/> MAKES, and for its reason: PlanLocalId IS the
+    /// tool name on a call row and DisplayName is that name followed by the arguments, so the label
+    /// here and the table's last row name the same call the same way.</para>
+    /// </summary>
+    private static string InFlightLabel(Job job)
+    {
+        var tool = job.PlanLocalId is { Length: > 0 } named ? named : job.DisplayName;
+
+        if (job.DisplayName.Length <= tool.Length
+            || !job.DisplayName.StartsWith(tool, StringComparison.Ordinal))
+            return tool;
+
+        var target = job.DisplayName[tool.Length..].Trim();
+
+        // THE ARGUMENTS AS TYPED, NOT AS SENT. DisplayName carries the raw JSON a tool was called
+        // with — `run_shell {"command":"dotnet build"}` — and a header is one line beside a count.
+        // The value inside is what a reader is looking for; the key and the braces are scaffolding
+        // that pushes it off the end of the line.
+        if (target.StartsWith('{') && target.EndsWith('}'))
+        {
+            var firstValue = System.Text.RegularExpressions.Regex.Match(target, "\"\\s*:\\s*\"([^\"]*)\"");
+            if (firstValue.Success) target = firstValue.Groups[1].Value;
+        }
+
+        return target.Length == 0 ? tool : $"{tool} {target}";
+    }
+
+    /// <summary>Test seam: the row's body, which a unit test cannot read off the transcript.</summary>
+    public string? TurnRowBodyForTest() => TurnRowBody();
+
+    /// <summary>Test seam: the row's header, for the same reason.</summary>
+    public string? TurnRowHeaderForTest() => TurnRowHeader();
+
     public void RecordToolCall(ToolCallReport report)
     {
+
+        // THE FIRST CALL INSIDE A TURN NAMES THE PARENT. A child cannot call anything before its
+        // spawn does, so whichever agent files the first call of a turn is the one whose turn it is.
+        _parentAgentId ??= report.AgentId;
+
         var calls = _workerCalls.GetOrAdd(report.AgentId, _ => new List<ToolCallReport>());
         lock (calls) calls.Add(report);
+
+        // THE ROW IS DRAWN FROM HERE, not only from the one-second tick: a turn against a fast model
+        // opens, calls, and closes between two ticks, and nothing would ever have drawn it.
+        //
+        // THE STRINGS ARE COMPUTED NOW AND THE ENQUEUE ONLY CARRIES THEM. Reading the scope inside
+        // the enqueued action instead would read it after TurnEnded had closed it — which is the
+        // same race, one hop later.
+        if (TurnRowBody() is { } body)
+        {
+            var header = TurnRowHeader() ?? string.Empty;
+            _system.EnqueueOnUIThread(() => DrawTurnRow(header, body));
+        }
     }
 
     /// <summary>

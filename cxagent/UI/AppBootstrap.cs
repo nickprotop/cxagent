@@ -817,6 +817,20 @@ public static class AppBootstrap
             // consult, which already has a repair round.
             var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
 
+            // A TURN'S TOOLS ARE ONE ROW, and the two sinks have to agree where a turn starts. The
+            // boundary arrives on the transcript sink (an ISessionObserver member); the rows and the
+            // tool records live in the job sink. A callback rather than a reference between them, so
+            // a re-wire can replace either without the other holding a stale one.
+            //
+            // THE USER'S MESSAGE OPENS THE SCOPE AND THE NEXT ONE CLOSES IT. See the callback's own
+            // note for why the assistant's boundaries are the wrong ones.
+            sink.OnUserTurnAdded = () => jobPanelSink.TurnBegan();
+
+            // AND A ROW PER ANSWER, NOT PER TURN. Each round the model finishes closes the row for
+            // the calls it made, so the working sits beside the prose it produced rather than being
+            // pooled with work done after the reader has moved past it.
+            sink.OnAssistantRoundEnded = jobPanelSink.RoundEnded;
+
             // AND BACK TO THE WINDOW, so its one-second clock can tick the elapsed time on running
             // rows. Assigned here rather than passed in because the sink needs the window's Chat
             // control to exist first — see MainWindow.JobSink. Re-wiring (/model, resume) builds a

@@ -46,6 +46,37 @@ public sealed record ToolCallReport(
     /// name it, including the persistence layer, which stores measurements and not labels.</para>
     /// </summary>
     public string? Target { get; init; }
+
+    /// <summary>
+    /// What the call returned, capped — or null for a call that returned nothing, and for one that
+    /// never ran.
+    ///
+    /// <para>KEPT FOR A SURFACE THAT DOES NOT EXIST YET. Nothing renders this: an expandable row, a
+    /// diff view, a "what did that actually return" affordance all need the text to have been kept
+    /// from the start, and a field added the day it is first read has no history behind it.</para>
+    ///
+    /// <para>AN INIT-ONLY PROPERTY, for the reason <see cref="Target"/> gives — every construction
+    /// site would otherwise have to name it, including the persistence layer, which stores
+    /// measurements and not labels. This is not a measurement at all.</para>
+    ///
+    /// <para>CAPPED, because the UI holds a session's worth of these. <see cref="ResultChars"/>
+    /// records the true length, so nothing about size is lost by not keeping every byte.</para>
+    /// </summary>
+    public string? Output { get; init; }
+
+    /// <summary>How much of a call's output is kept.</summary>
+    public const int OutputCap = 4096;
+
+    /// <summary>
+    /// Trims an output to <see cref="OutputCap"/>, saying so when it does.
+    ///
+    /// <para>THE MARKER MATTERS MORE THAN THE BYTES. Text that simply stops looks like a tool that
+    /// returned exactly that much, and someone debugging from it would be reading a lie.</para>
+    /// </summary>
+    public static string? Cap(string? output) =>
+        output is { Length: > OutputCap }
+            ? output[..OutputCap] + $"\n… truncated at {OutputCap:N0} characters"
+            : output;
 }
 
 /// <summary>

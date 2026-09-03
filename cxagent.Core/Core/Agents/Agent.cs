@@ -2613,6 +2613,10 @@ public sealed class Agent
             // The row's own label, so the list of calls names what each one acted on rather than
             // repeating a tool name nine times.
             Target = job.DisplayName,
+
+            // WHAT IT RETURNED, capped. Nothing reads this yet — it is kept because the surfaces
+            // that will want it cannot go back and collect what was thrown away.
+            Output = ToolCallReport.Cap(result),
         });
 
         return result;
