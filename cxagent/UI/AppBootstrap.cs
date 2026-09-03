@@ -1533,7 +1533,11 @@ public static class AppBootstrap
                 // AND destroy the run, when Deny is a real answer the model can adapt to.
                 if (mainWindow.TryDenyPermission()) return true;
 
-                if (EscapeRouting.For(session.IsBusy) is EscapeTarget.CancelTurn)
+                // THE ACTIVE TAB KEEPS ESCAPE. A shell tab is running the user's own programs and a
+                // file tab holds a buffer; both want the key, and neither expects it to end the run
+                // behind them. F4 goes back to chat, where Escape cancels as it always did.
+                if (EscapeRouting.For(session.IsBusy, mainWindow.ChatTabIsActive)
+                    is EscapeTarget.CancelTurn)
                     session.CancelTurn();
                 return true;
             });

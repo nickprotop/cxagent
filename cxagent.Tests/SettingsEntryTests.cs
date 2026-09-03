@@ -28,12 +28,34 @@ public class SettingsEntryTests
         // function of its inputs, and AppBootstrap DOES clear the dialog flag in a finally
         // (verified). What that symptom actually is: Escape does not clear typed COMPOSER TEXT.
         //
-        // ONE INPUT. What Escape can find in front of it is a running turn, or nothing — and with no
+        // TWO INPUTS. What Escape can find in front of it is a running turn, or nothing — and with no
         // turn running it means "cancel nothing", not some third discard state, which would be a
         // no-op nothing tells the user about. A permission prompt and a question are both answered
         // before this is reached — see the handler, which checks them first, so their absence here
         // is the routing staying a pure function rather than a gap.
-        Assert.Equal(EscapeTarget.CancelTurn, EscapeRouting.For(turnIsRunning: true));
-        Assert.Equal(EscapeTarget.Nothing,    EscapeRouting.For(turnIsRunning: false));
+        Assert.Equal(EscapeTarget.CancelTurn,
+            EscapeRouting.For(turnIsRunning: true, chatTabIsActive: true));
+        Assert.Equal(EscapeTarget.Nothing,
+            EscapeRouting.For(turnIsRunning: false, chatTabIsActive: true));
+    }
+
+    // ESCAPE BELONGS TO THE ACTIVE TAB. A shell tab runs the user's own programs and Escape is a key
+    // those programs want: pressing it at a vim inside a terminal tab must not kill the agent run
+    // behind it. The waiting bar shows a turn is running from any tab and F4 returns to chat, so
+    // scoping this takes nothing away that the user cannot see a way back to.
+    [Fact]
+    public void EscapeCancelsOnlyFromTheChatTab()
+    {
+        Assert.Equal(EscapeTarget.CancelTurn,
+            EscapeRouting.For(turnIsRunning: true, chatTabIsActive: true));
+
+        Assert.Equal(EscapeTarget.Nothing,
+            EscapeRouting.For(turnIsRunning: true, chatTabIsActive: false));
+
+        // Not a turn to cancel: the tab does not come into it.
+        Assert.Equal(EscapeTarget.Nothing,
+            EscapeRouting.For(turnIsRunning: false, chatTabIsActive: true));
+        Assert.Equal(EscapeTarget.Nothing,
+            EscapeRouting.For(turnIsRunning: false, chatTabIsActive: false));
     }
 }

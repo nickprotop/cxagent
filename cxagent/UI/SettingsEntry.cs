@@ -121,8 +121,14 @@ public static class EscapeRouting
     /// same as this in behaviour but not in readability: Escape then does nothing whenever no dialog
     /// is open, and nothing in the code says so.</para>
     /// </summary>
-    // ONE INPUT. The only thing Escape can find in front of it is a running turn: a prompt or a
-    // question is answered before this is reached — see the handler, which checks those first.
-    public static EscapeTarget For(bool turnIsRunning) =>
-        turnIsRunning ? EscapeTarget.CancelTurn : EscapeTarget.Nothing;
+    // TWO INPUTS. A prompt or a question is answered before this is reached — see the handler, which
+    // checks those first — so what is left is a running turn, and whether Escape is the chat tab's to
+    // spend. It is not: a shell tab runs the user's own programs and a file tab holds a buffer, and
+    // both want the key for themselves. Pressing Escape at a vim inside a terminal tab must not kill
+    // the run behind it.
+    //
+    // NOTHING BECOMES UNREACHABLE. The waiting bar shows a turn running from any tab and F4 returns
+    // to chat, so the way to cancel is one key away and visible from where the user is standing.
+    public static EscapeTarget For(bool turnIsRunning, bool chatTabIsActive) =>
+        turnIsRunning && chatTabIsActive ? EscapeTarget.CancelTurn : EscapeTarget.Nothing;
 }

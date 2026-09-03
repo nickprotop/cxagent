@@ -195,6 +195,16 @@ public sealed class MainWindow : IDisposable
     /// the cell's GridPlacement across the swap.</summary>
     private GridControl _mainGrid = null!;
 
+    /// <summary>
+    /// True when the conversation is the tab on screen.
+    ///
+    /// <para>THE CHAT TAB IS INDEX 0 and is never closable, so the index is a stable test rather than
+    /// a lookup by title. Named because two decisions turn on it — whether the status strip hides
+    /// behind a prompt, and whether Escape is the chat tab's to spend (see <c>EscapeRouting</c>) —
+    /// and a bare <c>ActiveTabIndex == 0</c> in both places is two chances to write <c>!= 0</c>.</para>
+    /// </summary>
+    public bool ChatTabIsActive => Tabs.ActiveTabIndex == 0;
+
     /// <summary>Test seam: the panel column's width and the status strip's row height are layout
     /// decisions worth pinning, and both are only observable through the grid. Public rather than
     /// internal because this assembly grants no InternalsVisibleTo; the ForTest suffix follows the
@@ -302,7 +312,7 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private void RefreshStatusStrip()
     {
-        var hide = _activePrompt is not null && Tabs.ActiveTabIndex == 0;
+        var hide = _activePrompt is not null && ChatTabIsActive;
 
         StatusBar.Visible = !hide;
         _statusRule.Visible = !hide;
