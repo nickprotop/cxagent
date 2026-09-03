@@ -1508,7 +1508,19 @@ public sealed class InlineJobSink : IToolObserver
         var id = turn.AgentId ?? _parentAgentId;
         if (id is null || !_workerCalls.TryGetValue(id, out var calls)) return [];
 
-        lock (calls) return turn.From >= calls.Count ? [] : calls[turn.From..];
+        List<ToolCallReport> slice;
+        lock (calls) slice = turn.From >= calls.Count ? [] : calls[turn.From..];
+
+        // A SPAWN IS NOT IN THE TABLE, BECAUSE ITS ROW IS ALREADY ON SCREEN. Asking for a worker is
+        // a tool call and lands in this list like any other, but the worker keeps its own row — with
+        // its own table of what the child did — so counting it here shows one spawn twice, once as a
+        // line in this table and once as the row below it.
+        //
+        // THIS REVERSES A DECISION MADE IN THE DESIGN. The argument for keeping both was that they
+        // say different things: the call's duration here, the child's work there. On screen it reads
+        // as a duplicate, and the count it protects ("4 calls" on a turn that made five) is worth
+        // less than not showing the same event twice.
+        return [.. slice.Where(c => c.JobType != "llm_agent")];
     }
 
     /// <summary>Test seam: the turn's slice, which is otherwise only visible through a row.</summary>

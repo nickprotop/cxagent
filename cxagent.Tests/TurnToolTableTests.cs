@@ -274,3 +274,41 @@ public class RoundScopedRowTests
         Assert.Empty(sink.TurnCallsForTest());
     }
 }
+
+/// <summary>A spawn has its own row; it is not also a line in the turn's table.</summary>
+public class SpawnNotDoubledTests
+{
+    private static ToolCallReport Call(string tool, string? jobType) =>
+        new(Guid.NewGuid().ToString(), "parent", tool, jobType, "succeeded", 5, 10,
+            DateTimeOffset.UtcNow);
+
+    // USER-REPORTED: "double rows when we run a subagent. the subagent row and the tools it uses
+    // second row below". Asking for a worker is a tool call and lands in the parent's list like any
+    // other, but the worker keeps its own row — so counting it here shows one spawn twice.
+    [Fact]
+    public void ASpawnIsNotCountedInTheTurnsTable()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.TurnBegan("parent");
+
+        sink.RecordToolCall(Call("read_file", "file"));
+        sink.RecordToolCall(Call("agent", "llm_agent"));
+
+        var calls = sink.TurnCallsForTest();
+
+        Assert.Single(calls);
+        Assert.Equal("read_file", calls[0].ToolName);
+    }
+
+    // AND A TURN THAT ONLY SPAWNED GETS NO ROW AT ALL — the worker's row is the whole story.
+    [Fact]
+    public void ATurnThatOnlySpawnedHasNoRow()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.TurnBegan("parent");
+
+        sink.RecordToolCall(Call("agent", "llm_agent"));
+
+        Assert.Null(sink.TurnRowHeaderForTest());
+    }
+}
