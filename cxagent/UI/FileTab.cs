@@ -49,6 +49,9 @@ public static class FileTab
     {
         public OpenFiles Open { get; } = new();
         public Dictionary<string, TabState> States { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Started with the first open file, and shared by every tab after it.</summary>
+        public OpenFileWatcher? Watcher { get; set; }
     }
 
     private static Workspace For(MainWindow main) => Workspaces.GetOrCreateValue(main);
@@ -199,6 +202,8 @@ public static class FileTab
         }
 
         host.Main.Tabs.TabCloseRequested += OnCloseRequested;
+
+        StartWatching(host);
 
         host.Main.AddTab(title, content);
         Refresh(host.Main, title);
@@ -477,6 +482,86 @@ public static class FileTab
         Refresh(host.Main, title);
         host.Session.Inject(SaveMessage(state.Path, host.Session.WorkingDirectory));
     }
+    /// <summary>
+    /// Starts the workspace's watcher, once.
+    ///
+    /// <para>ON THE SESSION'S WORKING DIRECTORY, because that is where the agent edits — a watcher
+    /// rooted at each open file's own folder would miss nothing but cost a handle per directory, and
+    /// files outside the working directory are ones the agent is not going to touch.</para>
+    /// </summary>
+    private static void StartWatching(EditorHost host)
+    {
+        var workspace = For(host.Main);
+        if (workspace.Watcher is not null) return;
+
+        try
+        {
+            workspace.Watcher = new OpenFileWatcher(host.Session.WorkingDirectory, workspace.Open,
+                path => OnChangedOffThread(host, path));
+        }
+        catch (Exception)
+        {
+            // A DIRECTORY THAT CANNOT BE WATCHED IS NOT A REASON TO REFUSE THE FILE. The editor still
+            // works; what is lost is being told when the agent writes underneath it, and a tab that
+            // opens is better than an exception where a file was asked for.
+        }
+    }
+
+    /// <summary>
+    /// A file changed under a tab. Arrives on a threadpool thread.
+    ///
+    /// <para>MARSHALLED BEFORE ANYTHING IS TOUCHED. Every control here belongs to the UI thread, and
+    /// a watcher callback is the classic place that rule is broken because nothing about the call
+    /// site says which thread it is on.</para>
+    /// </summary>
+    private static void OnChangedOffThread(EditorHost host, string path)
+        => host.System.EnqueueOnUIThread(() => OnChanged(host, path));
+
+    private static void OnChanged(EditorHost host, string path)
+    {
+        var workspace = For(host.Main);
+        if (!workspace.Open.TryGetTitle(path, out var title)) return;
+        if (!workspace.States.TryGetValue(title, out var state)) return;
+
+        // GONE IS NOT A QUESTION. Nothing is lost at the moment it happens — the buffer simply is the
+        // file now, and Save writes it back. A dialog raised by something the user did not do is an
+        // interruption rather than a question.
+        if (!File.Exists(state.Path))
+        {
+            state.Deleted = true;
+            state.ExternallyChanged = true;
+            Refresh(host.Main, title);
+            return;
+        }
+
+        state.Deleted = false;
+
+        // A CLEAN BUFFER SHOWING STALE CONTENT IS A LIE WITH NO COST TO FIXING, so it just catches up.
+        // A modified one must never be overwritten by a program: the edits stay and the reload becomes
+        // something the user asks for.
+        if (!state.IsModified)
+        {
+            Reload(host, title);
+            state.Status.SetContent(
+                new List<string> { $"[{ColorScheme.MutedMarkup}]reloaded from disk[/]" });
+            return;
+        }
+
+        state.ExternallyChanged = true;
+        Refresh(host.Main, title);
+    }
+
+    /// <summary>Test seam: a tab's current buffer text.</summary>
+    public static string? ContentForTest(EditorHost host, string title)
+        => For(host.Main).States.TryGetValue(title, out var state) ? state.Editor.GetContent() : null;
+
+    /// <summary>Test seam: whether the save gate is armed for a tab.</summary>
+    public static bool ExternallyChangedForTest(EditorHost host, string title)
+        => For(host.Main).States.TryGetValue(title, out var state) && state.ExternallyChanged;
+
+    /// <summary>Test seam: raises a change as the watcher would, on this thread.</summary>
+    public static void RaiseChangedForTest(EditorHost host, string path) => OnChanged(host, path);
+
     /// <summary>One answer to one question, and what it does.</summary>
     private sealed record Choice(string Label, ColorRole Role, Action Take);
 

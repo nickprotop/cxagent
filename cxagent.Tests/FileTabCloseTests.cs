@@ -72,3 +72,69 @@ public class FileTabCloseTests : IDisposable
         Assert.Equal(before, _fixture.Host.Main.Tabs.TabCount);
     }
 }
+
+public class FileWatchTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private string Open(string name, string text = "one\n")
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, name);
+        File.WriteAllText(path, text);
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+        return path;
+    }
+
+    // A CLEAN BUFFER CATCHES UP. Showing stale content is a lie with no cost to fixing.
+    [Fact]
+    public void ACleanBuffer_ReloadsInPlace()
+    {
+        var path = Open("clean-reload.cs");
+        File.WriteAllText(path, "two\n");
+
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.Equal("two\n", FileTab.ContentForTest(_fixture.Host, "clean-reload.cs"));
+    }
+
+    // A MODIFIED BUFFER IS NEVER OVERWRITTEN BY A PROGRAM. The edits stay and the reload becomes
+    // something the user asks for.
+    [Fact]
+    public void AModifiedBuffer_KeepsItsEdits()
+    {
+        var path = Open("dirty-keep.cs");
+        FileTab.SetContentForTest(_fixture.Host, "dirty-keep.cs", "mine\n");
+        File.WriteAllText(path, "theirs\n");
+
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.Equal("mine\n", FileTab.ContentForTest(_fixture.Host, "dirty-keep.cs"));
+    }
+
+    // AND THE SAVE GATE ARMS, so the next save asks before discarding what the agent wrote.
+    [Fact]
+    public void AModifiedBuffer_ArmsTheSaveGate()
+    {
+        var path = Open("dirty-gate.cs");
+        FileTab.SetContentForTest(_fixture.Host, "dirty-gate.cs", "mine\n");
+        File.WriteAllText(path, "theirs\n");
+
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.True(FileTab.ExternallyChangedForTest(_fixture.Host, "dirty-gate.cs"));
+    }
+
+    // DELETION IS NOT A QUESTION: the buffer is all that is left of the file, and Save recreates it.
+    [Fact]
+    public void ADeletedFile_KeepsTheBufferAndAsksNothing()
+    {
+        var path = Open("gone.cs");
+        File.Delete(path);
+
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.Equal("one\n", FileTab.ContentForTest(_fixture.Host, "gone.cs"));
+        Assert.Equal(0, FileTab.PendingConfirmationsForTest(_fixture.Host));
+    }
+}
