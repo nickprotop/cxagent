@@ -351,6 +351,26 @@ public class MainWindowTests
         Assert.False(mw.TryDenyPermission());
     }
 
+    // THE ROW HEIGHT, not just the Visible flags. The strip is two controls inside a grid row, and
+    // hiding it collapses that row to zero cells; restoring only the flags leaves both controls
+    // "visible" inside a row with no height, which looks exactly like a status bar that never came
+    // back. Asserting the row definition is what catches that — the flags alone pass either way.
+    [Fact]
+    public void RestoreComposer_BringsTheStatusStripBack()
+    {
+        var mw = BuiltMainWindow();
+        var prompt = new PermissionPromptControl(ShellRequest("git status"));
+        var built = prompt.BuildContent();
+
+        mw.ShowPermissionPrompt(built);
+        Assert.Equal(0, mw.MainGridForTest.RowDefinitions[2].Value);
+
+        mw.RestoreComposer(built);
+
+        Assert.True(mw.StatusBar.Visible);
+        Assert.Equal(MainWindow.StatusRows, mw.MainGridForTest.RowDefinitions[2].Value);
+    }
+
     [Fact]
     public void ShowPermissionPrompt_ReplacesTheComposer_AndRestorePutsItBack()
     {

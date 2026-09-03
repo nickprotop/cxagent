@@ -195,9 +195,11 @@ public sealed class MainWindow : IDisposable
     /// the cell's GridPlacement across the swap.</summary>
     private GridControl _mainGrid = null!;
 
-    /// <summary>Test seam: the panel column's width is a layout decision worth pinning, and it is
-    /// only observable through the grid.</summary>
-    internal GridControl MainGridForTest => _mainGrid;
+    /// <summary>Test seam: the panel column's width and the status strip's row height are layout
+    /// decisions worth pinning, and both are only observable through the grid. Public rather than
+    /// internal because this assembly grants no InternalsVisibleTo; the ForTest suffix follows the
+    /// seam convention used elsewhere here.</summary>
+    public GridControl MainGridForTest => _mainGrid;
 
     /// <summary>Rule, prompt and mode line as ONE grid cell — see the comment at its construction.</summary>
     private GridControl _composer = null!;
@@ -371,7 +373,7 @@ public sealed class MainWindow : IDisposable
     /// disappear because something happened to the prompt. The same fixed-cell-count rule applies
     /// as above: a control added to that strip without raising this number is simply not drawn.</para>
     /// </summary>
-    internal const int StatusRows = 2;
+    public const int StatusRows = 2;
 
     /// <summary>
     /// What the empty composer says.
@@ -1592,8 +1594,12 @@ public sealed class MainWindow : IDisposable
             SetWaiting(false);
             _composer.ReplaceControl(prompt, _promptBox);
             _chatTab.RowDefinitions[1] = GridLength.Cells(ComposerRows);
-            RefreshStatusStrip();
+
+            // CLEARED BEFORE THE REFRESH, because RefreshStatusStrip decides from _activePrompt.
+            // Refreshing first recomputes hide=true from the prompt now being torn down, collapsing
+            // the strip's row to zero cells with nothing left to expand it again.
             _activePrompt = null;
+            RefreshStatusStrip();
 
             // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
             // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
@@ -1609,9 +1615,6 @@ public sealed class MainWindow : IDisposable
                 _denyActivePrompt = null;
                 _denyOwner = null;
             }
-
-            StatusBar.Visible = true;
-            _statusRule.Visible = true;
         }
 
         FocusComposer();
