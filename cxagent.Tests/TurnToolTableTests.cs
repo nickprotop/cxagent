@@ -312,3 +312,51 @@ public class SpawnNotDoubledTests
         Assert.Null(sink.TurnRowHeaderForTest());
     }
 }
+
+/// <summary>Whose calls a turn is counting.</summary>
+public class TurnOwnershipTests
+{
+    private static ToolCallReport Call(string agentId, string tool, string? jobType = "file") =>
+        new(Guid.NewGuid().ToString(), agentId, tool, jobType, "succeeded", 5, 10,
+            DateTimeOffset.UtcNow);
+
+    // USER-REPORTED, with the numbers that gave it away: a row reading "5 calls" beside a panel
+    // reading "1 tool call". A worker's calls are forwarded up under the CHILD's id, and a turn whose
+    // first act is a spawn saw them before the parent had made a second call — so "the parent is
+    // whoever called first" adopted the child and counted its work as the turn's.
+    [Fact]
+    public void ATurnThatSpawnsFirstDoesNotAdoptTheChild()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.NoteChildAgentForTest("child");
+        sink.TurnBegan();
+
+        // The spawn itself, then everything the child does.
+        sink.RecordToolCall(Call("parent", "agent", "llm_agent"));
+        sink.RecordToolCall(Call("child", "read_file"));
+        sink.RecordToolCall(Call("child", "grep"));
+        sink.RecordToolCall(Call("child", "read_file"));
+
+        // The spawn is excluded as its own row, and the child's work is not this turn's.
+        Assert.Empty(sink.TurnCallsForTest());
+        Assert.Null(sink.TurnRowHeaderForTest());
+    }
+
+    // AND THE PARENT'S OWN CALLS STILL COUNT once it makes them.
+    [Fact]
+    public void TheParentsCallsStillCountAfterASpawn()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.NoteChildAgentForTest("child");
+        sink.TurnBegan();
+
+        sink.RecordToolCall(Call("parent", "agent", "llm_agent"));
+        sink.RecordToolCall(Call("child", "read_file"));
+        sink.RecordToolCall(Call("parent", "read_file"));
+
+        var calls = sink.TurnCallsForTest();
+
+        Assert.Single(calls);
+        Assert.Equal("parent", calls[0].AgentId);
+    }
+}

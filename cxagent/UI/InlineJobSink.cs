@@ -1348,6 +1348,15 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     private string? _parentAgentId;
 
+    /// <summary>Agent ids known to be workers, so the parent is whatever is left.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _childAgentIds = new();
+
+    /// <summary>Whether an agent id belongs to a worker this session spawned.</summary>
+    private bool IsAChild(string agentId) => _childAgentIds.ContainsKey(agentId);
+
+    /// <summary>Test seam: names a child without building one, which needs a live Agent.</summary>
+    public void NoteChildAgentForTest(string agentId) => _childAgentIds[agentId] = 0;
+
     /// <summary>
     /// Opens a turn's scope. Its calls are whatever this agent files from now on.
     ///
@@ -1362,7 +1371,7 @@ public sealed class InlineJobSink : IToolObserver
         // row loses its spinner and its in-flight call at the moment it stops being live.
         if (_turn is not null) TurnEnded();
 
-        var id = agentId ?? _parentAgentId;
+        var id = agentId is { } named && !IsAChild(named) ? named : _parentAgentId;
         if (id is null)
         {
             // NO ID YET, SO THE TURN OPENS EMPTY. The first call of the session names the agent, and
@@ -1635,9 +1644,16 @@ public sealed class InlineJobSink : IToolObserver
     public void RecordToolCall(ToolCallReport report)
     {
 
-        // THE FIRST CALL INSIDE A TURN NAMES THE PARENT. A child cannot call anything before its
-        // spawn does, so whichever agent files the first call of a turn is the one whose turn it is.
-        _parentAgentId ??= report.AgentId;
+        // THE PARENT IS THE AGENT THAT IS NOT A CHILD. Learning it from "whoever called first" looked
+        // right and is not: a worker's calls are forwarded up under the CHILD's id, and a turn whose
+        // first act is a spawn sees the child's calls arrive before the parent has made a second one.
+        // The turn then adopted the child and counted its work as its own — a row reading "5 calls"
+        // beside a panel reading "1 tool call", which is how it was reported.
+        //
+        // NoteChild has recorded every child by the time its calls arrive: ChildSpawned fires when
+        // the child is built, before it runs.
+        if (_parentAgentId is null && !IsAChild(report.AgentId))
+            _parentAgentId = report.AgentId;
 
         var calls = _workerCalls.GetOrAdd(report.AgentId, _ => new List<ToolCallReport>());
         lock (calls) calls.Add(report);
@@ -1683,7 +1699,15 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>NOT MARSHALLED ONTO THE UI THREAD, for the reason <see cref="RecordToolCall"/> gives:
     /// this writes to a concurrent dictionary and touches no control.</para>
     /// </summary>
-    public void NoteChild(string jobId, SubAgent child) => _workerChildren[jobId] = child;
+    public void NoteChild(string jobId, SubAgent child)
+    {
+        _workerChildren[jobId] = child;
+
+        // AND ITS AGENT ID, so a call arriving under it is never mistaken for the parent's. Recorded
+        // here because ChildSpawned fires when the child is BUILT, before it runs — so the id is
+        // known by the time the child's first call is forwarded up.
+        _childAgentIds[child.Agent.Id] = 0;
+    }
 
     /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
     /// so cannot be static.</summary>
