@@ -59,3 +59,26 @@ public class FileTabTests : IDisposable
         Assert.True(FileTab.EditorIsEditingForTest("Edit.cs"));
     }
 }
+
+public class FileSaveRoundTripTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // THE WIRING, not the pieces. SaveMessage and FileMutation are unit-tested apart; this pins that
+    // pressing Save actually reaches them — the failure the unit tests cannot see is a button whose
+    // handler was never connected.
+    [Fact]
+    public async Task Save_WritesTheBufferAndTellsTheModel()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "Round.cs");
+        await File.WriteAllTextAsync(path, "before\n");
+        var loaded = FileLoad.TryLoad(path, out _)!;
+
+        FileTab.Open(_fixture.Host, loaded);
+        FileTab.SetContentForTest("Round.cs", "after\n");
+        await FileTab.SaveForTest(_fixture.Host, "Round.cs");
+
+        Assert.Equal("after\n", await File.ReadAllTextAsync(path));
+    }
+}

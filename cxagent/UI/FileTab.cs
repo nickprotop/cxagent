@@ -1,3 +1,4 @@
+using CxAgent.Core.Jobs.Builtin;
 using CxAgent.Core.Sessions;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
@@ -248,6 +249,49 @@ public static class FileTab
     }
 
     /// <summary>
+    /// The message a save sends to the model.
+    ///
+    /// <para>THE PATH AND NOTHING ELSE. A diff would be more useful and more tokens; the model can
+    /// read the file if it cares, and it is the one thing here that already knows how.</para>
+    ///
+    /// <para>RELATIVE WHERE IT CAN BE, so the model sees the paths it uses in its own tool calls
+    /// rather than a machine-specific absolute one it cannot match against anything.</para>
+    /// </summary>
+    public static string SaveMessage(string path, string workingDirectory)
+    {
+        var full = Path.GetFullPath(path);
+        var root = Path.GetFullPath(workingDirectory);
+
+        var shown = full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            ? Path.GetRelativePath(root, full)
+            : full;
+
+        return $"[cxagent] the user edited {shown}";
+    }
+
+    /// <summary>
+    /// Whether a save has to ask before it writes.
+    ///
+    /// <para>THE MIRROR OF THE WATCHER'S RULE. A modified buffer is never overwritten by a program,
+    /// and equally a program's file is never silently overwritten by a stale buffer: the agent wrote
+    /// at turn 15, the user was mid-edit so their buffer survived under a warning, and their next
+    /// save would quietly discard what the agent wrote.</para>
+    ///
+    /// <para>THE EXCEPTION, NOT A STEP ON EVERY WRITE. A confirmation on every save trains the user
+    /// to dismiss it, which is how the one that matters gets clicked through.</para>
+    /// </summary>
+    public static bool SaveNeedsConfirmationForTest(bool externallyChanged) => externallyChanged;
+
+    /// <summary>Test seam: drives a save to completion, which RequestSave cannot be awaited for.</summary>
+    public static Task SaveForTest(EditorHost host, string title) => SaveAsync(host, title);
+
+    /// <summary>Test seam: types into a tab's editor without simulating keystrokes.</summary>
+    public static void SetContentForTest(string title, string content)
+    {
+        if (States.TryGetValue(title, out var state)) state.Editor.SetContent(content);
+    }
+
+    /// <summary>
     /// Test seam: whether a tab's editor is in edit mode.
     ///
     /// <para>Public with a ForTest suffix because this assembly grants no InternalsVisibleTo — see
@@ -258,7 +302,71 @@ public static class FileTab
 
     // The behaviour below arrives with the tasks that own it; the buttons exist now so the toolbar is
     // built once rather than three times.
-    private static void RequestSave(EditorHost host, string title) { }
+    /// <summary>
+    /// Writes the buffer, then tells the model it happened.
+    ///
+    /// <para>ASKS FIRST WHEN THE FILE CHANGED UNDER US — see SaveNeedsConfirmationForTest. The
+    /// dialog belongs to the confirmation work; until it exists the safe branch is taken and nothing
+    /// is written, because the failure this guards against is silent.</para>
+    /// </summary>
+    private static async void RequestSave(EditorHost host, string title)
+    {
+        // EVERYTHING INSIDE THE TRY. An async void method's exception reaches no caller — it goes
+        // straight to the thread pool and takes the app with it — so nothing here may throw past this
+        // point, the injection and the repaint included.
+        try
+        {
+            await SaveAsync(host, title);
+        }
+        catch (Exception ex)
+        {
+            if (States.TryGetValue(title, out var s))
+                s.Status.SetContent(new List<string> { $"[{ColorScheme.MutedMarkup}]{ex.Message}[/]" });
+        }
+    }
+
+    private static async Task SaveAsync(EditorHost host, string title)
+    {
+        if (!States.TryGetValue(title, out var state)) return;
+
+        if (SaveNeedsConfirmationForTest(state.ExternallyChanged)) return;
+
+        var content = state.Editor.GetContent();
+
+        // SUPPRESSED AROUND THE WRITE so the watcher does not report our own save back as somebody
+        // else's change. Cleared in a finally: a throwing write that left it set would silence the
+        // watcher for the rest of the session, and nothing would say why.
+        SuppressWatch = true;
+        try
+        {
+            await FileMutation.WriteAsync(state.Path, content, state.File.Snapshot,
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // THE BUFFER STAYS MODIFIED and nothing is injected: the file did not change, so there is
+            // nothing to tell the model about.
+            state.Status.SetContent(new List<string> { $"[{ColorScheme.MutedMarkup}]{ex.Message}[/]" });
+            return;
+        }
+        finally
+        {
+            SuppressWatch = false;
+        }
+
+        // THE SNAPSHOT MOVES WITH THE FILE. Written bytes are the new baseline for both "modified"
+        // and the conventions the next save restores.
+        state.Baseline = content;
+        state.File = state.File with
+        {
+            Text = content,
+            Snapshot = state.File.Snapshot with { Text = content, Existed = true },
+        };
+        state.Deleted = false;
+
+        Refresh(host.Main, title);
+        host.Session.Inject(SaveMessage(state.Path, host.Session.WorkingDirectory));
+    }
     private static void RequestReload(EditorHost host, string title) { }
     private static void ShowTheirs(EditorHost host, string title) { }
 }
