@@ -56,7 +56,7 @@ public class FileTabTests : IDisposable
     {
         FileTab.Open(_fixture.Host, FileAt("Edit.cs"));
 
-        Assert.True(FileTab.EditorIsEditingForTest("Edit.cs"));
+        Assert.True(FileTab.EditorIsEditingForTest(_fixture.Host, "Edit.cs"));
     }
 }
 
@@ -76,7 +76,7 @@ public class FileSaveRoundTripTests : IDisposable
         var loaded = FileLoad.TryLoad(path, out _)!;
 
         FileTab.Open(_fixture.Host, loaded);
-        FileTab.SetContentForTest("Round.cs", "after\n");
+        FileTab.SetContentForTest(_fixture.Host, "Round.cs", "after\n");
         await FileTab.SaveForTest(_fixture.Host, "Round.cs");
 
         Assert.Equal("after\n", await File.ReadAllTextAsync(path));

@@ -6,6 +6,8 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
 using SharpConsoleUI.Highlighting;
 using SharpConsoleUI.Layout;
+using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Themes;
 
 namespace CxAgent.UI;
 
@@ -28,11 +30,28 @@ public sealed record EditorHost(ConsoleWindowSystem System, MainWindow Main, Ses
 /// </summary>
 public static class FileTab
 {
-    /// <summary>Every open file, so a second /open switches rather than opening a rival buffer.</summary>
-    private static readonly OpenFiles Open_ = new();
+    /// <summary>
+    /// The open files and their tabs, per main window.
+    ///
+    /// <para>KEYED ON THE WINDOW, NOT GLOBAL. These hold live controls belonging to one screen, and a
+    /// static dictionary would make a second window inherit the first's idea of what is open — every
+    /// tab title colliding with a tab it cannot see. A counter can be global because a number is not
+    /// attached to anything; a control is.</para>
+    ///
+    /// <para>A CONDITIONAL TABLE so a window that is closed takes its entry with it rather than
+    /// pinning every editor it ever opened.</para>
+    /// </summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MainWindow, Workspace>
+        Workspaces = new();
 
-    /// <summary>Per-tab state, keyed by the tab title the registry handed out.</summary>
-    private static readonly Dictionary<string, TabState> States = new(StringComparer.Ordinal);
+    /// <summary>One window's open files.</summary>
+    private sealed class Workspace
+    {
+        public OpenFiles Open { get; } = new();
+        public Dictionary<string, TabState> States { get; } = new(StringComparer.Ordinal);
+    }
+
+    private static Workspace For(MainWindow main) => Workspaces.GetOrCreateValue(main);
 
     /// <summary>
     /// Suppresses the watcher while we are the ones writing.
@@ -78,13 +97,13 @@ public static class FileTab
     /// </summary>
     public static void Open(EditorHost host, LoadedFile file)
     {
-        if (Open_.TryGetTitle(file.Path, out var existing))
+        if (For(host.Main).Open.TryGetTitle(file.Path, out var existing))
         {
             Show(host.Main, existing);
             return;
         }
 
-        var title = Open_.Add(file.Path);
+        var title = For(host.Main).Open.Add(file.Path);
 
         // NoWrap: wrapped code stops line numbers corresponding to lines, and it is the only mode
         // with a horizontal scrollbar at all.
@@ -155,7 +174,7 @@ public static class FileTab
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
 
-        States[title] = new TabState
+        For(host.Main).States[title] = new TabState
         {
             Path = file.Path,
             Editor = editor,
@@ -165,6 +184,21 @@ public static class FileTab
             File = file,
             Baseline = file.Text,
         };
+
+        // ADVISORY, NOT A VETO. The event does not remove the tab — this handler does — so the
+        // question below is a plain one with no ordering to get wrong.
+        //
+        // THE TITLE IDENTIFIES THE TAB, because the event carries every closable tab in the control
+        // and each open file subscribes its own handler.
+        void OnCloseRequested(object? _, TabEventArgs e)
+        {
+            if (e.TabPage.Title != title && !e.TabPage.Title.EndsWith(title, StringComparison.Ordinal))
+                return;
+
+            RequestClose(host, title, () => host.Main.Tabs.TabCloseRequested -= OnCloseRequested);
+        }
+
+        host.Main.Tabs.TabCloseRequested += OnCloseRequested;
 
         host.Main.AddTab(title, content);
         Refresh(host.Main, title);
@@ -180,7 +214,7 @@ public static class FileTab
     /// </summary>
     public static void ShowRefusal(EditorHost host, string path, string refusal)
     {
-        var title = Open_.Add(path);
+        var title = For(host.Main).Open.Add(path);
 
         var content = Controls.Grid()
             .Columns(GridLength.Star(1))
@@ -220,7 +254,7 @@ public static class FileTab
     /// </summary>
     private static void Refresh(MainWindow main, string title)
     {
-        if (!States.TryGetValue(title, out var state)) return;
+        if (!For(main).States.TryGetValue(title, out var state)) return;
 
         var modified = state.IsModified;
 
@@ -282,13 +316,91 @@ public static class FileTab
     /// </summary>
     public static bool SaveNeedsConfirmationForTest(bool externallyChanged) => externallyChanged;
 
+    /// <summary>
+    /// Closes the tab, asking first when that would discard edits.
+    ///
+    /// <para>A CLEAN BUFFER CLOSES WITHOUT A QUESTION — nothing is lost, and a dialog that appears
+    /// when nothing is at stake is what teaches people to dismiss them unread.</para>
+    /// </summary>
+    private static void RequestClose(EditorHost host, string title, Action unsubscribe)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
+
+        if (!state.IsModified)
+        {
+            unsubscribe();
+            Close(host.Main, title);
+            return;
+        }
+
+        Ask(host, title,
+            $"{title} has unsaved changes.",
+            "Closing it discards them.",
+            [
+                // SAVE WRITES, INJECTS, CLOSES — through the save path, so its own gate still applies.
+                new Choice("Save", ColorScheme.Affirmative, () =>
+                {
+                    RequestSave(host, title);
+                    unsubscribe();
+                    Close(host.Main, title);
+                }),
+                // DISCARD INJECTS NOTHING: nothing happened to the file.
+                new Choice("Discard", ColorScheme.Destructive, () =>
+                {
+                    unsubscribe();
+                    Close(host.Main, title);
+                }),
+                new Choice("Cancel", ColorScheme.Accent, () => { }),
+            ]);
+    }
+
+    /// <summary>Removes the tab and forgets the file, landing the user back in the conversation.</summary>
+    private static void Close(MainWindow main, string title)
+    {
+        var workspace = For(main);
+        if (workspace.States.Remove(title, out var state)) workspace.Open.Remove(state.Path);
+        if (Find(main, title) is { } index) main.CloseTab(index);
+
+        main.ShowChatTab();
+    }
+
+    /// <summary>Test seam: asks the close question as a close request would.</summary>
+    public static void RequestCloseForTest(EditorHost host, string title)
+        => RequestClose(host, title, () => { });
+
+    /// <summary>Test seam: asks the save question as the toolbar button would.</summary>
+    public static void RequestSaveForTest(EditorHost host, string title)
+    {
+        if (For(host.Main).States.TryGetValue(title, out var state)
+            && SaveNeedsConfirmationForTest(state.ExternallyChanged))
+            Ask(host, title, "changed underneath", "saving overwrites it",
+                [new Choice("Save anyway", ColorScheme.Destructive, () => { })]);
+    }
+
+    /// <summary>Test seam: marks a buffer edited without simulating keystrokes.</summary>
+    public static void MarkModifiedForTest(EditorHost host, string title)
+    {
+        if (For(host.Main).States.TryGetValue(title, out var state))
+            state.Editor.SetContent(state.Baseline + "edit\n");
+    }
+
+    /// <summary>Test seam: marks the file as changed under the tab.</summary>
+    public static void MarkExternallyChangedForTest(EditorHost host, string title)
+    {
+        if (For(host.Main).States.TryGetValue(title, out var state)) state.ExternallyChanged = true;
+    }
+
+    /// <summary>Test seam: how many tabs are holding an open question.</summary>
+    public static int PendingConfirmationsForTest(EditorHost host)
+        => For(host.Main).States.Values.Count(s => s.Asking);
+
     /// <summary>Test seam: drives a save to completion, which RequestSave cannot be awaited for.</summary>
     public static Task SaveForTest(EditorHost host, string title) => SaveAsync(host, title);
 
     /// <summary>Test seam: types into a tab's editor without simulating keystrokes.</summary>
-    public static void SetContentForTest(string title, string content)
+    public static void SetContentForTest(EditorHost host, string title, string content)
     {
-        if (States.TryGetValue(title, out var state)) state.Editor.SetContent(content);
+        if (For(host.Main).States.TryGetValue(title, out var state)) state.Editor.SetContent(content);
     }
 
     /// <summary>
@@ -297,11 +409,9 @@ public static class FileTab
     /// <para>Public with a ForTest suffix because this assembly grants no InternalsVisibleTo — see
     /// ColorScheme.cs:184.</para>
     /// </summary>
-    public static bool EditorIsEditingForTest(string title)
-        => States.TryGetValue(title, out var state) && state.Editor.IsEditing;
+    public static bool EditorIsEditingForTest(EditorHost host, string title)
+        => For(host.Main).States.TryGetValue(title, out var state) && state.Editor.IsEditing;
 
-    // The behaviour below arrives with the tasks that own it; the buttons exist now so the toolbar is
-    // built once rather than three times.
     /// <summary>
     /// Writes the buffer, then tells the model it happened.
     ///
@@ -320,14 +430,14 @@ public static class FileTab
         }
         catch (Exception ex)
         {
-            if (States.TryGetValue(title, out var s))
+            if (For(host.Main).States.TryGetValue(title, out var s))
                 s.Status.SetContent(new List<string> { $"[{ColorScheme.MutedMarkup}]{ex.Message}[/]" });
         }
     }
 
     private static async Task SaveAsync(EditorHost host, string title)
     {
-        if (!States.TryGetValue(title, out var state)) return;
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
 
         if (SaveNeedsConfirmationForTest(state.ExternallyChanged)) return;
 
@@ -367,6 +477,168 @@ public static class FileTab
         Refresh(host.Main, title);
         host.Session.Inject(SaveMessage(state.Path, host.Session.WorkingDirectory));
     }
-    private static void RequestReload(EditorHost host, string title) { }
-    private static void ShowTheirs(EditorHost host, string title) { }
+    /// <summary>One answer to one question, and what it does.</summary>
+    private sealed record Choice(string Label, ColorRole Role, Action Take);
+
+    /// <summary>
+    /// Asks one question about one tab, and does what the answer says.
+    ///
+    /// <para>ONE DIALOG AT A TIME PER TAB. Close, save-over and reload are all raised from paths the
+    /// watcher can fire during, and a close request arrives on every attempt — without the guard a
+    /// second question stacks behind the first and looks exactly like a button that does nothing.
+    /// That took four attempts to unpick in the shell window.</para>
+    ///
+    /// <para>APP-MODAL, NOT PARENTED to the tab it is about to change: a modal whose parent goes out
+    /// from under it stays on screen needing a second dismissal.</para>
+    /// </summary>
+    private static void Ask(EditorHost host, string title, string headline, string detail,
+                            IReadOnlyList<Choice> choices)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state) || state.Asking) return;
+        state.Asking = true;
+
+        Window? dialog = null;
+        void Dismiss()
+        {
+            state.Asking = false;
+            if (dialog is not null)
+                host.System.CloseWindow(dialog, activateParent: true, force: true);
+        }
+
+        var body = Controls.Markup()
+            .AddEmptyLine()
+            .AddLine($"  [{ColorScheme.CautionMarkup}]{MarkupParser.Escape(headline)}[/]")
+            .AddEmptyLine()
+            .AddLine($"  [{ColorScheme.MutedMarkup}]{MarkupParser.Escape(detail)}[/]")
+            .AddEmptyLine()
+            .Build();
+
+        var buttons = Controls.Toolbar()
+            .WithSpacing(2)
+            .WithAlignment(HorizontalAlignment.Center);
+
+        foreach (var choice in choices)
+        {
+            var take = choice.Take;
+            buttons = buttons.AddButton(new ButtonBuilder()
+                .WithText(choice.Label)
+                .WithColorRole(choice.Role)
+                // THE DIALOG GOES FIRST, then the work: acting on a tab while its modal is up leaves
+                // the modal on screen with nothing able to dismiss it.
+                .OnClick((_, _) => { Dismiss(); take(); }));
+        }
+
+        dialog = new WindowBuilder(host.System)
+            .WithTitle($" {title} ")
+            .WithSize(64, 11)
+            .Centered()
+            .AsModal()
+            .WithBackgroundColor(ColorScheme.ChatSurface)
+            .WithBorderStyle(BorderStyle.Rounded)
+            .WithBorderColor(ColorScheme.AccentRgb)
+            .Resizable(false)
+            .Minimizable(false)
+            .Maximizable(false)
+            // ESCAPE CANCELS. The safe answer is the one a reflex reaches, and every one of these
+            // questions has "leave everything as it was" among its answers.
+            .OnKeyPressed((_, e) =>
+            {
+                if (e.KeyInfo.Key != ConsoleKey.Escape) return;
+
+                Dismiss();
+                e.Handled = true;
+            })
+            .AddControl(body)
+            .AddControl(buttons.StickyBottom().Build())
+            .Build();
+
+        host.System.AddWindow(dialog);
+    }
+
+    /// <summary>
+    /// Re-reads the file, asking first when that would discard edits.
+    ///
+    /// <para>THE SAME LOSS AS CLOSING, so it asks the same way. Save first routes back through the
+    /// save path INCLUDING its own gate, rather than writing by a side door that skips it.</para>
+    /// </summary>
+    private static void RequestReload(EditorHost host, string title)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
+
+        if (!state.IsModified)
+        {
+            Reload(host, title);
+            return;
+        }
+
+        Ask(host, title,
+            $"{title} has unsaved changes.",
+            "Reloading replaces them with what is on disk.",
+            [
+                new Choice("Save first", ColorScheme.Affirmative, () => RequestSave(host, title)),
+                new Choice("Discard", ColorScheme.Destructive, () => Reload(host, title)),
+                new Choice("Cancel", ColorScheme.Accent, () => { }),
+            ]);
+    }
+
+    /// <summary>Re-reads the file into the buffer, unconditionally.</summary>
+    private static void Reload(EditorHost host, string title)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
+        if (FileLoad.TryLoad(state.Path, out _) is not { } fresh) return;
+
+        state.Editor.SetContent(fresh.Text);
+        state.File = fresh;
+        state.Baseline = fresh.Text;
+        state.ExternallyChanged = false;
+        state.Deleted = false;
+
+        Refresh(host.Main, title);
+    }
+
+    /// <summary>
+    /// Opens what is on disk beside the buffer, read-only.
+    ///
+    /// <para>TWO WAYS IN, ONE IMPLEMENTATION: the toolbar button and the save dialog both land here,
+    /// so there is one place to keep the read-only rule rather than two to forget it in.</para>
+    ///
+    /// <para>NOT HELD IN EDIT MODE, unlike the editor: that rule exists so typing works, and this
+    /// buffer is not for typing. The current-line highlight is gated on the same flag, so a read-only
+    /// editor shows none — do not set a colour for one expecting it to appear.</para>
+    /// </summary>
+    private static void ShowTheirs(EditorHost host, string title)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
+        if (FileLoad.TryLoad(state.Path, out _) is not { } theirs) return;
+
+        var theirTitle = title + " (on disk)";
+        if (Find(host.Main, theirTitle) is { } already)
+        {
+            host.Main.Tabs.ActiveTabIndex = already;
+            return;
+        }
+
+        var view = new MultilineEditControlBuilder()
+            .WithContent(theirs.Text)
+            .WithWrapMode(WrapMode.NoWrap)
+            .WithLineNumbers()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Build();
+        view.ReadOnly = true;
+
+        var content = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Cells(1), GridLength.Cells(1), GridLength.Star(1))
+            .Place(new MarkupControl(new List<string>
+                { $"[{ColorScheme.MutedMarkup}]on disk · read-only[/]" }), 0, 0)
+            .Place(new RuleControl { Color = ColorScheme.MutedRgb }, 1, 0)
+            .Place(view, 2, 0)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
+        host.Main.AddTab(theirTitle, content);
+        Show(host.Main, theirTitle);
+    }
 }
