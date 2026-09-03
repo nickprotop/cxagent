@@ -443,6 +443,10 @@ public static class FileTab
     public static int PendingConfirmationsForTest(EditorHost host)
         => For(host.Main).States.Values.Count(s => s.Asking);
 
+    /// <summary>Test seam: presses Save as the toolbar button does, gate included.</summary>
+    public static void RequestSaveForRealTest(EditorHost host, string title)
+        => RequestSave(host, title);
+
     /// <summary>Test seam: drives a save to completion, which RequestSave cannot be awaited for.</summary>
     public static Task SaveForTest(EditorHost host, string title) => SaveAsync(host, title);
 
@@ -468,7 +472,31 @@ public static class FileTab
     /// dialog belongs to the confirmation work; until it exists the safe branch is taken and nothing
     /// is written, because the failure this guards against is silent.</para>
     /// </summary>
-    private static async void RequestSave(EditorHost host, string title)
+    private static void RequestSave(EditorHost host, string title)
+    {
+        if (!For(host.Main).States.TryGetValue(title, out var state)) return;
+
+        // THE GATE, AND ONLY WHEN IT IS ARMED. A confirmation on every save trains the user to
+        // dismiss it, which is how the one that matters gets clicked through.
+        if (SaveNeedsConfirmationForTest(state.ExternallyChanged))
+        {
+            Ask(host, title,
+                $"The agent changed {title} after you opened it.",
+                "Saving writes your version over its changes.",
+                [
+                    new Choice("Save anyway", ColorScheme.Destructive, () => Write(host, title)),
+                    // SEEING BEFORE CHOOSING. Asking someone to pick between two versions they cannot
+                    // read is not really asking them.
+                    new Choice("See theirs", ColorScheme.Accent, () => ShowTheirs(host, title)),
+                    new Choice("Cancel", ColorScheme.Affirmative, () => { }),
+                ]);
+            return;
+        }
+
+        Write(host, title);
+    }
+
+    private static async void Write(EditorHost host, string title)
     {
         // EVERYTHING INSIDE THE TRY. An async void method's exception reaches no caller — it goes
         // straight to the thread pool and takes the app with it — so nothing here may throw past this
@@ -487,8 +515,6 @@ public static class FileTab
     private static async Task SaveAsync(EditorHost host, string title)
     {
         if (!For(host.Main).States.TryGetValue(title, out var state)) return;
-
-        if (SaveNeedsConfirmationForTest(state.ExternallyChanged)) return;
 
         var content = state.Editor.GetContent();
 
@@ -522,6 +548,11 @@ public static class FileTab
             Snapshot = state.File.Snapshot with { Text = content, Existed = true },
         };
         state.Deleted = false;
+
+        // THE WARNING IS SPENT. What was on disk has just been overwritten by this buffer, so there
+        // is no longer another version to lose — leaving the flag set would gate the next save over a
+        // conflict that no longer exists, and leave a warning on a tab that matches its file exactly.
+        state.ExternallyChanged = false;
 
         Refresh(host.Main, title);
         host.Session.Inject(SaveMessage(state.Path, host.Session.WorkingDirectory));
@@ -684,6 +715,29 @@ public static class FileTab
     /// <summary>Test seam: raises a change as the watcher would, on this thread.</summary>
     public static void RaiseChangedForTest(EditorHost host, string path) => OnChanged(host, path);
 
+    /// <summary>
+    /// The question currently on screen, and how to take it back.
+    ///
+    /// <para>ESCAPE IS A GLOBAL SHORTCUT, consulted before the active window
+    /// (InputCoordinator.cs:130-134), so a dialog's own OnKeyPressed never sees the key — the
+    /// plugin manager carries the same note and the same remedy. Without this, Escape on one of
+    /// these questions falls through to the branches below it and cancels the running turn instead
+    /// of dismissing what is on screen.</para>
+    /// </summary>
+    private static Action? _dismissOpenQuestion;
+
+    /// <summary>
+    /// Closes the question on screen, if there is one. Called from the global Escape handler before
+    /// anything else it might mean.
+    /// </summary>
+    public static bool CloseQuestionIfOpen()
+    {
+        if (_dismissOpenQuestion is not { } dismiss) return false;
+
+        dismiss();
+        return true;
+    }
+
     /// <summary>One answer to one question, and what it does.</summary>
     private sealed record Choice(string Label, ColorRole Role, Action Take);
 
@@ -708,9 +762,12 @@ public static class FileTab
         void Dismiss()
         {
             state.Asking = false;
+            _dismissOpenQuestion = null;
             if (dialog is not null)
                 host.System.CloseWindow(dialog, activateParent: true, force: true);
         }
+
+        _dismissOpenQuestion = Dismiss;
 
         var body = Controls.Markup()
             .AddEmptyLine()

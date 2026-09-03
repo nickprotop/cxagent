@@ -62,3 +62,58 @@ public class FileSaveTests : IDisposable
         Assert.Contains("\r\n", await File.ReadAllTextAsync(path));
     }
 }
+
+public class SaveGateTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private string Open(string name)
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, name);
+        File.WriteAllText(path, "mine\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+        return path;
+    }
+
+    // THE GATE ASKS RATHER THAN WRITING. The mirror of "a modified buffer is never overwritten by a
+    // program": a program's file is not silently overwritten by a stale buffer either.
+    [Fact]
+    public void SavingAWarnedTabAsksAndWritesNothing()
+    {
+        var path = Open("gated.txt");
+        FileTab.MarkExternallyChangedForTest(_fixture.Host, "gated.txt");
+        File.WriteAllText(path, "theirs\n");
+
+        FileTab.RequestSaveForRealTest(_fixture.Host, "gated.txt");
+
+        Assert.Equal(1, FileTab.PendingConfirmationsForTest(_fixture.Host));
+        Assert.Equal("theirs\n", File.ReadAllText(path));
+    }
+
+    // AND A PLAIN SAVE STILL JUST WRITES.
+    [Fact]
+    public async Task SavingAnUnwarnedTabWritesWithoutAsking()
+    {
+        var path = Open("plain.txt");
+        FileTab.SetContentForTest(_fixture.Host, "plain.txt", "changed\n");
+
+        await FileTab.SaveForTest(_fixture.Host, "plain.txt");
+
+        Assert.Equal(0, FileTab.PendingConfirmationsForTest(_fixture.Host));
+        Assert.Equal("changed\n", File.ReadAllText(path));
+    }
+
+    // THE WARNING IS SPENT BY THE WRITE. Left set, it would gate the next save over a conflict that
+    // no longer exists.
+    [Fact]
+    public async Task WritingClearsTheWarning()
+    {
+        Open("spent.txt");
+        FileTab.MarkExternallyChangedForTest(_fixture.Host, "spent.txt");
+
+        await FileTab.SaveForTest(_fixture.Host, "spent.txt");
+
+        Assert.False(FileTab.ExternallyChangedForTest(_fixture.Host, "spent.txt"));
+    }
+}

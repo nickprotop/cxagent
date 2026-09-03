@@ -1583,6 +1583,11 @@ public static class AppBootstrap
                 // cancel a running turn, which is not remotely what the user asked for.
                 if (PluginManagerDialog.CloseIfOpen()) return true;
 
+                // AND A FILE TAB'S QUESTION, for the same reason and with the same shape. Every one
+                // of them has "leave everything as it was" among its answers, so dismissing is the
+                // safe reading of the key — and it is the one a reflex reaches.
+                if (FileTab.CloseQuestionIfOpen()) return true;
+
                 // A QUESTION FIRST, BEFORE ANYTHING ELSE. Escape while the model is asking means
                 // "I am not answering that" — not "throw away the run". Making the only exit from a
                 // dialog be cancelling the turn would put the user's work behind their reluctance to
