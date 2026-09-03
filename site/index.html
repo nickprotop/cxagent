@@ -212,6 +212,27 @@
     </div>
     <div class="u-item">
       <div class="u-num">09</div>
+      <p class="u-title">A file opens beside the conversation</p>
+      <p class="u-body"><code>/open</code> puts a file in a tab — line numbers, its language's
+      highlighter, and a save that keeps the bytes you did not edit. It tells the model afterwards,
+      which removes the quiet failure of an agent editing from a read you have since changed.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">10</div>
+      <p class="u-title">A second model can answer the prompts</p>
+      <p class="u-body">Name a classifier in your config and <code>/mode edits auto</code> reviews
+      each write that would otherwise stop you. It fails closed — a timeout, an error or anything
+      it cannot parse means ask, never allow.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">11</div>
+      <p class="u-title">Some questions do not need the model</p>
+      <p class="u-body"><code>/diff</code> reads the working tree, <code>/stats</code> reads the
+      ledger, <code>/sessions</code> reads what is recorded. They answer from git and from disk,
+      spending nothing and adding nothing to what the model has to read.</p>
+    </div>
+    <div class="u-item">
+      <div class="u-num">12</div>
       <p class="u-title">It comes in several colours</p>
       <p class="u-body">A theme is a startup flag, a config key, or a picker in the status bar —
       <code>--theme &lt;name&gt;</code>, and <code>cxagent --help</code> lists what is installed. The

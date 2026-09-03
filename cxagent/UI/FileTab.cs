@@ -134,6 +134,8 @@ public static class FileTab
         // ChatSurface is the theme's own window background, so the editor follows the active theme
         // without deciding anything itself.
         editorBuilder = editorBuilder
+            .IsEditing()
+            .WithEscapeExitsEditMode(false)
             .WithColors(ColorScheme.Code, ColorScheme.ChatSurface)
             .WithFocusedColors(ColorScheme.Code, ColorScheme.ChatSurface);
 
@@ -144,8 +146,6 @@ public static class FileTab
         // "typing silently dies" was how it was found. Escape cannot knock it back out either — it is
         // a global shortcut (AppBootstrap.cs:1515), consulted before the focused control, so it never
         // reaches here to be interpreted as "leave edit mode".
-        editor.IsEditing = true;
-        editor.EscapeExitsEditMode = false;
 
         var status = new MarkupControl(new List<string> { string.Empty })
         {
@@ -224,6 +224,19 @@ public static class FileTab
 
         // THE MARKER FOLLOWS THE BUFFER. Nothing else recomputes it: Refresh runs on open and on a
         // watcher event, so without this the tab says "3 lines" with no bullet while the user is
+        // typing into it — and the close confirmation, which reads the same state, would let edits go
+        // without asking.
+        // THE MARKER FOLLOWS THE BUFFER. Nothing else recomputes it: Refresh runs on open and on a
+        // watcher event, so without this the tab says "2 lines" with no bullet while the user is
+        // typing into it — and the close confirmation, which reads the same state, would let edits go
+        // without asking.
+        //
+        // GUARDED ON A REAL CHANGE. The control raises ContentChanged while it is still being set up,
+        // before the baseline this compares against is stored, so an unguarded handler marks every
+        // file modified the moment it opens — a bullet on an untouched file, and a close confirmation
+        // for edits nobody made.
+        // THE MARKER FOLLOWS THE BUFFER. Nothing else recomputes it: Refresh runs on open and on a
+        // watcher event, so without this the tab says "2 lines" with no bullet while the user is
         // typing into it — and the close confirmation, which reads the same state, would let edits go
         // without asking.
         editor.ContentChanged += (_, _) => Refresh(host.Main, title);

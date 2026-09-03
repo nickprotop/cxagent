@@ -281,6 +281,39 @@ of its own. Someone who has just closed a terminal may be reading it, or thinkin
 agent that starts talking into that — or starts fixing a failure nobody asked it to fix — is worse
 than one that waits. It arrives with whatever you say next.
 
+
+---
+
+## A file, for the edit that is faster to make than to describe
+
+![A C# file open in a tab, with line numbers and syntax highlighting](25-editor.png)
+
+`/open` puts a file in a tab beside the conversation. Bare, it opens a picker; with a path it goes
+straight there; and `@` completes the path, because the composer's completion does not care that a
+slash command is in front of it.
+
+The editor is a real one — line numbers, the language's own highlighter, no wrapping so the numbers
+keep meaning what they say. Saving writes the file back with the conventions it arrived with: a file
+that had a BOM keeps it, a CRLF file stays CRLF, and the diff shows only what you changed.
+
+The reason it exists is the line the model never sees otherwise. It read a file at turn 12, you
+changed it at turn 15, and it edits from a stale read at turn 20 — which happens today, with an
+external editor, silently. Saving here tells the model: `[cxagent] the user edited <path>`, queued
+rather than sent, so it arrives with your next message instead of starting a turn of its own.
+
+![The same file after the agent changed it underneath, showing the warning and its three buttons](26-editor-changed.png)
+
+The other half of the same problem. A watcher notices when the agent writes a file you have open: a
+clean buffer just reloads, and a modified one keeps your edits and says so. The `⚠` and the `•`
+compose — the file changed underneath **and** you have unsaved work.
+
+`Reload` and `See theirs` appear only in this state; on a clean file they would be two controls that
+do nothing. `See theirs` opens what is on disk read-only in a second tab, because choosing between
+two versions you cannot read is not a choice.
+
+Saving now asks first. The rule the watcher enforces has a mirror: a modified buffer is never
+overwritten by a program, and a program's file is never silently overwritten by a stale buffer.
+
 ---
 
 ## A second project, and a worker's receipts
