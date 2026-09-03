@@ -27,11 +27,34 @@ public static class FileProbe
     }
 
     /// <summary>
-    /// True when a leading chunk of a file contains a null byte.
+    /// True when a leading chunk of a file is not text.
     ///
-    /// <para>THE TEST IS A NULL BYTE, not a character-set heuristic: it is what actually separates
-    /// the files that render as a screenful of replacement characters, and it never rejects valid
-    /// UTF-8. An empty file has none, so it opens as an empty buffer.</para>
+    /// <para>A NULL BYTE SETTLES IT. Executables, images and archives carry thousands, and no valid
+    /// UTF-8 text contains one.</para>
+    ///
+    /// <para>AND SO DOES A DECODE THAT MOSTLY FAILS, which the null-byte test alone misses: 400 bytes
+    /// of random data have no zero byte roughly a fifth of the time, and a compressed or encrypted
+    /// fragment often has none at all. Such a file passes the first test and then renders as a
+    /// screenful of replacement characters — the exact outcome both tests exist to prevent. Measuring
+    /// what decoding actually produced is the direct question, where the null byte is a proxy.</para>
+    ///
+    /// <para>THE THRESHOLD IS DELIBERATELY HIGH. Text that is merely in an encoding we did not guess
+    /// still has structure worth showing, and a file the user asked for by name deserves the benefit
+    /// of the doubt; a third of a file arriving as U+FFFD is past any doubt. An empty file decodes
+    /// cleanly to nothing and opens as an empty buffer.</para>
     /// </summary>
-    public static bool LooksBinary(ReadOnlySpan<byte> head) => head.IndexOf((byte)0) >= 0;
+    public static bool LooksBinary(ReadOnlySpan<byte> head)
+    {
+        if (head.IndexOf((byte)0) >= 0) return true;
+        if (head.IsEmpty) return false;
+
+        var text = System.Text.Encoding.UTF8.GetString(head);
+        if (text.Length == 0) return false;
+
+        var replacements = 0;
+        foreach (var c in text)
+            if (c == '\uFFFD') replacements++;
+
+        return replacements * 3 > text.Length;
+    }
 }

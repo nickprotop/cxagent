@@ -195,8 +195,11 @@ public static class FileTab
         // and each open file subscribes its own handler.
         void OnCloseRequested(object? _, TabEventArgs e)
         {
-            if (e.TabPage.Title != title && !e.TabPage.Title.EndsWith(title, StringComparison.Ordinal))
-                return;
+            // MATCHED ON THE TAB, NOT ITS TEXT. Refresh rewrites the title to carry the markers — a
+            // modified file is "name •" and one changed underneath is "⚠ name •" — so comparing the
+            // displayed string to the title this tab opened with stops matching the moment the file
+            // is edited, and the close request then belongs to nobody.
+            if (!ReferenceEquals(e.TabPage, TabOf(host.Main, title))) return;
 
             RequestClose(host, title, () => host.Main.Tabs.TabCloseRequested -= OnCloseRequested);
         }
@@ -219,6 +222,15 @@ public static class FileTab
     /// </summary>
     public static void ShowRefusal(EditorHost host, string path, string refusal)
     {
+        // ALREADY SHOWING WHY? Switch to it. Add returns the title a known path already has, so
+        // without this a second ask builds a second tab of the same name — and TabControl addresses
+        // tabs by title, which makes the pair indistinguishable to everything that looks one up.
+        if (For(host.Main).Open.TryGetTitle(path, out var shown))
+        {
+            Show(host.Main, shown);
+            return;
+        }
+
         var title = For(host.Main).Open.Add(path);
 
         var content = Controls.Grid()
@@ -242,14 +254,27 @@ public static class FileTab
         if (Find(main, title) is { } index) main.Tabs.ActiveTabIndex = index;
     }
 
-    /// <summary>A tab's index, or null when it has already gone.</summary>
+    /// <summary>
+    /// A tab's index, or null when it has already gone.
+    ///
+    /// <para>SEARCHES THE DISPLAYED TITLE FOR THE REGISTRY'S ONE, because Refresh decorates it with
+    /// markers: an open file's tab reads "⚠ name •" while the registry still calls it "name".</para>
+    /// </summary>
     private static int? Find(MainWindow main, string title)
     {
         for (var i = 0; i < main.Tabs.TabCount; i++)
-            if (main.Tabs.GetTab(i)?.Title == title) return i;
+            if (main.Tabs.GetTab(i)?.Title is { } shown && Undecorate(shown) == title) return i;
 
         return null;
     }
+
+    /// <summary>The tab itself, for identity comparisons.</summary>
+    private static TabPage? TabOf(MainWindow main, string title)
+        => Find(main, title) is { } index ? main.Tabs.GetTab(index) : null;
+
+    /// <summary>Strips the markers Refresh adds, leaving the registry's title.</summary>
+    private static string Undecorate(string shown)
+        => shown.TrimStart('⚠', ' ').TrimEnd(' ', '•');
 
     /// <summary>
     /// Repaints the toolbar and the tab title from the state.
@@ -266,7 +291,7 @@ public static class FileTab
         state.Reload.Visible = state.ExternallyChanged && !state.Deleted;
         state.SeeTheirs.Visible = state.ExternallyChanged && !state.Deleted;
 
-        var lines = state.Editor.GetContent().Split('\n').Length;
+        var lines = LineCountForTest(state.Editor.GetContent());
         var language = state.File.Language ?? "text";
 
         var text = state.Deleted
@@ -549,6 +574,21 @@ public static class FileTab
 
         state.ExternallyChanged = true;
         Refresh(host.Main, title);
+    }
+
+    /// <summary>
+    /// How many lines a buffer has.
+    ///
+    /// <para>A TRAILING NEWLINE TERMINATES THE LAST LINE RATHER THAN STARTING ANOTHER. Splitting
+    /// "a\nb\n" on newlines gives three pieces, the last empty — so every well-formed text file, which
+    /// ends in a newline, would report one line more than it has.</para>
+    /// </summary>
+    public static int LineCountForTest(string content)
+    {
+        if (content.Length == 0) return 0;
+
+        var trimmed = content.EndsWith('\n') ? content[..^1] : content;
+        return trimmed.Split('\n').Length;
     }
 
     /// <summary>Test seam: a tab's current buffer text.</summary>
