@@ -2001,7 +2001,7 @@ public sealed class Agent
             PlanLocalId = call.Name,
             AgentId = agentId,
             JobType = ToolJobType(call.Name),
-            DisplayName = DescribeCall(call),
+            DisplayName = DescribeCall(call, _workingDir),
             State = JobState.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow,
@@ -2955,7 +2955,11 @@ public sealed class Agent
         _ => "file",
     };
 
-    private static string DescribeCall(ToolCall call)
+    /// <summary>Test seam: the label is a pure projection of a call and where the session is.</summary>
+    public static string DescribeCallForTest(ToolCall call, string? workingDir) =>
+        DescribeCall(call, workingDir);
+
+    private static string DescribeCall(ToolCall call, string? workingDir)
     {
         // A SPAWN IS NAMED BY ITS TYPE AND ITS DESCRIPTION, not by raw JSON. The generic branch below
         // truncates the serialised arguments at 60 characters, and a spawn's JSON opens with
@@ -3005,8 +3009,52 @@ public sealed class Agent
                 : $"plan · {done}/{items.Count} · {Clip(current.Text, 44)}";
         }
 
+        // THE TOOLS A READER SEES MOST, named by the one argument that matters. The generic branch
+        // below renders `read_file {"path":"/tmp/x/cxgpu/Export/UsageView.cs"}` — JSON scaffolding
+        // around a filename, with the prefix repeated on every row and the name pushed toward the
+        // clip. This is the same complaint the spawn, skill and plan branches above were each
+        // written to answer; these were simply never given the same treatment.
+        if (PrimaryArgument(call) is { } primary)
+            return $"{call.Name} · {Clip(primary, 56)}";
+
         var args = call.Arguments.ToString();
         return $"{call.Name} {Clip(args, 60)}";
+
+        // A PATH RELATIVE TO THE SESSION'S DIRECTORY, which is how the model names files in its own
+        // calls and what a reader recognises — and one outside it left absolute, because relative
+        // would climb with ../.. and be both longer and harder to read than what it replaced.
+        string? PrimaryArgument(ToolCall c) => c.Name switch
+        {
+            "read_file" or "write_file" or "replace_in_file" or "edit_file" => Relative(ReadArg(c, "path")),
+            "run_shell" => ReadArg(c, "command"),
+            // THE PATTERN, NOT THE PATH: a grep's question is what it looked for. Quoted, because a
+            // bare pattern beside a tool name reads as a second word of the name.
+            "grep" => ReadArg(c, "pattern") is { } p ? $"\"{p}\"" : Relative(ReadArg(c, "path")),
+            "glob" => ReadArg(c, "pattern"),
+            _ => null,
+        };
+
+        string? Relative(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return path;
+            if (string.IsNullOrWhiteSpace(workingDir)) return path;
+
+            try
+            {
+                var full = System.IO.Path.GetFullPath(path);
+                var root = System.IO.Path.GetFullPath(workingDir);
+
+                return full.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                    ? System.IO.Path.GetRelativePath(root, full)
+                    : path;
+            }
+            catch (Exception)
+            {
+                // A MALFORMED PATH STILL GETS A ROW. This feeds a display name, and GetFullPath
+                // throws on inputs a tool call can certainly contain.
+                return path;
+            }
+        }
     }
 
     private static string Clip(string text, int max) =>
