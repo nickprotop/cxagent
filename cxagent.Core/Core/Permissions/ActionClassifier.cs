@@ -26,20 +26,41 @@ public sealed class ActionClassifier
     private readonly TimeSpan _stageDeadline;
 
     /// <summary>
-    /// DEFAULTS TO 10 SECONDS SO NO PRODUCTION CALL SITE CHANGES. The parameter exists only for
-    /// tests: two stages means a worst-case classifier run can now wait out TWO real deadlines back
-    /// to back, and a unit test that actually sits out 10 real seconds per stage cannot be told apart
-    /// from a hang by anyone reading the suite's duration — this repo's whole "20s is a hang, not a
-    /// slow test" convention depends on the suite staying in single digits. Injecting a short deadline
-    /// in `TwoStageClassifierTests`'s timeout cases keeps those tests proving the same
-    /// thing (a stage that never answers still yields Ask) without paying the wall-clock cost of the
-    /// real 10s production value.
+    /// THIRTY SECONDS, BECAUSE A LOCAL CLASSIFIER SHARES ITS MODEL WITH THE AGENT. A hosted one
+    /// answers on a dedicated endpoint and never waits; a local one queues behind whatever the agent
+    /// and its sub-agents are generating. Measured against a 35B local model: 150ms idle, 4.9s with
+    /// one generation in flight, 13.5s with two — the first call after joining the queue pays the
+    /// whole wait, and that is exactly the call a gated write makes. Ten seconds fitted the hosted
+    /// case and quietly failed the local one.
+    ///
+    /// <para>TOO SHORT IS NOT A WRONG ANSWER, IT IS NO ANSWER. The classifier fails closed to ASK, so
+    /// a missed deadline does not decide anything incorrectly — it stops deciding, and auto mode
+    /// degrades to always-ask while still calling itself auto. That is why this went unnoticed.</para>
+    ///
+    /// <para>THE PARAMETER IS ALSO THE TEST SEAM. A unit test that sits out a real deadline per stage
+    /// cannot be told from a hang by anyone reading the suite's duration, and this repo's "20s is a
+    /// hang, not a slow test" convention depends on the suite staying in single digits — so
+    /// TwoStageClassifierTests injects a short one to prove the same thing without the wall clock.
+    /// Config reaches it through <c>classifierTimeoutSeconds</c>.</para>
     /// </summary>
     public ActionClassifier(ILlmProvider provider, TimeSpan? stageDeadline = null)
     {
         _provider = provider;
-        _stageDeadline = stageDeadline ?? TimeSpan.FromSeconds(10);
+        _stageDeadline = stageDeadline ?? TimeSpan.FromSeconds(30);
     }
+
+    /// <summary>
+    /// How many times a stage has missed its deadline or errored, this session.
+    ///
+    /// <para>COUNTED BECAUSE THE WARNING IS THROTTLED. The failure line is reported once per turn so
+    /// a shell-heavy turn does not bury the transcript, but that throttle also makes a persistent
+    /// degradation read like a one-off blip each time — the same yellow line, once a turn, saying
+    /// nothing about whether it happened once or forty times.</para>
+    /// </summary>
+    public int FailureCount { get; private set; }
+
+    /// <summary>Test seam: the deadline each stage is given, so the default cannot drift unnoticed.</summary>
+    public TimeSpan StageDeadlineForTest => _stageDeadline;
 
     /// <summary>Why the last call could not answer, or null when it did. The caller reports this once
     /// per turn rather than per action — a shell-heavy turn would otherwise bury the transcript in
@@ -344,12 +365,14 @@ public sealed class ActionClassifier
         }
         catch (OperationCanceledException)
         {
-            LastFailure = "classifier timed out";
+            LastFailure = "timed out";
+            FailureCount++;
             return null;
         }
         catch (Exception ex)
         {
             LastFailure = ex.Message;
+            FailureCount++;
             return null;
         }
     }

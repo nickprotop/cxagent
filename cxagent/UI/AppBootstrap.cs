@@ -763,7 +763,8 @@ public static class AppBootstrap
             // CLEARED WHEN NOTHING IS CONFIGURED, not left behind. Removing the classifier entry and
             // re-wiring must actually turn `auto` off; keeping the outgoing instance would keep a
             // mode alive that config no longer describes.
-            permissionGate.BindClassifier(res.ClassifierInstance, res.Providers);
+            permissionGate.BindClassifier(res.ClassifierInstance, res.Providers,
+                res.ClassifierTimeoutSeconds);
 
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host

@@ -225,3 +225,95 @@ public class ActionClassifierTests
         }
     }
 }
+
+/// <summary>
+/// The deadline, and the count of what missed it.
+/// </summary>
+public class ClassifierTimeoutTests
+{
+    private static readonly TimeSpan Short = TimeSpan.FromMilliseconds(50);
+
+    private static PermissionRequest FileWrite(string path) =>
+        new(PermissionKind.FileWrite, path, path);
+
+    // THIRTY SECONDS, NOT TEN. A local classifier shares its model with the agent and queues behind
+    // whatever the sub-agents are generating — measured at 13.5s with two in flight, where the old
+    // default gave up at 10 and auto mode silently became always-ask.
+    [Fact]
+    public void TheDefaultDeadlineIsThirtySeconds()
+    {
+        var classifier = new ActionClassifier(new NeverAnswersProvider());
+
+        Assert.Equal(TimeSpan.FromSeconds(30), classifier.StageDeadlineForTest);
+    }
+
+    // A COUNT, BECAUSE THE WARNING IS THROTTLED TO ONCE A TURN. Without it, forty misses and one
+    // miss print the same line.
+    [Fact]
+    public async Task EveryMissedDeadlineIsCounted()
+    {
+        var classifier = new ActionClassifier(new NeverAnswersProvider(), Short);
+
+        Assert.Equal(0, classifier.FailureCount);
+
+        await classifier.JudgeAsync(FileWrite("/tmp/a.txt"), default);
+        await classifier.JudgeAsync(FileWrite("/tmp/b.txt"), default);
+
+        Assert.True(classifier.FailureCount >= 2,
+            $"expected at least one failure per call, got {classifier.FailureCount}");
+    }
+
+    // AND A MISS IS STILL ASK, NEVER DENY — the stance the whole class is built on.
+    [Fact]
+    public async Task AMissedDeadlineAsks()
+    {
+        var classifier = new ActionClassifier(new NeverAnswersProvider(), Short);
+
+        var verdict = await classifier.JudgeAsync(FileWrite("/tmp/a.txt"), default);
+
+        Assert.Equal(ClassifierVerdict.Ask, verdict.Verdict);
+    }
+
+    private sealed class NeverAnswersProvider : ILlmProvider
+    {
+        public string ProviderId => "never-answers";
+        public string DisplayName => "NeverAnswers";
+        public string ModelId => "test-model";
+        public bool SupportsToolCalling => false;
+        public bool SupportsStreaming => false;
+
+        public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages, List<ToolDefinition>? tools,
+            CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+}
+
+
+/// <summary>The warning line, which carries the count because it is throttled to once a turn.</summary>
+public class ClassifierFailureMessageTests
+{
+    // ONE MISS READS AS ONE MISS. No tally, because "1 so far this session" says nothing the line
+    // does not already.
+    [Fact]
+    public void ASingleFailureHasNoTally()
+        => Assert.Equal("auto review unavailable (timed out) — asking instead",
+            PermissionDecider.ClassifierNoticeForTest("timed out", 1));
+
+    // MANY MISSES SAY SO. Without this, forty misses and one miss print the same line once a turn —
+    // and a classifier too slow to ever answer looks exactly like one that hiccuped.
+    [Fact]
+    public void RepeatedFailuresCarryTheCount()
+        => Assert.Equal("auto review unavailable (timed out, 12 so far this session) — asking instead",
+            PermissionDecider.ClassifierNoticeForTest("timed out", 12));
+}

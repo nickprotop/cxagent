@@ -72,12 +72,18 @@ public sealed class PermissionDecider : IPermissionGate
     /// cannot be half-applied — a re-wire spread across the root moves some consumers of a resolution
     /// and not others.</para>
     /// </summary>
-    public void BindClassifier(string? instanceName, Llm.ProviderRegistry? providers) =>
+    public void BindClassifier(string? instanceName, Llm.ProviderRegistry? providers,
+                               int? stageTimeoutSeconds = null) =>
         Classifier =
             instanceName is { Length: > 0 } name
             && providers is not null
             && providers.TryGet(name, out var provider)
-                ? new ActionClassifier(provider)
+                // A NON-POSITIVE VALUE IS NOT A ZERO DEADLINE. Config is hand-edited, and a 0 there
+                // would make every classification time out instantly — auto mode that silently never
+                // decides. Out-of-range means "use the default", the same reading every other
+                // hand-edited number here takes.
+                ? new ActionClassifier(provider,
+                    stageTimeoutSeconds is > 0 and var s ? TimeSpan.FromSeconds(s) : null)
                 : null;
 
     // REPORTED ONCE PER TURN, not per action. A provider that is down would otherwise put an
@@ -86,6 +92,19 @@ public sealed class PermissionDecider : IPermissionGate
     // (Session.Turn.cs) — a type test against PermissionDecider there, since this reset is state
     // specific to this one gate implementation, not a concept IPermissionGate itself carries.
     private bool _reportedClassifierFailure;
+
+    /// <summary>
+    /// The warning line, with its running total.
+    ///
+    /// <para>THE COUNT IS THERE BECAUSE THE LINE IS THROTTLED to once a turn — without it, forty
+    /// misses and one miss print identically, and a classifier too slow to ever answer reads as one
+    /// that hiccuped. A single miss carries no tally, which would say nothing the line does not.</para>
+    /// </summary>
+    public static string ClassifierNoticeForTest(string failure, int count)
+    {
+        var tally = count > 1 ? $", {count} so far this session" : string.Empty;
+        return $"auto review unavailable ({failure}{tally}) — asking instead";
+    }
 
     /// <summary>Lets a new turn report a classifier failure again — the fact is stale once the turn
     /// that observed it is over, and a session that stays quiet forever after one blip would hide a
@@ -360,7 +379,13 @@ public sealed class PermissionDecider : IPermissionGate
             if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
-                _notice?.Invoke(new($"auto review unavailable ({failure}) — asking instead", Severity.Warning));
+
+                // THE RUNNING TOTAL, because the line itself is throttled to once a turn. Without it
+                // the same warning each turn reads as a fresh blip rather than a degradation that has
+                // been going on all session — which is how a classifier too slow to ever answer looks
+                // exactly like one that hiccuped.
+                _notice?.Invoke(new(
+                    ClassifierNoticeForTest(failure, Classifier.FailureCount), Severity.Warning));
             }
         }
 

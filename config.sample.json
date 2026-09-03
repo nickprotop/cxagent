@@ -66,6 +66,19 @@
     "verdict all ask; only an explicit allow is silent."
   ],
   "classifier": "local",
+  "//classifierTimeoutSeconds": [
+    "HOW LONG EACH OF THE CLASSIFIER'S TWO STAGES MAY TAKE. Absent means 30 seconds.",
+    "IT EXISTS BECAUSE A LOCAL CLASSIFIER SHARES ITS MODEL WITH THE AGENT. A hosted one answers",
+    "on its own endpoint and never waits; a local one queues behind whatever the agent and its",
+    "sub-agents are generating. Measured against a 35B local model: 150ms idle, 4.9s with one",
+    "generation in flight, 13.5s with two \u2014 the first call after joining the queue pays the",
+    "whole wait, and that is the call a gated write makes.",
+    "TOO SHORT IS NOT A WRONG ANSWER, IT IS NO ANSWER. Auto fails closed to ask, so a missed",
+    "deadline does not decide anything incorrectly \u2014 it stops deciding, and auto quietly",
+    "becomes always-ask while still calling itself auto. The warning line counts the misses.",
+    "Raise it if you run a busy local classifier; lower it if a hosted one being down should",
+    "give up sooner. Zero or negative is refused and the default is kept."
+  ],
   "//theme": [
     "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
     "ABSENT MEANS `cxagent` \u2014 its own palette, a near-black ground with a warm amber accent.",

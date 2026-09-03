@@ -97,6 +97,9 @@ public sealed record ResolvedConfig(
     public int? MaxConcurrentAgents => Catalog.MaxConcurrentAgents;
     public string? ClassifierInstance => Catalog.ClassifierInstance;
 
+    /// <summary>Seconds each classifier stage may take, or null for the default.</summary>
+    public int? ClassifierTimeoutSeconds => Catalog.ClassifierTimeoutSeconds;
+
     /// <summary>The theme name from config, or null for cxagent's own. Resolved at startup, where
     /// an unknown name falls back rather than failing — the registry does not exist here.</summary>
     public string? Theme => Catalog.Theme;
@@ -173,7 +176,8 @@ public static class ConfigResolver
                     MaxConcurrentAgents: cfg.MaxConcurrentAgents,
                     ClassifierInstance: settings.Classifier,
                     Theme: settings.Theme)
-                { Tools = settings.Tools, PluginPaths = settings.PluginPaths },
+                { Tools = settings.Tools, PluginPaths = settings.PluginPaths,
+                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));
@@ -279,7 +283,8 @@ public static class ConfigResolver
                 // /model switch. A configured plugin path that resolves after switching models but not
                 // on launch is the same defect wearing a different key's name. Plugins themselves make
                 // the same trip via Entries below.
-                { Tools = settings.Tools, PluginPaths = settings.PluginPaths },
+                { Tools = settings.Tools, PluginPaths = settings.PluginPaths,
+                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));

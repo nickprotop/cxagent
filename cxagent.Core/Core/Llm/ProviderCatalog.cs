@@ -47,6 +47,15 @@ public sealed record ProviderCatalog(
     string? ClassifierInstance = null,
     string? Theme = null)
 {
+    /// <summary>
+    /// How long each of the classifier's two stages may take, from config's
+    /// <c>classifierTimeoutSeconds</c>. Null leaves the classifier's own default.
+    ///
+    /// <para>AN INIT PROPERTY, NOT A CONSTRUCTOR PARAMETER, following PluginPaths below: the
+    /// positional list is already at seven and this is a setting almost nobody passes.</para>
+    /// </summary>
+    public int? ClassifierTimeoutSeconds { get; init; }
+
     /// <summary>Where a plugin's <c>file</c> is searched for, in order — matching config.json's
     /// <c>pluginPaths</c>. Search paths are resolved once and stay fixed for the process, unlike the
     /// plugin entries themselves — see <see cref="PluginEntries"/> for why those moved out.</summary>

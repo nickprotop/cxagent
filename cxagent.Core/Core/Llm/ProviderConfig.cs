@@ -334,6 +334,21 @@ public record ProviderSettings(
     public string? Classifier { get; init; }
 
     /// <summary>
+    /// How long each of the classifier's two stages may take, in seconds. Null takes the default.
+    ///
+    /// <para>IT EXISTS BECAUSE A LOCAL CLASSIFIER SHARES ITS MODEL WITH THE AGENT. A hosted
+    /// classifier answers on a dedicated endpoint and is never queued behind anything; a local one
+    /// waits for whatever the agent and its sub-agents are generating. Measured against a 35B local
+    /// model: 150ms idle, 4.9s with one generation in flight, 13.5s with two — so the wait scales
+    /// with how much work the machine is already doing, and no single default fits both setups.</para>
+    ///
+    /// <para>MISSING IT COSTS CORRECTNESS OF A KIND. The classifier fails closed to ASK, so a
+    /// deadline that is too short does not decide anything wrong — it quietly stops deciding at all,
+    /// and auto mode degrades to always-ask while still calling itself auto.</para>
+    /// </summary>
+    public int? ClassifierTimeoutSeconds { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -668,6 +683,11 @@ public static class ProviderConfigLoader
             if (classifier is not null && !providers.ContainsKey(classifier))
                 errors.Add($"classifier '{classifier}' is not a configured provider instance.");
 
+            // HOW LONG EACH CLASSIFIER STAGE MAY TAKE. Absent means the default, which suits a hosted
+            // classifier on its own endpoint; a LOCAL one shares its model with the agent and queues
+            // behind whatever the sub-agents are generating, which is measured in tens of seconds.
+            //
+
             // NOT VALIDATED AGAINST A LIST OF NAMES. The window system owns the theme registry and
             // does not exist yet when config is read; an unknown name is resolved at startup, where
             // it falls back to cxagent's own theme rather than failing.
@@ -708,6 +728,25 @@ public static class ProviderConfigLoader
             // HOISTED ABOVE THE ORCHESTRATOR BLOCK, which now warns about removed keys and about a
             // negative cap. One list for the whole load; the MCP block below appends to the same one.
             var warnings = new List<string>();
+
+            // A WARNING, NOT AN ERROR, and the default is kept. This is an optional tuning knob for
+            // one mode — the MCP block's reasoning applies exactly: a typo here must not take
+            // providers and session down with it, and dropping the value silently would be its own
+            // bug, so it is dropped loudly.
+            //
+            // A NON-POSITIVE VALUE IS NOT A ZERO DEADLINE. Zero would time out every classification
+            // instantly, and because the classifier fails closed to ASK that reads as auto mode
+            // working normally rather than one that never decides.
+            int? classifierTimeout = null;
+            if (root.TryGetProperty("classifierTimeoutSeconds", out var ct))
+            {
+                if (ct.ValueKind == JsonValueKind.Number && ct.TryGetInt32(out var seconds) && seconds > 0)
+                    classifierTimeout = seconds;
+                else
+                    warnings.Add(
+                        "classifierTimeoutSeconds must be a whole number of seconds greater than zero — "
+                        + "using the default.");
+            }
 
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
@@ -981,6 +1020,7 @@ public static class ProviderConfigLoader
                 Tools = llmAgentTools,
                 Warnings = warnings,
                 Classifier = classifier,
+                ClassifierTimeoutSeconds = classifierTimeout,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,
