@@ -3,6 +3,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
+[Collection("file-tabs")]
 public class FileTabCloseTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -73,6 +74,7 @@ public class FileTabCloseTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class FileWatchTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -139,6 +141,7 @@ public class FileWatchTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class ReloadFidelityTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -164,6 +167,7 @@ public class ReloadFidelityTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class FileTabThemeTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -197,6 +201,7 @@ public class FileTabThemeTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class ModifiedMarkerTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -220,6 +225,7 @@ public class ModifiedMarkerTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class CloseAnswersTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -280,5 +286,60 @@ public class CloseAnswersTests : IDisposable
 
         FileTab.RequestCloseForTest(_fixture.Host, "again.txt");
         Assert.Equal(1, FileTab.PendingConfirmationsForTest(_fixture.Host));
+    }
+}
+
+[Collection("file-tabs")]
+public class ReloadDialogTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private string Open(string name)
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, name);
+        File.WriteAllText(path, "on disk\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+        return path;
+    }
+
+    // RELOADING A MODIFIED BUFFER IS THE SAME LOSS AS CLOSING ONE, so it asks the same way.
+    [Fact]
+    public void ReloadingAModifiedBufferAsksFirst()
+    {
+        Open("reload-ask.txt");
+        FileTab.SetContentForTest(_fixture.Host, "reload-ask.txt", "my edits\n");
+
+        FileTab.RequestReloadForTest(_fixture.Host, "reload-ask.txt");
+
+        Assert.Equal(1, FileTab.PendingConfirmationsForTest(_fixture.Host));
+        Assert.Equal("my edits\n", FileTab.ContentForTest(_fixture.Host, "reload-ask.txt"));
+    }
+
+    // AND A CLEAN ONE JUST RELOADS — nothing is lost, so there is nothing to ask.
+    [Fact]
+    public void ReloadingACleanBufferAsksNothing()
+    {
+        var path = Open("reload-clean.txt");
+        File.WriteAllText(path, "changed outside\n");
+
+        FileTab.RequestReloadForTest(_fixture.Host, "reload-clean.txt");
+
+        Assert.Equal(0, FileTab.PendingConfirmationsForTest(_fixture.Host));
+        Assert.Equal("changed outside\n", FileTab.ContentForTest(_fixture.Host, "reload-clean.txt"));
+    }
+
+    // DISCARD TAKES WHAT IS ON DISK.
+    [Fact]
+    public void DiscardingOnReloadTakesTheDiskVersion()
+    {
+        var path = Open("reload-discard.txt");
+        FileTab.SetContentForTest(_fixture.Host, "reload-discard.txt", "mine\n");
+        File.WriteAllText(path, "theirs\n");
+
+        FileTab.RequestReloadForTest(_fixture.Host, "reload-discard.txt");
+        FileTab.AnswerForTest(_fixture.Host, "reload-discard.txt", "Discard");
+
+        Assert.Equal("theirs\n", FileTab.ContentForTest(_fixture.Host, "reload-discard.txt"));
     }
 }

@@ -52,6 +52,9 @@ public static class FileTab
 
         /// <summary>Started with the first open file, and shared by every tab after it.</summary>
         public OpenFileWatcher? Watcher { get; set; }
+
+        /// <summary>The question on this window's screen: how to take it back, and its answers.</summary>
+        public (string Title, IReadOnlyList<Choice> Choices, Action Dismiss)? OpenQuestion { get; set; }
     }
 
     private static Workspace For(MainWindow main) => Workspaces.GetOrCreateValue(main);
@@ -446,12 +449,16 @@ public static class FileTab
     /// <summary>Test seam: presses one of the open question's buttons by its label.</summary>
     public static void AnswerForTest(EditorHost host, string title, string label)
     {
-        if (_openChoices is not { } open || open.Title != title) return;
+        if (For(host.Main).OpenQuestion is not { } open || open.Title != title) return;
         if (open.Choices.FirstOrDefault(c => c.Label == label) is not { } choice) return;
 
         open.Dismiss();
         choice.Take();
     }
+
+    /// <summary>Test seam: presses Reload as the toolbar button does.</summary>
+    public static void RequestReloadForTest(EditorHost host, string title)
+        => RequestReload(host, title);
 
     /// <summary>Test seam: opens the on-disk view as the button does.</summary>
     public static void ShowTheirsForTest(EditorHost host, string title) => ShowTheirs(host, title);
@@ -735,28 +742,28 @@ public static class FileTab
     public static void RaiseChangedForTest(EditorHost host, string path) => OnChanged(host, path);
 
     /// <summary>
-    /// The question currently on screen, and how to take it back.
+    /// Closes the question on this window, if one is up.
     ///
     /// <para>ESCAPE IS A GLOBAL SHORTCUT, consulted before the active window
     /// (InputCoordinator.cs:130-134), so a dialog's own OnKeyPressed never sees the key — the
     /// plugin manager carries the same note and the same remedy. Without this, Escape on one of
     /// these questions falls through to the branches below it and cancels the running turn instead
     /// of dismissing what is on screen.</para>
+    ///
+    /// <para>PER WINDOW, NOT GLOBAL, for the reason the workspaces are: one screen shows one modal,
+    /// but two windows are two screens — and a global would let one window's Escape dismiss the
+    /// other's question. Test classes run in parallel and are exactly that shape.</para>
     /// </summary>
-    private static Action? _dismissOpenQuestion;
-
-    /// <summary>The question on screen, so a test can answer it without one.</summary>
-    private static (string Title, IReadOnlyList<Choice> Choices, Action Dismiss)? _openChoices;
 
     /// <summary>
     /// Closes the question on screen, if there is one. Called from the global Escape handler before
     /// anything else it might mean.
     /// </summary>
-    public static bool CloseQuestionIfOpen()
+    public static bool CloseQuestionIfOpen(MainWindow main)
     {
-        if (_dismissOpenQuestion is not { } dismiss) return false;
+        if (For(main).OpenQuestion is not { } open) return false;
 
-        dismiss();
+        open.Dismiss();
         return true;
     }
 
@@ -784,14 +791,12 @@ public static class FileTab
         void Dismiss()
         {
             state.Asking = false;
-            _dismissOpenQuestion = null;
-            _openChoices = null;
+            For(host.Main).OpenQuestion = null;
             if (dialog is not null)
                 host.System.CloseWindow(dialog, activateParent: true, force: true);
         }
 
-        _dismissOpenQuestion = Dismiss;
-        _openChoices = (title, choices, Dismiss);
+        For(host.Main).OpenQuestion = (title, choices, Dismiss);
 
         var body = Controls.Markup()
             .AddEmptyLine()

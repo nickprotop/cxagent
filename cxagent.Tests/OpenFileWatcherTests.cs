@@ -3,6 +3,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
+[Collection("file-tabs")]
 public class OpenFileWatcherTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("cxagent-watch").FullName;

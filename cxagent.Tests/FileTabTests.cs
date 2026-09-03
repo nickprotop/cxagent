@@ -4,6 +4,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
+[Collection("file-tabs")]
 public class FileTabTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -60,6 +61,7 @@ public class FileTabTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class FileSaveRoundTripTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();

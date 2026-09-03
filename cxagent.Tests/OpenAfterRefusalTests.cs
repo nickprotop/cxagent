@@ -3,6 +3,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
+[Collection("file-tabs")]
 public class OpenAfterRefusalTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();

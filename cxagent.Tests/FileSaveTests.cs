@@ -4,6 +4,7 @@ using Xunit;
 
 namespace CxAgent.Tests;
 
+[Collection("file-tabs")]
 public class FileSaveTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("cxagent-filesave").FullName;
@@ -63,6 +64,7 @@ public class FileSaveTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class SaveGateTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -118,6 +120,7 @@ public class SaveGateTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class SeeTheirsTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
@@ -158,6 +161,7 @@ public class SeeTheirsTests : IDisposable
     }
 }
 
+[Collection("file-tabs")]
 public class DeletedFileSaveTests : IDisposable
 {
     private readonly EditorHostFixture _fixture = new();
