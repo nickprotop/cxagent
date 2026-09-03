@@ -8,6 +8,7 @@ using CxAgent.Core.Permissions;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using SharpConsoleUI;
+using SharpConsoleUI.Dialogs;
 using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drivers;
@@ -691,6 +692,63 @@ public static class AppBootstrap
 
                     return true;
                 });
+
+        // NOT TOLD TO THE MODEL. TellTheModel defaults to false and this is why: the model has
+        // read_file, so naming /open to it would cost tokens in every request to enable a suggestion
+        // nobody wants — "you could open it yourself" is not a useful answer to anything.
+        //
+        // THE ARGUMENT COMPLETES. Unlike /shell's <command>, a path is exactly what the @ machinery
+        // already offers, so `/open @cxagent/UI/Sh` finishes itself with no new code.
+        manager.Commands.Register(
+            new SessionCommand("/open",
+                "open a file in a tab",
+                [new CommandArgument("<path>", "the file to open")]),
+            (session, arguments) =>
+            {
+                var host = new EditorHost(system, mainWindow, session);
+                var target = OpenTarget.For(arguments ?? string.Empty, session.WorkingDirectory);
+
+                if (target.ShowPicker)
+                {
+                    ShowPicker(host);
+                    return true;
+                }
+
+                OpenPath(host, target.Path!);
+                return true;
+            });
+
+        // ASYNC VOID AT THE EDGE, deliberately: the command handler is synchronous and the picker is
+        // a dialog that resolves whenever the user is done with it. Everything inside is in a try —
+        // an async void that throws reaches no caller and takes the app with it.
+        async void ShowPicker(EditorHost host)
+        {
+            try
+            {
+                var chosen = await FileDialogs.ShowFilePickerAsync(system,
+                    startPath: host.Session.WorkingDirectory);
+
+                // NULL IS A CANCEL, not a failure: the dialog closes itself and nothing is opened.
+                if (!string.IsNullOrWhiteSpace(chosen)) OpenPath(host, chosen);
+            }
+            catch (Exception ex)
+            {
+                // A TAB, LIKE EVERY OTHER REFUSAL HERE. The user is looking at the workspace because
+                // they just asked to open something; a line in the conversation is read later, if at
+                // all.
+                FileTab.ShowRefusal(host, "file picker", $"could not show the file picker: {ex.Message}");
+            }
+        }
+
+        // A REFUSAL OPENS A TAB rather than printing into the transcript: a tab is where the user
+        // just asked to look, and a line in the conversation is read after they have switched away.
+        static void OpenPath(EditorHost host, string path)
+        {
+            if (FileLoad.TryLoad(path, out var refusal) is { } loaded)
+                FileTab.Open(host, loaded);
+            else
+                FileTab.ShowRefusal(host, path, refusal!);
+        }
 
         void WireRunner(ResolvedConfig res)
         {
