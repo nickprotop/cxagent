@@ -219,3 +219,66 @@ public class ModifiedMarkerTests : IDisposable
         Assert.Contains(_fixture.Host.Main.Tabs.TabTitles, t => t.Contains('•'));
     }
 }
+
+public class CloseAnswersTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    private string Open(string name)
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, name);
+        File.WriteAllText(path, "kept\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+        return path;
+    }
+
+    // DISCARD INJECTS NOTHING AND WRITES NOTHING — nothing happened to the file, so there is nothing
+    // to tell the model and nothing to save.
+    [Fact]
+    public void DiscardClosesAndLeavesTheFileAlone()
+    {
+        var path = Open("discard.txt");
+        FileTab.SetContentForTest(_fixture.Host, "discard.txt", "thrown away\n");
+        var before = _fixture.Host.Main.Tabs.TabCount;
+
+        FileTab.RequestCloseForTest(_fixture.Host, "discard.txt");
+        FileTab.AnswerForTest(_fixture.Host, "discard.txt", "Discard");
+
+        Assert.Equal(before - 1, _fixture.Host.Main.Tabs.TabCount);
+        Assert.Equal("kept\n", File.ReadAllText(path));
+    }
+
+    // CANCEL LEAVES EVERYTHING AS IT WAS: the tab stays, the edits stay, the file is untouched.
+    [Fact]
+    public void CancelLeavesTheTabAndTheEdits()
+    {
+        var path = Open("cancel.txt");
+        FileTab.SetContentForTest(_fixture.Host, "cancel.txt", "still mine\n");
+        var before = _fixture.Host.Main.Tabs.TabCount;
+
+        FileTab.RequestCloseForTest(_fixture.Host, "cancel.txt");
+        FileTab.AnswerForTest(_fixture.Host, "cancel.txt", "Cancel");
+
+        Assert.Equal(before, _fixture.Host.Main.Tabs.TabCount);
+        Assert.Equal("still mine\n", FileTab.ContentForTest(_fixture.Host, "cancel.txt"));
+        Assert.Equal("kept\n", File.ReadAllText(path));
+    }
+
+    // AND THE GUARD RELEASES, so a cancelled question can be asked again rather than the tab being
+    // stuck unable to raise another.
+    [Fact]
+    public void CancellingReleasesTheGuard()
+    {
+        Open("again.txt");
+        FileTab.SetContentForTest(_fixture.Host, "again.txt", "edited\n");
+
+        FileTab.RequestCloseForTest(_fixture.Host, "again.txt");
+        FileTab.AnswerForTest(_fixture.Host, "again.txt", "Cancel");
+
+        Assert.Equal(0, FileTab.PendingConfirmationsForTest(_fixture.Host));
+
+        FileTab.RequestCloseForTest(_fixture.Host, "again.txt");
+        Assert.Equal(1, FileTab.PendingConfirmationsForTest(_fixture.Host));
+    }
+}

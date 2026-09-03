@@ -59,3 +59,28 @@ public class SettingsEntryTests
             EscapeRouting.For(turnIsRunning: false, chatTabIsActive: false));
     }
 }
+
+/// <summary>The routing is a pure function; this pins that the window reports what it reads.</summary>
+public class ChatTabIsActiveTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // ESCAPE'S SCOPE COMES FROM THIS FLAG. If the window reported it wrongly the routing would be
+    // right and the behaviour still wrong, which no test of EscapeRouting alone would catch.
+    [Fact]
+    public void OpeningAFileTabMakesTheChatTabInactive()
+    {
+        Assert.True(_fixture.Host.Main.ChatTabIsActive);
+
+        var path = Path.Combine(_fixture.WorkingDirectory, "scope.txt");
+        File.WriteAllText(path, "x\n");
+        CxAgent.UI.FileTab.Open(_fixture.Host, CxAgent.UI.FileLoad.TryLoad(path, out _)!);
+
+        Assert.False(_fixture.Host.Main.ChatTabIsActive);
+
+        _fixture.Host.Main.ShowChatTab();
+
+        Assert.True(_fixture.Host.Main.ChatTabIsActive);
+    }
+}

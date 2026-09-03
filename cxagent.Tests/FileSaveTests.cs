@@ -117,3 +117,71 @@ public class SaveGateTests : IDisposable
         Assert.False(FileTab.ExternallyChangedForTest(_fixture.Host, "spent.txt"));
     }
 }
+
+public class SeeTheirsTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // ONE IMPLEMENTATION, TWO WAYS IN: the toolbar button and the save dialog both land here, so the
+    // read-only rule is kept in one place rather than forgotten in a second.
+    [Fact]
+    public void SeeTheirs_OpensTheDiskVersionReadOnly()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "theirs.txt");
+        File.WriteAllText(path, "mine\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        FileTab.SetContentForTest(_fixture.Host, "theirs.txt", "my edit\n");
+        File.WriteAllText(path, "their edit\n");
+
+        FileTab.ShowTheirsForTest(_fixture.Host, "theirs.txt");
+
+        // A second tab, showing what is on disk — not what is in the buffer.
+        Assert.Contains(_fixture.Host.Main.Tabs.TabTitles, t => t.Contains("on disk"));
+        Assert.Equal("my edit\n", FileTab.ContentForTest(_fixture.Host, "theirs.txt"));
+    }
+
+    // ASKED FOR TWICE, ONE TAB. The same rule the refusal tabs needed.
+    [Fact]
+    public void SeeTheirs_Twice_DoesNotOpenTwoTabs()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "once.txt");
+        File.WriteAllText(path, "x\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        FileTab.ShowTheirsForTest(_fixture.Host, "once.txt");
+        var after1 = _fixture.Host.Main.Tabs.TabCount;
+        FileTab.ShowTheirsForTest(_fixture.Host, "once.txt");
+
+        Assert.Equal(after1, _fixture.Host.Main.Tabs.TabCount);
+    }
+}
+
+public class DeletedFileSaveTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // THE TOOLBAR PROMISES "Save recreates it", so Save must recreate it. Deletion must not arm the
+    // save gate: that gate protects a version on disk from a stale buffer, and a deleted file has no
+    // version to protect — arming it makes Save ask about a conflict that cannot exist and write
+    // nothing, while the toolbar says otherwise.
+    [Fact]
+    public async Task SavingADeletedFileRecreatesIt()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "recreate.txt");
+        File.WriteAllText(path, "still here\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        File.Delete(path);
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.False(FileTab.ExternallyChangedForTest(_fixture.Host, "recreate.txt"));
+
+        await FileTab.SaveForTest(_fixture.Host, "recreate.txt");
+
+        Assert.True(File.Exists(path));
+        Assert.Equal("still here\n", await File.ReadAllTextAsync(path));
+    }
+}

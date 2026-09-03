@@ -443,6 +443,19 @@ public static class FileTab
     public static int PendingConfirmationsForTest(EditorHost host)
         => For(host.Main).States.Values.Count(s => s.Asking);
 
+    /// <summary>Test seam: presses one of the open question's buttons by its label.</summary>
+    public static void AnswerForTest(EditorHost host, string title, string label)
+    {
+        if (_openChoices is not { } open || open.Title != title) return;
+        if (open.Choices.FirstOrDefault(c => c.Label == label) is not { } choice) return;
+
+        open.Dismiss();
+        choice.Take();
+    }
+
+    /// <summary>Test seam: opens the on-disk view as the button does.</summary>
+    public static void ShowTheirsForTest(EditorHost host, string title) => ShowTheirs(host, title);
+
     /// <summary>Test seam: presses Save as the toolbar button does, gate included.</summary>
     public static void RequestSaveForRealTest(EditorHost host, string title)
         => RequestSave(host, title);
@@ -604,7 +617,13 @@ public static class FileTab
         if (!File.Exists(state.Path))
         {
             state.Deleted = true;
-            state.ExternallyChanged = true;
+
+            // NOT ExternallyChanged. That flag arms the save gate, which exists to stop a stale
+            // buffer overwriting a version on disk — and there is no version on disk to protect.
+            // Arming it here makes Save ask about a conflict that cannot exist, and the toolbar
+            // promises "Save recreates it" while nothing happens.
+            state.ExternallyChanged = false;
+
             Refresh(host.Main, title);
             return;
         }
@@ -726,6 +745,9 @@ public static class FileTab
     /// </summary>
     private static Action? _dismissOpenQuestion;
 
+    /// <summary>The question on screen, so a test can answer it without one.</summary>
+    private static (string Title, IReadOnlyList<Choice> Choices, Action Dismiss)? _openChoices;
+
     /// <summary>
     /// Closes the question on screen, if there is one. Called from the global Escape handler before
     /// anything else it might mean.
@@ -763,11 +785,13 @@ public static class FileTab
         {
             state.Asking = false;
             _dismissOpenQuestion = null;
+            _openChoices = null;
             if (dialog is not null)
                 host.System.CloseWindow(dialog, activateParent: true, force: true);
         }
 
         _dismissOpenQuestion = Dismiss;
+        _openChoices = (title, choices, Dismiss);
 
         var body = Controls.Markup()
             .AddEmptyLine()
