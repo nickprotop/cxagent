@@ -121,6 +121,16 @@ public static class FileTab
         if (SyntaxHighlighters.For(file.Language) is { } highlighter)
             editorBuilder = editorBuilder.WithSyntaxHighlighter(highlighter);
 
+        // THE SAME GROUND AS EVERYTHING ELSE, and the same when focused as when not. The control
+        // defaults to a colour of its own and paints the whole cell with it, which reads as a slab
+        // announcing itself rather than a document in the app's window — and the default focus colour
+        // makes the tab change shade as focus moves, drawing the eye to a change that means nothing.
+        // ChatSurface is the theme's own window background, so the editor follows the active theme
+        // without deciding anything itself.
+        editorBuilder = editorBuilder
+            .WithColors(ColorScheme.Code, ColorScheme.ChatSurface)
+            .WithFocusedColors(ColorScheme.Code, ColorScheme.ChatSurface);
+
         var editor = editorBuilder.Build();
 
         // ALWAYS IN EDIT MODE. A buffer you must first activate before it takes a keystroke is a mode
@@ -749,6 +759,8 @@ public static class FileTab
             .WithLineNumbers()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
+            .WithColors(ColorScheme.Code, ColorScheme.ChatSurface)
+            .WithFocusedColors(ColorScheme.Code, ColorScheme.ChatSurface)
             .Build();
         view.ReadOnly = true;
 

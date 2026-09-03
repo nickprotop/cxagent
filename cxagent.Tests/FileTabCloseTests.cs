@@ -138,3 +138,28 @@ public class FileWatchTests : IDisposable
         Assert.Equal(0, FileTab.PendingConfirmationsForTest(_fixture.Host));
     }
 }
+
+public class ReloadFidelityTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // A RELOAD MUST NOT CHANGE THE TEXT. The watcher fires on any write in the working directory, so
+    // this runs on ordinary use — and a reload that prepends a line puts a blank row above line 1 and
+    // makes every line number wrong from then on.
+    [Fact]
+    public void ReloadingDoesNotChangeTheContent()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "fidelity.cs");
+        File.WriteAllText(path, "using System;\nclass A { }\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        Assert.Equal("using System;\nclass A { }\n",
+            FileTab.ContentForTest(_fixture.Host, "fidelity.cs"));
+
+        FileTab.RaiseChangedForTest(_fixture.Host, path);
+
+        Assert.Equal("using System;\nclass A { }\n",
+            FileTab.ContentForTest(_fixture.Host, "fidelity.cs"));
+    }
+}
