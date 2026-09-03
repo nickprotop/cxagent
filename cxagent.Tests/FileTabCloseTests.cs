@@ -163,3 +163,36 @@ public class ReloadFidelityTests : IDisposable
             FileTab.ContentForTest(_fixture.Host, "fidelity.cs"));
     }
 }
+
+public class FileTabThemeTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // COLOURS ARE CAPTURED BY VALUE when the editor is built, so a theme switch leaves an open file
+    // painted in the outgoing theme unless something goes back and re-colours it. MainWindow's grips
+    // and mode line carry the same note; this is the same bug in a new surface.
+    [Fact]
+    public void AThemeSwitch_RecoloursAnOpenEditor()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "themed.cs");
+        File.WriteAllText(path, "class A { }\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        var before = FileTab.EditorBackgroundForTest(_fixture.Host, "themed.cs");
+
+        // A theme with a different window background, then the window reapplies. Same construction
+        // as ColorSchemeTests uses.
+        var other = SharpConsoleUI.Themes.Theme.From(new SharpConsoleUI.Themes.ModernGrayTheme())
+            .WithName("test-pale")
+            .With(t => t.WindowBackgroundColor = new SharpConsoleUI.Color(0xf5, 0xf5, 0xf5))
+            .Build();
+        ColorScheme.DeriveFrom(other);
+        FileTab.ReapplyTheme(_fixture.Host.Main);
+
+        var after = FileTab.EditorBackgroundForTest(_fixture.Host, "themed.cs");
+
+        Assert.NotEqual(before, after);
+        Assert.Equal(ColorScheme.ChatSurface, after);
+    }
+}

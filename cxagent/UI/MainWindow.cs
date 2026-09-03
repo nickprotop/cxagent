@@ -1801,6 +1801,11 @@ public sealed class MainWindow : IDisposable
         // The session panel captured its own surfaces the same way this window did.
         ApplyRoleStyles();   // each style captured its Background by value
         SessionPanel.ReapplyTheme();
+
+        // OPEN FILES CAPTURED THEIR SURFACE THE SAME WAY. An editor built under one theme keeps its
+        // colours until told otherwise, and a file left open across a switch is the most visible
+        // place for that to show.
+        FileTab.ReapplyTheme(this);
     }
 
     /// <summary>

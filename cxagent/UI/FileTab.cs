@@ -89,6 +89,9 @@ public static class FileTab
         /// <summary>One question at a time. See RequestClose.</summary>
         public bool Asking { get; set; }
 
+        /// <summary>The read-only on-disk view, when one is open beside this tab.</summary>
+        public MultilineEditControl? TheirsView { get; set; }
+
         public bool IsModified => !string.Equals(Editor.GetContent(), Baseline, StringComparison.Ordinal);
     }
 
@@ -601,6 +604,42 @@ public static class FileTab
         return trimmed.Split('\n').Length;
     }
 
+    /// <summary>
+    /// Re-colours every open editor after a theme switch.
+    ///
+    /// <para>THE COLOURS WERE CAPTURED BY VALUE when each editor was built, so without this a switch
+    /// leaves every open file painted in the outgoing theme — the one surface still showing colours
+    /// that are no longer active. The grips and the mode line in MainWindow.ReapplyTheme carry the
+    /// same note for the same reason.</para>
+    ///
+    /// <para>THE STATUS LINE TOO, because its markup names a colour and markup cannot be re-coloured
+    /// by assignment; Refresh regenerates the text.</para>
+    /// </summary>
+    public static void ReapplyTheme(MainWindow main)
+    {
+        foreach (var (title, state) in For(main).States)
+        {
+            Recolour(state.Editor);
+            if (state.TheirsView is { } view) Recolour(view);
+
+            Refresh(main, title);
+        }
+
+        static void Recolour(MultilineEditControl editor)
+        {
+            editor.BackgroundColor = ColorScheme.ChatSurface;
+            editor.FocusedBackgroundColor = ColorScheme.ChatSurface;
+            editor.ForegroundColor = ColorScheme.Code;
+            editor.FocusedForegroundColor = ColorScheme.Code;
+        }
+    }
+
+    /// <summary>Test seam: an editor's painted background.</summary>
+    public static SharpConsoleUI.Color? EditorBackgroundForTest(EditorHost host, string title)
+        => For(host.Main).States.TryGetValue(title, out var state)
+            ? state.Editor.BackgroundColor
+            : null;
+
     /// <summary>Test seam: a tab's current buffer text.</summary>
     public static string? ContentForTest(EditorHost host, string title)
         => For(host.Main).States.TryGetValue(title, out var state) ? state.Editor.GetContent() : null;
@@ -763,6 +802,8 @@ public static class FileTab
             .WithFocusedColors(ColorScheme.Code, ColorScheme.ChatSurface)
             .Build();
         view.ReadOnly = true;
+
+        state.TheirsView = view;
 
         var content = Controls.Grid()
             .Columns(GridLength.Star(1))
