@@ -1401,6 +1401,11 @@ public static class AppBootstrap
         // always gets you back to the conversation.
         system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.ShowChatTab);
 
+        // F5 SAVES THE FILE TAB ON SCREEN, and does nothing anywhere else. The editor consumes Tab as
+        // indent, so its toolbar cannot be reached by keyboard at all — see FileTab.SaveActiveTab.
+        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5,
+            () => FileTab.SaveActiveTab(new EditorHost(system, mainWindow, session)));
+
         // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
         // before the active window (InputCoordinator.cs:130-134) — a window.KeyPressed handler for a
         // key registered here would be dead code, which is also why the dialog's own Escape lives in

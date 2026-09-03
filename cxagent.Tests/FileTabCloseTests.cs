@@ -196,3 +196,26 @@ public class FileTabThemeTests : IDisposable
         Assert.Equal(ColorScheme.ChatSurface, after);
     }
 }
+
+public class ModifiedMarkerTests : IDisposable
+{
+    private readonly EditorHostFixture _fixture = new();
+    public void Dispose() => _fixture.Dispose();
+
+    // TYPING MARKS THE TAB. Refresh runs on open and on watcher events, so without a content hook the
+    // tab reads "3 lines" with no bullet while the user edits — and the close confirmation reads the
+    // same state, so unsaved edits would be discarded without a question.
+    [Fact]
+    public void TypingMarksTheTabModified()
+    {
+        var path = Path.Combine(_fixture.WorkingDirectory, "marker.txt");
+        File.WriteAllText(path, "one\ntwo\n");
+        FileTab.Open(_fixture.Host, FileLoad.TryLoad(path, out _)!);
+
+        Assert.DoesNotContain(_fixture.Host.Main.Tabs.TabTitles, t => t.Contains('•'));
+
+        FileTab.SetContentForTest(_fixture.Host, "marker.txt", "one\ntwo\nthree\n");
+
+        Assert.Contains(_fixture.Host.Main.Tabs.TabTitles, t => t.Contains('•'));
+    }
+}

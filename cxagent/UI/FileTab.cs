@@ -219,6 +219,12 @@ public static class FileTab
 
         host.Main.Tabs.TabCloseRequested += OnCloseRequested;
 
+        // THE MARKER FOLLOWS THE BUFFER. Nothing else recomputes it: Refresh runs on open and on a
+        // watcher event, so without this the tab says "3 lines" with no bullet while the user is
+        // typing into it — and the close confirmation, which reads the same state, would let edits go
+        // without asking.
+        editor.ContentChanged += (_, _) => Refresh(host.Main, title);
+
         StartWatching(host);
 
         host.Main.AddTab(title, content);
@@ -632,6 +638,33 @@ public static class FileTab
             editor.ForegroundColor = ColorScheme.Code;
             editor.FocusedForegroundColor = ColorScheme.Code;
         }
+    }
+
+    /// <summary>
+    /// Saves the file tab on screen, if the active tab is one.
+    ///
+    /// <para>A KEY, BECAUSE THE BUTTON IS UNREACHABLE FROM THE KEYBOARD. The editor consumes Tab as
+    /// indent — which is right for an editor and is why F4 is the way back to the composer — so
+    /// nothing moves focus from the buffer to the toolbar above it. Save is not a convenience like
+    /// the shell tab's copy button; it is the reason the tab is editable, and a control you can only
+    /// reach with a mouse is one a keyboard user does not have.</para>
+    ///
+    /// <para>A FUNCTION KEY, NOT CTRL+S. A terminal sends Ctrl+letter as a single control byte and
+    /// Ctrl+S is XOFF on many of them, which stops the display rather than reaching the app — the
+    /// same reasoning that put every other action in this app on a function key.</para>
+    ///
+    /// <para>A NO-OP ON ANY OTHER TAB, so the key means nothing where there is nothing to save
+    /// rather than acting on a file the user is not looking at.</para>
+    /// </summary>
+    public static void SaveActiveTab(EditorHost host)
+    {
+        var index = host.Main.Tabs.ActiveTabIndex;
+        if (host.Main.Tabs.GetTab(index)?.Title is not { } shown) return;
+
+        var title = Undecorate(shown);
+        if (!For(host.Main).States.ContainsKey(title)) return;
+
+        RequestSave(host, title);
     }
 
     /// <summary>Test seam: an editor's painted background.</summary>
