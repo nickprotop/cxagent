@@ -57,7 +57,7 @@
   </ItemGroup>
   <!-- CI/release: use NuGet package -->
   <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
-    <PackageReference Include="SharpConsoleUI" Version="2.6.4" />
+    <PackageReference Include="SharpConsoleUI" Version="2.6.5" />
   </ItemGroup>
 
   <ItemGroup>
