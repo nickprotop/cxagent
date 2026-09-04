@@ -11,7 +11,7 @@ namespace CxAgent.Core.Mcp;
 /// toolset's servers is enough for the next turn to see them. This is the piece that does the
 /// replacing.</para>
 ///
-/// <para>The fleet belongs to the SESSION, not to any one <c>AgentHost</c> — an F5 provider swap
+/// <para>The fleet belongs to the SESSION, not to any one <c>AgentHost</c> — a provider swap
 /// rebuilds the host and must not kill the servers.</para>
 /// </summary>
 public sealed class McpManager : IAsyncDisposable

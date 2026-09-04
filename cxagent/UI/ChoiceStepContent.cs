@@ -55,7 +55,7 @@ internal sealed class ChoiceStepContent : IFlowStepContent<string>
             // Escape the LABEL, not just the prompt above. A choice like "[ Add provider… ]" is
             // otherwise read as markup and rendered as an EMPTY ROW — the button still works and is
             // still selectable, so nothing errors; the entry is simply invisible. P7's live drive
-            // found this on the F8 provider list, where "[ Add provider… ]" and "[ Set default… ]"
+            // found this on the provider list, where "[ Add provider… ]" and "[ Set default… ]"
             // both vanished, leaving a user no discoverable way to add a provider at all. The same
             // bracketed convention is used by RoleEditor's "[ New role… ]" and ModelPicker's
             // "[ Filter… ]", so all three were affected. `capture` stays UNESCAPED because it is the

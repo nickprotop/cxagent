@@ -292,7 +292,7 @@ public sealed class MainWindow : IDisposable
     /// <para>THE HEADER BECOMES REAL TOGETHER: drawn and focusable, or neither. An invisible strip
     /// that is still a Tab stop is a place focus can land with nothing to show for it.</para>
     ///
-    /// <para>AND THE STATUS ITEM WITH THEM. F8 focuses the strip and does nothing at one tab, so a
+    /// <para>AND THE STATUS ITEM WITH THEM. F6 focuses the strip and does nothing at one tab, so a
     /// hint offering it then would name a key that is deliberately inert — the one thing a keymap
     /// must never do.</para>
     ///
@@ -745,9 +745,9 @@ public sealed class MainWindow : IDisposable
             Chat.AddMessage(ChatRole.System,
                 // POINTS AT THE WIZARD, not at hand-editing config.json: the wizard is on screen
                 // offering to write that file, so any other instruction here contradicts it.
-                "**No LLM provider configured.**\n\nUse the setup wizard (it opens on this "
-                + "screen, or press `F5` later), or run `/model` to pick a configured "
-                + "instance. `cxagent --mock` tries the UI without a provider.");
+                "**No LLM provider configured.**\n\nUse the setup wizard on this screen, or run "
+                + "`/model` to pick a configured instance. `cxagent --mock` tries the UI without a "
+                + "provider.");
             // THROUGH THE SAME SEAM AS EVERY OTHER ERROR ROW, so a resolution failure is coloured
             // and marked exactly like one Core reports, and renders as markup for the same reason.
             foreach (var err in _resolution.Errors)
@@ -1936,12 +1936,12 @@ public sealed class MainWindow : IDisposable
     /// taken out and put back would land at the end of the bar instead of beside the one it belongs
     /// next to. RefreshTabStrip owns when it shows.</para>
     /// </summary>
-    /// <param name="onClick">Invoked when the item is clicked — the same focus F8 does.</param>
+    /// <param name="onClick">Invoked when the item is clicked — the same focus F6 does.</param>
     public void ShowTabsItem(Action onClick)
     {
         if (_tabsItem is not null) return;   // idempotent, like the items beside it
 
-        _tabsItem = StatusBar.AddLeft("F8", "Tabs", onClick);
+        _tabsItem = StatusBar.AddLeft("F6", "Tabs", onClick);
         _tabsItem.IsVisible = Tabs.TabCount > 1;
     }
 

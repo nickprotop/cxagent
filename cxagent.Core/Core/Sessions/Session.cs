@@ -52,7 +52,7 @@ public sealed partial class Session
     /// <summary>
     /// The agent running this conversation, or null before the first wire.
     ///
-    /// <para>REPLACED, NOT MUTATED, on an F5/F7 re-wire: a provider change builds a fresh host over
+    /// <para>REPLACED, NOT MUTATED, on a re-wire: a provider change builds a fresh host over
     /// the same conversation. <see cref="ReplaceHost"/> disposes the outgoing one, which is the step
     /// that was easy to forget while this was a bare local.</para>
     /// </summary>
@@ -78,7 +78,7 @@ public sealed partial class Session
     // programming error: SessionManager.Open builds the session, then wires it.
     //
     // THE EVENTS ATTACH TO WHATEVER HOST EXISTS WHEN YOU SUBSCRIBE, and that is a trap worth naming
-    // rather than hiding. ReplaceHost builds a fresh host on an F5/F7 re-wire, and a handler
+    // rather than hiding. ReplaceHost builds a fresh host on a re-wire, and a handler
     // registered against the previous one is silently attached to an object nothing raises any more.
     // Subscribe AFTER wiring — the composition root does, inside WireRunner and immediately after
     // ReplaceHost, which is why the properties above forward live while these do not.
@@ -176,7 +176,7 @@ public sealed partial class Session
     public string? InstanceName { get; private set; }
 
     /// <summary>The executor registry for the current wiring, or null before the first wire. Rebuilt
-    /// per re-wire so an F7 rebinding dispatches through the NEW resolution rather than the bindings
+    /// per re-wire so a role rebinding dispatches through the NEW resolution rather than the bindings
     /// that existed at launch.</summary>
     public JobRegistry? Executors { get; private set; }
 

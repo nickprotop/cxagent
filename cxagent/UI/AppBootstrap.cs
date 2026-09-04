@@ -539,8 +539,8 @@ public static class AppBootstrap
         var mcpCommand = new McpCommand(mcp, mcpTokens, httpForAuth, paths, env, mainWindow);
 
 
-        // THE PROCESS'S SESSIONS AND WHAT THEY SHARE, built ONCE. WireRunner runs again on every F5,
-        // F7 and /model. Constructing a fresh SharedServices record each time from these
+        // THE PROCESS'S SESSIONS AND WHAT THEY SHARE, built ONCE. WireRunner runs again on every re-wire,
+        // setup and /model. Constructing a fresh SharedServices record each time from these
         // same locals — harmless while the members are identical, and exactly the shape that stops
         // being harmless when a second session exists and one re-wire hands it a different record.
         //
@@ -783,7 +783,7 @@ public static class AppBootstrap
             if (!res.HasProvider) return;
 
             // REBOUND ON EVERY WIRE, from THIS resolution. Bind once at startup and changing
-            // `classifier` in config and pressing F5 leaves `auto` mode consulting the outgoing
+            // `classifier` in config and a re-wire leaves `auto` mode consulting the outgoing
             // provider — silently, because the mode still works. That is the shape of every bug in
             // this method: a re-wire that moves some consumers of a resolution and not others, with
             // nothing marking which is which.
@@ -903,7 +903,7 @@ public static class AppBootstrap
 
             // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
             // because the session id does not exist until the host does — and reassigned on every
-            // re-wire (F5 changes provider), so the hook reads the session lazily rather than closing
+            // re-wire (a re-wire changes provider), so the hook reads the session lazily rather than closing
             // over the id of a host that has since been replaced.
             permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
@@ -1011,7 +1011,7 @@ public static class AppBootstrap
         // MCP SERVERS BEFORE THE FIRST WIRE-UP.
         //
         // Started here rather than inside WireRunner because they belong to the SESSION, not to the
-        // provider: an F5/F7/F8 re-wire swaps the model, and killing and re-spawning every server
+        // provider: a re-wire swaps the model, and killing and re-spawning every server
         // over a provider change would cost seconds and lose whatever state they hold. WireRunner
         // reads these; they outlive each host it builds, and AppBootstrap ends them at exit.
         //
@@ -1185,7 +1185,7 @@ public static class AppBootstrap
         // ourselves when the text ends in a backslash. Gated to when the composer has focus, so Enter in the job panel (expand
         // block) still works. Registered UNCONDITIONALLY (not just when a provider is configured at
         // startup) because it reads through the session, so a provider wired in later via
-        // first-run setup or F5 settings becomes usable without re-registering anything.
+        // first-run setup becomes usable without re-registering anything.
         // THE SLASH MENU. Its keys are handled by the portal's own content, NOT here: an open
         // desktop portal captures keyboard input before PreviewKeyPressed is reached, so a hook in
         // this handler would never fire while the menu is up. See CommandMenuContent.
@@ -1474,18 +1474,19 @@ public static class AppBootstrap
             return true;
         }
 
-        // F5 IS THE WAY OUT OF A TAB. Tab reaches the strip from the composer, but the editor takes
+        // ONE KEY IS THE WAY OUT OF A TAB. Tab reaches the strip from the composer, but the editor takes
         // Tab as indent and a terminal hands it to the child process — so from the two tabs anyone
         // actually wants to leave, keyboard traversal has no exit. One key, and the arrows the strip
         // already handles do the rest.
-        // F8, NOT F5: refresh is what F5 means nearly everywhere, and the plugin manager's own
+        // F6, NOT F5: refresh is what F5 means nearly everywhere, and the plugin manager's own
         // refresh is bound to it — a global takes a key from every window (InputCoordinator.cs:130-134),
-        // so claiming F5 here left that dialog unable to see its own key.
+        // so claiming F5 here left that dialog unable to see its own key. F6 is "next pane" in enough
+        // editors that moving focus to the tab strip is close to what a user expects of it.
         //
-        // Func<bool> all the same. F8 is unclaimed today, but the decline is what keeps this binding
+        // Func<bool> all the same. F6 is unclaimed today, but the decline is what keeps this binding
         // from doing to some future dialog what the F5 binding did to the plugin manager, and a strip
         // behind a modal is not what the key should reach in any case.
-        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F8,
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F6,
             "focus the tab strip — then ← → to change tabs",
             () =>
             {
@@ -1985,7 +1986,7 @@ public static class AppBootstrap
 
 
     /// <summary>
-    /// Runs the setup wizard (first-run launch or F5 settings), persists the result, and rewires the
+    /// Runs the setup wizard (first-run launch), persists the result, and rewires the
     /// live AgentHost so the same session becomes usable immediately — no restart. On cancel (null
     /// result) or a wizard fault, this is a no-op beyond whatever the wizard itself already reported.
     /// </summary>
@@ -1997,9 +1998,9 @@ public static class AppBootstrap
         Action<ResolvedConfig> wireRunner,
         CancellationToken ct)
     {
-        // Load what is already configured so the wizard APPENDS. Without this, F5 replaced the whole
-        // catalog (single-entry dictionary, empty roles) — destroying every other provider instance
-        // and every role binding the user had.
+        // Load what is already configured so the wizard APPENDS. Without this, a wizard run replaces
+        // the whole catalog (single-entry dictionary, empty roles) — destroying every other provider
+        // instance and every role binding the user had.
         //
         // An INVALID config is deliberately still passed as null: the wizard starts from empty rather
         // than merging into something that did not parse. The cost is real — a wizard run over an
@@ -2021,8 +2022,8 @@ public static class AppBootstrap
         if (settings is null) return;   // user cancelled
 
         ProviderConfigWriter.Write(paths, settings);
-        // useMock: false — a --mock session already has a provider and never reaches first-run setup;
-        // F5 re-running setup mid-session should re-resolve against the real config either way.
+        // useMock: false — a --mock session already has a provider and never reaches first-run setup,
+        // and a re-run should re-resolve against the real config either way.
         var reResolved = ConfigResolver.Resolve(paths, env, useMock: false);
         wireRunner(reResolved);
         mainWindow.Chat.AddMessage(ChatRole.System, reResolved.HasProvider

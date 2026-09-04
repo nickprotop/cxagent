@@ -115,15 +115,16 @@ public class SessionCommandTableTests
         Assert.Contains("disabled", text, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>With nothing configured it says so and points at Settings, rather than printing an
-    /// empty list that reads like a bug.</summary>
+    /// <summary>With nothing configured it says so and names where to add one, rather than printing
+    /// an empty list that reads like a bug. Config.json, not a settings dialog: there is no such
+    /// surface, and naming one sends the reader looking for a key that does something else.</summary>
     [Fact]
     public void Mcp_WithNoServers_SaysHowToAddOne()
     {
         var text = SessionCommands.DescribeMcp([]);
 
         Assert.Contains("no mcp servers", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("settings", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("config.json", text, StringComparison.OrdinalIgnoreCase);
     }
     // ---- arguments -----------------------------------------------------------------------------
 

@@ -34,7 +34,7 @@ internal static class SessionFactory
     internal static void Wire(Session session, ResolvedConfig resolution,
         SharedServices shared, SessionPorts ports, WorkingMode mode)
     {
-        // Rebuilt from THIS resolution's roles so an F7 rebinding takes effect in this session.
+        // Rebuilt from THIS resolution's roles so a role rebinding takes effect in this session.
         // The new AgentHost below reads this field, not a startup copy.
         // THE SESSION'S POLICY GOES WITH THE REGISTRY. The gate is shared across the process and
         // the registry is per session, so this is where "which session is asking" is attached — see
@@ -105,7 +105,7 @@ internal static class SessionFactory
         if (spawnWithheld) mode = mode with { Agent = AgentMode.Single };
 
         // CONSUMED ONCE, READ TWICE. Taking the session's pending resume clears it, so a later
-        // F5 re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
+        // re-wire cannot resurrect a session the user already resumed. But BOTH the ledger's
         // seed and the host's context come from it, and taking it inline in the argument list
         // (as this used to) while also reading it for the ledger would hand the second reader a
         // null — seeding the ledger and silently discarding the entire restored conversation,
@@ -117,7 +117,7 @@ internal static class SessionFactory
         // and sub-agent factories both have to ask.
         //
         // IN WireRunner, NOT AT THE TOP OF AppBootstrap, and the distinction is behavioural.
-        // This method re-runs on every F5 provider change and that RESETS the spend to zero.
+        // This method re-runs on every provider change and that RESETS the spend to zero.
         // Hoisting it to startup would make the ledger survive the re-wire and report one
         // session's spend across two providers as though it were one model's.
         // CONSUMED ONCE, like the pending resume: a later re-wire must start fresh rather than
@@ -134,7 +134,7 @@ internal static class SessionFactory
         // and the orchestrator settings. That is why the ledger is built here rather than inside
         // AgentHost — those last two are private on the host and unreachable from any factory.
         var orchestrator = resolution.Orchestrator ?? OrchestratorSettings.Unbounded;
-        // THE TYPE CATALOG. Built per re-wire, like everything else here: an F5 provider change
+        // THE TYPE CATALOG. Built per re-wire, like everything else here: a provider change
         // must re-resolve every type's instance against the NEW registry, or a type would keep a
         // provider the session no longer uses.
         var agentTypes = new AgentTypeCatalog(resolution.AgentTypes, resolution.Providers);
@@ -230,7 +230,7 @@ internal static class SessionFactory
                 Orchestrator = resolution.Orchestrator,
 
                 // The toolset, but NOT the servers: ownership stays with the session. Handing
-                // those over would let an F5 re-wire dispose them, killing every server on a
+                // those over would let a re-wire dispose them, killing every server on a
                 // provider change and leaving the new host with a toolset over dead pipes.
                 Mcp = shared.Mcp,
 

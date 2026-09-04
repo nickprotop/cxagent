@@ -63,7 +63,7 @@ public sealed class AgentHost : IDisposable
     /// <summary>Connected MCP servers, passed straight to the agent. Null when none are configured.</summary>
 
     /// <summary>What this host's agent was created to do, or null for a plain session. Fixed here so
-    /// an F5 re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
+    /// a re-wire rebuilds the agent with the SAME briefing rather than silently dropping it.</summary>
 
     /// <summary>
     /// The subprocesses behind <c>_runtime.Mcp</c>, held only so <see cref="Dispose"/> can end them.
@@ -812,12 +812,12 @@ public sealed class AgentHost : IDisposable
 
     /// <summary>
     /// Nothing to release — this type owns no schedulers. Kept because the composition root disposes
-    /// the outgoing runner on every F5 rewire.
+    /// the outgoing runner on every re-wire.
     /// </summary>
     /// <summary>
     /// Releases the MCP subprocesses.
     ///
-    /// <para>THE ONE FAILURE THAT OUTLIVES THE PROCESS. An F5 re-wire builds a fresh host on every
+    /// <para>THE ONE FAILURE THAT OUTLIVES THE PROCESS. A re-wire builds a fresh host on every
     /// provider change and disposes the outgoing one; without this, each re-wire would leave its
     /// servers running for the life of the app, holding whatever they had open. Best-effort and
     /// synchronous: shutdown is not a place to throw or to wait.</para>

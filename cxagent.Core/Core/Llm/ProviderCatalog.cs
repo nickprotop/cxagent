@@ -12,7 +12,7 @@ namespace CxAgent.Core.Llm;
 /// because nothing named the set.</para>
 ///
 /// <para>FIXED FOR THE PROCESS. Config is resolved once and never rebound — see AppBootstrap on why
-/// F5 restarts rather than reconfiguring in place — so everything here is read-only for a session's
+/// setup restarts rather than reconfiguring in place — so everything here is read-only for a session's
 /// whole life. What a session CHANGES is <see cref="ActiveModel"/>, and the two being separate types
 /// is what makes "changed the model" and "changed the configuration" different statements.</para>
 /// </summary>
@@ -91,7 +91,7 @@ public sealed record ProviderCatalog(
     /// <c>ConfigResolver.ResolveInstance</c>, which re-read config.json, re-validated it, rebuilt
     /// the whole registry and re-probed the window — to obtain something this process already held,
     /// and then discarded every part of it but the model. Worse than wasteful: the catalog is
-    /// documented as fixed for the process (F5 restarts rather than reconfiguring in place), so a
+    /// documented as fixed for the process (setup restarts rather than reconfiguring in place), so a
     /// config edited since startup gave <c>/model</c> a different answer than the rest of the
     /// session, silently and with no restart.</para>
     ///

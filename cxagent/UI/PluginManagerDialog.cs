@@ -299,7 +299,7 @@ public static class PluginManagerDialog
         window.AddControl(statusBar);
 
         // F5 STAYS ON THE WINDOW: no global claims it, so this handler is reached directly. That is
-        // deliberate rather than lucky — the tab strip is on F8 precisely because F5 means refresh
+        // deliberate rather than lucky — the tab strip is on F6 precisely because F5 means refresh
         // nearly everywhere, and a global claim on it would take the key from this dialog entirely
         // (InputCoordinator.cs:130-134). Escape and F2 ARE claimed globally and are handled there.
         window.KeyPressed += (_, e) =>

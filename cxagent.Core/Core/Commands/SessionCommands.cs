@@ -369,8 +369,7 @@ public static class SessionCommands
     private static string List(IReadOnlyList<Core.Mcp.McpServerStatus> servers)
     {
         if (servers.Count == 0)
-            return "No MCP servers configured. Add one in Settings (F5), or in the \"mcp\" block of "
-                 + "config.json.";
+            return "No MCP servers configured. Add one in the \"mcp\" block of config.json.";
 
         // A TABLE, NOT A DASH-SEPARATED LINE PER SERVER. Server and status are two columns of data,
         // not one sentence — the same call this task makes for /sessions and /model.

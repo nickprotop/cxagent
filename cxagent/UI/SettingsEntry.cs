@@ -86,9 +86,7 @@ public readonly record struct ConfigLoad(ProviderSettings? Settings, IReadOnlyLi
 /// it here is the only way Cancel is reachable at all.</para>
 ///
 /// <para>What it does NOT do, stated because a drive expected otherwise: Escape has never cleared
-/// typed composer text, in any version of this app. <c>DiscardDraft</c> resolves a pending COPILOT
-/// approval (AgentHost.cs — a TaskCompletionSource), which is a different thing that happens to
-/// share the key.</para>
+/// typed composer text, in any version of this app.</para>
 /// </summary>
 public enum EscapeTarget
 {

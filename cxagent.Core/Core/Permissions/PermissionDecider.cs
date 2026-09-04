@@ -64,7 +64,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// Binds the classifier this resolution describes, or clears it when it describes none.
     ///
     /// <para>CALLED ON EVERY RE-WIRE, not once at startup. Bound once, changing `classifier` in config
-    /// and pressing F5 leaves `auto` mode consulting the SUPERSEDED provider — silently, because the
+    /// and a re-wire leaves `auto` mode consulting the SUPERSEDED provider — silently, because the
     /// mode still works. Clearing matters as much: removing the entry and re-wiring has to turn the
     /// mode off, or a mode stays alive that config no longer describes.</para>
     ///
