@@ -45,7 +45,10 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// good default and not this one — a user's message has no footer and should still be marked, and
     /// the messages that do have footers are not the user's.</para>
     /// </summary>
-    public void UserTurnAdded(ChatMessageId id, string text) =>
+    public void UserTurnAdded(ChatMessageId id, string text)
+    {
+        OnUserTurnAdded?.Invoke();
+
         _system.EnqueueOnUIThread(() =>
         {
             // THE PLACEHOLDER GOES FIRST. A user turn arriving mid-run is a steer the agent has just
@@ -59,14 +62,42 @@ public sealed class ChatTranscriptSink : ISessionObserver
             _chat.SetMessageRail(added, true);
             _map[id.Value] = added;
         });
+    }
 
     /// <summary>Run on the UI thread just before a user turn is written — see
     /// <see cref="UserTurnAdded"/>. The composition root uses it to take down the queued block.</summary>
     public Action? BeforeUserTurn { get; set; }
 
-    public void AssistantTurnBegan(ChatMessageId id) =>
+    /// <summary>
+    /// Run when a user turn opens and when a model round ends, so a consumer can scope work to them.
+    ///
+    /// <para>THE USER'S TURN, NOT THE ASSISTANT'S, for the opening. AssistantTurnBegan/Ended bracket
+    /// one MODEL ROUND, and a round returning a tool call closes before the call runs — scoping to
+    /// those alone would put every call outside every scope.</para>
+    ///
+    /// <para>CALLBACKS RATHER THAN A REFERENCE TO THE OTHER SINK: a re-wire (/model, resume) replaces
+    /// one without the other knowing, and a field pointing at the current job sink would be a second
+    /// thing to keep in step.</para>
+    ///
+    /// <para>Both are invoked WITHOUT marshalling; the consumer decides what needs the UI thread.
+    /// Null, and a no-op, for a host with no job sink at all.</para>
+    /// </summary>
+    public Action? OnUserTurnAdded { get; set; }
+
+    /// <inheritdoc cref="OnUserTurnAdded"/>
+    public Action? OnAssistantRoundEnded { get; set; }
+
+    public void AssistantTurnBegan(ChatMessageId id)
+    {
+        // THE PREVIOUS ROUND'S ROW SETTLES BEFORE THIS ROUND'S MESSAGE EXISTS. A transcript row is
+        // appended at the end, so a row drawn while a round's assistant message is already on screen
+        // lands BELOW it — and the prose that round wrote then sits above working that happened
+        // after it. Closing at the start of the next round gives working, answer, working, answer.
+        OnAssistantRoundEnded?.Invoke();
+
         _system.EnqueueOnUIThread(() =>
             _map[id.Value] = _chat.AddMessage(ChatRole.Assistant, "", thinking: true));
+    }
 
     /// <summary>
     /// Stops the turn's spinner. Writing an EMPTY body is what clears Thinking (the control clears it

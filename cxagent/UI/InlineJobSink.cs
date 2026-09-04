@@ -609,6 +609,10 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     public int RefreshRunningHeadersNow()
     {
+        // THE ROUND'S ROW IS DRAWN HERE AND NOWHERE ELSE. One renderer on one thread is the whole
+        // design: a call arriving sets a flag, and this turns any number of them into one render.
+        PaintRoundNow();
+
         var refreshed = 0;
 
         foreach (var job in _known.Values)
@@ -684,7 +688,21 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam: the header label is a pure projection of the job.</summary>
 
     /// <summary>Every job belongs in the transcript — no job type is filtered out.</summary>
-    private static bool ShouldShow(Job job) => true;
+    /// <summary>
+    /// Whether this job gets a transcript row of its own.
+    ///
+    /// <para>THE ROUND'S ROW CARRIES THE REST. A round that reads four files and greps twice used to
+    /// put six messages on screen, each a line of header over an empty body, and the answer that
+    /// followed started a screen further down.</para>
+    ///
+    /// <para>A FOLDED JOB CAN STILL GAIN A ROW LATER. This is read again on every update, so a call
+    /// that is refused or fails stops being folded at that moment and ToolUpdated's adopt path
+    /// creates the line it never had.</para>
+    /// </summary>
+    private static bool ShouldShow(Job job) => !IsFolded(job);
+
+    /// <summary>Test seam: a pure decision whose effect is only visible through a transcript.</summary>
+    public static bool ShouldShowForTest(Job job) => ShouldShow(job);
 
     public static string AuthorForTest(Job job) => AuthorFor(job);
 
@@ -1211,6 +1229,24 @@ public sealed class InlineJobSink : IToolObserver
     private static bool IsTheAnswer(Job job) => job.JobType is "llm_agent" or "todo";
 
     /// <summary>
+    /// Whether this row's working folds into the round's one row instead of taking a line of its own.
+    ///
+    /// <para>THE WORKING FOLDS; THE ANSWER DOES NOT. A tool's bulky output is an echo of what the
+    /// model already has — this file says so three times — and six echoes push the conversation off
+    /// screen. A worker's report and a todo list ARE the point of their rows, so folding one into a
+    /// count deletes a feature rather than summarising it.</para>
+    ///
+    /// <para>A REFUSAL AND A FAILURE KEEP THEIR ROW. The reader answered the refusal themselves a
+    /// moment ago; making their own decision harder to find than it was is the one regression this
+    /// design must not ship. A failure is the same shape of thing — the row nobody wants folded is
+    /// exactly the row that went wrong.</para>
+    /// </summary>
+    private static bool IsFolded(Job job) =>
+        !IsTheAnswer(job)
+        && job.State is not JobState.Failed
+        && job.Result?.PermissionDenied != true;
+
+    /// <summary>
     /// Whether this row collapses to one line. Two ways to qualify, and the SECOND is the one the
     /// user found by looking at a real transcript:
     ///
@@ -1294,6 +1330,290 @@ public sealed class InlineJobSink : IToolObserver
     {
         var calls = _workerCalls.GetOrAdd(report.AgentId, _ => new List<ToolCallReport>());
         lock (calls) calls.Add(report);
+
+        // THE PARENT IS THE AGENT THAT IS NOT A CHILD. NoteChild has recorded every worker by the
+        // time its calls arrive — ChildSpawned fires when the child is built, before it runs.
+        if (_parentAgentId is null && !IsAChild(report.AgentId)) _parentAgentId = report.AgentId;
+
+        // A FLAG, AND A PLACE IN THE TRANSCRIPT. The flag is all the RENDERING this path does — it
+        // composes nothing and enqueues no re-render, which is what keeps twenty calls to one draw.
+        //
+        // BUT THE ROW'S POSITION CANNOT WAIT FOR THE TICK. A transcript row is appended at the end,
+        // so a row first created a second later lands BELOW the prose the model wrote about it —
+        // "the first command printed: one" over the calls that produced it, which reads backwards.
+        // Claiming the message here, empty, fixes the ORDER; the tick still owns what goes in it.
+        //
+        // A CHILD'S CALL CLAIMS NOTHING. Its work belongs to the worker's own row.
+        if (IsAChild(report.AgentId)) return;
+
+        _roundDirty = true;
+        _system.EnqueueOnUIThread(ClaimRoundRowNow);
+    }
+
+    // ─── The round's tool row ────────────────────────────────────────────────────────────────────
+    //
+    // ONE WRITER, ONE THREAD. Everything below that touches the round's identity or its row runs on
+    // the UI thread, and the only cross-thread input is _roundDirty — a bool set by RecordToolCall
+    // and read by the tick. An earlier build wrote these fields from the session thread, the tool
+    // thread and the UI thread at once, and produced duplicate rows, prose out of order, and a
+    // stalled main loop; the fixes for each worked around the race rather than removing it.
+
+    /// <summary>
+    /// A round has produced tool calls that the row has not drawn yet.
+    ///
+    /// <para>THE ONLY THING WRITTEN OFF THE UI THREAD. Volatile because the writer and the reader are
+    /// different threads and this is the whole synchronisation contract: set it, and the next tick
+    /// renders once regardless of how many calls set it.</para>
+    /// </summary>
+    private volatile bool _roundDirty;
+
+    /// <summary>Agent ids known to be workers, so the parent is whatever is left.</summary>
+    private readonly ConcurrentDictionary<string, byte> _childAgentIds = new();
+
+    /// <summary>Whether an agent id belongs to a worker this session spawned.</summary>
+    private bool IsAChild(string agentId) => _childAgentIds.ContainsKey(agentId);
+
+    /// <summary>Test seam: names a child without building one, which needs a live Agent.</summary>
+    public void NoteChildAgentForTest(string agentId) => _childAgentIds[agentId] = 0;
+
+    /// <summary>Test seam: opens a round synchronously, which the enqueue cannot do without a loop.</summary>
+    public void OpenRoundForTest() => OpenRoundNow();
+
+    /// <summary>Test seam: claims the row as a recorded call does, without a UI loop to drain it.</summary>
+    public void ClaimRoundRowForTest() => ClaimRoundRowNow();
+
+    /// <summary>Test seam: draws the live round synchronously.</summary>
+    public void PaintRoundForTest() => PaintRoundNow();
+
+    /// <summary>Test seam: the calls the round on screen is counting.</summary>
+    public IReadOnlyList<ToolCallReport> RoundCallsForTest() =>
+        _round is { } r ? CallsOf(r) : [];
+
+    /// <summary>Test seam: whether a call has arrived that the row has not drawn.</summary>
+    public bool RoundIsDirtyForTest => _roundDirty;
+
+    /// <summary>One round's row: where its calls start, and the message drawn for them.</summary>
+    private sealed class Round
+    {
+        /// <summary>Which agent's list this round reads, once one has been seen.</summary>
+        public string? AgentId { get; set; }
+
+        /// <summary>How many calls that list already held when the round opened.</summary>
+        public int From { get; set; }
+
+        /// <summary>The message, once the round has a call worth drawing.</summary>
+        public SharpConsoleUI.Controls.ChatMessageId? Row { get; set; }
+    }
+
+    /// <summary>
+    /// The round on screen, or null between rounds.
+    ///
+    /// <para>READ AND WRITTEN ONLY ON THE UI THREAD. Every entry point that changes it — a turn
+    /// opening, a round ending, the tick — arrives marshalled, so "settle the old row and open the
+    /// next" cannot interleave with a paint. The previous build wrote this from the session thread
+    /// while the UI thread was drawing from it.</para>
+    /// </summary>
+    private Round? _round;
+
+    /// <summary>
+    /// The agent whose calls are this session's own — the one that is not a worker.
+    ///
+    /// <para>NOT "WHOEVER CALLED FIRST", which is what an earlier build used and got wrong: a
+    /// worker's calls are forwarded up under the CHILD's id, so a turn whose first act is a spawn saw
+    /// the child's calls before the parent's second one and adopted the child.</para>
+    /// </summary>
+    private string? _parentAgentId;
+
+    /// <summary>
+    /// A user turn began: settle whatever round was on screen and open a fresh one.
+    ///
+    /// <para>ENQUEUED, NOT WRITTEN HERE. This arrives on the session thread, and every field it
+    /// touches belongs to the UI thread — posting the intent is what keeps one writer. The previous
+    /// build wrote them directly and raced its own paints.</para>
+    /// </summary>
+    public void TurnBegan() => _system.EnqueueOnUIThread(SettleRoundNow);
+
+    /// <summary>
+    /// A model round ended: settle its row and open the next.
+    ///
+    /// <para>A ROW PER ANSWER, NOT PER TURN. A turn is often several rounds — work, speak, work again
+    /// — and one row spanning all of them would put calls made before a paragraph and after it in the
+    /// same table, below prose the reader has already gone past.</para>
+    ///
+    /// <para>SETTLED AT THE START OF THE NEXT ROUND rather than the end of this one, and that
+    /// ordering is not cosmetic: a transcript row is appended at the end, so a row drawn while a
+    /// round's assistant message already exists lands BELOW it and strands the prose above working
+    /// that happened after it.</para>
+    /// </summary>
+    public void RoundEnded() => _system.EnqueueOnUIThread(SettleRoundNow);
+
+    /// <summary>
+    /// Settles the round on screen and opens a fresh one. Must be on the UI thread.
+    ///
+    /// <para>USED BY TESTS AND BY THE LAZY OPEN BELOW. A boundary only SETTLES: it cannot open,
+    /// because a round's window has to start at the moment its first call is recorded, and the
+    /// boundary arrives after the model has already asked for that call. Opening there captured a
+    /// position one call too late and the row rendered empty every time.</para>
+    /// </summary>
+    private void OpenRoundNow()
+    {
+        SettleRoundNow();
+        _round = new Round { AgentId = _parentAgentId, From = CountFor(_parentAgentId) };
+    }
+
+    /// <summary>
+    /// Opens the round if a call is waiting for one, and gives it a message. Must be on the UI thread.
+    ///
+    /// <para>THE WINDOW OPENS AT THE FIRST CALL, not at a boundary: a round's calls are recorded
+    /// before the model's reply arrives, so a window opened when the boundary fires starts one call
+    /// too late and the row renders empty.</para>
+    ///
+    /// <para>THE MESSAGE IS CLAIMED EMPTY, AND NOW. It only holds a place — the tick fills it — but
+    /// the place is the point: a transcript row is appended at the end, so one created a second later
+    /// sits below the prose written about it.</para>
+    /// </summary>
+    private void ClaimRoundRowNow()
+    {
+        _round ??= new Round { AgentId = _parentAgentId, From = _lastSettledAt };
+        _round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
+    }
+
+    /// <summary>Draws a round's final state and forgets it. Must be on the UI thread.</summary>
+    private void SettleRoundNow()
+    {
+        if (_round is not { Row: { } id } settling) { _round = null; return; }
+
+        var calls = CallsOf(settling);
+        if (calls.Count > 0)
+        {
+            // NO LIVE ARGUMENT, so the table settles into its finished shape: no spinner, no
+            // in-flight row, and the out column back.
+            var table = Timetable(calls);
+            _chat.SetHeader(id, table.Split('\n')[0]);
+            _chat.UpdateMessage(id, BodyOf(table));
+
+            // OPENED WHEN SOMETHING WENT WRONG. An ordinary round's working is an echo and stays
+            // folded; a round holding a refusal or a failure is the one whose working is worth
+            // reading, and the reader should not go looking for a decision they just made.
+            if (calls.Any(c => c.Outcome is "denied" or "failed")) _chat.SetExpanded(id, true);
+        }
+
+        _lastSettledAt = CountFor(settling.AgentId ?? _parentAgentId);
+        _round = null;
+    }
+
+    /// <summary>
+    /// Where the settled round ended, so the next begins there rather than at "now".
+    ///
+    /// <para>A ROUND'S CALLS ARRIVE BEFORE ANY BOUNDARY SAYS THE ROUND EXISTS, so "now" is always too
+    /// late — the first call would fall outside the window that is meant to contain it.</para>
+    /// </summary>
+    private int _lastSettledAt;
+
+    /// <summary>How many calls an agent's list holds right now, or zero for an unknown agent.</summary>
+    private int CountFor(string? agentId)
+    {
+        if (agentId is null || !_workerCalls.TryGetValue(agentId, out var calls)) return 0;
+        lock (calls) return calls.Count;
+    }
+
+    /// <summary>
+    /// The calls this round has made, oldest first.
+    ///
+    /// <para>A POSITION, NOT A COPY. The parent's list is append-only for the session — the only
+    /// removals target a CHILD's id at its terminal transition — so a round's calls are the ones
+    /// after the count the list held when it opened.</para>
+    ///
+    /// <para>A SPAWN IS EXCLUDED, because the worker keeps its own row. Counting it here shows one
+    /// spawn twice: a line in this table and the row below it.</para>
+    /// </summary>
+    private IReadOnlyList<ToolCallReport> CallsOf(Round round)
+    {
+        var id = round.AgentId ?? _parentAgentId;
+        if (id is null || !_workerCalls.TryGetValue(id, out var calls)) return [];
+
+        List<ToolCallReport> slice;
+        lock (calls) slice = round.From >= calls.Count ? [] : calls[round.From..];
+
+        return [.. slice.Where(c => c.JobType != "llm_agent")];
+    }
+
+    /// <summary>
+    /// Draws the live round, if it has anything new. Must be on the UI thread.
+    ///
+    /// <para>THE ONLY RENDERER. Calls arriving set a flag and nothing more, so twenty calls in a
+    /// round cost ONE render rather than twenty — which is what removes the stall, rather than any
+    /// throttle. Measured: rewriting a 50-row table is 0.03 ms, so the cost was never the render
+    /// itself but the number of them queued.</para>
+    ///
+    /// <para>THE ROW IS CREATED AT THE FIRST CALL, not when the round opens: a conversational round
+    /// calls nothing and gets no row, so this costs nothing where there is nothing to show.</para>
+    ///
+    /// <para>ALSO ON EVERY TICK REGARDLESS OF THE FLAG WHEN A CALL IS IN FLIGHT, because the header
+    /// carries a clock and the name of what is running — both pure projections of the moment they
+    /// were rendered, so they freeze unless something re-renders them.</para>
+    /// </summary>
+    private void PaintRoundNow()
+    {
+        if (_round is not { } round) return;
+
+        var running = InFlightOfRound();
+        var wasDirty = _roundDirty;
+        if (!wasDirty && running is null) return;
+        _roundDirty = false;
+
+        var calls = CallsOf(round);
+        if (calls.Count == 0 && running is null) return;
+
+        var table = Timetable(calls, running is null ? null : new LiveRun(running));
+        var summary = table.Split('\n')[0];
+
+        // WHAT IS RUNNING, ON THE END OF THE SUMMARY. The per-call rows this replaces each named a
+        // tool and its argument as it happened, and a reader watching a long round is watching for
+        // exactly that — six calls in, a header that only counts says nothing about which file it is
+        // reading.
+        if (running is { } job && InFlightLabel(job) is { Length: > 0 } label)
+            summary += $" · {label}";
+
+        round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
+
+        _chat.SetHeader(round.Row.Value, summary);
+        _chat.UpdateMessage(round.Row.Value, BodyOf(table));
+    }
+
+    /// <summary>
+    /// The one call running right now, or null.
+    ///
+    /// <para>THE FIRST NON-TERMINAL FOLDED JOB: a round runs its calls one at a time, so there is at
+    /// most one, and a worker's row is not folded and never appears here.</para>
+    /// </summary>
+    private Job? InFlightOfRound() =>
+        _round is null ? null : _known.Values.FirstOrDefault(j => !IsTerminal(j.State) && IsFolded(j));
+
+    /// <summary>
+    /// "read_file cxagent/UI/FileTab.cs" — the tool and what it is acting on.
+    ///
+    /// <para>THE SAME SPLIT <see cref="InFlightRow"/> MAKES: PlanLocalId IS the tool name on a call
+    /// row and DisplayName is that name followed by its argument, so the header and the table's last
+    /// row name the same call the same way.</para>
+    /// </summary>
+    private static string InFlightLabel(Job job)
+    {
+        var tool = job.PlanLocalId is { Length: > 0 } named ? named : job.DisplayName;
+        return job.DisplayName.Length > tool.Length
+               && job.DisplayName.StartsWith(tool, StringComparison.Ordinal)
+            ? job.DisplayName
+            : tool;
+    }
+
+    /// <summary>The table without its summary line, which the header carries instead.</summary>
+    private static string BodyOf(string table)
+    {
+        // THE LEADING BLANK LINE IS KEPT. A collapsed row previews its body's first line, which here
+        // would be `|   | tool | target |` — markdown scaffolding shown as text beside an "expand…"
+        // offering to reveal the rest of it.
+        var parts = table.Split('\n', 2);
+        return parts.Length == 2 ? "\n" + parts[1].TrimStart('\n') : string.Empty;
     }
 
     /// <summary>
@@ -1324,7 +1644,13 @@ public sealed class InlineJobSink : IToolObserver
     /// <para>NOT MARSHALLED ONTO THE UI THREAD, for the reason <see cref="RecordToolCall"/> gives:
     /// this writes to a concurrent dictionary and touches no control.</para>
     /// </summary>
-    public void NoteChild(string jobId, SubAgent child) => _workerChildren[jobId] = child;
+    public void NoteChild(string jobId, SubAgent child)
+    {
+        _workerChildren[jobId] = child;
+
+        // AND ITS AGENT ID, so a call arriving under it is never mistaken for the parent's.
+        _childAgentIds[child.Agent.Id] = 0;
+    }
 
     /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
     /// so cannot be static.</summary>
