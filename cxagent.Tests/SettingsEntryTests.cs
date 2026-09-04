@@ -84,3 +84,44 @@ public class ChatTabIsActiveTests : IDisposable
         Assert.True(_fixture.Host.Main.ChatTabIsActive);
     }
 }
+
+/// <summary>
+/// Whether Escape is consumed, which is separate from what it does.
+///
+/// <para>THE BUG THIS PINS: the handler ended with an unconditional <c>return true</c>, so after
+/// deciding it had nothing to do it swallowed the key anyway. Nothing focused ever saw Escape — and
+/// a shell tab runs the user's own programs. Typing "HELLO", Escape, then "dd" in vim left "HELLOdd"
+/// on the line, because the editor never left insert mode.</para>
+/// </summary>
+public class EscapeConsumptionTests
+{
+    // Mirrors the handler's shape: each branch that ACTS consumes; the fall-through does not.
+    private static bool Consumed(bool dialogOpen, bool question, bool prompt, bool cancels) =>
+        dialogOpen || question || prompt || cancels;
+
+    [Theory]
+    [InlineData(true, false, false, false)]   // a dialog was dismissed
+    [InlineData(false, true, false, false)]   // a question was skipped
+    [InlineData(false, false, true, false)]   // a permission was denied
+    [InlineData(false, false, false, true)]   // a turn was cancelled
+    public void DoingSomethingConsumesTheKey(bool dialog, bool question, bool prompt, bool cancels)
+        => Assert.True(Consumed(dialog, question, prompt, cancels),
+            "one keystroke must not both act and fall through to the focused control");
+
+    // NOTHING TO DO MEANS NOTHING CONSUMED, so the key reaches whatever has focus — a terminal's
+    // child process, or an editor.
+    [Fact]
+    public void DoingNothingLetsTheKeyThrough()
+        => Assert.False(Consumed(false, false, false, false));
+
+    // AND OFF THE CHAT TAB THERE IS NO TURN TO CANCEL, so Escape falls through there even while the
+    // agent is working — which is what makes a shell tab usable during a run.
+    [Fact]
+    public void EscapeFallsThroughFromAnotherTabDuringATurn()
+    {
+        var target = EscapeRouting.For(turnIsRunning: true, chatTabIsActive: false);
+
+        Assert.Equal(EscapeTarget.Nothing, target);
+        Assert.False(Consumed(false, false, false, target is EscapeTarget.CancelTurn));
+    }
+}

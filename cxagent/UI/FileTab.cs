@@ -76,6 +76,10 @@ public static class FileTab
         public required string Path { get; init; }
         public required MultilineEditControl Editor { get; init; }
         public required MarkupControl Status { get; init; }
+
+        /// <summary>The toolbar's first button, and where Escape lands.</summary>
+        public required ButtonControl Save { get; init; }
+
         public required ButtonControl Reload { get; init; }
         public required ButtonControl SeeTheirs { get; init; }
         public required LoadedFile File { get; set; }
@@ -140,6 +144,13 @@ public static class FileTab
             .WithFocusedColors(ColorScheme.Code, ColorScheme.ChatSurface);
 
         var editor = editorBuilder.Build();
+
+        // BACK INTO EDIT MODE WHENEVER FOCUS RETURNS. The builder puts it in edit mode once, which
+        // was enough while nothing could leave — Escape now can, and a buffer that came back focused
+        // but not editing would swallow every keystroke. The composer's own note calls that failure
+        // "typing silently dies", and LazyDotIde carries the same handler for the same reason: a code
+        // editor is always typing mode.
+        editor.GotFocus += (_, _) => editor.IsEditing = true;
 
         // ALWAYS IN EDIT MODE. A buffer you must first activate before it takes a keystroke is a mode
         // nobody asked for and nothing on screen shows; the composer carries the same rule, and
@@ -207,6 +218,7 @@ public static class FileTab
         {
             Path = file.Path,
             Editor = editor,
+            Save = save,
             Status = status,
             Reload = reload,
             SeeTheirs = seeTheirs,
@@ -736,6 +748,36 @@ public static class FileTab
     /// <para>A NO-OP ON ANY OTHER TAB, so the key means nothing where there is nothing to save
     /// rather than acting on a file the user is not looking at.</para>
     /// </summary>
+    /// <summary>
+    /// Puts the keyboard on the file tab's toolbar, at its first button. Does nothing anywhere else.
+    ///
+    /// <para>ESCAPE'S DESTINATION, because the toolbar had no keyboard route at all: the editor
+    /// consumes Tab as indent, so nothing moved focus off the buffer. F5 goes to the tab strip and
+    /// F4 to the composer; this reaches the third place, and the three keys divide by destination
+    /// rather than overlapping.</para>
+    ///
+    /// <para>THE FIRST BUTTON, NOT THE TOOLBAR. A toolbar is a container; the thing that can hold
+    /// focus and show it is the button, and Save is the one always present — Reload and See theirs
+    /// appear only under a warning.</para>
+    /// </summary>
+    /// <returns>True when focus moved, so a caller can tell whether the key was used.</returns>
+    public static bool FocusActiveToolbar(EditorHost host)
+    {
+        if (ActiveState(host) is not { } state) return false;
+
+        host.Main.Window?.FocusManager.SetFocus(state.Save, FocusReason.Keyboard);
+        return true;
+    }
+
+    /// <summary>The file tab on screen, or null when the active tab is not one.</summary>
+    private static TabState? ActiveState(EditorHost host)
+    {
+        var index = host.Main.Tabs.ActiveTabIndex;
+        if (host.Main.Tabs.GetTab(index)?.Title is not { } shown) return null;
+
+        return For(host.Main).States.GetValueOrDefault(Undecorate(shown));
+    }
+
     public static void SaveActiveTab(EditorHost host)
     {
         var index = host.Main.Tabs.ActiveTabIndex;

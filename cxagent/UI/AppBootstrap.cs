@@ -1677,8 +1677,39 @@ public static class AppBootstrap
                 // behind them. F4 goes back to chat, where Escape cancels as it always did.
                 if (EscapeRouting.For(session.IsBusy, mainWindow.ChatTabIsActive)
                     is EscapeTarget.CancelTurn)
+                {
                     session.CancelTurn();
-                return true;
+                    return true;
+                }
+
+                // A FILE TAB'S TOOLBAR, WHICH NOTHING ELSE CAN REACH. The editor consumes Tab as
+                // indent, so focus never leaves the buffer by keyboard; this is the way out, and it
+                // lands on Save — the one button always there.
+                //
+                // AFTER EVERYTHING ABOVE, so a dialog or a prompt still answers first: those are
+                // questions in front of the user, and moving focus instead would leave one unanswered
+                // behind a key that looked like it did something.
+                //
+                // A NO-OP ON ANY OTHER TAB, which is what lets the fall-through below still hand the
+                // key to a terminal's child process.
+                if (FileTab.FocusActiveToolbar(new EditorHost(system, mainWindow, session)))
+                    return true;
+
+                // NOTHING TO DO MEANS NOTHING CONSUMED. Returning true here swallowed the key after
+                // deciding it had no use for it, so nothing focused ever saw Escape — and a shell tab
+                // runs the user's own programs, which need it. Confirmed live: typing `HELLO`, then
+                // Escape, then `dd` in vim left `HELLOdd` on the line, because the editor never left
+                // insert mode.
+                //
+                // THE Func<bool> OVERLOAD EXISTS FOR THIS. It returns the handler's result, and false
+                // lets the key continue down the pipeline to the focused control — which for a
+                // terminal is the child process, where TerminalControl already encodes Escape as
+                // 0x1B and only needed to be given the chance.
+                //
+                // THE BRANCHES ABOVE STILL CONSUME. A dismissed dialog, an answered question, a
+                // denied prompt and a cancelled turn each did something with the key, and passing it
+                // on afterwards would let one keystroke do two things.
+                return false;
             });
 
         // MainWindow stays independent of SetupWizard; AppBootstrap supplies the flow via these seams.
