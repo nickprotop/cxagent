@@ -282,20 +282,37 @@ public sealed class MainWindow : IDisposable
     public void AddTab(string title, IWindowControl content, bool closable = true)
     {
         Tabs.AddTab(title, content, closable);
-
-        // THE HEADER BECOMES REAL TOGETHER: drawn and focusable, or neither. An invisible strip that
-        // is still a Tab stop is a place focus can land with nothing to show for it.
-        Tabs.ShowTabHeader = Tabs.TabCount > 1;
-        Tabs.IsEnabled = Tabs.ShowTabHeader;
+        RefreshTabStrip();
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
+    }
+
+    /// <summary>
+    /// Brings the strip and everything that depends on it into line with the number of tabs.
+    ///
+    /// <para>THE HEADER BECOMES REAL TOGETHER: drawn and focusable, or neither. An invisible strip
+    /// that is still a Tab stop is a place focus can land with nothing to show for it.</para>
+    ///
+    /// <para>AND THE STATUS ITEM WITH THEM. F5 focuses the strip and does nothing at one tab, so a
+    /// hint offering it then would name a key that is deliberately inert — the one thing a keymap
+    /// must never do.</para>
+    ///
+    /// <para>ONE PLACE, because three things now turn on the same count and they were already
+    /// written out twice.</para>
+    /// </summary>
+    private void RefreshTabStrip()
+    {
+        var several = Tabs.TabCount > 1;
+
+        Tabs.ShowTabHeader = several;
+        Tabs.IsEnabled = several;
+        if (_tabsItem is not null) _tabsItem.IsVisible = several;
     }
 
     /// <summary>Removes a tab and hides the header again when the chat tab is left alone.</summary>
     public void CloseTab(int index)
     {
         Tabs.RemoveTab(index);
-        Tabs.ShowTabHeader = Tabs.TabCount > 1;
-        Tabs.IsEnabled = Tabs.ShowTabHeader;
+        RefreshTabStrip();
     }
 
     /// <summary>
@@ -1130,6 +1147,29 @@ public sealed class MainWindow : IDisposable
     public void FocusComposer()
         => Window?.FocusManager.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
 
+    /// <summary>
+    /// Puts the keyboard on the tab strip, where ← and → change tabs.
+    ///
+    /// <para>A KEY BECAUSE TAB CANNOT ALWAYS GET THERE. The strip is a real focus stop and Tab
+    /// reaches it from the composer, but the editor consumes Tab as indent and a terminal sends it
+    /// to the child process — so from the two tabs most worth leaving, there is no way out. This is
+    /// the way out, and it works from anywhere.</para>
+    ///
+    /// <para>NOTHING TO FOCUS BELOW TWO TABS. The strip is not drawn at one — AddTab sets
+    /// ShowTabHeader from the count — and focusing something invisible is worse than a key that does
+    /// nothing: the arrows would then move a selection nobody can see.</para>
+    ///
+    /// <para>THE STRIP SAYS IT HAS FOCUS. The framework draws a "← →" hint at the right of the
+    /// header while it is focused and there is more than one tab, so the key teaches its own
+    /// follow-up rather than leaving the user to guess.</para>
+    /// </summary>
+    public void FocusTabStrip()
+    {
+        if (Tabs.TabCount < 2) return;
+
+        Window?.FocusManager.SetFocus(Tabs, SharpConsoleUI.Controls.FocusReason.Keyboard);
+    }
+
 
     /// <summary>
     /// Swaps the prompt INTO the composer's grid cell (GridControl.ReplaceControl keeps the
@@ -1885,6 +1925,31 @@ public sealed class MainWindow : IDisposable
     }
 
     private StatusBarItem? _pluginItem;
+
+    /// <summary>
+    /// Puts the tab-strip key beside the plugin item, hidden until there is more than one tab.
+    ///
+    /// <para>RIGHT OF F2, so the bar reads as one column of keys in the order they were added — and
+    /// this one is the newest, not the most important.</para>
+    ///
+    /// <para>CREATED ONCE AND HIDDEN, rather than added and removed: AddLeft appends, so an item
+    /// taken out and put back would land at the end of the bar instead of beside the one it belongs
+    /// next to. RefreshTabStrip owns when it shows.</para>
+    /// </summary>
+    /// <param name="onClick">Invoked when the item is clicked — the same focus F5 does.</param>
+    public void ShowTabsItem(Action onClick)
+    {
+        if (_tabsItem is not null) return;   // idempotent, like the items beside it
+
+        _tabsItem = StatusBar.AddLeft("F5", "Tabs", onClick);
+        _tabsItem.IsVisible = Tabs.TabCount > 1;
+    }
+
+    private StatusBarItem? _tabsItem;
+
+    /// <summary>Test seam: whether the tab-strip hint is on the bar — a decision only the status bar
+    /// shows, and one that has to survive tabs opening and closing.</summary>
+    public bool TabsItemVisibleForTest => _tabsItem?.IsVisible ?? false;
 
     /// <summary>Re-labels the theme item after a switch. No-op before it is shown.</summary>
     /// <param name="themeName">The newly active theme's name.</param>

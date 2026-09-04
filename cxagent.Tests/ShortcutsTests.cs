@@ -1,4 +1,6 @@
+using CxAgent.Core.Llm;
 using CxAgent.UI;
+using SharpConsoleUI.Controls;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -172,4 +174,68 @@ public class ButtonHintTests
     [Fact]
     public void AnUnboundActionHasNoHint()
         => Assert.Null(new Shortcuts().For("save the file tab on screen"));
+}
+
+/// <summary>The tab-strip key, and the hint that only appears when it does something.</summary>
+public class TabStripKeyTests
+{
+    private static MainWindow Built()
+    {
+        var system = SinkFixture.SystemForTest();
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-tabs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var paths = new CxAgent.Core.Storage.AppPaths(dir);
+        paths.EnsureCreated();
+
+        var mw = new MainWindow(system,
+            CxAgent.Core.Llm.ResolvedConfig.ForTesting(new MockLlmProvider(), "Mock"),
+            new CxAgent.Core.Storage.LogFileManager(paths));
+        mw.Build();
+        mw.ShowTabsItem(() => { });
+        return mw;
+    }
+
+    private static IWindowControl Pane() => new SharpConsoleUI.Controls.MarkupControl(["x"]);
+
+    // A KEY THAT DOES NOTHING MUST NOT BE ADVERTISED. At one tab the strip is not drawn and F5 is
+    // deliberately inert, so a hint offering it would name a key that goes nowhere — the one thing a
+    // keymap must never do.
+    [Fact]
+    public void TheHintIsHiddenWithOneTab()
+        => Assert.False(Built().TabsItemVisibleForTest);
+
+    [Fact]
+    public void TheHintAppearsWithASecondTab()
+    {
+        var mw = Built();
+
+        mw.AddTab("second", Pane());
+
+        Assert.True(mw.TabsItemVisibleForTest);
+    }
+
+    // AND GOES AGAIN WHEN THE TABS DO. Closing back to one is the path a live drive cannot reach
+    // without a mouse, and the one where a hint would be left behind advertising a dead key.
+    [Fact]
+    public void TheHintGoesWhenTheLastExtraTabCloses()
+    {
+        var mw = Built();
+        mw.AddTab("second", Pane());
+
+        mw.CloseTab(1);
+
+        Assert.False(mw.TabsItemVisibleForTest);
+    }
+
+    // FOCUSING THE STRIP AT ONE TAB IS A NO-OP, not a focus onto something invisible: the arrows
+    // would then move a selection nobody can see.
+    [Fact]
+    public void FocusingTheStripWithOneTabDoesNothing()
+    {
+        var mw = Built();
+
+        mw.FocusTabStrip();   // must not throw, and must not focus a hidden strip
+
+        Assert.False(mw.Tabs.IsEnabled);
+    }
 }

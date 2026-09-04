@@ -1474,6 +1474,13 @@ public static class AppBootstrap
             return true;
         }
 
+        // F5 IS THE WAY OUT OF A TAB. Tab reaches the strip from the composer, but the editor takes
+        // Tab as indent and a terminal hands it to the child process — so from the two tabs anyone
+        // actually wants to leave, keyboard traversal has no exit. One key, and the arrows the strip
+        // already handles do the rest.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F5,
+            "focus the tab strip — then ← → to change tabs", mainWindow.FocusTabStrip);
+
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F2, "plugins",
             () => TogglePluginManager());
 
@@ -1596,6 +1603,11 @@ public static class AppBootstrap
         // OUTSIDE the theme feature's own branch, since the plugin manager does not stop existing
         // when the theme picker is turned off. It simply moves to the left end.
         mainWindow.ShowPluginItem(() => TogglePluginManager());
+
+        // AND THE TAB STRIP BESIDE IT, hidden until a second tab exists. Same shape as the two items
+        // to its left: the key in the shortcut slot, and a click that runs exactly what the key runs
+        // rather than a second path to the same place.
+        mainWindow.ShowTabsItem(mainWindow.FocusTabStrip);
 
         // NO "DIAGNOSE THE FOCUSED JOB" KEY. Such a key would resolve its target through
         // FocusedJobId(), which walks the focus path for a JobBlockControl — and those are created
