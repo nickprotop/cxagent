@@ -45,12 +45,7 @@ public sealed class ChatTranscriptSink : ISessionObserver
     /// good default and not this one — a user's message has no footer and should still be marked, and
     /// the messages that do have footers are not the user's.</para>
     /// </summary>
-    public void UserTurnAdded(ChatMessageId id, string text)
-    {
-        // OUTSIDE THE ENQUEUE, AND THAT IS THE POINT. Tool calls are recorded off the UI thread, so
-        // a scope opened inside this hop opens after the turn's first call has already been filed.
-        OnUserTurnAdded?.Invoke();
-
+    public void UserTurnAdded(ChatMessageId id, string text) =>
         _system.EnqueueOnUIThread(() =>
         {
             // THE PLACEHOLDER GOES FIRST. A user turn arriving mid-run is a steer the agent has just
@@ -64,57 +59,14 @@ public sealed class ChatTranscriptSink : ISessionObserver
             _chat.SetMessageRail(added, true);
             _map[id.Value] = added;
         });
-    }
 
     /// <summary>Run on the UI thread just before a user turn is written — see
     /// <see cref="UserTurnAdded"/>. The composition root uses it to take down the queued block.</summary>
     public Action? BeforeUserTurn { get; set; }
 
-    /// <summary>
-    /// Run when the user says something, before their message is written — so a consumer can scope
-    /// work to the turn it starts.
-    ///
-    /// <para>THE USER'S TURN, NOT THE ASSISTANT'S. AssistantTurnBegan/Ended bracket one MODEL ROUND,
-    /// and a round that returns a tool call closes before the call runs — the interface says as much
-    /// where it explains a planning turn that returns create_plan and no prose. Scoping to those
-    /// would put every tool call outside every scope. A user message is the boundary a reader
-    /// perceives, and the rounds nest inside it.</para>
-    ///
-    /// <para>NOT MARSHALLED, unlike the transcript work below: tool calls are recorded off the UI
-    /// thread, so a scope opened inside that hop would open after the first call was already filed.
-    /// This callback touches no control.</para>
-    ///
-    /// <para>Null, and a no-op, for a host with no job sink at all.</para>
-    /// </summary>
-    public Action? OnUserTurnAdded { get; set; }
-
-    /// <summary>
-    /// Run when one model round ends — the point where the working done for that round stops and
-    /// whatever the model said about it is on screen.
-    ///
-    /// <para>ROUNDS, NOT THE WHOLE TURN. A turn is often several: work, say something, work again.
-    /// One row per round puts each batch of calls beside the answer it produced, where a single row
-    /// for the turn would collect calls made before and after a paragraph the reader has already
-    /// passed.</para>
-    /// </summary>
-    public Action? OnAssistantRoundEnded { get; set; }
-
-    public void AssistantTurnBegan(ChatMessageId id)
-    {
-        // THE PREVIOUS ROUND'S TOOL ROW SETTLES HERE, BEFORE THIS ROUND'S MESSAGE EXISTS. A
-        // transcript row is appended at the end, so a row drawn while a round's assistant message is
-        // already on screen lands BELOW it — and the prose that round wrote then sits above working
-        // that happened after it. Closing at the start of the next round means each row is complete
-        // before anything is added beneath it, and the reader gets working, answer, working, answer.
-        //
-        // NOT MARSHALLED, unlike the transcript work below: tool calls are recorded off the UI
-        // thread, and a boundary that landed a hop later would let the next round's first call join
-        // the row that just closed.
-        OnAssistantRoundEnded?.Invoke();
-
+    public void AssistantTurnBegan(ChatMessageId id) =>
         _system.EnqueueOnUIThread(() =>
             _map[id.Value] = _chat.AddMessage(ChatRole.Assistant, "", thinking: true));
-    }
 
     /// <summary>
     /// Stops the turn's spinner. Writing an EMPTY body is what clears Thinking (the control clears it

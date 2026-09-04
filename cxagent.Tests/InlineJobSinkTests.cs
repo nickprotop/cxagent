@@ -705,19 +705,17 @@ public class InlineJobSinkTests
     /// two paths under test here have synchronous <c>…Now</c> halves — see
     /// <c>InlineJobSink.RefreshRunningHeadersNow</c>.</para>
     /// </summary>
-    private static (InlineJobSink Sink, ChatTranscriptControl Chat) Headless() => SinkFixture.Build();
+    private static (InlineJobSink Sink, ChatTranscriptControl Chat) Headless()
+    {
+        var system = new ConsoleWindowSystem(new HeadlessConsoleDriver(80, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
+        var chat = new ChatTranscriptControl();
+        return (new InlineJobSink(system, chat), chat);
+    }
 
-    /// <summary>
-    /// A running row that HAS a row: the tick can only rewrite a header that exists.
-    ///
-    /// <para>A WORKER, NOT A SHELL CALL. An ordinary tool's working folds into the turn's one row
-    /// (InlineJobSink.IsFolded), so a shell job has no header of its own for the tick to touch —
-    /// which would make these tests measure the folding rather than the clock they were written for.
-    /// A worker keeps its row because its body is the answer.</para>
-    /// </summary>
     private static Job RunningRow(string id, DateTimeOffset startedAt) => new()
     {
-        Id = id, AgentId = "g1", JobType = "llm_agent", DisplayName = "spawn_agent",
+        Id = id, AgentId = "g1", JobType = "shell", DisplayName = "run_shell",
         State = JobState.Running, CreatedAt = startedAt, StartedAt = startedAt,
     };
 
