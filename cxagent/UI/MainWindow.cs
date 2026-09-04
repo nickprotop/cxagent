@@ -2272,6 +2272,19 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public CxAgent.Core.Commands.CommandRegistry? Registry { get; set; }
 
+    /// <summary>
+    /// The keys this app bound, for help to describe — the same list they were registered through, so
+    /// the table cannot name a key nothing binds.
+    ///
+    /// <para>IT ALREADY HAD. The table named F5 for a settings dialog that was deleted, and omitted
+    /// F2 and F9 while the status bar advertised both — the exact drift the commands avoid by
+    /// reading from their registry.</para>
+    ///
+    /// <para>Null falls back to the composer keys alone, which are the framework's rather than
+    /// ours.</para>
+    /// </summary>
+    public Shortcuts? Keys { get; set; }
+
     public void ShowHelp()
     {
         // MARKDOWN, LIKE EVERY OTHER SYSTEM ROW. A colour tag here would reach the screen as its
@@ -2285,11 +2298,10 @@ public sealed class MainWindow : IDisposable
             + "| `Enter` | run the goal in the composer |\n"
             + "| `\\` + `Enter` | continue on a new line (Shift+Enter is not deliverable on a Unix terminal) |\n"
             + "| `↑` / `↓` | recall an earlier goal |\n"
-            + "| `F1` | this help |\n"
-            + "| `F3` | show or hide the session panel |\n"
-            + "| `F4` | put the cursor back in the composer |\n"
-            + "| `F5` | settings — providers, roles, orchestrator, permissions |\n"
-            + "| `Ctrl+Q` | quit |\n"
+            // FROM THE REGISTRY, not a second copy — the same rule the command list below follows.
+            // The three rows above are the COMPOSER's keys, which the framework owns and this app
+            // never binds, so they cannot come from a list of what this app bound.
+            + string.Concat((Keys?.Documented ?? []).Select(k => $"| `{k.Label()}` | {k.Description} |\n"))
             + "\n## Commands\n"
             + "\n"
             // FROM THE TABLE, not a second copy. Every list of commands that is maintained by hand

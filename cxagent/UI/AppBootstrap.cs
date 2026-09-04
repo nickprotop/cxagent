@@ -1419,8 +1419,14 @@ public static class AppBootstrap
         // Ctrl+N (0x0E) doesn't collide with a key, but the driver's raw reader didn't deliver it
         // either, so it's avoided too. F-keys arrive as escape sequences — unambiguous — and Ctrl+Q
         // (0x11) is proven working, so it keeps the quit binding.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F3, mainWindow.ToggleSessionPanel);
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F1, mainWindow.ShowHelp);
+        // EVERY KEY THROUGH THE REGISTRY, so /help and a button's hint read what was actually bound
+        // rather than a list somebody kept by hand. Help had already drifted: it named F5 for a
+        // settings dialog that no longer exists and omitted F2 and F9 that the status bar shows.
+        var keys = new Shortcuts();
+
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F3,
+            "show or hide the session panel", mainWindow.ToggleSessionPanel);
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F1, "this help", mainWindow.ShowHelp);
         // F4 FOCUSES THE COMPOSER, and it earns its binding even though most sessions never need
         // it. Two things take focus away deliberately:
         // MainWindow.FocusQuestion moves it to a question's first option, and the permission prompt
@@ -1434,11 +1440,19 @@ public static class AppBootstrap
         // means going there — focusing a control on a tab that is not showing leaves the caret
         // somewhere invisible while the keys still land in the terminal. This is the one key that
         // always gets you back to the conversation.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F4, mainWindow.ShowChatTab);
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F4,
+            "put the cursor back in the composer", mainWindow.ShowChatTab);
 
-        // F5 SAVES THE FILE TAB ON SCREEN, and does nothing anywhere else. The editor consumes Tab as
-        // indent, so its toolbar cannot be reached by keyboard at all — see FileTab.SaveActiveTab.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F5,
+        // CTRL+S SAVES THE FILE TAB ON SCREEN, and does nothing anywhere else. The editor consumes
+        // Tab as indent, so its toolbar cannot be reached by keyboard at all — see
+        // FileTab.SaveActiveTab.
+        //
+        // CTRL+S IS SAFE HERE, though it is XOFF on a terminal in its default mode: the framework's
+        // raw mode clears IXON explicitly (TerminalRawMode), so the key arrives rather than freezing
+        // the display. Checked before choosing it, because the opposite assumption is the reasonable
+        // one and would have sent this to a function key nobody's fingers know.
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.S,
+            "save the file tab on screen",
             () => FileTab.SaveActiveTab(new EditorHost(system, mainWindow, session)));
 
         // F2 OPENS THE PLUGIN MANAGER. Global rather than window-bound because globals are consulted
@@ -1460,7 +1474,7 @@ public static class AppBootstrap
             return true;
         }
 
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F2,
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F2, "plugins",
             () => TogglePluginManager());
 
 
@@ -1539,7 +1553,7 @@ public static class AppBootstrap
         win.SetComposerEditing(!picker.IsOpen);
     }
 
-    sys.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.F9, ToggleThemePicker);
+    keys.Bind(sys, ConsoleModifiers.None, ConsoleKey.F9, "themes", ToggleThemePicker);
 
     // ARROWS, ENTER AND ESCAPE, THROUGH THE ONE ROUTE THAT REACHES A PORTAL. A desktop portal is
     // painted above the window but does NOT capture the keyboard here, and PreviewKeyPressed
@@ -1561,7 +1575,10 @@ public static class AppBootstrap
              { ConsoleKey.UpArrow, ConsoleKey.DownArrow, ConsoleKey.Enter, ConsoleKey.Escape })
     {
         var captured = key;
-        sys.RegisterGlobalShortcut(ConsoleModifiers.None, captured, () => ToPicker(captured));
+        // NO DESCRIPTION: these are how the picker's list works while it is open, not keys anyone
+        // should be told about. A help table naming Up, Down, Enter and Escape would bury the four
+        // that matter under four that are obvious.
+        keys.Bind(sys, ConsoleModifiers.None, captured, null, () => ToPicker(captured));
     }
     win.ShowThemeItem(
         sys.ThemeStateService.CurrentTheme.Name ?? CxAgentTheme.Name, ToggleThemePicker);
@@ -1569,6 +1586,11 @@ public static class AppBootstrap
         }
 
         if (Features.ThemePicker) WireThemePicker();
+
+        // AFTER EVERY BINDING, so help describes the whole keymap rather than however much of it had
+        // been registered when the window was built. Read at call time, so the order only has to be
+        // right by the time somebody presses F1.
+        mainWindow.Keys = keys;
 
         // AFTER THE THEME ITEM, because AddLeft appends and that is the order they read in — but
         // OUTSIDE the theme feature's own branch, since the plugin manager does not stop existing
@@ -1592,7 +1614,8 @@ public static class AppBootstrap
         // focus stop — so the choice is "read the page names in front of you" rather than "remember
         // which F-key", which is the point of having a nav pane at all.
         //
-        system.RegisterGlobalShortcut(ConsoleModifiers.Control, ConsoleKey.Q, () => { cts.Cancel(); system.Shutdown(); });
+        keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.Q, "quit",
+            () => { cts.Cancel(); system.Shutdown(); });
         // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. The session is read
         // through the closure (same pattern as every other handler here), so these track whichever
         // AgentHost WireRunner last installed. Both ApproveDraft/DiscardDraft are synchronous and
@@ -1605,12 +1628,13 @@ public static class AppBootstrap
         // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
         // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
         // shortcut would swallow the keys that edit a typed answer.
-        system.RegisterGlobalShortcut(ConsoleModifiers.Alt, ConsoleKey.LeftArrow,
-            () => mainWindow.TryQuestionBack());
+        keys.Bind(system, ConsoleModifiers.Alt, ConsoleKey.LeftArrow,
+            "go back while the model is asking", () => mainWindow.TryQuestionBack());
 
         // Func<bool>, NOT Action: the Action overload is wrapped to always report the key consumed
         // (ConsoleWindowSystem.cs:1878-1879), and this handler must be able to yield to a dialog.
-        system.RegisterGlobalShortcut(ConsoleModifiers.None, ConsoleKey.Escape, () =>
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.Escape,
+            "answer a prompt, or cancel the running turn from the chat tab", () =>
             {
                 // A DIALOG OWNS ESCAPE WHILE IT IS UP. Globals are consulted before the active window
                 // (InputCoordinator.cs:130-134), so without this the plugin manager could not be

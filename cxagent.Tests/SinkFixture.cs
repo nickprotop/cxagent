@@ -14,6 +14,11 @@ namespace CxAgent.Tests;
 /// </summary>
 internal static class SinkFixture
 {
+    /// <summary>A headless window system, for tests that need one without a sink.</summary>
+    public static ConsoleWindowSystem SystemForTest() =>
+        new(new HeadlessConsoleDriver(80, 24),
+            new ConsoleWindowSystemOptions(InstallSynchronizationContext: true));
+
     public static (InlineJobSink Sink, ChatTranscriptControl Chat) Build()
     {
         var system = new ConsoleWindowSystem(new HeadlessConsoleDriver(80, 24),

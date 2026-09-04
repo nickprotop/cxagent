@@ -152,8 +152,18 @@ public static class FileTab
             HorizontalAlignment = HorizontalAlignment.Left,
         };
 
+        // THE KEY ON THE BUTTON, because the button is the only place anyone learns it exists. The
+        // editor consumes Tab as indent, so nothing moves focus to this toolbar — a reader who does
+        // not know the shortcut cannot reach this control at all, and a label that names it turns a
+        // dead button into a legend.
+        //
+        // FROM THE REGISTRY, NOT WRITTEN HERE. A label carrying its own "^S" is a third place that
+        // claims to know the keymap, and the help table has already shown what that costs.
+        var saveKey = host.Main.Keys?.For("save the file tab on screen");
+        var saveLabel = saveKey is null ? " Save " : $" Save  {saveKey.Label(caret: true)} ";
+
         var save = new ButtonBuilder()
-            .WithText(" Save ")
+            .WithText(saveLabel)
             .WithColorRole(ColorScheme.Accent)
             .OnClick((_, _) => RequestSave(host, title))
             .Build();
