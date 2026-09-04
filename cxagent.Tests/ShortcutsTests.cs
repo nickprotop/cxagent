@@ -14,6 +14,24 @@ namespace CxAgent.Tests;
 /// </summary>
 public class ShortcutsTests
 {
+    /// <summary>
+    /// A STATUS ITEM FINDS ITS KEY BY DESCRIPTION, so the description is an identifier and a typo in
+    /// one silently falls back to a literal — an item that looks registry-driven while being written
+    /// by hand, which is the arrangement the registry replaced. Pins the round trip rather than the
+    /// key: the point is that the lookup resolves, not which key it resolves to.
+    /// </summary>
+    [Fact]
+    public void AnItemFindsItsKeyByDescription()
+    {
+        var keys = new Shortcuts();
+        var system = SinkFixture.SystemForTest();
+
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F6, "focus the tab strip", () => { });
+
+        Assert.Equal("F6", keys.For("focus the tab strip")?.Label());
+        Assert.Null(keys.For("focus the tab stripe"));   // a typo resolves to nothing, not to a guess
+    }
+
     [Fact]
     public void ABindingIsRecorded()
     {

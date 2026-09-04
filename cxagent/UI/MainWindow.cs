@@ -1085,6 +1085,11 @@ public sealed class MainWindow : IDisposable
         //
         // F3 stays because it is the only key that changes what is ON SCREEN; everything else opens
         // something and comes back.
+        // THE ONE HINT STILL WRITTEN OUT, because this runs in the constructor and the shortcut
+        // registry does not exist until AppBootstrap has bound every key. The items added later
+        // (theme, plugins, tabs) read their key from it instead, so this is the only status hint
+        // left that must be edited by hand if F3 ever moves. Nothing catches it if nobody does:
+        // the bindings live behind a live window and no test reaches them.
         StatusBar.AddRight("F3", "Panel");
 
         // D10: the goal composer is INVISIBLE when empty, and nothing on screen says where to type.
@@ -1898,7 +1903,7 @@ public sealed class MainWindow : IDisposable
         // THE KEY, THEN WHAT IT DOES — "F9:Theme" — which is the shape F2 and F3 already use. The
         // value moves into the label beside it, so the bar reads as one column of keys rather than
         // one item that names its key first and another that buries it after a word.
-        _themeItem = StatusBar.AddLeft("F9", $"Theme {themeName}", onClick);
+        _themeItem = StatusBar.AddLeft(KeyHint("themes", "F9"), $"Theme {themeName}", onClick);
     }
 
     /// <summary>
@@ -1921,7 +1926,7 @@ public sealed class MainWindow : IDisposable
         // F9: cxagent" names a setting and then reports it, so the key belongs with the word it
         // qualifies. This item has nothing to report — it is a way in, not a readout — so it reads
         // as the key and what the key does.
-        _pluginItem = StatusBar.AddLeft("F2", "Plugins", onClick);
+        _pluginItem = StatusBar.AddLeft(KeyHint("plugins", "F2"), "Plugins", onClick);
     }
 
     private StatusBarItem? _pluginItem;
@@ -1937,11 +1942,24 @@ public sealed class MainWindow : IDisposable
     /// next to. RefreshTabStrip owns when it shows.</para>
     /// </summary>
     /// <param name="onClick">Invoked when the item is clicked — the same focus F6 does.</param>
+    /// <summary>
+    /// The key a status-bar item should show, from the registry rather than a literal.
+    ///
+    /// <para>FOUR ITEMS USED TO SPELL THEIR OWN KEY, and that is the arrangement the shortcut
+    /// registry exists to end: moving a binding then means editing the bar by hand, and a bar that
+    /// disagrees with the keymap is worse than one that says nothing. Falls back to the literal for
+    /// the case where nothing is bound under that description, so a lookup that misses degrades to
+    /// today's behaviour instead of blanking the item.</para>
+    /// </summary>
+    private string KeyHint(string description, string fallback) =>
+        Keys?.For(description)?.Label() ?? fallback;
+
     public void ShowTabsItem(Action onClick)
     {
         if (_tabsItem is not null) return;   // idempotent, like the items beside it
 
-        _tabsItem = StatusBar.AddLeft("F6", "Tabs", onClick);
+        _tabsItem = StatusBar.AddLeft(
+            KeyHint("focus the tab strip — then ← → to change tabs", "F6"), "Tabs", onClick);
         _tabsItem.IsVisible = Tabs.TabCount > 1;
     }
 

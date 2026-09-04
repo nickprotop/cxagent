@@ -1606,12 +1606,14 @@ public static class AppBootstrap
 
         }
 
-        if (Features.ThemePicker) WireThemePicker();
-
-        // AFTER EVERY BINDING, so help describes the whole keymap rather than however much of it had
-        // been registered when the window was built. Read at call time, so the order only has to be
-        // right by the time somebody presses F1.
+        // BEFORE THE THEME PICKER'S OWN BINDINGS AND EVERY STATUS ITEM. Help reads the registry at
+        // call time and would not care, but each status item now asks it for the key it displays —
+        // so the registry has to be reachable by the time the first item is built, not merely by the
+        // time somebody presses F1. An item built earlier would silently fall back to a literal and
+        // look registry-driven while being hand-maintained, which is the failure this replaced.
         mainWindow.Keys = keys;
+
+        if (Features.ThemePicker) WireThemePicker();
 
         // AFTER THE THEME ITEM, because AddLeft appends and that is the order they read in — but
         // OUTSIDE the theme feature's own branch, since the plugin manager does not stop existing
