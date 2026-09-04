@@ -174,8 +174,8 @@ public static class AppBootstrap
             .Where(e => e.Key is string k && k.StartsWith("CXAGENT_"))
             .ToDictionary(e => (string)e.Key, e => (string)(e.Value ?? ""));
 
-        // RESOLVED ONCE, AND NEVER REBOUND. Four sites want to repoint it — startup, --model, F5's
-        // save, and /model — while every other consumer in this method closes over the VARIABLE. A
+        // RESOLVED ONCE, AND NEVER REBOUND. Four sites want to repoint it — startup, --model, the
+        // setup save, and /model — while every other consumer in this method closes over the VARIABLE. A
         // mutable local makes correctness depend on when each consumer happens to read, which is not
         // a property anything can check: read too early and a consumer keeps a stale record (the
         // auto classifier consulting a provider config the settings no longer describe, silently,
@@ -205,7 +205,7 @@ public static class AppBootstrap
         // What the helper buys is smaller and real: the declaration and the value are one line, so
         // there is no `ResolvedConfig resolution;` sitting empty inviting branches to fill it,
         // and the two startup cases cannot drift apart. Enforcement here is the comment above and
-        // the fact that no consumer needs a rebind any more — F5 restarts, /model passes its own
+        // the fact that no consumer needs a rebind any more — setup restarts, /model passes its own
         // record. If a fourth bug of this shape ever appears, the answer is a wrapper type with a
         // genuinely readonly field, not a stronger comment.
         var startup = ResolveStartup(paths, env, useMock, options.Instance);
@@ -351,7 +351,7 @@ public static class AppBootstrap
         var window = mainWindow.Build();
 
         // Task 4: the real interactive gate. workingDir is captured ONCE here — not re-read per
-        // F5/F7/F8 re-wire below — because a rule granted in this project must stay scoped to
+        // setup re-wire below — because a rule granted in this project must stay scoped to
         // this project for the life of the process (PermissionRulesStore scopes every rule and
         // trust entry by this exact string). rulesStore/policy/gate are likewise built once and
         // reused across every WireRunner call: a fresh store per re-wire would forget every rule
@@ -394,7 +394,7 @@ public static class AppBootstrap
         // attributed like any other. Null here is the whole gate on `auto`: unconfigured means the
         // mode is not listed, not cyclable, and not parseable, so this is never consulted.
         // Guards the LoadError echo below so it is reported once, on the FIRST WireRunner call
-        // only — F5/F7/F8 re-wires reuse this same permissionRules instance, and its LoadError
+        // only — a setup re-wire reuses this same permissionRules instance, and its LoadError
         // describes what happened at construction, not live state, so repeating it on every
         // re-wire would just be noise about an event that already happened and was already told.
         var permissionLoadErrorReported = false;
@@ -1000,9 +1000,9 @@ public static class AppBootstrap
         // this the user learns nothing until they notice their reviewer jobs ran on the local model and
         // billed the wrong account.
         //
-        // Called from WireRunner, not once at startup, so it also fires after an F5/F7/F8 re-wire —
-        // deleting an instance in F8 is exactly how a binding becomes broken, and the report belongs at
-        // the moment it breaks, not at next launch.
+        // Called from WireRunner, not once at startup, so it also fires after a setup re-wire —
+        // removing a provider instance is exactly how a role binding becomes broken, and the report
+        // belongs at the moment it breaks, not at next launch.
         //
         // On a HEALTHY config BindingWarnings() is empty and this posts NOTHING. Unbound roles are the
         // normal state of every fresh install and are deliberately not reported: a warning that fires
@@ -1478,12 +1478,14 @@ public static class AppBootstrap
         // Tab as indent and a terminal hands it to the child process — so from the two tabs anyone
         // actually wants to leave, keyboard traversal has no exit. One key, and the arrows the strip
         // already handles do the rest.
-        // Func<bool>, NOT Action: a global is consulted before the active window ever sees the key
-        // (InputCoordinator.cs:130-134), so binding F5 here silently took it away from the plugin
-        // manager's own refresh. Declining while that dialog is up hands the key back to it — the
-        // same arrangement the global Escape below uses, and for the same reason. A tab strip behind
-        // a modal is not what F5 means anyway.
-        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F5,
+        // F8, NOT F5: refresh is what F5 means nearly everywhere, and the plugin manager's own
+        // refresh is bound to it — a global takes a key from every window (InputCoordinator.cs:130-134),
+        // so claiming F5 here left that dialog unable to see its own key.
+        //
+        // Func<bool> all the same. F8 is unclaimed today, but the decline is what keeps this binding
+        // from doing to some future dialog what the F5 binding did to the plugin manager, and a strip
+        // behind a modal is not what the key should reach in any case.
+        keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F8,
             "focus the tab strip — then ← → to change tabs",
             () =>
             {

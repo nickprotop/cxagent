@@ -298,11 +298,10 @@ public static class PluginManagerDialog
         statusBar.StickyPosition = StickyPosition.Bottom;
         window.AddControl(statusBar);
 
-        // F5 REACHES THIS WINDOW ONLY BECAUSE THE GLOBAL DECLINES IT. A global shortcut is consulted
-        // at the application level before the active window sees a key (InputCoordinator.cs:130-134),
-        // and F5 is bound there to focus the tab strip — so that binding returns false while IsOpen,
-        // which is what lets this handler run. Escape and F2 are claimed globally the same way and
-        // are handled there rather than here.
+        // F5 STAYS ON THE WINDOW: no global claims it, so this handler is reached directly. That is
+        // deliberate rather than lucky — the tab strip is on F8 precisely because F5 means refresh
+        // nearly everywhere, and a global claim on it would take the key from this dialog entirely
+        // (InputCoordinator.cs:130-134). Escape and F2 ARE claimed globally and are handled there.
         window.KeyPressed += (_, e) =>
         {
             if (e.KeyInfo.Key != ConsoleKey.F5) return;

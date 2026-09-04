@@ -25,7 +25,7 @@ public sealed class MainWindow : IDisposable
     /// <summary>
     /// The provider this window reports on.
     ///
-    /// <para>NOT READONLY, deliberately. A re-wire replaces the session's provider — F5 does it, and
+    /// <para>NOT READONLY, deliberately. A re-wire replaces the session's provider — setup does it, and
     /// so does <c>/model</c> — and this field has to move with it. Pinned to whatever startup
     /// resolved, the status bar goes on quoting the previous model's context window, so occupancy is
     /// measured against a denominator the agent is not using.</para>
@@ -292,7 +292,7 @@ public sealed class MainWindow : IDisposable
     /// <para>THE HEADER BECOMES REAL TOGETHER: drawn and focusable, or neither. An invisible strip
     /// that is still a Tab stop is a place focus can land with nothing to show for it.</para>
     ///
-    /// <para>AND THE STATUS ITEM WITH THEM. F5 focuses the strip and does nothing at one tab, so a
+    /// <para>AND THE STATUS ITEM WITH THEM. F8 focuses the strip and does nothing at one tab, so a
     /// hint offering it then would name a key that is deliberately inert — the one thing a keymap
     /// must never do.</para>
     ///
@@ -413,7 +413,7 @@ public sealed class MainWindow : IDisposable
     private const string ComposerPlaceholder = "What should I do?";
 
     /// <summary>Shown instead when no provider resolved, so the empty box explains itself.</summary>
-    private const string NoProviderPlaceholder = "No provider configured — press F5 to set one up";
+    private const string NoProviderPlaceholder = "No provider configured — restart to set one up";
 
     /// <summary>
     /// Clears the composer's placeholder for good — called on the first submitted goal.
@@ -1936,12 +1936,12 @@ public sealed class MainWindow : IDisposable
     /// taken out and put back would land at the end of the bar instead of beside the one it belongs
     /// next to. RefreshTabStrip owns when it shows.</para>
     /// </summary>
-    /// <param name="onClick">Invoked when the item is clicked — the same focus F5 does.</param>
+    /// <param name="onClick">Invoked when the item is clicked — the same focus F8 does.</param>
     public void ShowTabsItem(Action onClick)
     {
         if (_tabsItem is not null) return;   // idempotent, like the items beside it
 
-        _tabsItem = StatusBar.AddLeft("F5", "Tabs", onClick);
+        _tabsItem = StatusBar.AddLeft("F8", "Tabs", onClick);
         _tabsItem.IsVisible = Tabs.TabCount > 1;
     }
 
@@ -1999,7 +1999,7 @@ public sealed class MainWindow : IDisposable
     /// does or the command has no observable effect.
     /// </summary>
     /// <summary>
-    /// Point the window at a different provider — after a <c>/model</c> switch or an F5 re-wire.
+    /// Point the window at a different provider — after a <c>/model</c> switch or a setup re-wire.
     ///
     /// <para>The window, the model name and the agent types all come off the resolution, so this is
     /// the one assignment that keeps the panel describing the session that is actually running.</para>

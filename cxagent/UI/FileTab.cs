@@ -752,7 +752,7 @@ public static class FileTab
     /// Puts the keyboard on the file tab's toolbar, at its first button. Does nothing anywhere else.
     ///
     /// <para>ESCAPE'S DESTINATION, because the toolbar had no keyboard route at all: the editor
-    /// consumes Tab as indent, so nothing moved focus off the buffer. F5 goes to the tab strip and
+    /// consumes Tab as indent, so nothing moved focus off the buffer. F8 goes to the tab strip and
     /// F4 to the composer; this reaches the third place, and the three keys divide by destination
     /// rather than overlapping.</para>
     ///
