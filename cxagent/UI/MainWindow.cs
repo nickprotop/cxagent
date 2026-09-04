@@ -660,6 +660,12 @@ public sealed class MainWindow : IDisposable
         // ChatTranscriptSink). The control resolves a rail's colour from its message's role, so
         // leaving it on everywhere would give tool rows and system notices their own rails too — and
         // a marker that marks everything marks nothing.
+        // CONTROL-WIDE, AND THAT IS ENOUGH. Only ChatRole.Tool starts collapsed here, which is
+        // exactly the set this is for; System and Assistant collapse only when the user asks, and a
+        // row someone just folded themselves needs no reminder of what is inside it. See
+        // Features.CollapsedPeek for why it is off.
+        Chat.CollapsedPreview = Features.CollapsedPeek;
+
         Chat.MessageRailEnabled = true;
 
         // HEAVY, NOT LIGHT. The control defaults to '│' (U+2502), which at the rail's dimmed colour

@@ -1,25 +1,30 @@
 namespace CxAgent.UI;
 
 /// <summary>
-/// Switches for work that is BUILT BUT NOT FINISHED, and the defaults that go with them.
+/// The decisions a developer makes about this app and rebuilds — what is offered, and what it looks
+/// like when nothing else says.
 ///
-/// <para>ONE PLACE, SO NOBODY HAS TO GO LOOKING. A flag living inside the feature it gates reads
-/// naturally to whoever wrote it and is invisible to everyone else; a reader wondering "is this off,
-/// and why?" should have one file to open rather than a codebase to search.</para>
+/// <para>ONE PLACE, SO NOBODY HAS TO GO LOOKING. A switch living inside the thing it governs reads
+/// naturally to whoever wrote it and is invisible to everyone else; a reader wondering "why does it
+/// do that, and can I change it?" should have one file to open rather than a codebase to search.</para>
 ///
 /// <para>NOT CONFIGURATION, AND THE DISTINCTION MATTERS. These are values a developer flips and
-/// rebuilds, never keys a user sets. A setting says "you may prefer this off"; a flag here says
-/// "this is not ready", which is a claim only the person shipping it can make. Anything that
-/// outgrows that belongs in config.json with the user's real preferences instead.</para>
+/// rebuilds, never keys a user sets. Anything that becomes a matter of a user's taste rather than
+/// this app's judgement belongs in config.json with their real preferences instead.</para>
 ///
-/// <para>READONLY FIELDS RATHER THAN CONSTS, deliberately. A <c>const false</c> makes every call
-/// behind it literally unreachable and the compiler says so — a warning per gated feature, in a
-/// codebase that builds at zero. A static readonly reads identically at the call site and leaves the
-/// gated code compiling like any other.</para>
+/// <para>TWO KINDS LIVE HERE, and the doc on each says which it is. A GATE covers work that is built
+/// but not finished — <see cref="ThemePicker"/> — and is expected to be short-lived: one that has
+/// been false for a long time is either a feature nobody finished or one nobody wanted, and both
+/// deserve a decision rather than being left switched off forever. A DEFAULT is settled and stays —
+/// <see cref="DefaultTheme"/>, <see cref="CollapsedPeek"/> — a choice made once about how the app
+/// behaves, written down where it can be found and reconsidered rather than buried at its call
+/// site.</para>
 ///
-/// <para>These are expected to be SHORT-LIVED. A flag that has been false for a long time is either
-/// a feature nobody finished or one nobody wanted, and both deserve a decision rather than being
-/// left switched off forever.</para>
+/// <para>READONLY FIELDS RATHER THAN CONSTS for the gates, deliberately. A <c>const false</c> makes
+/// every call behind it literally unreachable and the compiler says so — a warning per gated
+/// feature, in a codebase that builds at zero. A static readonly reads identically at the call site
+/// and leaves the gated code compiling like any other. A default that nothing is gated on can be a
+/// const.</para>
 /// </summary>
 public static class Features
 {
@@ -58,4 +63,22 @@ public static class Features
     /// surface. See <see cref="CxAgentTheme"/>.</para>
     /// </summary>
     public const string DefaultTheme = CxAgentTheme.Name;
+
+    /// <summary>
+    /// Whether a collapsed message shows a one-line preview of what it is hiding, with a clickable
+    /// <c>expand…</c> cue.
+    ///
+    /// <para>OFF, BECAUSE THE FIRST LINE IS RARELY THE CONTENT. Only tool rows start collapsed here,
+    /// and their opening line is scaffolding: a worker's body begins with the frontmatter above its
+    /// report, so the preview reads <c>- type: explore</c>, and a folded tool row's begins with the
+    /// head of a markdown table. Both take a full row to say nothing, and the fade that marks them as
+    /// a preview makes them look like content that failed to render.</para>
+    ///
+    /// <para>THE TRIANGLE STILL SAYS THERE IS SOMETHING. Losing the cue costs a word that named the
+    /// gesture; the row is one line either way and still opens on a click.</para>
+    ///
+    /// <para>A DEFAULT, NOT A GATE: the preview works, and this is a judgement about how a folded row
+    /// should read. Set it true to bring the preview back.</para>
+    /// </summary>
+    public const bool CollapsedPeek = false;
 }
