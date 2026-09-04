@@ -218,3 +218,39 @@ public class RoundRowOrderingTests
         Assert.Single(chat.MessageIds);
     }
 }
+
+/// <summary>Rounds that have nothing to show must not claim a row.</summary>
+public class EmptyRoundRowTests
+{
+    private static ToolCallReport Call(string tool, string? jobType) =>
+        new(Guid.NewGuid().ToString(), "parent", tool, jobType, "succeeded", 5, 10,
+            DateTimeOffset.UtcNow);
+
+    // USER-REPORTED: "what is the empty tools row??" — a round whose only act was spawning a worker
+    // claimed a message and never filled it, because a spawn is excluded from the table (the worker
+    // keeps its own row). The claim has to wait for a call that will actually render.
+    [Fact]
+    public void ASpawnOnlyRoundClaimsNoRow()
+    {
+        var (sink, chat) = SinkFixture.Build();
+
+        sink.RecordToolCall(Call("agent", "llm_agent"));
+        sink.ClaimRoundRowForTest();
+
+        Assert.Empty(chat.MessageIds);
+    }
+
+    // AND A ROUND THAT ALSO DID REAL WORK STILL GETS ONE.
+    [Fact]
+    public void ARoundThatSpawnsAndAlsoWorksClaimsARow()
+    {
+        var (sink, chat) = SinkFixture.Build();
+
+        sink.RecordToolCall(Call("agent", "llm_agent"));
+        sink.ClaimRoundRowForTest();
+        sink.RecordToolCall(Call("read_file", "file"));
+        sink.ClaimRoundRowForTest();
+
+        Assert.Single(chat.MessageIds);
+    }
+}

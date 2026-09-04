@@ -1474,8 +1474,16 @@ public sealed class InlineJobSink : IToolObserver
     /// </summary>
     private void ClaimRoundRowNow()
     {
-        _round ??= new Round { AgentId = _parentAgentId, From = _lastSettledAt };
-        _round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
+        var round = _round ??= new Round { AgentId = _parentAgentId, From = _lastSettledAt };
+
+        // NOT UNTIL THERE IS SOMETHING TO SHOW. A call is recorded for every tool the round asks
+        // for, but not every one of them appears in the table: a spawn is excluded because the
+        // worker keeps its own row. Claiming on the call alone left a round whose only act was a
+        // spawn holding an empty "Tools" row that nothing ever filled — reported on screen as
+        // exactly that, sitting under the worker it belonged to.
+        if (CallsOf(round).Count == 0) return;
+
+        round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
     }
 
     /// <summary>Draws a round's final state and forgets it. Must be on the UI thread.</summary>
