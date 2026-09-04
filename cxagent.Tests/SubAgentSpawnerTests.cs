@@ -4,6 +4,8 @@ using CxAgent.Core.Models;
 using CxAgent.Core.Jobs;
 using Xunit;
 
+using System.Text.RegularExpressions;
+
 namespace CxAgent.Tests;
 
 /// <summary>
@@ -1665,9 +1667,20 @@ public class SubAgentSpawnerTests
             .TryInvokeAsync(TypedSpawn("general"), c => general = c, CancellationToken.None);
 
         Assert.Equal(
-            bare!.Agent.Context.Messages.First(m => m.Role == "system").Content,
-            general!.Agent.Context.Messages.First(m => m.Role == "system").Content);
+            WithoutTheDate(bare!.Agent.Context.Messages.First(m => m.Role == "system").Content),
+            WithoutTheDate(general!.Agent.Context.Messages.First(m => m.Role == "system").Content));
     }
+
+    /// <summary>
+    /// Blanks the environment block's <c>Today:</c> line so two prompts can be compared byte for byte.
+    ///
+    /// <para>EACH AGENT FREEZES ITS OWN START DATE, so two agents built either side of local midnight
+    /// disagree on that one line while being identical in every way this test is about. Comparing the
+    /// whole prompt is still the point — a briefing, a tool list or a working directory that differed
+    /// would fail here — and only the term that cannot be equal is dropped.</para>
+    /// </summary>
+    private static string WithoutTheDate(string? prompt) =>
+        Regex.Replace(prompt ?? "", @"^  Today: .*$", "  Today: -", RegexOptions.Multiline);
 
     /// <summary>
     /// AN UNKNOWN TYPE IS REFUSED AND THE ERROR NAMES WHAT IS VALID. The model will invent
