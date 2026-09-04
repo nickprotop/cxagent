@@ -243,6 +243,34 @@ public static class AppBootstrap
         ColorScheme.DeriveFrom(system.ThemeStateService.CurrentTheme);
         var logs = new LogFileManager(paths);
 
+        // WHAT THE WATCHDOG SAW, WRITTEN DOWN. The framework detects a stalled main loop and shows a
+        // banner, and it knows more than the banner says: which phase the loop was in and a label for
+        // the callback that was executing. Without this the diagnosis is displayed and discarded, and
+        // a hang leaves nothing behind but a session log that stops — which is exactly what one did,
+        // and reading the absence wrongly cost an evening.
+        //
+        // THE HANDLER RUNS ON THE WATCHDOG THREAD WHILE THE UI THREAD IS STUCK, so it must touch no
+        // control and must not wait on the UI: the contract on the event says so, and anything
+        // marshalled here would queue behind the very stall being reported. AppendAsync is safe from
+        // any thread — it locks per path — and is deliberately not awaited.
+        //
+        // THE BANNER STAYS. ShowBanner is left alone: the user needs to know now, the log is for
+        // afterwards, and owning the display would mean reimplementing it for nothing.
+        system.Unresponsive += (_, e) =>
+        {
+            try
+            {
+                _ = logs.AppendAsync("app", "watchdog", "log",
+                    WatchdogLine(e.TimestampUtc, e.StalledFor, e.Phase.ToString(), e.BlockedIn)
+                    + Environment.NewLine);
+            }
+            catch (Exception)
+            {
+                // A DIAGNOSTIC MUST NOT TAKE DOWN WHAT IT IS DIAGNOSING — the same stance the context
+                // logger takes. This runs while the app is already in trouble.
+            }
+        };
+
         // THE RESUME BUFFER. Built before the host so it can be handed in at construction, and
         // pruned once here rather than on a timer: startup is the only moment nothing is mid-turn,
         // and finished sessions are the only rows old enough to be worth dropping.
@@ -2028,4 +2056,25 @@ public static class AppBootstrap
             },
         ]);
     }
+    /// <summary>
+    /// One line recording what the watchdog saw when the main loop stalled.
+    ///
+    /// <para>SEPARATED FROM THE HANDLER SO IT CAN BE TESTED. The handler runs on a timer thread while
+    /// the UI is stuck, which no unit test can arrange; the line it writes is a pure projection of
+    /// four values and is the part a future reader depends on.</para>
+    ///
+    /// <para>THE DURATION THROUGH DisplayNumber. A bare :F1 takes the CURRENT CULTURE's decimal
+    /// separator, so the same stall reads "8.4s" or "8,4s" depending on the machine — and a comma
+    /// reads as a group separator to anyone expecting the other. The same reasoning the timetable's
+    /// durations carry.</para>
+    ///
+    /// <para>A MISSING LABEL IS SAID, NOT OMITTED. "no frame label" is itself a finding: it means the
+    /// loop stalled outside any callback the framework had a name for, which points somewhere
+    /// different than a stall inside a named one.</para>
+    /// </summary>
+    public static string WatchdogLine(DateTime utc, TimeSpan stalledFor, string phase, string? blockedIn) =>
+        $"[{utc:yyyy-MM-dd HH:mm:ss}Z] main loop unresponsive for "
+        + $"{CxAgent.Core.Helpers.DisplayNumber.Fixed(stalledFor.TotalSeconds, 1)}s · phase {phase}"
+        + (blockedIn is { Length: > 0 } where ? $" · in {where}" : " · no frame label");
+
 }
