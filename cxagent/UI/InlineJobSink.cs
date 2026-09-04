@@ -1385,6 +1385,23 @@ public sealed class InlineJobSink : IToolObserver
     /// <summary>Test seam: draws the live round synchronously.</summary>
     public void PaintRoundForTest() => PaintRoundNow();
 
+    /// <summary>Test seam: the header the round is showing, which only the transcript renders.</summary>
+    public string RoundHeaderForTest()
+    {
+        if (_round is not { } r) return string.Empty;
+        var calls = CallsOf(r);
+        return HeaderFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null),
+                         calls, InFlightOfRound());
+    }
+
+    /// <summary>Test seam: the body behind the expand.</summary>
+    public string RoundBodyForTest()
+    {
+        if (_round is not { } r) return string.Empty;
+        var calls = CallsOf(r);
+        return BodyFor(Timetable(calls, InFlightOfRound() is { } j ? new LiveRun(j) : null), calls);
+    }
+
     /// <summary>Test seam: the calls the round on screen is counting.</summary>
     public IReadOnlyList<ToolCallReport> RoundCallsForTest() =>
         _round is { } r ? CallsOf(r) : [];
@@ -1497,8 +1514,8 @@ public sealed class InlineJobSink : IToolObserver
             // NO LIVE ARGUMENT, so the table settles into its finished shape: no spinner, no
             // in-flight row, and the out column back.
             var table = Timetable(calls);
-            _chat.SetHeader(id, table.Split('\n')[0]);
-            _chat.UpdateMessage(id, BodyOf(table));
+            _chat.SetHeader(id, HeaderFor(table, calls, running: null));
+            _chat.UpdateMessage(id, BodyFor(table, calls));
 
             // OPENED WHEN SOMETHING WENT WRONG. An ordinary round's working is an echo and stays
             // folded; a round holding a refusal or a failure is the one whose working is worth
@@ -1574,19 +1591,10 @@ public sealed class InlineJobSink : IToolObserver
         if (calls.Count == 0 && running is null) return;
 
         var table = Timetable(calls, running is null ? null : new LiveRun(running));
-        var summary = table.Split('\n')[0];
-
-        // WHAT IS RUNNING, ON THE END OF THE SUMMARY. The per-call rows this replaces each named a
-        // tool and its argument as it happened, and a reader watching a long round is watching for
-        // exactly that — six calls in, a header that only counts says nothing about which file it is
-        // reading.
-        if (running is { } job && InFlightLabel(job) is { Length: > 0 } label)
-            summary += $" · {label}";
-
         round.Row ??= _chat.AddMessage(ChatRole.Tool, string.Empty, author: "Tools");
 
-        _chat.SetHeader(round.Row.Value, summary);
-        _chat.UpdateMessage(round.Row.Value, BodyOf(table));
+        _chat.SetHeader(round.Row.Value, HeaderFor(table, calls, running));
+        _chat.UpdateMessage(round.Row.Value, BodyFor(table, calls));
     }
 
     /// <summary>
@@ -1612,6 +1620,65 @@ public sealed class InlineJobSink : IToolObserver
                && job.DisplayName.StartsWith(tool, StringComparison.Ordinal)
             ? job.DisplayName
             : tool;
+    }
+
+    /// <summary>
+    /// The header for a round: the table's summary line, and what it was doing.
+    ///
+    /// <para>A SINGLE CALL IS NAMED. "1 call · across 1 tool · 0.0s in tools" counts something the
+    /// reader can already see is one and drops the only fact that distinguishes this round from any
+    /// other — which file was read, which command ran. The count earns its place at two calls and
+    /// above, where naming them all is not possible; at one it is pure overhead.</para>
+    ///
+    /// <para>THE SAME SHAPE AS THE LIVE HEADER, deliberately: a round that names its in-flight call
+    /// while running and then loses the name on settling would change under the reader at the moment
+    /// they look at it.</para>
+    /// </summary>
+    private static string HeaderFor(string table, IReadOnlyList<ToolCallReport> calls, Job? running)
+    {
+        var summary = table.Split('\n')[0];
+
+        // WHAT IS RUNNING, WHILE IT RUNS. The per-call rows this replaces each named a tool and its
+        // argument as it happened, and a reader watching a long round is watching for exactly that.
+        if (running is { } job && InFlightLabel(job) is { Length: > 0 } live)
+            return $"{summary} · {live}";
+
+        // OR WHAT THE ONE CALL WAS, once it is over — and INSTEAD OF THE COUNT, not after it. "1 call
+        // · across 1 tool" beside a named call is three ways of saying one, and the durations still
+        // follow, so nothing is lost but the arithmetic nobody needed.
+        if (running is null && calls.Count == 1)
+        {
+            var only = calls[0];
+            var label = string.IsNullOrWhiteSpace(only.Target) ? only.ToolName : only.Target!;
+
+            // THE TAIL OF THE SUMMARY IS KEPT: it carries "0.0s in tools" and, when something went
+            // wrong, "1 denied" — the parts that are still true of one call. Only the two counts at
+            // the front are dropped.
+            var tail = summary.Split(" · ").Skip(2);
+
+            return string.Join(" · ", new[] { label }.Concat(tail));
+        }
+
+        return summary;
+    }
+
+    /// <summary>
+    /// The body for a round: its table, or — for a single call — what that call returned.
+    ///
+    /// <para>ONE ROW IS NOT A TABLE. Expanding a round that made one call to find a header, a
+    /// separator and a single line of cells is scaffolding around one fact, and the fact a reader
+    /// opened it for is the OUTPUT, which the table never showed at all.</para>
+    ///
+    /// <para>NOTHING TO SHOW FALLS BACK TO THE TABLE. A call that returned nothing — or one from
+    /// before the output was captured — still has its row, and an empty body under an expand is
+    /// worse than the scaffolding it replaced.</para>
+    /// </summary>
+    private static string BodyFor(string table, IReadOnlyList<ToolCallReport> calls)
+    {
+        if (calls.Count == 1 && calls[0].Output is { Length: > 0 } output)
+            return "\n" + output.TrimEnd();
+
+        return BodyOf(table);
     }
 
     /// <summary>The table without its summary line, which the header carries instead.</summary>

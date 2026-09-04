@@ -254,3 +254,80 @@ public class EmptyRoundRowTests
         Assert.Single(chat.MessageIds);
     }
 }
+
+/// <summary>A round that made one call names it, and shows what it returned.</summary>
+public class SingleCallRowTests
+{
+    private static ToolCallReport Call(string tool, string? target, string? output = null) =>
+        new(Guid.NewGuid().ToString(), "parent", tool, "file", "succeeded", 5,
+            output?.Length ?? 0, DateTimeOffset.UtcNow) { Target = target, Output = output };
+
+    // ONE CALL IS NAMED, NOT COUNTED. "1 call · across 1 tool" says three times over what the reader
+    // can see once, and drops the only fact that tells this round from any other.
+    [Fact]
+    public void OneCallIsNamedInsteadOfCounted()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.RecordToolCall(Call("read_file", "read_file · UI/FileProbe.cs"));
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        var header = sink.RoundHeaderForTest();
+
+        Assert.Contains("UI/FileProbe.cs", header);
+        Assert.DoesNotContain("1 call", header);
+        Assert.DoesNotContain("across 1 tool", header);
+    }
+
+    // THE TIMING SURVIVES: only the two counts at the front are dropped.
+    [Fact]
+    public void OneCallKeepsTheRestOfTheSummary()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.RecordToolCall(Call("run_shell", "run_shell · dotnet build"));
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        Assert.Contains("in tools", sink.RoundHeaderForTest());
+    }
+
+    // TWO CALLS STILL COUNT. The count earns its place where naming them all is not possible.
+    [Fact]
+    public void TwoCallsAreStillCounted()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.RecordToolCall(Call("read_file", "read_file · a.cs"));
+        sink.RecordToolCall(Call("grep", "grep · \"x\""));
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        Assert.Contains("2 calls", sink.RoundHeaderForTest());
+    }
+
+    // ONE ROW IS NOT A TABLE. Expanding a single-call round should show what it returned, not
+    // scaffolding around one line of cells — and the output is the fact the table never showed.
+    [Fact]
+    public void OneCallShowsItsOutput()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.RecordToolCall(Call("read_file", "read_file · a.cs", "the file's contents"));
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        Assert.Contains("the file's contents", sink.RoundBodyForTest());
+        Assert.DoesNotContain("| tool |", sink.RoundBodyForTest());
+    }
+
+    // A CALL THAT RETURNED NOTHING KEEPS ITS TABLE. An empty body under an expand is worse than the
+    // scaffolding it replaced.
+    [Fact]
+    public void OneCallWithNoOutputKeepsTheTable()
+    {
+        var (sink, _) = SinkFixture.Build();
+        sink.RecordToolCall(Call("read_file", "read_file · a.cs"));
+        sink.ClaimRoundRowForTest();
+        sink.PaintRoundForTest();
+
+        Assert.Contains("| tool |", sink.RoundBodyForTest());
+    }
+}
