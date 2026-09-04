@@ -1478,8 +1478,19 @@ public static class AppBootstrap
         // Tab as indent and a terminal hands it to the child process — so from the two tabs anyone
         // actually wants to leave, keyboard traversal has no exit. One key, and the arrows the strip
         // already handles do the rest.
+        // Func<bool>, NOT Action: a global is consulted before the active window ever sees the key
+        // (InputCoordinator.cs:130-134), so binding F5 here silently took it away from the plugin
+        // manager's own refresh. Declining while that dialog is up hands the key back to it — the
+        // same arrangement the global Escape below uses, and for the same reason. A tab strip behind
+        // a modal is not what F5 means anyway.
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F5,
-            "focus the tab strip — then ← → to change tabs", mainWindow.FocusTabStrip);
+            "focus the tab strip — then ← → to change tabs",
+            () =>
+            {
+                if (PluginManagerDialog.IsOpen) return false;
+                mainWindow.FocusTabStrip();
+                return true;
+            });
 
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F2, "plugins",
             () => TogglePluginManager());
@@ -1628,15 +1639,6 @@ public static class AppBootstrap
         //
         keys.Bind(system, ConsoleModifiers.Control, ConsoleKey.Q, "quit",
             () => { cts.Cancel(); system.Shutdown(); });
-        // F9 Approve / Esc Discard — copilot mode's (P9) approve-or-discard gate. The session is read
-        // through the closure (same pattern as every other handler here), so these track whichever
-        // AgentHost WireRunner last installed. Both ApproveDraft/DiscardDraft are synchronous and
-        // self-guard to a no-op when nothing is currently drafting (AgentHost.cs:162/174) — no
-        // pending-approval pre-check needed here, and none of the other handlers in this
-        // block pre-check their own preconditions either (F6 DiagnoseFocusedJob is the same shape).
-        // Esc, not another F-key: this codebase has no OTHER Esc binding anywhere (grepped before
-        // choosing it), so it's free, and Esc-to-cancel/dismiss is the universal convention — a
-        // second F-key would be one more thing to memorize for no reason.
         // BACK, WHILE THE MODEL IS ASKING. Only meaningful during a multi-question run, and a no-op
         // otherwise. Alt-modified because the field below is a text box: a bare Left or Backspace
         // shortcut would swallow the keys that edit a typed answer.
@@ -1997,11 +1999,10 @@ public static class AppBootstrap
         // catalog (single-entry dictionary, empty roles) — destroying every other provider instance
         // and every role binding the user had.
         //
-        // An INVALID config is deliberately still passed as null (the wizard starts from empty) rather
-        // than refused as F7/F8 do: F5 is the documented way OUT of a broken config — the message both
-        // of those print says "press F5" — so blocking it too would leave a user with an unloadable
-        // file and no in-app route to repair it. The cost is real (a wizard run over an invalid file
-        // rebuilds rather than merges), so it is stated here rather than left to be rediscovered.
+        // An INVALID config is deliberately still passed as null: the wizard starts from empty rather
+        // than merging into something that did not parse. The cost is real — a wizard run over an
+        // invalid file rebuilds rather than merges — so it is stated here rather than left to be
+        // rediscovered.
         var load = SettingsEntry.LoadSettings(paths, env);
         var existing = load.Settings;
         if (load.IsInvalid)

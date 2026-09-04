@@ -27,7 +27,7 @@ public static partial class SetupWizard
     /// by the mandatory tmux drive instead).
     ///
     /// MERGES into <paramref name="existing"/> when one is supplied. This is what makes re-running the
-    /// wizard (F5) ADD a provider instead of replacing the catalog. Building a fresh settings object
+    /// wizard ADD a provider instead of replacing the catalog. Building a fresh settings object
     /// from the answers alone drops every part of the existing config the wizard does not ask about,
     /// and the writer persists that emptiness faithfully.
     /// </summary>
@@ -59,7 +59,7 @@ public static partial class SetupWizard
     /// </summary>
     /// <param name="existing">
     /// The catalog currently on disk, or <c>null</c> on a genuine first run (no config, or one that
-    /// does not load). The wizard MERGES its answer into this, so pressing F5 adds a provider rather
+    /// does not load). The wizard MERGES its answer into this, so a later run adds a provider rather
     /// than replacing everything the user already configured. Only the final projection uses it — the
     /// probe and model steps deliberately build a throwaway single-provider registry.
     /// </param>
@@ -196,7 +196,7 @@ public static partial class SetupWizard
             {
                 var info = ProviderKindCatalog.For(s.Kind);
                 // No baseline, deliberately: .Default must resolve to the instance being configured,
-                // not to something already in the catalog on an F5 re-run.
+                // not to something already in the catalog on a re-run.
                 var provider = ProviderRegistry.Build(BuildSettings(s)).Default;
                 var initial = string.IsNullOrWhiteSpace(s.Model) ? info.ModelHint : s.Model;
 
