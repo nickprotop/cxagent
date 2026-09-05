@@ -283,6 +283,18 @@ public static class AppBootstrap
         // opened.
         var history = new UsageHistoryStore(paths);
 
+        // RECORDED NOW, CONSUMED LATER. Nothing reads `installation` yet — it is wired here because
+        // the value only becomes useful once a version has been written BEFORE the one asking. A
+        // feature that starts recording on the day it ships sees "no previous version" for every
+        // existing user and cannot tell a long-time user from a new install; writing it from here
+        // means that by the time anything wants "first run after an update", the answer is true.
+        //
+        // Reading it also has to happen exactly once per launch — Read consumes what it reports, and
+        // increments the launch count — so this is the one call site, and a consumer takes the value
+        // rather than asking again.
+        var installation = Installation.Read(history, Version());
+        _ = installation;
+
         // CONSTRUCTED BEFORE THE WINDOW, because the remembered edit mode below has to be resolved
         // before MainWindow's StartupMode banner is written — that banner is a chat message and
         // cannot be revised, so a mode restored after it would be announced wrong for the rest of

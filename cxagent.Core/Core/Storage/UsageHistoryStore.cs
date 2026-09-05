@@ -228,6 +228,15 @@ public sealed class UsageHistoryStore
                     decision  TEXT NOT NULL,
                     requester TEXT,
                     working_dir TEXT);
+
+                -- DURABLE APP STATE THAT IS NOT CONFIG. Config is the user's file — hand-editable,
+                -- theirs to delete, and meaningless to overwrite behind their back. This is the app
+                -- remembering what it has already done: whether it has run here before, and which
+                -- version ran last. Those outlive a session and belong to the app rather than the
+                -- user, so neither the config file nor the session store is the right home.
+                CREATE TABLE IF NOT EXISTS app_state (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL);
                 """;
             cmd.ExecuteNonQuery();
 
@@ -325,6 +334,46 @@ public sealed class UsageHistoryStore
             cmd.Parameters.AddWithValue("$creported", r.CacheReported ? 1 : 0);
             cmd.Parameters.AddWithValue("$cwritten", r.CacheWrittenTokens);
             cmd.Parameters.AddWithValue("$cost", (object?)r.Cost ?? DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Reads a durable app-state value, or null when it has never been written.
+    ///
+    /// <para>NULL ON FAILURE, LIKE EVERY OTHER READ HERE. A store that cannot be opened must not
+    /// stop the app starting, so a caller gets "I don't know" rather than an exception — and every
+    /// caller of this has to have an answer for not knowing.</para>
+    /// </summary>
+    public string? GetState(string key)
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT value FROM app_state WHERE key = $k;";
+            cmd.Parameters.AddWithValue("$k", key);
+            return cmd.ExecuteScalar() as string;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Writes a durable app-state value, replacing any previous one.</summary>
+    public void SetState(string key, string value)
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "INSERT INTO app_state (key, value) VALUES ($k, $v) " +
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+            cmd.Parameters.AddWithValue("$k", key);
+            cmd.Parameters.AddWithValue("$v", value);
             cmd.ExecuteNonQuery();
         }
         catch (Exception) { }
