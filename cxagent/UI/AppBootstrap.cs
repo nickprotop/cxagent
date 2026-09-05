@@ -293,7 +293,6 @@ public static class AppBootstrap
         // increments the launch count — so this is the one call site, and a consumer takes the value
         // rather than asking again.
         var installation = Installation.Read(history, Version());
-        _ = installation;
 
         // CONSTRUCTED BEFORE THE WINDOW, because the remembered edit mode below has to be resolved
         // before MainWindow's StartupMode banner is written — that banner is a chat message and
@@ -696,6 +695,47 @@ public static class AppBootstrap
         manager.Commands.Register(
             new SessionCommand("/exit", "quit cxagent"),
             (_, _) => { cts.Cancel(); system.Shutdown(); return true; });
+
+        // /about, DECLARED HERE FOR /exit's REASON. Every fact it prints is the front end's — the
+        // executable that was launched, the terminal library, this window's plugins — so a table in
+        // Core would advertise it to consumers that cannot answer it.
+        //
+        // NOT TellTheModel. The default keeps it out of the system prompt, which is right: it
+        // answers a question a person asks about their own install, and a model told about it would
+        // suggest a command that returns nothing it can use.
+        manager.Commands.Register(
+            new SessionCommand("/about", "what this is, and what it knows about your install"),
+            (s, _) =>
+            {
+                // THE STORE IS READ HERE, NOT AT STARTUP. These two counts are the only part of the
+                // card that costs a query, and paying for it on every launch to serve a command most
+                // sessions never run is the wrong trade — /about is not on a hot path.
+                //
+                // NULL ON FAILURE, not zero: the reads throw where the writes swallow (by design —
+                // see UsageHistoryStore's own note), and "0 sessions" would be a confident lie to
+                // someone whose history is merely unreadable. Render drops the line instead.
+                AboutText.Usage? usage;
+                try
+                {
+                    var since = DateTimeOffset.UtcNow.AddYears(-100);
+                    usage = new AboutText.Usage(
+                        history.SessionsSince(since).Count,
+                        history.ToolCallsSince(since).Count);
+                }
+                catch (Exception)
+                {
+                    usage = null;
+                }
+
+                var id = mainWindow.Chat.AddMessage(ChatRole.System,
+                    AboutText.Render(installation, paths.ConfigDir, usage,
+                        s.Plugins.LoadedPluginNames, DateTimeOffset.UtcNow));
+
+                // EXPANDED, because the System role is StartCollapsed and a command that answers with
+                // "▸ System / expand…" has not answered.
+                mainWindow.Chat.SetExpanded(id, true);
+                return true;
+            });
 
         // /exit's REASON: a library cannot open a window in its host, so this is declared beside the
         // handler that can service it rather than in a table every consumer advertises.
