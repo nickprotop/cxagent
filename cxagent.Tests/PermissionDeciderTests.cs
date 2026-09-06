@@ -43,7 +43,16 @@ public class PermissionDeciderTests
     private sealed class PromptScript
     {
         private readonly object _lock = new();
-        private TaskCompletionSource<PermissionChoice>? _current;
+
+        /// <summary>
+        /// Every prompt still waiting, oldest first.
+        ///
+        /// <para>A QUEUE RATHER THAN ONE SLOT, because the gate no longer serialises prompts — that
+        /// rule moved to the front end that owns the composer cell. A single slot silently ORPHANED
+        /// the first of two concurrent prompts: its completion source was overwritten, nothing could
+        /// ever resolve it, and the test hung rather than failed.</para>
+        /// </summary>
+        private readonly Queue<TaskCompletionSource<PermissionChoice>> _waiting = new();
 
         public int ShownCount { get; private set; }
         public int RestoredCount { get; private set; }
@@ -56,7 +65,8 @@ public class PermissionDeciderTests
             {
                 ShownCount++;
                 LastOfferTrust = offerTrust;
-                tcs = _current = new TaskCompletionSource<PermissionChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
+                tcs = new TaskCompletionSource<PermissionChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiting.Enqueue(tcs);
             }
             // Same shape as PermissionDecider's real prompt hook (AwaitAndRestore):
             // cancellation resolves the CONTROL's own completion, and "restore" only counts once
@@ -73,10 +83,11 @@ public class PermissionDeciderTests
             }
         }
 
+        /// <summary>Answers the oldest prompt still waiting.</summary>
         public void Answer(PermissionChoice choice)
         {
             TaskCompletionSource<PermissionChoice>? tcs;
-            lock (_lock) { tcs = _current; }
+            lock (_lock) { _waiting.TryDequeue(out tcs); }
             tcs!.TrySetResult(choice);
         }
     }
@@ -103,25 +114,36 @@ public class PermissionDeciderTests
         return PermissionDecider.ForTesting(policy, rules, notice: null, script.Show);
     }
 
+    /// <summary>
+    /// TWO CONCURRENT REQUESTS BOTH REACH THE PROMPT. The gate used to serialise them behind a
+    /// semaphore held across the user's answer, because a terminal's composer cell can only show one
+    /// control — a front end's constraint, enforced for every consumer, and one unanswered prompt
+    /// could freeze permission decisions for every session in the process.
+    ///
+    /// <para>The rule did not disappear: it moved to <c>WindowPermissionPrompt</c>, which owns the
+    /// cell. What this pins is that Core no longer imposes it, so a consumer with somewhere else to
+    /// put a prompt is not made to wait for a cell it does not have.</para>
+    /// </summary>
     [Fact]
-    public async Task TwoConcurrentRequests_AreAnsweredOneAtATime()
+    public async Task TwoConcurrentRequests_BothReachThePrompt()
     {
         var gate = GateWithScriptedPrompt(out var script);
         var first = gate.RequestAsync(Shell("cmd-1"), CancellationToken.None);
         var second = gate.RequestAsync(Shell("cmd-2"), CancellationToken.None);
 
-        // Poll briefly for the first prompt to land — RequestAsync's continuation onto the
-        // (fake, synchronous-enough) prompt hook is asynchronous by construction.
-        for (var i = 0; i < 100 && script.ShownCount == 0; i++) await Task.Delay(5);
+        // Both continuations are asynchronous by construction, so poll for the second to arrive.
+        for (var i = 0; i < 200 && script.ShownCount < 2; i++) await Task.Delay(5);
 
-        Assert.Equal(1, script.ShownCount);        // second is queued, not overlaid
+        Assert.Equal(2, script.ShownCount);   // neither waited for the other
+
         script.Answer(PermissionChoice.Once);
-        Assert.True((await first).Allowed);
-
-        for (var i = 0; i < 100 && script.ShownCount == 1; i++) await Task.Delay(5);
         script.Answer(PermissionChoice.Deny);
-        Assert.False((await second).Allowed);
-        Assert.Equal(2, script.ShownCount);
+
+        // ONE OF EACH, WITHOUT SAYING WHICH. Nothing orders two concurrent requests, so asserting
+        // that the FIRST got the first answer would be pinning a race rather than a behaviour.
+        var outcomes = new[] { (await first).Allowed, (await second).Allowed };
+        Assert.Contains(true, outcomes);
+        Assert.Contains(false, outcomes);
     }
 
     [Fact]

@@ -34,16 +34,19 @@ public sealed record PermissionDecisionReport(
 /// therefore never touches a control directly; it only ever reaches the UI through
 /// <c>system.EnqueueOnUIThread</c>, via the <see cref="_promptHook"/> seam below.</para>
 ///
-/// <para><b>Why concurrent requests are not a deadlock.</b> <see cref="_oneAtATime"/> serialises
-/// prompts to one at a time — the composer cell can only show one control. With maxParallel = 4,
-/// up to four jobs can each want permission at once; the second, third, and fourth PARK on this
-/// semaphore, and each one's scheduler slot (and thread) sits idle for as long as the user takes
-/// to answer the one in front of it. That is not a deadlock, because the answer the user is being
-/// asked for never depends on any of the parked jobs finishing — nothing downstream of the parked
-/// `WaitAsync` needs to run for the prompt in front to resolve. It is the exact same shape as a
-/// copilot draft parking an entire goal today (AgentHost's approval gate): the whole point of
-/// asking is that the app waits for a human, and waiting for a human is not progress-blocked on
-/// the app's own work.</para>
+/// <para><b>Concurrent requests are allowed, and the queueing is not here.</b> This gate once
+/// serialised every prompt in the process behind a semaphore held across the user's answer, because
+/// the composer cell can only show one control at a time. That is a FRONT END'S constraint, and it
+/// belongs to the front end: <c>WindowPermissionPrompt</c> queues its own prompts now, and a
+/// consumer with somewhere else to put them — several windows, several clients, a bot — is not
+/// forced to wait for a cell it does not have.</para>
+///
+/// <para>WHAT THE SEMAPHORE ACTUALLY GUARDED WAS THE SHOWING. Everything between acquiring and
+/// releasing it was one read off the request's own policy, the prompt hook, and <c>Apply</c>. It
+/// protected no shared mutable state: <see cref="PermissionRulesStore"/> carries its own lock and
+/// already documents concurrent access, and the classifier is consulted BEFORE the prompt and has
+/// always run concurrently under <c>maxParallel</c>. Removing it exposes nothing that was not
+/// already exposed.</para>
 /// </summary>
 public sealed class PermissionDecider : IPermissionGate
 {
@@ -135,11 +138,6 @@ public sealed class PermissionDecider : IPermissionGate
     // value" for the soft-lock this closes.
     private readonly Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> _promptHook;
 
-    // Serialises prompts to one at a time: the composer cell can only show one control, and
-    // showing a second while the first is still up is exactly the caller bug MainWindow's own
-    // idempotence guard defends against (ShowPermissionPrompt no-ops rather than crash, but we
-    // must not rely on that — see the class doc for why parking here is safe, not a deadlock).
-    private readonly SemaphoreSlim _oneAtATime = new(1, 1);
 
     /// <summary>The real, UI-wired gate. `system`/`mw` are used only inside the prompt hook, kept
     /// thin: build the control, show it, await Completion, restore the composer in `finally`.
@@ -415,18 +413,10 @@ public sealed class PermissionDecider : IPermissionGate
     private async Task<bool> DecideAsync(PermissionRequest request, CancellationToken ct)
     {
 
-        try
-        {
-            await _oneAtATime.WaitAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // Cancelled while still queued behind another prompt — a deny, not a hang, and not a
-            // thrown exception either: a cancelled goal must resolve cleanly, same as a cancelled
-            // goal that answers Deny after the prompt was actually shown (below).
-            return false;
-        }
-        try
+        // ALREADY CANCELLED IS A DENY, not a hang and not a throw. A cancelled goal must resolve
+        // cleanly, the same way one cancelled after its prompt was shown does below.
+        if (ct.IsCancellationRequested) return false;
+
         {
             // THE ASKING SESSION'S BOUNDARY, for the same reason the decision path uses it: whether
             // a path is "inside the working directory" depends on WHOSE working directory, and
@@ -463,10 +453,6 @@ public sealed class PermissionDecider : IPermissionGate
                 choice = PermissionChoice.Deny;
             }
             return Apply(request, choice);
-        }
-        finally
-        {
-            _oneAtATime.Release();
         }
     }
 
