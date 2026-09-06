@@ -32,7 +32,9 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private ResolvedConfig _resolution;
 
-    private readonly ChatTranscriptControl _firstChat = new()
+    /// <summary>A transcript configured the way every other one is — shared rather than repeated,
+    /// so a second tab cannot drift from the first the day either changes.</summary>
+    private static ChatTranscriptControl NewTranscript() => new()
     {
         VerticalAlignment = VerticalAlignment.Fill,
         HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -42,6 +44,8 @@ public sealed class MainWindow : IDisposable
         // inset — two different left edges in one column.
         Margin = new Margin(1, 0, 1, 0),
     };
+
+    private readonly ChatTranscriptControl _firstChat = NewTranscript();
     /// <summary>
     /// The goal composer.
     ///
@@ -60,7 +64,15 @@ public sealed class MainWindow : IDisposable
     /// grid's composer row and the grip's height dynamic, and every agent CLI in this class keeps a
     /// fixed prompt. MeasureDOM clamps between the two, so pinning them pins the height.</para>
     /// </summary>
-    private readonly PromptControl _firstInput = new()
+    /// <summary>
+    /// A prompt configured the way every other one is.
+    ///
+    /// <para>A DEFAULT-CONSTRUCTED ONE IS USELESS AND LOOKS BROKEN: without `Multiline` and the row
+    /// counts it renders as a single filled bar, and without <c>EnterBehavior.Submit</c> it cannot be
+    /// submitted at all. A drive found exactly that where a second tab's composer should have been,
+    /// which is why this is shared rather than repeated.</para>
+    /// </summary>
+    private static PromptControl NewPrompt() => new()
     {
         // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
         // the mode line beside it has none — so a margin here pushed the prompt one column right of
@@ -92,6 +104,8 @@ public sealed class MainWindow : IDisposable
         InputBackgroundColor = ColorScheme.ComposerSurface,
         InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
+
+    private readonly PromptControl _firstInput = NewPrompt();
     private readonly JobPanelControl _firstJobPanel;
 
     /// <summary>
@@ -128,20 +142,32 @@ public sealed class MainWindow : IDisposable
     public JobPanelControl JobPanel => ActiveSessionTab.JobPanel;
 
     /// <summary>
-    /// A transcript control configured the way the first one is.
+    /// How a composer is bound to the completion menu, supplied by the composition root.
     ///
-    /// <para>THE FIRST ONE IS STILL A FIELD INITIALISER, because it carries layout this window
-    /// argued for and moving it would have risked all of that to save a field — so this repeats the
-    /// settings rather than sharing them. What keeps the two from drifting is that they are eight
-    /// lines apart in one file, and that a second session's tab is styled by the same
-    /// ApplyRoleStyles the first is.</para>
+    /// <para>A SUBSCRIPTION CANNOT FOLLOW A RESOLVING PROPERTY. <c>Input</c> answers the active tab,
+    /// so everything the menu READS follows the user — but `InputChanged += …` attaches to one
+    /// control, and a tab opened later would have no such attachment at all.</para>
     /// </summary>
-    private static ChatTranscriptControl NewTranscript() => new()
+    public Action<PromptControl>? WireComposer { get; set; }
+
+    /// <summary>Which composers have been wired, so none is wired twice.</summary>
+    private readonly HashSet<PromptControl> _wiredComposers = [];
+
+    /// <summary>
+    /// Wires the first tab's composer, once.
+    ///
+    /// <para>NOT `WireComposer(Input)`. `Input` resolves to the ACTIVE tab, so naming "the composer"
+    /// is ambiguous with two of them — and a control subscribed twice syncs twice per keystroke,
+    /// which shows up as the completion menu eating every other letter.</para>
+    /// </summary>
+    public void WireFirstComposer() => WireOnce(_sessionTabs[0].Input);
+
+    /// <summary>Subscribes a composer to the completion menu unless it already is.</summary>
+    private void WireOnce(PromptControl input)
     {
-        VerticalAlignment = VerticalAlignment.Fill,
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-        Margin = new Margin(1, 0, 1, 0),
-    };
+        if (!_wiredComposers.Add(input)) return;
+        WireComposer?.Invoke(input);
+    }
 
     /// <summary>
     /// A composer for one tab: its prompt, with the mode line under it.
@@ -151,21 +177,100 @@ public sealed class MainWindow : IDisposable
     /// window: two sessions mean two places to type, and one shared between them would send a line
     /// to whichever session happened to be in front.</para>
     /// </summary>
+    /// <summary>
+    /// A whole composer — rule, grip, prompt, mode line, and the padding that insets the card.
+    ///
+    /// <para>ONE CONSTRUCTION, USED BY EVERY TAB. This was written inline in <see cref="Build"/>, and
+    /// a second composer written beside it lost the mode line, the cell padding that insets it from
+    /// the pane edges, and the grip's full height — three defects from one cause, which is that there
+    /// were two places to get it right. The first tab is now simply this method's first caller.</para>
+    ///
+    /// <para>The mode line is filled here rather than waiting for the next <c>SetMode</c>, or a tab
+    /// opened mid-session shows a blank line under its prompt until the mode happens to change.</para>
+    /// </summary>
     private GridControl BuildComposerFor(SessionTab tab)
     {
-        // THE SAME FOUR PIECES THE FIRST TAB'S HAS, and the same rows, because a second composer
-        // that merely holds a prompt renders as a bare edit box with no boundary above it and no
-        // mode line under it — which a drive found immediately.
-        // THE SAME MARK AND THE SAME COLOUR as the first tab's, repeated per prompt row — a grip
-        // that differs between two composers in one window reads as two different kinds of surface.
-        var bar = $"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]";
-        var grip = new MarkupControl(
-            [string.Join('\n', Enumerable.Repeat(bar, PromptRows))]);
+        var model = ModelLabel;
+        var modeLine = Controls.Markup()
+            // THE BACKGROUND IS IN THE MARKUP, not on the control. MarkupControl.PaintDOM fills from
+            // Container?.BackgroundColor and never consults its own, so the builder's
+            // WithBackgroundColor set a property nothing reads. An `on <colour>` tag plus [fillwidth]
+            // paints the row itself — and fillwidth is the same tag that carries a code block's
+            // background to the end of a wrapped line, so it is already load-bearing here.
+            // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
+            // the background form, so it painted nothing. Each run carries its own background, and
+            // [fillwidth] carries the last one to the end of the row.
+            .AddLine(ModeLineText(_mode, model))
+            // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
+            // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
+            // the last character — the fill was working, it simply had nothing to cross.
+            .WithAlignment(HorizontalAlignment.Stretch)
+            // THE CONTROL CARRIES THE SURFACE TOO, not only the markup runs.
+            //
+            // MarkupControl reads its own BackgroundColor for the right-hand fill (PaintDOM's
+            // rightFillBg) but takes the main fill from Container?.BackgroundColor — so the colour
+            // has to be set in BOTH places for every paint path to agree. With only the markup runs
+            // carrying it, any cell the runs did not cover fell back to whatever was behind.
+            .WithBackgroundColor(ColorScheme.ComposerSurface)
+            // NO CONTROL MARGIN. MarkupControl paints its margins with a HARDCODED Transparent
+            // (PaintDOM's marginBg), so a margin here is a hole showing whatever sits behind the
+            // control. Giving it a container whose background is the composer surface makes the
+            // hole land on the right colour — but only where that container's background actually
+            // resolves, and it demonstrably does not everywhere: the margins rendered as dark
+            // columns either side of the band while the same build measured as continuous here.
+            //
+            // The inset is INSIDE THE PAINTED RUN instead: a leading space in the first styled run
+            // and [fillwidth] carrying the last one past the trailing edge. There is no margin to
+            // show through, so the row cannot break regardless of what is behind it.
+            .Build();
 
-        var modeLine = new MarkupControl([""]) { Wrap = false };
-        tab.ModeLine = modeLine;
+        // EXPERIMENT: PROMPT AND MODE LINE IN ONE GRID, and the GRID carries the surface.
+        //
+        // MarkupControl resolves its main fill from `Container?.BackgroundColor`, so a container
+        // whose background IS the composer surface should let the mode line drop every workaround it
+        // accumulated — the per-run `on <colour>` tags, the [fillwidth] marker, and the leading
+        // space standing in for a margin. If the grid paints the row, the markup only has to colour
+        // TEXT, which is what markup is for.
+        // ONE GRID, with CELL PADDING carrying the inset.
+        //
+        // GridControl fills its ENTIRE rect with its background, margin included — PaintDOM's
+        // per-line FillRect runs from bounds.X for the full bounds.Width with nothing subtracted —
+        // so a MARGIN here would be inset for layout but painted the composer surface anyway, and
+        // the gap would read as padding. Cell padding is the opposite and the one that is wanted:
+        // GridLayout subtracts it when measuring the child (GridLayout.cs:427), so the content is
+        // inset while the cell's own rect, and therefore the surface, is not.
+        //
+        // The prompt box paints the surface across its rect; the composer cell holding it is padded
+        // by one column, so the chat field shows through at the edges and the composer reads as a
+        // card inset from the pane.
+        // THE GRIP: a one-column rule down the prompt's left edge, marking where the user types.
+        //
+        // Its own column rather than a markup prefix on each line, because a prefix fights everything
+        // the edit control does — wrapping, scrolling, selection — and would have to be re-derived on
+        // every keystroke. A column is laid out once and the control beside it is untouched.
+        //
+        // THE WHOLE COMPOSER, mode line included. The grip marks one object — the thing at the
+        // bottom that belongs to the user — and stopping it at the prompt's last row split that
+        // object in two, leaving the caption looking like something separate that had drifted
+        // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
+        var grip = Controls.Markup()
+            .AddLine(string.Join('\n',
+                // ▌ (U+258C), A HALF BLOCK — the heaviest of these that still reads as a rule. It
+                // was ▏ (U+258F), a one-eighth sliver thin enough to disappear against the surface
+                // it was marking.
+                //
+                // HEAVIER THAN THE MESSAGE RAIL'S ┃, AND THAT IS THE POINT rather than an
+                // inconsistency. The two marks share a colour and a meaning — Grip's own comment
+                // records it: the user owns two surfaces, but not a job. A message rail is
+                // transient: it scrolls past, in a column shared with tool rows and
+                // worker reports, so it stays a drawn line. The grip is chrome that never leaves the
+                // screen and has nothing to compete with, so it can afford to be solid.
+                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
+                    PromptRows + 1)))
+            .WithAlignment(HorizontalAlignment.Left)
+            .Build();
 
-        var box = Controls.Grid()
+        var promptBox = Controls.Grid()
             .Columns(GridLength.Cells(1), GridLength.Star(1))
             .Rows(GridLength.Cells(PromptRows), GridLength.Auto())
             .Place(grip, 0, 0, rowSpan: 2)
@@ -173,17 +278,88 @@ public sealed class MainWindow : IDisposable
             .Place(modeLine, 1, 1)
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
+        promptBox.BackgroundColor = ColorScheme.ComposerSurface;
 
-        return Controls.Grid()
-            .Columns(GridLength.Star(1))
-            .Rows(GridLength.Cells(1), GridLength.Auto())
-            .Place(Controls.RuleBuilder().WithColor(ColorScheme.Separator)
-                .WithAlignment(HorizontalAlignment.Stretch).Build(), 0, 0)
-            .Place(box, 1, 0)
+        var composerRule = Controls.RuleBuilder()
+            .WithColor(ColorScheme.Separator)
             .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
+        // THE SAME LINE UNDER THE COMPOSER. The status bar is a third kind of surface again — not
+        // transcript, not input — and it sat directly against the composer with nothing marking the
+        // change. One rule above it and one above the composer make the three read as three bands
+        // rather than as a prompt with a caption stuck to it.
+        //
+        // UNPADDED, unlike the composer's rule. That one is inset a column so it stops at the card's
+        // edges; the status bar fills the pane edge to edge, so a rule that stopped short of the
+        // frame would leave a notch at each end.
+        _statusRule = Controls.RuleBuilder()
+            .WithColor(ColorScheme.Separator)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithMargin(1,0,1,0)
+            .Build();
+
+        var composer = Controls.Grid()
+            .Columns(GridLength.Star(1))
+            // CELLS, not Auto, for the prompt's row. MultilineEditControl grows to fill its bounds
+            // when its VerticalAlignment is Fill (GetEffectiveViewportHeight), and Fill is what it
+            // inherits here — so an Auto row handed it the composer's whole share and it reported
+            // back that it wanted all of it. The result was three usable lines of prompt sitting on
+            // seven rows of its own background, with the mode line pushed to the bottom of the gap.
+            // Naming the row's height makes the control's own viewportHeight the thing that decides.
+            // A SEPARATOR ABOVE THE CARD. The transcript and the composer are two different kinds
+            // of surface, and without a line between them a long answer runs straight into the
+            // prompt with nothing marking where output ends and input begins. Structure-coloured
+            // and one cell tall: enough to read as a boundary, not enough to read as chrome.
+            // AUTO for the prompt box's row, not a fixed height: a permission prompt takes its
+            // place there and is as tall as its question. The prompt box itself pins its own two
+            // rows, so Auto still resolves to exactly PromptRows + 1 in the ordinary case.
+            // THE STATUS BAR IS NOT IN HERE. It reports on the SESSION — the theme, the plugin
+            // key, the context percentage — none of which belong to the composer, and all of which
+            // must stay on screen when the composer does not. Keeping them in one grid meant a
+            // composer that moves takes the shortcut hints and the token readout with it.
+            .Rows(GridLength.Cells(1), GridLength.Auto())
+            .Place(composerRule, 0, 0)
+            .Place(promptBox, 1, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
+            // taller than the composer — and when it is, that is the defect: a row measuring six rows
+            // larger than its contents sinks the composer to the bottom, and the unused top becomes a
+            // band of dead space between the end of the transcript and the prompt. The chat's Star(1)
+            // row ends where this row begins, so those rows are unreachable by either pane. Sizing to
+            // content leaves nothing to sink through.
             .WithVerticalAlignment(VerticalAlignment.Top)
             .Build();
+
+        // The one-column inset, on the CELL rather than the control — see the prompt box's note.
+        // The separator's row is padded to match, so the rule stops where the card's edges are
+        // rather than running the full width of the pane.
+        composer.Cell(0, 0).Padding = new Padding(1, 0, 1, 0);
+        composer.Cell(1, 0).Padding = new Padding(1, 0, 1, 0);
+
+        // THE PARTS GO ON THE TAB, because they are per conversation: a prompt swapped out for a
+        // permission control belongs to the tab that asked, and a mode line reports that tab's mode.
+        tab.ModeLine = modeLine;
+        tab.PromptBox = promptBox;
+        tab.Grip = grip;
+
+        return composer;
     }
+
+    /// <summary>
+    /// The active tab's prompt box — what a permission prompt replaces and a restore puts back.
+    ///
+    /// <para>A PROPERTY OVER THE ACTIVE TAB rather than a field, for the reason every other one here
+    /// became one: with several conversations there are several prompt boxes, and the one a prompt
+    /// swaps out has to be the one belonging to the tab that asked.</para>
+    /// </summary>
+    private GridControl _promptBox => ActiveSessionTab.PromptBox!;
+
+    /// <summary>The active tab's mode line.</summary>
+    private MarkupControl? _modeLine => ActiveSessionTab.ModeLine;
+
+    /// <summary>The active tab's composer grip.</summary>
+    private MarkupControl? _promptGrip => ActiveSessionTab.Grip;
 
     /// <summary>
     /// The session behind the active tab, or null before one is wired.
@@ -214,10 +390,11 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public SessionTab AddSessionTab(Core.Sessions.Session session)
     {
-        var tab = new SessionTab(session, NewTranscript(), new PromptControl(), _firstJobPanel);
+        var tab = new SessionTab(session, NewTranscript(), NewPrompt(), _firstJobPanel);
         tab.Compose(BuildComposerFor(tab));
 
         _sessionTabs.Add(tab);
+        WireOnce(tab.Input);
         AddTab(session.WorkingDirectory, tab.Content);
         RelabelSessionTabs();
         ApplyRoleStyles(tab.Chat);
@@ -685,14 +862,11 @@ public sealed class MainWindow : IDisposable
     private const int PromptRows = 3;
 
     /// <summary>The line between the transcript and the composer — see its placement.</summary>
-    private RuleControl _composerRule = null!;
     private RuleControl _statusRule = null!;
 
     /// <summary>Prompt + mode line, painting the composer surface — see its construction.</summary>
-    private GridControl _promptBox = null!;
 
     /// <summary>The vertical rule marking the prompt as the user's — see its construction.</summary>
-    private MarkupControl _promptGrip = null!;
 
     /// <summary>
     /// The line under the composer: which MODE is running, then the model it runs on.
@@ -702,7 +876,6 @@ public sealed class MainWindow : IDisposable
     /// of jobs or one agent with tools, and it has no
     /// other home in the UI. The model beside it needs one too: a startup line scrolls away.</para>
     /// </summary>
-    private MarkupControl _modeLine = null!;
 
     /// <summary>
     /// The mode shown on the row under the composer.
@@ -1044,151 +1217,7 @@ public sealed class MainWindow : IDisposable
         // the model is a detail of it, and reading them the other way round invites a user to think
         // the model is what they are choosing.
         var model = ModelLabel;
-        _modeLine = Controls.Markup()
-            // THE BACKGROUND IS IN THE MARKUP, not on the control. MarkupControl.PaintDOM fills from
-            // Container?.BackgroundColor and never consults its own, so the builder's
-            // WithBackgroundColor set a property nothing reads. An `on <colour>` tag plus [fillwidth]
-            // paints the row itself — and fillwidth is the same tag that carries a code block's
-            // background to the end of a wrapped line, so it is already load-bearing here.
-            // `[fg on bg]` is ONE tag in this parser — a bare `[on #…]` has no foreground and is not
-            // the background form, so it painted nothing. Each run carries its own background, and
-            // [fillwidth] carries the last one to the end of the row.
-            .AddLine(ModeLineText(_mode, model))
-            // STRETCH, so [fillwidth] has a full-width rect to fill INTO. The painter extends the
-            // flagged cell's background to `bounds.Right`, and without stretch those bounds ended at
-            // the last character — the fill was working, it simply had nothing to cross.
-            .WithAlignment(HorizontalAlignment.Stretch)
-            // THE CONTROL CARRIES THE SURFACE TOO, not only the markup runs.
-            //
-            // MarkupControl reads its own BackgroundColor for the right-hand fill (PaintDOM's
-            // rightFillBg) but takes the main fill from Container?.BackgroundColor — so the colour
-            // has to be set in BOTH places for every paint path to agree. With only the markup runs
-            // carrying it, any cell the runs did not cover fell back to whatever was behind.
-            .WithBackgroundColor(ColorScheme.ComposerSurface)
-            // NO CONTROL MARGIN. MarkupControl paints its margins with a HARDCODED Transparent
-            // (PaintDOM's marginBg), so a margin here is a hole showing whatever sits behind the
-            // control. Giving it a container whose background is the composer surface makes the
-            // hole land on the right colour — but only where that container's background actually
-            // resolves, and it demonstrably does not everywhere: the margins rendered as dark
-            // columns either side of the band while the same build measured as continuous here.
-            //
-            // The inset is INSIDE THE PAINTED RUN instead: a leading space in the first styled run
-            // and [fillwidth] carrying the last one past the trailing edge. There is no margin to
-            // show through, so the row cannot break regardless of what is behind it.
-            .Build();
-
-        // EXPERIMENT: PROMPT AND MODE LINE IN ONE GRID, and the GRID carries the surface.
-        //
-        // MarkupControl resolves its main fill from `Container?.BackgroundColor`, so a container
-        // whose background IS the composer surface should let the mode line drop every workaround it
-        // accumulated — the per-run `on <colour>` tags, the [fillwidth] marker, and the leading
-        // space standing in for a margin. If the grid paints the row, the markup only has to colour
-        // TEXT, which is what markup is for.
-        // ONE GRID, with CELL PADDING carrying the inset.
-        //
-        // GridControl fills its ENTIRE rect with its background, margin included — PaintDOM's
-        // per-line FillRect runs from bounds.X for the full bounds.Width with nothing subtracted —
-        // so a MARGIN here would be inset for layout but painted the composer surface anyway, and
-        // the gap would read as padding. Cell padding is the opposite and the one that is wanted:
-        // GridLayout subtracts it when measuring the child (GridLayout.cs:427), so the content is
-        // inset while the cell's own rect, and therefore the surface, is not.
-        //
-        // The prompt box paints the surface across its rect; the composer cell holding it is padded
-        // by one column, so the chat field shows through at the edges and the composer reads as a
-        // card inset from the pane.
-        // THE GRIP: a one-column rule down the prompt's left edge, marking where the user types.
-        //
-        // Its own column rather than a markup prefix on each line, because a prefix fights everything
-        // the edit control does — wrapping, scrolling, selection — and would have to be re-derived on
-        // every keystroke. A column is laid out once and the control beside it is untouched.
-        //
-        // THE WHOLE COMPOSER, mode line included. The grip marks one object — the thing at the
-        // bottom that belongs to the user — and stopping it at the prompt's last row split that
-        // object in two, leaving the caption looking like something separate that had drifted
-        // underneath. PromptRows + 1 is the prompt's viewport plus the mode line's single row.
-        _promptGrip = Controls.Markup()
-            .AddLine(string.Join('\n',
-                // ▌ (U+258C), A HALF BLOCK — the heaviest of these that still reads as a rule. It
-                // was ▏ (U+258F), a one-eighth sliver thin enough to disappear against the surface
-                // it was marking.
-                //
-                // HEAVIER THAN THE MESSAGE RAIL'S ┃, AND THAT IS THE POINT rather than an
-                // inconsistency. The two marks share a colour and a meaning — Grip's own comment
-                // records it: the user owns two surfaces, but not a job. A message rail is
-                // transient: it scrolls past, in a column shared with tool rows and
-                // worker reports, so it stays a drawn line. The grip is chrome that never leaves the
-                // screen and has nothing to compete with, so it can afford to be solid.
-                Enumerable.Repeat($"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]",
-                    PromptRows + 1)))
-            .WithAlignment(HorizontalAlignment.Left)
-            .Build();
-
-        _promptBox = Controls.Grid()
-            .Columns(GridLength.Cells(1), GridLength.Star(1))
-            .Rows(GridLength.Cells(PromptRows), GridLength.Auto())
-            .Place(_promptGrip, 0, 0, rowSpan: 2)
-            .Place(Input, 0, 1)
-            .Place(_modeLine, 1, 1)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .Build();
-        _promptBox.BackgroundColor = ColorScheme.ComposerSurface;
-
-        _composerRule = Controls.RuleBuilder()
-            .WithColor(ColorScheme.Separator)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .Build();
-
-        // THE SAME LINE UNDER THE COMPOSER. The status bar is a third kind of surface again — not
-        // transcript, not input — and it sat directly against the composer with nothing marking the
-        // change. One rule above it and one above the composer make the three read as three bands
-        // rather than as a prompt with a caption stuck to it.
-        //
-        // UNPADDED, unlike the composer's rule. That one is inset a column so it stops at the card's
-        // edges; the status bar fills the pane edge to edge, so a rule that stopped short of the
-        // frame would leave a notch at each end.
-        _statusRule = Controls.RuleBuilder()
-            .WithColor(ColorScheme.Separator)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .WithMargin(1,0,1,0)
-            .Build();
-
-        _composer = Controls.Grid()
-            .Columns(GridLength.Star(1))
-            // CELLS, not Auto, for the prompt's row. MultilineEditControl grows to fill its bounds
-            // when its VerticalAlignment is Fill (GetEffectiveViewportHeight), and Fill is what it
-            // inherits here — so an Auto row handed it the composer's whole share and it reported
-            // back that it wanted all of it. The result was three usable lines of prompt sitting on
-            // seven rows of its own background, with the mode line pushed to the bottom of the gap.
-            // Naming the row's height makes the control's own viewportHeight the thing that decides.
-            // A SEPARATOR ABOVE THE CARD. The transcript and the composer are two different kinds
-            // of surface, and without a line between them a long answer runs straight into the
-            // prompt with nothing marking where output ends and input begins. Structure-coloured
-            // and one cell tall: enough to read as a boundary, not enough to read as chrome.
-            // AUTO for the prompt box's row, not a fixed height: a permission prompt takes its
-            // place there and is as tall as its question. The prompt box itself pins its own two
-            // rows, so Auto still resolves to exactly PromptRows + 1 in the ordinary case.
-            // THE STATUS BAR IS NOT IN HERE. It reports on the SESSION — the theme, the plugin
-            // key, the context percentage — none of which belong to the composer, and all of which
-            // must stay on screen when the composer does not. Keeping them in one grid meant a
-            // composer that moves takes the shortcut hints and the token readout with it.
-            .Rows(GridLength.Cells(1), GridLength.Auto())
-            .Place(_composerRule, 0, 0)
-            .Place(_promptBox, 1, 0)
-            .WithAlignment(HorizontalAlignment.Stretch)
-            // NOT Bottom. Bottom-aligning the composer inside its row only makes sense if the row is
-            // taller than the composer — and when it is, that is the defect: a row measuring six rows
-            // larger than its contents sinks the composer to the bottom, and the unused top becomes a
-            // band of dead space between the end of the transcript and the prompt. The chat's Star(1)
-            // row ends where this row begins, so those rows are unreachable by either pane. Sizing to
-            // content leaves nothing to sink through.
-            .WithVerticalAlignment(VerticalAlignment.Top)
-            .Build();
-
-        // The one-column inset, on the CELL rather than the control — see the prompt box's note.
-        // The separator's row is padded to match, so the rule stops where the card's edges are
-        // rather than running the full width of the pane.
-        _composer.Cell(0, 0).Padding = new Padding(1, 0, 1, 0);
-        _composer.Cell(1, 0).Padding = new Padding(1, 0, 1, 0);
+        _composer = BuildComposerFor(_sessionTabs[0]);
 
 
         // TWO COLUMNS: the transcript, and the session panel beside it. The panel's column is Auto,

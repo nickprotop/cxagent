@@ -1302,7 +1302,19 @@ public static class AppBootstrap
             // "/mcp reload" when the user descended into its arguments.
             mainWindow.Input.Input = completion;
         };
-        mainWindow.Input.InputChanged += (_, text) => commandMenu.Sync(text);
+        // EVERY SESSION TAB'S COMPOSER, NOT JUST THE FIRST. `mainWindow.Input` resolves to the
+        // active tab, so the menu's own reads follow the user — but a SUBSCRIPTION binds to the
+        // control it was made on, and a second tab's composer would have had none: typing in it
+        // synced nothing and reached no completion.
+        //
+        // Handed to the window so a tab opened later is wired the same way, rather than only the
+        // ones that existed when this ran.
+        // WIRED ONCE PER CONTROL, and the window records which it has done. `mainWindow.Input`
+        // resolves to the ACTIVE tab, so calling this for "the composer" is ambiguous the moment
+        // there are two — and a control subscribed twice syncs twice per keystroke, which reads as
+        // the menu eating every other letter ("/eexxiitt").
+        mainWindow.WireComposer = input => input.InputChanged += (_, text) => commandMenu.Sync(text);
+        mainWindow.WireFirstComposer();
 
         // DECLARED BEFORE THE KEY HANDLER because the handler must forward to it, and assigned later
         // where mainWindow exists. A desktop portal does NOT capture keys on its own here — the theme
@@ -1433,7 +1445,9 @@ public static class AppBootstrap
             // still does nothing. Reported against v0.4.2 — text types into the composer, Enter does
             // nothing. SubmissionEnabled is safe to fold in here because it is not a busy flag: its
             // only other use is choosing the placeholder text.
-            if (!session.HasAgent || !mainWindow.SubmissionEnabled)
+            // THE ACTIVE TAB'S SESSION, for the same reason the submit below uses it: with several
+            // conversations, "is there a model" is a question about the one being typed into.
+            if (!(mainWindow.ActiveSession ?? session).HasAgent || !mainWindow.SubmissionEnabled)
             {
                 var command = SessionCommands.Match(goalText, manager.Commands);
                 if (command is null or { NeedsModel: true })

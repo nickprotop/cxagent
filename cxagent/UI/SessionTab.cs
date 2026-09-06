@@ -25,9 +25,18 @@ namespace CxAgent.UI;
 /// </summary>
 public sealed class SessionTab
 {
-    /// <summary>Rows the composer draws. Star above it, cells for it — an Auto row here would hand
-    /// the transcript's ScrollablePanel an intrinsic measure, the shape that once painted nothing.</summary>
-    private const int ComposerRows = 3;
+    /// <summary>
+    /// Rows the composer draws — the window's own count, not a copy.
+    ///
+    /// <para>THIS WAS A LITERAL 3 AND THE WINDOW'S IS <c>PromptRows + 2</c>, WHICH IS 5. A second
+    /// tab's composer was allocated two rows too few, so it rendered with a prompt row missing and
+    /// no mode line at all — the same class of bug as every other duplicated piece of this composer,
+    /// and the reason all of them are shared now.</para>
+    ///
+    /// <para>Star above it and cells for it: an Auto row here would hand the transcript's
+    /// ScrollablePanel an intrinsic measure, the shape that once painted nothing.</para>
+    /// </summary>
+    private const int ComposerRows = MainWindow.ComposerRows;
 
     /// <summary>
     /// What this tab is a view of, or null before one is wired.
@@ -52,6 +61,18 @@ public sealed class SessionTab
 
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
+
+    /// <summary>
+    /// The grid holding this tab's prompt and mode line.
+    ///
+    /// <para>WHAT A PERMISSION PROMPT REPLACES. The gate swaps a control into the composer's cell
+    /// and puts this back afterwards, so it has to be the box belonging to the tab that asked.</para>
+    /// </summary>
+    public GridControl? PromptBox { get; set; }
+
+    /// <summary>This tab's composer grip — the accent bar left of the prompt, repainted on a theme
+    /// switch.</summary>
+    public MarkupControl? Grip { get; set; }
 
     /// <summary>The transcript over the composer — what the tab shows.</summary>
     public GridControl Content { get; private set; } = null!;
