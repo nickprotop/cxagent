@@ -62,7 +62,13 @@ public static class SessionLifecycleLog
                 detail,
             }, Compact);
 
-            _ = logs.AppendAsync(Agent, Job, Stream, line + Environment.NewLine);
+            // AWAITED, NOT FIRE AND FORGET. AppendAsync recreates the directory it writes into, so
+            // a write still in flight when a caller tears its own down puts the folder BACK — and a
+            // test deleting a temp directory then fails with "directory not empty" somewhere else
+            // entirely. Finishing before Open returns costs one small append on a path that already
+            // opens a database.
+            logs.AppendAsync(Agent, Job, Stream, line + Environment.NewLine)
+                .GetAwaiter().GetResult();
         }
         catch (Exception)
         {

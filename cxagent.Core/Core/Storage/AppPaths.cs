@@ -20,6 +20,22 @@ public class AppPaths
     /// </summary>
     public string HistoryPath => Path.Combine(ConfigDir, "history.db");
 
+    /// <summary>
+    /// The transcript store: what each session's front end was SHOWN, so a client attaching later
+    /// can be shown the same thing.
+    ///
+    /// <para>A FOURTH FILE, AND DELIBERATELY NOT THE ARCHIVE. <see cref="HistoryPath"/> holds
+    /// measurements — how long a call took, how many characters came back — and its own comment
+    /// calls it the place a question like "is planner worth spawning" gets answered. Tool arguments
+    /// and results are neither measurements nor safe there: they carry whatever the agent touched,
+    /// including a token in a command or a key in a file, and that store is append-only and never
+    /// rewritten.</para>
+    ///
+    /// <para>SO THIS ONE IS DISPOSABLE. It exists to replay a conversation to a front end, it is
+    /// deleted with its session, and losing it costs nothing but scrollback.</para>
+    /// </summary>
+    public string TranscriptPath => Path.Combine(ConfigDir, "transcript.db");
+
     public string LogsDir => Path.Combine(ConfigDir, "logs");
 
     public AppPaths(string? overrideDir = null)
