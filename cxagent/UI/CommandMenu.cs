@@ -63,8 +63,18 @@ public sealed class CommandMenu
     /// </summary>
     public static string? CompletionFor(CommandArgument argument, string prefix)
     {
+        // A PLACEHOLDER IS NOT PART OF THE COMPLETION. "resume <number|id>" completes to "resume ",
+        // leaving the user to supply the value; the angle brackets are how the table SAYS a value is
+        // required, not text anybody types.
         var bracket = argument.Name.IndexOf('<');
         if (bracket > 0) return $"{prefix} {argument.Name[..bracket]}";
+
+        // AND NEITHER IS AN OPTIONAL ONE. "new [folder]" completes to "new" and is then a complete
+        // command — the argument may follow or may not, so the menu has nothing left to offer and
+        // must let Enter finish. Without this the verb was uncompletable: the menu stayed open over
+        // a line that was already valid.
+        var optional = argument.Name.IndexOf('[');
+        if (optional > 0) return $"{prefix} {argument.Name[..optional].TrimEnd()}";
 
         return argument.Completes ? $"{prefix} {argument.Name}" : null;
     }
@@ -234,6 +244,13 @@ public sealed class CommandMenu
 
             matches = [.. args.Select(a => new Row(
                 a.Name, a.Summary, CompletionFor(a, prefix)))];
+
+            // NOTHING LEFT TO OFFER ONCE A COMPLETE ARGUMENT IS TYPED. "/sessions new /some/path"
+            // still matched the verb `new`, so the menu sat over a line that was already finished
+            // and Enter chose that completion instead of submitting. A row completing to what the
+            // user has ALREADY typed is not a suggestion.
+            matches = [.. matches.Where(m =>
+                !string.Equals(m.Completion?.TrimEnd(), text.TrimEnd(), StringComparison.Ordinal))];
         }
         else
         {

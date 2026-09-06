@@ -187,6 +187,31 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private int _promptTab = -1;
 
+    /// <summary>
+    /// Records a session's spend and context on ITS tab, and repaints if that tab is in front.
+    ///
+    /// <para>NOT ON THE ACTIVE TAB. The window's setters write wherever the user is looking, so a
+    /// first session's numbers arriving while a second is on screen overwrote the second's — and the
+    /// second's own updates never reached its tab at all. A statistic belongs to the conversation
+    /// that produced it, whoever is watching.</para>
+    /// </summary>
+    public void NoteSessionStats(Core.Sessions.Session session, int? spent, int? contextUsed)
+    {
+        var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+        if (tab is null) return;
+
+        if (spent is { } s) tab.SpentTokens = s;
+        if (contextUsed is { } c) tab.ContextUsed = c;
+
+        // ONLY WHAT IS ON SCREEN NEEDS REPAINTING. A background session's numbers are recorded and
+        // shown the moment its tab comes forward.
+        if (ReferenceEquals(tab, ActiveSessionTab))
+        {
+            if (spent is { } total) SetTokenTotal(total);
+            RefreshSessionPanel();
+        }
+    }
+
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
     public void NotePromptTabBySessionId(string? sessionId) =>
         _promptTab = sessionId is null

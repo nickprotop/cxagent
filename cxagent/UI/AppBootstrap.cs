@@ -615,9 +615,11 @@ public static class AppBootstrap
             // Injected here for /exit's reason: opening a tab needs a window.
             if (declared.Name == "/sessions")
                 manager.Commands.RegisterVerb("/sessions",
+                    // COMPLETES, because the folder is OPTIONAL: "new" on its own is a finished
+                    // command that asks with a picker. A non-completing verb leaves the menu open
+                    // over a line that is already valid.
                     new CommandArgument("new [folder]",
-                        "open another session in a tab — asks for a folder when none is given",
-                        Completes: false),
+                        "open another session in a tab — asks for a folder when none is given"),
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
                         system, mainWindow, manager, permissionRules, resolution, startupMode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
@@ -1029,6 +1031,10 @@ public static class AppBootstrap
                 // readout: it sits beside an occupancy percentage that is the parent's, so a
                 // session-wide figure there read as the parent's and was four times too large.
                 var (ownIn, ownOut) = session.OwnSpend;
+
+                // THIS SESSION'S TAB, NOT THE ACTIVE ONE. The plain setters write wherever the user
+                // is looking, so one session's numbers landed on another's panel.
+                mainWindow.NoteSessionStats(session, ownIn + ownOut, contextUsed: null);
                 mainWindow.SetTokenTotal(ownIn + ownOut);
                 mainWindow.SetTokenSplit(ownIn, ownOut);
 
@@ -1054,7 +1060,11 @@ public static class AppBootstrap
                     TotalCost = spend.TotalCost,
                 });
             });
-            session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used));
+            session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() =>
+            {
+                mainWindow.NoteSessionStats(session, spent: null, contextUsed: used);
+                mainWindow.SetContextUsed(used);
+            });
             session.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
             session.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
             // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for

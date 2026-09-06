@@ -176,6 +176,19 @@ public sealed class NewSessionCommand
             },
             _host.Mode.Agent);
 
+        // ITS OWN STATS, REACHING ITS OWN TAB. The startup path subscribes these for the first
+        // session inside WireRunner, which never runs again — so without this a second session's
+        // spend and context never reached the panel at all, and it sat at zero while the session
+        // worked.
+        session.TokensUpdated += (_, _) => _host.System.EnqueueOnUIThread(() =>
+        {
+            var (ownIn, ownOut) = session.OwnSpend;
+            _host.Main.NoteSessionStats(session, ownIn + ownOut, contextUsed: null);
+        });
+
+        session.ContextUsedUpdated += (_, used) => _host.System.EnqueueOnUIThread(() =>
+            _host.Main.NoteSessionStats(session, spent: null, contextUsed: used));
+
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
 
         // ITS OWN PLUGINS, LOADED FOR ITS OWN FOLDER. The startup path loads them for the first
