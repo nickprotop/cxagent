@@ -29,8 +29,17 @@ public sealed class SessionTab
     /// the transcript's ScrollablePanel an intrinsic measure, the shape that once painted nothing.</summary>
     private const int ComposerRows = 3;
 
-    /// <summary>What this tab is a view of.</summary>
-    public Core.Sessions.Session Session { get; }
+    /// <summary>
+    /// What this tab is a view of, or null before one is wired.
+    ///
+    /// <para>THE WINDOW IS BUILT BEFORE THE SESSION EXISTS — the composition root needs a window to
+    /// hand the session's ports — so the first tab spends a moment as controls with no conversation
+    /// behind them. Null says so rather than a half-built session pretending otherwise.</para>
+    /// </summary>
+    public Core.Sessions.Session? Session { get; private set; }
+
+    /// <summary>Records the session this tab shows, once the composition root has one.</summary>
+    public void NoteSession(Core.Sessions.Session session) => Session = session;
 
     /// <summary>The conversation.</summary>
     public ChatTranscriptControl Chat { get; }
@@ -53,7 +62,7 @@ public sealed class SessionTab
     /// </summary>
     public string Label { get; set; } = "Chat";
 
-    public SessionTab(Core.Sessions.Session session, ChatTranscriptControl chat,
+    public SessionTab(Core.Sessions.Session? session, ChatTranscriptControl chat,
                       PromptControl input, JobPanelControl jobPanel)
     {
         Session = session;

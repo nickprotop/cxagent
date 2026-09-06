@@ -32,7 +32,7 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private ResolvedConfig _resolution;
 
-    public ChatTranscriptControl Chat { get; } = new()
+    private readonly ChatTranscriptControl _firstChat = new()
     {
         VerticalAlignment = VerticalAlignment.Fill,
         HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -60,7 +60,7 @@ public sealed class MainWindow : IDisposable
     /// grid's composer row and the grip's height dynamic, and every agent CLI in this class keeps a
     /// fixed prompt. MeasureDOM clamps between the two, so pinning them pins the height.</para>
     /// </summary>
-    public PromptControl Input { get; } = new()
+    private readonly PromptControl _firstInput = new()
     {
         // NO MARGIN. The cell already carries the composer's inset (_composer.Cell(0,0).Padding), and
         // the mode line beside it has none — so a margin here pushed the prompt one column right of
@@ -92,7 +92,40 @@ public sealed class MainWindow : IDisposable
         InputBackgroundColor = ColorScheme.ComposerSurface,
         InputFocusedBackgroundColor = ColorScheme.ComposerSurface,
     };
-    public JobPanelControl JobPanel { get; }
+    private readonly JobPanelControl _firstJobPanel;
+
+    /// <summary>
+    /// The sessions this window is showing, one per tab, in tab order.
+    ///
+    /// <para>THE FIRST ONE'S CONTROLS ARE BUILT AS FIELDS ABOVE rather than through the same path as
+    /// the rest, because their initialisers carry every layout decision this window ever argued for
+    /// and moving them would have meant re-deriving all of it. The list is seeded with them; a
+    /// second session builds its own the same way.</para>
+    /// </summary>
+    private readonly List<SessionTab> _sessionTabs = [];
+
+    /// <summary>
+    /// The session tab the user is looking at, or the first when the active tab is not one.
+    ///
+    /// <para>A SHELL OR A FILE TAB IS NOT A SESSION, so the active tab index does not index this
+    /// list. Falling back to the first is what keeps every existing caller correct: a status readout
+    /// or a transcript write issued while a shell is on screen belongs to the conversation it came
+    /// from, which is the only one there is until a second is opened.</para>
+    /// </summary>
+    private SessionTab ActiveSessionTab =>
+        _sessionTabs.Count > 0 && Tabs.ActiveTabIndex >= 0 && Tabs.ActiveTabIndex < _sessionTabs.Count
+            ? _sessionTabs[Tabs.ActiveTabIndex]
+            : _sessionTabs.Count > 0 ? _sessionTabs[0]
+            : throw new InvalidOperationException("MainWindow.Build has not run yet.");
+
+    /// <summary>The active session's transcript.</summary>
+    public ChatTranscriptControl Chat => ActiveSessionTab.Chat;
+
+    /// <summary>The active session's composer.</summary>
+    public PromptControl Input => ActiveSessionTab.Input;
+
+    /// <summary>The active session's tool rows.</summary>
+    public JobPanelControl JobPanel => ActiveSessionTab.JobPanel;
     /// <summary>
     /// The bottom line: working directory on the left, context and the two escape keys on the right.
     ///
@@ -741,11 +774,22 @@ public sealed class MainWindow : IDisposable
     {
         _system = system;
         _resolution = resolution;
-        JobPanel = new JobPanelControl(system, logs);
+        _firstJobPanel = new JobPanelControl(system, logs);
     }
 
     public Window Build()
     {
+        // THE FIRST SESSION'S TAB, SEEDED BEFORE ANYTHING READS Chat OR Input. Every property below
+        // resolves through this list, so it has to hold the first entry before the first read — and
+        // Build is the earliest point where that is true, since the fields it holds are initialised
+        // by then and nothing has drawn yet.
+        //
+        // A NULL SESSION, BECAUSE THIS WINDOW IS BUILT BEFORE ONE EXISTS. The composition root wires
+        // the session afterwards and calls NoteSession; until then the tab is a set of controls with
+        // no conversation behind it, which is exactly what it is.
+        if (_sessionTabs.Count == 0)
+            _sessionTabs.Add(new SessionTab(null, _firstChat, _firstInput, _firstJobPanel));
+
         SubmissionEnabled = _resolution.HasProvider;
 
         // MARKDOWN'S PALETTE IS NOT INSTALLED HERE. ColorScheme.DeriveFrom sets
