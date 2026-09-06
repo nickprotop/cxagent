@@ -210,6 +210,12 @@ public sealed class NewSessionCommand
         // panel had no id at all, so a conversation the user could see could not be resumed by name.
         tab.AgentId = session.SessionId ?? string.Empty;
 
+        // AND THE MODE THE SESSION WAS OPENED IN. The session itself is wired with it above; the TAB
+        // has its own copy, because Shift+Tab changes one conversation and the mode line reports it.
+        // Left at the type's default, a new tab would advertise always-ask while its gate ran on
+        // whatever the process started in — a status line describing rules nobody was using.
+        tab.Mode = _host.Mode;
+
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
 
         // ITS OWN PLUGINS, LOADED FOR ITS OWN FOLDER. The startup path loads them for the first

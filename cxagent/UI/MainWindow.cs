@@ -1078,7 +1078,12 @@ public sealed class MainWindow : IDisposable
     /// while the agent holds a spawn tool. A status line that lies is worse than no status line,
     /// because it is the one thing a user checks INSTEAD of asking.</para>
     /// </summary>
-    private WorkingMode _mode = WorkingMode.Default;
+    /// <summary>The active session's working mode — see <see cref="SessionTab.Mode"/>.</summary>
+    private WorkingMode _mode
+    {
+        get => ActiveSessionTab.Mode;
+        set => ActiveSessionTab.Mode = value;
+    }
 
     /// <summary>
     /// The mode this session starts in, set BEFORE <see cref="Build"/>.
@@ -1140,8 +1145,19 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>The in/out split behind <see cref="_lastTokens"/>, so a refresh driven by the clock
     /// or a resize shows the same numbers as the one driven by a turn.</summary>
-    private int _lastInput;
-    private int _lastOutput;
+    /// <summary>The active session's input total — see <see cref="SessionTab.LastInput"/>.</summary>
+    private int _lastInput
+    {
+        get => ActiveSessionTab.LastInput;
+        set => ActiveSessionTab.LastInput = value;
+    }
+
+    /// <inheritdoc cref="_lastInput"/>
+    private int _lastOutput
+    {
+        get => ActiveSessionTab.LastOutput;
+        set => ActiveSessionTab.LastOutput = value;
+    }
 
     /// <summary>
     /// Spend per model id, for the panel's breakdown. Empty until something is recorded, and it stays
@@ -1286,6 +1302,15 @@ public sealed class MainWindow : IDisposable
         _system = system;
         _resolution = resolution;
         _firstJobPanel = new JobPanelControl(system, logs);
+
+        // THE FIRST TAB EXISTS FROM CONSTRUCTION, so everything per-session resolves before Build.
+        // StartupMode is an INIT property — it lands after this constructor and before Build — and
+        // the banner it decides cannot be revised afterwards, so the mode has to have somewhere to
+        // live by then.
+        //
+        // AFTER _firstJobPanel, not before: a tab built earlier captures a null panel, and Build
+        // then dereferences it. That is what an earlier attempt at this got wrong.
+        _sessionTabs.Add(new SessionTab(null, _firstChat, _firstInput, _firstJobPanel));
     }
 
     public Window Build()

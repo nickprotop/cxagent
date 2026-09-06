@@ -1,3 +1,4 @@
+using CxAgent.Core.Sessions;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
 using Ctl = SharpConsoleUI.Builders.Controls;
@@ -77,6 +78,21 @@ public sealed class SessionTab
     /// a conversation rather than to a terminal.</para>
     /// </summary>
     public int SpentTokens { get; set; }
+
+    /// <summary>
+    /// This session's working mode — which agent mode, and how much the gate asks.
+    ///
+    /// <para>PER SESSION, because Shift+Tab changes how THIS conversation behaves. Held on the
+    /// window, cycling it in one tab changed what every OTHER tab reported while each session's gate
+    /// went on using its own policy — a status line describing somebody else's rules.</para>
+    /// </summary>
+    public WorkingMode Mode { get; set; } = WorkingMode.Default;
+
+    /// <summary>This session's own input and output totals, for the split the panel shows.</summary>
+    public int LastInput { get; set; }
+
+    /// <inheritdoc cref="LastInput"/>
+    public int LastOutput { get; set; }
 
     /// <inheritdoc cref="SpentTokens"/>
     public int? ContextUsed { get; set; }
