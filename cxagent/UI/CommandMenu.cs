@@ -137,6 +137,19 @@ public sealed class CommandMenu
     public string? Root { get; set; }
 
     /// <summary>
+    /// The root, read when it is needed rather than captured.
+    ///
+    /// <para>WHY A FUNCTION. With several sessions the folder an @ reference resolves against is the
+    /// one the user is typing in, which changes as they switch tabs — a root assigned once completes
+    /// a second session's paths against the first session's directory.</para>
+    /// </summary>
+    public Func<string?>? RootOf { get; set; }
+
+    /// <summary>The root in force right now: the live one when a caller supplies it, else the fixed
+    /// one.</summary>
+    private string? CurrentRoot => RootOf?.Invoke() ?? Root;
+
+    /// <summary>
     /// Where the caret is in the composer.
     ///
     /// <para>A FUNC, NOT AN INT, because the caret moves without the text changing — an arrow key
@@ -178,7 +191,7 @@ public sealed class CommandMenu
 
         // THE @ BRANCH IS ANCHORED TO THE CARET, the slash branch to the start of the text, so the
         // two cannot both match and their order is not a precedence question.
-        if (Root is { Length: > 0 } root && Caret is { } caret
+        if (CurrentRoot is { Length: > 0 } root && Caret is { } caret
             && AtToken.At(text, caret()) is { } at)
         {
             _at = at;

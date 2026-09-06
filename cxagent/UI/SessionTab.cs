@@ -59,6 +59,16 @@ public sealed class SessionTab
     /// <summary>This session's tool rows.</summary>
     public JobPanelControl JobPanel { get; }
 
+    /// <summary>
+    /// The sink that owns this tab's tool rows, so the window's clock ticks the right ones.
+    ///
+    /// <para>ONE CLOCK, ONE SINK PER TAB. A running row's elapsed time is rewritten once a second by
+    /// the window; held as a single field it ticked whichever tab set it last, while a second
+    /// session's rows went stale and the two contended on one panel — which the watchdog reports as
+    /// a stall in Drain.</para>
+    /// </summary>
+    public InlineJobSink? JobSink { get; set; }
+
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
 

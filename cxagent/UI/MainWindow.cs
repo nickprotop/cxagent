@@ -22,6 +22,9 @@ namespace CxAgent.UI;
 public sealed class MainWindow : IDisposable
 {
     private readonly ConsoleWindowSystem _system;
+
+    /// <summary>Kept so a tab opened later can build its own job panel.</summary>
+    private LogFileManager _logs = null!;
     /// <summary>
     /// The provider this window reports on.
     ///
@@ -107,6 +110,15 @@ public sealed class MainWindow : IDisposable
 
     private readonly PromptControl _firstInput = NewPrompt();
     private readonly JobPanelControl _firstJobPanel;
+
+    /// <summary>
+    /// A tool-row panel for one tab.
+    ///
+    /// <para>NOT SHARED. Every tab had the first one's, so two sessions running tools at once wrote
+    /// their rows through one control — which is contention on the UI thread, and the shape a
+    /// watchdog reports as a stall in Drain.</para>
+    /// </summary>
+    private JobPanelControl NewJobPanel() => new(_system, _logs);
 
     /// <summary>
     /// The sessions this window is showing, one per tab, in tab order.
@@ -390,7 +402,7 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public SessionTab AddSessionTab(Core.Sessions.Session session)
     {
-        var tab = new SessionTab(session, NewTranscript(), NewPrompt(), _firstJobPanel);
+        var tab = new SessionTab(session, NewTranscript(), NewPrompt(), NewJobPanel());
         tab.Compose(BuildComposerFor(tab));
 
         _sessionTabs.Add(tab);
@@ -1065,6 +1077,7 @@ public sealed class MainWindow : IDisposable
 
     public MainWindow(ConsoleWindowSystem system, ResolvedConfig resolution, LogFileManager logs)
     {
+        _logs = logs;
         _system = system;
         _resolution = resolution;
         _firstJobPanel = new JobPanelControl(system, logs);
@@ -1721,7 +1734,11 @@ public sealed class MainWindow : IDisposable
     /// at which both could be passed to the other. Null until then, and the tick simply does nothing
     /// — the window runs for a while before any session is wired, and there are no rows to tick.</para>
     /// </summary>
-    public InlineJobSink? JobSink { get; set; }
+    public InlineJobSink? JobSink
+    {
+        get => ActiveSessionTab.JobSink;
+        set => ActiveSessionTab.JobSink = value;
+    }
 
     private void StartPanelClock()
     {

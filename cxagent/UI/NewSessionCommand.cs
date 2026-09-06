@@ -31,13 +31,15 @@ public sealed class NewSessionCommand
     /// <param name="Rules">The permission store every session's policy is scoped against.</param>
     /// <param name="Resolution">The configuration a new session resolves against.</param>
     /// <param name="Mode">The working mode a new session starts in.</param>
+    /// <param name="ConfigDir">Where plugins are discovered and their child processes recorded.</param>
     public readonly record struct Host(
         ConsoleWindowSystem System,
         MainWindow Main,
         SessionManager Manager,
         PermissionRulesStore Rules,
         ResolvedConfig Resolution,
-        WorkingMode Mode);
+        WorkingMode Mode,
+        string ConfigDir);
 
     private readonly Host _host;
 
@@ -147,6 +149,11 @@ public sealed class NewSessionCommand
         sink.OnUserTurnAdded = jobs.TurnBegan;
         sink.OnAssistantRoundEnded = jobs.RoundEnded;
 
+        // THE TAB OWNS ITS SINK, so the window's one-second clock ticks THIS tab's running rows.
+        // Held as a single field it ticked whichever session wired it last, leaving the other's
+        // elapsed times frozen and both contending on one panel.
+        tab.JobSink = jobs;
+
         _host.Manager.Open(session, _host.Resolution,
             new SessionPorts
             {
@@ -170,5 +177,39 @@ public sealed class NewSessionCommand
             _host.Mode.Agent);
 
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
+
+        // ITS OWN PLUGINS, LOADED FOR ITS OWN FOLDER. The startup path loads them for the first
+        // session and closes over it, so a second session had none at all — no tools, and no system
+        // rows saying so, which is indistinguishable from a session that simply has no plugins
+        // configured. The search folders include the session's own directory, so a project-local
+        // plugin belongs to the project that declares it.
+        _ = LoadPluginsAsync(session, tab);
+    }
+
+    /// <summary>
+    /// Loads this session's plugins, reporting into its own transcript.
+    ///
+    /// <para>FIRE AND FORGET, LIKE THE STARTUP PATH: loading spawns processes and may ask permission,
+    /// and a command handler is synchronous. The task is discarded rather than awaited, so a failure
+    /// is reported into the tab rather than thrown at a caller that has already returned.</para>
+    /// </summary>
+    private async Task LoadPluginsAsync(Session session, SessionTab tab)
+    {
+        if (_host.Resolution.Plugins.Count == 0) return;
+
+        try
+        {
+            var folders = PluginDiscovery.SearchFolders(
+                _host.Resolution.PluginPaths, session.WorkingDirectory, _host.ConfigDir);
+
+            await PluginDiscovery.LoadConfiguredAsync(session, _host.Resolution.Plugins, folders,
+                _host.ConfigDir,
+                message => tab.Chat.AddMessage(ChatRole.System, message),
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            tab.Chat.AddMessage(ChatRole.System, $"could not load plugins: {ex.Message}");
+        }
     }
 }

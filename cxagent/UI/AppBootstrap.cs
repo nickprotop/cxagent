@@ -619,7 +619,7 @@ public static class AppBootstrap
                         "open another session in a tab — asks for a folder when none is given",
                         Completes: false),
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
-                        system, mainWindow, manager, permissionRules, resolution, startupMode))
+                        system, mainWindow, manager, permissionRules, resolution, startupMode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
 
             if (declared.Name == "/stats")
@@ -1279,7 +1279,11 @@ public static class AppBootstrap
 
             // WHAT AN @ PATH IS RELATIVE TO. The session's own folder, so a completed reference
             // reads the way the user would have typed it and means the same thing to the model.
-            Root = session.WorkingDirectory,
+            // THE ACTIVE SESSION'S FOLDER, read per keystroke rather than captured. An @ reference
+            // means "in the project I am typing in", and a root fixed at startup completes a second
+            // session's paths against the first one's directory — which then joins an absolute path
+            // onto a foreign root and produces the path twice over.
+            RootOf = () => mainWindow.ActiveSession?.WorkingDirectory ?? session.WorkingDirectory,
 
             // THE END OF THE TEXT, NOT THE TRUE CARET — and this is a limitation worth naming rather
             // than hiding. PromptControl keeps its caret index private (CurrentCursorPosition), so a
