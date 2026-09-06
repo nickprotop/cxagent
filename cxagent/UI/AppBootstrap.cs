@@ -389,8 +389,15 @@ public static class AppBootstrap
         // decides whether a write asks, and it was only ever assigned on a LATER /mode or Shift+Tab —
         // so a restored AlwaysAsk would have shown in the status bar while the policy still ran at
         // AcceptEdits, which is the dangerous direction of that mismatch.
+        // THE SESSION'S ID RIDES THE POLICY, so a decision made under it can be attributed. One gate
+        // serves every session in the process and its reports named none of them; the policy is
+        // already per-session and already attached to every request, so nothing that BUILDS a
+        // request has to learn what a session is.
         var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules,
-            startupMode.Edits);
+            startupMode.Edits)
+        {
+            SessionId = session.Id,
+        };
         // The UI's own transcript writer. The control it wraps is created with mainWindow above and
         // never replaced, so there is no later lifetime to
         // chase: every caller below can hold this one instance for good.
@@ -957,13 +964,14 @@ public static class AppBootstrap
             // because the session id does not exist until the host does — and reassigned on every
             // re-wire (a re-wire changes provider), so the hook reads the session lazily rather than closing
             // over the id of a host that has since been replaced.
-            // THE SESSION'S ID, NOT THE AGENT'S. A permission decision belongs to the session that
-            // made it, and the agent's id is replaced by every re-wire — so keying on that would
-            // split one session's decisions across as many ids as it had models. Session.Id is
-            // minted once and outlives them.
+            // THE REPORT'S SESSION, NOT THE ONE THIS CLOSURE WAS BUILT OVER. One gate serves every
+            // session, so a report can arrive from any of them; reading `session` here would file
+            // every row against whichever session happened to wire the callback. The fallback to
+            // this session's id covers a request that carried no policy, which is the only case
+            // where the report cannot say.
             permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
-                    session.Id, DateTimeOffset.UtcNow,
+                    report.SessionId ?? session.Id, DateTimeOffset.UtcNow,
                     report.Kind.ToString(), report.Decision, report.Requester,
                     session.WorkingDirectory, report.Subject, report.Flagged));
 

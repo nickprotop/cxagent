@@ -40,6 +40,21 @@ public class PermissionPolicy
     }
 
     /// <summary>
+    /// Which session this policy belongs to, or null when nobody said.
+    ///
+    /// <para>SO A DECISION CAN BE ATTRIBUTED. One gate serves every session in a process, and its
+    /// reports named none of them — a denial echoed to "the" transcript reached whichever session
+    /// the callback was built over, and a history row was filed against whoever asked last. The
+    /// policy is the one thing already per-session and already attached to every request, so it is
+    /// where the answer belongs; nothing that builds a request has to learn about sessions.</para>
+    ///
+    /// <para>INIT-ONLY AND OPTIONAL rather than a fourth constructor parameter: every existing
+    /// construction site keeps working, and a policy built without one reports null rather than
+    /// guessing — which is honest for a consumer that has no sessions at all.</para>
+    /// </summary>
+    public string? SessionId { get; init; }
+
+    /// <summary>
     /// When a write happens without asking.
     ///
     /// <para>SETTABLE, because the mode is session state a user flips mid-session with Shift+Tab, and
