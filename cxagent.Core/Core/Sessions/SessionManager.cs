@@ -467,6 +467,14 @@ public sealed class SessionManager : IDisposable
     {
         SessionFactory.Wire(session, config ?? Config, Shared, ports, mode ?? WorkingMode.Default);
 
+        // AFTER WIRING, so the agent id and the model are real by the time they are written. Open is
+        // idempotent — a re-wire calls it again with the same Session — so this records both the
+        // first opening and every re-wire, which is what makes a model switch followable.
+        var reopened = false;
+        lock (_gate) reopened = _sessions.Contains(session);
+        SessionLifecycleLog.Write(Shared.Logs, reopened ? "rewire" : "open", session,
+            model: (config ?? Config)?.DisplayName, mode: (mode ?? WorkingMode.Default).ToString());
+
         lock (_gate)
         {
             if (!_sessions.Contains(session)) _sessions.Add(session);
@@ -669,6 +677,7 @@ public sealed class SessionManager : IDisposable
     /// <param name="snapshot">The saved conversation and its spend.</param>
     public void Resume(Session session, Storage.SessionSnapshot snapshot, Action? rewire = null)
     {
+        SessionLifecycleLog.Write(Shared.Logs, "resume", session);
         if (session.RefuseIfBusy()) return;
 
         // THE STORED HOOK WHEN NOTHING IS PASSED. A caller that has one uses it; /sessions resume has
@@ -708,6 +717,7 @@ public sealed class SessionManager : IDisposable
     /// </summary>
     public void Close(Session session)
     {
+        SessionLifecycleLog.Write(Shared.Logs, "close", session);
         lock (_gate) _sessions.Remove(session);
 
         // UNWIRE EVERY PLUGIN FIRST — the plugin design: "closing a session is unwiring every plugin it
