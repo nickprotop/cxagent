@@ -1114,6 +1114,9 @@ public sealed class MainWindow : IDisposable
     /// <para>It reached five parameters by accretion — the hit rate, then the per-agent split, then
     /// the write count — which is how every long-parameter method in this codebase got long.</para>
     /// </summary>
+    /// <summary>A reading for a session that has spent nothing yet — what a fresh tab shows.</summary>
+    private static readonly SpendReading EmptySpend = new() { ByInstance = new Dictionary<string, int>() };
+
     public sealed record SpendReading
     {
         public required IReadOnlyDictionary<string, int> ByInstance { get; init; }
@@ -1470,7 +1473,12 @@ public sealed class MainWindow : IDisposable
             // without this they keep showing the conversation the user has just left.
             RefreshSessionPanel();
             SetTokenTotal(ActiveSessionTab.SpentTokens);
-            if (ActiveSessionTab.Spend is { } spend) SetSpend(spend);
+
+            // A TAB WITH NO READING CLEARS THE PANEL rather than leaving the last one. Skipping the
+            // call left the previous tab's figures on screen under a new session's name — the panel
+            // said 8,684 tokens beside a folder that had spent none, which is the most misleading
+            // state of the three (right label, wrong numbers).
+            SetSpend(ActiveSessionTab.Spend ?? EmptySpend);
         };
 
         _mainGrid = Controls.Grid()
