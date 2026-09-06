@@ -528,6 +528,11 @@ public sealed class MainWindow : IDisposable
         ShowActiveSession();
         ApplyRoleStyles(tab.Chat);
 
+        // AND THE CURSOR, UNCONDITIONALLY. ShowActiveSession declines to take focus while the tab
+        // strip has it — right for arrowing through tabs, wrong here: a session just created is one
+        // the user is about to type into, and they did not arrive at it by browsing.
+        if (_activePrompt is null) FocusComposer();
+
         return tab;
     }
 

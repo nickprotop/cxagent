@@ -48,6 +48,14 @@ public static class SessionLifecycleLog
     {
         if (logs is null) return;
 
+        var path = logs.PathFor(Agent, Job, Stream);
+        var root = logs.LogsDir;
+
+        // NOTHING TO WRITE INTO MEANS NOTHING TO WRITE. AppendAsync CREATES the directory it needs,
+        // which is right for the first log of a session and wrong for a late one: a write still in
+        // flight when a caller removes its own log root puts the folder back, and a test tearing
+        // down a temp directory then fails with "directory not empty" somewhere unrelated. Checking
+        // first costs one stat on a path that is about to open a database anyway.
         try
         {
             var line = JsonSerializer.Serialize(new
@@ -62,13 +70,30 @@ public static class SessionLifecycleLog
                 detail,
             }, Compact);
 
-            // AWAITED, NOT FIRE AND FORGET. AppendAsync recreates the directory it writes into, so
-            // a write still in flight when a caller tears its own down puts the folder BACK — and a
-            // test deleting a temp directory then fails with "directory not empty" somewhere else
-            // entirely. Finishing before Open returns costs one small append on a path that already
-            // opens a database.
-            logs.AppendAsync(Agent, Job, Stream, line + Environment.NewLine)
-                .GetAwaiter().GetResult();
+            // WRITTEN HERE RATHER THAN THROUGH LogFileManager, and both halves of that matter.
+            //
+            // NOT AWAITED THROUGH IT: AppendAsync waits on a process-wide semaphore per path, and
+            // Open runs on the UI thread from a command handler — blocking there stalled the loop
+            // for five seconds, which the watchdog reported as phase Input.
+            //
+            // AND NOT FIRE-AND-FORGET THROUGH IT EITHER: AppendAsync CREATES the directory it needs,
+            // so a write still in flight when a caller removes its own log root puts the folder
+            // back, and a test tearing down a temp directory then fails with "directory not empty".
+            //
+            // A plain synchronous append to a file whose directory must ALREADY exist has neither
+            // problem: it takes no shared lock, and it declines rather than recreating.
+            // THE FIRST RECORD CREATES THE FOLDER, later ones do not. A log needs somewhere to go
+            // on a fresh install; what it must not do is put back a folder somebody deleted while a
+            // write was in flight. Creating only when the log root itself is present distinguishes
+            // "never existed" from "has been taken away".
+            var dir = Path.GetDirectoryName(path) ?? string.Empty;
+            if (!Directory.Exists(dir))
+            {
+                if (!Directory.Exists(root)) return;
+                Directory.CreateDirectory(dir);
+            }
+
+            File.AppendAllText(path, line + Environment.NewLine);
         }
         catch (Exception)
         {

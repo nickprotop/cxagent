@@ -45,6 +45,10 @@ public class LogFileManager
     public LogFileManager Under(string parentAgentId) =>
         new(_paths, [.. _ancestry, parentAgentId]);
 
+    /// <summary>Where this manager's tree lives — for a caller that must know whether it still
+    /// exists before writing, rather than recreating it.</summary>
+    public string LogsDir => _paths.LogsDir;
+
     public string PathFor(string agentId, string jobId, string stream)
     {
         if (Array.IndexOf(Streams, stream) < 0)
