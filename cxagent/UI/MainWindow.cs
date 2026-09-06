@@ -237,6 +237,24 @@ public sealed class MainWindow : IDisposable
     private bool _waiting;
 
     /// <summary>
+    /// The bar's own line, rewritten when what is waiting changes.
+    ///
+    /// <para>HELD RATHER THAN REBUILT, because the bar is placed in a grid cell once: replacing the
+    /// control would mean replacing the cell, where rewriting its content does not.</para>
+    /// </summary>
+    private MarkupControl _waitingMessage = null!;
+
+    /// <summary>
+    /// The tabs whose session is waiting for an answer, by index.
+    ///
+    /// <para>A SET RATHER THAN A FLAG, because with several sessions two can be asking at once and a
+    /// bool can neither say which nor say "two". It also decides whether the bar shows at all: the
+    /// bar is for a prompt you are NOT looking at, which is a question about the ACTIVE tab against
+    /// this set, not about tab zero.</para>
+    /// </summary>
+    private readonly SortedSet<int> _waitingTabs = [];
+
+    /// <summary>
     /// The tabs. The transcript is tab zero and the only one until something opens another.
     ///
     /// <para>NO HEADER AT ONE TAB. <c>ShowTabHeader = false</c> makes <c>TabHeaderHeight</c> report
@@ -282,6 +300,7 @@ public sealed class MainWindow : IDisposable
     public void AddTab(string title, IWindowControl content, bool closable = true)
     {
         Tabs.AddTab(title, content, closable);
+        _tabTitles.Add(title);
         RefreshTabStrip();
         Tabs.ActiveTabIndex = Tabs.TabCount - 1;
     }
@@ -312,7 +331,20 @@ public sealed class MainWindow : IDisposable
     public void CloseTab(int index)
     {
         Tabs.RemoveTab(index);
+
+        // THE TITLES AND THE WAITING SET ARE INDEXED BY TAB, so both shift when one closes. Left
+        // alone, a dot would move to whatever tab inherited the index and the bar would name the
+        // wrong session — worse than saying nothing, because it points somewhere real.
+        if (index >= 0 && index < _tabTitles.Count) _tabTitles.RemoveAt(index);
+
+        var shifted = _waitingTabs.Where(t => t != index)
+                                  .Select(t => t > index ? t - 1 : t)
+                                  .ToList();
+        _waitingTabs.Clear();
+        foreach (var t in shifted) _waitingTabs.Add(t);
+
         RefreshTabStrip();
+        RefreshWaitingBar();
     }
 
     /// <summary>
@@ -342,8 +374,61 @@ public sealed class MainWindow : IDisposable
     private void SetWaiting(bool waiting)
     {
         _waiting = waiting;
+
+        // THE ACTIVE TAB IS THE ONE ASKING. A prompt belongs to the session the user was working in,
+        // which is the tab in front of them at the moment it is raised — a second session's prompt
+        // arrives while ITS tab is active, or through a path that names it.
+        SetWaiting(Tabs.ActiveTabIndex, waiting);
+    }
+
+    /// <summary>
+    /// Records that one tab's session is waiting, or has stopped.
+    ///
+    /// <para>BY TAB RATHER THAN BY A FLAG, because two sessions can be asking at once and the bar has
+    /// to say which — or how many. The single bool that used to serve the whole window could express
+    /// neither, and marked tab zero whichever session was actually asking.</para>
+    /// </summary>
+    private void SetWaiting(int tabIndex, bool waiting)
+    {
+        if (waiting) _waitingTabs.Add(tabIndex);
+        else _waitingTabs.Remove(tabIndex);
+
         RefreshWaitingBar();
     }
+
+    /// <summary>
+    /// What the bar says.
+    ///
+    /// <para>IT NAMES THE SESSION, because with one conversation "something wants you" was enough —
+    /// there was nowhere else it could be — and with several it is the one fact needed to decide
+    /// whether to switch. Several waiting collapses to a count rather than a list: three names is a
+    /// line nobody reads, and the dots on the tabs already say which.</para>
+    /// </summary>
+    private string WaitingText()
+    {
+        var caution = ColorScheme.CautionMarkup;
+
+        if (_waitingTabs.Count > 1)
+            return $"[{caution}]{_waitingTabs.Count} sessions are waiting for an answer[/]";
+
+        var where = _waitingTabs.Count == 1 ? TabTitleOf(_waitingTabs.Min) : "Chat";
+        return $"[{caution}]cxagent is waiting for an answer in {where}[/]";
+    }
+
+    /// <summary>
+    /// Each tab's title WITHOUT its waiting marker.
+    ///
+    /// <para>KEPT HERE BECAUSE THE CONTROL CANNOT BE ASKED. <c>TabControl</c> takes a title and does
+    /// not hand one back, so a marker appended to what was read would compound — "Chat • •" — and a
+    /// title trimmed of one would corrupt any label legitimately ending in a bullet. The unmarked
+    /// title is this window's to remember, and it has to be anyway: a label is recomputed when tabs
+    /// open and close.</para>
+    /// </summary>
+    private readonly List<string> _tabTitles = [];
+
+    /// <summary>A tab's title without the waiting marker, for naming it in a sentence.</summary>
+    private string TabTitleOf(int index) =>
+        index >= 0 && index < _tabTitles.Count ? _tabTitles[index] : "Chat";
 
     /// <summary>
     /// Shows the bar only when a prompt is up AND the user is not looking at it.
@@ -361,15 +446,27 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private void RefreshWaitingBar()
     {
-        var show = _waiting && Tabs.ActiveTabIndex != 0;
+        // WAITING SOMEWHERE THE USER IS NOT LOOKING. The active tab's own prompt is on screen and
+        // needs no bar; any other tab's does. Tab zero used to stand in for "the conversation",
+        // which stops being true the moment there is a second one.
+        var elsewhere = _waitingTabs.Any(t => t != Tabs.ActiveTabIndex);
+        var show = elsewhere;
+
+        if (show) _waitingMessage.SetContent([WaitingText()]);
 
         _waitingBar.Visible = show;
         // TWO CELLS: the rule and the message. The row has to name what the bar draws, or the last
         // of it falls off — the same fixed-cell-count rule the composer and status strip follow.
         _mainGrid.RowDefinitions[1] = show ? GridLength.Cells(2) : GridLength.Cells(0);
 
-        if (Tabs.TabCount > 0)
-            Tabs.SetTabTitle(0, _waiting ? "Chat •" : "Chat");
+        // A DOT ON EACH WAITING TAB, and on no others. This was written to tab zero, which put a
+        // second session's marker on the first session's tab — the same addressing mistake the bar
+        // above made, and a worse one because a dot in the wrong place points somewhere real.
+        for (var i = 0; i < Tabs.TabCount; i++)
+        {
+            var title = TabTitleOf(i);
+            Tabs.SetTabTitle(i, _waitingTabs.Contains(i) ? title + " •" : title);
+        }
     }
 
     /// <summary>
@@ -965,8 +1062,8 @@ public sealed class MainWindow : IDisposable
             ItemSpacing = 2,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        waitingRow.AddItem(new MarkupControl(
-            [$"[{ColorScheme.CautionMarkup}]cxagent is waiting for an answer in Chat[/]"]));
+        _waitingMessage = new MarkupControl([WaitingText()]);
+        waitingRow.AddItem(_waitingMessage);
         waitingRow.AddItem(go);
 
         // A RULE ABOVE IT, closing the bar off from the tab content. Without one the message runs
@@ -1022,6 +1119,9 @@ public sealed class MainWindow : IDisposable
             .Build();
 
         Tabs.AddTab("Chat", _chatTab);
+        // TAB ZERO IS ADDED DIRECTLY rather than through AddTab, which activates the new tab and
+        // refreshes a strip that does not exist yet — so its title is recorded here by hand.
+        _tabTitles.Add("Chat");
 
         // THE BAR FOLLOWS THE TAB, not only the prompt: arriving at Chat while a question waits must
         // clear it, and leaving Chat while one waits must raise it.
