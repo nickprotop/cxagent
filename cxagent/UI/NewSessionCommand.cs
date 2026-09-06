@@ -205,6 +205,11 @@ public sealed class NewSessionCommand
         session.ContextUsedUpdated += (_, used) => _host.System.EnqueueOnUIThread(() =>
             _host.Main.NoteSessionStats(session, spent: null, contextUsed: used));
 
+        // THE PANEL'S SESSION ID. It shows the AGENT's id — what --resume takes — and only
+        // WireRunner set it, which runs once for the first session. Without this a second session's
+        // panel had no id at all, so a conversation the user could see could not be resumed by name.
+        tab.AgentId = session.SessionId ?? string.Empty;
+
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
 
         // ITS OWN PLUGINS, LOADED FOR ITS OWN FOLDER. The startup path loads them for the first

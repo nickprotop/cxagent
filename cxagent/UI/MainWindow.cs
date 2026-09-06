@@ -243,7 +243,12 @@ public sealed class MainWindow : IDisposable
         //
         // ONLY WHEN A PROMPT IS NOT UP. A permission control has taken the composer's place and owns
         // the keyboard; stealing focus back would make the question unanswerable.
-        if (_activePrompt is null && Tabs.ActiveTabIndex < _sessionTabs.Count) FocusComposer();
+        // AND NOT WHILE THE STRIP IS BEING DRIVEN. Arrowing through tabs is browsing; taking focus
+        // then yanks the user out of the strip mid-navigation.
+        if (_activePrompt is null
+            && !Tabs.HasFocus
+            && Tabs.ActiveTabIndex < _sessionTabs.Count)
+            FocusComposer();
     }
 
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
@@ -670,7 +675,14 @@ public sealed class MainWindow : IDisposable
     /// behind a prompt, and whether Escape is the chat tab's to spend (see <c>EscapeRouting</c>) —
     /// and a bare <c>ActiveTabIndex == 0</c> in both places is two chances to write <c>!= 0</c>.</para>
     /// </summary>
-    public bool ChatTabIsActive => Tabs.ActiveTabIndex == 0;
+    /// <summary>
+    /// Whether a CONVERSATION is on screen, rather than a shell or a file tab.
+    ///
+    /// <para>NOT `index == 0`. That meant "the chat tab" when there was one; with several sessions
+    /// every one of them is a chat tab, and Escape's behaviour turns on this — so the old test made
+    /// Escape cancel a turn only from the FIRST conversation.</para>
+    /// </summary>
+    public bool ChatTabIsActive => Tabs.ActiveTabIndex < _sessionTabs.Count;
 
     /// <summary>Test seam: the panel column's width and the status strip's row height are layout
     /// decisions worth pinning, and both are only observable through the grid. Public rather than
