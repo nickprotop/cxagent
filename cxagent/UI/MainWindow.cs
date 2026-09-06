@@ -236,6 +236,14 @@ public sealed class MainWindow : IDisposable
 
         // LAST, because SetSpend repaints it too and the panel should settle on the final values.
         RefreshSessionPanel();
+
+        // AND THE CURSOR GOES WHERE THE TYPING SHOULD. Arriving on a session tab without focus in
+        // its composer means the next thing typed is discarded silently — which is what happened
+        // after answering a new tab's plugin gates: the goal went nowhere and nothing said so.
+        //
+        // ONLY WHEN A PROMPT IS NOT UP. A permission control has taken the composer's place and owns
+        // the keyboard; stealing focus back would make the question unanswerable.
+        if (_activePrompt is null && Tabs.ActiveTabIndex < _sessionTabs.Count) FocusComposer();
     }
 
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
@@ -509,6 +517,10 @@ public sealed class MainWindow : IDisposable
         WireOnce(tab.Input);
         AddTab(session.WorkingDirectory, tab.Content);
         RelabelSessionTabs();
+
+        // THE NEW TAB IS THE ACTIVE ONE, so its composer takes the cursor: a session opened and then
+        // typed into should not need a key press first.
+        ShowActiveSession();
         ApplyRoleStyles(tab.Chat);
 
         return tab;
