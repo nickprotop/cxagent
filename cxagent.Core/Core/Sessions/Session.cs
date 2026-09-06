@@ -90,7 +90,22 @@ public sealed partial class Session
     /// <summary>What this session has spent, across its own turns and its children's.</summary>
     public Llm.TokenLedger? Ledger => Host?.Ledger;
 
-    /// <summary>This session's agent id — what <c>--resume</c> takes.</summary>
+    /// <summary>
+    /// This session's own identity, for the life of the session.
+    ///
+    /// <para>NOT <see cref="SessionId"/>, WHICH IS THE AGENT'S. That one is a fresh ULID per
+    /// <c>Agent</c>, so it changes on every re-wire and again on resume — "the same session
+    /// continuing on another model", which this type's own summary names as the concept it exists
+    /// for, cannot be addressed by an id that a model switch replaces.</para>
+    ///
+    /// <para>SO THERE ARE TWO IDS AND EACH ANSWERS A DIFFERENT QUESTION. The resume store and the
+    /// history archive key on the agent's, correctly: a resumed session IS a new agent writing its
+    /// own rows. Anything naming the session — a permission row that should follow it across a
+    /// re-wire, a tab, a client attaching later — wants this one.</para>
+    /// </summary>
+    public string Id { get; } = Helpers.UlidGenerator.NewId();
+
+    /// <summary>The agent id — what <c>--resume</c> takes, and what the stores key on.</summary>
     public string? SessionId => Host?.SessionId;
 
     /// <summary>

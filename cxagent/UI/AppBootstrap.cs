@@ -957,9 +957,13 @@ public static class AppBootstrap
             // because the session id does not exist until the host does — and reassigned on every
             // re-wire (a re-wire changes provider), so the hook reads the session lazily rather than closing
             // over the id of a host that has since been replaced.
+            // THE SESSION'S ID, NOT THE AGENT'S. A permission decision belongs to the session that
+            // made it, and the agent's id is replaced by every re-wire — so keying on that would
+            // split one session's decisions across as many ids as it had models. Session.Id is
+            // minted once and outlives them.
             permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
-                    session.SessionId ?? "unknown", DateTimeOffset.UtcNow,
+                    session.Id, DateTimeOffset.UtcNow,
                     report.Kind.ToString(), report.Decision, report.Requester,
                     session.WorkingDirectory, report.Subject, report.Flagged));
 
