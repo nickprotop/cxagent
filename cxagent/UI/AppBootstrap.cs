@@ -1048,7 +1048,7 @@ public static class AppBootstrap
                 // a token event, which only a wired session raises.
                 if (session.Ledger is not { } spend) return;
 
-                mainWindow.SetSpend(new MainWindow.SpendReading
+                mainWindow.SetSpend(session, new MainWindow.SpendReading
                 {
                     ByInstance = spend.ByModel,
                     SubAgentTokens = spend.SubAgentTokens,
@@ -1293,7 +1293,10 @@ public static class AppBootstrap
         // this handler would never fire while the menu is up. See CommandMenuContent.
         var commandMenu = new CommandMenu(system, window, mainWindow.Input)
         {
-            Composer = mainWindow.Input,
+            // THE ACTIVE TAB'S, READ WHEN NEEDED. A fixed reference replayed captured keystrokes
+            // into the first tab's composer while the menu's events came from the active one — the
+            // first letter of a word in one conversation, the next in another.
+            ComposerOf = () => mainWindow.Input,
             // THE SAME LOOKUP DISPATCH USES, so a verb this process registers — /stats clear —
             // appears here at the moment it becomes real, not from a second copy of the table.
             Registry = manager.Commands,

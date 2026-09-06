@@ -187,6 +187,9 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private int _promptTab = -1;
 
+    /// <summary>The tab the user was on when a prompt pulled them elsewhere, or -1.</summary>
+    private int _tabBeforePrompt = -1;
+
     /// <summary>
     /// Records a session's spend and context on ITS tab, and repaints if that tab is in front.
     ///
@@ -1136,6 +1139,21 @@ public sealed class MainWindow : IDisposable
     }
 
     /// <summary>Takes one reading of the ledger and repaints. See <see cref="SpendReading"/>.</summary>
+    /// <summary>
+    /// Records a session's spend on ITS tab, and repaints when that tab is in front.
+    ///
+    /// <para>The plain <see cref="SetSpend"/> writes to whichever tab is active, which is right for
+    /// the session the user is watching and wrong for one working in the background.</para>
+    /// </summary>
+    public void SetSpend(Core.Sessions.Session session, SpendReading reading)
+    {
+        var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+        if (tab is null) return;
+
+        tab.Spend = reading;
+        if (ReferenceEquals(tab, ActiveSessionTab)) SetSpend(reading);
+    }
+
     public void SetSpend(SpendReading reading)
     {
         _spendByModel = reading.ByInstance;
@@ -1452,6 +1470,7 @@ public sealed class MainWindow : IDisposable
             // without this they keep showing the conversation the user has just left.
             RefreshSessionPanel();
             SetTokenTotal(ActiveSessionTab.SpentTokens);
+            if (ActiveSessionTab.Spend is { } spend) SetSpend(spend);
         };
 
         _mainGrid = Controls.Grid()
@@ -1774,6 +1793,20 @@ public sealed class MainWindow : IDisposable
         // Taking the prompt box's place puts it in the composer's own row, which sizes to content
         // (see the row definitions), and removes the mode line with it — the composer is not usable
         // while a prompt is up, so showing its furniture is noise around the only live control.
+        // RAISED ON THE TAB THAT ASKED. _composer resolves to the ACTIVE tab, so a prompt from a
+        // second session raised while the user is elsewhere would swap into the wrong composer —
+        // invisible, unanswerable, and the turn waiting on a control nobody can reach.
+        //
+        // WHERE THEY WERE IS REMEMBERED, so answering can put them back: a prompt pulls the user
+        // into another conversation, and leaving them there means the next thing they type goes to
+        // a session they did not choose.
+        var asking = _promptTab >= 0 && _promptTab < _sessionTabs.Count ? _promptTab : Tabs.ActiveTabIndex;
+        if (asking != Tabs.ActiveTabIndex && asking < Tabs.TabCount)
+        {
+            _tabBeforePrompt = Tabs.ActiveTabIndex;
+            Tabs.ActiveTabIndex = asking;
+        }
+
         _composer.ReplaceControl(_promptBox, prompt);
         _activePrompt = prompt;
 
@@ -2085,6 +2118,16 @@ public sealed class MainWindow : IDisposable
             // the strip's row to zero cells with nothing left to expand it again.
             _activePrompt = null;
             RefreshStatusStrip();
+
+            // AND BACK WHERE THEY WERE. Answering a question raised by another conversation must
+            // not leave the user inside it — the next thing they type belongs to the tab they were
+            // reading when they were interrupted.
+            if (_tabBeforePrompt >= 0 && _tabBeforePrompt < Tabs.TabCount)
+            {
+                Tabs.ActiveTabIndex = _tabBeforePrompt;
+                _tabBeforePrompt = -1;
+                FocusComposer();
+            }
 
             // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
             // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would

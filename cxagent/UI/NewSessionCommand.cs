@@ -184,6 +184,22 @@ public sealed class NewSessionCommand
         {
             var (ownIn, ownOut) = session.OwnSpend;
             _host.Main.NoteSessionStats(session, ownIn + ownOut, contextUsed: null);
+
+            // AND THE BREAKDOWN THE PANEL SHOWS. "Tokens by instance" is about THIS conversation,
+            // so without this a second session's panel reported the first session's figures — real
+            // numbers about somebody else's work, which is worse than none.
+            if (session.Ledger is not { } spend) return;
+            _host.Main.SetSpend(session, new MainWindow.SpendReading
+            {
+                ByInstance = spend.ByModel,
+                SubAgentTokens = spend.SubAgentTokens,
+                SplitByInstance = spend.SplitByModel,
+                CacheHitRate = spend.CacheHitRate,
+                CacheByAgent = spend.CacheHitRateByAgent,
+                CacheWrittenTokens = spend.CacheWrittenTokens,
+                CostByInstance = spend.CostByInstance,
+                TotalCost = spend.TotalCost,
+            });
         });
 
         session.ContextUsedUpdated += (_, used) => _host.System.EnqueueOnUIThread(() =>

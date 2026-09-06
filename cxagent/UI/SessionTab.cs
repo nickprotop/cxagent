@@ -84,6 +84,15 @@ public sealed class SessionTab
     /// <summary>The agent id this session resumes under, for the panel to show.</summary>
     public string AgentId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// This session's last spend reading — the per-instance and per-agent breakdown the panel shows.
+    ///
+    /// <para>PER SESSION, because "tokens by instance" answers what THIS conversation has spent. Held
+    /// on the window it reported the first session's figures under every tab, which is worse than
+    /// showing nothing: the numbers are real, just about somebody else's work.</para>
+    /// </summary>
+    public MainWindow.SpendReading? Spend { get; set; }
+
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
 

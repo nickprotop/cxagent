@@ -33,6 +33,15 @@ public sealed class CommandMenu
     private readonly Window _window;
     private readonly IWindowControl _owner;
 
+    /// <summary>
+    /// The control the portal anchors to right now.
+    ///
+    /// <para>THE OWNER IS FIXED AT CONSTRUCTION and is the first tab's composer, which is the right
+    /// anchor only while there is one. With several the portal must belong to the composer the user
+    /// is typing in, or it opens over the wrong conversation.</para>
+    /// </summary>
+    private IWindowControl CurrentOwner => CurrentComposer ?? _owner;
+
     private DesktopPortal? _portal;
     private CommandMenuContent? _list;
     /// <summary>
@@ -455,7 +464,7 @@ public sealed class CommandMenu
                 // It is removed on a FILE because the reference is then complete, and what the model
                 // receives must be an ordinary path in an ordinary sentence.
                 var text = _at is { } at
-                    ? Splice(Composer?.Input ?? string.Empty, at,
+                    ? Splice(CurrentComposer?.Input ?? string.Empty, at,
                              picked.Completion.EndsWith('/') ? "@" + picked.Completion
                                                              : picked.Completion)
                     : picked.Completion;
@@ -477,22 +486,37 @@ public sealed class CommandMenu
     /// <summary>The composer this menu filters for; typing captured by the portal is replayed here.</summary>
     public PromptControl? Composer { get; set; }
 
+    /// <summary>
+    /// The composer to use right now, when a host has several.
+    ///
+    /// <para>A FIXED REFERENCE IS WRONG WITH TABS. Held as one control this replayed captured
+    /// keystrokes into the FIRST tab's composer while the menu's own events came from the active
+    /// one — so the first letter of a word landed in one conversation and the next in another. The
+    /// menu has to ask which composer is in front, the same way it asks which folder an @ resolves
+    /// against.</para>
+    /// </summary>
+    public Func<PromptControl?>? ComposerOf { get; set; }
+
+    /// <summary>The composer in force: the live one when a caller supplies it, else the fixed one.</summary>
+    private PromptControl? CurrentComposer => ComposerOf?.Invoke() ?? Composer;
+
     private bool ForwardToComposer(ConsoleKeyInfo key)
     {
-        if (Composer is null) return false;
+        var composer = CurrentComposer;
+        if (composer is null) return false;
 
-        var text = Composer.Input ?? string.Empty;
+        var text = composer.Input ?? string.Empty;
 
         if (key.Key == ConsoleKey.Backspace)
         {
             if (text.Length == 0) return false;
-            Composer.Input = text[..^1];
+            composer.Input = text[..^1];
             return true;
         }
 
         if (char.IsControl(key.KeyChar)) return false;
 
-        Composer.Input = text + key.KeyChar;
+        composer.Input = text + key.KeyChar;
         return true;
     }
 
@@ -519,7 +543,7 @@ public sealed class CommandMenu
             // The click that dismisses must not also land in the transcript behind it.
             DismissOnClickOutside: true,
             ConsumeClickOnDismiss: true,
-            Owner: _owner,
+            Owner: CurrentOwner,
             OnDismiss: () => { _portal = null; _list = null; }));
     }
 
