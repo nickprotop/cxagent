@@ -361,6 +361,11 @@ public static class AppBootstrap
         };
         var window = mainWindow.Build();
 
+        // THE FIRST TAB LEARNS WHICH SESSION IT SHOWS. Build seeds the tab before a session can be
+        // attached — the window has to exist before the session's ports can be wired to it — so the
+        // two are introduced here, as soon as both are real.
+        mainWindow.NoteFirstSession(session);
+
         // Task 4: the real interactive gate. workingDir is captured ONCE here — not re-read per
         // setup re-wire below — because a rule granted in this project must stay scoped to
         // this project for the life of the process (PermissionRulesStore scopes every rule and
@@ -605,6 +610,18 @@ public static class AppBootstrap
             // THE VERB, NOT THE COMMAND. Core reports usage perfectly well; what this process adds
             // is the one argument it alone can service — clearing needs a confirmation, and a
             // synchronous handler cannot ask one.
+            // A SECOND CONVERSATION, IN ITS OWN TAB. A verb on the command that already lists
+            // sessions rather than a `/session` sibling, which would be a mistype waiting to happen.
+            // Injected here for /exit's reason: opening a tab needs a window.
+            if (declared.Name == "/sessions")
+                manager.Commands.RegisterVerb("/sessions",
+                    new CommandArgument("new [folder]",
+                        "open another session in a tab — asks for a folder when none is given",
+                        Completes: false),
+                    (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
+                        system, mainWindow, manager, permissionRules, resolution, startupMode))
+                        .Run(current, NewSessionCommand.FolderFrom(arguments)));
+
             if (declared.Name == "/stats")
                 manager.Commands.RegisterVerb("/stats",
                     new CommandArgument("clear", "delete all usage history, after confirming"),
@@ -1438,12 +1455,18 @@ public static class AppBootstrap
             mainWindow.Input.Input = "";   // clear the composer for the next goal
             mainWindow.RetireComposerPlaceholder();
 
+            // THE TAB THE USER TYPED IN, not the session this closure was built over. Every
+            // session tab has its own composer, so a line entered in the second one belongs to the
+            // second one's conversation — routing it here would run it in the first, which is the
+            // one failure a second session cannot recover from.
+            var target = mainWindow.ActiveSession ?? session;
+
             // THE REGISTRY FIRST. Core seeds what it can service — including /compress, which
             // summarises through the model exactly as auto-compression does — and a command that
             // has finished moving here never reaches the goal path below.
-            if (manager.Commands.TryRun(session, goalText)) return;
+            if (manager.Commands.TryRun(target, goalText)) return;
 
-            var disposition = session.Submit(goalText);
+            var disposition = target.Submit(goalText);
             if (disposition is not Session.SubmitOutcome.Started started) return;
 
             // Fire-and-forget on the UI-initiated flow; sync-context resumes continuations on the UI thread.

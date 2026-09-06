@@ -50,6 +50,9 @@ public sealed class SessionTab
     /// <summary>This session's tool rows.</summary>
     public JobPanelControl JobPanel { get; }
 
+    /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
+    public MarkupControl? ModeLine { get; set; }
+
     /// <summary>The transcript over the composer — what the tab shows.</summary>
     public GridControl Content { get; private set; } = null!;
 

@@ -126,6 +126,126 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>The active session's tool rows.</summary>
     public JobPanelControl JobPanel => ActiveSessionTab.JobPanel;
+
+    /// <summary>
+    /// A transcript control configured the way the first one is.
+    ///
+    /// <para>THE FIRST ONE IS STILL A FIELD INITIALISER, because it carries layout this window
+    /// argued for and moving it would have risked all of that to save a field — so this repeats the
+    /// settings rather than sharing them. What keeps the two from drifting is that they are eight
+    /// lines apart in one file, and that a second session's tab is styled by the same
+    /// ApplyRoleStyles the first is.</para>
+    /// </summary>
+    private static ChatTranscriptControl NewTranscript() => new()
+    {
+        VerticalAlignment = VerticalAlignment.Fill,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Margin = new Margin(1, 0, 1, 0),
+    };
+
+    /// <summary>
+    /// A composer for one tab: its prompt, with the mode line under it.
+    ///
+    /// <para>THE FIRST TAB'S IS BUILT IN <see cref="Build"/> WITH THE REST OF THE WINDOW, and this
+    /// is the same shape for a later one. A composer belongs to a conversation rather than to the
+    /// window: two sessions mean two places to type, and one shared between them would send a line
+    /// to whichever session happened to be in front.</para>
+    /// </summary>
+    private GridControl BuildComposerFor(SessionTab tab)
+    {
+        // THE SAME FOUR PIECES THE FIRST TAB'S HAS, and the same rows, because a second composer
+        // that merely holds a prompt renders as a bare edit box with no boundary above it and no
+        // mode line under it — which a drive found immediately.
+        // THE SAME MARK AND THE SAME COLOUR as the first tab's, repeated per prompt row — a grip
+        // that differs between two composers in one window reads as two different kinds of surface.
+        var bar = $"[#{ColorScheme.Grip.R:x2}{ColorScheme.Grip.G:x2}{ColorScheme.Grip.B:x2}]▌[/]";
+        var grip = new MarkupControl(
+            [string.Join('\n', Enumerable.Repeat(bar, PromptRows))]);
+
+        var modeLine = new MarkupControl([""]) { Wrap = false };
+        tab.ModeLine = modeLine;
+
+        var box = Controls.Grid()
+            .Columns(GridLength.Cells(1), GridLength.Star(1))
+            .Rows(GridLength.Cells(PromptRows), GridLength.Auto())
+            .Place(grip, 0, 0, rowSpan: 2)
+            .Place(tab.Input, 0, 1)
+            .Place(modeLine, 1, 1)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Build();
+
+        return Controls.Grid()
+            .Columns(GridLength.Star(1))
+            .Rows(GridLength.Cells(1), GridLength.Auto())
+            .Place(Controls.RuleBuilder().WithColor(ColorScheme.Separator)
+                .WithAlignment(HorizontalAlignment.Stretch).Build(), 0, 0)
+            .Place(box, 1, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Top)
+            .Build();
+    }
+
+    /// <summary>
+    /// The session behind the active tab, or null before one is wired.
+    ///
+    /// <para>WHAT A TYPED LINE BELONGS TO. Each session tab has its own composer, so the submit path
+    /// has to ask which conversation is in front of the user rather than closing over the one it was
+    /// built with.</para>
+    /// </summary>
+    public Core.Sessions.Session? ActiveSession => ActiveSessionTab.Session;
+
+    /// <summary>The session tabs, in tab order — for a caller relabelling or enumerating them.</summary>
+    public IReadOnlyList<SessionTab> SessionTabs => _sessionTabs;
+
+    /// <summary>Records the session behind the first tab, once the composition root has one.</summary>
+    public void NoteFirstSession(Core.Sessions.Session session) =>
+        _sessionTabs[0].NoteSession(session);
+
+    /// <summary>
+    /// Adds a tab for another session and returns it, so the caller can wire its ports.
+    ///
+    /// <para>THE CONTROLS ARE BUILT HERE, NOT BY THE CALLER, because the transcript's own styling is
+    /// this window's — role colours, collapsed defaults, the markdown palette — and a tab that built
+    /// its own would drift from the first one the day either changed.</para>
+    ///
+    /// <para>EVERY LABEL IS RECOMPUTED, not just this one's. A label says what distinguishes a tab
+    /// from the others, so a new one can change what the existing ones have to say — see
+    /// <see cref="TabLabels"/>.</para>
+    /// </summary>
+    public SessionTab AddSessionTab(Core.Sessions.Session session)
+    {
+        var tab = new SessionTab(session, NewTranscript(), new PromptControl(), _firstJobPanel);
+        tab.Compose(BuildComposerFor(tab));
+
+        _sessionTabs.Add(tab);
+        AddTab(session.WorkingDirectory, tab.Content);
+        RelabelSessionTabs();
+        ApplyRoleStyles(tab.Chat);
+
+        return tab;
+    }
+
+    /// <summary>
+    /// Recomputes every session tab's label and writes it to the strip.
+    ///
+    /// <para>OVER THE WHOLE SET, because opening `other/src` beside an existing `src` has to qualify
+    /// BOTH — leaving the first as `src` would make it read as the main session rather than as the
+    /// one that was there first.</para>
+    /// </summary>
+    private void RelabelSessionTabs()
+    {
+        if (_sessionTabs.Count < 2) return;   // one session keeps the name it was given
+
+        var labels = TabLabels.For(
+            [.. _sessionTabs.Select(t => t.Session?.WorkingDirectory ?? "Chat")]);
+
+        for (var i = 0; i < labels.Count && i < _tabTitles.Count; i++)
+        {
+            _sessionTabs[i].Label = labels[i];
+            _tabTitles[i] = labels[i];
+            Tabs.SetTabTitle(i, _waitingTabs.Contains(i) ? labels[i] + " •" : labels[i]);
+        }
+    }
     /// <summary>
     /// The bottom line: working directory on the left, context and the two escape keys on the right.
     ///
@@ -1889,9 +2009,13 @@ public sealed class MainWindow : IDisposable
     /// <para>Messages ALREADY on screen do re-paint from these styles, unlike their inline markup —
     /// the surface is a property of the role, not text baked into the transcript.</para>
     /// </summary>
-    private void ApplyRoleStyles()
+    private void ApplyRoleStyles() => ApplyRoleStyles(Chat);
+
+    /// <summary>Applies every role's style to one transcript, so a second session's tab
+    /// looks like the first rather than like the control's defaults.</summary>
+    private void ApplyRoleStyles(ChatTranscriptControl chat)
     {
-        Chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
+        chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
         {
             Markdown = true,
             ColorRole = ColorRole.Primary,
@@ -1912,8 +2036,8 @@ public sealed class MainWindow : IDisposable
         // (ChatTranscriptControl: `_roleStyles[role] = style`), so a fresh ChatRoleStyle carrying only
         // a Background would silently drop the seeded Header and ColorRole — the "Assistant" label
         // would vanish, which is the opposite of what is wanted here.
-        var assistant = Chat.GetRoleStyle(ChatRole.Assistant);
-        Chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
+        var assistant = chat.GetRoleStyle(ChatRole.Assistant);
+        chat.SetRoleStyle(ChatRole.Assistant, new ChatRoleStyle
         {
             Markdown = assistant.Markdown,
             ColorRole = assistant.ColorRole,
@@ -1933,7 +2057,7 @@ public sealed class MainWindow : IDisposable
         //
         // StartCollapsed: a five-job fan-out each returning paragraphs would push the conversation off
         // screen. The header stays readable, and the detail is one keypress away.
-        Chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
+        chat.SetRoleStyle(ChatRole.Tool, new ChatRoleStyle
         {
             Markdown = true,
             ColorRole = ColorRole.Info,
