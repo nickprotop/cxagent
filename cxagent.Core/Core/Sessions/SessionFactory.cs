@@ -198,6 +198,19 @@ internal static class SessionFactory
         }),
             agentTypes);
 
+        // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
+        // handed the fan-out instead. Behaviour is identical with one subscriber; what it buys is
+        // that a second can join later — a front end attaching to a session already running, or a
+        // transcript store — where assigning to a single field would replace whoever was there.
+        //
+        // BOTH, because ISessionObserver carries what is SAID and IToolObserver carries the working.
+        // Fanning out one would hand a second watcher half a transcript.
+        var observers = new ObserverFanOut();
+        observers.Add(ports.Observer);
+
+        var toolObservers = new ToolObserverFanOut();
+        toolObservers.Add(ports.ToolObserver);
+
         var host = new AgentHost(
             new AgentHost.AgentRuntime
             {
@@ -271,8 +284,8 @@ internal static class SessionFactory
                 ModelFacingCommands = ports.ModelFacingCommands,
                 ToolSelection = toolSelection,
             },
-            ports.Observer,
-            ports.ToolObserver,
+            observers,
+            toolObservers,
             new AgentHost.SessionStores
             {
                 // Every completed turn lands here, so a crash leaves something to resume from.
@@ -296,7 +309,8 @@ internal static class SessionFactory
         session.NoteServices(shared);
         session.NoteAgentTypes(agentTypes);
         session.NoteSpawner(subAgents);
-        session.NoteObserver(ports.Observer);
+        session.NoteObserver(observers);
+        session.NoteFanOuts(observers, toolObservers);
 
         // AFTER NoteObserver, because Say is a no-op before it — the fallback above happens where
         // both facts are known, and is reported here where there is somebody to report it to.

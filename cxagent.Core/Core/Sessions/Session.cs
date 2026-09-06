@@ -911,6 +911,35 @@ public sealed partial class Session
     /// handed it in the ports.</summary>
     internal void NoteObserver(ISessionObserver? sink) => _sink = sink;
 
+    /// <summary>
+    /// The fan-outs this session speaks through, for adding a second listener.
+    ///
+    /// <para>WHY THESE ARE REACHABLE AT ALL. The factory wraps each port observer in a fan-out and
+    /// hands the FAN-OUT to both this session and its agent host — so what was one observer is now
+    /// subscriber one of a list, and today's behaviour is unchanged. Exposing them is what makes the
+    /// list joinable: a second front end, a transcript store, anything that wants to watch a session
+    /// already running adds itself here rather than replacing whoever was there.</para>
+    ///
+    /// <para>BOTH, BECAUSE ONE IS HALF A TRANSCRIPT. <see cref="ISessionObserver"/> carries what the
+    /// session and the model SAY; every tool row, worker panel and progress line arrives through
+    /// <see cref="IToolObserver"/>. A watcher given only the first sees a conversation with no
+    /// working in it.</para>
+    ///
+    /// <para>NULL FOR A SESSION BUILT DIRECTLY rather than through the factory — the ports are the
+    /// factory's, and a caller that wired its own observers by hand owns them itself.</para>
+    /// </summary>
+    public ObserverFanOut? Observers { get; private set; }
+
+    /// <inheritdoc cref="Observers"/>
+    public ToolObserverFanOut? ToolObservers { get; private set; }
+
+    /// <summary>Records the fan-outs the factory built. Called by SessionFactory.</summary>
+    internal void NoteFanOuts(ObserverFanOut observers, ToolObserverFanOut tools)
+    {
+        Observers = observers;
+        ToolObservers = tools;
+    }
+
     // ONE FUNNEL, UNCHANGED IN SHAPE. Command replies and the session's own words both arrive here;
     // that they already did is why one Message type serves both.
     /// <summary>Says something to whoever is watching this session. A no-op when nobody is.</summary>
