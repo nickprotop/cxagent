@@ -717,8 +717,19 @@ public static class AppBootstrap
         // command Core ships but can never service is one every consumer advertises and none can
         // run. Declaring it beside the handler keeps the two from drifting.
         manager.Commands.Register(
-            new SessionCommand("/exit", "quit cxagent"),
-            (_, _) => { cts.Cancel(); system.Shutdown(); return true; });
+            new SessionCommand("/exit", "close this session, or quit when it is the last"),
+            (_, _) =>
+            {
+                // THE SESSION IN FRONT, NOT THE APP, when there is more than one. Quitting from a
+                // second conversation would take the first down with it, which is not what "exit"
+                // means once a window holds several — and with one session the two are the same
+                // thing, so nothing changes for anybody who never opens a second.
+                if (mainWindow.CloseActiveSession()) return true;
+
+                cts.Cancel();
+                system.Shutdown();
+                return true;
+            });
 
         // /about, DECLARED HERE FOR /exit's REASON. Every fact it prints is the front end's — the
         // executable that was launched, the terminal library, this window's plugins — so a table in

@@ -37,7 +37,9 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>A transcript configured the way every other one is — shared rather than repeated,
     /// so a second tab cannot drift from the first the day either changes.</summary>
-    private static ChatTranscriptControl NewTranscript() => new()
+    private static ChatTranscriptControl NewTranscript()
+    {
+        var chat = new ChatTranscriptControl()
     {
         VerticalAlignment = VerticalAlignment.Fill,
         HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -46,7 +48,18 @@ public sealed class MainWindow : IDisposable
         // to edge, so without this they butt against the pane's borders while the composer sits
         // inset — two different left edges in one column.
         Margin = new Margin(1, 0, 1, 0),
-    };
+        };
+
+        // EVERY TAB'S, NOT THE FIRST'S. These were applied to one control in Build, so a second
+        // tab rendered with the library's defaults: no message rail, and a collapsed preview the
+        // Features constant deliberately turns off.
+        chat.CollapsedPreview = Features.CollapsedPeek;
+        chat.MessageRailEnabled = true;
+        chat.MessageRailGlyph = '┃';
+        chat.MessageRailColor = ColorScheme.Grip;
+
+        return chat;
+    }
 
     private readonly ChatTranscriptControl _firstChat = NewTranscript();
     /// <summary>
@@ -164,6 +177,21 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>Which composers have been wired, so none is wired twice.</summary>
     private readonly HashSet<PromptControl> _wiredComposers = [];
+
+    /// <summary>
+    /// The tab whose session is raising the next prompt, or -1 for the active one.
+    ///
+    /// <para>SET BY THE GATE'S CALLER, because only it knows which session asked. A prompt is a
+    /// question from a conversation, and with several open the active tab is not reliably the one
+    /// that wants an answer — raising it on the wrong tab makes it invisible and unanswerable.</para>
+    /// </summary>
+    private int _promptTab = -1;
+
+    /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
+    public void NotePromptTabBySessionId(string? sessionId) =>
+        _promptTab = sessionId is null
+            ? -1
+            : _sessionTabs.FindIndex(t => t.Session?.Id == sessionId);
 
     /// <summary>
     /// Wires the first tab's composer, once.
@@ -353,6 +381,7 @@ public sealed class MainWindow : IDisposable
         // permission control belongs to the tab that asked, and a mode line reports that tab's mode.
         tab.ModeLine = modeLine;
         tab.PromptBox = promptBox;
+        tab.Composer = composer;
         tab.Grip = grip;
 
         return composer;
@@ -381,6 +410,26 @@ public sealed class MainWindow : IDisposable
     /// built with.</para>
     /// </summary>
     public Core.Sessions.Session? ActiveSession => ActiveSessionTab.Session;
+
+    /// <summary>
+    /// Closes the active session's tab, or answers false when it is the only one.
+    ///
+    /// <para>FALSE MEANS "NOTHING TO CLOSE, THIS IS THE APP" — the caller then quits. With one
+    /// conversation, closing it and quitting are the same act, so the distinction only appears once
+    /// a second session exists.</para>
+    /// </summary>
+    public bool CloseActiveSession()
+    {
+        if (_sessionTabs.Count < 2) return false;
+
+        var index = Tabs.ActiveTabIndex;
+        if (index < 0 || index >= _sessionTabs.Count) return false;
+
+        _sessionTabs.RemoveAt(index);
+        CloseTab(index);
+        RelabelSessionTabs();
+        return true;
+    }
 
     /// <summary>The session tabs, in tab order — for a caller relabelling or enumerating them.</summary>
     public IReadOnlyList<SessionTab> SessionTabs => _sessionTabs;
@@ -480,7 +529,12 @@ public sealed class MainWindow : IDisposable
     /// without this the only way to find the right one afterwards is to guess by timestamp. Updated
     /// per goal, because that is the granularity the directories actually use.</para>
     /// </summary>
-    public string SessionId { get; set; } = string.Empty;
+    /// <summary>The active session's agent id — what the panel shows and --resume takes.</summary>
+    public string SessionId
+    {
+        get => ActiveSessionTab.AgentId;
+        set => ActiveSessionTab.AgentId = value;
+    }
 
     /// <summary>
     /// How the model is named everywhere the UI shows one: <c>instance:model</c>.
@@ -514,7 +568,15 @@ public sealed class MainWindow : IDisposable
     /// process. The agent stopped making that ambient read; the panel showing a different answer
     /// than the agent is using would be the same two-sources bug in a place nobody would check.</para>
     /// </summary>
-    public string? WorkingDirectory { get; set; }
+    /// <summary>The active session's folder, from the session itself rather than a field somebody
+    /// has to remember to update.</summary>
+    public string? WorkingDirectory
+    {
+        get => ActiveSessionTab.Session?.WorkingDirectory ?? _workingDirectoryFallback;
+        set => _workingDirectoryFallback = value;
+    }
+
+    private string? _workingDirectoryFallback;
 
 
     // ShowSettings is the SINGLE entry point into the settings dialog. Roles and providers are pages
@@ -554,7 +616,18 @@ public sealed class MainWindow : IDisposable
     public GridControl MainGridForTest => _mainGrid;
 
     /// <summary>Rule, prompt and mode line as ONE grid cell — see the comment at its construction.</summary>
-    private GridControl _composer = null!;
+    /// <summary>
+    /// The active tab's composer — where a permission prompt is raised.
+    ///
+    /// <para>A PROPERTY OVER THE ACTIVE TAB. As a single field it was the FIRST tab's, so a gate
+    /// raised by a second session swapped into a grid nobody was looking at: invisible, unanswerable,
+    /// and the turn waiting forever on it.</para>
+    /// </summary>
+    private GridControl _composer
+    {
+        get => ActiveSessionTab.Composer!;
+        set => ActiveSessionTab.Composer = value;
+    }
 
     /// <summary>The status bar and its rule, in their own main-grid row below the tabs.</summary>
     private GridControl _statusStrip = null!;
@@ -817,9 +890,38 @@ public sealed class MainWindow : IDisposable
     /// <para>BOTH, NOT JUST THE TAB. The composer belongs to this tab; arriving on it with focus
     /// still in a terminal would leave the user looking at the prompt and typing into the shell.</para>
     /// </summary>
+    /// <summary>
+    /// Switches to the tab whose session is waiting for an answer, and focuses it.
+    ///
+    /// <para>THE FIRST ONE WAITING when several are: they are equally blocking, and the bar has
+    /// already said how many. Nothing waiting leaves the user where they are rather than moving them
+    /// for no reason.</para>
+    /// </summary>
+    public void GoToWaitingTab()
+    {
+        var waiting = _waitingTabs.FirstOrDefault(t => t < Tabs.TabCount, -1);
+        if (waiting < 0) return;
+
+        Tabs.ActiveTabIndex = waiting;
+        FocusComposer();
+    }
+
     public void ShowChatTab()
     {
-        Tabs.ActiveTabIndex = 0;
+        // THE ACTIVE SESSION'S COMPOSER WHEN THERE IS ONE. "Put the cursor back where you type"
+        // meant tab zero when there was one conversation; with several, the one in front of the user
+        // is the one they meant — jumping them to the first session's composer moves them out of the
+        // conversation they were reading.
+        if (Tabs.ActiveTabIndex >= 0 && Tabs.ActiveTabIndex < _sessionTabs.Count)
+        {
+            FocusComposer();
+            return;
+        }
+
+        // FROM A SHELL OR FILE TAB, back to a session — the first with a prompt waiting if any is
+        // asking, since that is the tab the user is most likely reaching for.
+        var waiting = _waitingTabs.FirstOrDefault(t => t < _sessionTabs.Count, -1);
+        Tabs.ActiveTabIndex = waiting >= 0 ? waiting : 0;
         FocusComposer();
     }
 
@@ -949,7 +1051,12 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>Last token total seen, so a panel refresh triggered by a RESIZE still shows the
     /// current number rather than zero.</summary>
-    private int _lastTokens;
+    /// <summary>The active session's spend — held on the tab, so the panel follows the user.</summary>
+    private int _lastTokens
+    {
+        get => ActiveSessionTab.SpentTokens;
+        set => ActiveSessionTab.SpentTokens = value;
+    }
 
     /// <summary>The in/out split behind <see cref="_lastTokens"/>, so a refresh driven by the clock
     /// or a resize shows the same numbers as the one driven by a turn.</summary>
@@ -1128,41 +1235,13 @@ public sealed class MainWindow : IDisposable
         // exactly the set this is for; System and Assistant collapse only when the user asks, and a
         // row someone just folded themselves needs no reminder of what is inside it. See
         // Features.CollapsedPeek for why it is off.
-        Chat.CollapsedPreview = Features.CollapsedPeek;
+        // THE TRANSCRIPT'S OWN SETTINGS MOVED INTO NewTranscript, so every tab gets them.
+        // Applied here they reached only the first chat, and a second tab rendered with the
+        // control's defaults — a different collapsed preview and no message rail.
 
-        Chat.MessageRailEnabled = true;
-
-        // HEAVY, NOT LIGHT. The control defaults to '│' (U+2502), which at the rail's dimmed colour
-        // is thin enough to read as an artefact of the border rather than a deliberate mark. '┃'
-        // (U+2503) is the same shape at the box-drawing family's heavy weight, so it stays a LINE —
-        // a margin marker — where a block glyph would read as a highlight over the message.
-        Chat.MessageRailGlyph = '┃';
-
-        // AND THE GRIP'S COLOUR, not a dimmed role colour. Left to itself the control blends the
-        // message's role colour 50% toward the background, which is right for a rail that marks
-        // every role and wrong for one that marks only the user: these two rails are one idea,
-        // recorded on ColorScheme.Grip — and a mark that means "yours" should not change shade
-        // between the thing you typed and the box you type into.
-        Chat.MessageRailColor = ColorScheme.Grip;
-
-        Chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
-        {
-            Markdown = true,
-            ColorRole = ColorRole.Info,
-            HeaderStyle = CollapsibleHeaderStyle.Borderless,
-            Collapsible = true,
-            // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
-            // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
-            // live-drive agent read exactly that, concluded the app "does not accept typed input",
-            // filed a blocking defect and marked four other scenarios NOT RUN. Typing worked fine.
-            //
-            // System lines are short and few — a goal starting, a warning, a permission denial — and
-            // every one of them is something the user is meant to ACT on. Collapsing them hides the
-            // message behind a control nobody opens. The bulky output that motivated collapsing is
-            // jobs, and those are ChatRole.Tool, which keeps StartCollapsed.
-            StartCollapsed = false,
-            Header = static (_, author) => author ?? "System",
-        });
+        // THE SYSTEM ROLE MOVED INTO ApplyRoleStyles, so every tab gets it — applied here it
+        // reached only the first chat, and a second tab's system messages rendered as plain
+        // text instead of markdown.
         // A FLAT BLOCK, NOT A BOX. A surface marks whose turn it is; ours drew a rounded border,
         // which is chrome around the text rather than the text on its own ground — and it competed
         // with the code blocks and tables inside assistant answers, so the loudest
@@ -1256,7 +1335,11 @@ public sealed class MainWindow : IDisposable
             .WithColorRole(ColorScheme.Accent)
             // SWITCHES AND FOCUSES IN ONE PRESS. Landing on the tab but not the prompt would need a
             // second key to answer a question that is already blocking the turn.
-            .OnClick((_, _) => ShowChatTab())
+            //
+            // TO THE TAB THAT IS ASKING, not to the active one and not to tab zero. The bar exists
+            // precisely because the prompt is somewhere the user is not, so "go" has one meaning:
+            // take me there.
+            .OnClick((_, _) => GoToWaitingTab())
             .Build();
 
         // LEFT, LIKE THE STATUS BAR UNDER IT. The two are neighbouring rows of chrome at the foot
@@ -1338,6 +1421,12 @@ public sealed class MainWindow : IDisposable
             // AND THE STRIP: whether a prompt is hiding it depends on which tab is showing, so
             // switching tabs changes the answer as surely as raising or answering one does.
             RefreshStatusStrip();
+
+            // AND EVERYTHING THAT REPORTS ON A SESSION. The panel and the status bar read the ACTIVE
+            // tab's spend, context and folder, so switching tabs changes what they should say — and
+            // without this they keep showing the conversation the user has just left.
+            RefreshSessionPanel();
+            SetTokenTotal(ActiveSessionTab.SpentTokens);
         };
 
         _mainGrid = Controls.Grid()
@@ -2061,6 +2150,25 @@ public sealed class MainWindow : IDisposable
     /// looks like the first rather than like the control's defaults.</summary>
     private void ApplyRoleStyles(ChatTranscriptControl chat)
     {
+        chat.SetRoleStyle(ChatRole.System, new ChatRoleStyle
+        {
+            Markdown = true,
+            ColorRole = ColorRole.Info,
+            HeaderStyle = CollapsibleHeaderStyle.Borderless,
+            Collapsible = true,
+            // EXPANDED by default. These were StartCollapsed, and it cost real comprehension: the
+            // chat's own "Type a goal and press Enter" rendered as "▸ System / expand…", and a
+            // live-drive agent read exactly that, concluded the app "does not accept typed input",
+            // filed a blocking defect and marked four other scenarios NOT RUN. Typing worked fine.
+            //
+            // System lines are short and few — a goal starting, a warning, a permission denial — and
+            // every one of them is something the user is meant to ACT on. Collapsing them hides the
+            // message behind a control nobody opens. The bulky output that motivated collapsing is
+            // jobs, and those are ChatRole.Tool, which keeps StartCollapsed.
+            StartCollapsed = false,
+            Header = static (_, author) => author ?? "System",
+        });
+
         chat.SetRoleStyle(ChatRole.User, new ChatRoleStyle
         {
             Markdown = true,
@@ -2471,7 +2579,12 @@ public sealed class MainWindow : IDisposable
     private static int PercentFreed(int before, int after) =>
         before <= 0 ? 0 : (int)Math.Round(100.0 * (before - after) / before);
 
-    private int? _contextUsed;
+    /// <summary>The active session's context use — held on the tab, for the same reason.</summary>
+    private int? _contextUsed
+    {
+        get => ActiveSessionTab.ContextUsed;
+        set => ActiveSessionTab.ContextUsed = value;
+    }
     private bool _contextStale;
 
     /// <summary>

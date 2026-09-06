@@ -69,6 +69,21 @@ public sealed class SessionTab
     /// </summary>
     public InlineJobSink? JobSink { get; set; }
 
+    /// <summary>
+    /// What the right panel reports about THIS conversation.
+    ///
+    /// <para>THESE WERE WINDOW FIELDS, so the panel showed the first session's numbers whichever tab
+    /// was in front — a token count, a context percentage and a working directory that all belong to
+    /// a conversation rather than to a terminal.</para>
+    /// </summary>
+    public int SpentTokens { get; set; }
+
+    /// <inheritdoc cref="SpentTokens"/>
+    public int? ContextUsed { get; set; }
+
+    /// <summary>The agent id this session resumes under, for the panel to show.</summary>
+    public string AgentId { get; set; } = string.Empty;
+
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
 
@@ -79,6 +94,15 @@ public sealed class SessionTab
     /// and puts this back afterwards, so it has to be the box belonging to the tab that asked.</para>
     /// </summary>
     public GridControl? PromptBox { get; set; }
+
+    /// <summary>
+    /// This tab's composer grid — the surface a permission prompt swaps into.
+    ///
+    /// <para>PER TAB, because a prompt has to appear where the person is looking. Held as one field
+    /// it swapped into the FIRST tab's composer whichever session asked, so a gate raised by a second
+    /// session was invisible and unanswerable: the turn waited on a control nobody could see.</para>
+    /// </summary>
+    public GridControl? Composer { get; set; }
 
     /// <summary>This tab's composer grip — the accent bar left of the prompt, repainted on a theme
     /// switch.</summary>

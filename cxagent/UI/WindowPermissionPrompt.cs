@@ -62,6 +62,12 @@ public static class WindowPermissionPrompt
 
         try
         {
+            // NAME THE ASKING TAB BEFORE RAISING. The window raises a prompt into the ACTIVE tab's
+            // composer, and with several sessions the active tab is not reliably the one that asked
+            // — a prompt in the wrong composer is invisible and cannot be answered at all. The
+            // request's policy is the only thing here that knows which session it belongs to.
+            mw.NotePromptTabBySessionId(request.Policy?.SessionId);
+
             var prompt = new PermissionPromptControl(request, offerTrust);
             var content = prompt.BuildContent();   // built ONCE — see PermissionDecider's note
             // THE DENY ACTION GOES WITH IT. The window is handed the built content, not this
