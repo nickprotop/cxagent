@@ -215,6 +215,29 @@ public sealed class MainWindow : IDisposable
         }
     }
 
+    /// <summary>
+    /// Repaints everything that reports on a session, from the tab now in front.
+    ///
+    /// <para>ONE PLACE, BECAUSE THE LIST GROWS. Every readout belonging to a conversation rather
+    /// than to the terminal has to be re-applied when the user changes tabs, and doing it inline at
+    /// the switch meant each new one had to be remembered there — the same "captured once" mistake
+    /// that put one session's tokens on another session's panel.</para>
+    ///
+    /// <para>AND AN ABSENT VALUE IS APPLIED, NOT SKIPPED. A session that has spent nothing must
+    /// CLEAR the readout rather than leave the previous tab's showing: skipping left real figures
+    /// under the wrong folder's name, which is worse than showing none at all.</para>
+    /// </summary>
+    private void ShowActiveSession()
+    {
+        // The strip first: whether a prompt is hiding it depends on which tab is showing.
+        RefreshStatusStrip();
+        SetTokenTotal(ActiveSessionTab.SpentTokens);
+        SetSpend(ActiveSessionTab.Spend ?? EmptySpend);
+
+        // LAST, because SetSpend repaints it too and the panel should settle on the final values.
+        RefreshSessionPanel();
+    }
+
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
     public void NotePromptTabBySessionId(string? sessionId) =>
         _promptTab = sessionId is null
@@ -1463,22 +1486,7 @@ public sealed class MainWindow : IDisposable
         Tabs.TabChanged += (_, _) =>
         {
             RefreshWaitingBar();
-
-            // AND THE STRIP: whether a prompt is hiding it depends on which tab is showing, so
-            // switching tabs changes the answer as surely as raising or answering one does.
-            RefreshStatusStrip();
-
-            // AND EVERYTHING THAT REPORTS ON A SESSION. The panel and the status bar read the ACTIVE
-            // tab's spend, context and folder, so switching tabs changes what they should say — and
-            // without this they keep showing the conversation the user has just left.
-            RefreshSessionPanel();
-            SetTokenTotal(ActiveSessionTab.SpentTokens);
-
-            // A TAB WITH NO READING CLEARS THE PANEL rather than leaving the last one. Skipping the
-            // call left the previous tab's figures on screen under a new session's name — the panel
-            // said 8,684 tokens beside a folder that had spent none, which is the most misleading
-            // state of the three (right label, wrong numbers).
-            SetSpend(ActiveSessionTab.Spend ?? EmptySpend);
+            ShowActiveSession();
         };
 
         _mainGrid = Controls.Grid()
