@@ -151,6 +151,14 @@ public sealed class MainWindow : IDisposable
     /// or a transcript write issued while a shell is on screen belongs to the conversation it came
     /// from, which is the only one there is until a second is opened.</para>
     /// </summary>
+    /// <summary>The tab in front, for callers that must know whether their session is the one showing.</summary>
+    /// <remarks>
+    /// READ-ONLY AND EXPOSED, because SessionWiring's handlers have to distinguish "record and
+    /// repaint" from "record only". Settable it would be a second way to change tabs, competing
+    /// with the strip that actually owns the selection.
+    /// </remarks>
+    public SessionTab ActiveTab => ActiveSessionTab;
+
     private SessionTab ActiveSessionTab =>
         SessionTabAt(Tabs.ActiveTabIndex)
         ?? (_sessionTabs.Count > 0 ? _sessionTabs[0]
@@ -229,9 +237,21 @@ public sealed class MainWindow : IDisposable
     /// second's own updates never reached its tab at all. A statistic belongs to the conversation
     /// that produced it, whoever is watching.</para>
     /// </summary>
+    /// <summary>The tab showing a session, or null when it has none.</summary>
+    /// <remarks>
+    /// NULL IS ORDINARY, NOT AN ERROR. A session's events can outlive its tab — a closed tab's last
+    /// turn still reports — and every caller here is a readout, so having nowhere to put a number is
+    /// a reason to drop it rather than to throw on a background thread.
+    /// </remarks>
+    /// <inheritdoc cref="TabFor"/>
+    public SessionTab? TabForSession(Core.Sessions.Session session) => TabFor(session);
+
+    private SessionTab? TabFor(Core.Sessions.Session session) =>
+        _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+
     public void NoteSessionStats(Core.Sessions.Session session, int? spent, int? contextUsed)
     {
-        var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+        var tab = TabFor(session);
         if (tab is null) return;
 
         if (spent is { } s) tab.SpentTokens = s;
@@ -262,10 +282,31 @@ public sealed class MainWindow : IDisposable
     {
         // The strip first: whether a prompt is hiding it depends on which tab is showing.
         RefreshStatusStrip();
-        SetTokenTotal(ActiveSessionTab.SpentTokens);
-        SetSpend(ActiveSessionTab.Spend ?? EmptySpend);
+
+        // EVERY READOUT THAT BELONGS TO A CONVERSATION, restored from the tab now in front. The list
+        // is exactly the state SessionTab holds, and that is not a coincidence: a readout that needs
+        // restoring here is one that needs storing there, so the two lists are the same list. Adding
+        // a per-session number means adding it in both places, and forgetting the second half is
+        // what leaves a stale figure on screen after a tab switch.
+        var tab = ActiveSessionTab;
+
+        _contextUsed = tab.ContextUsed;
+        _contextStale = tab.ContextStale;
+        _contextDelta = tab.ContextDelta;
+        _lastInput = tab.LastInput;
+        _lastOutput = tab.LastOutput;
+        SkillCount = tab.SkillCount;
+        LoadedSkills = tab.LoadedSkills;
+
+        // AND THE PANEL'S TALLIES, which it reads through a reference rather than a copy — so a turn
+        // completing while this tab is in front lands on the tab's own counters.
+        SessionPanel.Follow(tab.Tally);
+
+        SetTokenTotal(tab.SpentTokens);
+        SetSpend(tab.Spend ?? EmptySpend);
 
         // LAST, because SetSpend repaints it too and the panel should settle on the final values.
+        RefreshTokenItem();
         RefreshSessionPanel();
 
         // AND THE CURSOR GOES WHERE THE TYPING SHOULD. Arriving on a session tab without focus in
@@ -527,6 +568,21 @@ public sealed class MainWindow : IDisposable
         var tab = SessionTabAt(strip);
         if (tab is null) return false;
 
+        // THE SESSION GOES WITH THE TAB. Removing only the controls left the conversation open in
+        // the manager: its plugins stayed wired, their child processes (a language server per
+        // session) stayed running for the life of the app, and a turn started before the close ran
+        // on to completion writing into a transcript nobody could see. It also stayed unfinished in
+        // the store, so `--resume` offered a conversation whose window was gone.
+        //
+        // REFUSED WHILE BUSY, and the tab stays. Closing mid-turn kills the provider call and
+        // unwires plugins the turn is still calling into.
+        if (tab.Session is { } closing && CloseSession is { } close && !close(closing))
+        {
+            tab.Chat.AddMessage(ChatRole.System,
+                "this session is still working — cancel with Escape, then close it.");
+            return true;   // handled: the command did something, even though the tab remains
+        }
+
         // BY IDENTITY, NOT BY STRIP POSITION. Removing `_sessionTabs[stripIndex]` took the wrong
         // element the moment a file or shell tab sat before a session — or threw outright.
         _sessionTabs.Remove(tab);
@@ -535,6 +591,15 @@ public sealed class MainWindow : IDisposable
         RelabelSessionTabs();
         return true;
     }
+
+    /// <summary>
+    /// Destroys a session, answering false when it is mid-turn and nothing was closed.
+    ///
+    /// <para>A HOOK RATHER THAN A MANAGER REFERENCE, matching how this window takes everything else
+    /// from the composition root: the window's job is to know which conversation the user meant, not
+    /// how sessions are torn down.</para>
+    /// </summary>
+    public Func<Core.Sessions.Session, bool>? CloseSession { get; set; }
 
     /// <summary>The session tabs, in tab order — for a caller relabelling or enumerating them.</summary>
     public IReadOnlyList<SessionTab> SessionTabs => _sessionTabs;
@@ -1282,7 +1347,7 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void SetSpend(Core.Sessions.Session session, SpendReading reading)
     {
-        var tab = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
+        var tab = TabFor(session);
         if (tab is null) return;
 
         tab.Spend = reading;
@@ -1322,6 +1387,23 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>Records the input/output split. Separate from SetTokenTotal because the total
     /// arrives through an event that predates the split and is raised from two different paths.</summary>
+    /// <summary>
+    /// One session's input/output split, recorded against its tab.
+    ///
+    /// <para>ADDRESSED, LIKE EVERY OTHER PER-CONVERSATION READOUT. The plain overload writes what the
+    /// status bar shows, which is the tab in FRONT — so a background session finishing a turn
+    /// rewrote the foreground session's split with its own.</para>
+    /// </summary>
+    public void SetTokenSplit(Core.Sessions.Session session, int input, int output)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.LastInput = input;
+        tab.LastOutput = output;
+        if (ReferenceEquals(tab, ActiveSessionTab)) SetTokenSplit(input, output);
+    }
+
     public void SetTokenSplit(int input, int output)
     {
         _lastInput = input;
@@ -2151,6 +2233,26 @@ public sealed class MainWindow : IDisposable
     /// <summary>How many skills discovery found. Set by the composition root, which owns the read.</summary>
     public int SkillCount { get; set; }
 
+    /// <summary>Records what one session's folder offers, against its own tab.</summary>
+    /// <remarks>
+    /// SKILLS ARE DISCOVERED PER FOLDER, so two sessions in different projects have different
+    /// catalogues. Written to the window, whichever session last completed a turn set the count for
+    /// every tab — the panel listed skills the conversation in front could not invoke.
+    /// </remarks>
+    public void SetSkills(Core.Sessions.Session session, int available, IReadOnlyList<string> loaded)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.SkillCount = available;
+        tab.LoadedSkills = loaded;
+
+        if (!ReferenceEquals(tab, ActiveSessionTab)) return;
+        SkillCount = available;
+        LoadedSkills = loaded;
+        RefreshSessionPanel();
+    }
+
     /// <summary>
     /// The skills whose bodies are still in the PARENT agent's window. A function of the conversation
     /// rather than a remembered list, so it stops reporting one the moment compaction removes it.
@@ -2702,6 +2804,29 @@ public sealed class MainWindow : IDisposable
     private static string EditModeMarkup(EditMode edits) =>
         edits == EditMode.Auto ? ColorScheme.CautionMarkup : ColorScheme.MutedMarkup;
 
+    /// <summary>
+    /// One session's context occupancy, recorded against its tab.
+    /// </summary>
+    /// <remarks>
+    /// A MEASUREMENT CLEARS THAT SESSION'S STALE MARK, not the window's — the same reason the split
+    /// above is addressed. A background session reporting usage cleared the foreground session's
+    /// "compressed" note, erasing the one line explaining why its gauge had just moved.
+    /// </remarks>
+    public void SetContextUsed(Core.Sessions.Session session, int inputTokens, bool estimated = false)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.ContextUsed = inputTokens > 0 ? inputTokens : null;
+        if (!estimated)
+        {
+            tab.ContextStale = false;
+            tab.ContextDelta = null;
+        }
+
+        if (ReferenceEquals(tab, ActiveSessionTab)) SetContextUsed(inputTokens, estimated);
+    }
+
     public void SetContextUsed(int inputTokens, bool estimated = false)
     {
         _contextUsed = inputTokens > 0 ? inputTokens : null;
@@ -2734,6 +2859,18 @@ public sealed class MainWindow : IDisposable
     /// with a real reading. That is honest about the uncertainty AND visibly acknowledges the
     /// compression, which is the feedback that was missing.</para>
     /// </summary>
+    /// <summary>One session's compression note, recorded against its tab.</summary>
+    /// <inheritdoc cref="MarkContextStale(int, int)"/>
+    public void MarkContextStale(Core.Sessions.Session session, int charsBefore, int charsAfter)
+    {
+        var tab = TabFor(session);
+        if (tab is null || tab.ContextUsed is null) return;
+
+        tab.ContextStale = true;
+        tab.ContextDelta = DeltaText(charsBefore, charsAfter);
+        if (ReferenceEquals(tab, ActiveSessionTab)) MarkContextStale(charsBefore, charsAfter);
+    }
+
     public void MarkContextStale(int charsBefore, int charsAfter)
     {
         if (_contextUsed is null) return;
@@ -2747,14 +2884,29 @@ public sealed class MainWindow : IDisposable
         // replaced by a summary, and summarising one already-short message produces more text than it
         // replaced (measured: 536→667 chars on a two-message session). Printing that as "compressed
         // 536→667" claims a win that did not happen, so the verb follows the arithmetic.
+        _contextDelta = DeltaText(charsBefore, charsAfter);
+
+        RefreshTokenItem();
+    }
+
+    /// <summary>
+    /// What a compression did, as the line shown beside the gauge.
+    ///
+    /// <para>SHARED BY BOTH OVERLOADS so the tab's stored note and the painted one cannot drift —
+    /// two copies of this arithmetic would disagree the first time either was edited.</para>
+    /// </summary>
+    private static string DeltaText(int charsBefore, int charsAfter)
+    {
+        // SAY WHICH WAY IT WENT. Compression can make a SHORT conversation bigger: the older half is
+        // replaced by a summary, and summarising one already-short message produces more text than it
+        // replaced (measured: 536→667 chars on a two-message session). Printing that as "compressed
+        // 536→667" claims a win that did not happen, so the verb follows the arithmetic.
         var freed = PercentFreed(charsBefore, charsAfter);
-        _contextDelta = charsAfter < charsBefore
+        return charsAfter < charsBefore
             ? freed >= 1
                 ? $"compressed −{freed}%"
                 : $"compressed {Compact(charsBefore)}→{Compact(charsAfter)} chars"
             : "summarised, nothing to free";
-
-        RefreshTokenItem();
     }
 
     /// <summary>

@@ -139,82 +139,30 @@ public sealed class NewSessionCommand
         var session = new Session(full);
         var tab = _host.Main.AddSessionTab(session);
 
-        // THE SINKS BELONG TO THE TAB, not to the window. Each writes into the transcript control of
-        // the tab it serves, which is what keeps a second session's rows out of the first's.
-        var sink = new ChatTranscriptSink(_host.System, tab.Chat);
-        var jobs = new InlineJobSink(_host.System, tab.Chat);
+        // THE SAME ROUTINE THE STARTUP PATH USES. Written separately, this path subscribed two of
+        // eleven events — no tool rows, no turn recording, no compression notice, no child tracking
+        // — because nothing on this side lists what the other side wires. See SessionWiring.
+        var wiring = new SessionWiring.Wiring(
+            System: _host.System,
+            Main: _host.Main,
+            Tab: tab,
+            Session: session,
+            Manager: _host.Manager,
+            Resolution: _host.Resolution,
+            Mode: _host.Mode,
 
-        // A ROUND'S TOOLS ARE ONE ROW, and the two sinks have to agree where a round starts — the
-        // boundaries are the transcript sink's, the rows are the job sink's.
-        sink.OnUserTurnAdded = jobs.TurnBegan;
-        sink.OnAssistantRoundEnded = jobs.RoundEnded;
+            // JUDGED BY ITS OWN ROOT, AND SAYING WHICH SESSION IT IS. The root stops this session
+            // being measured against another's folder, and the id is what a permission decision is
+            // filed under.
+            Policy: new PermissionPolicy(full, _host.Rules, _host.Mode.Edits) { SessionId = session.Id },
+            ConfigDir: _host.ConfigDir);
 
-        // THE TAB OWNS ITS SINK, so the window's one-second clock ticks THIS tab's running rows.
-        // Held as a single field it ticked whichever session wired it last, leaving the other's
-        // elapsed times frozen and both contending on one panel.
-        tab.JobSink = jobs;
+        var (sink, jobs) = SessionWiring.Sinks(_host.System, tab);
 
         _host.Manager.Open(session, _host.Resolution,
-            new SessionPorts
-            {
-                Observer = sink,
-                ToolObserver = jobs,
-                Tools = [],
-                Ask = _host.Main.AskQuestionAsync,
-                ModelFacingCommands = () =>
-                    [.. _host.Manager.Commands.All
-                        .Where(c => c.TellTheModel)
-                        .Select(c => (c.Name, c.Summary))],
+            SessionWiring.Ports(wiring, sink, jobs), _host.Mode.Agent);
 
-                // JUDGED BY ITS OWN ROOT, AND SAYING WHICH SESSION IT IS. Both halves matter: the
-                // root stops this session being measured against another's folder, and the id is
-                // what a permission decision is filed under.
-                Policy = new PermissionPolicy(full, _host.Rules, _host.Mode.Edits)
-                {
-                    SessionId = session.Id,
-                },
-            },
-            _host.Mode.Agent);
-
-        // ITS OWN STATS, REACHING ITS OWN TAB. The startup path subscribes these for the first
-        // session inside WireRunner, which never runs again — so without this a second session's
-        // spend and context never reached the panel at all, and it sat at zero while the session
-        // worked.
-        session.TokensUpdated += (_, _) => _host.System.EnqueueOnUIThread(() =>
-        {
-            var (ownIn, ownOut) = session.OwnSpend;
-            _host.Main.NoteSessionStats(session, ownIn + ownOut, contextUsed: null);
-
-            // AND THE BREAKDOWN THE PANEL SHOWS. "Tokens by instance" is about THIS conversation,
-            // so without this a second session's panel reported the first session's figures — real
-            // numbers about somebody else's work, which is worse than none.
-            if (session.Ledger is not { } spend) return;
-            _host.Main.SetSpend(session, new MainWindow.SpendReading
-            {
-                ByInstance = spend.ByModel,
-                SubAgentTokens = spend.SubAgentTokens,
-                SplitByInstance = spend.SplitByModel,
-                CacheHitRate = spend.CacheHitRate,
-                CacheByAgent = spend.CacheHitRateByAgent,
-                CacheWrittenTokens = spend.CacheWrittenTokens,
-                CostByInstance = spend.CostByInstance,
-                TotalCost = spend.TotalCost,
-            });
-        });
-
-        session.ContextUsedUpdated += (_, used) => _host.System.EnqueueOnUIThread(() =>
-            _host.Main.NoteSessionStats(session, spent: null, contextUsed: used));
-
-        // THE PANEL'S SESSION ID. It shows the AGENT's id — what --resume takes — and only
-        // WireRunner set it, which runs once for the first session. Without this a second session's
-        // panel had no id at all, so a conversation the user could see could not be resumed by name.
-        tab.AgentId = session.SessionId ?? string.Empty;
-
-        // AND THE MODE THE SESSION WAS OPENED IN. The session itself is wired with it above; the TAB
-        // has its own copy, because Shift+Tab changes one conversation and the mode line reports it.
-        // Left at the type's default, a new tab would advertise always-ask while its gate ran on
-        // whatever the process started in — a status line describing rules nobody was using.
-        tab.Mode = _host.Mode;
+        SessionWiring.Subscribe(wiring, jobs);
 
         tab.Chat.AddMessage(ChatRole.System, $"session opened in {full}");
 

@@ -77,10 +77,20 @@ public sealed class SessionPanel
     /// </summary>
     private readonly ScrollablePanelControl _host;
 
-    private readonly DateTimeOffset _started = DateTimeOffset.UtcNow;
-
-    private int _turns;
-    private int _toolCalls;
+    /// <summary>
+    /// The conversation whose tallies this panel is currently rendering.
+    ///
+    /// <para>NOT ITS OWN COUNTERS. One panel serves every tab — the column is a property of the
+    /// window, not of a session — so counters held HERE were shared by every conversation in it:
+    /// two sessions summed into one turn count, and one elapsed clock started when the WINDOW
+    /// opened rather than when either session did. A second session's panel read "14 turns" before
+    /// it had taken one.</para>
+    ///
+    /// <para>The tallies belong to the conversation, so the tab holds them and the panel is handed
+    /// whichever it is showing. That also makes a tab switch correct for free: the numbers arrive
+    /// with the tab rather than having to be restored after it.</para>
+    /// </summary>
+    private SessionTally _tally = new();
 
     /// <summary>
     /// The git block, pinned to the foot of the panel.
@@ -145,10 +155,18 @@ public sealed class SessionPanel
     /// <summary>Counts one completed turn and its tool calls. The panel updates BETWEEN turns, not
     /// during streaming — a token counter climbing beside prose you are reading is motion competing
     /// with the thing it is meant to inform.</summary>
+    /// <summary>
+    /// Points the panel at a conversation's tallies.
+    ///
+    /// <para>Called when a tab comes forward, so turns, tool calls and elapsed time describe the
+    /// session the user is looking at rather than whichever one last completed a turn.</para>
+    /// </summary>
+    public void Follow(SessionTally tally) => _tally = tally;
+
     public void RecordTurn(int toolCalls)
     {
-        _turns++;
-        _toolCalls += toolCalls;
+        _tally.Turns++;
+        _tally.ToolCalls += toolCalls;
 
         // A TURN IS WHEN THE TREE MAY HAVE MOVED. Tool calls are how the agent writes, so a completed
         // turn is the one moment worth paying for a fresh git reading — and it makes the five-second
@@ -292,8 +310,8 @@ public sealed class SessionPanel
         // can be hidden.
 
         Section(lines, "Session");
-        lines.Add(Value($"{Elapsed()} · {_turns} turn{(_turns == 1 ? "" : "s")}"));
-        lines.Add(Muted($"{_toolCalls} tool call{(_toolCalls == 1 ? "" : "s")}"));
+        lines.Add(Value($"{Elapsed()} · {_tally.Turns} turn{(_tally.Turns == 1 ? "" : "s")}"));
+        lines.Add(Muted($"{_tally.ToolCalls} tool call{(_tally.ToolCalls == 1 ? "" : "s")}"));
 
         // WHERE, which prevents the worst class of mistake there is: editing the wrong checkout.
         Section(lines, "Location");
@@ -317,7 +335,7 @@ public sealed class SessionPanel
         // and 0 only for an explicit opt-out. Take the raw configured value here and an unconfigured
         // session reads "no cap" while a real ceiling is in force.
         //
-        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{_turns}/{max}" pairs a
+        // THE CAP IS PER GOAL; THE COUNTER ABOVE IS PER SESSION. Rendering "{Turns}/{max}" pairs a
         // session-lifetime count with a limit that resets on every prompt — a long session then
         // reads "290/300 turns" and looks one prompt from death while the current goal has taken
         // three. Two different denominators sharing one slash.
@@ -666,7 +684,7 @@ public sealed class SessionPanel
 
     private string Elapsed()
     {
-        var d = DateTimeOffset.UtcNow - _started;
+        var d = DateTimeOffset.UtcNow - _tally.Started;
         return d.TotalHours >= 1 ? $"{(int)d.TotalHours}h {d.Minutes}m" : $"{(int)d.TotalMinutes}m {d.Seconds}s";
     }
 

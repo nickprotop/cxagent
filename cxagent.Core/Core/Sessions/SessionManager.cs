@@ -743,8 +743,23 @@ public sealed class SessionManager : IDisposable
     /// <para>THE SHARED SERVICES SURVIVE: a session ending is not the process ending, and the next
     /// session wants the same rules, the same logs and the same history.</para>
     /// </summary>
-    public void Close(Session session)
+    /// <returns>
+    /// False when the session is mid-turn and nothing was closed; true when it was.
+    /// </returns>
+    /// <remarks>
+    /// A RUNNING TURN IS NOT CLOSED OUT FROM UNDER ITSELF. Disposing the host while the agent is
+    /// streaming kills the provider call and unwires plugins the turn is still calling into — a
+    /// language server's process gone mid-request, an ObjectDisposedException surfacing from a
+    /// scheduler thread where no caller can catch it. Resume already refuses on the same grounds;
+    /// close is the more destructive of the two and had no such check.
+    ///
+    /// ANSWERED RATHER THAN THROWN, so a front end can say "still working" and leave the tab open.
+    /// Cancel first, then close, is the caller's sequence — not this method's to decide.
+    /// </remarks>
+    public bool Close(Session session)
     {
+        if (session.IsBusy) return false;
+
         SessionLifecycleLog.Write(Shared.Logs, "close", session);
         lock (_gate) _sessions.Remove(session);
 
@@ -766,6 +781,12 @@ public sealed class SessionManager : IDisposable
         // missed for the life of the process.
         session.DisposeTurnScope();
         session.Host?.Dispose();
+
+        // MARKED FINISHED SO IT STOPS BEING OFFERED FOR RESUME. A session closed and left unmarked
+        // shows up in `/sessions` and in --resume's picker as an unfinished conversation to return
+        // to; picking it restores a transcript whose host is gone.
+        session.MarkFinished();
+        return true;
     }
 
     /// <summary>
@@ -779,7 +800,14 @@ public sealed class SessionManager : IDisposable
     /// </summary>
     public void Dispose()
     {
-        foreach (var session in Sessions) Close(session);
+        // NOT REFUSED BY THE BUSY CHECK. Dispose is the process going away, so a turn still running
+        // has nowhere to finish; cancel it first and then close, rather than leaking the host to
+        // preserve a turn nobody will see the end of.
+        foreach (var session in Sessions)
+        {
+            session.CancelPending();
+            if (!Close(session)) { session.DisposeTurnScope(); session.Host?.Dispose(); }
+        }
     }
 }
 

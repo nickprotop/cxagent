@@ -456,12 +456,18 @@ public static class AppBootstrap
         // THE ONE BLOCK QUEUED MESSAGES SHARE, or null when nothing is queued. One row that updates
         // beats a row per message: three quick corrections are one thought, and three transcript
         // lines for them push the running turn's own output off the screen just when it matters.
-        SharpConsoleUI.Controls.ChatMessageId? queuedBlock = null;
+        //
+        // ON THE TAB, NOT HERE. These handlers run for the session that queued the text, but wrote
+        // through `mainWindow.Chat`, which resolves to whatever tab is IN FRONT — so queueing in a
+        // background session put the placeholder in the foreground one's transcript, and cancelling
+        // restored the text into the foreground one's composer. The tab that owns the conversation
+        // is the tab that owns its queue.
 
             // ONE BLOCK, REWRITTEN. Adding a message updates the row rather than appending a new
             // one, so a burst of corrections stays one line and the running turn keeps the screen.
             void ShowQueued(string? body)
             {
+                if (mainWindow.TabForSession(session) is not { } tab) return;
                 if (body is not { Length: > 0 }) { RemoveQueuedBlock(); return; }
 
                 var text = $"[dim]queued[/] {ChatTranscriptSink.Escape(body)}";
@@ -473,12 +479,12 @@ public static class AppBootstrap
                 // occupy when it goes in. Still ONE row either way — the cost this avoids is a row
                 // per message, not a row that moves.
                 RemoveQueuedBlock();
-                queuedBlock = mainWindow.Chat.AddMessage(ChatRole.System, text);
+                tab.QueuedBlock = tab.Chat.AddMessage(ChatRole.System, text);
 
                 // CANCEL PUTS THEM BACK IN THE COMPOSER, not in the bin. What was typed was meant,
                 // and the same Restore that Escape uses places it ABOVE anything typed since — the
                 // queued thought came first, so it reads first.
-                mainWindow.Chat.SetActions(queuedBlock.Value,
+                tab.Chat.SetActions(tab.QueuedBlock.Value,
                 [
                     new ChatMessageAction
                     {
@@ -516,8 +522,9 @@ public static class AppBootstrap
             // buttons stay.
             void RemoveQueuedBlock()
             {
-                if (queuedBlock is { } block) mainWindow.Chat.RemoveMessage(block);
-                queuedBlock = null;
+                if (mainWindow.TabForSession(session) is not { } tab) return;
+                if (tab.QueuedBlock is { } block) tab.Chat.RemoveMessage(block);
+                tab.QueuedBlock = null;
             }
 
             // ASKS THE SESSION TO EMPTY THE QUEUE; the restoring is done by the Cancelled handler
@@ -534,7 +541,9 @@ public static class AppBootstrap
             // saying so would explain something already on screen at the cost of a transcript line.
             session.Cancelled += text => system.EnqueueOnUIThread(() =>
             {
-                mainWindow.Input.Input = PromptQueue.Restore(text, mainWindow.Input.Input);
+                // INTO THE COMPOSER OF THE SESSION THAT CANCELLED, not the one on screen.
+                if (mainWindow.TabForSession(session) is { } tab)
+                    tab.Input.Input = PromptQueue.Restore(text, tab.Input.Input);
                 RemoveQueuedBlock();
             });
 
@@ -600,6 +609,10 @@ public static class AppBootstrap
         // cannot list different commands: a verb registered here appears in both or neither.
         mainWindow.Registry = manager.Commands;
 
+        // HOW A CLOSED TAB'S SESSION IS TORN DOWN. The window decides WHICH conversation the user
+        // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
+        mainWindow.CloseSession = manager.Close;
+
         foreach (var declared in SessionCommands.All)
         {
             // OVER CORE'S. Core's /help has no keys of its own to list; this window's has two
@@ -620,8 +633,15 @@ public static class AppBootstrap
                     // over a line that is already valid.
                     new CommandArgument("new [folder]",
                         "open another session in a tab — asks for a folder when none is given"),
+                    // THE CURRENT SESSION'S CONFIGURATION AND MODE, NOT THE PROCESS'S STARTUP ONES.
+                    // `resolution` and `startupMode` are the values this window was BUILT with, so a
+                    // /model switch or a Shift+Tab before opening a tab was silently ignored: the new
+                    // session came up on the old provider, in the mode the app had launched in, while
+                    // the status bar it inherited said otherwise. Both live on the session, which is
+                    // where a re-wire updates them.
                     (current, arguments) => new NewSessionCommand(new NewSessionCommand.Host(
-                        system, mainWindow, manager, permissionRules, resolution, startupMode, paths.ConfigDir))
+                        system, mainWindow, manager, permissionRules,
+                        current.Resolution ?? resolution, current.Mode, paths.ConfigDir))
                         .Run(current, NewSessionCommand.FolderFrom(arguments)));
 
             if (declared.Name == "/stats")
@@ -886,13 +906,12 @@ public static class AppBootstrap
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host
             // is a bare local.
-            var sink = new ChatTranscriptSink(system, mainWindow.Chat)
-            {
-                // A STEER TAKEN MID-TURN ARRIVES AS A USER TURN, and its placeholder must go with it.
-                // The agent announces through this sink from its own flow; the removal is marshalled
-                // onto the UI thread by the sink itself, so this runs where the controls live.
-                BeforeUserTurn = RemoveQueuedBlock,
-            };
+            // THE SHARED PAIR, so this path and /sessions new cannot disagree about how a round's
+            // boundaries reach the rows. BeforeUserTurn is this path's alone: a steer taken mid-turn
+            // arrives as a user turn and its queued placeholder must go with it, which only the
+            // startup session's queue produces.
+            var (sink, jobPanelSink) = SessionWiring.Sinks(
+                system, mainWindow.ActiveTab, beforeUserTurn: RemoveQueuedBlock);
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             mainWindow.SetMode(startupMode);
@@ -917,72 +936,29 @@ public static class AppBootstrap
                     transcript.Write(new Message(line, Severity.Info));
                 pluginReapReported = true;
             }
-            // Jobs render INLINE in the transcript, not in a side panel — one column, jobs
-            // interleaved with the turns that caused them. JobPanelSink (and JobPanelControl) still
-            // exist and still work; they are simply not wired. Both speak IToolObserver, so this line is
-            // the entire switch: AgentHost never touches a control.
-            // The failed-job buttons. Delegates rather than an AgentHost reference, because the host
-            // is built BELOW this line and REPLACED on every re-wire — capturing the instance would
-            // pin whichever one existed when this sink was built. Reading through the closure is the
-            // same pattern every other handler here uses, and it is why the session rather than the
-            // host is what everything holds now.
-            //
-            // No inline failure actions. Retry/Skip/Diagnose let the user drive the scheduler by
-            // hand while the orchestrator was mid-drive -- "a drive operation is already in
-            // progress" on screen -- and a hand-skipped job desynchronised the plan from what the
-            // orchestrator believed had run. The failure and its reason reach the model on the next
-            // consult, which already has a repair round.
-            var jobPanelSink = new InlineJobSink(system, mainWindow.Chat);
-
-            // A ROUND'S TOOLS ARE ONE ROW, and the two sinks have to agree where a round starts. The
-            // boundaries arrive on the transcript sink (they are ISessionObserver members); the rows
-            // and the tool records live in the job sink.
-            sink.OnUserTurnAdded = jobPanelSink.TurnBegan;
-            sink.OnAssistantRoundEnded = jobPanelSink.RoundEnded;
-
-            // AND BACK TO THE WINDOW, so its one-second clock can tick the elapsed time on running
-            // rows. Assigned here rather than passed in because the sink needs the window's Chat
-            // control to exist first — see MainWindow.JobSink. Re-wiring (/model, resume) builds a
-            // new sink and overwrites this, which is what we want: the clock must drive whichever
-            // sink actually owns the rows on screen.
-            mainWindow.JobSink = jobPanelSink;
-
             // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
             // collection empty while a session was plainly running, which Adopt() was added to paper
             // over — the session went in afterwards, and nothing checked that what the root wired
             // matched what the manager would have. One routine now does both, so the collection
             // cannot disagree with reality. Idempotent on re-wire: /model and resume call this again
             // with the same Session, and Open adds it only if it is not already there.
+            // THROUGH THE MANAGER, not SessionFactory directly. Wiring outside it left the manager's
+            // collection empty while a session was plainly running. Idempotent on re-wire: /model and
+            // resume call this again with the same Session, and Open adds it only if it is not
+            // already there.
+            var wiring = new SessionWiring.Wiring(
+                System: system,
+                Main: mainWindow,
+                Tab: mainWindow.ActiveTab,
+                Session: session,
+                Manager: manager,
+                Resolution: res,
+                Mode: startupMode,
+                Policy: permissionPolicy,
+                ConfigDir: paths.ConfigDir);
+
             manager.Open(session, res,
-                new Core.Sessions.SessionPorts
-                {
-                    Observer = sink,
-                    ToolObserver = jobPanelSink,
-
-                    // THE SEAM FOR EMBEDDER TOOLS, passed explicitly even while empty. This layer is
-                    // where a tool that needs a transcript, colour or folding would be supplied,
-                    // because Core has none of the three and must stay ignorant of presentation.
-                    // SessionFactory wraps whatever lands here in GatedAgentTool on the way through,
-                    // so a tool added later is gated without the caller remembering to ask.
-                    Tools = [],
-                    Ask = mainWindow.AskQuestionAsync,
-
-                    // WHAT THE MODEL IS TOLD IT CAN SUGGEST, read per turn from the registry as it
-                    // actually stands — after this app has overridden Core's declarations and added
-                    // its own. Almost nothing qualifies: a command declares TellTheModel only when
-                    // it answers something the model cannot do itself, so today this is empty and
-                    // the prompt renders no command section at all.
-                    ModelFacingCommands = () =>
-                        [.. manager.Commands.All
-                            .Where(c => c.TellTheModel)
-                            .Select(c => (c.Name, c.Summary))],
-
-                    // JUDGED BY ITS OWN ROOT AND MODE. The gate is one per process; this is the
-                    // session half of the decision, and passing it is what stops a second session
-                    // being judged against this one's folder.
-                    Policy = permissionPolicy,
-                },
-                startupMode);
+                SessionWiring.Ports(wiring, sink, jobPanelSink), startupMode);
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
             // because a skipped server the user never hears about is indistinguishable from one
@@ -999,100 +975,29 @@ public static class AppBootstrap
             // every row against whichever session happened to wire the callback. The fallback to
             // this session's id covers a request that carried no policy, which is the only case
             // where the report cannot say.
+            // PERMISSION DECISIONS INTO HISTORY. Set here rather than at the gate's construction
+            // because the session id does not exist until the host does.
+            //
+            // BOTH FIELDS FROM THE REPORT, NOT THE CLOSURE. One gate serves every session, so a
+            // report can arrive from any of them — and taking the id from the report while taking
+            // the FOLDER from `session` filed rows naming session B beside session A's directory.
+            // The fallbacks cover a request that carried no policy, the only case where the report
+            // cannot say.
             permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
                     report.SessionId ?? session.Id, DateTimeOffset.UtcNow,
                     report.Kind.ToString(), report.Decision, report.Requester,
-                    session.WorkingDirectory, report.Subject, report.Flagged));
+                    report.Root ?? session.WorkingDirectory, report.Subject, report.Flagged));
 
-            // WHAT EACH WORKER DID, for the timetable its finished row renders instead of its prose.
-            // One subscription serves every worker in the session: a parent forwards its children's
-            // reports unchanged and each one carries the id of the agent that made the call, so the
-            // sink files them by that and joins them to a row when the row closes.
-            //
-            // NOT MARSHALLED ONTO THE UI THREAD. This only appends to a concurrent accumulator and
-            // touches no control — the enqueue every other handler here needs is for the controls,
-            // and paying for one per tool call would put a UI-thread hop on the loop's hot path.
-            session.ToolCallFinished += jobPanelSink.RecordToolCall;
+            // EVERY READOUT, ADDRESSED TO THIS SESSION'S TAB — the same call /sessions new makes,
+            // which is the point: written separately, that path wired two of these eleven.
+            SessionWiring.Subscribe(wiring, jobPanelSink);
 
-            // AND WHICH CHILD BELONGS TO WHICH ROW, so a RUNNING worker can show the same timetable
-            // its finished row will settle into — growing as calls land, with what the child is doing
-            // right now as the last line. The calls above are the finished half; this is the live one,
-            // and the child's own job panel is where it is read from.
-            //
-            // NOT MARSHALLED ONTO THE UI THREAD, for the same reason: this writes to a concurrent
-            // dictionary and touches no control.
-            session.ChildSpawned += spawned => jobPanelSink.NoteChild(spawned.JobId, spawned.Child);
-
-            session.TokensUpdated += (_, total) => system.EnqueueOnUIThread(() =>
-            {
-                // THE PARENT'S OWN SPEND, not `total`. The event carries Ledger.TotalTokens, which is
-                // the whole session — children share the ledger — and the status bar is this agent's
-                // readout: it sits beside an occupancy percentage that is the parent's, so a
-                // session-wide figure there read as the parent's and was four times too large.
-                var (ownIn, ownOut) = session.OwnSpend;
-
-                // THIS SESSION'S TAB, NOT THE ACTIVE ONE. The plain setters write wherever the user
-                // is looking, so one session's numbers landed on another's panel.
-                mainWindow.NoteSessionStats(session, ownIn + ownOut, contextUsed: null);
-                mainWindow.SetTokenTotal(ownIn + ownOut);
-                mainWindow.SetTokenSplit(ownIn, ownOut);
-
-                // THE SAME EVENT, so the breakdown and the number it breaks down can never disagree.
-                // Pushed rather than pulled: the panel refreshes on a clock too, and a stale tally
-                // beside a live total is the kind of small inconsistency nobody can explain later.
-                //
-                // The PANEL keeps the session-wide figures — that is the division: bar is this agent,
-                // panel is everything, and "Tokens by agent" is where the two are reconciled.
-                // LEDGER IS NULLABLE because a session before its first wire has none; this runs from
-                // a token event, which only a wired session raises.
-                if (session.Ledger is not { } spend) return;
-
-                mainWindow.SetSpend(session, new MainWindow.SpendReading
-                {
-                    ByInstance = spend.ByModel,
-                    SubAgentTokens = spend.SubAgentTokens,
-                    SplitByInstance = spend.SplitByModel,
-                    CacheHitRate = spend.CacheHitRate,
-                    CacheByAgent = spend.CacheHitRateByAgent,
-                    CacheWrittenTokens = spend.CacheWrittenTokens,
-                    CostByInstance = spend.CostByInstance,
-                    TotalCost = spend.TotalCost,
-                });
-            });
-            session.ContextUsedUpdated += (_, used) => system.EnqueueOnUIThread(() =>
-            {
-                mainWindow.NoteSessionStats(session, spent: null, contextUsed: used);
-                mainWindow.SetContextUsed(used);
-            });
-            session.ContextCompressed += (_, d) => system.EnqueueOnUIThread(() => mainWindow.MarkContextStale(d.Before, d.After));
-            session.ContextEstimatedUpdated += (_, used) => system.EnqueueOnUIThread(() => mainWindow.SetContextUsed(used, estimated: true));
-            // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
-            // and nothing to re-raise — a per-prompt subscription would fire on every
-            // prompt because every prompt minted a new id.
+            // ONCE, AT WIRE-UP, and this half stays here: the panel's session id is the WINDOW's
+            // readout of whichever tab is in front, and at startup that is this one.
             mainWindow.SessionId = session.SessionId ?? "";
             mainWindow.RefreshSessionPanel();
-            session.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
-            {
-                mainWindow.SessionPanel.RecordTurn(calls);
-                // THE PARENT'S SPLIT, matching the total beside it. The ledger's InputTokens and
-                // OutputTokens include every child, and a bar showing a session-wide ↑/↓ under a
-                // parent-only total would be two figures that cannot be added together.
-                var (turnIn, turnOut) = session.OwnSpend;
-                mainWindow.SetTokenSplit(turnIn, turnOut);
 
-                // SKILLS, RE-READ EVERY TURN like the agent's own discovery — a skill added or
-                // edited mid-session shows up here on the same turn its description reaches the
-                // prompt, rather than after a restart.
-                //
-                // The LOADED list is derived from the parent's window, so it empties itself when
-                // compaction removes a body. That silent stop is the thing worth showing.
-                mainWindow.SkillCount = Core.Skills.SkillCatalog
-                    .Find(session.WorkingDirectory, paths.ConfigDir).Skills.Count;
-                mainWindow.LoadedSkills = session.LoadedSkills;
-
-                mainWindow.RefreshSessionPanel();
-            });
             mainWindow.SetSubmissionEnabled(true);
         }
 

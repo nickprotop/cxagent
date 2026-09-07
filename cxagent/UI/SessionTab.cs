@@ -109,6 +109,47 @@ public sealed class SessionTab
     /// </summary>
     public MainWindow.SpendReading? Spend { get; set; }
 
+    /// <summary>
+    /// This conversation's turns, tool calls and elapsed time.
+    ///
+    /// <para>HERE RATHER THAN IN THE PANEL, which there is only one of. See <see cref="SessionTally"/>
+    /// — held by the panel, these counted every session in the window as though it were one.</para>
+    ///
+    /// <para>Created WITH THE TAB, so the clock starts when the conversation does.</para>
+    /// </summary>
+    public SessionTally Tally { get; } = new();
+
+    /// <summary>
+    /// The placeholder row standing for text queued behind a running turn, or null when none is.
+    ///
+    /// <para>PER CONVERSATION, because queueing is. Held by the composition root as one local, it
+    /// was written through the window's active-tab transcript: queueing in a background session put
+    /// the row in the FOREGROUND session's history, and cancelling pasted the text into the
+    /// foreground session's composer.</para>
+    /// </summary>
+    public SharpConsoleUI.Controls.ChatMessageId? QueuedBlock { get; set; }
+
+    /// <summary>Whether the context reading predates a compression that has not been measured yet.</summary>
+    /// <remarks>PER CONVERSATION, like the reading it qualifies: compressing one session left the
+    /// OTHER one's gauge marked stale, so a tab that had done nothing claimed its numbers were
+    /// out of date.</remarks>
+    public bool ContextStale { get; set; }
+
+    /// <summary>What the last compression did, as text beside the gauge; null when none has run.</summary>
+    /// <inheritdoc cref="ContextStale"/>
+    public string? ContextDelta { get; set; }
+
+    /// <summary>How many skills this session's folder offers, and which are loaded.</summary>
+    /// <remarks>
+    /// PER CONVERSATION BECAUSE SKILLS ARE DISCOVERED PER FOLDER. Two sessions in different projects
+    /// have different catalogues, and a count held by the window reported whichever session last
+    /// finished a turn — a list of skills the tab in front cannot use.
+    /// </remarks>
+    public int SkillCount { get; set; }
+
+    /// <inheritdoc cref="SkillCount"/>
+    public IReadOnlyList<string> LoadedSkills { get; set; } = [];
+
     /// <summary>This tab's mode line, under its prompt — set when the composer is built.</summary>
     public MarkupControl? ModeLine { get; set; }
 

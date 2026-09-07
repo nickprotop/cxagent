@@ -31,6 +31,17 @@ public sealed record PermissionDecisionReport(
     /// whichever session the consumer happened to close over.</para>
     /// </summary>
     public string? SessionId { get; init; }
+
+    /// <summary>
+    /// The folder the decision was judged against, or null when the request carried no policy.
+    ///
+    /// <para>FROM THE REQUEST'S POLICY, FOR THE SAME REASON AS <see cref="SessionId"/>, and it is the
+    /// same bug caught one field short. A consumer that reads the session from the report but the
+    /// FOLDER from its own closure files a row naming session B beside session A's directory —
+    /// internally inconsistent, and wrong in exactly the case history is consulted for: which
+    /// session was working where when it asked.</para>
+    /// </summary>
+    public string? Root { get; init; }
 }
 
 /// <summary>
@@ -267,7 +278,7 @@ public sealed class PermissionDecider : IPermissionGate
 
         if (request.Policy is not { } policy)
         {
-            OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What) { SessionId = request.Policy?.SessionId });
+            OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
             _notice?.Invoke(new("refused: this request carried no session policy, so there "
                              + "was nothing to judge it against.", Severity.Warning));
             // NOBODY DECIDED THIS — there was no session to ask and no classifier consulted. Still
@@ -283,7 +294,7 @@ public sealed class PermissionDecider : IPermissionGate
         // session of decisions.
         if (policy.IsSilentlyAllowed(request))
         {
-            OnDecision?.Invoke(new(request.Kind, "silent", request.Requester, request.What) { SessionId = request.Policy?.SessionId });
+            OnDecision?.Invoke(new(request.Kind, "silent", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
             return PermissionOutcome.Allow;
         }
 
@@ -334,7 +345,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // passed on the boundary alone. It is a real request to a real endpoint on every
                 // trusted write, and a reader deciding whether auto is worth its latency needs the
                 // count.
-                OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId });
+                OnDecision?.Invoke(new(request.Kind, "auto-allowed", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
                 // AutoAllow, not Allow — same effect (the action runs) but the outcome now says WHO
                 // decided, which is what lets the tool row badge "auto-approved" (Task 8) rather than
                 // looking identical to a silent rule/boundary allow.
@@ -352,7 +363,7 @@ public sealed class PermissionDecider : IPermissionGate
             // should be the last word, and that is not a claim about which way it leans.
             if (decision.Verdict == ClassifierVerdict.Deny && effect == ReviewEffect.MayApprove)
             {
-                OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId });
+                OnDecision?.Invoke(new(request.Kind, "auto-denied", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
                 request = request with { DeniedByClassifier = true, ClassifierReason = decision.Reason };
                 // THE REASON RIDES THE OUTCOME NOW, not only the request field above. That field
                 // still exists for the prompt-heading work (Task 8+); this is the return the MODEL
@@ -369,7 +380,7 @@ public sealed class PermissionDecider : IPermissionGate
             // folder means the classifier did not clear the action and a prompt is about to appear —
             // the single most useful thing to be able to count, because it is the answer to "why did
             // auto ask me that?" and nothing recorded it.
-            OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId });
+            OnDecision?.Invoke(new(request.Kind, "auto-refused", request.Requester, request.What, decision.Flagged) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
 
             // AND THE PROMPT IS TOLD WHY, so its heading names the classifier rather than blaming a
             // folder the user very likely trusts — and carries the model's own reason when it gave
@@ -406,7 +417,7 @@ public sealed class PermissionDecider : IPermissionGate
         {
             var granted = await DecideAsync(request, ct);
             OnDecision?.Invoke(new(request.Kind, granted ? "allowed" : "denied", request.Requester, request.What)
-                { SessionId = request.Policy?.SessionId });
+                { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
             // A HUMAN ANSWERED HERE, always — DecideAsync is only reached once the silent path,
             // auto-allow and auto-deny have all fallen through, so every bool it returns is either
             // the user's own click (Once/Always/TrustFolder/Deny) or a cancellation the gate treats
