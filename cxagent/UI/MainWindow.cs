@@ -152,10 +152,41 @@ public sealed class MainWindow : IDisposable
     /// from, which is the only one there is until a second is opened.</para>
     /// </summary>
     private SessionTab ActiveSessionTab =>
-        _sessionTabs.Count > 0 && Tabs.ActiveTabIndex >= 0 && Tabs.ActiveTabIndex < _sessionTabs.Count
-            ? _sessionTabs[Tabs.ActiveTabIndex]
-            : _sessionTabs.Count > 0 ? _sessionTabs[0]
-            : throw new InvalidOperationException("MainWindow.Build has not run yet.");
+        SessionTabAt(Tabs.ActiveTabIndex)
+        ?? (_sessionTabs.Count > 0 ? _sessionTabs[0]
+            : throw new InvalidOperationException("MainWindow.Build has not run yet."));
+
+    /// <summary>
+    /// Where each session tab sits in the strip, by the same order as <c>_sessionTabs</c>.
+    ///
+    /// <para>SESSION TABS ARE NOT A PREFIX OF THE STRIP, and assuming they were is the sharpest bug
+    /// this file has had. A file or shell tab appends to the same strip, so `/open` then
+    /// `/sessions new` gives strip [chat, file, session] against a session list of two — and
+    /// indexing one by the other's position silently returned the FIRST session while the user was
+    /// looking at the second. Typed goals went to the wrong conversation, or vanished.</para>
+    ///
+    /// <para>ONE MAPPING, USED EVERYWHERE. Every question of the form "which session is this strip
+    /// position" goes through <see cref="SessionTabAt"/>, and every "where is this session" through
+    /// <see cref="StripIndexOf"/>. The two index spaces stop being interchangeable by accident.</para>
+    /// </summary>
+    private readonly List<int> _sessionStripIndex = [];
+
+    /// <summary>The session tab at a strip position, or null when that position is not one.</summary>
+    private SessionTab? SessionTabAt(int stripIndex)
+    {
+        var i = _sessionStripIndex.IndexOf(stripIndex);
+        return i >= 0 && i < _sessionTabs.Count ? _sessionTabs[i] : null;
+    }
+
+    /// <summary>Where a session tab sits in the strip, or -1.</summary>
+    private int StripIndexOf(SessionTab tab)
+    {
+        var i = _sessionTabs.IndexOf(tab);
+        return i >= 0 && i < _sessionStripIndex.Count ? _sessionStripIndex[i] : -1;
+    }
+
+    /// <summary>Whether a strip position holds a conversation.</summary>
+    private bool IsSessionTab(int stripIndex) => _sessionStripIndex.Contains(stripIndex);
 
     /// <summary>The active session's transcript.</summary>
     public ChatTranscriptControl Chat => ActiveSessionTab.Chat;
@@ -247,15 +278,21 @@ public sealed class MainWindow : IDisposable
         // then yanks the user out of the strip mid-navigation.
         if (_activePrompt is null
             && !Tabs.HasFocus
-            && Tabs.ActiveTabIndex < _sessionTabs.Count)
+            && IsSessionTab(Tabs.ActiveTabIndex))
             FocusComposer();
     }
 
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
-    public void NotePromptTabBySessionId(string? sessionId) =>
-        _promptTab = sessionId is null
-            ? -1
-            : _sessionTabs.FindIndex(t => t.Session?.Id == sessionId);
+    public void NotePromptTabBySessionId(string? sessionId)
+    {
+        // A STRIP POSITION, NOT A SESSION INDEX. ShowPermissionPrompt assigns this to
+        // Tabs.ActiveTabIndex, so a session index would select whatever tab happened to sit there.
+        var tab = sessionId is null
+            ? null
+            : _sessionTabs.FirstOrDefault(t => t.Session?.Id == sessionId);
+
+        _promptTab = tab is null ? -1 : StripIndexOf(tab);
+    }
 
     /// <summary>
     /// Wires the first tab's composer, once.
@@ -486,11 +523,15 @@ public sealed class MainWindow : IDisposable
     {
         if (_sessionTabs.Count < 2) return false;
 
-        var index = Tabs.ActiveTabIndex;
-        if (index < 0 || index >= _sessionTabs.Count) return false;
+        var strip = Tabs.ActiveTabIndex;
+        var tab = SessionTabAt(strip);
+        if (tab is null) return false;
 
-        _sessionTabs.RemoveAt(index);
-        CloseTab(index);
+        // BY IDENTITY, NOT BY STRIP POSITION. Removing `_sessionTabs[stripIndex]` took the wrong
+        // element the moment a file or shell tab sat before a session — or threw outright.
+        _sessionTabs.Remove(tab);
+        _sessionStripIndex.Remove(strip);
+        CloseTab(strip);
         RelabelSessionTabs();
         return true;
     }
@@ -521,6 +562,10 @@ public sealed class MainWindow : IDisposable
         _sessionTabs.Add(tab);
         WireOnce(tab.Input);
         AddTab(session.WorkingDirectory, tab.Content);
+
+        // WHERE IT ACTUALLY LANDED, which is the end of the strip — not the end of the session list.
+        // Those are the same number only while nothing else has opened a tab.
+        _sessionStripIndex.Add(Tabs.TabCount - 1);
         RelabelSessionTabs();
 
         // THE NEW TAB IS THE ACTIVE ONE, so its composer takes the cursor: a session opened and then
@@ -550,11 +595,16 @@ public sealed class MainWindow : IDisposable
         var labels = TabLabels.For(
             [.. _sessionTabs.Select(t => t.Session?.WorkingDirectory ?? "Chat")]);
 
-        for (var i = 0; i < labels.Count && i < _tabTitles.Count; i++)
+        for (var i = 0; i < labels.Count && i < _sessionTabs.Count; i++)
         {
+            // TO THE STRIP POSITION THIS SESSION ACTUALLY OCCUPIES. Writing to position `i` renamed
+            // whatever sat there — a file tab, once one had been opened first.
+            var strip = _sessionStripIndex[i];
+            if (strip < 0 || strip >= _tabTitles.Count) continue;
+
             _sessionTabs[i].Label = labels[i];
-            _tabTitles[i] = labels[i];
-            Tabs.SetTabTitle(i, _waitingTabs.Contains(i) ? labels[i] + " •" : labels[i]);
+            _tabTitles[strip] = labels[i];
+            Tabs.SetTabTitle(strip, _waitingTabs.Contains(strip) ? labels[i] + " •" : labels[i]);
         }
     }
     /// <summary>
@@ -687,7 +737,7 @@ public sealed class MainWindow : IDisposable
     /// every one of them is a chat tab, and Escape's behaviour turns on this — so the old test made
     /// Escape cancel a turn only from the FIRST conversation.</para>
     /// </summary>
-    public bool ChatTabIsActive => Tabs.ActiveTabIndex < _sessionTabs.Count;
+    public bool ChatTabIsActive => IsSessionTab(Tabs.ActiveTabIndex);
 
     /// <summary>Test seam: the panel column's width and the status strip's row height are layout
     /// decisions worth pinning, and both are only observable through the grid. Public rather than
@@ -837,6 +887,20 @@ public sealed class MainWindow : IDisposable
                                   .ToList();
         _waitingTabs.Clear();
         foreach (var t in shifted) _waitingTabs.Add(t);
+
+        // AND THE SESSION MAPPING, for the same reason: a closed tab shifts everything after it, so
+        // a mapping left alone would name a strip position that now holds something else. A file tab
+        // closing moves every session tab after it.
+        for (var i = 0; i < _sessionStripIndex.Count; i++)
+            if (_sessionStripIndex[i] > index) _sessionStripIndex[i]--;
+
+        // A PROMPT'S REMEMBERED TABS SHIFT TOO. Left as raw indices they would send the user back to
+        // whatever inherited the position.
+        if (_promptTab > index) _promptTab--;
+        else if (_promptTab == index) _promptTab = -1;
+
+        if (_tabBeforePrompt > index) _tabBeforePrompt--;
+        else if (_tabBeforePrompt == index) _tabBeforePrompt = -1;
 
         RefreshTabStrip();
         RefreshWaitingBar();
@@ -992,7 +1056,7 @@ public sealed class MainWindow : IDisposable
         // meant tab zero when there was one conversation; with several, the one in front of the user
         // is the one they meant — jumping them to the first session's composer moves them out of the
         // conversation they were reading.
-        if (Tabs.ActiveTabIndex >= 0 && Tabs.ActiveTabIndex < _sessionTabs.Count)
+        if (IsSessionTab(Tabs.ActiveTabIndex))
         {
             FocusComposer();
             return;
@@ -1000,7 +1064,7 @@ public sealed class MainWindow : IDisposable
 
         // FROM A SHELL OR FILE TAB, back to a session — the first with a prompt waiting if any is
         // asking, since that is the tab the user is most likely reaching for.
-        var waiting = _waitingTabs.FirstOrDefault(t => t < _sessionTabs.Count, -1);
+        var waiting = _waitingTabs.FirstOrDefault(IsSessionTab, -1);
         Tabs.ActiveTabIndex = waiting >= 0 ? waiting : 0;
         FocusComposer();
     }
@@ -1534,6 +1598,7 @@ public sealed class MainWindow : IDisposable
         // TAB ZERO IS ADDED DIRECTLY rather than through AddTab, which activates the new tab and
         // refreshes a strip that does not exist yet — so its title is recorded here by hand.
         _tabTitles.Add("Chat");
+        _sessionStripIndex.Add(0);
 
         // THE BAR FOLLOWS THE TAB, not only the prompt: arriving at Chat while a question waits must
         // clear it, and leaving Chat while one waits must raise it.
@@ -1870,7 +1935,7 @@ public sealed class MainWindow : IDisposable
         // WHERE THEY WERE IS REMEMBERED, so answering can put them back: a prompt pulls the user
         // into another conversation, and leaving them there means the next thing they type goes to
         // a session they did not choose.
-        var asking = _promptTab >= 0 && _promptTab < _sessionTabs.Count ? _promptTab : Tabs.ActiveTabIndex;
+        var asking = _promptTab >= 0 && IsSessionTab(_promptTab) ? _promptTab : Tabs.ActiveTabIndex;
         if (asking != Tabs.ActiveTabIndex && asking < Tabs.TabCount)
         {
             _tabBeforePrompt = Tabs.ActiveTabIndex;
