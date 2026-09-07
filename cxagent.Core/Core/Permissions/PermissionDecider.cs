@@ -73,7 +73,20 @@ public sealed record PermissionDecisionReport(
 public sealed class PermissionDecider : IPermissionGate
 {
     private readonly PermissionRulesStore _store;
-    private readonly Action<Message>? _notice;
+    /// <summary>
+    /// Where a decision's own words go — a denial echo, a trust confirmation, a rule that could not
+    /// be saved.
+    /// </summary>
+    /// <remarks>
+    /// IT TAKES THE SESSION, NOT ONLY THE MESSAGE. One gate serves every session, so a notice that
+    /// names none is printed wherever the consumer's closure happens to point — which was the first
+    /// tab, for the life of the process. A security notice filed against a conversation that did not
+    /// produce it is worse than none: it accuses the wrong session and leaves the right one silent.
+    ///
+    /// NULLABLE SESSION, because a request that carried no policy cannot say — and that case has its
+    /// own notice, which is precisely the one that must still be printed somewhere.
+    /// </remarks>
+    private readonly Action<string?, Message>? _notice;
 
     /// <summary>
     /// The reviewer for <c>/mode edits auto</c>, or null when none is configured — in which case auto
@@ -186,12 +199,12 @@ public sealed class PermissionDecider : IPermissionGate
     /// decided how something looked, and every consumer would have had to undo it.</para></param>
     /// <param name="store">Where an "always" answer is remembered.</param>
     /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
-    public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<Message>? notice,
+    public static PermissionDecider WithPrompt(PermissionRulesStore store, Action<string?, Message>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(store, notice, promptHook);
 
     private PermissionDecider(PermissionRulesStore store,
-        Action<Message>? notice, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
+        Action<string?, Message>? notice, Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook)
     {
         _store = store;
         _notice = notice;
@@ -213,7 +226,7 @@ public sealed class PermissionDecider : IPermissionGate
     /// <param name="notice">Where a one-line explanation goes, or null to say nothing.</param>
     /// <param name="promptHook">How a question reaches a human, and how their answer comes back.</param>
     public static PermissionDecider ForTesting(PermissionPolicy policy, PermissionRulesStore store,
-        Action<Message>? notice,
+        Action<string?, Message>? notice,
         Func<PermissionRequest, bool, CancellationToken, Task<PermissionChoice>> promptHook) =>
         new(store, notice, promptHook) { StampForTesting = policy };
 
@@ -279,7 +292,7 @@ public sealed class PermissionDecider : IPermissionGate
         if (request.Policy is not { } policy)
         {
             OnDecision?.Invoke(new(request.Kind, "denied", request.Requester, request.What) { SessionId = request.Policy?.SessionId, Root = request.Policy?.Root });
-            _notice?.Invoke(new("refused: this request carried no session policy, so there "
+            _notice?.Invoke(null, new("refused: this request carried no session policy, so there "
                              + "was nothing to judge it against.", Severity.Warning));
             // NOBODY DECIDED THIS — there was no session to ask and no classifier consulted. Still
             // reported as a user denial (DeniedBy left at its "user" default) because that is this
@@ -404,7 +417,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // the same warning each turn reads as a fresh blip rather than a degradation that has
                 // been going on all session — which is how a classifier too slow to ever answer looks
                 // exactly like one that hiccuped.
-                _notice?.Invoke(new(
+                _notice?.Invoke(request.Policy?.SessionId, new(
                     ClassifierNoticeForTest(failure, Classifier.FailureCount), Severity.Warning));
             }
         }
@@ -514,7 +527,7 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke(new($"could not save this rule for next time: {ex.Message}", Severity.Warning));
+                    _notice?.Invoke(request.Policy?.SessionId, new($"could not save this rule for next time: {ex.Message}", Severity.Warning));
                 }
                 // Silent on success. The rule IS visible — Settings → Permissions lists every stored
                 // rule for this folder — so this is discoverable rather than invisible, without a line
@@ -528,7 +541,7 @@ public sealed class PermissionDecider : IPermissionGate
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _notice?.Invoke(new($"could not save folder trust for next time: {ex.Message}", Severity.Warning));
+                    _notice?.Invoke(request.Policy?.SessionId, new($"could not save folder trust for next time: {ex.Message}", Severity.Warning));
                 }
 
                 // SAID OUT LOUD, because this button is the one place a folder becomes trusted
@@ -537,13 +550,13 @@ public sealed class PermissionDecider : IPermissionGate
                 // who pressed it had no record of having widened anything — and the next launch
                 // does not ask, because the state is no longer Unknown. "It is on the Settings page"
                 // is not discovery for a decision the user did not know they were making.
-                _notice?.Invoke(new($"trusted this folder — file operations in "
+                _notice?.Invoke(request.Policy?.SessionId, new($"trusted this folder — file operations in "
                     + $"{request.Policy!.Root} will not ask again", Severity.Info));
                 return true;
 
             case PermissionChoice.Deny:
             default:
-                _notice?.Invoke(new($"denied: {request.Display}", Severity.Warning));
+                _notice?.Invoke(request.Policy?.SessionId, new($"denied: {request.Display}", Severity.Warning));
                 return false;
         }
     }

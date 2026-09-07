@@ -223,7 +223,8 @@ internal static class SessionFactory
         // support identity comparison.
         var observers = session.Observers ?? new ObserverFanOut();
         var toolObservers = session.ToolObservers ?? new ToolObserverFanOut();
-        session.ResubscribePorts(observers.Add(ports.Observer), toolObservers.Add(ports.ToolObserver));
+        session.ResubscribePorts(new Session.PortSubscription(
+            observers, ports.Observer, toolObservers, ports.ToolObserver));
 
         var host = new AgentHost(
             new AgentHost.AgentRuntime

@@ -405,7 +405,7 @@ public class ReviewEffectTests
         var notices = new List<Message>();
         var script = new PromptScript();
         var policy = new PermissionPolicy(root, rules, EditMode.Auto);
-        var gate = PermissionDecider.ForTesting(policy, rules, notices.Add, script.Show);
+        var gate = PermissionDecider.ForTesting(policy, rules, (_, m) => notices.Add(m), script.Show);
         gate.Classifier = new ActionClassifier(new ThrowingProvider(new InvalidOperationException("endpoint down")));
         script.AnswerWith(PermissionChoice.Once);
 

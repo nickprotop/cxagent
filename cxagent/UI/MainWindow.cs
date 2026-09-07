@@ -256,6 +256,15 @@ public sealed class MainWindow : IDisposable
     /// <inheritdoc cref="TabFor"/>
     public SessionTab? TabForSession(Core.Sessions.Session session) => TabFor(session);
 
+    /// <summary>The tab showing a session, by the session's own id.</summary>
+    /// <remarks>
+    /// BY ID BECAUSE THE GATE ONLY HAS ONE. A permission request carries a policy, not a Session —
+    /// deliberately, since the policy is what crosses into Core. The id on it is the stable one,
+    /// which is why <see cref="Core.Sessions.Session.Id"/> exists rather than reusing the agent's.
+    /// </remarks>
+    public SessionTab? TabForSessionId(string sessionId) =>
+        _sessionTabs.FirstOrDefault(t => t.Session?.Id == sessionId);
+
     private SessionTab? TabFor(Core.Sessions.Session session) =>
         _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.Session, session));
 

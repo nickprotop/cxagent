@@ -98,3 +98,4 @@ public class ResumeTargetTests : IDisposable
         Assert.True(ran);
     }
 }
+

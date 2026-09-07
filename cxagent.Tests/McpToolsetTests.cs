@@ -395,7 +395,7 @@ public class McpToolsetTests
         // WithPrompt, NOT ForTesting: ForTesting sets StampForTesting, which patches the missing
         // policy and hides the exact production defect this test is for.
         var notices = new List<Message>();
-        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+        var gate = PermissionDecider.WithPrompt(rules, (_, m) => notices.Add(m),
             (_, _, _) => Task.FromResult(PermissionChoice.Once));
 
         var toolset = new McpToolset([new FakeServer("ctx", Tool("query"))], gate);

@@ -231,4 +231,73 @@ public class ObserverFanOutTests
 
         Assert.Equal(0, fan.Count);
     }
+    /// <summary>
+    /// A RE-WIRE SWAPS THE PORTS' SUBSCRIBER WITHOUT EVER DOUBLE-SUBSCRIBING.
+    ///
+    /// <para>THE WINDOW BETWEEN ADD AND REMOVE IS THE BUG. A re-wire (`/model`, resume, a setup
+    /// flow) replaces the front end's sink, and if the new one joins before the old one leaves, an
+    /// event arriving in between reaches a transcript control TWICE — invisible in a transcript that
+    /// appends. Narrow today because a re-wire refuses while a turn is running; under a daemon, a
+    /// re-wire racing an in-flight event is the ordinary case.</para>
+    ///
+    /// <para>The shape is what makes it safe: `ResubscribePorts` takes the fan-out and the observer
+    /// and does the `Add` ITSELF. Handed ready-made subscription handles instead, the caller has to
+    /// create them to pass them, and C# evaluates arguments before the call — so both would join
+    /// before the method's first line, and the ordering could not be honoured from inside it.</para>
+    ///
+    /// <para><b>THIS TEST PINS THE END STATE, NOT THE WINDOW</b> — stated plainly because the
+    /// distinction matters and the test cannot make it. The double-subscription lasts only between
+    /// the `Add` and the `Dispose`, so a single-threaded test observes the same final fan-out either
+    /// way: verified by reintroducing the add-before-remove ordering, and these assertions still
+    /// passed. Catching the window itself needs an event raised from another thread DURING the swap,
+    /// which is a race a test can only make probable, never certain. What is enforced here is that
+    /// one subscriber remains and it is the new one; what prevents the window is the SIGNATURE,
+    /// which is why the argument-evaluation reasoning is written into the method's own remarks
+    /// rather than left to this test.</para>
+    /// </summary>
+    [Fact]
+    public void ReSubscribingPortsReplacesTheSubscriberRatherThanAddingBesideIt()
+    {
+        var session = new Session(Path.GetTempPath());
+        var fan = new ObserverFanOut();
+        var tools = new ToolObserverFanOut();
+
+        var outgoing = new Spy();
+        session.ResubscribePorts(new Session.PortSubscription(fan, outgoing, tools, null));
+
+        var incoming = new Spy();
+        session.ResubscribePorts(new Session.PortSubscription(fan, incoming, tools, null));
+
+        fan.Said(new Message("hello"));
+
+        Assert.Empty(outgoing.Seen);                  // the outgoing sink is gone
+        Assert.Equal(["said:hello"], incoming.Seen);  // and the incoming one hears it exactly once
+        Assert.Equal(1, fan.Count);
+    }
+
+    /// <summary>
+    /// AND A SUBSCRIBER THAT JOINED SEPARATELY SURVIVES THE RE-WIRE.
+    ///
+    /// <para>This is the whole reason the fan-outs are KEPT across a wire rather than rebuilt:
+    /// minting fresh ones would silently drop every subscriber that had joined since the last wire —
+    /// an attached client, a transcript store — failing by going quiet rather than by throwing.</para>
+    /// </summary>
+    [Fact]
+    public void ReSubscribingPortsLeavesOtherSubscribersInPlace()
+    {
+        var session = new Session(Path.GetTempPath());
+        var fan = new ObserverFanOut();
+        var tools = new ToolObserverFanOut();
+
+        var attached = new Spy();   // an attached client, not the ports'
+        fan.Add(attached);
+
+        session.ResubscribePorts(new Session.PortSubscription(fan, new Spy(), tools, null));
+        session.ResubscribePorts(new Session.PortSubscription(fan, new Spy(), tools, null));
+
+        fan.Said(new Message("hello"));
+
+        Assert.Equal(["said:hello"], attached.Seen);
+    }
+
 }

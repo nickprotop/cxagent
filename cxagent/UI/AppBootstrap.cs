@@ -406,7 +406,11 @@ public static class AppBootstrap
         // The UI's own transcript writer. The control it wraps is created with mainWindow above and
         // never replaced, so there is no later lifetime to
         // chase: every caller below can hold this one instance for good.
-        var transcript = new TranscriptWriter(system, mainWindow.Chat);
+        // A DELEGATE, NOT THE CONTROL. `mainWindow.Chat` resolves to the ACTIVE tab, so passing it
+        // here would evaluate it once — at startup, with one tab — and pin every gate notice to that
+        // tab. One gate serves every session, so each session's denials landed in the first
+        // session's transcript.
+        var transcript = new TranscriptWriter(system, () => mainWindow.Chat);
         // NO SESSION IN IT. The gate is the process's — a rules store and a way to ask — and every
         // decision reads the policy carried on the request instead. That is what lets one gate serve
         // any number of sessions honestly.

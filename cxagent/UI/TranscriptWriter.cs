@@ -15,7 +15,18 @@ namespace CxAgent.UI;
 /// <para>It implements no Core interface, which is the point: the UI prints to its own surface
 /// rather than through the session's port.</para>
 /// </summary>
-public sealed class TranscriptWriter(ConsoleWindowSystem system, ChatTranscriptControl chat)
+/// <remarks>
+/// THE CONTROL IS RESOLVED PER WRITE, NOT CAPTURED. `MainWindow.Chat` is a PROPERTY over the active
+/// tab, so passing it to a constructor evaluates it once — at startup, when only the first tab
+/// exists — and pins this writer to that tab's transcript for the life of the process. One gate
+/// serves every session and writes its denial echoes through here, so a captured control sent every
+/// session's "denied: …" and "trusted this folder" into the FIRST session's history: a security
+/// notice filed against a conversation that did not produce it, and missing from the one that did.
+///
+/// A delegate rather than a MainWindow reference, because what this needs is one control chosen at
+/// the moment of writing, not a window to reach into.
+/// </remarks>
+public sealed class TranscriptWriter(ConsoleWindowSystem system, Func<ChatTranscriptControl> chat)
     : ITranscriptWriter
 {
     // MARKUP, SAID PER MESSAGE. The System role renders markdown — which is what Core writes — and
@@ -24,10 +35,10 @@ public sealed class TranscriptWriter(ConsoleWindowSystem system, ChatTranscriptC
     // both, rather than making one of the two writers wrong.
     public void Write(string markup) =>
         system.EnqueueOnUIThread(() =>
-            ChatTranscriptSink.Post(chat, new ChatTranscriptSink.SystemRow(markup, false)));
+            ChatTranscriptSink.Post(chat(), new ChatTranscriptSink.SystemRow(markup, false)));
 
     public void WriteError(string message) =>
-        system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(chat,
+        system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(chat(),
             new ChatTranscriptSink.SystemRow($"[{ColorScheme.DangerMarkup}]{message}[/]", false)));
 
     // SEVERITY BECOMES A COLOUR HERE, and nowhere earlier. Core says what a line MEANS; only the UI
@@ -37,7 +48,7 @@ public sealed class TranscriptWriter(ConsoleWindowSystem system, ChatTranscriptC
     // Info goes through the markdown path unstyled — it is the common case, and wrapping every
     // ordinary notice in a colour scope would put a literal tag on screen for the System role.
     public void Write(Message message) => system.EnqueueOnUIThread(() =>
-        ChatTranscriptSink.Post(chat, new ChatTranscriptSink.SystemRow(message.Severity switch
+        ChatTranscriptSink.Post(chat(), new ChatTranscriptSink.SystemRow(message.Severity switch
         {
             Severity.Error => $"[{ColorScheme.DangerMarkup}]{message.Text}[/]",
             Severity.Warning => $"[{ColorScheme.CautionMarkup}]{message.Text}[/]",

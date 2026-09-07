@@ -168,7 +168,7 @@ public class PluginInstallerTests : IDisposable
         var rules = new PermissionRulesStore(new AppPaths(_dir));
         var asked = 0;
         var notices = new List<Message>();
-        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+        var gate = PermissionDecider.WithPrompt(rules, (_, m) => notices.Add(m),
             (_, _, _) => { asked++; return Task.FromResult(PermissionChoice.Once); });
 
         var request = new PermissionRequest(PermissionKind.Http,
@@ -193,7 +193,7 @@ public class PluginInstallerTests : IDisposable
         var rules = new PermissionRulesStore(new AppPaths(_dir));
         var asked = 0;
         var notices = new List<Message>();
-        var gate = PermissionDecider.WithPrompt(rules, notices.Add,
+        var gate = PermissionDecider.WithPrompt(rules, (_, m) => notices.Add(m),
             (_, _, _) => { asked++; return Task.FromResult(PermissionChoice.Once); });
 
         var outcome = await gate.RequestAsync(

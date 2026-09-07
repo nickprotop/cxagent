@@ -955,16 +955,36 @@ public sealed partial class Session
     /// Swaps the ports' subscriptions for new ones, leaving every other subscriber in place.
     /// </summary>
     /// <remarks>
-    /// THE OLD ONES GO FIRST. Adding before removing would put both sinks in the fan-out at once,
-    /// and an event arriving in that window reaches a transcript control twice.
+    /// <para>THE OLD ONES GO FIRST. Adding before removing puts both sinks in the fan-out at once,
+    /// and an event arriving in that window reaches a transcript control twice.</para>
+    ///
+    /// <para>WHICH IS WHY THIS TAKES THE FAN-OUTS AND THE OBSERVERS RATHER THAN TWO SUBSCRIPTION
+    /// HANDLES. Handed handles, the caller has to CREATE them to pass them — `Resubscribe(fanOut.Add(x),
+    /// …)` — and C# evaluates arguments before the call, so both `Add`s run before this method's first
+    /// line. The ordering the paragraph above requires is then impossible to honour from inside here,
+    /// and the contract reads as satisfied while being violated at every call site.</para>
     /// </remarks>
-    internal void ResubscribePorts(IDisposable observer, IDisposable tools)
+    internal void ResubscribePorts(PortSubscription subscription)
     {
         _observerPort?.Dispose();
         _toolObserverPort?.Dispose();
-        _observerPort = observer;
-        _toolObserverPort = tools;
+
+        _observerPort = subscription.Observer is { } o ? subscription.Observers.Add(o) : null;
+        _toolObserverPort = subscription.ToolObserver is { } t ? subscription.Tools.Add(t) : null;
     }
+
+    /// <summary>A wire's two observers and the fan-outs they join.</summary>
+    /// <remarks>
+    /// FOUR ARGUMENTS ARE TWO PAIRS, and the pair is the concept: a fan-out is useless here without
+    /// the observer joining it, and the observer cannot be placed without its fan-out. Named, the
+    /// two pairs cannot be transposed — and both pairs are (fan-out, observer) of DIFFERENT
+    /// interfaces, so a transposition would otherwise be a compile error only by luck of the types.
+    /// </remarks>
+    internal readonly record struct PortSubscription(
+        ObserverFanOut Observers,
+        ISessionObserver? Observer,
+        ToolObserverFanOut Tools,
+        IToolObserver? ToolObserver);
 
     // ONE FUNNEL, UNCHANGED IN SHAPE. Command replies and the session's own words both arrive here;
     // that they already did is why one Message type serves both.
