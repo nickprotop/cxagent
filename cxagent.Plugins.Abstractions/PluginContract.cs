@@ -22,28 +22,28 @@ public static class PluginContract
     /// <summary>
     /// The oldest contract this host still loads.
     ///
-    /// <para><b>A RANGE, WHERE THIS WAS ONCE EXACT EQUALITY.</b> The reasoning for exactness was that
-    /// "a host cannot know whether an unfamiliar contract omits something whose absence would change
-    /// behaviour silently, and guessing at that is how a permission gate goes missing" — a real
-    /// hazard, and the example given was contract 1 having no per-call gate.</para>
+    /// <para><b>A RANGE, WHERE THIS WAS ONCE EXACT EQUALITY</b> — so a host that GAINS a capability
+    /// stops refusing every plugin that never asked for it. Exactness made each bump a coordinated
+    /// rebuild of every published plugin, and broke any third-party one until its author noticed.</para>
     ///
-    /// <para><b>BUT THE HOST ALREADY REFUSES THAT CASE ON ITS OWN MERITS.</b>
-    /// <c>ManagedPluginLoader</c> rejects a manifest declaring <c>gated:"dynamic"</c> whose type does
-    /// not implement <c>IPluginGateSource</c>, whatever contract it claims — and a plugin that
-    /// declares no dynamic tools has no gate to miss. The contract number was a second lock on a door
-    /// that was already bolted, and its cost was refusing every older plugin outright rather than
-    /// running it without the capability it never had.</para>
+    /// <para><b>BUT THE FLOOR IS 2, NOT 1, AND THE REASON IS THE GATE.</b> Contract 2 is the first
+    /// that can express <c>gated:"dynamic"</c> — a tool deciding per call whether to interrupt the
+    /// user. A contract-1 manifest cannot say it, so its tools parse as <see cref="PluginGating.Never"/>:
+    /// loaded here they would never ask permission at all. The loader's own check does not catch that
+    /// — it refuses a manifest that DECLARES dynamic without a gate to consult, and a contract-1
+    /// manifest declares nothing, so the check never fires. Silence, not a refusal.</para>
     ///
-    /// <para><b>WHAT A RANGE OBLIGES, and it is the price of accepting one:</b> every addition from
-    /// here must be OPT-IN AND DETECTABLE — a separate interface a plugin implements, or a manifest
-    /// field whose absence the host can act on — never a change to the meaning of something a plugin
-    /// already produces. An addition that cannot be detected is one this floor cannot honestly admit,
-    /// and the answer then is to raise this number rather than to guess.</para>
+    /// <para><b>WHICH IS WHAT A FLOOR IS FOR.</b> A range says "older shapes still run"; this says how
+    /// far back that holds, and the answer is: to the first contract that can express what the host
+    /// now assumes every plugin can.</para>
     ///
-    /// <para>Contract 2's own addition passes that test, which is what makes 1 loadable: the gate is
-    /// <c>IPluginGateSource</c>, a type test, not a reinterpretation of an existing field.</para>
+    /// <para><b>THE OBLIGATION EVERY LATER ADDITION CARRIES:</b> it must be OPT-IN AND DETECTABLE — a
+    /// separate interface a plugin implements, or a manifest field whose absence the host can act on
+    /// — never a change to the meaning of something a plugin already produces, and never a new
+    /// ASSUMPTION about what a plugin supplies. An addition failing that test is one this floor
+    /// cannot honestly admit, and the answer is to raise this number, exactly as contract 2 did.</para>
     /// </summary>
-    public const int Oldest = 1;
+    public const int Oldest = 2;
 
     /// <summary>
     /// Why this sidecar cannot be loaded here, or null when it can.

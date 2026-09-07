@@ -83,43 +83,12 @@ public class ManagedPluginLoaderTests
     /// Assembly.LoadFrom is irreversible and a constructor is arbitrary code, so a check after
     /// either discards a result rather than preventing anything.
     /// </summary>
-    /// <summary>
-    /// AN OLDER CONTRACT LOADS, which is the point of the range replacing exact equality.
-    ///
-    /// <para>The exact check refused every plugin not built against this exact number, so a host
-    /// gaining a capability broke every plugin that had never asked for it. What it was protecting —
-    /// a contract-1 plugin having no per-call gate — the loader already refuses on its own merits:
-    /// a manifest declaring gated:"dynamic" without IPluginGateSource is rejected whatever contract
-    /// it claims, and one declaring no dynamic tools has no gate to miss.</para>
-    ///
-    /// <para>THE OBLIGATION THAT COMES WITH IT is that every addition stays OPT-IN AND DETECTABLE —
-    /// a separate interface, or a manifest field whose absence the host can act on. An addition that
-    /// cannot be detected is one the floor cannot honestly admit.</para>
-    /// </summary>
-    [Fact]
-    public async Task AnOlderContractStillLoads()
-    {
-        var dll = FixtureDll("cxagent.Tests.PluginFixture.Empty");
-        var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
-        await File.WriteAllTextAsync(sidecar,
-            """{"pluginContract":1,"name":"old","version":"1.0.0","tools":[]}""");
-        try
-        {
-            var result = await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None);
-
-            // NOT a contract refusal. The fixture has no IPlugin type, so it fails for THAT — which
-            // is the proof: the load got past the contract and failed on the assembly instead.
-            if (result is ManagedPluginLoadResult.Failed failed)
-                Assert.DoesNotContain("contract", failed.Reason, StringComparison.OrdinalIgnoreCase);
-        }
-        finally
-        {
-            File.Delete(sidecar);
-        }
-    }
-
     [Theory]
     [InlineData("""{"name":"nocontract","version":"1.0.0","tools":[]}""", "pluginContract")]
+    // BELOW THE FLOOR: contract 1 cannot express gated:"dynamic", so its tools would parse as
+    // never-ask and it would load as a plugin that silently skips the permission gate.
+    [InlineData("""{"pluginContract":1,"name":"old","version":"1.0.0","tools":[]}""", "no longer loads")]
+    // ABOVE THE CEILING: it may require something this build has never heard of.
     [InlineData("""{"pluginContract":99,"name":"future","version":"1.0.0","tools":[]}""", "contract 99")]
     public async Task AManifestThisBuildCannotVouchForIsRefused(string manifest, string expected)
     {
