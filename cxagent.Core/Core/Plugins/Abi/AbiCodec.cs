@@ -63,12 +63,21 @@ public static class AbiCodec
     /// </summary>
     public static AbiParseResult<int> CheckVersion(int reportedVersion)
     {
-        return reportedVersion == PluginContract.Version
-            ? AbiParseResult<int>.Success(reportedVersion)
-            : AbiParseResult<int>.Failure(
-                $"plugin reports ABI version {reportedVersion}, this host understands version "
-                + $"{PluginContract.Version} only — refusing the load rather than guessing at "
+        // A RANGE, MATCHING THE MANAGED LOADER. Both read the same `pluginContract` from the same
+        // file, so they must accept the same span of it — refusing an ABI plugin a managed one of
+        // the same vintage would load is two behaviours where the manifest describes one.
+        if (reportedVersion > PluginContract.Version)
+            return AbiParseResult<int>.Failure(
+                $"plugin reports ABI version {reportedVersion}, this host understands "
+                + $"{PluginContract.Version} at most — refusing the load rather than guessing at "
                 + "an unfamiliar shape.");
+
+        if (reportedVersion < PluginContract.Oldest)
+            return AbiParseResult<int>.Failure(
+                $"plugin reports ABI version {reportedVersion}, this host no longer loads anything "
+                + $"below {PluginContract.Oldest} — rebuild it against a current contract.");
+
+        return AbiParseResult<int>.Success(reportedVersion);
     }
 
     // ---- describe ----

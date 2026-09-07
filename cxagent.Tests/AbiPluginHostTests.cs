@@ -246,6 +246,9 @@ public class AbiPluginHostTests
         Assert.False(handshake.Ready);
         Assert.NotNull(handshake.Error);
         Assert.Contains("99", handshake.Error);
-        Assert.Contains($"version {PluginContract.Version}", handshake.Error);
+        // THE HOST'S OWN CEILING, named so the reader can tell which side is out of date. "at most"
+        // rather than "only" since the check became a range — too NEW is still refused, because a
+        // higher contract may require something this build has never heard of.
+        Assert.Contains($"{PluginContract.Version} at most", handshake.Error);
     }
 }

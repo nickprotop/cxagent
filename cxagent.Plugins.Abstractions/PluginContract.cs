@@ -12,15 +12,38 @@ namespace CxAgent.Core.Plugins;
 public static class PluginContract
 {
     /// <summary>
-    /// Bumped when the shape a plugin must produce changes. Checked with EXACT EQUALITY, never a
-    /// floor: a host cannot know whether an unfamiliar contract omits something whose absence would
-    /// change behaviour silently, and guessing at that is how a permission gate goes missing.
+    /// Bumped when the shape a plugin must produce changes. This host speaks it, and every contract
+    /// down to <see cref="Oldest"/>.
     ///
-    /// <para>2 added the per-call gate — <c>"gated": "dynamic"</c> and the callback behind it. A
-    /// contract-1 plugin has no gate to consult, and a host that accepted one would be deciding
-    /// permission questions on behalf of a plugin that never answered any.</para>
+    /// <para>2 added the per-call gate — <c>"gated": "dynamic"</c> and the callback behind it.</para>
     /// </summary>
     public const int Version = 2;
+
+    /// <summary>
+    /// The oldest contract this host still loads.
+    ///
+    /// <para><b>A RANGE, WHERE THIS WAS ONCE EXACT EQUALITY.</b> The reasoning for exactness was that
+    /// "a host cannot know whether an unfamiliar contract omits something whose absence would change
+    /// behaviour silently, and guessing at that is how a permission gate goes missing" — a real
+    /// hazard, and the example given was contract 1 having no per-call gate.</para>
+    ///
+    /// <para><b>BUT THE HOST ALREADY REFUSES THAT CASE ON ITS OWN MERITS.</b>
+    /// <c>ManagedPluginLoader</c> rejects a manifest declaring <c>gated:"dynamic"</c> whose type does
+    /// not implement <c>IPluginGateSource</c>, whatever contract it claims — and a plugin that
+    /// declares no dynamic tools has no gate to miss. The contract number was a second lock on a door
+    /// that was already bolted, and its cost was refusing every older plugin outright rather than
+    /// running it without the capability it never had.</para>
+    ///
+    /// <para><b>WHAT A RANGE OBLIGES, and it is the price of accepting one:</b> every addition from
+    /// here must be OPT-IN AND DETECTABLE — a separate interface a plugin implements, or a manifest
+    /// field whose absence the host can act on — never a change to the meaning of something a plugin
+    /// already produces. An addition that cannot be detected is one this floor cannot honestly admit,
+    /// and the answer then is to raise this number rather than to guess.</para>
+    ///
+    /// <para>Contract 2's own addition passes that test, which is what makes 1 loadable: the gate is
+    /// <c>IPluginGateSource</c>, a type test, not a reinterpretation of an existing field.</para>
+    /// </summary>
+    public const int Oldest = 1;
 
     /// <summary>
     /// Why this sidecar cannot be loaded here, or null when it can.
@@ -41,10 +64,21 @@ public static class PluginContract
                  + $"{Version}; a manifest that does not say which it was built against cannot be "
                  + "checked, and is refused rather than assumed compatible.";
 
-        if (sidecar.Contract != Version)
+        // TOO NEW IS THE UNKNOWABLE DIRECTION. A contract above this host's may require something
+        // this build has never heard of, and there is no reading of a higher number that is safe to
+        // guess at — which is the whole of what the old exact check was protecting.
+        if (sidecar.Contract > Version)
             return $"'{sidecar.Name}' was built against plugin contract {sidecar.Contract}; this "
-                 + $"build speaks {Version} only — refusing rather than guessing at an unfamiliar "
+                 + $"build speaks {Version} at most — refusing rather than guessing at an unfamiliar "
                  + "shape.";
+
+        // AND TOO OLD IS A REAL FLOOR, not a formality. Below Oldest the host no longer carries
+        // whatever compatibility an older shape needed, and saying so beats loading something whose
+        // support was quietly dropped.
+        if (sidecar.Contract < Oldest)
+            return $"'{sidecar.Name}' was built against plugin contract {sidecar.Contract}; this "
+                 + $"build no longer loads anything below {Oldest} — rebuild it against a current "
+                 + "contract.";
 
         return null;
     }
