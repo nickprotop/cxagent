@@ -68,3 +68,66 @@ public class ResumeFolderScopeTests
         Assert.Contains(words, w => w.Equals("all", StringComparison.OrdinalIgnoreCase));
     }
 }
+
+/// <summary>
+/// Whether `all` can widen a resume to another folder, and how it must be typed.
+///
+/// <para>THE SCOPE AND THE VERB ARE PARSED SEPARATELY, which is what makes the syntax matter.
+/// `all` is detected from ANY word of the argument, but `Decide` reads the VERB from the first word
+/// and the uid from the second — so the two orderings are not equivalent, and one of them silently
+/// lists instead of resuming.</para>
+/// </summary>
+public class ResumeAcrossFoldersTests
+{
+    private static SessionInfo Row(string uid, string dir) =>
+        new(uid, Title: null, WorkingDir: dir, InputTokens: 0, OutputTokens: 0,
+            Finished: false, UpdatedAt: DateTimeOffset.UtcNow);
+
+    private static readonly SessionInfo[] Everywhere =
+    [
+        Row("01AAAA", "/work/alpha"),
+        Row("01BBBB", "/work/beta"),
+    ];
+
+    /// <summary>
+    /// `/sessions resume &lt;id&gt; all` RESUMES — `resume` leads, so the verb is read, and `all`
+    /// anywhere in the argument widens the scope.
+    /// </summary>
+    [Fact]
+    public void ResumeFirstThenAllResumesAcrossFolders()
+    {
+        var result = SessionsCommand.Decide("resume 01BBBB all", Everywhere,
+            TimeSpan.FromDays(30), all: true);
+
+        Assert.Equal("01BBBB", result.ResumeUid);
+    }
+
+    /// <summary>
+    /// BUT `/sessions all resume &lt;id&gt;` DOES NOT RESUME — it lists.
+    ///
+    /// <para>`Decide` reads the verb from the FIRST word, which is `all` here, so nothing matches
+    /// `resume` and the reply is a listing. The scope was widened and the verb was lost. Worth
+    /// pinning because the two orderings read as equivalent English and only one works.</para>
+    /// </summary>
+    [Fact]
+    public void AllFirstThenResumeOnlyLists()
+    {
+        var result = SessionsCommand.Decide("all resume 01BBBB", Everywhere,
+            TimeSpan.FromDays(30), all: true);
+
+        Assert.Null(result.ResumeUid);
+    }
+
+    /// <summary>AND WITHOUT `all`, A UID FROM ANOTHER FOLDER IS NOT IN THE ROWS the caller passes,
+    /// so it cannot be resumed however it is typed.</summary>
+    [Fact]
+    public void WithoutAllTheOtherFoldersUidIsNotEvenListed()
+    {
+        var here = new[] { Row("01AAAA", "/work/alpha") };
+
+        var result = SessionsCommand.Decide("resume 01BBBB", here, TimeSpan.FromDays(30));
+
+        Assert.Null(result.ResumeUid);
+        Assert.Contains("No session matches", result.Reply.Text, StringComparison.Ordinal);
+    }
+}
