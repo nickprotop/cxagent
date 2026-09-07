@@ -54,6 +54,26 @@ public class SessionWiringParityTests
         Assert.DoesNotContain("session.ToolCallFinished +=", source);
     }
 
+    /// <summary>
+    /// AND NEITHER DOES THE COMPOSITION ROOT, for the events that belong to a conversation.
+    ///
+    /// <para>`session.Changed` was subscribed once at startup, over the startup session — so a
+    /// second session's /mode, /model and /clear reached no front end: its mode line kept naming the
+    /// provider it was opened with while its gate ran on another, and /clear wiped whichever
+    /// transcript was in front rather than its own.</para>
+    ///
+    /// <para>SCOPED TO WHAT IS PER-CONVERSATION. AppBootstrap still subscribes the queue events
+    /// (Cancelled, Drained, Pending), which resolve through the session's own tab and are checked by
+    /// their own behaviour rather than by this shape.</para>
+    /// </summary>
+    [Fact]
+    public void TheCompositionRootDoesNotSubscribeChangedItself()
+    {
+        var source = Read("cxagent/UI/AppBootstrap.cs");
+
+        Assert.DoesNotContain("session.Changed +=", source);
+    }
+
     /// <summary>AND BOTH CALL THE SHARED ROUTINE, so the check above cannot be satisfied by a path
     /// that simply wires nothing at all.</summary>
     [Theory]

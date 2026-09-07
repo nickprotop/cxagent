@@ -310,6 +310,17 @@ public sealed class MainWindow : IDisposable
         SkillCount = tab.SkillCount;
         LoadedSkills = tab.LoadedSkills;
 
+        // THE CONFIGURATION AND MODE OF THE CONVERSATION IN FRONT. Two sessions can run different
+        // providers, so the panel's model row and the status readouts have to come back with the
+        // tab — without this, switching to a session on `local` kept reporting the other's `small`.
+        if (tab.Resolution is { } resolution) _resolution = resolution;
+        _mode = tab.Mode;
+
+        // AND THE RULE COUNT, which is per FOLDER. Sessions in different projects have different
+        // grants, so a count left from the outgoing tab described somebody else's permissions.
+        if (tab.Session is { } showing && PermissionRuleCountFor is { } count)
+            _permissionRuleCount = count(showing.WorkingDirectory);
+
         // AND THE PANEL'S TALLIES, which it reads through a reference rather than a copy — so a turn
         // completing while this tab is in front lands on the tab's own counters.
         SessionPanel.Follow(tab.Tally);
@@ -613,6 +624,13 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public Func<Core.Sessions.Session, bool>? CloseSession { get; set; }
 
+    /// <summary>How many always-allow rules a folder has, for restoring the count on a tab switch.</summary>
+    /// <remarks>
+    /// A HOOK RATHER THAN THE STORE, matching CloseSession: the window knows WHICH folder is in
+    /// front, and the composition root owns where rules are kept.
+    /// </remarks>
+    public Func<string, int>? PermissionRuleCountFor { get; set; }
+
     /// <summary>The session tabs, in tab order — for a caller relabelling or enumerating them.</summary>
     public IReadOnlyList<SessionTab> SessionTabs => _sessionTabs;
 
@@ -756,17 +774,22 @@ public sealed class MainWindow : IDisposable
     /// <para>It is also what <c>/model</c> switches BY, so the readout names the thing the user
     /// would type to change it.</para>
     /// </summary>
-    private string ModelLabel
-    {
-        get
-        {
-            var model = _resolution.Provider?.ModelId;
-            if (model is null) return _resolution.DisplayName ?? "no provider";
+    private string ModelLabel => ModelLabelFor(_resolution);
 
-            return _resolution.InstanceName is { Length: > 0 } instance
-                ? $"{instance}:{model}"
-                : model;
-        }
+    /// <summary>The same label for any resolution — a tab's own, rather than the window's.</summary>
+    /// <remarks>
+    /// TAKING THE RESOLUTION RATHER THAN READING THE FIELD is what lets a background session's mode
+    /// line name ITS model. As a property over `_resolution` there was one answer for the window, so
+    /// every composer said whatever the last /model switch had chosen.
+    /// </remarks>
+    private static string ModelLabelFor(ResolvedConfig resolution)
+    {
+        var model = resolution.Provider?.ModelId;
+        if (model is null) return resolution.DisplayName ?? "no provider";
+
+        return resolution.InstanceName is { Length: > 0 } instance
+            ? $"{instance}:{model}"
+            : model;
     }
 
     /// <summary>
@@ -2792,6 +2815,26 @@ public sealed class MainWindow : IDisposable
     /// <para>The window, the model name and the agent types all come off the resolution, so this is
     /// the one assignment that keeps the panel describing the session that is actually running.</para>
     /// </summary>
+    /// <summary>One session's configuration, recorded against its tab.</summary>
+    /// <remarks>
+    /// TWO SESSIONS CAN RUN DIFFERENT PROVIDERS — that is what holding the resolution on the session
+    /// is for. Written to the window, a /model switch in a background session renamed the model under
+    /// the FOREGROUND session's composer, and its panel with it.
+    /// </remarks>
+    public void SetResolution(Core.Sessions.Session session, ResolvedConfig resolution)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.Resolution = resolution;
+
+        // THE MODE LINE IS THE TAB'S OWN, so it is refreshed whether or not the tab is in front —
+        // a background session's composer must not keep naming the model it used to have.
+        tab.ModeLine?.SetContent([ModeLineText(tab.Mode, ModelLabelFor(resolution))]);
+
+        if (ReferenceEquals(tab, ActiveSessionTab)) SetResolution(resolution);
+    }
+
     public void SetResolution(ResolvedConfig resolution)
     {
         _resolution = resolution;
@@ -2803,6 +2846,20 @@ public sealed class MainWindow : IDisposable
 
         RefreshSessionPanel();
         RefreshTokenItem();
+    }
+
+    /// <summary>One session's working mode, recorded against its tab.</summary>
+    /// <inheritdoc cref="SetResolution(Core.Sessions.Session, ResolvedConfig)"/>
+    public void SetMode(Core.Sessions.Session session, WorkingMode mode)
+    {
+        var tab = TabFor(session);
+        if (tab is null) return;
+
+        tab.Mode = mode;
+        tab.ModeLine?.SetContent(
+            [ModeLineText(mode, tab.Resolution is { } r ? ModelLabelFor(r) : ModelLabel)]);
+
+        if (ReferenceEquals(tab, ActiveSessionTab)) SetMode(mode);
     }
 
     public void SetMode(WorkingMode mode)

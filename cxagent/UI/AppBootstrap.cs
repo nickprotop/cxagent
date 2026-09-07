@@ -613,6 +613,11 @@ public static class AppBootstrap
         // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
         mainWindow.CloseSession = manager.Close;
 
+        // AND HOW MANY RULES A FOLDER HAS, so a tab switch restores the count for the project now in
+        // front rather than leaving the outgoing session's.
+        mainWindow.PermissionRuleCountFor =
+            folder => permissionRules.RulesFor(folder).Rules.Count;
+
         foreach (var declared in SessionCommands.All)
         {
             // OVER CORE'S. Core's /help has no keys of its own to list; this window's has two
@@ -1354,19 +1359,6 @@ public static class AppBootstrap
             }
 
             if (e.KeyInfo.Key != ConsoleKey.Enter) return;
-
-            // ENTER ON THE TAB STRIP COMMITS TO THE TAB. Arrowing the strip is BROWSING, which is why
-            // a tab switch declines to steal focus — but Enter is the user saying "this one", and
-            // leaving focus on the strip afterwards sent everything they typed next nowhere at all.
-            // Drive-verified: switch tabs with F6, type a goal, and it vanished — not in the
-            // transcript, not in the composer, with nothing on screen saying why.
-            if (mainWindow.TabStripHasFocus)
-            {
-                e.Handled = true;
-                mainWindow.ShowChatTab();
-                return;
-            }
-
             if (!mainWindow.Input.HasFocus) return;   // let the job panel etc. handle Enter when focused there
 
             // A LINE ENDING IN '\' CONTINUES. The backslash is consumed — it is punctuation for the
@@ -1566,12 +1558,19 @@ public static class AppBootstrap
         // Func<bool> all the same. F6 is unclaimed today, but the decline is what keeps this binding
         // from doing to some future dialog what the F5 binding did to the plugin manager, and a strip
         // behind a modal is not what the key should reach in any case.
+        // AND IT CYCLES, because "next pane" is a round trip and a one-way key strands the user.
+        // The strip's own ← → already SWITCH the tab as you arrow — TabControl.ProcessKey assigns
+        // ActiveTabIndex — so there is nothing to confirm when you arrive: you are already there,
+        // with focus still on the strip and a composer that will not take what you type. Pressing
+        // F6 again is the way back, which is what the key's own name promises.
         keys.Bind(system, ConsoleModifiers.None, ConsoleKey.F6,
-            "focus the tab strip — then ← → to change tabs",
+            "focus the tab strip — then ← → to change tabs, F6 back to the composer",
             () =>
             {
                 if (PluginManagerDialog.IsOpen) return false;
-                mainWindow.FocusTabStrip();
+
+                if (mainWindow.TabStripHasFocus) mainWindow.ShowChatTab();
+                else mainWindow.FocusTabStrip();
                 return true;
             });
 
@@ -1917,35 +1916,16 @@ public static class AppBootstrap
             // already holds.
             //
             // MARSHALLED: a change can land from a turn's own thread, and these touch controls.
-            session.Changed += kind => system.EnqueueOnUIThread(() =>
-            {
-                if (kind is Core.Sessions.SessionChangeKind.Mode)
-                    mainWindow.SetMode(session.Mode);
-
-                if (kind is Core.Sessions.SessionChangeKind.Model && session.Resolution is { } current)
-                    mainWindow.SetResolution(current);
-
-                // THE GAUGE, AND THE SCROLLBACK WITH IT. Clearing the transcript is THIS front end's
-                // answer to "the messages behind it are gone" — a log writer would draw a divider and
-                // keep them, which is why the session announces the fact rather than the remedy.
-                if (kind is Core.Sessions.SessionChangeKind.ContextCleared)
-                {
-                    mainWindow.SetContextUsed(0);
-
-                    // THE SCROLLBACK GOES, and the session's own line arrives after it — see
-                    // Session.ClearContext, which announces before it speaks precisely so a watcher
-                    // whose reaction wipes the surface does not wipe the explanation with it. An
-                    // empty screen with nothing said is worse than no clear at all.
-                    mainWindow.Chat.Clear();
-                }
-            });
-
             // KEEP THE COUNT LIVE. Seeding once leaves "Always" grants invisible until something
             // else happens to redraw the panel. The grant can land on a scheduler thread, so the
             // recount is marshalled rather than run inline — RefreshSessionPanel touches controls.
+            // AGAINST THE FOLDER IN FRONT, not this session's. Rules are scoped per folder, so a
+            // count taken from the startup session's directory described the wrong project the
+            // moment a second tab was showing — "none granted" over a folder with rules, or the
+            // reverse. The active session is the one whose panel is being repainted.
             permissionRules.RulesChanged += () => system.EnqueueOnUIThread(() =>
-                mainWindow.SetPermissionRuleCount(
-                    permissionRules.RulesFor(session.WorkingDirectory).Rules.Count));
+                mainWindow.SetPermissionRuleCount(permissionRules
+                    .RulesFor((mainWindow.ActiveSession ?? session).WorkingDirectory).Rules.Count));
 
             // ASK THE OWNER, and know nothing about what it looks up. Switching on the source name
             // here would mean reaching into a resume store, a provider catalog and the session's own

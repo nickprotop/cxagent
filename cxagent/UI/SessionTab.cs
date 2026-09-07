@@ -1,3 +1,4 @@
+using CxAgent.Core.Llm;
 using CxAgent.Core.Sessions;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Layout;
@@ -128,6 +129,15 @@ public sealed class SessionTab
     /// foreground session's composer.</para>
     /// </summary>
     public SharpConsoleUI.Controls.ChatMessageId? QueuedBlock { get; set; }
+
+    /// <summary>
+    /// The configuration this conversation resolved against, or null before it has wired one.
+    ///
+    /// <para>PER CONVERSATION BECAUSE /model IS. Two sessions can run different providers — that is
+    /// the point of holding the resolution on the session — and a window-wide copy reported whichever
+    /// one switched last: the mode line under one composer named the other's model.</para>
+    /// </summary>
+    public ResolvedConfig? Resolution { get; set; }
 
     /// <summary>Whether the context reading predates a compression that has not been measured yet.</summary>
     /// <remarks>PER CONVERSATION, like the reading it qualifies: compressing one session left the

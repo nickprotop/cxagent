@@ -184,6 +184,32 @@ public static class SessionWiring
                 session.LoadedSkills);
         });
 
+        // WHAT THE SESSION ITSELF ANNOUNCES — mode, model, a cleared context. Subscribed HERE rather
+        // than once at startup: held over the startup session alone, a second session's /mode,
+        // /model and /clear reached no front end at all, so its mode line kept naming the provider
+        // it had been opened with while its gate ran on another.
+        session.Changed += kind => system.EnqueueOnUIThread(() =>
+        {
+            if (kind is SessionChangeKind.Mode) main.SetMode(session, session.Mode);
+
+            if (kind is SessionChangeKind.Model && session.Resolution is { } current)
+                main.SetResolution(session, current);
+
+            // THE GAUGE, AND THE SCROLLBACK WITH IT. Clearing the transcript is THIS front end's
+            // answer to "the messages behind it are gone" — a log writer would draw a divider and
+            // keep them, which is why the session announces the fact rather than the remedy.
+            if (kind is not SessionChangeKind.ContextCleared) return;
+
+            main.SetContextUsed(session, 0);
+
+            // THIS SESSION'S SCROLLBACK, and the session's own line arrives after it — see
+            // Session.ClearContext, which announces before it speaks precisely so a watcher whose
+            // reaction wipes the surface does not wipe the explanation with it. Cleared through the
+            // window it wiped whichever transcript was in front: /clear in a background session
+            // erased the foreground session's history and left its own untouched.
+            tab.Chat.Clear();
+        });
+
         // ONCE, AT WIRE-UP. The agent's id is fixed for its life, so there is nothing to wait for
         // and nothing to re-raise.
         tab.AgentId = session.SessionId ?? string.Empty;
@@ -193,6 +219,10 @@ public static class SessionWiring
         // Left at the type's default, a tab would advertise always-ask while its gate ran on
         // whatever the process started in — a status line describing rules nobody was using.
         tab.Mode = w.Mode;
+
+        // AND THE CONFIGURATION IT WAS OPENED WITH, so its mode line names its own model from the
+        // first frame rather than after the first /model switch.
+        tab.Resolution = w.Resolution;
     }
 
     /// <summary>
