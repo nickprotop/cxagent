@@ -807,18 +807,45 @@ public sealed class SessionManager : IDisposable
         // plugin's own point of view, merely ending normally rather than one whose agent is already
         // gone.
         //
-        // BLOCKING, NOT ASYNC, because Close's signature is the one every caller already has — a
-        // CloseAsync would be a second close path for every embedder to learn. Bounded, not
-        // unbounded: PluginRegistry.UnwireAsync's own Stop timeout is what keeps this call from
-        // blocking process shutdown on a hung managed plugin — the abandon-and-log remedy described
-        // there, not a second timeout here.
-        session.Plugins.UnwireAllAsync(CancellationToken.None).GetAwaiter().GetResult();
+        // NOT ON THE CALLER'S THREAD. Unwiring awaits each plugin's Stop with a ten-second timeout,
+        // and a session can hold several — a language server among them. Blocking here was correct
+        // while Close ran only at process shutdown, where there is no loop left to starve; `/exit`
+        // closing ONE session of several calls it from the UI thread, and the app froze with
+        // "UI UNRESPONSIVE" while three plugins stopped. Drive-verified, and the watchdog logged it
+        // as `phase Input`, which is the same signature the lifecycle log's blocking append produced.
+        //
+        // FIRE AND FORGET WITH THE FAILURE SWALLOWED, because there is no caller left to tell: Close
+        // has already answered, the session is already out of the collection, and a plugin that
+        // throws on the way out must not surface on a thread pool thread and take the process with
+        // it. PluginRegistry.UnwireAsync's own timeout is what bounds this.
+        //
+        // THE HOST IS DISPOSED AFTER THE UNWIRE, INSIDE the same continuation. A plugin's Stop runs
+        // against a session that is, from the plugin's point of view, merely ending normally — which
+        // it is not if the agent underneath it has already gone.
+        var teardown = Task.Run(async () =>
+        {
+            try
+            {
+                await session.Plugins.UnwireAllAsync(CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                // A PLUGIN FAILING TO STOP MUST NOT TAKE THE PROCESS DOWN. The registry logs it.
+            }
+            finally
+            {
+                // BOTH, and in this order: the session owns the turn's cancellation scope, and the
+                // host owns the agent and its MCP servers. Closing one without the other leaks
+                // whichever was missed for the life of the process.
+                session.DisposeTurnScope();
+                session.Host?.Dispose();
+            }
+        });
 
-        // BOTH, and in this order: the session owns the turn's cancellation scope now, and the host
-        // owns the agent and its MCP servers. Closing one without the other leaks whichever was
-        // missed for the life of the process.
-        session.DisposeTurnScope();
-        session.Host?.Dispose();
+        // KEPT SO SHUTDOWN CAN WAIT FOR IT. A detached teardown is right for `/exit` — the UI thread
+        // must not stall on a plugin's Stop — and wrong for process exit, where letting the process
+        // end first is exactly the orphaned-child-process leak the reaper exists to clean up after.
+        lock (_gate) _closing.Add(teardown);
 
         // MARKED FINISHED SO IT STOPS BEING OFFERED FOR RESUME. A session closed and left unmarked
         // shows up in `/sessions` and in --resume's picker as an unfinished conversation to return
@@ -846,6 +873,40 @@ public sealed class SessionManager : IDisposable
             session.CancelPending();
             if (!Close(session)) { session.DisposeTurnScope(); session.Host?.Dispose(); }
         }
+
+        // AND WAIT FOR WHAT CLOSE DETACHED. Close hands the plugin unwiring to the thread pool so a
+        // `/exit` cannot freeze the UI; at process exit the opposite is needed — a plugin's child
+        // process outlives us if we do not give its Stop time to run, and that is precisely the
+        // orphan the reaper has to kill on the next launch.
+        //
+        // BOUNDED. UnwireAsync already times each Stop out; this is a second, larger bound so a
+        // teardown that hangs anyway cannot stop the app exiting — the same trade the reaper's
+        // existence assumes.
+        Task[] pending;
+        lock (_gate) pending = [.. _closing];
+
+        try { Task.WaitAll(pending, TimeSpan.FromSeconds(15)); }
+        catch (Exception) { /* a teardown's own failure is logged where it happened. */ }
+    }
+
+    /// <summary>Teardowns Close detached, so Dispose can wait for them. See Close.</summary>
+    private readonly List<Task> _closing = [];
+
+    /// <summary>
+    /// Waits for the teardowns <see cref="Close"/> detached — every plugin stopped, every host
+    /// disposed.
+    /// </summary>
+    /// <remarks>
+    /// FOR A CALLER THAT NEEDS THE WORK FINISHED, which a UI does not: `/exit` wants the tab gone
+    /// now and the language server stopped whenever. A test asserting a plugin's Stop ran, or an
+    /// embedder shutting down in its own order, wants the opposite — so the wait is available rather
+    /// than assumed either way.
+    /// </remarks>
+    public Task WhenClosed()
+    {
+        Task[] pending;
+        lock (_gate) pending = [.. _closing];
+        return Task.WhenAll(pending);
     }
 }
 

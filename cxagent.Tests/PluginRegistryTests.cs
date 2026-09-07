@@ -574,6 +574,13 @@ public class PluginRegistryTests : IDisposable
 
         manager.Close(session);
 
+        // AWAITED, BECAUSE CLOSE DETACHES THE TEARDOWN. Unwiring stops each plugin with a
+        // ten-second timeout and a session can hold several, so doing it on the caller's thread
+        // froze the UI when `/exit` closed one session of two — drive-verified, watchdog logged.
+        // Close answers immediately now and the stopping happens behind it; a caller that needs the
+        // work finished asks for it.
+        await manager.WhenClosed();
+
         Assert.True(plugin.Stopped);
     }
 

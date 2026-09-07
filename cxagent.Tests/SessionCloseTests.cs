@@ -71,6 +71,33 @@ public class SessionCloseTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// CLOSE RETURNS PROMPTLY, whatever the plugins are doing.
+    ///
+    /// <para>Unwiring awaits each plugin's Stop with a ten-second timeout and a session can hold
+    /// several — a language server among them. Run on the caller's thread that is fine at process
+    /// shutdown, where no loop is left to starve, and fatal for `/exit` closing one session of
+    /// two: the app froze with "UI UNRESPONSIVE" while three plugins stopped, and the watchdog
+    /// logged `phase Input`. Drive-verified before and after.</para>
+    ///
+    /// <para>THE BOUND IS GENEROUS ON PURPOSE. This asserts Close does not WAIT for the teardown,
+    /// not that it is fast — a threshold tight enough to measure speed would be a flake on a loaded
+    /// machine, and the failure being caught is a ten-second block.</para>
+    /// </summary>
+    [Fact]
+    public void ClosingDoesNotWaitForPluginTeardown()
+    {
+        var (manager, session) = Wired();
+        using var _ = manager;
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True(manager.Close(session));
+        clock.Stop();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(2),
+            $"Close took {clock.Elapsed.TotalSeconds:F1}s — it is waiting for the teardown again.");
+    }
+
     /// <summary>AND IT CLOSES ONCE THE TURN ENDS — the refusal is a wait, not a permanent no.</summary>
     [Fact]
     public void ClosingSucceedsAfterTheTurnEnds()
