@@ -367,7 +367,20 @@ public sealed class SqliteSessionStore
     /// <para>AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest match silently is how someone
     /// restores the wrong conversation and does not find out for ten minutes.</para>
     /// </summary>
-    public UidLookup LoadByUid(string prefix)
+    /// <param name="withinFolder">
+    /// When given, only sessions recorded against this working directory can match.
+    ///
+    /// <para>THE GUARD BELONGS HERE, NOT ONLY IN THE CALLER'S LISTING. `/sessions resume` scopes by
+    /// handing this method a uid it resolved against rows it had already filtered — a real guard,
+    /// but an indirect one: it holds only for as long as every caller remembers to filter first, and
+    /// says nothing about which folder the uid it finally passes belongs to. Stating the folder makes
+    /// the refusal the store's own.</para>
+    ///
+    /// <para>NULL MEANS ANY FOLDER, which is what `--resume` needs: naming a session on the command
+    /// line is a deliberate act by somebody who typed the id, and the folder they happen to be
+    /// standing in is not a reason to refuse it.</para>
+    /// </param>
+    public UidLookup LoadByUid(string prefix, string? withinFolder = null)
     {
         if (string.IsNullOrWhiteSpace(prefix)) return new UidLookup(null, []);
 
@@ -379,16 +392,24 @@ public sealed class SqliteSessionStore
             // minutes share their opening characters, so the listing shows the TAIL — the random
             // half — and a leading-prefix match alone could never resolve what a user reads off the
             // screen. A full uid pasted from --sessions or an exit hint still matches from the front.
-            cmd.CommandText = """
-                SELECT agent_id FROM agent_sessions
-                WHERE agent_id LIKE $p ESCAPE '\' OR agent_id LIKE $s ESCAPE '\'
-                ORDER BY updated_at DESC;
-                """;
+            cmd.CommandText = withinFolder is null
+                ? """
+                  SELECT agent_id FROM agent_sessions
+                  WHERE agent_id LIKE $p ESCAPE '\' OR agent_id LIKE $s ESCAPE '\'
+                  ORDER BY updated_at DESC;
+                  """
+                : """
+                  SELECT agent_id FROM agent_sessions
+                  WHERE (agent_id LIKE $p ESCAPE '\' OR agent_id LIKE $s ESCAPE '\')
+                    AND working_dir = $dir
+                  ORDER BY updated_at DESC;
+                  """;
             // Case-insensitive by hand: a user reads a lowercase id off the screen and a ULID is
             // stored uppercase, so an exact LIKE would never match what they just typed.
             var needle = Escape(prefix.Trim().ToUpperInvariant());
             cmd.Parameters.AddWithValue("$p", needle + "%");
             cmd.Parameters.AddWithValue("$s", "%" + needle);
+            if (withinFolder is not null) cmd.Parameters.AddWithValue("$dir", withinFolder);
 
             var matches = new List<string>();
             using (var r = cmd.ExecuteReader())

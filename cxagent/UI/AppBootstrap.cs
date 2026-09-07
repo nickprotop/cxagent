@@ -617,6 +617,10 @@ public static class AppBootstrap
         // meant; the manager owns unwiring its plugins, disposing its host and marking it finished.
         mainWindow.CloseSession = manager.Close;
 
+        // ASKED BEFORE A RESUME DISCARDS A LIVE CONVERSATION. Core decides WHETHER there is anything
+        // to lose; this decides how the question looks — see ConfirmReplaceConversation.
+        manager.ConfirmReplace = ask => ConfirmReplaceConversation(mainWindow, ask);
+
         // AND HOW MANY RULES A FOLDER HAS, so a tab switch restores the count for the project now in
         // front rather than leaving the outgoing session's.
         mainWindow.PermissionRuleCountFor =
@@ -896,9 +900,15 @@ public static class AppBootstrap
                 FileTab.ShowRefusal(host, path, refusal!);
         }
 
-        void WireRunner(ResolvedConfig res)
+        // TAKES THE SESSION IT IS WIRING. Held as a closure over the startup session, this could
+        // only ever rebuild that one — which is why `/sessions resume` from a second tab had to be
+        // refused rather than serviced. The five uses below are the whole of it; what made the change
+        // worth doing carefully is the POLICY, which was built once outside and is per session.
+        void WireRunner(ResolvedConfig res, Session? target = null)
         {
             if (!res.HasProvider) return;
+
+            var wired = target ?? session;
 
             // THE CLASSIFIER IS THE SESSION'S NOW, not the gate's — SessionWiring puts it on the
             // policy, which is per session and rides every request. Bound here it was one slot for
@@ -912,8 +922,13 @@ public static class AppBootstrap
             // boundaries reach the rows. BeforeUserTurn is this path's alone: a steer taken mid-turn
             // arrives as a user turn and its queued placeholder must go with it, which only the
             // startup session's queue produces.
+            // THE TAB SHOWING THE SESSION BEING WIRED. `ActiveTab` is where the user is, which is
+            // the same thing only at startup — re-wiring a background session would otherwise point
+            // its sinks at whatever tab happened to be in front.
+            var wiringTab = mainWindow.TabForSession(wired) ?? mainWindow.ActiveTab;
+
             var (sink, jobPanelSink) = SessionWiring.Sinks(
-                system, mainWindow.ActiveTab, beforeUserTurn: RemoveQueuedBlock);
+                system, wiringTab, beforeUserTurn: RemoveQueuedBlock);
             // The row and the agent must agree from the first frame — a status line that is right
             // only after the user touches something is a status line nobody trusts.
             mainWindow.SetMode(startupMode);
@@ -951,15 +966,23 @@ public static class AppBootstrap
             var wiring = new SessionWiring.Wiring(
                 System: system,
                 Main: mainWindow,
-                Tab: mainWindow.ActiveTab,
-                Session: session,
+                Tab: wiringTab,
+                Session: wired,
                 Manager: manager,
                 Resolution: res,
                 Mode: startupMode,
-                Policy: permissionPolicy,
+                // THIS SESSION'S OWN, not the one built at startup. A policy carries the root it
+                // judges against and the id decisions are filed under, so re-wiring session B with
+                // session A's policy would judge B's file operations against A's folder.
+                Policy: ReferenceEquals(wired, session)
+                    ? permissionPolicy
+                    : new PermissionPolicy(wired.WorkingDirectory, permissionRules, startupMode.Edits)
+                      {
+                          SessionId = wired.Id,
+                      },
                 ConfigDir: paths.ConfigDir);
 
-            manager.Open(session, res,
+            manager.Open(wired, res,
                 SessionWiring.Ports(wiring, sink, jobPanelSink), startupMode);
 
             // Non-fatal config complaints — a server entry we could not read. Said once, here,
@@ -987,9 +1010,9 @@ public static class AppBootstrap
             // cannot say.
             permissionGate.OnDecision = report =>
                 history.SavePermission(new PermissionRecord(
-                    report.SessionId ?? session.Id, DateTimeOffset.UtcNow,
+                    report.SessionId ?? wired.Id, DateTimeOffset.UtcNow,
                     report.Kind.ToString(), report.Decision, report.Requester,
-                    report.Root ?? session.WorkingDirectory, report.Subject, report.Flagged));
+                    report.Root ?? wired.WorkingDirectory, report.Subject, report.Flagged));
 
             // EVERY READOUT, ADDRESSED TO THIS SESSION'S TAB — the same call /sessions new makes,
             // which is the point: written separately, that path wired two of these eleven.
@@ -997,7 +1020,7 @@ public static class AppBootstrap
 
             // ONCE, AT WIRE-UP, and this half stays here: the panel's session id is the WINDOW's
             // readout of whichever tab is in front, and at startup that is this one.
-            mainWindow.SessionId = session.SessionId ?? "";
+            mainWindow.SessionId = wired.SessionId ?? "";
             mainWindow.RefreshSessionPanel();
 
             mainWindow.SetSubmissionEnabled(true);
@@ -1110,21 +1133,22 @@ public static class AppBootstrap
         // REFUSING IS THE HONEST ANSWER UNTIL WireRunner TAKES A SESSION. A resume that silently
         // rebuilt the wrong conversation is the worst outcome available; one that declines and says
         // why costs the user a restart and nothing else.
+        // ANY SESSION, NOT ONLY THE ONE THIS WINDOW STARTED WITH. WireRunner takes the session it is
+        // wiring now, so a resume typed in the second tab rebuilds the second tab's conversation —
+        // which is what the command always looked like it did. It refused before, because the
+        // closure could only ever rebuild the startup session and doing so silently was worse than
+        // declining.
+        //
+        // ITS OWN RESOLUTION WHERE IT HAS ONE. A re-wire re-resolves the configuration the session
+        // is actually running under; `resolution` is the process's startup config, which is right
+        // only for the session that started with it.
         manager.RewireOne = target =>
         {
-            if (ReferenceEquals(target, session))
-            {
-                WireRunner(resolution);
-                return true;
-            }
-
-            mainWindow.Chat.AddMessage(ChatRole.System,
-                "Resuming another session's conversation is not supported yet — only the session "
-                + "this window started with can be restored. Nothing was changed.");
-            return false;
+            WireRunner(target.Resolution ?? resolution, target);
+            return true;
         };
 
-        WireRunner(resolution);   // startup path, unchanged in effect
+        WireRunner(resolution, session);   // startup path, unchanged in effect
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.
         if (migrationNotice is not null)
@@ -1227,6 +1251,11 @@ public static class AppBootstrap
             // into the first tab's composer while the menu's events came from the active one — the
             // first letter of a word in one conversation, the next in another.
             ComposerOf = () => mainWindow.Input,
+
+            // RUNS WHAT IS TYPED when a row cannot be completed. The menu cannot reach the submit
+            // path itself — it is guarded by Input.HasFocus, and the portal holds the keyboard — so
+            // it asks. See CommandMenu.Submit for what was broken without it.
+            Submit = SubmitComposer,
             // THE SAME LOOKUP DISPATCH USES, so a verb this process registers — /stats clear —
             // appears here at the moment it becomes real, not from a second copy of the table.
             Registry = manager.Commands,
@@ -1812,7 +1841,11 @@ public static class AppBootstrap
         // Reached from exactly one place: startup with no usable provider.
         async Task RunFirstRunSetupAsync()
         {
-            await RunSetupFlowAsync(system, mainWindow, paths, env, WireRunner, cts.Token);
+            // THE STARTUP SESSION EXPLICITLY. A setup flow re-resolves configuration for the session
+            // the app launched with; the lambda says so, where a method group would silently pick up
+            // the optional parameter's default and mean the same thing by accident.
+            await RunSetupFlowAsync(system, mainWindow, paths, env,
+                res => WireRunner(res, session), cts.Token);
         }
 
         // (Task 2.5) The startup trust question: an unclassified folder must be asked about,
@@ -2139,6 +2172,71 @@ public static class AppBootstrap
     /// confirmation that stays pressable is one a user can answer twice, and the second press acts on
     /// a question that was already settled.</para>
     /// </summary>
+    /// <summary>
+    /// Asks before a resume discards the conversation a session is holding.
+    ///
+    /// <para>A BLOCK WITH BUTTONS, not a modal, and the same shape `/stats clear` uses. The question
+    /// belongs in the transcript it is about: it stays there after the choice, so what happened to a
+    /// conversation is answerable later — which a dialog that closes cannot be.</para>
+    ///
+    /// <para>IN THE ASKING SESSION'S OWN TAB, because the resume is that session's. Written to the
+    /// active tab it would ask about one conversation in front of another.</para>
+    ///
+    /// <para>NAMING BOTH SIDES. "Are you sure" cannot be answered by somebody who stepped away for
+    /// ten minutes: the row says how much this session would lose and when the incoming conversation
+    /// was last touched, so the choice can be made from the screen rather than from memory.</para>
+    /// </summary>
+    private static void ConfirmReplaceConversation(MainWindow mainWindow, ReplaceConversation ask)
+    {
+        var chat = mainWindow.TabForSession(ask.Session)?.Chat ?? mainWindow.Chat;
+
+        var incoming = ask.Incoming;
+        var losing = ask.Session.Ledger?.TotalTokens ?? 0;
+
+        var id = chat.AddMessage(ChatRole.System,
+            $"**Replace this conversation?**\n\n"
+            + $"This session has {DisplayNumber.Grouped(losing)} tokens of history, which resuming "
+            + $"discards — it is not saved anywhere else.\n\n"
+            + $"The conversation arriving has {incoming.Context.Count} message(s), last active "
+            + $"{Ago(incoming.UpdatedAt)}.");
+
+        chat.SetActions(id,
+        [
+            new ChatMessageAction
+            {
+                Id = "replace",
+                Label = "Replace",
+                Variant = ChatActionVariant.Danger,
+                AfterPress = ChatActionAfterPress.Hide,
+                OnClick = ctx =>
+                {
+                    ask.Resume();
+                    ctx.SetStatus("conversation replaced", SharpConsoleUI.Core.NotificationSeverity.Success);
+                },
+            },
+            new ChatMessageAction
+            {
+                Id = "keep",
+                Label = "Keep this one",
+                AfterPress = ChatActionAfterPress.Hide,
+                OnClick = ctx => ctx.SetStatus("kept", SharpConsoleUI.Core.NotificationSeverity.Info),
+            },
+        ]);
+    }
+
+    /// <summary>How long ago, in the coarsest unit that is still informative.</summary>
+    private static string Ago(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "just now",
+            { TotalHours: < 1 } => $"{(int)span.TotalMinutes}m ago",
+            { TotalDays: < 1 } => $"{(int)span.TotalHours}h ago",
+            _ => $"{(int)span.TotalDays}d ago",
+        };
+    }
+
     private static void ConfirmClearHistory(MainWindow mainWindow, UsageHistoryStore history)
     {
         var rows = history.TotalRows();

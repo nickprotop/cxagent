@@ -120,10 +120,38 @@ public sealed partial class Session
                 return CommandStatus.Reported;
             }
 
-            if (store.LoadByUid(result.ResumeUid) is { Session: { } snapshot })
-                manager.Resume(this, snapshot);
-            else
-                Say(new Message("That session could not be read back.", Severity.Warning));
+            // SCOPED TO THIS FOLDER. The listing above was already filtered, so a uid that reaches
+            // here normally belongs to this project — but stating it makes the refusal the store's
+            // own rather than a property of the caller having filtered first. `all` widens the
+            // LISTING, and a uid read off that listing is one the user chose deliberately from
+            // another project, so it widens the lookup with it.
+            var lookup = store.LoadByUid(result.ResumeUid, withinFolder: all ? null : WorkingDirectory);
+
+            if (lookup is not { Session: { } snapshot })
+            {
+                Say(new Message(all
+                    ? "That session could not be read back."
+                    : "That session is not in this folder. `/sessions all` lists every folder's.",
+                    Severity.Warning));
+                return CommandStatus.Reported;
+            }
+
+            // ASKED FIRST WHEN THERE IS SOMETHING TO LOSE. Resuming REPLACES this conversation, and
+            // a session that has taken a turn — or was itself restored — has history the user would
+            // not get back. One that has said nothing has nothing to protect, and a confirmation
+            // there is friction that teaches people to dismiss the dialog without reading it, which
+            // is precisely when it stops protecting anything.
+            //
+            // THE FRONT END DOES THE ASKING. Core has no dialog and must not grow one; it decides
+            // WHETHER to ask and hands over what to say. A host with no hook resumes — an embedder
+            // that never wired confirmation did not ask for a prompt it cannot render.
+            if (HasSavedTurn && Services?.ConfirmReplace is { } confirm)
+            {
+                confirm(new ReplaceConversation(this, snapshot, () => manager.Resume(this, snapshot)));
+                return CommandStatus.Reported;
+            }
+
+            manager.Resume(this, snapshot);
         }
         catch (Exception ex)
         {

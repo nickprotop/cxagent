@@ -13,6 +13,12 @@ namespace CxAgent.Tests;
 /// discarding a live conversation, possibly under its own running turn — the busy check tests the
 /// session that ASKED, not the one that gets rebuilt — while the asking session kept a pending
 /// snapshot armed and was told the restore had worked.</para>
+///
+/// <para>THE APP SERVICES ANY SESSION NOW rather than refusing the ones it could not rebuild:
+/// `WireRunner` takes the session it is wiring, so a resume typed in the second tab rebuilds the
+/// second tab's conversation. What these tests pin is the CONTRACT the per-session hook has to
+/// keep — asked before anything is armed, and a refusal leaving nothing behind — which is what
+/// makes declining safe for any host that needs to decline.</para>
 /// </summary>
 public class ResumeTargetTests : IDisposable
 {

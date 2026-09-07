@@ -427,10 +427,27 @@ public sealed class CommandMenu
             case ConsoleKey.Enter:
                 var picked = _shown[_selected];
 
-                // A PLACEHOLDER CANNOT BE CHOSEN. `<server>` and `<days>` name a shape, not a value;
-                // completing them literally would put text in the composer that is not a command.
-                // The row exists to say the argument is there — the typing stays the user's.
-                if (picked.Completion is null) return true;
+                // A PLACEHOLDER CANNOT BE COMPLETED, BUT IT MUST NOT TRAP THE KEY EITHER.
+                // `<server>`, `<days>` and `resume <number|id>` name a shape rather than a value, so
+                // filling the composer with the text would put something in it that is not a
+                // command. Swallowing Enter and staying open was worse: `resume <number|id>` is the
+                // FIRST row of `/sessions`, so it is selected by default, and every Enter vanished
+                // into it — the command could not be run by keyboard at all, and the menu stayed up
+                // with no visible reason. The composer kept the text and nothing happened.
+                //
+                // CLOSING AND SUBMITTING IS THE HONEST ANSWER: the user has typed a complete command
+                // and pressed Enter, and a row that cannot offer a value has nothing to add to that.
+                //
+                // NOT `return false`. An open portal DROPS what its content declines (see
+                // CommandMenuContent), so declining loses the key entirely — and the composer's own
+                // submit path is guarded by `Input.HasFocus`, which is false while the portal holds
+                // the keyboard. Closing first and then replaying the key is what actually reaches it.
+                if (picked.Completion is null)
+                {
+                    Close();
+                    Submit?.Invoke();
+                    return true;
+                }
 
                 Close();
 
@@ -496,6 +513,22 @@ public sealed class CommandMenu
     /// against.</para>
     /// </summary>
     public Func<PromptControl?>? ComposerOf { get; set; }
+
+    /// <summary>
+    /// Runs whatever is in the composer, for a row that cannot be completed.
+    /// </summary>
+    /// <remarks>
+    /// A HOOK BECAUSE THE MENU CANNOT REACH THE SUBMIT PATH ITSELF. That path is guarded by
+    /// `Input.HasFocus`, which is false while the portal holds the keyboard, and an open portal
+    /// DROPS what its content declines — so neither returning false nor forwarding the key works.
+    /// The composition root owns submission and can simply be asked.
+    ///
+    /// WHY A PLACEHOLDER ROW NEEDS THIS AT ALL: `resume &lt;number|id&gt;` names a shape rather than a
+    /// value, and it is the FIRST row of `/sessions`, so it is selected by default. Enter on it used
+    /// to be swallowed with the menu left open — `/sessions` could not be run from the keyboard at
+    /// all, and nothing on screen said why.
+    /// </remarks>
+    public Action? Submit { get; set; }
 
     /// <summary>The composer in force: the live one when a caller supplies it, else the fixed one.</summary>
     private PromptControl? CurrentComposer => ComposerOf?.Invoke() ?? Composer;

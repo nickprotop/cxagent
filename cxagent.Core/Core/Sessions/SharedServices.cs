@@ -66,6 +66,21 @@ public sealed record SharedServices
     public IPermissionGate? Gate { get; init; }
 
     /// <summary>
+    /// Asks the user to confirm replacing a live conversation, or null when nothing can ask.
+    ///
+    /// <para>CORE DECIDES WHETHER TO ASK; A FRONT END DECIDES HOW. Resuming REPLACES the
+    /// conversation in the session, and one that has taken a turn has history the user does not get
+    /// back — so the question is worth asking, and Core is the only place that knows whether there
+    /// is anything to lose. What it cannot do is render a dialog, so it hands over the decision and
+    /// the action and lets a host draw whatever it draws.</para>
+    ///
+    /// <para>NULL RESUMES WITHOUT ASKING. An embedder that never wired a confirmation did not ask
+    /// for a prompt it cannot show, and refusing the command instead would make resume look broken
+    /// in a host that simply has no UI.</para>
+    /// </summary>
+    public Action<ReplaceConversation>? ConfirmReplace { get; set; }
+
+    /// <summary>
     /// Which tools every session this manager opens is offered. Null means no opinion.
     ///
     /// <para>S1 IN CODE, and there is a second home for the same level: <c>llmAgent.tools</c> in
@@ -86,3 +101,23 @@ public sealed record SharedServices
     /// </summary>
     public string? GlobalInstructionsDir { get; init; }
 }
+
+/// <summary>
+/// A pending replacement of one conversation by another, for a front end to confirm.
+///
+/// <para>THE ACTION IS CARRIED RATHER THAN DESCRIBED. A host that had to reconstruct the resume from
+/// an id would need the manager, the store and the snapshot — and would be reimplementing the branch
+/// that decided to ask. Handing over the closure keeps the decision and its consequence in one
+/// place, and means a host that confirms simply calls it.</para>
+///
+/// <para>WHAT THE HOST NEEDS TO WRITE THE QUESTION is the session losing its history and the
+/// conversation arriving: how long each is, and when the incoming one was last touched. A prompt
+/// that says only "are you sure" cannot be answered by anybody who stepped away.</para>
+/// </summary>
+/// <param name="Session">The session whose conversation would be replaced.</param>
+/// <param name="Incoming">The conversation that would replace it.</param>
+/// <param name="Resume">Performs the replacement. Called only if the user agrees.</param>
+public readonly record struct ReplaceConversation(
+    Session Session,
+    Storage.SessionSnapshot Incoming,
+    Action Resume);

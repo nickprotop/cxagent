@@ -100,6 +100,22 @@ public sealed class SessionManager : IDisposable
     /// for exactly this reason.</para>
     public Func<Session, bool>? RewireOne { get; set; }
 
+    /// <summary>
+    /// How a host confirms replacing a live conversation. See
+    /// <see cref="SharedServices.ConfirmReplace"/>.
+    /// </summary>
+    /// <remarks>
+    /// ON THE MANAGER RATHER THAN IN THE SERVICES LITERAL, because the services are built inside
+    /// `Create` before a host exists to supply a hook — the same reason <see cref="Rewire"/> and
+    /// <see cref="RewireOne"/> live here. Assigning it reaches every session, which is right: the
+    /// question is about a conversation, and any session can be asked to replace one.
+    /// </remarks>
+    public Action<ReplaceConversation>? ConfirmReplace
+    {
+        get => Shared.ConfirmReplace;
+        set => Shared.ConfirmReplace = value;
+    }
+
     /// <summary>An empty environment, for the default config read — see Create's `config` param.</summary>
     private static readonly IReadOnlyDictionary<string, string> EmptyEnvironment =
         new Dictionary<string, string>();

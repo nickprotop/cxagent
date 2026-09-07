@@ -7,7 +7,14 @@ namespace CxAgent.Tests;
 /// <summary>
 /// Which sessions `/sessions resume` can reach.
 ///
-/// <para>THE GUARD IS THE LISTING, NOT THE LOOKUP. `LoadByUid` matches on the agent id alone and asks
+/// <para>THE GUARD IS NOW BOTH. `LoadByUid` takes an optional folder and refuses a uid outside it,
+/// so `/sessions resume` is scoped by the store rather than only by what the caller listed. `all`
+/// widens the listing AND the lookup together — a uid read off `/sessions all` was chosen
+/// deliberately from another project — and `--resume` passes no folder at all, because naming a
+/// session on the command line is a deliberate act by somebody who typed the id.</para>
+///
+/// <para>THE OLD SHAPE, kept because it explains why the store's own guard was worth adding: the
+/// guard was the listing, not the lookup. `LoadByUid` matches on the agent id alone and asks
 /// nothing about folders, so what stops a resume crossing projects is that `Decide` resolves the
 /// typed uid against the rows it was HANDED — and the caller scopes those to the working directory
 /// unless `all` was asked for. That is a real guard, but an indirect one: it lives in the caller's
