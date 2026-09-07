@@ -543,7 +543,9 @@ public static class AppBootstrap
             // REMOVED, not rewritten to a tombstone. The queue emptied, so the placeholder has nothing
             // left to stand for — and the text is sitting in the composer in plain view, so a row
             // saying so would explain something already on screen at the cost of a transcript line.
-            session.Cancelled += text => system.EnqueueOnUIThread(() =>
+            // THE ASKER IS IGNORED WHILE THERE IS ONE FRONT END. It exists so a daemon can route the
+            // text back to the composer it came from; this window is the only composer there is.
+            session.Cancelled += (text, _) => system.EnqueueOnUIThread(() =>
             {
                 // INTO THE COMPOSER OF THE SESSION THAT CANCELLED, not the one on screen.
                 if (mainWindow.TabForSession(session) is { } tab)

@@ -74,7 +74,7 @@ public class QueueEventsTests
         var session = Bare();
         string? cancelled = null;
         var drainedFired = false;
-        session.Cancelled += text => cancelled = text;
+        session.Cancelled += (text, _) => cancelled = text;
         session.Drained += _ => drainedFired = true;
 
         session.Steer("typed but never sent");
@@ -92,7 +92,7 @@ public class QueueEventsTests
     {
         var session = Bare();
         var fired = false;
-        session.Cancelled += _ => fired = true;
+        session.Cancelled += (_, _) => fired = true;
 
         session.CancelPending();
 
@@ -227,7 +227,7 @@ public class CancelTurnTests : IDisposable
         using var mgr = manager;
 
         string? landed = null;
-        session.Cancelled += text => landed = text;   // a composer here; a log elsewhere
+        session.Cancelled += (text, _) => landed = text;   // a composer here; a log elsewhere
 
         session.Steer("typed mid-turn");
         session.CancelPending();
@@ -319,7 +319,7 @@ public class CancelRestoresQueuedTests : IDisposable
             AgentMode.Single);
 
         string? handedBack = null;
-        session.Cancelled += text => handedBack = text;
+        session.Cancelled += (text, _) => handedBack = text;
 
         session.Steer("alpha");
         session.Steer("beta");
@@ -341,7 +341,7 @@ public class CancelRestoresQueuedTests : IDisposable
             AgentMode.Single);
 
         var handedBack = 0;
-        session.Cancelled += _ => handedBack++;
+        session.Cancelled += (_, _) => handedBack++;
 
         session.Steer("taken at the barrier");
         Assert.Equal("taken at the barrier", session.TakePendingSteer());

@@ -130,7 +130,7 @@ public class DrainLoopTests : IDisposable
         using var _ = manager;
 
         string? handedBack = null;
-        session.Cancelled += text => handedBack = text;
+        session.Cancelled += (text, _) => handedBack = text;
 
         provider.OnCall = () =>
         {

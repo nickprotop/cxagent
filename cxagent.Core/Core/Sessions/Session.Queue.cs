@@ -63,7 +63,11 @@ public sealed partial class Session
     /// subscriber does opposite things: drained means the real message is about to appear and the
     /// stand-in should go, cancelled means put it back where it can be edited. One "emptied" event
     /// would force every subscriber to reconstruct which happened.</para></summary>
-    public event Action<string>? Cancelled;
+    /// <para>THE SECOND ARGUMENT IS WHO ASKED, or null when nothing said. Cancel puts the text back
+    /// in a composer, and with several front ends attached there are several — a subscriber that
+    /// cannot tell which one asked has to guess, and guessing means one client's typing reappearing
+    /// in another's prompt.</para>
+    public event Action<string, string?>? Cancelled;
 
     /// <summary>Adds to what is waiting, starting it if nothing was. Newline-separated: the lines
     /// were separate thoughts when they were typed, and the break is structure a model reads.</summary>
@@ -91,12 +95,24 @@ public sealed partial class Session
     /// <para>SILENT WHEN EMPTY. Cancelling nothing is not an event: a subscriber that restored an
     /// empty string into a composer would clear what the user had typed since.</para>
     /// </summary>
-    public void CancelPending()
+    /// <param name="by">
+    /// Who asked, or null when nothing can say — which is every caller today.
+    ///
+    /// <para>WHY IT EXISTS BEFORE ANYTHING FILLS IT. Cancel returns the text to a COMPOSER, and with
+    /// several front ends attached there are several: whoever cancelled is the only defensible
+    /// answer, so the event has to be able to say. Adding the parameter now costs one optional
+    /// argument; adding it later means changing an event signature every subscriber implements.</para>
+    ///
+    /// <para>NOT A CLIENT TYPE. Core has no notion of a connection and must not grow one for this —
+    /// a string the host chooses is enough to route a reply back to its origin, and a host with one
+    /// front end passes nothing and reads nothing.</para>
+    /// </param>
+    public void CancelPending(string? by = null)
     {
         string? taken;
         lock (_pendingGate) { taken = _pending; _pending = null; }
 
-        if (taken is { Length: > 0 }) Cancelled?.Invoke(taken);
+        if (taken is { Length: > 0 }) Cancelled?.Invoke(taken, by);
     }
 
     /// <summary>

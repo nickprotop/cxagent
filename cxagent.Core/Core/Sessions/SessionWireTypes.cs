@@ -36,7 +36,26 @@ public sealed record JobSnapshot(
     double? Progress,
     string? ProgressMessage,
     DateTimeOffset? StartedAt,
-    DateTimeOffset? CompletedAt)
+    DateTimeOffset? CompletedAt,
+
+    /// <summary>Whether the gate is asking a model about this job right now.</summary>
+    /// <remarks>
+    /// A ROW RENDERS IT, so a DTO without it loses the "reviewing…" state a client shows while a
+    /// classifier is being consulted — which is exactly the moment a user wonders why nothing is
+    /// happening. It was omitted rather than declined; there is no reason a remote client needs it
+    /// less than a local one.
+    /// </remarks>
+    bool Reviewing = false,
+
+    /// <summary>How many times this job has been retried.</summary>
+    /// <inheritdoc cref="Reviewing"/>
+    int RetryCount = 0,
+
+    /// <summary>The longer progress text, where a job reports one beside its short message.</summary>
+    string? ProgressBody = null,
+
+    /// <summary>When the job was created — which is not when it STARTED, for a queued one.</summary>
+    DateTimeOffset? CreatedAt = null)
 {
     /// <summary>How much of a result or a parameter set is kept.</summary>
     /// <remarks>
@@ -59,7 +78,11 @@ public sealed record JobSnapshot(
         Progress: job.Progress,
         ProgressMessage: job.ProgressMessage,
         StartedAt: job.StartedAt,
-        CompletedAt: job.CompletedAt);
+        CompletedAt: job.CompletedAt,
+        Reviewing: job.Reviewing,
+        RetryCount: job.RetryCount,
+        ProgressBody: Cap(job.ProgressBody),
+        CreatedAt: job.CreatedAt);
 
     /// <summary>
     /// A parameter dictionary as text.

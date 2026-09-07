@@ -655,6 +655,8 @@ public sealed class SessionManager : IDisposable
             targets = _sessions.ToList();
         }
 
+        var rebound = 0;
+
         foreach (var session in targets)
         {
             // EVERY SESSION, NOT THE CALLER'S. Session.Plugins is a registry per session and this is
@@ -687,7 +689,21 @@ public sealed class SessionManager : IDisposable
             }
 
             session.RebindPlugins(Config.PluginSet);
+            rebound++;
         }
+
+        // RECORDED, BECAUSE THIS REACHES EVERY SESSION. Open, resume and close each write a line and
+        // this did not — yet it is the widest-reaching change the manager makes: one caller's edit
+        // rebinds the plugin set of every session in the process, and defers it into the ones that
+        // are busy. Without a line, "why did that session's tools change" has no answer at all;
+        // with one, the count says how far it went and `detail` says which entry moved.
+        //
+        // FILED AGAINST THE CALLER, since that is the session that asked — the others are
+        // consequences, and listing them would put a line per session on a config edit.
+        SessionLifecycleLog.Write(Shared.Logs, "plugins", caller,
+            detail: unwire is { } changed
+                ? $"unwired {changed}; rebound {rebound} of {targets.Count} session(s)"
+                : $"rebound {rebound} of {targets.Count} session(s)");
 
         return new PluginChangeResult.Applied();
     }
