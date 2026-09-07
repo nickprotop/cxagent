@@ -74,6 +74,32 @@ public class SessionWiringParityTests
         Assert.DoesNotContain("session.Changed +=", source);
     }
 
+    /// <summary>
+    /// AND THE SHARED WIRING PUTS A CLASSIFIER ON THE POLICY.
+    ///
+    /// <para>THE UNIT TESTS FOR THIS CANNOT SEE IT. They exercise `PermissionPolicy.Classifier`
+    /// directly, so they stay green if the wiring stops setting it — verified by removing the call
+    /// and watching all three pass. What breaks then is silent and severe: every session falls back
+    /// to the gate's slot, which nothing binds any more, so auto-review is off everywhere with
+    /// nothing said. This is the assertion that notices.</para>
+    /// </summary>
+    [Fact]
+    public void TheSharedWiringGivesEachSessionItsOwnClassifier()
+    {
+        var source = Read("cxagent/UI/SessionWiring.cs");
+
+        Assert.Contains("Policy = Reviewing(", source);
+        Assert.Contains("PermissionDecider.ClassifierFor(", source);
+    }
+
+    /// <summary>AND THE COMPOSITION ROOT NO LONGER BINDS ONE ON THE GATE, which would be one slot for
+    /// every session again — the defect this replaced.</summary>
+    [Fact]
+    public void TheCompositionRootDoesNotBindTheGatesClassifier()
+    {
+        Assert.DoesNotContain("permissionGate.BindClassifier(", Read("cxagent/UI/AppBootstrap.cs"));
+    }
+
     /// <summary>AND BOTH CALL THE SHARED ROUTINE, so the check above cannot be satisfied by a path
     /// that simply wires nothing at all.</summary>
     [Theory]

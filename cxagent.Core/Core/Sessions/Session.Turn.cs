@@ -330,7 +330,10 @@ public sealed partial class Session
             // them) would need a no-op override for a method that means nothing to them. A type test
             // at the one real call site is honest about that; widening the interface is not required
             // to make the reset happen and would be churn with no caller ever exercising it on a fake.
-            if (Services?.Gate is Permissions.PermissionDecider decider) decider.ResetTurnState();
+            // THIS SESSION'S POLICY, so its own classifier's cache is cleared rather than whichever
+            // one the gate happens to hold — see PermissionDecider.Classifier.
+            if (Services?.Gate is Permissions.PermissionDecider decider)
+                decider.ResetTurnState(Policy);
 
             // THE TURN'S SCOPE, created here because the turn is this method's. It was the host's,
             // so the host is not a second way to start one.

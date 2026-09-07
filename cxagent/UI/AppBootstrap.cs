@@ -900,17 +900,10 @@ public static class AppBootstrap
         {
             if (!res.HasProvider) return;
 
-            // REBOUND ON EVERY WIRE, from THIS resolution. Bind once at startup and changing
-            // `classifier` in config and a re-wire leaves `auto` mode consulting the outgoing
-            // provider — silently, because the mode still works. That is the shape of every bug in
-            // this method: a re-wire that moves some consumers of a resolution and not others, with
-            // nothing marking which is which.
-            //
-            // CLEARED WHEN NOTHING IS CONFIGURED, not left behind. Removing the classifier entry and
-            // re-wiring must actually turn `auto` off; keeping the outgoing instance would keep a
-            // mode alive that config no longer describes.
-            permissionGate.BindClassifier(res.ClassifierInstance, res.Providers,
-                res.ClassifierTimeoutSeconds);
+            // THE CLASSIFIER IS THE SESSION'S NOW, not the gate's — SessionWiring puts it on the
+            // policy, which is per session and rides every request. Bound here it was one slot for
+            // the process: a second session's bind replaced the first's, and a session configured
+            // with no classifier cleared auto-review for everyone.
 
             // The outgoing host is disposed by Session.ReplaceHost below, not here: a re-wire that
             // merely reassigned would leak it, and that is a step a caller can forget while the host

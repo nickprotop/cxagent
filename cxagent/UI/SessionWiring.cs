@@ -226,6 +226,21 @@ public static class SessionWiring
     }
 
     /// <summary>
+    /// The policy, carrying the classifier this session's configuration asks for.
+    /// </summary>
+    /// <remarks>
+    /// THE POLICY IS MUTATED RATHER THAN REBUILT because it is already this session's own — built by
+    /// the caller with its root, rules and edit mode. Assigning here keeps "what reviews this
+    /// session" beside "what this session may do", which is the same question asked twice.
+    /// </remarks>
+    private static PermissionPolicy Reviewing(PermissionPolicy policy, ResolvedConfig resolution)
+    {
+        policy.Classifier = PermissionDecider.ClassifierFor(
+            resolution.ClassifierInstance, resolution.Providers, resolution.ClassifierTimeoutSeconds);
+        return policy;
+    }
+
+    /// <summary>
     /// The ports a session is opened with.
     ///
     /// <para>SHARED SO A SECOND SESSION GETS THE SAME SEAMS AS THE FIRST — the embedder tool slot,
@@ -265,6 +280,12 @@ public static class SessionWiring
             // JUDGED BY ITS OWN ROOT AND MODE, AND SAYING WHICH SESSION IT IS. The gate is one per
             // process; this is the session half of the decision, and passing it is what stops a
             // second session being judged against the first one's folder.
-            Policy = w.Policy,
+            //
+            // AND REVIEWED BY ITS OWN CLASSIFIER. Auto mode asks a model whether an action is safe,
+            // and which model comes from THIS session's config. Bound on the gate — one slot for the
+            // process — a second session's bind replaced the first's, and a session configured with
+            // no classifier cleared it for everyone: auto-review silently off, which is the
+            // direction that lets a reviewable action through unreviewed.
+            Policy = Reviewing(w.Policy, w.Resolution),
         };
 }

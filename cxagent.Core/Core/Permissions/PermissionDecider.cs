@@ -110,9 +110,27 @@ public sealed class PermissionDecider : IPermissionGate
     /// cannot be half-applied — a re-wire spread across the root moves some consumers of a resolution
     /// and not others.</para>
     /// </summary>
+    /// <remarks>
+    /// THIS BINDS THE GATE'S FALLBACK, WHICH IS PROCESS-WIDE. For a session, set
+    /// <see cref="PermissionPolicy.Classifier"/> instead — one gate serves every session, so binding
+    /// here for one of them rebinds for all, and binding null clears auto-review for all. Use
+    /// <see cref="ClassifierFor"/> to build the instance either way.
+    /// </remarks>
     public void BindClassifier(string? instanceName, Llm.ProviderRegistry? providers,
                                int? stageTimeoutSeconds = null) =>
-        Classifier =
+        Classifier = ClassifierFor(instanceName, providers, stageTimeoutSeconds);
+
+    /// <summary>
+    /// The classifier a configuration asks for, or null when it names none.
+    /// </summary>
+    /// <remarks>
+    /// EXTRACTED SO A SESSION CAN BUILD ITS OWN without going through the gate's shared slot. The
+    /// resolution is per session — two projects can review with different models, or one with a model
+    /// and one with none — and the arithmetic of turning a name into an instance is the same either
+    /// way.
+    /// </remarks>
+    public static ActionClassifier? ClassifierFor(string? instanceName, Llm.ProviderRegistry? providers,
+                                                  int? stageTimeoutSeconds = null) =>
             instanceName is { Length: > 0 } name
             && providers is not null
             && providers.TryGet(name, out var provider)
@@ -147,9 +165,15 @@ public sealed class PermissionDecider : IPermissionGate
     /// <summary>Lets a new turn report a classifier failure again — the fact is stale once the turn
     /// that observed it is over, and a session that stays quiet forever after one blip would hide a
     /// provider that never came back.</summary>
-    public void ResetTurnState()
+    /// <param name="policy">
+    /// The turn's own session policy, so ITS classifier's cache is the one cleared. The gate serves
+    /// every session; clearing only the gate's left a per-session classifier holding a verdict
+    /// computed for a previous turn — a cached answer about one action standing in for another.
+    /// </param>
+    public void ResetTurnState(PermissionPolicy? policy = null)
     {
         _reportedClassifierFailure = false;
+        (policy?.Classifier)?.ResetTurnState();
         // KEPT IN LOCKSTEP WITH THE FAILURE FLAG ABOVE, not reset by a second call site — a cached
         // verdict answers for one action, not a standing rule, and must not outlive the turn it was
         // computed for. Session.RunTurnAsync calls this exact method at the top of every lap, so the
@@ -329,7 +353,17 @@ public sealed class PermissionDecider : IPermissionGate
         // true on an ALLOW, so any population a bool admits is a population a bool silences. Trust is
         // still the floor and EffectFor still checks it; see ReviewEffect.
         var effect = policy.EffectFor(request);
-        if (effect != ReviewEffect.None && Classifier is not null)
+
+        // THE ASKING SESSION'S CLASSIFIER, falling back to the gate's. One gate serves every session
+        // and `Classifier` is one slot on it, so a second session's bind replaced the first's — and a
+        // session resolving none CLEARED it for everyone, silently turning auto-review off. The
+        // policy is per session and already rides the request, so it is where this belongs.
+        //
+        // THE FALLBACK IS NOT VESTIGIAL: an embedder that binds one classifier for a process it owns
+        // entirely is doing something reasonable, and a request with no policy has no other source.
+        var classifier = policy.Classifier ?? Classifier;
+
+        if (effect != ReviewEffect.None && classifier is not null)
         {
             // TOLD ONLY HERE, inside the branch that actually calls the classifier. Neither the
             // silent path above nor the trust-floor guard above that ever reach this line, so a
@@ -340,7 +374,7 @@ public sealed class PermissionDecider : IPermissionGate
             ClassifierDecision decision;
             try
             {
-                decision = await Classifier.JudgeAsync(request, ct);
+                decision = await classifier.JudgeAsync(request, ct);
             }
             finally
             {

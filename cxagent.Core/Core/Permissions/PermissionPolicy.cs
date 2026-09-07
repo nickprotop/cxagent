@@ -55,6 +55,21 @@ public class PermissionPolicy
     public string? SessionId { get; init; }
 
     /// <summary>
+    /// The model that reviews this session's requests in auto mode, or null when none is configured.
+    ///
+    /// <para>ON THE POLICY BECAUSE IT IS PER SESSION. The instance name comes from a session's own
+    /// resolved config, so two sessions can be told to review with different models — or one with a
+    /// model and one with none. Held on the GATE, which there is one of, they could not: the last
+    /// bind won for everybody, and a session that resolved no classifier turned auto-review OFF for
+    /// every other session. That is the dangerous direction — a request that should have been
+    /// reviewed is silently allowed instead.</para>
+    ///
+    /// <para>SETTABLE, NOT INIT, because a re-wire replaces the resolution while the policy outlives
+    /// it: `/model` can change which instance reviews, and the policy is what the gate reads.</para>
+    /// </summary>
+    public ActionClassifier? Classifier { get; set; }
+
+    /// <summary>
     /// When a write happens without asking.
     ///
     /// <para>SETTABLE, because the mode is session state a user flips mid-session with Shift+Tab, and
