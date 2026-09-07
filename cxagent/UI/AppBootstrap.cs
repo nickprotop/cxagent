@@ -1194,6 +1194,29 @@ public static class AppBootstrap
         // SET BEFORE THE FIRST WIRE, so a resume arriving on the first render pump finds it.
         manager.Rewire = () => WireRunner(resolution);
 
+        // AND THE PER-SESSION HOOK, WHICH IS WHAT RESUME USES. WireRunner closes over the startup
+        // session and assigns four window properties that resolve to the ACTIVE tab, so re-wiring
+        // through it from a second session would discard the FIRST session's conversation — under
+        // its own running turn, since Resume's busy check tested the session that ASKED — and land
+        // the rebuilt session's output in whichever tab happened to be in front.
+        //
+        // REFUSING IS THE HONEST ANSWER UNTIL WireRunner TAKES A SESSION. A resume that silently
+        // rebuilt the wrong conversation is the worst outcome available; one that declines and says
+        // why costs the user a restart and nothing else.
+        manager.RewireOne = target =>
+        {
+            if (ReferenceEquals(target, session))
+            {
+                WireRunner(resolution);
+                return true;
+            }
+
+            mainWindow.Chat.AddMessage(ChatRole.System,
+                "Resuming another session's conversation is not supported yet — only the session "
+                + "this window started with can be restored. Nothing was changed.");
+            return false;
+        };
+
         WireRunner(resolution);   // startup path, unchanged in effect
 
         // AFTER THE WIRE, because the sink it writes to is created inside it.

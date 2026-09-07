@@ -80,6 +80,26 @@ public sealed class SessionManager : IDisposable
     /// </summary>
     public Action? Rewire { get; set; }
 
+    /// <summary>
+    /// How to re-wire ONE named session, when the process-wide <see cref="Rewire"/> cannot say which.
+    ///
+    /// <para>WHY BOTH EXIST. <see cref="Rewire"/> is a single action set once, which was right while
+    /// a process held one session: every caller would otherwise close over the same invariant value.
+    /// With several, that hook re-wires whichever session the composition root built it over — so
+    /// `/sessions resume` typed in a second session applied to the FIRST, discarding its live
+    /// conversation, possibly under its own running turn, while the session that asked kept its
+    /// pending resume armed and was told it had worked.</para>
+    ///
+    /// <para>A HOST THAT CAN TELL SESSIONS APART SETS THIS; one that cannot leaves it null and keeps
+    /// the old behaviour. Resume prefers it, so the fix arrives wherever it is supplied without
+    /// every embedder having to change.</para>
+    /// </summary>
+    /// <para>RETURNS WHETHER IT RE-WIRED. A host that cannot re-wire a particular session must be
+    /// able to say so BEFORE the snapshot is armed — arming one that nothing applies leaves the
+    /// session claiming a context its host does not have, which the null-hook path already refuses
+    /// for exactly this reason.</para>
+    public Func<Session, bool>? RewireOne { get; set; }
+
     /// <summary>An empty environment, for the default config read — see Create's `config` param.</summary>
     private static readonly IReadOnlyDictionary<string, string> EmptyEnvironment =
         new Dictionary<string, string>();
@@ -682,6 +702,14 @@ public sealed class SessionManager : IDisposable
 
         // THE STORED HOOK WHEN NOTHING IS PASSED. A caller that has one uses it; /sessions resume has
         // no way to build one, which is what Rewire exists for.
+        // THE PER-SESSION HOOK FIRST. It knows which conversation is being restored; the
+        // process-wide one only knows the session its closure was built over, which is the right
+        // answer exactly once.
+        // ASKED BEFORE ANYTHING IS ARMED. A host that declines this session must not leave a pending
+        // snapshot behind: it would fire on some unrelated later re-wire, restoring a conversation
+        // nobody asked for at a moment nobody expects.
+        if (rewire is null && RewireOne is { } one && !one(session)) return;
+
         var apply = rewire ?? Rewire;
 
         // NO REWIRE, NO RESUME. Arming a resume nothing applies would leave the session claiming a
