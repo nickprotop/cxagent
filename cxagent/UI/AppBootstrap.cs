@@ -1386,14 +1386,20 @@ public static class AppBootstrap
             {
                 e.Handled = true;
 
-                if (!session.HasAgent) return;   // no agent to set a mode on
+                // THE SESSION IN FRONT, for the same reason as Escape. The focus gate above is the
+                // ACTIVE tab's composer, so cycling in tab two loosened tab ONE's gate — and the
+                // change was then painted onto tab two's mode line, which is the dangerous direction
+                // this codebase names elsewhere: a status line promising always-ask over a gate
+                // running looser.
+                var cycling = mainWindow.ActiveSession ?? session;
+                if (!cycling.HasAgent) return;   // no agent to set a mode on
 
                 // A TURN IN FLIGHT IS DECLINED, the same predicate /mode uses: the tool list is fixed
                 // once a request begins, and a silent flip mid-turn is exactly what that guards.
                     // THE CYCLE SKIPS AUTO WHEN NO CLASSIFIER IS CONFIGURED, so Shift+Tab never lands on
                 // a mode that would do nothing. With one, the order runs strict -> permissive ->
                 // reviewed, which reads as increasing autonomy.
-                var nextEdits = session.Mode.Edits switch
+                var nextEdits = cycling.Mode.Edits switch
                 {
                     EditMode.AlwaysAsk => EditMode.AcceptEdits,
                     EditMode.AcceptEdits when permissionGate.Classifier is not null => EditMode.Auto,
@@ -1407,7 +1413,7 @@ public static class AppBootstrap
                 // no repaint here: a repaint line beside it is the line a new command forgets.
                 // ONE CALL, NOT TWO. SetMode remembers the preference itself, so there is no second
                 // line here to be copied without its partner.
-                session.SetMode(session.Mode with { Edits = nextEdits });
+                cycling.SetMode(cycling.Mode with { Edits = nextEdits });
 
                 // SAID OUT LOUD, because a keystroke that changes what runs without asking must not
                 // be silent itself — and the composer line alone is easy to miss mid-flow.
@@ -1599,7 +1605,11 @@ public static class AppBootstrap
         {
             if (PluginManagerDialog.CloseIfOpen()) return true;
 
-            PluginManagerDialog.Show(system, window, manager, session, paths, session.WorkingDirectory);
+            // THE SESSION IN FRONT. The dialog reports what a session has loaded and mutates its
+            // plugin set, so opening it from a second tab must show that tab's conversation rather
+            // than the one this closure was built over.
+            var forDialog = mainWindow.ActiveSession ?? session;
+            PluginManagerDialog.Show(system, window, manager, forDialog, paths, forDialog.WorkingDirectory);
             return true;
         }
 
@@ -1811,10 +1821,16 @@ public static class AppBootstrap
                 // THE ACTIVE TAB KEEPS ESCAPE. A shell tab is running the user's own programs and a
                 // file tab holds a buffer; both want the key, and neither expects it to end the run
                 // behind them. F4 goes back to chat, where Escape cancels as it always did.
-                if (EscapeRouting.For(session.IsBusy, mainWindow.ChatTabIsActive)
+                // THE SESSION IN FRONT, NOT THE ONE THIS CLOSURE WAS BUILT OVER. Escape cancels the
+                // turn the user is watching: reading the startup session meant it could not cancel a
+                // second session's turn at all, and would cancel the FIRST session's work from a tab
+                // not even showing it. The window audit fixed the ChatTabIsActive half of this line
+                // and left the session half.
+                var escaping = mainWindow.ActiveSession ?? session;
+                if (EscapeRouting.For(escaping.IsBusy, mainWindow.ChatTabIsActive)
                     is EscapeTarget.CancelTurn)
                 {
-                    session.CancelTurn();
+                    escaping.CancelTurn();
                     return true;
                 }
 
