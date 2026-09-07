@@ -437,6 +437,17 @@ public sealed partial class Session
         // nothing naming the set that has to move together.
         Resolution = Resolution?.WithModel(next) ?? new ResolvedConfig(next, Llm.ProviderCatalog.Empty, []);
 
+        // RECORDED, BECAUSE NOTHING ELSE RECORDS IT. `/model` swaps the provider IN PLACE — it never
+        // reaches SessionManager.Open, so the "rewire" line that a resume or a setup flow writes is
+        // not written here, and the log would show a session opening on one model and spending
+        // against another with nothing in between to explain it. Which model a turn ran on is the
+        // first thing anybody asks of a cost or a bad answer.
+        SessionLifecycleLog.Write(Services?.Logs, "model", this,
+            model: next.InstanceName is { Length: > 0 } named
+                ? $"{named} {next.Provider.ModelId}"
+                : next.Provider.ModelId,
+            mode: Mode.ToString());
+
         Announce(SessionChangeKind.Model);
         Say(ModelSwitchNotice.For(next.InstanceName ?? next.Provider.ProviderId, next.Provider.ModelId,
             next.ContextWindow, previousWindow, used));

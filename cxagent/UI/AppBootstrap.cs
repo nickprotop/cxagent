@@ -1976,11 +1976,18 @@ public static class AppBootstrap
             // SESSION FIRST, THEN MANAGER. Each returns empty for a set it does not own, so neither
             // has to know what the other answers. Read on every keystroke, never cached: a session
             // that ended in another window a minute ago has to appear.
+            // THE SESSION IN FRONT, READ PER KEYSTROKE. Closed over the startup session, the palette
+            // offered ITS values from every tab — so `/sessions resume ` in the second tab listed the
+            // FIRST session's conversations, and picking one is how a resume reaches another folder's
+            // work. The listing this menu shadows is correctly scoped; the menu was not, which made
+            // the two disagree about what "here" means.
             commandMenu.Values = source =>
             {
-                var values = session.Values(source);
+                var asking = mainWindow.ActiveSession ?? session;
+
+                var values = asking.Values(source);
                 if (values.Count == 0)
-                    values = manager.Values(source, session.WorkingDirectory);
+                    values = manager.Values(source, asking.WorkingDirectory);
 
                 return [.. values.Select(v => new CommandArgument(v.Name, v.Summary))];
             };
