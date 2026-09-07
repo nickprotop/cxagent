@@ -226,6 +226,21 @@ internal static class SessionFactory
         session.ResubscribePorts(new Session.PortSubscription(
             observers, ports.Observer, toolObservers, ports.ToolObserver));
 
+        // AND THE TRANSCRIPT RECORDER, ONCE PER SESSION RATHER THAN PER WIRE. It is a second
+        // subscriber on the same fan-out — the first one the fan-out was built for — and a re-wire
+        // must not add another beside it, or a `/model` switch would double every row from then on.
+        // The session records that it has one; the fan-out is kept across a wire, so the existing
+        // subscription survives with it.
+        //
+        // KEYED BY THE SESSION'S OWN ID, not the agent's. The agent id is replaced by a re-wire and a
+        // resume, so a transcript keyed on it would split one conversation across rows nothing joins
+        // — which is the reason Session.Id exists at all.
+        if (shared.Transcripts is { } transcripts && !session.RecordsTranscript)
+        {
+            observers.Add(new Storage.TranscriptRecorder(transcripts, session.Id));
+            session.NoteRecordingTranscript();
+        }
+
         var host = new AgentHost(
             new AgentHost.AgentRuntime
             {

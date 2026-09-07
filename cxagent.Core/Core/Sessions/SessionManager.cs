@@ -335,6 +335,12 @@ public sealed class SessionManager : IDisposable
             {
                 Logs = new LogFileManager(paths),
                 Resume = resume,
+                // LAZY, BECAUSE CONSTRUCTING IT CREATES THE DATABASE. A process that opens no
+                // session — or a headless embedder that records nothing — should not leave a
+                // transcript.db behind, and the file appearing in the config directory changes what
+                // is there for anything that reads the directory as a whole (a plugin load set is
+                // hashed by its contents, which is how a test caught this).
+                Transcripts = new Lazy<TranscriptStore>(() => new TranscriptStore(paths)),
                 History = new UsageHistoryStore(paths),
                 Gate = buildGate?.Invoke(rules),
                 Mcp = mcp,

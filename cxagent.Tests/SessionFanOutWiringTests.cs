@@ -45,8 +45,15 @@ public class SessionFanOutWiringTests : IDisposable
             Assert.NotNull(session.Observers);
             Assert.NotNull(session.ToolObservers);
 
-            // The port's own observer is subscriber one — behaviour is unchanged with one listener.
-            Assert.Equal(1, session.Observers!.Count);
+            // TWO SUBSCRIBERS ON THE SESSION FAN-OUT: the port's own observer, and the transcript
+            // recorder the manager wires for every session. The recorder is the first real user of
+            // the thing this test exists to prove — before the fan-out, it would have REPLACED the
+            // front end's sink rather than joining it.
+            //
+            // ONE ON THE TOOL FAN-OUT, because the recorder implements ISessionObserver only: what
+            // it stores is what was SAID, and a tool row is rebuilt from the job rather than replayed
+            // from its progress stream.
+            Assert.Equal(2, session.Observers!.Count);
             Assert.Equal(1, session.ToolObservers!.Count);
         }
     }
@@ -66,7 +73,7 @@ public class SessionFanOutWiringTests : IDisposable
 
             session.Observers.Said(new Message("hello"));
 
-            Assert.Equal(2, session.Observers.Count);
+            Assert.Equal(3, session.Observers.Count);   // ports, recorder, and the listener just added
             Assert.Contains("hello", second.Transcript, StringComparison.Ordinal);
         }
     }
@@ -82,7 +89,7 @@ public class SessionFanOutWiringTests : IDisposable
             var token = session.Observers!.Add(new BufferedChatSink());
             token.Dispose();
 
-            Assert.Equal(1, session.Observers.Count);
+            Assert.Equal(2, session.Observers.Count);   // back to ports and recorder
         }
     }
 

@@ -100,6 +100,22 @@ public class SessionWiringParityTests
         Assert.DoesNotContain("permissionGate.BindClassifier(", Read("cxagent/UI/AppBootstrap.cs"));
     }
 
+    /// <summary>
+    /// THE COMPOSITION ROOT SUPPLIES A TRANSCRIPT STORE.
+    ///
+    /// <para>`SessionManager.Create` builds one; the app uses `Over` and builds its own
+    /// `SharedServices`, so it has to supply the store itself. It did not — which is how the store
+    /// shipped with a schema, tests, and nothing writing to it: every unit test passed because they
+    /// drove the recorder directly, and the one construction site that mattered had no store at
+    /// all.</para>
+    /// </summary>
+    [Fact]
+    public void TheCompositionRootSuppliesATranscriptStore()
+    {
+        Assert.Contains("Transcripts = new Lazy<Core.Storage.TranscriptStore>(",
+            Read("cxagent/UI/AppBootstrap.cs"));
+    }
+
     /// <summary>AND BOTH CALL THE SHARED ROUTINE, so the check above cannot be satisfied by a path
     /// that simply wires nothing at all.</summary>
     [Theory]

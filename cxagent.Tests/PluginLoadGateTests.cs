@@ -311,14 +311,22 @@ public class PluginLoadGateTests : IDisposable
     [Fact]
     public async Task TheStoredRuleSubjectIsTheContentHashNotThePath()
     {
-        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        // A LOAD SET OF ITS OWN, not the config directory. HashLoadSet walks the folder recursively,
+        // so anything the app writes into it changes the plugin's identity — and the config
+        // directory is where the app keeps its databases. In production the two are already separate
+        // (plugins live in `<config>/plugins/`), and using one directory for both here made this
+        // test fail the moment a session recorded a transcript.
+        var loadSet = Path.Combine(_dir, "plugins", "lsp-rust");
+        Directory.CreateDirectory(loadSet);
+        File.WriteAllText(Path.Combine(loadSet, "plugin.dll"), "content");
+
         var gate = new ScriptedGate(PermissionOutcome.Allow);
         var session = SessionWithGate(gate, out var manager);
         using var _ = manager;
 
-        await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), _dir);
+        await session.LoadPlugin(new FakePlugin(), Manifest("lsp-rust", "lsp_rename"), loadSet);
 
-        Assert.Equal(PluginIdentity.HashLoadSet(_dir), gate.Requests[0].AlwaysRule);
+        Assert.Equal(PluginIdentity.HashLoadSet(loadSet), gate.Requests[0].AlwaysRule);
     }
 
     /// <summary>A plugin loaded with no gate wired at all (headless, or a test with nothing to

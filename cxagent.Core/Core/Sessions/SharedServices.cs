@@ -41,6 +41,22 @@ public sealed record SharedServices
     /// <summary>The resume buffer — every completed turn, so a crash leaves something to come back to.</summary>
     public SqliteSessionStore? Resume { get; init; }
 
+    /// <summary>
+    /// Where a session's transcript is recorded, so another front end can be shown the same.
+    /// </summary>
+    /// <remarks>
+    /// SEPARATE FROM <see cref="Resume"/>, WHICH KEEPS A DIFFERENT THING. The resume store holds the
+    /// CONTEXT — the messages a provider is re-sent — and is keyed by the agent's id, which a re-wire
+    /// replaces. This holds what a front end was SHOWN, keyed by the session's own id, and is
+    /// disposable: deleted with its session, worth nothing but scrollback.
+    /// </remarks>
+    /// <remarks>
+    /// LAZY, BECAUSE CONSTRUCTING THE STORE CREATES ITS DATABASE. A process that records nothing
+    /// should leave no file behind — the store is disposable by design, and an empty one is still a
+    /// file somebody has to explain.
+    /// </remarks>
+    public Lazy<TranscriptStore>? Transcripts { get; init; }
+
     /// <summary>The usage archive behind <c>/stats</c>. A different database from Resume, deliberately.</summary>
     public UsageHistoryStore? History { get; init; }
 

@@ -595,6 +595,13 @@ public static class AppBootstrap
                 Mcp = mcp.Toolset,
                 McpStatuses = mcp.Statuses,
                 Gate = permissionGate,
+
+                // WHAT EACH SESSION WAS SHOWN, so a front end attaching later can be shown the same.
+                // LAZY: constructing the store creates its database, and a run that records nothing
+                // should leave no file behind.
+                Transcripts = new Lazy<Core.Storage.TranscriptStore>(
+                    () => new Core.Storage.TranscriptStore(paths)),
+
                 GlobalInstructionsDir = paths.ConfigDir,
             },
             permissionRules,

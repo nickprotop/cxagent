@@ -933,6 +933,20 @@ public sealed partial class Session
     /// <inheritdoc cref="Observers"/>
     public ToolObserverFanOut? ToolObservers { get; private set; }
 
+    /// <summary>
+    /// Whether a transcript recorder is already subscribed for this session.
+    /// </summary>
+    /// <remarks>
+    /// A RE-WIRE MUST NOT ADD A SECOND ONE. `SessionFactory.Wire` runs again on every `/model`,
+    /// resume and setup flow, and the fan-out is deliberately KEPT across those — so subscribing
+    /// unconditionally would leave one recorder per wire, each writing the same row, and the store's
+    /// upsert would make that invisible until somebody counted.
+    /// </remarks>
+    internal bool RecordsTranscript { get; private set; }
+
+    /// <inheritdoc cref="RecordsTranscript"/>
+    internal void NoteRecordingTranscript() => RecordsTranscript = true;
+
     /// <summary>Records the fan-outs the factory built. Called by SessionFactory.</summary>
     internal void NoteFanOuts(ObserverFanOut observers, ToolObserverFanOut tools)
     {
