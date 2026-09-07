@@ -1348,6 +1348,28 @@ public static class AppBootstrap
             // terminal that reports CSI Z as Tab-without-Shift simply cannot reach this shortcut, and
             // /mode edits is the way in there. Losing a shortcut on some terminals is a smaller cost
             // than losing Tab everywhere.
+            // PLAIN TAB REACHES A BLOCK'S BUTTONS. A confirmation — "delete this history", "replace
+            // this conversation" — renders real focusable buttons in the transcript, and nothing put
+            // the keyboard on them: the transcript is a long scrolling surface that focus traversal
+            // does not stop at, so the buttons were mouse-only in practice. A confirmation a
+            // keyboard-driven user cannot answer is worse than no confirmation, because the thing
+            // they asked for silently does not happen.
+            //
+            // THE NEWEST ROW, because a block with buttons is a question just asked; older rows are
+            // history whose buttons have been answered or abandoned. Tab from the composer goes
+            // there, and Tab within the row cycles the buttons — the toolbar's own behaviour.
+            //
+            // BEFORE THE SHIFT+TAB BRANCH BELOW, which is a different key: Shift+Tab cycles the edit
+            // mode and must keep doing so even while a block is asking.
+            if (e.KeyInfo.Key == ConsoleKey.Tab
+                && (e.KeyInfo.Modifiers & ConsoleModifiers.Shift) == 0
+                && mainWindow.Input.HasFocus
+                && mainWindow.FocusNewestActions())
+            {
+                e.Handled = true;
+                return;
+            }
+
             if (e.KeyInfo.Key == ConsoleKey.Tab
                 && (e.KeyInfo.Modifiers & ConsoleModifiers.Shift) != 0
                 && mainWindow.Input.HasFocus)
@@ -1792,6 +1814,13 @@ public static class AppBootstrap
                 // registration, which resolves the prompt as Deny anyway. The key would then deny
                 // AND destroy the run, when Deny is a real answer the model can adapt to.
                 if (mainWindow.TryDenyPermission()) return true;
+
+                // AND ESCAPE LEAVES A BLOCK'S BUTTONS, which is what makes Tab into them safe to
+                // offer. Without a way back the key is a trap: the composer is not focused, typing
+                // goes nowhere, and the only remedy is a shortcut the user has to know. Leaving the
+                // buttons ANSWERS NOTHING — an unanswered block stays exactly as it was, which is
+                // right for a question whose whole point is that it was not answered by accident.
+                if (mainWindow.ReturnFromActions()) return true;
 
                 // THE ACTIVE TAB KEEPS ESCAPE. A shell tab is running the user's own programs and a
                 // file tab holds a buffer; both want the key, and neither expects it to end the run

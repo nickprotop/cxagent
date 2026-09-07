@@ -1936,6 +1936,51 @@ public sealed class MainWindow : IDisposable
     /// header while it is focused and there is more than one tab, so the key teaches its own
     /// follow-up rather than leaving the user to guess.</para>
     /// </summary>
+    /// <summary>
+    /// Puts the keyboard on the newest block's action buttons, if any block has some.
+    /// </summary>
+    /// <returns>False when nothing is asking, so the caller can let the key do its usual job.</returns>
+    /// <remarks>
+    /// THE ACTIVE TAB'S TRANSCRIPT, because a question belongs to a conversation — Tab in one
+    /// session must not answer another's.
+    /// </remarks>
+    public bool FocusNewestActions()
+    {
+        if (Window?.FocusManager is not { } fm) return false;
+        if (ActiveSessionTab.Chat.NewestActionsRow() is not { } row) return false;
+        if (!row.CanReceiveFocus) return false;
+
+        // THE ROW, NOT A BUTTON INSIDE IT. The toolbar owns the ordering and is what declares
+        // WantsTabKey — focusing a button directly makes the BUTTON the dispatcher's focused
+        // control, and Tab then asks the button rather than the row that knows what comes next.
+        fm.SetFocus(row, SharpConsoleUI.Controls.FocusReason.Keyboard);
+        return true;
+    }
+
+    /// <summary>
+    /// Puts the keyboard back in the composer when it is on a block's action buttons.
+    /// </summary>
+    /// <returns>False when focus is elsewhere, so Escape can go on to mean what it usually means.</returns>
+    /// <remarks>
+    /// THE WAY BACK IS WHAT MAKES THE WAY IN SAFE. Tab moves focus onto a confirmation's buttons;
+    /// without this the composer is unfocused and everything typed goes nowhere, with no visible
+    /// reason. Answering nothing on the way out is deliberate — a question that was not answered
+    /// should stay unanswered.
+    /// </remarks>
+    public bool ReturnFromActions()
+    {
+        if (ActiveSessionTab.Chat.NewestActionsRow() is not { } row) return false;
+
+        // THE ROW OR ANYTHING INSIDE IT. Focus lands on a BUTTON once the arrows have moved within
+        // the row, and `ToolbarControl.HasFocus` is the focus PATH — true for either — which is what
+        // makes one check cover both. Reading a button's own focus instead would need this to
+        // enumerate the row's items and would miss one added later.
+        if (!row.HasFocus) return false;
+
+        FocusComposer();
+        return true;
+    }
+
     /// <summary>Whether the tab strip is being driven, so a caller can tell browsing from typing.</summary>
     public bool TabStripHasFocus => Tabs.HasFocus;
 
