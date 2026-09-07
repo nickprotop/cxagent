@@ -45,9 +45,42 @@ public sealed partial class Session
         WorkingDirectory = workingDirectory;
     }
 
-    /// <summary>Where this session works. Fixed for its life — a session that moved would invalidate
-    /// its own permission grants, which are scoped to a folder.</summary>
-    public string WorkingDirectory { get; }
+    /// <summary>
+    /// Where this session works.
+    ///
+    /// <para>CHANGED ONLY BY A RESUME, through <see cref="MoveTo"/>. It was fixed for the session's
+    /// life, on the grounds that a session which moved would invalidate its own permission grants —
+    /// which is true, and is why moving it is not a general operation. What makes a resume the
+    /// exception is that it replaces the CONVERSATION as well: the session becomes the stored one,
+    /// and a conversation that remembers one project while its tools act on another is the worse
+    /// outcome of the two.</para>
+    ///
+    /// <para>THE GRANTS DO NOT TRAVEL WITH IT, and must not: the policy is rebuilt against the new
+    /// folder on the re-wire that follows, so the arriving project's own trust and rules apply. A
+    /// grant made in the folder being left stays there.</para>
+    /// </summary>
+    public string WorkingDirectory { get; private set; }
+
+    /// <summary>
+    /// Points this session at the folder a resumed conversation came from.
+    /// </summary>
+    /// <remarks>
+    /// INTERNAL AND NARROW. Only <see cref="SessionManager.Resume"/> calls it, immediately before the
+    /// re-wire that rebuilds everything scoped to the folder — the agent's working directory, the
+    /// permission policy, the plugin search paths, the skill catalogue. Called at any other moment it
+    /// would leave those describing a folder the session is no longer in.
+    ///
+    /// REFUSED WHILE BUSY, like every other re-wire: a turn in flight holds tools that resolve paths
+    /// against the old folder.
+    /// </remarks>
+    internal bool MoveTo(string workingDirectory)
+    {
+        if (IsBusy) return false;
+        if (string.IsNullOrWhiteSpace(workingDirectory)) return false;
+
+        WorkingDirectory = workingDirectory;
+        return true;
+    }
 
     /// <summary>
     /// The agent running this conversation, or null before the first wire.

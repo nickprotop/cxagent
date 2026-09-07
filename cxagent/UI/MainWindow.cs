@@ -712,6 +712,30 @@ public sealed class MainWindow : IDisposable
     /// BOTH — leaving the first as `src` would make it read as the main session rather than as the
     /// one that was there first.</para>
     /// </summary>
+    /// <summary>
+    /// Repaints what names a session's FOLDER, after a resume has moved one.
+    /// </summary>
+    /// <remarks>
+    /// THE LABEL AND THE PANEL BOTH READ IT LIVE — the tab label from `Session.WorkingDirectory`,
+    /// the panel through `WorkingDirectory` — so neither is stale in itself; both are simply painted
+    /// on an event, and a session moving is an event nothing else announces. Without this the strip
+    /// still names the folder left behind, which is the one readout a user checks to know where a
+    /// turn will act.
+    ///
+    /// AND THE RULE COUNT WITH THEM, because grants are per folder: the arriving project's count is
+    /// a different number, and showing the departing one's overstates what has been allowed here.
+    /// </remarks>
+    public void NoteSessionMoved()
+    {
+        RelabelSessionTabs();
+
+        if (ActiveSessionTab.Session is { } showing && PermissionRuleCountFor is { } count)
+            _permissionRuleCount = count(showing.WorkingDirectory);
+
+        RefreshStatusStrip();
+        RefreshSessionPanel();
+    }
+
     private void RelabelSessionTabs()
     {
         if (_sessionTabs.Count < 2) return;   // one session keeps the name it was given

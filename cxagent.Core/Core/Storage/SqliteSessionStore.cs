@@ -275,7 +275,8 @@ public sealed class SqliteSessionStore
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode
+                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode,
+                       working_dir
                 FROM agent_sessions
                 WHERE finished = 0 AND working_dir IS NOT NULL AND working_dir = $dir
                 ORDER BY updated_at DESC
@@ -290,7 +291,8 @@ public sealed class SqliteSessionStore
             if (context is null) return null;
 
             return new SessionSnapshot(r.GetString(0), context, r.GetInt32(2), r.GetInt32(3),
-                ParseTs(r.GetString(4)), ReadEditMode(r, 5));
+                ParseTs(r.GetString(4)), ReadEditMode(r, 5),
+                r.IsDBNull(6) ? null : r.GetString(6));
         }
         catch (Exception)
         {
@@ -434,7 +436,8 @@ public sealed class SqliteSessionStore
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode
+                SELECT agent_id, context_json, input_tokens, output_tokens, updated_at, edit_mode,
+                       working_dir
                 FROM agent_sessions WHERE agent_id = $id;
                 """;
             cmd.Parameters.AddWithValue("$id", agentId);
@@ -445,8 +448,14 @@ public sealed class SqliteSessionStore
             var context = JsonSerializer.Deserialize<List<ChatMessage>>(r.GetString(1), JsonOptions);
             if (context is null) return null;
 
+            // THE SAME SIX FIELDS THE OTHER LOADER READS. This projection was two short — it
+            // dropped the edit mode and, once the column was carried, the folder — so a resume BY
+            // ID silently lost what a resume by folder kept: the same conversation restored two
+            // different ways depending on which command reached it.
             return new SessionSnapshot(r.GetString(0), context, r.GetInt32(2), r.GetInt32(3),
-                DateTimeOffset.Parse(r.GetString(4), System.Globalization.CultureInfo.InvariantCulture));
+                DateTimeOffset.Parse(r.GetString(4), System.Globalization.CultureInfo.InvariantCulture),
+                ReadEditMode(r, 5),
+                r.IsDBNull(6) ? null : r.GetString(6));
         }
         catch (Exception)
         {
@@ -658,4 +667,19 @@ public sealed record SessionSnapshot(
     int InputTokens,
     int OutputTokens,
     DateTimeOffset UpdatedAt,
-    EditMode? Edits = null);
+    EditMode? Edits = null,
+
+    /// <param name="WorkingDir">
+    /// The folder the conversation was working in, or null for a row written before the column
+    /// existed.
+    ///
+    /// <para>CARRIED SO A RESUME CAN GO THERE. The column was always stored — it is what scopes the
+    /// listing — but the snapshot dropped it, so resuming a conversation from another project left
+    /// the session working in the folder it was already in: the model remembered one project while
+    /// its tools acted on another.</para>
+    ///
+    /// <para>NULL IS NOT A FOLDER. An older row says nothing about where it ran, and guessing is
+    /// worse than staying put — a resume that silently re-scoped to the wrong project would change
+    /// which files a turn may touch.</para>
+    /// </param>
+    string? WorkingDir = null);

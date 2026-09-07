@@ -758,6 +758,28 @@ public sealed class SessionManager : IDisposable
             return;
         }
 
+        // THE SESSION GOES WHERE THE CONVERSATION WAS. Resuming makes this session BECOME the stored
+        // one, and a conversation that remembers one project while its tools act on another is the
+        // worse half of that: `/open`, `@file`, the plugin search and the skill catalogue would all
+        // still resolve against the folder the user happened to be standing in.
+        //
+        // BEFORE THE RE-WIRE, because the re-wire is what rebuilds everything scoped to the folder —
+        // the agent's working directory, the permission policy, the plugin paths. Moving after it
+        // would leave all of them describing the folder just left.
+        //
+        // THE ARRIVING FOLDER'S OWN TRUST APPLIES. Grants do not travel with a conversation: the
+        // policy is rebuilt against the new root, so a permissive mode restored from elsewhere still
+        // asks in a folder whose trust is Unknown — the floor that already governs a restored edit
+        // mode governs this too.
+        //
+        // NULL MEANS AN OLDER ROW, written before the column was carried, and staying put is the safe
+        // reading: guessing a folder would change which files a turn may touch.
+        if (snapshot.WorkingDir is { Length: > 0 } moved
+            && !string.Equals(moved, session.WorkingDirectory, StringComparison.Ordinal))
+        {
+            session.MoveTo(moved);
+        }
+
         session.PendResume(snapshot);
         apply();
         Shared.Resume?.MarkSuperseded(snapshot.AgentId);

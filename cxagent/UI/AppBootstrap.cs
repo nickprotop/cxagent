@@ -983,7 +983,14 @@ public static class AppBootstrap
                 // THIS SESSION'S OWN, not the one built at startup. A policy carries the root it
                 // judges against and the id decisions are filed under, so re-wiring session B with
                 // session A's policy would judge B's file operations against A's folder.
+                // AND REBUILT WHEN THE FOLDER MOVED UNDER IT. A resume can now carry the session to
+                // the folder its conversation came from, and the startup policy was built once, at
+                // launch, against the folder the app opened in — reusing it would judge the arriving
+                // project's file operations against the departing one's root and trust, which is the
+                // direction that grants more than the user gave.
                 Policy: ReferenceEquals(wired, session)
+                        && string.Equals(permissionPolicy.Root, wired.WorkingDirectory,
+                                         StringComparison.Ordinal)
                     ? permissionPolicy
                     : new PermissionPolicy(wired.WorkingDirectory, permissionRules, startupMode.Edits)
                       {
@@ -1030,7 +1037,12 @@ public static class AppBootstrap
             // ONCE, AT WIRE-UP, and this half stays here: the panel's session id is the WINDOW's
             // readout of whichever tab is in front, and at startup that is this one.
             mainWindow.SessionId = wired.SessionId ?? "";
-            mainWindow.RefreshSessionPanel();
+
+            // AND WHERE IT NOW WORKS. A resume can carry a session to the folder its conversation
+            // came from, and the tab label and panel location are painted on events — a move is one
+            // nothing else announces. Called on every wire rather than only on a move: it is a
+            // repaint, and a wire is already the moment everything else about the session is redrawn.
+            mainWindow.NoteSessionMoved();
 
             mainWindow.SetSubmissionEnabled(true);
         }
