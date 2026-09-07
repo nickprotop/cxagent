@@ -940,6 +940,32 @@ public sealed partial class Session
         ToolObservers = tools;
     }
 
+    /// <summary>The ports' own places in the fan-outs, so a re-wire can vacate them.</summary>
+    /// <remarks>
+    /// ONLY THE PORTS' SUBSCRIPTIONS ARE HELD HERE, and that is the distinction the whole fan-out
+    /// exists to make. A re-wire replaces the front end's sink and must drop the outgoing one, or
+    /// every event is delivered twice. Everyone ELSE who joined — an attached client, a transcript
+    /// store — holds their own handle and is not this method's business, which is what stops a
+    /// re-wire silently unsubscribing them.
+    /// </remarks>
+    private IDisposable? _observerPort;
+    private IDisposable? _toolObserverPort;
+
+    /// <summary>
+    /// Swaps the ports' subscriptions for new ones, leaving every other subscriber in place.
+    /// </summary>
+    /// <remarks>
+    /// THE OLD ONES GO FIRST. Adding before removing would put both sinks in the fan-out at once,
+    /// and an event arriving in that window reaches a transcript control twice.
+    /// </remarks>
+    internal void ResubscribePorts(IDisposable observer, IDisposable tools)
+    {
+        _observerPort?.Dispose();
+        _toolObserverPort?.Dispose();
+        _observerPort = observer;
+        _toolObserverPort = tools;
+    }
+
     // ONE FUNNEL, UNCHANGED IN SHAPE. Command replies and the session's own words both arrive here;
     // that they already did is why one Message type serves both.
     /// <summary>Says something to whoever is watching this session. A no-op when nobody is.</summary>

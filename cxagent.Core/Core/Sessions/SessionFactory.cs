@@ -205,11 +205,25 @@ internal static class SessionFactory
         //
         // BOTH, because ISessionObserver carries what is SAID and IToolObserver carries the working.
         // Fanning out one would hand a second watcher half a transcript.
-        var observers = new ObserverFanOut();
-        observers.Add(ports.Observer);
-
-        var toolObservers = new ToolObserverFanOut();
-        toolObservers.Add(ports.ToolObserver);
+        //
+        // KEPT ACROSS A RE-WIRE, NOT REBUILT. A re-wire (/model, resume, a setup flow) replaces the
+        // host, and minting fresh fan-outs here would silently drop every subscriber that had joined
+        // since the last one — which is exactly the case the fan-out exists for. The front end that
+        // owns `ports.Observer` re-supplies itself on every wire and would survive either way; an
+        // attached client, a transcript store, a second window would not, and would fail by going
+        // quiet rather than by throwing.
+        //
+        // THE PORTS' OBSERVER IS RE-ADDED, NOT ADDED BLINDLY: a re-wire passes a NEW sink built over
+        // the same tab, and the outgoing one has to go or every event would be delivered twice —
+        // once to a sink writing into a transcript control that is still on screen.
+        // THE PORTS' OBSERVER IS RE-SUBSCRIBED, AND THE OLD ONE DROPPED FIRST: a re-wire passes a
+        // NEW sink built over the same tab, and leaving the outgoing one attached would deliver
+        // every event twice — once to a sink still writing into a transcript control on screen. The
+        // handle Add returns is what makes that removal possible without the fan-out having to
+        // support identity comparison.
+        var observers = session.Observers ?? new ObserverFanOut();
+        var toolObservers = session.ToolObservers ?? new ToolObserverFanOut();
+        session.ResubscribePorts(observers.Add(ports.Observer), toolObservers.Add(ports.ToolObserver));
 
         var host = new AgentHost(
             new AgentHost.AgentRuntime

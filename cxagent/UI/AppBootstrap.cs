@@ -1354,6 +1354,19 @@ public static class AppBootstrap
             }
 
             if (e.KeyInfo.Key != ConsoleKey.Enter) return;
+
+            // ENTER ON THE TAB STRIP COMMITS TO THE TAB. Arrowing the strip is BROWSING, which is why
+            // a tab switch declines to steal focus — but Enter is the user saying "this one", and
+            // leaving focus on the strip afterwards sent everything they typed next nowhere at all.
+            // Drive-verified: switch tabs with F6, type a goal, and it vanished — not in the
+            // transcript, not in the composer, with nothing on screen saying why.
+            if (mainWindow.TabStripHasFocus)
+            {
+                e.Handled = true;
+                mainWindow.ShowChatTab();
+                return;
+            }
+
             if (!mainWindow.Input.HasFocus) return;   // let the job panel etc. handle Enter when focused there
 
             // A LINE ENDING IN '\' CONTINUES. The backslash is consumed — it is punctuation for the

@@ -656,7 +656,7 @@ public class MainWindowTests
         // A goal that stops "for no reason" has almost always hit a cap, and the numbers lived only
         // in config.json — readable after the fact, when the run was already over.
         var panel = new SessionPanel();
-        panel.RecordTurn(toolCalls: 1);
+        panel.TurnCompleted(toolCalls: 1);
         panel.Refresh(new SessionPanel.SessionPanelState
         {
             ContextUsed = 100,
@@ -716,7 +716,7 @@ public class MainWindowTests
         // unconfigured session resolves to the default before it gets here, so "no cap" means what it
         // says rather than printing wherever nothing was configured.
         var panel = new SessionPanel();
-        panel.RecordTurn(toolCalls: 2);
+        panel.TurnCompleted(toolCalls: 2);
         panel.Refresh(new SessionPanel.SessionPanelState
         {
             ContextUsed = 100,

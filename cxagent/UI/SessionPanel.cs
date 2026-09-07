@@ -152,9 +152,6 @@ public sealed class SessionPanel
     /// host now, so reading Control as a MarkupControl no longer reaches it.</summary>
     public string RenderedText => _body.Text;
 
-    /// <summary>Counts one completed turn and its tool calls. The panel updates BETWEEN turns, not
-    /// during streaming — a token counter climbing beside prose you are reading is motion competing
-    /// with the thing it is meant to inform.</summary>
     /// <summary>
     /// Points the panel at a conversation's tallies.
     ///
@@ -163,11 +160,14 @@ public sealed class SessionPanel
     /// </summary>
     public void Follow(SessionTally tally) => _tally = tally;
 
-    public void RecordTurn(int toolCalls)
+    /// <summary>
+    /// Reacts to a completed turn on the conversation this panel is showing.
+    ///
+    /// <para>THE COUNTS ARE NOT ITS OWN — <see cref="SessionTally"/> holds those, on the tab, because
+    /// one panel serves every tab. This is the panel's own side of a turn.</para>
+    /// </summary>
+    public void TurnCompleted(int toolCalls)
     {
-        _tally.Turns++;
-        _tally.ToolCalls += toolCalls;
-
         // A TURN IS WHEN THE TREE MAY HAVE MOVED. Tool calls are how the agent writes, so a completed
         // turn is the one moment worth paying for a fresh git reading — and it makes the five-second
         // cache invisible in the case that matters: a file written in this turn shows up immediately

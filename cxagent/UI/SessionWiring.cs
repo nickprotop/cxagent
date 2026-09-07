@@ -151,15 +151,19 @@ public static class SessionWiring
 
         session.TurnCompleted += (_, calls) => system.EnqueueOnUIThread(() =>
         {
-            // THIS TAB'S TALLY, THROUGH THE PANEL ONLY WHEN IT IS IN FRONT. The panel follows the
-            // active tab's counters, so recording through it while a different tab is showing would
-            // add this session's turn to that session's total.
-            if (ReferenceEquals(tab, main.ActiveTab)) main.SessionPanel.RecordTurn(calls);
-            else
-            {
-                tab.Tally.Turns++;
-                tab.Tally.ToolCalls += calls;
-            }
+            // ALWAYS INTO THIS TAB'S OWN TALLY, and the panel is told only when it is showing it.
+            //
+            // NOT "record through the panel when in front, into the tab otherwise". That branch has
+            // two ways to count one turn, and they drifted immediately: the panel starts life with a
+            // tally of its own and only adopts the active tab's on a tab SWITCH, so the first
+            // session's turns went into that orphan until the user switched away and back — after
+            // which its panel read zero turns for a conversation that had taken two.
+            //
+            // One writer, one place. RecordTurn is then purely the panel's own side of it — the git
+            // invalidation and the repaint — which is why it is still called rather than inlined.
+            tab.Tally.Turns++;
+            tab.Tally.ToolCalls += calls;
+            if (ReferenceEquals(tab, main.ActiveTab)) main.NoteTurnRecorded(calls);
 
             // THE PARENT'S SPLIT, matching the total beside it. The ledger's InputTokens and
             // OutputTokens include every child, and a bar showing a session-wide ↑/↓ under a

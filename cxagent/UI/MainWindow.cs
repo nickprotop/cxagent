@@ -151,6 +151,18 @@ public sealed class MainWindow : IDisposable
     /// or a transcript write issued while a shell is on screen belongs to the conversation it came
     /// from, which is the only one there is until a second is opened.</para>
     /// </summary>
+    /// <summary>
+    /// Tells the panel a turn finished on the conversation it is showing.
+    ///
+    /// <para>THE TALLY IS ALREADY UPDATED by the caller — it belongs to the tab, and the tab counts
+    /// its own whether or not it is in front. This is only the repaint and the git invalidation.</para>
+    /// </summary>
+    public void NoteTurnRecorded(int toolCalls)
+    {
+        SessionPanel.TurnCompleted(toolCalls);
+        RefreshSessionPanel();
+    }
+
     /// <summary>The tab in front, for callers that must know whether their session is the one showing.</summary>
     /// <remarks>
     /// READ-ONLY AND EXPOSED, because SessionWiring's handlers have to distinguish "record and
@@ -605,8 +617,16 @@ public sealed class MainWindow : IDisposable
     public IReadOnlyList<SessionTab> SessionTabs => _sessionTabs;
 
     /// <summary>Records the session behind the first tab, once the composition root has one.</summary>
-    public void NoteFirstSession(Core.Sessions.Session session) =>
+    public void NoteFirstSession(Core.Sessions.Session session)
+    {
         _sessionTabs[0].NoteSession(session);
+
+        // AND THE PANEL FOLLOWS ITS TALLY FROM THE START. ShowActiveSession does this on every tab
+        // SWITCH, and the first tab never goes through one — so the panel counted the first
+        // session's turns into a tally of its own until the user switched away and back, after
+        // which the panel read zero turns for a conversation that had taken several.
+        SessionPanel.Follow(_sessionTabs[0].Tally);
+    }
 
     /// <summary>
     /// Adds a tab for another session and returns it, so the caller can wire its ports.
@@ -829,6 +849,20 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>The chat tab's content: the transcript, and the composer under it.</summary>
     private GridControl _chatTab = null!;
+
+    /// <summary>
+    /// The grid whose composer row a prompt grows and a restore shrinks.
+    /// </summary>
+    /// <remarks>
+    /// TAB ZERO'S GRID IS A FIELD AND EVERY OTHER TAB'S IS ITS OWN. They are built to the same shape
+    /// — a star row for the transcript over a Cells(ComposerRows) row for the composer — so the
+    /// index is the same either way; what differs is WHICH grid, and using the field for all of them
+    /// resized the first tab for a prompt raised in the second.
+    /// </remarks>
+    private GridControl PromptRowOwner(int stripIndex) =>
+        SessionTabAt(stripIndex) is { } tab && !ReferenceEquals(tab, _sessionTabs[0])
+            ? tab.Content
+            : _chatTab;
 
     /// <summary>
     /// The row that says an answer is waiting in the chat tab, shown on every other tab.
@@ -1824,6 +1858,9 @@ public sealed class MainWindow : IDisposable
     /// header while it is focused and there is more than one tab, so the key teaches its own
     /// follow-up rather than leaving the user to guess.</para>
     /// </summary>
+    /// <summary>Whether the tab strip is being driven, so a caller can tell browsing from typing.</summary>
+    public bool TabStripHasFocus => Tabs.HasFocus;
+
     public void FocusTabStrip()
     {
         if (Tabs.TabCount < 2) return;
@@ -2038,11 +2075,16 @@ public sealed class MainWindow : IDisposable
         // prompt is taller than the composer, and a fixed row would clip the question just as the
         // fixed prompt row did. Auto for as long as the prompt is up; restored on the way out, so
         // the band cannot come back.
-        // THE CHAT TAB'S OWN ROW, not the main grid's. The composer lives inside the tab now, so
-        // the row that has to grow for a taller-than-usual prompt is the one holding it there —
-        // resizing the main grid's row 1 would stretch the STATUS STRIP instead, and row 2 no longer
-        // exists at all.
-        _chatTab.RowDefinitions[1] = GridLength.Auto();
+        // THE ASKING TAB'S OWN ROW, not the main grid's and not the FIRST tab's. The composer lives
+        // inside the tab, so the row that has to grow for a taller-than-usual prompt is the one
+        // holding it there — resizing the main grid's row 1 would stretch the STATUS STRIP instead.
+        //
+        // AND `_chatTab` IS TAB ZERO'S GRID, a fixed field. A prompt raised by the SECOND session
+        // grew the first tab's row and left its own clamped at Cells(ComposerRows), which clipped
+        // the question's buttons away entirely: the prompt rendered its text and nothing to answer
+        // it with, so the turn waited on a control that could not be reached. Drive-verified — a
+        // file read in an untrusted second folder asked, and had no buttons.
+        PromptRowOwner(Tabs.ActiveTabIndex).RowDefinitions[1] = GridLength.Auto();
 
         ElevatePrompt(prompt);
 
@@ -2348,7 +2390,8 @@ public sealed class MainWindow : IDisposable
         {
             SetWaiting(false);
             _composer.ReplaceControl(prompt, _promptBox);
-            _chatTab.RowDefinitions[1] = GridLength.Cells(ComposerRows);
+            PromptRowOwner(_promptTab >= 0 ? _promptTab : Tabs.ActiveTabIndex)
+                .RowDefinitions[1] = GridLength.Cells(ComposerRows);
 
             // CLEARED BEFORE THE REFRESH, because RefreshStatusStrip decides from _activePrompt.
             // Refreshing first recomputes hide=true from the prompt now being torn down, collapsing
