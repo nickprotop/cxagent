@@ -315,7 +315,7 @@ public class UsageHistoryStoreTests : IDisposable
             // working one).
             var upgraded = new UsageHistoryStore(new AppPaths(oldDir));
 
-            var old = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "old-agent");
+            var old = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.SessionId == "old-agent");
             Assert.Null(old.Subject);
             // SAME REASONING FOR `flagged` — this row predates triage-flag telemetry entirely, so
             // it has no answer to "did triage flag this", not a false one.
@@ -326,7 +326,7 @@ public class UsageHistoryStoreTests : IDisposable
             upgraded.SavePermission(new PermissionRecord("new-agent", Ago(1), "Shell", "auto-refused",
                 null, "/tmp/new", Subject: "echo hi", Flagged: true));
 
-            var fresh = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.AgentId == "new-agent");
+            var fresh = Assert.Single(upgraded.PermissionsSince(Ago(24)), r => r.SessionId == "new-agent");
             Assert.Equal("echo hi", fresh.Subject);
             Assert.True(fresh.Flagged);
         }

@@ -103,8 +103,22 @@ public sealed record CompactionRecord(
 /// had. Only ever true or false for the three auto-* decisions; every other decision never touched
 /// the classifier and this stays null for those too (see PermissionDecisionReport.Flagged).
 /// </param>
+/// <param name="SessionId">
+/// The SESSION the decision was made under — <see cref="Sessions.Session.Id"/>, not the agent's.
+///
+/// <para>THE COLUMN BEHIND IT IS STILL CALLED <c>agent_id</c>, and that is a name this record
+/// deliberately does not repeat. It held an agent id until permission rows moved to the stable
+/// session id, so that a grant could be followed across a `/model` switch or a resume — which
+/// replace the agent and its id, and are exactly the moments worth following. Renaming a column in
+/// a shipped table costs a migration for no behaviour, so the TYPE carries the truth instead.</para>
+///
+/// <para>THE TWO OTHER TABLES HERE — <c>sessions</c> and <c>runs</c> — genuinely key on the AGENT,
+/// because they measure what one agent instance spent: a re-wire starts a new ledger, so a
+/// session-keyed row would sum two providers' costs into one number nobody can split. That is a
+/// deliberate difference, not an oversight.</para>
+/// </param>
 public sealed record PermissionRecord(
-    string AgentId, DateTimeOffset At, string Kind, string Decision, string? Requester,
+    string SessionId, DateTimeOffset At, string Kind, string Decision, string? Requester,
     string? WorkingDir = null, string? Subject = null, bool? Flagged = null);
 
 /// <summary>
@@ -470,7 +484,7 @@ public sealed class UsageHistoryStore
                 INSERT INTO permissions (agent_id, at, kind, decision, requester, working_dir, subject, flagged)
                 VALUES ($agent, $at, $kind, $decision, $requester, $dir, $subject, $flagged);
                 """;
-            cmd.Parameters.AddWithValue("$agent", r.AgentId);
+            cmd.Parameters.AddWithValue("$agent", r.SessionId);
             cmd.Parameters.AddWithValue("$at", Stamp(r.At));
             cmd.Parameters.AddWithValue("$kind", r.Kind);
             cmd.Parameters.AddWithValue("$decision", r.Decision);
