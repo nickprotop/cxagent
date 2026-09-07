@@ -238,8 +238,6 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     private int _promptTab = -1;
 
-    /// <summary>The tab the user was on when a prompt pulled them elsewhere, or -1.</summary>
-    private int _tabBeforePrompt = -1;
 
     /// <summary>
     /// Records a session's spend and context on ITS tab, and repaints if that tab is in front.
@@ -336,14 +334,32 @@ public sealed class MainWindow : IDisposable
         // its composer means the next thing typed is discarded silently — which is what happened
         // after answering a new tab's plugin gates: the goal went nowhere and nothing said so.
         //
-        // ONLY WHEN A PROMPT IS NOT UP. A permission control has taken the composer's place and owns
-        // the keyboard; stealing focus back would make the question unanswerable.
         // AND NOT WHILE THE STRIP IS BEING DRIVEN. Arrowing through tabs is browsing; taking focus
         // then yanks the user out of the strip mid-navigation.
-        if (_activePrompt is null
-            && !Tabs.HasFocus
-            && IsSessionTab(Tabs.ActiveTabIndex))
-            FocusComposer();
+        if (!IsSessionTab(Tabs.ActiveTabIndex)) return;
+
+        // INTO THE PROMPT WHEN ONE IS UP — EVEN FROM THE STRIP. A prompt has taken this composer's
+        // place, so "focus the composer" would put the cursor on a control no longer in the tree and
+        // leave the question's buttons mouse-only: ButtonControl's ProcessKey returns false without
+        // focus.
+        //
+        // AND THE BROWSING GUARD DOES NOT APPLY HERE. Arrowing past tabs must not steal focus out of
+        // the strip — that is what the guard below protects — but arriving at a tab that is ASKING
+        // is not browsing past it: the dot and the bar are what brought the user, and the question
+        // is the only thing on that tab to interact with. Left guarded, arrowing to a waiting tab
+        // showed the prompt with nothing focused and Enter did nothing at all.
+        if (tab.ActivePrompt is { } waiting)
+        {
+            if (Window?.FocusManager is { } fm && FirstFocusable(waiting) is { } first)
+                fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
+            return;
+        }
+
+        // ARROWING THROUGH TABS IS BROWSING; taking focus then yanks the user out of the strip
+        // mid-navigation, so a tab with a free composer waits to be committed to.
+        if (Tabs.HasFocus) return;
+
+        FocusComposer();
     }
 
     /// <summary>Names the tab whose session is about to raise a prompt, by its session id.</summary>
@@ -1021,8 +1037,6 @@ public sealed class MainWindow : IDisposable
         if (_promptTab > index) _promptTab--;
         else if (_promptTab == index) _promptTab = -1;
 
-        if (_tabBeforePrompt > index) _tabBeforePrompt--;
-        else if (_tabBeforePrompt == index) _tabBeforePrompt = -1;
 
         RefreshTabStrip();
         RefreshWaitingBar();
@@ -1169,6 +1183,24 @@ public sealed class MainWindow : IDisposable
         if (waiting < 0) return;
 
         Tabs.ActiveTabIndex = waiting;
+
+        // INTO THE PROMPT, NOT THE COMPOSER. A waiting tab's composer has been SWAPPED OUT for the
+        // question — that is what makes it wait — so focusing "the composer" would put the cursor on
+        // a control no longer in the tree, and the buttons would stay mouse-only: ButtonControl's
+        // ProcessKey returns false without focus. Go promises to take the user to the answer, and an
+        // answer they cannot type is not one.
+        //
+        // ShowActiveSession has already run, from the tab change above, and it declines to touch
+        // focus while a prompt is up for exactly this reason — leaving it to here, where the prompt
+        // itself is known.
+        if (ActiveSessionTab.ActivePrompt is { } prompt
+            && Window?.FocusManager is { } fm
+            && FirstFocusable(prompt) is { } first)
+        {
+            fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
+            return;
+        }
+
         FocusComposer();
     }
 
@@ -1497,7 +1529,16 @@ public sealed class MainWindow : IDisposable
     /// <see cref="Input"/> — null when the composer itself is there. Tracked so a second
     /// ShowPermissionPrompt (a caller bug in Task 4's serialisation) can no-op instead of crashing
     /// the render loop on GridControl.ReplaceControl's "not currently placed" ArgumentException.</summary>
-    private IWindowControl? _activePrompt;
+    /// <summary>
+    /// The prompt occupying the composer the user is looking at, or null when it is free.
+    ///
+    /// <para>A PROPERTY OVER THE ACTIVE TAB, because prompts are per conversation and concurrent —
+    /// several sessions can be asking at once, each in its own composer. Everything reading this
+    /// asks about the tab ON SCREEN: whether to hide the status strip, whether it is safe to take
+    /// focus. As a field it answered for the window, so one session's question suppressed another
+    /// session's status bar and blocked focus in a composer that was perfectly free.</para>
+    /// </summary>
+    private IWindowControl? _activePrompt => ActiveSessionTab.ActivePrompt;
 
     public MainWindow(ConsoleWindowSystem system, ResolvedConfig resolution, LogFileManager logs)
     {
@@ -2016,11 +2057,12 @@ public sealed class MainWindow : IDisposable
 
     /// <summary>How to answer the prompt currently on screen with "no". See
     /// <see cref="TryDenyPermission"/>.</summary>
-    private Action? _denyActivePrompt;
-
-    /// <summary>The content <see cref="_denyActivePrompt"/> belongs to — NOT always
-    /// <see cref="_activePrompt"/>, which is why it is tracked separately. See RestoreComposer.</summary>
-    private IWindowControl? _denyOwner;
+    /// <remarks>
+    /// THE ACTIVE TAB'S, because Escape answers the conversation in front. Held window-wide, Escape
+    /// pressed in one session refused another session's question — a security answer given to a
+    /// prompt the user was not looking at, and the one they WERE looking at left unanswered.
+    /// </remarks>
+    private Action? _denyActivePrompt => ActiveSessionTab.DenyPrompt;
 
     /// <summary>
     /// Alt+← while a multi-question run is up: back to the previous one.
@@ -2052,13 +2094,23 @@ public sealed class MainWindow : IDisposable
         //
         // Answering the newest prompt is right in either order: the callback belongs to whichever
         // control the user is looking at, and a stale one is cleared by the restore that follows.
+        //
+        // ON THE ASKING TAB, LIKE THE PROMPT ITSELF. Escape answers the conversation in front, so a
+        // deny action stored window-wide let Escape in one session refuse another session's
+        // question — a security answer given to a prompt the user was not looking at.
+        var target = SessionTabAt(_promptTab) ?? ActiveSessionTab;
+
         if (deny is not null)
         {
-            _denyActivePrompt = deny;
-            _denyOwner = prompt;
+            target.DenyPrompt = deny;
+            target.DenyOwner = prompt;
         }
 
-        if (_activePrompt is not null) return;   // already showing one — no-op, not a crash
+        // ALREADY SHOWING ONE ON THAT TAB — a no-op, not a crash. PER TAB rather than per window:
+        // the gate serialises nothing (its semaphore was removed so several sessions can ask at
+        // once), so a window-wide guard made the SECOND asker a no-op and left its turn waiting
+        // forever on a control that was never shown.
+        if (target.ActivePrompt is not null) return;
 
         // SWAP THE WHOLE PROMPT BOX, not the Input inside it.
         //
@@ -2070,28 +2122,32 @@ public sealed class MainWindow : IDisposable
         // Taking the prompt box's place puts it in the composer's own row, which sizes to content
         // (see the row definitions), and removes the mode line with it — the composer is not usable
         // while a prompt is up, so showing its furniture is noise around the only live control.
-        // RAISED ON THE TAB THAT ASKED. _composer resolves to the ACTIVE tab, so a prompt from a
-        // second session raised while the user is elsewhere would swap into the wrong composer —
-        // invisible, unanswerable, and the turn waiting on a control nobody can reach.
+        // RAISED ON THE TAB THAT ASKED, WITHOUT MOVING THE USER TO IT. Both halves are the point.
         //
-        // WHERE THEY WERE IS REMEMBERED, so answering can put them back: a prompt pulls the user
-        // into another conversation, and leaving them there means the next thing they type goes to
-        // a session they did not choose.
-        var asking = _promptTab >= 0 && IsSessionTab(_promptTab) ? _promptTab : Tabs.ActiveTabIndex;
-        if (asking != Tabs.ActiveTabIndex && asking < Tabs.TabCount)
-        {
-            _tabBeforePrompt = Tabs.ActiveTabIndex;
-            Tabs.ActiveTabIndex = asking;
-        }
+        // ON THE ASKING TAB, because the prompt swaps into a composer and each conversation has its
+        // own: putting it in the ACTIVE tab's would show one session's question above another
+        // session's transcript, and answering it would apply to a conversation the user was not
+        // reading.
+        //
+        // AND WITHOUT SWITCHING, because a session running unattended is the normal case tabs exist
+        // for. Pulling somebody out of what they are typing to answer a question from elsewhere is a
+        // worse interruption than a question found a second later — and the waiting bar, the tab dot
+        // and Go already make it findable. This window once did switch, and it was not a whim: the
+        // prompt HAD to be reachable, and going to it was the only way while there was one composer
+        // field. Now the prompt goes to its own tab and the user stays put.
+        if (target.Composer is not { } composer || target.PromptBox is not { } box) return;
 
-        _composer.ReplaceControl(_promptBox, prompt);
-        _activePrompt = prompt;
+        composer.ReplaceControl(box, prompt);
+        target.ActivePrompt = prompt;
 
         // RAISED HERE, CLEARED IN RestoreComposer. Every prompt — a permission request, a question
         // tool call, each step of a multi-step question — passes through this pair, so a caller
         // added later gets the bar without knowing it exists. Wiring it per-caller would make that
         // future one silently invisible, which is the failure the bar is being built to prevent.
-        SetWaiting(true);
+        //
+        // MARKING THE TAB THAT ASKED. That is what puts the dot on ITS strip entry and names it in
+        // the bar, which is the whole mechanism by which a prompt raised out of sight is findable.
+        SetWaiting(StripIndexOf(target), waiting: true);
 
         // AND LET THE ROW GROW. The composer's row in the main grid is a fixed Cells(ComposerRows) —
         // that is what closed the dead band between the transcript and the prompt — but a permission
@@ -2107,9 +2163,12 @@ public sealed class MainWindow : IDisposable
         // the question's buttons away entirely: the prompt rendered its text and nothing to answer
         // it with, so the turn waited on a control that could not be reached. Drive-verified — a
         // file read in an untrusted second folder asked, and had no buttons.
-        PromptRowOwner(Tabs.ActiveTabIndex).RowDefinitions[1] = GridLength.Auto();
+        PromptRowOwner(StripIndexOf(target)).RowDefinitions[1] = GridLength.Auto();
 
-        ElevatePrompt(prompt);
+        // ELEVATED ONLY WHEN IT IS ON SCREEN. Raising the z-order of a control in a background tab
+        // does nothing useful and is one more thing to undo.
+        var onScreen = ReferenceEquals(target, ActiveSessionTab);
+        if (onScreen) ElevatePrompt(prompt);
 
         // HIDE THE STATUS BAR OUTRIGHT while a prompt is up. Dimming it is the weaker answer: every
         // key it advertises is inert until the prompt is answered, so a dimmed row still shows the
@@ -2130,8 +2189,13 @@ public sealed class MainWindow : IDisposable
         // Focus the FIRST focusable descendant rather than the panel: the panel is a container, and
         // focusing it would leave the same dead keyboard. FocusManager.SetFocus with Programmatic is
         // the same call FocusComposer uses.
-        if (Window?.FocusManager is { } fm && FirstFocusable(prompt) is { } target)
-            fm.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
+        //
+        // ONLY WHEN THE ASKING TAB IS THE ONE ON SCREEN. Focusing a control inside a background tab
+        // takes the keyboard away from the composer the user is actually typing into — the very
+        // interruption raising the prompt in place is meant to avoid. The tab switch itself moves
+        // focus in when the user arrives, through ShowActiveSession.
+        if (onScreen && Window?.FocusManager is { } fm && FirstFocusable(prompt) is { } first)
+            fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
     }
 
     /// <summary>
@@ -2409,43 +2473,46 @@ public sealed class MainWindow : IDisposable
     /// </summary>
     public void RestoreComposer(IWindowControl prompt)
     {
-        if (ReferenceEquals(_activePrompt, prompt))
-        {
-            SetWaiting(false);
-            _composer.ReplaceControl(prompt, _promptBox);
-            PromptRowOwner(_promptTab >= 0 ? _promptTab : Tabs.ActiveTabIndex)
-                .RowDefinitions[1] = GridLength.Cells(ComposerRows);
+        // THE TAB THIS PROMPT IS ON, found from the prompt itself rather than from a remembered
+        // index. A restore arrives from the answering turn, which may be any session — and by then
+        // the user may have opened or closed tabs, so an index recorded when the question was asked
+        // is not reliably the same tab. The instance is.
+        var owner = _sessionTabs.FirstOrDefault(t => ReferenceEquals(t.ActivePrompt, prompt));
 
-            // CLEARED BEFORE THE REFRESH, because RefreshStatusStrip decides from _activePrompt.
-            // Refreshing first recomputes hide=true from the prompt now being torn down, collapsing
-            // the strip's row to zero cells with nothing left to expand it again.
-            _activePrompt = null;
+        if (owner is not null && owner.Composer is { } composer && owner.PromptBox is { } box)
+        {
+            SetWaiting(StripIndexOf(owner), waiting: false);
+            composer.ReplaceControl(prompt, box);
+            PromptRowOwner(StripIndexOf(owner)).RowDefinitions[1] = GridLength.Cells(ComposerRows);
+
+            // CLEARED BEFORE THE REFRESH, because RefreshStatusStrip decides from the active tab's
+            // prompt. Refreshing first recomputes hide=true from the prompt now being torn down,
+            // collapsing the strip's row to zero cells with nothing left to expand it again.
+            owner.ActivePrompt = null;
             RefreshStatusStrip();
 
-            // AND BACK WHERE THEY WERE. Answering a question raised by another conversation must
-            // not leave the user inside it — the next thing they type belongs to the tab they were
-            // reading when they were interrupted.
-            if (_tabBeforePrompt >= 0 && _tabBeforePrompt < Tabs.TabCount)
-            {
-                Tabs.ActiveTabIndex = _tabBeforePrompt;
-                _tabBeforePrompt = -1;
-                FocusComposer();
-            }
+            // NOBODY IS MOVED. The prompt was raised where it belonged and the user was never taken
+            // to it, so there is nowhere to send them back to — answering a question in the tab they
+            // chose to visit leaves them in that tab, which is where they meant to be.
+        }
 
-            // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
-            // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
-            // also swallow the keystroke and stop Escape reaching the turn it was meant for.
-            //
-            // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. Matching on
-            // _activePrompt is not enough: a replacement shown before this restore ran hits the
-            // idempotence guard above, so _activePrompt is STILL the outgoing content while the deny
-            // action is already the new prompt's — and clearing on that match would take Escape away
-            // from the prompt on screen. A test pins the _denyOwner check.
-            if (ReferenceEquals(_denyOwner, prompt))
-            {
-                _denyActivePrompt = null;
-                _denyOwner = null;
-            }
+        // CLEARED WITH THE PROMPT IT BELONGS TO. A stale deny action would let a later Escape
+        // resolve a TaskCompletionSource nobody is waiting on — harmless in itself, but it would
+        // also swallow the keystroke and stop Escape reaching the turn it was meant for.
+        //
+        // ONLY WHEN THE ACTION STILL BELONGS TO THE PROMPT BEING RESTORED. Matching on the tab's
+        // ActivePrompt is not enough: a replacement shown before this restore ran hits the
+        // idempotence guard in Show, so ActivePrompt is STILL the outgoing content while the deny
+        // action is already the new prompt's — and clearing on that match would take Escape away
+        // from the prompt on screen. A test pins the DenyOwner check.
+        //
+        // SEARCHED ACROSS TABS rather than read off `owner`, because the swap above may have been
+        // skipped (a stale caller whose Show was a no-op) while the deny action still needs clearing.
+        foreach (var tab in _sessionTabs)
+        {
+            if (!ReferenceEquals(tab.DenyOwner, prompt)) continue;
+            tab.DenyPrompt = null;
+            tab.DenyOwner = null;
         }
 
         FocusComposer();

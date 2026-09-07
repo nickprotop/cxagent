@@ -139,6 +139,27 @@ public sealed class SessionTab
     /// </summary>
     public ResolvedConfig? Resolution { get; set; }
 
+    /// <summary>
+    /// The prompt occupying this tab's composer, or null when it is free to type in.
+    ///
+    /// <para>PER TAB, BECAUSE PROMPTS ARE CONCURRENT. The gate serialises nothing — its semaphore
+    /// was removed precisely so several sessions can ask at once — and one window-wide field made
+    /// the second asker a no-op: its turn waited forever on a control that was never shown. Which
+    /// composer is occupied is a fact about a conversation, not about the window.</para>
+    /// </summary>
+    public IWindowControl? ActivePrompt { get; set; }
+
+    /// <summary>How to answer this tab's prompt with "no", for the Escape shortcut.</summary>
+    /// <remarks>
+    /// AND THE CONTENT IT BELONGS TO, tracked separately: a replacement prompt shown before the
+    /// outgoing one is restored would otherwise have its deny action cleared by that restore,
+    /// leaving a visible prompt the keyboard cannot answer.
+    /// </remarks>
+    public Action? DenyPrompt { get; set; }
+
+    /// <inheritdoc cref="DenyPrompt"/>
+    public IWindowControl? DenyOwner { get; set; }
+
     /// <summary>Whether the context reading predates a compression that has not been measured yet.</summary>
     /// <remarks>PER CONVERSATION, like the reading it qualifies: compressing one session left the
     /// OTHER one's gauge marked stale, so a tab that had done nothing claimed its numbers were
