@@ -68,6 +68,36 @@ public class PromptStaysPutTests
     }
 
     /// <summary>
+    /// ARROWING THE TAB STRIP KEEPS THE KEYBOARD, even past a tab with a question up.
+    ///
+    /// <para>The strip has to hold focus for the NEXT arrow. Taking it on arrival drops the user out
+    /// of the strip after one step, so continuing to browse needs F6 again — and a waiting tab is
+    /// not a special case: passing one on the way to another is still passing it. A programmatic tab
+    /// change is the opposite case, and is what Go uses.</para>
+    ///
+    /// <para>The guard is one condition, and the bug was reintroducing it BELOW the prompt branch
+    /// instead of above — so this pins the order, which is the thing that was wrong.</para>
+    /// </summary>
+    [Fact]
+    public void ArrowingTheStripIsNotInterruptedByAWaitingTab()
+    {
+        var source = Window();
+        var start = source.IndexOf("private void ShowActiveSession()", StringComparison.Ordinal);
+        Assert.True(start > 0, "ShowActiveSession not found");
+
+        var body = source[start..source.IndexOf("\n    /// <summary>", start, StringComparison.Ordinal)];
+
+        var guard = body.IndexOf("Tabs.HasFocus", StringComparison.Ordinal);
+        var promptBranch = body.IndexOf("ActivePrompt is", StringComparison.Ordinal);
+
+        Assert.True(guard > 0, "the browsing guard is gone: arrowing will steal focus from the strip");
+        Assert.True(promptBranch > 0, "the prompt branch is gone");
+        Assert.True(guard < promptBranch,
+            "the browsing guard must come BEFORE the prompt branch — below it, arrowing past a "
+            + "waiting tab drops the user out of the strip and browsing needs F6 again");
+    }
+
+    /// <summary>
     /// AND THE FIELD THAT REMEMBERED WHERE TO SEND THEM BACK IS GONE.
     ///
     /// <para>A leftover would be dead state that a later reader would take as a live rule — and

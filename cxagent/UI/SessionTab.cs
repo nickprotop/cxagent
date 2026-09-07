@@ -160,6 +160,16 @@ public sealed class SessionTab
     /// <inheritdoc cref="DenyPrompt"/>
     public IWindowControl? DenyOwner { get; set; }
 
+    /// <summary>
+    /// The question run in progress on this tab, or null when none is.
+    ///
+    /// <para>PER TAB FOR THE SAME REASON AS <see cref="ActivePrompt"/>, and with the same failure:
+    /// two sessions can ask at once, and one window-wide field meant the second overwrote the first.
+    /// Escape then skipped a question the user was not looking at, Alt+← stepped back through
+    /// somebody else's run, and the overwritten one was left with no keyboard route out at all.</para>
+    /// </summary>
+    public QuestionPromptControl? ActiveQuestion { get; set; }
+
     /// <summary>Whether the context reading predates a compression that has not been measured yet.</summary>
     /// <remarks>PER CONVERSATION, like the reading it qualifies: compressing one session left the
     /// OTHER one's gauge marked stale, so a tab that had done nothing claimed its numbers were

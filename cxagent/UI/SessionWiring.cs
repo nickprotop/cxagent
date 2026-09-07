@@ -246,7 +246,14 @@ public static class SessionWiring
             // tool that needs a transcript, colour or folding would be supplied, because Core has
             // none of the three and must stay ignorant of presentation.
             Tools = [],
-            Ask = w.Main.AskQuestionAsync,
+
+            // NAMING THE SESSION THAT ASKS. A question is raised in a composer, and each conversation
+            // has its own — passed as a bare method group it landed on whichever tab was in FRONT,
+            // so a background session's question appeared above another session's transcript and its
+            // answer was given by a user reading something else. The permission gate says which
+            // session it is through the request's policy; a question has no such carrier, so the
+            // wiring supplies it.
+            Ask = (questions, ct) => w.Main.AskQuestionAsync(w.Session, questions, ct),
 
             // WHAT THE MODEL IS TOLD IT CAN SUGGEST, read per turn from the registry as it actually
             // stands — after this app has overridden Core's declarations and added its own.

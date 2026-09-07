@@ -334,30 +334,26 @@ public sealed class MainWindow : IDisposable
         // its composer means the next thing typed is discarded silently — which is what happened
         // after answering a new tab's plugin gates: the goal went nowhere and nothing said so.
         //
-        // AND NOT WHILE THE STRIP IS BEING DRIVEN. Arrowing through tabs is browsing; taking focus
-        // then yanks the user out of the strip mid-navigation.
-        if (!IsSessionTab(Tabs.ActiveTabIndex)) return;
-
-        // INTO THE PROMPT WHEN ONE IS UP — EVEN FROM THE STRIP. A prompt has taken this composer's
-        // place, so "focus the composer" would put the cursor on a control no longer in the tree and
-        // leave the question's buttons mouse-only: ButtonControl's ProcessKey returns false without
-        // focus.
+        // AND NOT WHILE THE STRIP IS BEING DRIVEN. Arrowing through tabs is browsing, and the strip
+        // has to keep the keyboard for the NEXT arrow — take focus here and the user is dropped out
+        // of the strip after one step, needing F6 again to carry on. That applies to a tab with a
+        // question up exactly as it does to any other: passing a waiting tab on the way to another
+        // one is still passing it.
         //
-        // AND THE BROWSING GUARD DOES NOT APPLY HERE. Arrowing past tabs must not steal focus out of
-        // the strip — that is what the guard below protects — but arriving at a tab that is ASKING
-        // is not browsing past it: the dot and the bar are what brought the user, and the question
-        // is the only thing on that tab to interact with. Left guarded, arrowing to a waiting tab
-        // showed the prompt with nothing focused and Enter did nothing at all.
+        // A PROGRAMMATIC TAB CHANGE IS NOT BROWSING, which is the whole distinction. Go, a new tab,
+        // a closed tab — nobody is holding the strip, so focus lands where the user will act, and
+        // Go's own path focuses the question rather than the composer.
+        if (Tabs.HasFocus || !IsSessionTab(Tabs.ActiveTabIndex)) return;
+
+        // INTO THE PROMPT WHEN ONE IS UP. A prompt has taken this composer's place, so "focus the
+        // composer" would put the cursor on a control no longer in the tree and leave the question's
+        // buttons mouse-only: ButtonControl's ProcessKey returns false without focus.
         if (tab.ActivePrompt is { } waiting)
         {
             if (Window?.FocusManager is { } fm && FirstFocusable(waiting) is { } first)
                 fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
             return;
         }
-
-        // ARROWING THROUGH TABS IS BROWSING; taking focus then yanks the user out of the strip
-        // mid-navigation, so a tab with a free composer waits to be committed to.
-        if (Tabs.HasFocus) return;
 
         FocusComposer();
     }
@@ -1184,23 +1180,13 @@ public sealed class MainWindow : IDisposable
 
         Tabs.ActiveTabIndex = waiting;
 
-        // INTO THE PROMPT, NOT THE COMPOSER. A waiting tab's composer has been SWAPPED OUT for the
-        // question — that is what makes it wait — so focusing "the composer" would put the cursor on
-        // a control no longer in the tree, and the buttons would stay mouse-only: ButtonControl's
-        // ProcessKey returns false without focus. Go promises to take the user to the answer, and an
-        // answer they cannot type is not one.
+        // WHICH LANDS ON THE QUESTION, not the composer: a waiting tab's composer has been swapped
+        // out for it, and FocusComposer knows that. Go promises to take the user to the answer, and
+        // an answer they cannot type is not one.
         //
-        // ShowActiveSession has already run, from the tab change above, and it declines to touch
-        // focus while a prompt is up for exactly this reason — leaving it to here, where the prompt
-        // itself is known.
-        if (ActiveSessionTab.ActivePrompt is { } prompt
-            && Window?.FocusManager is { } fm
-            && FirstFocusable(prompt) is { } first)
-        {
-            fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
-            return;
-        }
-
+        // FOCUSED HERE RATHER THAN LEFT TO THE TAB CHANGE, because Go may be pressed while the strip
+        // holds focus — and ShowActiveSession rightly declines to take it then, so that arrowing
+        // past tabs is not interrupted. Go is arrival, not browsing.
         FocusComposer();
     }
 
@@ -1902,9 +1888,28 @@ public sealed class MainWindow : IDisposable
     /// the composer would have to re-assert IsEditing or typing silently dies.</para>
     ///
     /// <para>Kept as a named method because callers say what they mean.</para>
+    ///
+    /// <para>OR THE PROMPT, WHEN ONE HAS TAKEN THE COMPOSER'S PLACE. Every "put the cursor where the
+    /// user acts" path comes through here — F4, F6's return, ShowChatTab, a restored composer — and
+    /// on a waiting tab the composer is not in the tree at all: it was swapped out for the question.
+    /// Focusing it then puts the keyboard on a detached control, which leaves the question's buttons
+    /// mouse-only, because ButtonControl's ProcessKey returns false without focus.</para>
+    ///
+    /// <para>HANDLED HERE RATHER THAN AT EACH CALLER so a path added later cannot forget it — the
+    /// failure is silent, and looks like a key that simply does nothing.</para>
     /// </summary>
     public void FocusComposer()
-        => Window?.FocusManager.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    {
+        if (Window?.FocusManager is not { } fm) return;
+
+        if (ActiveSessionTab.ActivePrompt is { } prompt && FirstFocusable(prompt) is { } first)
+        {
+            fm.SetFocus(first, SharpConsoleUI.Controls.FocusReason.Programmatic);
+            return;
+        }
+
+        fm.SetFocus(Input, SharpConsoleUI.Controls.FocusReason.Programmatic);
+    }
 
     /// <summary>
     /// Puts the keyboard on the tab strip, where ← and → change tabs.
@@ -1970,26 +1975,42 @@ public sealed class MainWindow : IDisposable
     /// TaskCompletionSource keeps the composer swapped out, and the user would be looking at a
     /// question nobody is waiting on.</para>
     /// </summary>
+    /// <param name="asker">
+    /// The session asking. NAMED RATHER THAN INFERRED: a question has no policy to carry its session
+    /// the way a permission request does, so without this it landed on whichever tab was in front —
+    /// a background session's question above another session's transcript, answered by a user
+    /// reading something else.
+    /// </param>
     public async Task<QuestionAnswers> AskQuestionAsync(
-        IReadOnlyList<UserQuestion> questions, CancellationToken ct)
+        Core.Sessions.Session asker, IReadOnlyList<UserQuestion> questions, CancellationToken ct)
     {
         var prompt = new QuestionPromptControl(questions);
         var content = prompt.BuildContent();
+
+        // THE ASKER'S OWN TAB, resolved once so the step handler below closes over it: a multi-step
+        // run must keep every step in one place.
+        var asking = TabFor(asker) ?? ActiveSessionTab;
 
         // THE CURRENT STEP, tracked so the right control is torn down at the end. Each step builds a
         // fresh panel, so restoring the one built here would leave the last step's on screen.
         var shown = content;
 
+        // EACH STEP GOES BACK TO THE SAME TAB. _promptTab is set per REQUEST and a later request
+        // from another session moves it, so a multi-step run whose second step read it fresh would
+        // scatter its steps across tabs.
         prompt.StepChanged += next =>
         {
             RestoreComposer(shown);
             shown = next;
-            ShowPermissionPrompt(next);
+            ShowPromptOn(asking, next, deny: null);
             FocusQuestion(prompt);
         };
 
-        _activeQuestion = prompt;
-        ShowPermissionPrompt(content);
+        // ON THE TAB THAT ASKED, like a permission prompt — the same seam, so the question lands in
+        // its own session's composer and the waiting bar names that session.
+        asking.ActiveQuestion = prompt;
+
+        ShowPromptOn(asking, content, deny: null);
         FocusQuestion(prompt);
 
         using var _ = ct.Register(() => prompt.Resolve(QuestionAnswers.Cancel));
@@ -1999,7 +2020,7 @@ public sealed class MainWindow : IDisposable
         }
         finally
         {
-            _activeQuestion = null;
+            asking.ActiveQuestion = null;
             RestoreComposer(shown);
             FocusComposer();
         }
@@ -2009,7 +2030,12 @@ public sealed class MainWindow : IDisposable
     /// The question currently on screen, or null. Escape reads this — skipping a question must not
     /// have to kill the turn to get out of a dialog.
     /// </summary>
-    private QuestionPromptControl? _activeQuestion;
+    /// <remarks>
+    /// A PROPERTY OVER THE ACTIVE TAB. Escape and Alt+← answer the conversation in FRONT, so a
+    /// window-wide field let a keystroke drive a question in another session — see
+    /// <see cref="SessionTab.ActiveQuestion"/>.
+    /// </remarks>
+    private QuestionPromptControl? _activeQuestion => ActiveSessionTab.ActiveQuestion;
 
     /// <summary>
     /// Puts focus where the answer is given — the option list when there is one, else the field.
@@ -2018,8 +2044,16 @@ public sealed class MainWindow : IDisposable
     /// options did NOTHING: the user had to press Down before the list would respond. A question
     /// whose most obvious keystroke has no effect reads as a hung app.</para>
     /// </summary>
+    /// <remarks>
+    /// ONLY WHEN THE ASKING TAB IS ON SCREEN. A question raised by a background session must not
+    /// take the keyboard from the composer the user is typing into — the same rule a permission
+    /// prompt follows, and for the same reason: the bar and the tab dot are how a question
+    /// elsewhere announces itself.
+    /// </remarks>
     private void FocusQuestion(QuestionPromptControl prompt)
     {
+        if (!ReferenceEquals(ActiveSessionTab.ActiveQuestion, prompt)) return;
+
         if (prompt.FocusTarget is { } target)
             Window?.FocusManager.SetFocus(target, SharpConsoleUI.Controls.FocusReason.Programmatic);
     }
@@ -2098,8 +2132,19 @@ public sealed class MainWindow : IDisposable
         // ON THE ASKING TAB, LIKE THE PROMPT ITSELF. Escape answers the conversation in front, so a
         // deny action stored window-wide let Escape in one session refuse another session's
         // question — a security answer given to a prompt the user was not looking at.
-        var target = SessionTabAt(_promptTab) ?? ActiveSessionTab;
+        ShowPromptOn(SessionTabAt(_promptTab) ?? ActiveSessionTab, prompt, deny);
+    }
 
+    /// <summary>
+    /// Raises a prompt on one named tab.
+    /// </summary>
+    /// <remarks>
+    /// THE TAB IS A PARAMETER so a caller that already knows it does not re-read <c>_promptTab</c>.
+    /// That field is set per REQUEST, and a later request from another session moves it — a
+    /// multi-step question re-reading it would scatter its steps across tabs.
+    /// </remarks>
+    private void ShowPromptOn(SessionTab target, IWindowControl prompt, Action? deny)
+    {
         if (deny is not null)
         {
             target.DenyPrompt = deny;
