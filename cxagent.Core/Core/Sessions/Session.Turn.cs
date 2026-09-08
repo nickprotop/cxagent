@@ -40,6 +40,16 @@ public sealed partial class Session
 
     private bool _busy;
 
+    /// <summary>Who asked for the turn in flight, or null when none is running.</summary>
+    /// <remarks>
+    /// WRITTEN ON THE TURN'S OWN THREAD beside <c>_busy</c>, and read by unwire from another. Volatile
+    /// for the same reason <c>_busy</c> is: a stale read here decides whether someone's work is
+    /// cancelled.
+    /// </remarks>
+    public TurnOriginator? CurrentOriginator => Volatile.Read(ref _originator);
+
+    private TurnOriginator? _originator;
+
     /// <summary>Marks this session busy until the returned scope is disposed, so a test can exercise
     /// the mid-turn paths without driving a model. NOT a general-purpose control: the turn loop owns
     /// this flag, and anything but a test taking it would be racing the loop for it.</summary>
@@ -175,7 +185,8 @@ public sealed partial class Session
     /// <para>NO MANAGER, NO DISPATCH. A session built outside SessionManager.Open has no registry
     /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
     /// </summary>
-    public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null)
+    public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
+        TurnOriginator? origin = null)
     {
         if (Manager is { } manager && text.TrimStart().StartsWith('/'))
         {
@@ -230,7 +241,7 @@ public sealed partial class Session
             text = injected + "\n\n" + text;
         }
 
-        return SubmitRaw(text, echo, tools);
+        return SubmitRaw(text, echo, tools, origin);
     }
 
     /// <summary>
@@ -260,8 +271,13 @@ public sealed partial class Session
     /// Which tools this ONE request may use, composed onto the session's selection. Null keeps
     /// whatever the session already has. See <see cref="Jobs.ToolSelection"/>.
     /// </param>
+    /// <param name="origin">
+    /// Who asked for this turn. Null means <see cref="TurnOriginator.User"/> — the ordinary case for
+    /// every caller but a plugin driving its own session, which passes its own name so unwire can
+    /// tell its turn from the user's.
+    /// </param>
     public SubmitOutcome SubmitRaw(string text, string? echo = null,
-        Jobs.ToolSelection? tools = null)
+        Jobs.ToolSelection? tools = null, TurnOriginator? origin = null)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
 
@@ -294,7 +310,7 @@ public sealed partial class Session
         // REMEMBERED AS PASSED, not composed: the comparison above asks whether a later caller sent
         // the same thing, and a composed value carries S1 and S2 terms the caller never wrote.
         _turnTools = tools;
-        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools));
+        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin));
     }
 
     /// <summary>
@@ -308,7 +324,8 @@ public sealed partial class Session
     /// <para>CANCELLATION IS NOT AN ERROR HERE. <see cref="CancelTurn"/> already said "Stopped." and
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
-    private async Task RunTurnAsync(string text, string? echo, Jobs.ToolSelection? tools)
+    private async Task RunTurnAsync(string text, string? echo, Jobs.ToolSelection? tools,
+        TurnOriginator? origin)
     {
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why
@@ -343,6 +360,7 @@ public sealed partial class Session
             previous?.Dispose();
 
             Volatile.Write(ref _busy, true);
+            Volatile.Write(ref _originator, origin ?? TurnOriginator.User);
             try
             {
                 // THE TRANSCRIPT'S OWN TURNS, announced before the model is called so a watcher has a
@@ -384,6 +402,10 @@ public sealed partial class Session
                 // RELEASED HOWEVER THE LAP ENDS, including the cancellation that returns above: a turn
                 // that died leaving this set would refuse every later prompt and look hung.
                 Volatile.Write(ref _busy, false);
+
+                // CLEARED WITH _busy, NOT LATER: CurrentOriginator answers "who is running now", and
+                // once a turn is not running the answer is nobody, whichever originator it carried.
+                Volatile.Write(ref _originator, null);
 
                 // WHAT THE MANAGER CHANGED WHILE THIS TURN RAN. A plugin mutator skips a busy
                 // session deliberately — the tool list is fixed for a request — but skipping is a
