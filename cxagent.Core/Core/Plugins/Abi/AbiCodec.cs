@@ -57,9 +57,10 @@ public static class AbiCodec
     // ---- version handshake ----
 
     /// <summary>
-    /// Checks a native library's reported ABI version against <see cref="PluginContract.Version"/>
-    /// with EXACT equality — see cxagent_plugin.h, "ABI HANDSHAKE". A host meeting a version it does
-    /// not understand refuses cleanly rather than guessing at an unfamiliar shape.
+    /// Checks a native library's reported ABI version against a RANGE —
+    /// <see cref="PluginContract.Version"/> at most, <see cref="PluginContract.Oldest"/> at least —
+    /// see cxagent_plugin.h, "ABI HANDSHAKE". A host meeting a version it does not understand
+    /// refuses cleanly rather than guessing at an unfamiliar shape.
     /// </summary>
     public static AbiParseResult<int> CheckVersion(int reportedVersion)
     {

@@ -3,10 +3,12 @@ using System.Runtime.InteropServices;
 namespace CxAgent.PluginHost;
 
 /// <summary>
-/// What loading a native library and resolving its seven exports produced — a live
+/// What loading a native library and resolving its exports produced — a live
 /// <see cref="NativePlugin"/>, or a reason it never got there. Every failure here is exactly one
 /// this process must refuse CLEANLY rather than guess past: a missing file, a file that is not a
-/// shared library, or one that does not export all seven <c>cxagent_plugin_*</c> symbols.
+/// shared library, or one that does not export all seven MANDATORY <c>cxagent_plugin_*</c> symbols.
+/// The eighth, <c>cxagent_plugin_poll</c>, is optional — see <see cref="NativePlugin.HasPoll"/> —
+/// and its absence never fails a load.
 /// </summary>
 public abstract record NativePluginLoadResult
 {
@@ -18,10 +20,11 @@ public abstract record NativePluginLoadResult
 }
 
 /// <summary>
-/// The seven <c>extern "C"</c> exports cxagent_plugin.h declares, resolved once by name from a
-/// loaded library and called through function pointers — NOT <c>[DllImport]</c>, because the path to
-/// load is a runtime argument (the library named in a plugin's config entry), not a compile-time
-/// constant <c>DllImport</c> requires. <see cref="NativeLibrary.GetExport"/> is the same resolution
+/// The seven MANDATORY <c>extern "C"</c> exports cxagent_plugin.h declares, plus the one OPTIONAL
+/// export (<c>cxagent_plugin_poll</c>), resolved once by name from a loaded library and called
+/// through function pointers — NOT <c>[DllImport]</c>, because the path to load is a runtime
+/// argument (the library named in a plugin's config entry), not a compile-time constant
+/// <c>DllImport</c> requires. <see cref="NativeLibrary.GetExport"/> is the same resolution
 /// <c>DllImport</c> would perform, just deferred to a path this process only learns at startup.
 ///
 /// <para>NOTHING HERE HOLDS A JSON STRING LONGER THAN IT TAKES TO COPY IT OUT. Every method below
@@ -40,6 +43,7 @@ public sealed class NativePlugin : IDisposable
     private delegate IntPtr GateFn(IntPtr toolName, IntPtr callJson);
     private delegate IntPtr StopFn();
     private delegate void FreeFn(IntPtr ptr);
+    private delegate IntPtr PollFn();
 
     private readonly IntPtr _handle;
     private readonly AbiVersionFn _abiVersion;
@@ -49,18 +53,21 @@ public sealed class NativePlugin : IDisposable
     private readonly GateFn _gate;
     private readonly StopFn _stop;
     private readonly FreeFn _free;
+    // NULL FOR A LIBRARY BUILT BEFORE POLL EXISTED — the one export whose absence Load tolerates.
+    // See HasPoll.
+    private readonly PollFn? _poll;
 
     /// <summary>
-    /// Every <c>cxagent_plugin_*</c> symbol a v2 library must export, resolved together.
+    /// Every <c>cxagent_plugin_*</c> symbol a library must export, resolved together.
     ///
-    /// <para>ONE RECORD RATHER THAN SEVEN PARAMETERS: they are the ABI's export table, not seven
+    /// <para>ONE RECORD RATHER THAN SEVEN-PLUS PARAMETERS: they are the ABI's export table, not
     /// unrelated arguments, and they are all the same delegate-shaped kind of thing. Passed
     /// positionally, transposing two that share a signature — <c>describe</c> and <c>stop</c> both
     /// take nothing and return a pointer — compiles cleanly and calls the wrong function.</para>
     /// </summary>
     private sealed record Exports(
         AbiVersionFn AbiVersion, DescribeFn Describe, StartFn Start,
-        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free);
+        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free, PollFn? Poll);
 
     private NativePlugin(IntPtr handle, Exports exports)
     {
@@ -72,13 +79,18 @@ public sealed class NativePlugin : IDisposable
         _gate = exports.Gate;
         _stop = exports.Stop;
         _free = exports.Free;
+        _poll = exports.Poll;
     }
 
     /// <summary>
-    /// Loads <paramref name="libraryPath"/> and resolves all seven exports. Resolving every symbol
-    /// UP FRONT, before returning a usable instance, is what turns "this .so is not a cxagent
-    /// plugin" into one clean load-time failure instead of a null-pointer call the first time some
-    /// unrelated tool invocation happens to reach the one export that was never actually there.
+    /// Loads <paramref name="libraryPath"/> and resolves its exports: seven MANDATORY, refusing the
+    /// load if any is missing, and one OPTIONAL (<c>cxagent_plugin_poll</c>), left null rather than
+    /// refused. Resolving every mandatory symbol UP FRONT, before returning a usable instance, is
+    /// what turns "this .so is not a cxagent plugin" into one clean load-time failure instead of a
+    /// null-pointer call the first time some unrelated tool invocation happens to reach the one
+    /// export that was never actually there. Refusing the OPTIONAL export the same way would refuse
+    /// every plugin built before it existed — the entire reason contract-2 plugins still load
+    /// against a contract-3 host.
     /// </summary>
     public static NativePluginLoadResult Load(string libraryPath)
     {
@@ -105,9 +117,10 @@ public sealed class NativePlugin : IDisposable
             var gate = ResolveExport<GateFn>(handle, "cxagent_plugin_gate");
             var stop = ResolveExport<StopFn>(handle, "cxagent_plugin_stop");
             var free = ResolveExport<FreeFn>(handle, "cxagent_plugin_free");
+            var poll = ResolveOptionalExport<PollFn>(handle, "cxagent_plugin_poll");
 
             return new NativePluginLoadResult.Loaded(
-                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free)));
+                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free, poll)));
         }
         catch (MissingExportException ex)
         {
@@ -128,14 +141,30 @@ public sealed class NativePlugin : IDisposable
         return Marshal.GetDelegateForFunctionPointer<T>(address);
     }
 
+    /// <summary>
+    /// Resolves <paramref name="symbol"/> when the library exports it, and returns null rather than
+    /// throwing when it does not — the one difference from <see cref="ResolveExport{T}"/>, which is
+    /// what makes an export OPTIONAL rather than MANDATORY. <see cref="NativeLibrary.TryGetExport"/>
+    /// was already the API in use here; only the missing-export branch changes.
+    /// </summary>
+    private static T? ResolveOptionalExport<T>(IntPtr handle, string symbol) where T : Delegate =>
+        NativeLibrary.TryGetExport(handle, symbol, out var address)
+            ? Marshal.GetDelegateForFunctionPointer<T>(address)
+            : null;
+
     private sealed class MissingExportException(string symbol) : Exception
     {
         public string Symbol { get; } = symbol;
     }
 
+    /// <summary>Whether this library exported <c>cxagent_plugin_poll</c> — false for a library built
+    /// before the export existed, which is not a refused load (see <see cref="Load"/>), just a
+    /// plugin this host never polls.</summary>
+    public bool HasPoll => _poll is not null;
+
     /// <summary>The ABI version this library reports — checked by the caller against
-    /// <see cref="CxAgent.Core.Plugins.PluginContract.Version"/> with exact equality before
-    /// anything else here is trusted, exactly as cxagent_plugin.h requires.</summary>
+    /// <see cref="CxAgent.Core.Plugins.PluginContract.Version"/> with a range, not exact equality
+    /// (see cxagent_plugin.h, "ABI HANDSHAKE") before anything else here is trusted.</summary>
     public int AbiVersion() => _abiVersion();
 
     /// <summary>Calls <c>cxagent_plugin_describe</c> and returns the manifest JSON, copied out of
@@ -192,6 +221,34 @@ public sealed class NativePlugin : IDisposable
         {
             Utf8.FreeNative(namePtr);
             Utf8.FreeNative(callPtr);
+        }
+    }
+
+    /// <summary>
+    /// Calls <c>cxagent_plugin_poll</c>. Returns null when the plugin returned NULL, its ordinary
+    /// way of saying "nothing to say right now" — like <see cref="Gate"/>, the one export besides
+    /// gate whose null return is an ANSWER rather than a failure, so it is not routed through
+    /// CallAndFree's non-null expectation. Throws if the library never exported <c>poll</c> at all
+    /// — callers must check <see cref="HasPoll"/> first, since there is no ABI-level way to answer
+    /// "the plugin has nothing to say" and "the plugin cannot be asked" with the same null.
+    /// </summary>
+    public string? Poll()
+    {
+        if (_poll is null)
+            throw new InvalidOperationException(
+                "this library never exported cxagent_plugin_poll — check HasPoll before calling Poll.");
+
+        var result = _poll();
+        if (result == IntPtr.Zero) return null;
+        try
+        {
+            return Utf8.NativeToString(result);
+        }
+        finally
+        {
+            // FREED THROUGH THE PLUGIN'S OWN FREE, like every other returned pointer: the library
+            // allocated it and only the library knows how to release it.
+            _free(result);
         }
     }
 

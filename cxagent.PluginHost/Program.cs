@@ -46,10 +46,10 @@ if (loadResult is not NativePluginLoadResult.Loaded { Plugin: var plugin })
 
 using var _ = plugin;
 
-// THE HANDSHAKE, BEFORE ANYTHING ELSE IS TRUSTED — cxagent_plugin.h, "ABI HANDSHAKE": exact
-// equality against the version this build understands, never a floor. A mismatch is reported by
-// name on both sides and refused; this process never attempts to read a manifest shape it was not
-// built to understand.
+// THE HANDSHAKE, BEFORE ANYTHING ELSE IS TRUSTED — cxagent_plugin.h, "ABI HANDSHAKE": checked
+// against a RANGE this build understands (too new is refused; older than PluginContract.Oldest is
+// refused), not exact equality. A mismatch is reported by name on both sides and refused; this
+// process never attempts to read a manifest shape it was not built to understand.
 int reportedVersion;
 try
 {

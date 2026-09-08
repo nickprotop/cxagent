@@ -1,14 +1,15 @@
 /*
- * cxagent ABI plugin contract — v1.
+ * cxagent ABI plugin contract — v3.
  *
- * A native plugin is a shared library (.so / .dll / .dylib) exporting five `extern "C"`
- * functions, name-resolved by the host process (Task 9b), not linked. This header is the
- * authoritative declaration; CxAgent.Core/Core/Plugins/Abi/*.cs mirrors it on the managed side
- * and cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.
+ * A native plugin is a shared library (.so / .dll / .dylib) exporting eight `extern "C"`
+ * functions — seven MANDATORY and one OPTIONAL (cxagent_plugin_poll, see below) — name-resolved
+ * by the host process (Task 9b), not linked. This header is the authoritative declaration;
+ * CxAgent.Core/Core/Plugins/Abi/*.cs mirrors it on the managed side and
+ * cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.
  *
  * EVERYTHING THAT CROSSES THIS BOUNDARY IS JSON. A tool's input schema, a call's arguments, a
  * job's result, an error — one encoding both directions, so the host and the plugin agree on a
- * shape without agreeing on a struct layout. See PLUGINS.md, "The boundary is JSON": a struct
+ * shape without agreeing on a struct layout. See plugins.md, "The boundary is JSON": a struct
  * ABI is frozen the moment it ships; JSON lets an old plugin omit a field the host now defaults,
  * and a new plugin send a field an old host ignores.
  *
@@ -21,13 +22,14 @@
  * OWNERSHIP: every string is allocated by the side that produced it and freed by that side's own
  * allocator. The host's `context_json` / `call_json` arguments are host-owned, valid only for the
  * duration of the call — a plugin retaining either must copy it. Every string this library
- * RETURNS (from describe, start, invoke, stop) is plugin-allocated and MUST be released by the
- * plugin's own `cxagent_plugin_free`, called by the host exactly once per returned pointer, never
- * by the plugin itself. A plugin must never return a static/const literal or a stack buffer from
- * any of these functions — the host always hands the pointer back to cxagent_plugin_free, and
+ * RETURNS (from describe, start, invoke, stop, poll) is plugin-allocated and MUST be released by
+ * the plugin's own `cxagent_plugin_free`, called by the host exactly once per returned pointer,
+ * never by the plugin itself. A plugin must never return a static/const literal or a stack buffer
+ * from any of these functions — the host always hands the pointer back to cxagent_plugin_free, and
  * freeing memory the plugin did not heap-allocate is undefined behaviour. See "Why a plugin must
  * never return NULL" below for the one exception (a static sentinel `cxagent_plugin_free`
- * recognises and skips).
+ * recognises and skips) — gate and poll additionally MAY return NULL as an ordinary answer; see
+ * each function's own doc.
  */
 
 #ifndef CXAGENT_PLUGIN_H
@@ -40,16 +42,18 @@ extern "C" {
 #endif
 
 /*
- * HANDSHAKE. Returns the plugin contract this library was built against — currently 2.
+ * HANDSHAKE. Returns the plugin contract this library was built against — currently 3.
  *
  * THE SAME NUMBER A MANAGED PLUGIN'S SIDECAR CALLS "pluginContract". One contract covers both
  * loaders; the C entry point keeps its historical name because its signature can never change.
  *
- * Checked BEFORE every other call. The host compares this against the versions it understands
- * with EXACT EQUALITY, never a floor: a host built for v1 cannot know whether a v2 plugin omits a
- * field whose absence would silently change behaviour, so it refuses a mismatch cleanly rather
- * than guessing. Its own signature can never change — this is the one function both sides must
- * agree on before agreeing on anything else.
+ * Checked BEFORE every other call. The host compares this against a RANGE, not exact equality: a
+ * version above what this build understands is refused (it may require something never seen), and
+ * a version older than PluginContract.Oldest is refused (support for it was dropped). A plugin
+ * within the range may omit a capability a newer contract added — cxagent_plugin_poll among
+ * them — without failing the handshake; see the OPTIONAL EXPORT note on cxagent_plugin_poll below
+ * for what "may omit" means for one specific function. Its own signature can never change — this
+ * is the one function both sides must agree on before agreeing on anything else.
  */
 int32_t cxagent_plugin_abi_version(void);
 
@@ -66,7 +70,7 @@ const char* cxagent_plugin_describe(void);
 /*
  * LIFECYCLE: START. `context_json` carries the plugin's working directory and its own settings
  * object (see README.md, "context") — never the transcript, the model, or the permission store;
- * PLUGINS.md, "What a plugin is handed at Load" states those are withheld on purpose and the ABI
+ * plugins.md, "What a plugin is handed at Load" states those are withheld on purpose and the ABI
  * surface withholds them identically.
  *
  * Returns a UTF-8 JSON result envelope (see README.md, "the result envelope"): `{"ok":true}` on
@@ -83,9 +87,9 @@ const char* cxagent_plugin_start(const char* context_json);
  * GATE. Decides whether ONE call needs the user's permission, and what the prompt should say.
  * Returns NULL for "no prompt", or a JSON object: {"display": "...", "alwaysAskable": true}.
  *
- * EVERY v2 PLUGIN EXPORTS THIS, including one that gates nothing — such a plugin returns NULL
- * unconditionally, which is three lines and keeps one export table for every plugin rather than
- * two shapes a host must tell apart.
+ * EVERY PLUGIN FROM CONTRACT 2 ON EXPORTS THIS — one of the seven MANDATORY exports — including
+ * one that gates nothing, which returns NULL unconditionally: three lines, and one export table
+ * for every plugin rather than two shapes a host must tell apart.
  *
  * ONLY CALLED FOR A TOOL THE MANIFEST MARKED "gated": "dynamic". A tool declaring true or false has
  * already answered, and the host does not ask twice.
@@ -124,16 +128,18 @@ const char* cxagent_plugin_gate(const char* tool_name, const char* call_json);
  * Returns a UTF-8 JSON result envelope shaped like CxAgent.Core.Models.JobResult (see README.md,
  * "the result envelope"). Freshly allocated; released via cxagent_plugin_free. Never NULL.
  *
- * MAY BE CALLED CONCURRENTLY, from multiple invocations in flight on the same library. The host
- * takes no lock on this path; a plugin that cannot tolerate concurrent calls must say so in its
- * manifest (a future 'concurrency' hint — v1 has none, so v1 plugins are assumed reentrant) and
- * serialize internally if it is not.
+ * MAY BE CALLED CONCURRENTLY, from multiple invocations in flight on the same library — and MAY BE
+ * CALLED CONCURRENTLY WITH cxagent_plugin_poll (see below): a poll arriving while an invoke is
+ * still running is the ordinary case, not an edge one, since nothing on this host serializes the
+ * two. The host takes no lock on this path; a plugin that cannot tolerate concurrent calls must
+ * say so in its manifest (a future 'concurrency' hint — no contract has one yet, so every plugin is
+ * assumed reentrant) and serialize internally if it is not.
  */
 const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json);
 
 /*
  * LIFECYCLE: STOP. Runs before the host process exits. A plugin's own children should already be
- * gone when this returns; the pid record (PLUGINS.md, "Lifecycle") is the fallback for whatever
+ * gone when this returns; the pid record (plugins.md, "Lifecycle") is the fallback for whatever
  * outlives it, not the primary mechanism.
  *
  * Returns a UTF-8 JSON result envelope, `{"ok":true}` or `{"ok":false,"error":"..."}`. Freshly
@@ -142,10 +148,35 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json);
 const char* cxagent_plugin_stop(void);
 
 /*
- * Releases a string previously returned by cxagent_plugin_describe / _start / _invoke / _stop.
- * Called by the host exactly once per returned pointer, in a `finally`-equivalent — always,
- * including when the envelope failed to parse. NEVER called by the plugin on its own output; the
- * host owns the release side of every pointer this library hands back.
+ * OPTIONAL EXPORT: POLL. Contract 3 lets a plugin originate work in its own session
+ * (IPluginClient.Submit, on the managed side) — poll exists so a NATIVE plugin can reach for the
+ * same ability without this host having to call into unmanaged code on ITS own initiative; the
+ * host calls this periodically instead, and the plugin hands back a request only when it has one.
+ *
+ * THIS EXPORT IS OPTIONAL, unlike every function above it. A library built before contract 3 (or
+ * one that never originates work) omits it entirely, and the host loads it exactly as it always
+ * has — see "HANDSHAKE" above. Resolved by name at load time; its absence is not a load failure.
+ *
+ * MAY RETURN NULL, AND ORDINARILY DOES — an explicit exception to "a plugin must never return
+ * NULL" (see OWNERSHIP, above): NULL here means "nothing to say right now", the state a plugin
+ * spends nearly all of its time in. A plugin that allocated an empty object instead, to avoid ever
+ * returning NULL, would hand the host a fresh string to parse and free on every poll for no
+ * information gained.
+ *
+ * MAY BE CALLED CONCURRENTLY WITH cxagent_plugin_invoke — see the note on invoke, above. Returns a
+ * freshly allocated UTF-8 JSON string when the plugin has something to send, released via
+ * cxagent_plugin_free like every other non-NULL return. The JSON shape carried in a non-NULL
+ * return is not yet part of this contract — a later revision defines it once a native plugin
+ * actually submits work this way.
+ */
+const char* cxagent_plugin_poll(void);
+
+/*
+ * Releases a string previously returned by cxagent_plugin_describe / _start / _invoke / _stop /
+ * _poll (when poll's return was not NULL). Called by the host exactly once per returned pointer,
+ * in a `finally`-equivalent — always, including when the envelope failed to parse. NEVER called by
+ * the plugin on its own output; the host owns the release side of every pointer this library hands
+ * back.
  */
 void cxagent_plugin_free(const char* ptr);
 
