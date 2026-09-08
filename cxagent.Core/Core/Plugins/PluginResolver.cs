@@ -145,12 +145,24 @@ public static class PluginResolver
     /// recorded under the name the registry and <see cref="ChildProcessStore"/> key on later, and
     /// <c>Load()</c> has not returned yet to confirm it.
     /// </summary>
-    public static string? DeclaredName(string assemblyPath)
+    public static string? DeclaredName(string assemblyPath) => DeclaredManifest(assemblyPath)?.Name;
+
+    /// <summary>
+    /// The sidecar beside <paramref name="assemblyPath"/>, parsed — the same early read as
+    /// <see cref="DeclaredName"/>, but keeping the whole manifest rather than only the name. A caller
+    /// deciding whether to build an <see cref="IPluginClient"/> needs <see cref="PluginManifest.Client"/>
+    /// from THIS read: the declaration is what the load prompt discloses and the user approves, so it
+    /// has to gate whether a client is constructed at all, before <see cref="ManagedPluginLoader.Load"/>
+    /// ever runs the plugin's own code — checking it only after Load returns would let an
+    /// undeclared plugin stash a live reference during its own Load, which nothing afterward could
+    /// take back.
+    /// </summary>
+    public static PluginManifest? DeclaredManifest(string assemblyPath)
     {
         var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
         if (!File.Exists(sidecarPath)) return null;
 
-        return PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest?.Name;
+        return PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest;
     }
 
     /// <summary>What a runtime context needs to serve one plugin in one session.</summary>
@@ -161,16 +173,18 @@ public static class PluginResolver
     /// <param name="PluginName">Which plugin this is, for child-process scoping and sever.</param>
     /// <param name="SessionId">Which session, so two in one folder are distinguishable.</param>
     /// <param name="Client">
-    /// This plugin's handle on the session it is loaded into. NEVER NULL FROM A CALLER — the manifest
-    /// declaration <see cref="IPluginContext.Client"/>'s own doc describes is enforced by
-    /// <see cref="ManagedPluginLoader"/> checking <see cref="IPluginClientConsumer"/> AFTER Load
-    /// returns, not by withholding the client before Load runs; the sidecar is not even read as
-    /// trustworthy until the mismatch check past Load, so there is nothing yet to condition this on.
-    /// A plugin that never implements the marker interface simply has no code that can reach it.
+    /// This plugin's handle on the session it is loaded into, or null — NULL WHEN THE SIDECAR DID NOT
+    /// DECLARE IT. The declaration is what the load prompt disclosed and the user approved, so it is
+    /// what gates whether a reference exists at all: a plugin that never asked must never be able to
+    /// stash one during its own Load, before the caller has even checked its binary against the
+    /// declaration. <see cref="ManagedPluginLoader"/>'s own check
+    /// (<see cref="IPluginClientConsumer"/>, run AFTER Load returns) answers a DIFFERENT question —
+    /// whether a binary that DID declare the capability can honestly use it — and is orthogonal to
+    /// this: that check gates the binary, this parameter gates the reference.
     /// </param>
     public sealed record PluginRuntime(
         string WorkingDirectory, JsonElement Settings, Action<string> Report,
-        ChildProcessStore Children, string PluginName, string? SessionId, IPluginClient Client);
+        ChildProcessStore Children, string PluginName, string? SessionId, IPluginClient? Client);
 
     /// <summary>
     /// <see cref="IPluginContext"/> for a plugin loaded at RUNTIME, through <c>/plugin load</c> —

@@ -46,6 +46,7 @@
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Empty/cxagent.Tests.PluginFixture.Empty.csproj" />
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.Ambiguous/cxagent.Tests.PluginFixture.Ambiguous.csproj" />
     <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.ClaimsClient/cxagent.Tests.PluginFixture.ClaimsClient.csproj" />
+    <ProjectReference Include="fixtures/cxagent.Tests.PluginFixture.DeclaresClient/cxagent.Tests.PluginFixture.DeclaresClient.csproj" />
 
     <!-- THE REAL LSP PLUGIN, AS A BUILD DEPENDENCY ONLY. ReferenceOutputAssembly="false" is the
          whole point: this project must not compile against a plugin's types, or the core suite
@@ -123,6 +124,8 @@
           TargetPath="cxagent.Tests.PluginFixture.Throwing.plugin.json" />
     <None Include="PluginFixtures/ClaimsClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
           TargetPath="cxagent.Tests.PluginFixture.ClaimsClient.plugin.json" />
+    <None Include="PluginFixtures/DeclaresClientPlugin.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="cxagent.Tests.PluginFixture.DeclaresClient.plugin.json" />
 
     <!-- BESIDE fixture-wellformed.so AT THE OUTPUT ROOT, not under AbiPluginFixtures/ — AbiPluginLoader
          resolves a sidecar from the LIBRARY path with ".plugin.json" swapped in for the extension,

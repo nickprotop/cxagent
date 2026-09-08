@@ -231,9 +231,10 @@ public static class PluginDiscovery
             // this and what Load() returns, so reading it here is reading the same name early rather
             // than risking a second, different one.
             var sidecarPath = Path.ChangeExtension(assemblyPath, null) + ".plugin.json";
-            var declaredName = File.Exists(sidecarPath)
-                ? PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest?.Name
+            var sidecarManifest = File.Exists(sidecarPath)
+                ? PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest
                 : null;
+            var declaredName = sidecarManifest?.Name;
             if (string.IsNullOrEmpty(declaredName))
             {
                 report($"plugin '{name}': no usable sidecar manifest at '{sidecarPath}'.");
@@ -251,10 +252,16 @@ public static class PluginDiscovery
             // duplication cost a real bug: threading the session into child-process records was
             // applied to Core's context and missed this one, so an unwire went on reaping every
             // session's children while the fix looked complete.
-            // BUILT UP FRONT, ALONGSIDE THE CONTEXT — see PluginResolver.PluginRuntime's own doc for
-            // why this is not conditioned on the manifest's "client" declaration, which is not even
-            // checked against Load's result until ManagedPluginLoader.Load returns below.
-            var client = new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue);
+            // CONSTRUCTED ONLY WHEN THE SIDECAR DECLARES IT. The declaration is what the load prompt
+            // disclosed and what the user approved — a plugin that never asked must never hold a
+            // client, or a binary that stashed the reference during its own Load keeps a live handle
+            // on the session past a load the user went on to refuse or that Load itself never
+            // returns from cleanly. ManagedPluginLoader's own check (IPluginClientConsumer, after
+            // Load returns) is a DIFFERENT question — whether the binary can honestly use what it
+            // asked for — and gates nothing about whether the reference exists at all.
+            var client = sidecarManifest.Client
+                ? new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue)
+                : null;
 
             var context = new PluginResolver.RuntimeContext(new PluginResolver.PluginRuntime(
                 session.WorkingDirectory,

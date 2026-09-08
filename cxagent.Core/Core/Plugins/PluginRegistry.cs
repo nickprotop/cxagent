@@ -260,6 +260,21 @@ public sealed class PluginRegistry
     }
 
     /// <summary>
+    /// Whether the named loaded plugin holds an <see cref="IPluginClient"/> — TEST-ONLY, so a test
+    /// can prove the sidecar's "client" declaration actually gated construction (see
+    /// <see cref="Sessions.Session.LoadPlugin"/> and <c>PluginDiscovery</c>, both of which build one
+    /// only when <see cref="PluginManifest.Client"/> is true) without a public accessor onto
+    /// <see cref="LoadedPlugin"/> itself. Null when no plugin of this name is loaded.
+    /// </summary>
+    internal bool? HasClientForTest(string pluginName)
+    {
+        lock (_gate)
+            return _plugins.FirstOrDefault(p => p.Manifest.Name == pluginName) is { } plugin
+                ? plugin.Client is not null
+                : null;
+    }
+
+    /// <summary>
     /// Marks one call to this plugin as in flight until <paramref name="release"/> completes —
     /// TEST-ONLY, standing in for a real dispatch (which nothing can yet perform; see
     /// <see cref="PluginTool"/>'s own note) so <c>UnwireDeregistersBeforeDraining</c> can prove the

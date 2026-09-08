@@ -798,7 +798,8 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
-        var declaredName = CxAgent.Core.Plugins.PluginResolver.DeclaredName(assemblyPath);
+        var sidecarManifest = CxAgent.Core.Plugins.PluginResolver.DeclaredManifest(assemblyPath);
+        var declaredName = sidecarManifest?.Name;
         if (string.IsNullOrEmpty(declaredName))
         {
             Say(new Message($"plugin '{target}': no usable sidecar manifest beside '{assemblyPath}'.",
@@ -842,12 +843,13 @@ public sealed partial class Session
                 : System.Text.Json.JsonDocument.Parse("{}").RootElement;
         }
 
-        // THE CLIENT IS BUILT UP FRONT, ALONGSIDE THE CONTEXT, not conditioned on the manifest's own
-        // "client" declaration: ManagedPluginLoader checks that declaration against
-        // IPluginClientConsumer only AFTER Load returns, so at this point the sidecar has not even
-        // been matched against what Load produced. A plugin whose code never reaches IPluginClient
-        // simply has no way to call it — see PluginResolver.PluginRuntime's own doc.
-        var client = new CxAgent.Core.Plugins.SessionPluginClient(this, declaredName, Plugins.SubmitQueue);
+        // CONSTRUCTED ONLY WHEN THE SIDECAR DECLARES IT — see PluginResolver.PluginRuntime's own doc.
+        // The declaration is what the load prompt disclosed and the user approved; a plugin that
+        // never asked must never hold a reference it could stash during its own Load, before this
+        // caller has even seen what ManagedPluginLoader.Load's IPluginClientConsumer check decides.
+        var client = sidecarManifest.Client
+            ? new CxAgent.Core.Plugins.SessionPluginClient(this, declaredName, Plugins.SubmitQueue)
+            : null;
 
         // WorkingDirectory IS THIS SESSION'S FOLDER, not loadSetDirectory — see that member's own
         // contract ("where the plugin should root itself — an LSP plugin starts its server here").
