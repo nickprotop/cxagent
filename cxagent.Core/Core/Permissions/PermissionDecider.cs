@@ -101,14 +101,12 @@ public sealed class PermissionDecider : IPermissionGate
     /// <summary>
     /// Binds the classifier this resolution describes, or clears it when it describes none.
     ///
-    /// <para>CALLED ON EVERY RE-WIRE, not once at startup. Bound once, changing `classifier` in config
-    /// and a re-wire leaves `auto` mode consulting the SUPERSEDED provider — silently, because the
-    /// mode still works. Clearing matters as much: removing the entry and re-wiring has to turn the
-    /// mode off, or a mode stays alive that config no longer describes.</para>
-    ///
-    /// <para>Here rather than in the composition root so the rule is one line at each call site and
-    /// cannot be half-applied — a re-wire spread across the root moves some consumers of a resolution
-    /// and not others.</para>
+    /// <para>FOR AN EMBEDDER THAT OWNS ITS WHOLE PROCESS — cxagent itself does not call this. One gate
+    /// serves every session, so binding here for one session rebinds for all, and clearing it clears
+    /// for all; a session's own classifier rides <see cref="PermissionPolicy.Classifier"/> instead,
+    /// set on every re-wire so changing `classifier` in config cannot leave `auto` consulting a
+    /// superseded provider. <see cref="RequestAsync"/> resolves `policy.Classifier ?? Classifier`, so
+    /// this stays the answer for a request that carries no policy.</para>
     /// </summary>
     /// <remarks>
     /// THIS BINDS THE GATE'S FALLBACK, WHICH IS PROCESS-WIDE. For a session, set
