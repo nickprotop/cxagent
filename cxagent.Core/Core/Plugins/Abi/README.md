@@ -14,6 +14,7 @@ vocabulary they exchange, and the reasoning behind it.
 | `cxagent_plugin_invoke` | `IPlugin.Invoke` | `AbiInvokeCall` | `AbiResultEnvelope` (JobResult) |
 | `cxagent_plugin_stop` | `IPlugin.Stop` | — | `AbiResultEnvelope` (void) |
 | `cxagent_plugin_poll` (optional) | `IPluginClient.Submit`, originated by the plugin rather than called into it | — | a submit request, or NULL |
+| `cxagent_plugin_command` (optional) | `IPluginCommandHandler.RunCommand` | a command name and its typed argument string | `CommandResult`, or NULL |
 
 `IPlugin.Load` is split across two ABI calls deliberately: `describe` returns the manifest with no
 context (matching `plugin_describe` in ConsoleEx's spec, called before the plugin has seen
@@ -199,6 +200,36 @@ failure, not the turn's own result.
 
 **May be called concurrently with `cxagent_plugin_invoke`** — nothing on this host serializes the
 two, matching `invoke`'s own concurrency note above.
+
+## `command` — one command a person typed
+
+`cxagent_plugin_command` is `invoke`'s counterpart for commands rather than tools — the same
+relationship `describe`'s own `commands` array has to its `tools` array. Where `invoke`'s caller is
+a model reasoning about a JSON schema, `command`'s caller is a person who typed `/schedule tomorrow
+9am`: `arguments` is everything after the name, trimmed, exactly as they wrote it — `""`, never
+NULL, when there was nothing after the name — not a JSON object matching a schema.
+
+**Optional, unlike every mandatory export** — the same shape of addition `poll` is: a library built
+before commands existed, or one whose manifest declares none, omits it entirely, and the host loads
+it exactly as it always has. Declaring a command in `describe`'s own `commands` array without
+exporting this function is refused, but not at load — the host has no way to know an export exists
+without asking for it, so this is discovered the first time the command is actually run, and refused
+by name then.
+
+**The non-NULL shape:**
+
+```json
+{ "message": "...", "status": "reported" }
+```
+
+Field for field `CxAgent.Core.Plugins.CommandResult`: `message` is text for the transcript, or JSON
+null when the command has nothing to say, and `status` is one of `"reported"`, `"changed"`, or
+`"refused"` — the lowercase wire spelling of `PluginCommandOutcome`, matching how `gated` already
+crosses this boundary as a string a native author writes by hand rather than a numeric enum value.
+
+**MAY return NULL**, the same explicit exception to "a plugin must never return NULL" that `gate`
+and `poll` carry: NULL means "ran, and said nothing," exactly `{"message":null,"status":"reported"}`
+without allocating a string to say so.
 
 ## The result envelope
 

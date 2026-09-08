@@ -44,6 +44,7 @@ public sealed class NativePlugin : IDisposable
     private delegate IntPtr StopFn();
     private delegate void FreeFn(IntPtr ptr);
     private delegate IntPtr PollFn();
+    private delegate IntPtr CommandFn(IntPtr name, IntPtr argumentsJson);
 
     private readonly IntPtr _handle;
     private readonly AbiVersionFn _abiVersion;
@@ -56,6 +57,10 @@ public sealed class NativePlugin : IDisposable
     // NULL FOR A LIBRARY BUILT BEFORE POLL EXISTED — the one export whose absence Load tolerates.
     // See HasPoll.
     private readonly PollFn? _poll;
+    // NULL FOR A LIBRARY BUILT BEFORE COMMANDS EXISTED, OR ONE THAT DECLARES NONE — the second
+    // export whose absence Load tolerates, for the same reason poll's does: a plugin built before
+    // contract 3 added commands must still load. See HasCommand.
+    private readonly CommandFn? _command;
 
     /// <summary>
     /// Every <c>cxagent_plugin_*</c> symbol a library must export, resolved together.
@@ -67,7 +72,7 @@ public sealed class NativePlugin : IDisposable
     /// </summary>
     private sealed record Exports(
         AbiVersionFn AbiVersion, DescribeFn Describe, StartFn Start,
-        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free, PollFn? Poll);
+        InvokeFn Invoke, GateFn Gate, StopFn Stop, FreeFn Free, PollFn? Poll, CommandFn? Command);
 
     private NativePlugin(IntPtr handle, Exports exports)
     {
@@ -80,17 +85,19 @@ public sealed class NativePlugin : IDisposable
         _stop = exports.Stop;
         _free = exports.Free;
         _poll = exports.Poll;
+        _command = exports.Command;
     }
 
     /// <summary>
     /// Loads <paramref name="libraryPath"/> and resolves its exports: seven MANDATORY, refusing the
-    /// load if any is missing, and one OPTIONAL (<c>cxagent_plugin_poll</c>), left null rather than
-    /// refused. Resolving every mandatory symbol UP FRONT, before returning a usable instance, is
-    /// what turns "this .so is not a cxagent plugin" into one clean load-time failure instead of a
-    /// null-pointer call the first time some unrelated tool invocation happens to reach the one
-    /// export that was never actually there. Refusing the OPTIONAL export the same way would refuse
-    /// every plugin built before it existed — the entire reason contract-2 plugins still load
-    /// against a contract-3 host.
+    /// load if any is missing, and two OPTIONAL (<c>cxagent_plugin_poll</c>, <c>cxagent_plugin_command</c>),
+    /// left null rather than refused. Resolving every mandatory symbol UP FRONT, before returning a
+    /// usable instance, is what turns "this .so is not a cxagent plugin" into one clean load-time
+    /// failure instead of a null-pointer call the first time some unrelated tool invocation happens
+    /// to reach the one export that was never actually there. Refusing an OPTIONAL export the same
+    /// way would refuse every plugin built before it existed — the entire reason contract-2 plugins
+    /// still load against a contract-3 host, and the same reason a plugin declaring no commands at
+    /// all need not export <c>cxagent_plugin_command</c> either.
     /// </summary>
     public static NativePluginLoadResult Load(string libraryPath)
     {
@@ -118,9 +125,10 @@ public sealed class NativePlugin : IDisposable
             var stop = ResolveExport<StopFn>(handle, "cxagent_plugin_stop");
             var free = ResolveExport<FreeFn>(handle, "cxagent_plugin_free");
             var poll = ResolveOptionalExport<PollFn>(handle, "cxagent_plugin_poll");
+            var command = ResolveOptionalExport<CommandFn>(handle, "cxagent_plugin_command");
 
             return new NativePluginLoadResult.Loaded(
-                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free, poll)));
+                new NativePlugin(handle, new Exports(abiVersion, describe, start, invoke, gate, stop, free, poll, command)));
         }
         catch (MissingExportException ex)
         {
@@ -161,6 +169,11 @@ public sealed class NativePlugin : IDisposable
     /// before the export existed, which is not a refused load (see <see cref="Load"/>), just a
     /// plugin this host never polls.</summary>
     public bool HasPoll => _poll is not null;
+
+    /// <summary>Whether this library exported <c>cxagent_plugin_command</c> — false for a library
+    /// built before commands existed, or one that declares none of its own, which is not a refused
+    /// load (see <see cref="Load"/>), just a plugin this host never asks to run one.</summary>
+    public bool HasCommand => _command is not null;
 
     /// <summary>The ABI version this library reports — checked by the caller against
     /// <see cref="CxAgent.Core.Plugins.PluginContract.Version"/> with a range, not exact equality
@@ -249,6 +262,46 @@ public sealed class NativePlugin : IDisposable
             // FREED THROUGH THE PLUGIN'S OWN FREE, like every other returned pointer: the library
             // allocated it and only the library knows how to release it.
             _free(result);
+        }
+    }
+
+    /// <summary>
+    /// Calls <c>cxagent_plugin_command</c> with <paramref name="name"/> and
+    /// <paramref name="argumentsJson"/>. Returns null when the plugin returned NULL, which is its
+    /// ordinary way of saying "ran and had nothing to say" — like <see cref="Gate"/> and
+    /// <see cref="Poll"/>, this export's null return is an ANSWER rather than a failure, so it is
+    /// not routed through CallAndFree's non-null expectation. Throws if the library never exported
+    /// <c>command</c> at all — callers must check <see cref="HasCommand"/> first, matching
+    /// <see cref="Poll"/>'s own discipline: there is no ABI-level way to answer "nothing to say" and
+    /// "cannot be asked" with the same null.
+    /// </summary>
+    public string? Command(string name, string argumentsJson)
+    {
+        if (_command is null)
+            throw new InvalidOperationException(
+                "this library never exported cxagent_plugin_command — check HasCommand before calling Command.");
+
+        var namePtr = Utf8.StringToNative(name);
+        var argsPtr = Utf8.StringToNative(argumentsJson);
+        try
+        {
+            var result = _command(namePtr, argsPtr);
+            if (result == IntPtr.Zero) return null;
+            try
+            {
+                return Utf8.NativeToString(result);
+            }
+            finally
+            {
+                // FREED THROUGH THE PLUGIN'S OWN FREE, like every other returned pointer: the
+                // library allocated it and only the library knows how to release it.
+                _free(result);
+            }
+        }
+        finally
+        {
+            Utf8.FreeNative(namePtr);
+            Utf8.FreeNative(argsPtr);
         }
     }
 

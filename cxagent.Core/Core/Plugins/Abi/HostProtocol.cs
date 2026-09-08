@@ -35,14 +35,22 @@ public static class HostProtocol
 
         /// <summary>One per-call permission decision — see <c>cxagent_plugin_gate</c>.</summary>
         Gate,
+
+        /// <summary>One user-typed command — see <c>cxagent_plugin_command</c>.</summary>
+        Command,
     }
 }
 
 /// <summary>
 /// One line the parent sends. <see cref="ToolName"/>/<see cref="Arguments"/> are used only for
-/// <see cref="HostProtocol.RequestKind.Invoke"/> and ignored otherwise — a single shape for all
-/// three requests rather than three near-identical ones, matching how <c>AbiResultEnvelope</c>
-/// itself is one shape for start/invoke/stop replies.
+/// <see cref="HostProtocol.RequestKind.Invoke"/> and <see cref="HostProtocol.RequestKind.Gate"/>,
+/// and ignored otherwise — a single shape for all requests rather than one near-identical shape
+/// per kind, matching how <c>AbiResultEnvelope</c> itself is one shape for start/invoke/stop
+/// replies. A <see cref="HostProtocol.RequestKind.Command"/> reuses the same two fields: THE
+/// COMMAND'S NAME IN <see cref="ToolName"/>, and its typed argument string carried as a JSON
+/// string INSIDE <see cref="Arguments"/> (<c>"arguments":"the goal"</c>, not a bare unquoted
+/// string) — a second string-typed field on this record would exist for exactly one request kind,
+/// where reusing the one <see cref="System.Text.Json.JsonElement"/> already here costs nothing.
 /// </summary>
 public sealed record HostRequest(
     [property: JsonPropertyName("id")] long Id,
@@ -66,12 +74,19 @@ public sealed record HostRequest(
 /// <param name="Error">Why the call could not be made, when <paramref name="Ok"/> is false.</param>
 /// <param name="Gate">A gate reply's payload — null for every other request kind, and null from a
 /// gate that decided this call needs no prompt.</param>
+/// <param name="Command">A command reply's payload — null for every other request kind, and null
+/// on an <c>ok:false</c> reply (the library had no <c>cxagent_plugin_command</c> export, or the
+/// call threw on the managed side of the marshal). A command that ran and said nothing still
+/// carries a non-null <see cref="AbiCommandResult"/> with a null <see cref="AbiCommandResult.Message"/>
+/// — <c>ok</c> answers "did the call cross the boundary", never "did the command have anything to
+/// say", the same distinction <see cref="Result"/> already draws for invoke.</param>
 public sealed record HostReply(
     [property: JsonPropertyName("id")] long Id,
     [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("result")] AbiJobResult? Result,
     [property: JsonPropertyName("error")] string? Error,
-    [property: JsonPropertyName("gate")] AbiGate? Gate = null);
+    [property: JsonPropertyName("gate")] AbiGate? Gate = null,
+    [property: JsonPropertyName("command")] AbiCommandResult? Command = null);
 
 /// <summary>
 /// What <c>cxagent_plugin_gate</c> returns, mirroring <see cref="PluginGate"/>. Carries WORDING

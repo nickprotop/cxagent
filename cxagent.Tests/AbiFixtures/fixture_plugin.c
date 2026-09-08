@@ -15,6 +15,10 @@
  * ({"goal":"run the tests","wantResult":false}) on its FIRST call and NULL on every call after —
  * once, not every tick, so a test waiting for exactly one submit line does not have to distinguish
  * "the host stopped polling" from "the plugin keeps sending the same one."
+ * FIXTURE_COMMANDS: exports cxagent_plugin_command, one declared command "greet" that echoes its
+ * argument back, so AbiPluginHostTests can prove the host dispatches a real command through a real
+ * process rather than only at the managed AbiCodec seam. Every other build omits this export
+ * entirely, proving NativePlugin.HasCommand is false and the load still succeeds without it.
  * FIXTURE_MALFORMED also counts cxagent_plugin_free calls to a file (see FREE_COUNT_PATH env var,
  * read once at process start) — AbiPluginHostTests.FreeIsCalledExactlyOnce_EvenOnAParseFailure
  * reads it back to prove the host's free-exactly-once discipline holds on the parse-failure path,
@@ -106,6 +110,22 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json) 
 const char* cxagent_plugin_stop(void) {
     return dup_str("{\"ok\":true}");
 }
+
+#ifdef FIXTURE_COMMANDS
+/* ONE DECLARED COMMAND, "greet" — echoes its argument back so the test can tell the argument
+ * actually crossed the boundary, not just that some reply came back. Any other name is refused,
+ * proving a plugin's own RunCommand (not the host's "no such export" refusal AbiPlugin.RunCommand
+ * gives when this export is absent entirely) can answer "refused" on its own terms too. */
+const char* cxagent_plugin_command(const char* name, const char* arguments) {
+    if (name != NULL && strcmp(name, "greet") == 0) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "{\"message\":\"hello, %s\",\"status\":\"reported\"}",
+            arguments != NULL ? arguments : "");
+        return dup_str(buf);
+    }
+    return dup_str("{\"message\":\"no such command\",\"status\":\"refused\"}");
+}
+#endif
 
 #ifdef FIXTURE_SUBMITS
 /* ONE SUBMIT, EVER — a static flag rather than a counter because the test reading this only cares

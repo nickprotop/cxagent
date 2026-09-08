@@ -129,7 +129,13 @@ public static class AbiCodec
     public static PluginManifest ToPluginManifest(AbiManifest abi) => new(
         abi.Name, abi.Version, abi.Instructions, abi.Spawns,
         abi.Tools.Select(t => new PluginToolManifest(t.Name, t.Description, t.InputSchema,
-            PluginGatingJson.Parse(t.Gated, t.Name, out _), t.AlwaysAskable ?? true)).ToList())
+            PluginGatingJson.Parse(t.Gated, t.Name, out _), t.AlwaysAskable ?? true)).ToList(),
+        // NULL FLOWS THROUGH AS NULL, not an empty list — PluginManifest.DeclaredCommands' own
+        // default already reads a null the same way PluginManifest.Commands does (never null,
+        // empty when absent), so there is no information lost by carrying the absence itself
+        // rather than converting it to an empty list one layer early.
+        abi.Commands?.Select(c => new PluginCommandManifest(c.Name, c.Summary,
+            c.Arguments?.Select(a => new PluginCommandArgument(a.Name, a.Summary)).ToList())).ToList())
     {
         // CARRIED, NOT DROPPED. describe's own contract number is what the SIDECAR is compared
         // against downstream; leaving it null here would make every ABI plugin look like one whose
@@ -174,6 +180,55 @@ public static class AbiCodec
         var argsJson = JsonSerializer.Serialize(call.Values, WriteOptions);
         using var doc = JsonDocument.Parse(argsJson);
         return WriteInvokeCall(toolName, doc.RootElement.Clone());
+    }
+
+    // ---- command result (plugin -> host) ----
+
+    /// <summary>
+    /// Parses the JSON <c>cxagent_plugin_command</c> returns into an <see cref="AbiCommandResult"/>
+    /// — NULL from the export itself is a valid, ordinary answer (cxagent_plugin.h's own "MAY
+    /// RETURN NULL" note on this export, the same exception <c>gate</c> and <c>poll</c> already
+    /// carry) and is translated here into <see cref="PluginCommandOutcome.Reported"/> with a null
+    /// message, exactly what a managed plugin's own <c>RunCommand</c> returns when it ran and had
+    /// nothing to say. A non-null return that fails to parse, or names a status this contract does
+    /// not recognise, is refused BY NAME rather than guessed at — the same "fails, quoting a
+    /// bounded prefix" discipline <see cref="ParseEnvelope"/> already applies to invoke.
+    /// </summary>
+    public static AbiParseResult<CommandResult> ParseCommandResult(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return AbiParseResult<CommandResult>.Success(new CommandResult(null, PluginCommandOutcome.Reported));
+
+        AbiCommandResult? result;
+        try
+        {
+            result = JsonSerializer.Deserialize<AbiCommandResult>(json);
+        }
+        catch (JsonException ex)
+        {
+            return AbiParseResult<CommandResult>.Failure(
+                $"cxagent_plugin_command returned invalid JSON: {ex.Message} (payload: {Preview(json)})");
+        }
+
+        if (result is null)
+            return AbiParseResult<CommandResult>.Failure(
+                "cxagent_plugin_command returned JSON null, not a result object — return NULL itself for that.");
+
+        // LOWERCASE, MATCHING "gated"'S OWN WIRE SPELLING — a native author writes this by hand,
+        // never by reference to the managed enum's casing.
+        PluginCommandOutcome status = result.Status switch
+        {
+            "reported" => PluginCommandOutcome.Reported,
+            "changed" => PluginCommandOutcome.Changed,
+            "refused" => PluginCommandOutcome.Refused,
+            _ => (PluginCommandOutcome)(-1),
+        };
+        if ((int)status == -1)
+            return AbiParseResult<CommandResult>.Failure(
+                $"cxagent_plugin_command returned unrecognised status '{result.Status}' "
+                + "(expected \"reported\", \"changed\", or \"refused\").");
+
+        return AbiParseResult<CommandResult>.Success(new CommandResult(result.Message, status));
     }
 
     // ---- result envelope (plugin -> host) ----

@@ -1,9 +1,10 @@
 /*
  * cxagent ABI plugin contract — v3.
  *
- * A native plugin is a shared library (.so / .dll / .dylib) exporting eight `extern "C"`
- * functions — seven MANDATORY and one OPTIONAL (cxagent_plugin_poll, see below) — name-resolved
- * by the host process (Task 9b), not linked. This header is the authoritative declaration;
+ * A native plugin is a shared library (.so / .dll / .dylib) exporting nine `extern "C"`
+ * functions — seven MANDATORY and two OPTIONAL (cxagent_plugin_poll and cxagent_plugin_command,
+ * see below) — name-resolved by the host process (Task 9b), not linked. This header is the
+ * authoritative declaration;
  * CxAgent.Core/Core/Plugins/Abi/*.cs mirrors it on the managed side and
  * cxagent.Core/Core/Plugins/Abi/README.md carries the JSON schemas each call exchanges.
  *
@@ -22,14 +23,14 @@
  * OWNERSHIP: every string is allocated by the side that produced it and freed by that side's own
  * allocator. The host's `context_json` / `call_json` arguments are host-owned, valid only for the
  * duration of the call — a plugin retaining either must copy it. Every string this library
- * RETURNS (from describe, start, invoke, stop, poll) is plugin-allocated and MUST be released by
- * the plugin's own `cxagent_plugin_free`, called by the host exactly once per returned pointer,
- * never by the plugin itself. A plugin must never return a static/const literal or a stack buffer
- * from any of these functions — the host always hands the pointer back to cxagent_plugin_free, and
- * freeing memory the plugin did not heap-allocate is undefined behaviour. See "Why a plugin must
- * never return NULL" below for the one exception (a static sentinel `cxagent_plugin_free`
- * recognises and skips) — gate and poll additionally MAY return NULL as an ordinary answer; see
- * each function's own doc.
+ * RETURNS (from describe, start, invoke, stop, poll, command) is plugin-allocated and MUST be
+ * released by the plugin's own `cxagent_plugin_free`, called by the host exactly once per returned
+ * pointer, never by the plugin itself. A plugin must never return a static/const literal or a
+ * stack buffer from any of these functions — the host always hands the pointer back to
+ * cxagent_plugin_free, and freeing memory the plugin did not heap-allocate is undefined behaviour.
+ * See "Why a plugin must never return NULL" below for the one exception (a static sentinel
+ * `cxagent_plugin_free` recognises and skips) — gate, poll, and command additionally MAY return
+ * NULL as an ordinary answer; see each function's own doc.
  */
 
 #ifndef CXAGENT_PLUGIN_H
@@ -204,11 +205,47 @@ const char* cxagent_plugin_stop(void);
 const char* cxagent_plugin_poll(void);
 
 /*
+ * OPTIONAL EXPORT: COMMAND. Runs one command a person typed, named by describe()'s own "commands"
+ * array — the same relationship invoke has to "tools", but typed by a HUMAN rather than a model:
+ * `arguments` is everything the user wrote after the command's name, trimmed, exactly as they
+ * wrote it rather than a JSON object matching a schema, and `""` (never NULL) when there was
+ * nothing after the name.
+ *
+ * THIS EXPORT IS OPTIONAL, unlike every mandatory function above, for the SAME reason poll is: a
+ * library built before commands existed, or one whose manifest declares none at all, omits it
+ * entirely, and the host loads it exactly as it always has — resolved by name at load time, and
+ * its absence is not a load failure. A library that DOES declare a command in describe()'s own
+ * "commands" array but omits this export is refused when that command is actually run, not at
+ * load — there is no way for the host to know an export exists without asking for it, so unlike a
+ * managed plugin's own compile-time check, this one can only happen the first time it matters.
+ *
+ * `name` is the declared command WITHOUT its leading slash — describe() declares "schedule", never
+ * "/schedule", and this receives the identical spelling. `name` and `arguments` are both
+ * host-owned, valid only for the duration of this call.
+ *
+ * Returns a UTF-8 JSON object: {"message": "...", "status": "reported"|"changed"|"refused"} — see
+ * README.md, "command" for the field meanings, which mirror CxAgent.Core.Plugins.CommandResult
+ * field-for-field. `message` MAY be JSON null when the command has nothing to say. `status` MUST
+ * be exactly one of the three strings above; anything else fails the call the same way malformed
+ * JSON does.
+ *
+ * MAY RETURN NULL, an explicit exception to "a plugin must never return NULL" (see OWNERSHIP,
+ * above) shared with gate and poll: NULL here means "ran, and said nothing" — the equivalent of
+ * returning {"message":null,"status":"reported"} without allocating a string to say so. Use NULL
+ * for that ordinary case; reserve a non-null "refused" for a command that has a reason to give.
+ *
+ * NOT CALLED CONCURRENTLY WITH ITSELF, but MAY be called concurrently with cxagent_plugin_invoke
+ * and cxagent_plugin_poll — the same reentrancy assumption invoke's own doc states, since a person
+ * may type a command while a tool call from an earlier turn is still running.
+ */
+const char* cxagent_plugin_command(const char* name, const char* arguments);
+
+/*
  * Releases a string previously returned by cxagent_plugin_describe / _start / _invoke / _stop /
- * _poll (when poll's return was not NULL). Called by the host exactly once per returned pointer,
- * in a `finally`-equivalent — always, including when the envelope failed to parse. NEVER called by
- * the plugin on its own output; the host owns the release side of every pointer this library hands
- * back.
+ * _poll / _command (when poll's or command's return was not NULL). Called by the host exactly once
+ * per returned pointer, in a `finally`-equivalent — always, including when the envelope failed to
+ * parse. NEVER called by the plugin on its own output; the host owns the release side of every
+ * pointer this library hands back.
  */
 void cxagent_plugin_free(const char* ptr);
 

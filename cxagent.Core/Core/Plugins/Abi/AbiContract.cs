@@ -20,7 +20,12 @@ public sealed record AbiManifest(
     // ABSENT MEANS FALSE — a library built before contract 3 (or one that just never asks) has no
     // "client" key in its describe() JSON at all, and PluginManifest.Client's own default is false
     // for exactly that reason: silence reads as "did not ask," never as "host too old to tell."
-    [property: JsonPropertyName("client")] bool Client = false);
+    [property: JsonPropertyName("client")] bool Client = false,
+    // ABSENT MEANS NONE — the same shape of addition as Client, above: a library built before
+    // commands existed has no "commands" key in its describe() JSON at all, and
+    // PluginManifest.DeclaredCommands' own default (null, read back as an empty list through
+    // PluginManifest.Commands) already means exactly that for a managed plugin's manifest.
+    [property: JsonPropertyName("commands")] IReadOnlyList<AbiCommandManifest>? Commands = null);
 
 /// <summary>One tool entry inside <see cref="AbiManifest"/> — mirrors <see cref="PluginToolManifest"/>.</summary>
 public sealed record AbiToolManifest(
@@ -32,6 +37,17 @@ public sealed record AbiToolManifest(
     // rule — including refusing an unknown string by name instead of falling back to "never ask".
     [property: JsonPropertyName("gated")] JsonElement Gated,
     [property: JsonPropertyName("alwaysAskable")] bool? AlwaysAskable = null);
+
+/// <summary>One command entry inside <see cref="AbiManifest"/> — mirrors <see cref="PluginCommandManifest"/>.</summary>
+public sealed record AbiCommandManifest(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("arguments")] IReadOnlyList<AbiCommandArgument>? Arguments = null);
+
+/// <summary>One argument entry inside <see cref="AbiCommandManifest"/> — mirrors <see cref="PluginCommandArgument"/>.</summary>
+public sealed record AbiCommandArgument(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("summary")] string Summary);
 
 /// <summary>
 /// The JSON <c>cxagent_plugin_start</c> receives — see Abi/README.md, "context". Deliberately
@@ -54,6 +70,17 @@ public sealed record AbiPluginContext(
 public sealed record AbiInvokeCall(
     [property: JsonPropertyName("toolName")] string ToolName,
     [property: JsonPropertyName("arguments")] JsonElement Arguments);
+
+/// <summary>
+/// The JSON <c>cxagent_plugin_command</c> returns — see Abi/README.md, "command". Field-for-field
+/// <see cref="CommandResult"/>, with <see cref="Status"/> spelled as the lowercase wire form of
+/// <see cref="PluginCommandOutcome"/> rather than the enum's own name, matching how <c>gated</c>
+/// already crosses the wire as a string a native author writes by hand rather than a numeric enum
+/// value they would have to look up.
+/// </summary>
+public sealed record AbiCommandResult(
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("status")] string Status);
 
 /// <summary>
 /// The JSON result of one call to a <see cref="Models.JobResult"/>-shaped operation — the payload

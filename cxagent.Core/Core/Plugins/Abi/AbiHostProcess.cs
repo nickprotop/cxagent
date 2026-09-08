@@ -326,6 +326,13 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     public Task<HostReply> Stop(CancellationToken ct) =>
         Send(HostProtocol.RequestKind.Stop, null, null, ct);
 
+    /// <summary>Sends a <c>command</c> request for <paramref name="name"/> and awaits its reply — see
+    /// <see cref="HostRequest"/>'s own doc for why <paramref name="arguments"/> travels as a JSON
+    /// STRING inside the request's <c>arguments</c> field rather than a second plain-string
+    /// parameter this record has no room for.</summary>
+    public Task<HostReply> Command(string name, string arguments, CancellationToken ct) =>
+        Send(HostProtocol.RequestKind.Command, name, JsonSerializer.SerializeToElement(arguments), ct);
+
     /// <summary>
     /// Sends one request and waits for its reply, or gives up — never hangs and never throws past
     /// this method. Three ways this can end besides an ordinary reply:

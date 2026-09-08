@@ -234,6 +234,8 @@ static async Task HandleRequest(NativePlugin plugin, HostRequest request)
 
             HostProtocol.RequestKind.Gate => RunGateCall(request, plugin),
 
+            HostProtocol.RequestKind.Command => RunCommandCall(request, plugin),
+
             HostProtocol.RequestKind.Stop => RunVoidCall(request.Id, plugin.Stop),
 
             _ => new HostReply(request.Id, false, null, $"unknown request kind '{request.Kind}'."),
@@ -284,6 +286,51 @@ static HostReply RunGateCall(HostRequest request, NativePlugin plugin)
     {
         return new HostReply(request.Id, false, null, $"gate returned unparseable JSON: {ex.Message}");
     }
+}
+
+/// <summary>
+/// One user-typed command. A library that never exported <c>cxagent_plugin_command</c> — built
+/// before commands existed, or declaring none of its own — is refused BY NAME rather than
+/// attempted: there is nothing to call, and the parent (AbiPlugin.RunCommand) turns this exact
+/// failure into the same refused-by-name shape a missing client capability already gets.
+/// </summary>
+static HostReply RunCommandCall(HostRequest request, NativePlugin plugin)
+{
+    var name = request.ToolName ?? "";
+    if (!plugin.HasCommand)
+        return new HostReply(request.Id, false, null,
+            $"plugin does not export cxagent_plugin_command — cannot run '/{name}'.");
+
+    // THE SAME ENCODING HostRequest'S OWN DOC NAMES: a command's argument string travels as a JSON
+    // string inside Arguments, not a bare unquoted one — GetString() unwraps it back to the plain
+    // text cxagent_plugin_command expects.
+    var arguments = request.Arguments?.ValueKind == JsonValueKind.String
+        ? request.Arguments.Value.GetString() ?? ""
+        : "";
+
+    string? json;
+    try
+    {
+        json = plugin.Command(name, arguments);
+    }
+    catch (Exception ex)
+    {
+        return new HostReply(request.Id, false, null, $"command threw: {ex.Message}");
+    }
+
+    var parsed = AbiCodec.ParseCommandResult(json);
+    if (!parsed.IsSuccess)
+        return new HostReply(request.Id, false, null, parsed.Error);
+
+    var result = parsed.Value;
+    var status = result.Status switch
+    {
+        PluginCommandOutcome.Reported => "reported",
+        PluginCommandOutcome.Changed => "changed",
+        PluginCommandOutcome.Refused => "refused",
+        _ => "reported",
+    };
+    return new HostReply(request.Id, true, null, null, Command: new AbiCommandResult(result.Message, status));
 }
 
 static HostReply RunVoidCall(long id, Func<string> call)

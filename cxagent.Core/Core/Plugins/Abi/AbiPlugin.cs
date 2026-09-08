@@ -24,7 +24,7 @@ namespace CxAgent.Core.Plugins.Abi;
 /// spawning the host, running the handshake, and registering the child process; by the time this
 /// type exists, all of that has already succeeded.</para>
 /// </summary>
-public sealed class AbiPlugin : IPlugin, IPluginGateSource
+public sealed class AbiPlugin : IPlugin, IPluginGateSource, IPluginCommandHandler
 {
     private readonly AbiHostProcess _host;
     private readonly PluginManifest _manifest;
@@ -193,6 +193,45 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
             Duration = TimeSpan.FromMilliseconds(r.DurationMs),
         };
     }
+
+    /// <summary>
+    /// Sends <c>command</c> for <paramref name="name"/> — REFUSED BY NAME, NEVER THROWN, when the
+    /// host reports the library has no <c>cxagent_plugin_command</c> export, the identical shape
+    /// <see cref="OnPluginSubmitted"/> already refuses a plugin that polled a submit without
+    /// declaring the client capability: a manifest promising a command whose binary cannot run it
+    /// is a mismatch <see cref="ManagedPluginLoader"/> would catch at load time for a managed
+    /// plugin, but this loader has no equivalent static check (a native library's exports are only
+    /// known once the host calls them), so the refusal happens here, at the first call, instead. A
+    /// dead host or a malformed reply is refused the same way — there is no exception this
+    /// interface's caller (<see cref="PluginRegistry"/>'s command dispatch) expects to catch, only
+    /// the <see cref="CommandResult"/> shape every other outcome already uses.
+    /// </summary>
+    public async Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct)
+    {
+        var reply = await _host.Command(name, arguments, ct).ConfigureAwait(false);
+        if (!reply.Ok)
+            return new CommandResult(
+                $"plugin '{_manifest.Name}' could not run '/{name}': {reply.Error}", PluginCommandOutcome.Refused);
+
+        if (reply.Command is null)
+            return new CommandResult(
+                $"plugin '{_manifest.Name}' replied ok:true to command '/{name}' with no result.",
+                PluginCommandOutcome.Refused);
+
+        return new CommandResult(reply.Command.Message, PluginCommandOutcomeOf(reply.Command.Status));
+    }
+
+    /// <summary>Translates the wire's lowercase status spelling back into the managed enum — the
+    /// counterpart to <c>Program.cs</c>'s own switch in the other direction. An unrecognised value
+    /// cannot reach here: <see cref="AbiCodec.ParseCommandResult"/> already refuses one on the host
+    /// process's own side of the boundary, so <see cref="HostReply.Command"/> only ever carries one
+    /// of the three this class recognises.</summary>
+    private static PluginCommandOutcome PluginCommandOutcomeOf(string status) => status switch
+    {
+        "changed" => PluginCommandOutcome.Changed,
+        "refused" => PluginCommandOutcome.Refused,
+        _ => PluginCommandOutcome.Reported,
+    };
 
     /// <summary>
     /// How long a gate may take before the host stops waiting and asks instead. Short because this

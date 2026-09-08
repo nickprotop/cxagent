@@ -95,6 +95,63 @@ public class AbiPluginHostTests
         Assert.True(stopReply.Ok);
     }
 
+    // ---- A plugin that exports a command ------------------------------------------------------
+
+    [Fact]
+    public async Task ADeclaredCommandRunsThroughARealProcess()
+    {
+        if (!RequireFixture("fixture-commands", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        Assert.True(handshake.Ready);
+
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        var reply = await host.Command("greet", "world", CancellationToken.None);
+
+        Assert.True(reply.Ok);
+        Assert.NotNull(reply.Command);
+        Assert.Equal("hello, world", reply.Command!.Message);
+        Assert.Equal("reported", reply.Command.Status);
+
+        // A NAME THE FIXTURE'S OWN cxagent_plugin_command DOES NOT RECOGNISE — the library exports
+        // the function and still gets to say "refused" on its own terms, distinct from the host
+        // refusing an export that never existed at all (see the no-export test below).
+        var refused = await host.Command("nope", "", CancellationToken.None);
+        Assert.True(refused.Ok);
+        Assert.Equal("refused", refused.Command!.Status);
+    }
+
+    // ---- A well-formed plugin built before commands existed still loads and still refuses one -----
+
+    [Fact]
+    public async Task APluginWithNoCommandExportStillLoadsAndRefusesByName()
+    {
+        // FIXTURE-WELLFORMED, DELIBERATELY — contract 3's own regression: a plugin built before
+        // (or that simply never declares) any command must load exactly as it always has, and
+        // asking it for a command it never exported must fail cleanly rather than crash the host
+        // process or hang the caller.
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        Assert.True(handshake.Ready);
+
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        var reply = await host.Command("greet", "world", CancellationToken.None);
+        Assert.False(reply.Ok);
+        Assert.NotNull(reply.Error);
+        Assert.Contains("cxagent_plugin_command", reply.Error);
+
+        // THE HOST PROCESS ITSELF IS STILL ALIVE — refusing a missing export is a data problem, not
+        // a fault that should take the process down, the same discipline a malformed envelope gets.
+        var invokeReply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "hi" }),
+            CancellationToken.None);
+        Assert.True(invokeReply.Ok);
+    }
+
     // ---- A plugin that returns a malformed envelope -------------------------------------------
 
     [Fact]
