@@ -205,6 +205,11 @@ public static class PluginResolver
 
         public IPluginClient? Client { get; } = runtime.Client;
 
+        // THE SAME ID THE CHILD-PROCESS RECORD IS SCOPED BY, handed to the plugin rather than only
+        // used on its behalf: a plugin keying per-session state in a static needs the key Core
+        // already has.
+        public string? SessionId { get; } = runtime.SessionId;
+
         // CANCELLED AT STOP, AND ONLY AT STOP. A plugin that starts a timer needs a signal that its
         // session is done with it, or the timer outlives the plugin and keeps running against a
         // session nobody is watching — which matters more now that a plugin can submit work.

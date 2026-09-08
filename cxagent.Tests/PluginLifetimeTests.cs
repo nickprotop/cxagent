@@ -18,6 +18,26 @@ public class PluginLifetimeTests
             throw new NotSupportedException("not exercised by this test");
     }
 
+    /// <summary>
+    /// A plugin can tell WHICH session it was loaded into.
+    ///
+    /// <para>THE VALUE WAS CARRIED BEFORE IT WAS EXPOSED — Core scoped child-process records by it
+    /// while <see cref="IPluginContext"/> had no member for it, so a plugin keying per-session state
+    /// in a static had no key to use. Two sessions on one folder are indistinguishable by
+    /// <see cref="IPluginContext.WorkingDirectory"/> alone.</para>
+    /// </summary>
+    [Fact]
+    public void A_plugin_is_told_which_session_it_belongs_to()
+    {
+        using var doc = JsonDocument.Parse("{}");
+        var children = new ChildProcessStore(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()));
+        using var context = new PluginResolver.RuntimeContext(new PluginResolver.PluginRuntime(
+            WorkingDirectory: Path.GetTempPath(), Settings: doc.RootElement, Report: _ => { },
+            Children: children, PluginName: "test", SessionId: "session-42", Client: null));
+
+        Assert.Equal("session-42", ((IPluginContext)context).SessionId);
+    }
+
     [Fact]
     public void Lifetime_is_cancelled_when_the_context_is_disposed()
     {

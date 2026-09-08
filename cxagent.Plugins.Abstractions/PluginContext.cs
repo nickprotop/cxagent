@@ -76,6 +76,19 @@ public interface IPluginContext
     IPluginClient? Client => null;
 
     /// <summary>
+    /// Which session this instance was loaded into, or null when the host does not scope by session.
+    ///
+    /// <para>WITHOUT IT, TWO SESSIONS IN ONE FOLDER ARE INDISTINGUISHABLE. A plugin gets its own
+    /// instance per session, so anything it holds in a static — a cache, a connection, a map of
+    /// pending work — is shared across every session in the process, and <see cref="WorkingDirectory"/>
+    /// cannot separate two sessions opened on the same folder. This is the key that can.</para>
+    ///
+    /// <para>A DEFAULT MEMBER, so an embedder's own <see cref="IPluginContext"/> still compiles: it is
+    /// additive and costs no contract floor rise.</para>
+    /// </summary>
+    string? SessionId => null;
+
+    /// <summary>
     /// Cancelled at Stop, and only at Stop.
     ///
     /// <para>THIS IS THE PLUGIN INSTANCE'S TOKEN, NOT A TURN'S. A session holds a per-turn scope,
