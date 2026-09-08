@@ -244,9 +244,18 @@ public static class PluginManagerRows
     }
 
     /// <summary>Why this contract cannot load here, or null when it can. Split by direction: the
-    /// remedies are different and only one of them is in this dialog.</summary>
-    private static string? Mismatch(int contract) => contract == PluginContract.Version ? null
-        : contract < PluginContract.Version
+    /// remedies are different and only one of them is in this dialog.
+    ///
+    /// <para>A RANGE, MATCHING <see cref="PluginContract.Refusal"/> — NOT EXACT EQUALITY AGAINST
+    /// <see cref="PluginContract.Version"/>. The two must not drift apart: the loader accepts anything
+    /// in <c>[Oldest, Version]</c>, so a dialog that only accepts the exact ceiling would tell a user
+    /// a perfectly loadable older plugin "needs a newer build" while the loader loads it happily. That
+    /// was true here from <c>Oldest == Version</c> until the first bump past it made the two answers
+    /// disagree — a range comparison keeps them the same question.</para>
+    /// </summary>
+    private static string? Mismatch(int contract) =>
+        contract >= PluginContract.Oldest && contract <= PluginContract.Version ? null
+        : contract < PluginContract.Oldest
             ? $"contract {contract} · needs a newer build"
             : $"contract {contract} · needs a newer cxagent";
 
