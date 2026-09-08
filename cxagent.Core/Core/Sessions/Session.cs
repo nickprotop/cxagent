@@ -605,13 +605,31 @@ public sealed partial class Session
             ? name => Jobs.ToolBindings.IsBuiltinName(name) || host.KnowsInjectedTool(name)
             : (Func<string, bool>)Jobs.ToolBindings.IsBuiltinName;
 
-        var result = Plugins.Load(plugin, manifest, isNameTaken, context, client);
+        // A COMMAND'S TABLE IS THE MANAGER'S, NOT THIS SESSION'S — see SessionManager.Commands,
+        // shared by every session it opens. Manager is null only before this session's first wire
+        // (SessionFactory.Wire runs before NoteManager), so a plugin loaded that early declares
+        // commands nobody can check or register — the same "no gate, no prompt" absence isNameTaken
+        // above already tolerates for Host.
+        var isCommandNameTaken = Manager is { } manager
+            ? (Func<string, bool>)(name => manager.Commands.IsRegistered(name))
+            : null;
+
+        var result = Plugins.Load(plugin, manifest, isNameTaken, context, client,
+            isCommandNameTaken, Manager?.Commands);
 
         if (result is Plugins.PluginLoadResult.NameCollision collision)
         {
             Say(new Message(
                 $"plugin '{manifest.Name}' was not loaded — its tool '{collision.ToolName}' is "
                 + "already offered by this session.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        if (result is Plugins.PluginLoadResult.CommandNameCollision commandCollision)
+        {
+            Say(new Message(
+                $"plugin '{manifest.Name}' was not loaded — its command '/{commandCollision.CommandName}' "
+                + "is already offered by this session.", Severity.Warning));
             return CommandStatus.Reported;
         }
 
@@ -1196,6 +1214,22 @@ public sealed partial class Session
     /// own diagnosis, which is why this is the session's line rather than the plugin's.
     /// </summary>
     internal void SayPluginLifecycle(string message) => Say(new Message(message, Severity.Warning));
+
+    /// <summary>
+    /// Relays one plugin COMMAND's result to the transcript — called from
+    /// <see cref="Plugins.PluginRegistry"/>'s dispatch, the same seam <see cref="SayPluginLifecycle"/>
+    /// uses for the same reason: the plugin does not write to the transcript itself.
+    ///
+    /// <para>THE SEVERITY IS THE OUTCOME, mapped the way every DOES-SAYS-ANNOUNCES command method in
+    /// <c>Session.Commands.cs</c> already reads its own <see cref="CommandStatus"/> — a plugin
+    /// declining its own command (<see cref="Plugins.PluginCommandOutcome.Refused"/>) is worth a
+    /// warning for the same reason <c>SetMode</c> refusing while busy is, and a plain
+    /// <see cref="Plugins.PluginCommandOutcome.Reported"/> or
+    /// <see cref="Plugins.PluginCommandOutcome.Changed"/> is ordinary conversation.</para>
+    /// </summary>
+    internal void SayPluginCommandResult(string text, CxAgent.Core.Plugins.PluginCommandOutcome outcome) =>
+        Say(new Message(text, outcome == CxAgent.Core.Plugins.PluginCommandOutcome.Refused
+            ? Severity.Warning : Severity.Info));
 
     /// <summary>Records the policy this session is judged by, so it can move both mode axes
     /// together. Called by SessionFactory, which is handed it in the ports.</summary>

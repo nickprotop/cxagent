@@ -43,6 +43,23 @@ public sealed class CommandRegistry
     public void Register(SessionCommand command, CommandHandler handle) =>
         _byName[command.Name] = new Entry(command, handle);
 
+    /// <summary>
+    /// Whether a command of this name is currently registered — a plugin's collision check, which
+    /// asks about the same table <see cref="Register"/> writes rather than <c>SessionCommands.All</c>,
+    /// the seeded table: a name a front end registered without ever appearing in that table (a key
+    /// map, a quit) is exactly as taken as one that does.
+    /// </summary>
+    public bool IsRegistered(string name) => _byName.ContainsKey(name);
+
+    /// <summary>
+    /// Removes a command, for a plugin's unwire. <see cref="Register"/> REPLACES rather than
+    /// refusing, so there is no earlier registration for a removal to restore — a plugin's command
+    /// outliving its plugin would dispatch into a severed instance, which is the only reason this
+    /// exists: nothing else in this table is ever taken back once given.
+    /// </summary>
+    /// <returns>False when no command of this name was registered.</returns>
+    public bool Deregister(string name) => _byName.Remove(name);
+
     /// <summary>Every registered command, for a palette or a help listing.</summary>
     public IReadOnlyList<SessionCommand> All => [.. _byName.Values.Select(e => e.Command)];
 

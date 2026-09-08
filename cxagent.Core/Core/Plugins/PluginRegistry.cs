@@ -1,3 +1,4 @@
+using CxAgent.Core.Commands;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
@@ -22,13 +23,20 @@ namespace CxAgent.Core.Plugins;
 /// <see cref="PluginRegistry.UnwireAsync"/>. Null for a context built without one (a test fixture,
 /// mainly); a plugin loaded through <see cref="Sessions.Session.LoadPlugin"/> always has one.
 /// </param>
+/// <param name="commands">
+/// The table this plugin's <see cref="PluginManifest.Commands"/> were registered into, retained so
+/// <see cref="PluginRegistry.UnwireAsync"/> can deregister them without asking the caller to supply
+/// the same registry a second time at unwire. Null when this plugin declared no commands, or was
+/// loaded with none to register into.
+/// </param>
 internal sealed class LoadedPlugin(IPlugin instance, PluginManifest manifest,
-    IDisposable? context = null, SessionPluginClient? client = null)
+    IDisposable? context = null, SessionPluginClient? client = null, CommandRegistry? commands = null)
 {
     public IPlugin Instance { get; } = instance;
     public PluginManifest Manifest { get; } = manifest;
     public IDisposable? Context { get; } = context;
     public SessionPluginClient? Client { get; } = client;
+    public CommandRegistry? Commands { get; } = commands;
 
     /// <summary>
     /// Calls into this plugin's tools currently in flight. Incremented before dispatch, decremented
@@ -60,6 +68,14 @@ public abstract record PluginLoadResult
     /// plugin. Nothing from this plugin was registered.
     /// </summary>
     public sealed record NameCollision(string ToolName) : PluginLoadResult;
+
+    /// <summary>
+    /// A command name in this manifest is already taken — by a built-in (<c>/model</c>) or another
+    /// plugin. Nothing from this plugin was registered, tools included: checked and refused before
+    /// any registration runs, so a plugin whose SECOND command collides never leaves its first (or
+    /// its tools) registered behind it — see <see cref="PluginRegistry.Load"/>.
+    /// </summary>
+    public sealed record CommandNameCollision(string CommandName) : PluginLoadResult;
 }
 
 /// <summary>One plugin's system-prompt text and the tools it governs — see
@@ -156,9 +172,9 @@ public sealed class PluginRegistry
     private string? _sessionId;
 
     /// <summary>
-    /// Registers a plugin's tools, refusing the whole plugin on any name collision — with a
-    /// built-in or injected tool (via <paramref name="isNameTaken"/>, which the session supplies
-    /// since only it knows those sets) or with another already-loaded plugin.
+    /// Registers a plugin's tools and declared commands, refusing the whole plugin on any name
+    /// collision — a tool or command already offered by a built-in, an injected tool, a front end's
+    /// own command, or another already-loaded plugin.
     /// </summary>
     /// <param name="plugin">The running instance — kept so <see cref="UnwireAsync"/> can call Stop.</param>
     /// <param name="manifest">What this plugin contributes, from its own Load call.</param>
@@ -175,8 +191,22 @@ public sealed class PluginRegistry
     /// This plugin's handle on the session, retained so <see cref="UnwireAsync"/> can sever it before
     /// Stop runs. Null when this plugin was loaded without one.
     /// </param>
+    /// <param name="isCommandNameTaken">
+    /// Answers whether a command name is already registered outside this plugin's own manifest — a
+    /// built-in (<c>/model</c>) or a front end's own command. Null for a caller with no command
+    /// table to check against (most of this registry's own test fixtures), in which case a manifest
+    /// declaring commands is refused only against other loaded plugins, never a built-in.
+    /// </param>
+    /// <param name="commands">
+    /// The table this plugin's commands are registered into, or null to register none — the same
+    /// "no gate, no prompt" shape the rest of plugin wiring already uses for an absent dependency.
+    /// A caller supplying <paramref name="isCommandNameTaken"/> without this registers nothing
+    /// runnable while still refusing collisions, which is never useful; Session always supplies both
+    /// or neither.
+    /// </param>
     public PluginLoadResult Load(IPlugin plugin, PluginManifest manifest,
-        Func<string, bool> isNameTaken, IDisposable? context = null, SessionPluginClient? client = null)
+        Func<string, bool> isNameTaken, IDisposable? context = null, SessionPluginClient? client = null,
+        Func<string, bool>? isCommandNameTaken = null, CommandRegistry? commands = null)
     {
         lock (_gate)
         {
@@ -186,10 +216,87 @@ public sealed class PluginRegistry
                     return new PluginLoadResult.NameCollision(tool.Name);
             }
 
-            _plugins.Add(new LoadedPlugin(plugin, manifest, context, client));
+            // EVERY COMMAND CHECKED BEFORE ANY IS REGISTERED, for the same reason tools are: a
+            // plugin whose SECOND command collides must not leave its first sitting in the table —
+            // Register REPLACES rather than refusing, so a half-registered plugin here would leave a
+            // HOLE where a built-in used to be, not merely fail to add itself. isCommandNameTaken is
+            // asked first, matching isNameTaken's own precedence — a null delegate means no built-in
+            // table to check, not "nothing is taken".
+            //
+            // THE SLASH IS ADDED HERE, NOT CARRIED IN THE MANIFEST. A plugin declares "schedule" —
+            // see PluginManifest.Parse and IPluginCommandHandler.RunCommand's own doc, "without its
+            // leading slash" — but SessionCommand.Name and CommandRegistry both key on the form the
+            // user types, "/schedule". One spelling crossing the plugin boundary and another inside
+            // Core is deliberate: RunCommand's argument is what THIS plugin calls its own command,
+            // while the registry's key is what EVERY command in the session is called, slash
+            // included, so two plugins cannot declare names that only differ by it.
+            foreach (var command in manifest.Commands)
+            {
+                var name = "/" + command.Name;
+                if ((isCommandNameTaken?.Invoke(name) ?? false)
+                    || _plugins.Any(p => p.Manifest.Commands.Any(c => "/" + c.Name == name)))
+                    return new PluginLoadResult.CommandNameCollision(command.Name);
+            }
+
+            var loaded = new LoadedPlugin(plugin, manifest, context, client, commands);
+            _plugins.Add(loaded);
             _everLoaded.Add(manifest.Name);
+
+            // REGISTERED AFTER THE PLUGIN IS ADDED TO _plugins, not before: UnwireAsync's own
+            // deregistration (step 1) removes commands by name from `commands` and the plugin from
+            // `_plugins` together, and doing this add last here mirrors that — nothing outside this
+            // lock can observe a plugin whose commands exist but which the collision scan above does
+            // not yet know about.
+            if (commands is not null)
+                foreach (var command in manifest.Commands)
+                    commands.Register(
+                        new SessionCommand("/" + command.Name, command.Summary,
+                            [.. command.Args.Select(a => new CommandArgument(a.Name, a.Summary))]),
+                        (session, arguments) => RunPluginCommand(loaded, command.Name, session, arguments));
+
             return new PluginLoadResult.Loaded();
         }
+    }
+
+    /// <summary>
+    /// The <see cref="CommandHandler"/> behind one of a plugin's declared commands — dispatches into
+    /// the plugin's own <see cref="IPluginCommandHandler.RunCommand"/> and writes what comes back to
+    /// the session's transcript, exactly as <see cref="Sessions.Session"/>'s own DOES-SAYS-ANNOUNCES
+    /// command methods do (see <c>Session.ClearContext</c>) — a plugin's command reads like any other
+    /// to whoever typed it.
+    ///
+    /// <para>FIRE AND FORGET, matching <c>/compress</c> and <c>/plugin</c> in
+    /// <c>SessionManager.SeedCommands</c>: <see cref="CommandHandler"/> is synchronous, and a
+    /// plugin's own command may run for as long as its author wants — a definition lookup, an index
+    /// rebuild. The task's own faults are caught and said rather than left to become an unobserved
+    /// exception, since nothing here awaits it to propagate one.</para>
+    ///
+    /// <para><see cref="IPlugin"/> IS NOT CAST AT REGISTRATION TIME. The type check already ran at
+    /// load — <c>ManagedPluginLoader</c> refuses a manifest declaring commands a plugin's type does
+    /// not implement <see cref="IPluginCommandHandler"/> for — so reaching here with a plugin that
+    /// does not implement it would be that loader's own bug, not a caller's mistake to guard
+    /// against a second time.</para>
+    /// </summary>
+    private static bool RunPluginCommand(LoadedPlugin plugin, string name, Sessions.Session session,
+        string arguments)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var handler = (IPluginCommandHandler)plugin.Instance;
+                var result = await handler.RunCommand(name, arguments, CancellationToken.None);
+                if (result.Message is { } text)
+                    session.SayPluginCommandResult(text, result.Status);
+            }
+            catch (Exception ex)
+            {
+                session.SayPluginCommandResult(
+                    $"plugin '{plugin.Manifest.Name}' command '/{name}' failed: {ex.Message}",
+                    PluginCommandOutcome.Refused);
+            }
+        });
+        return true;
     }
 
     /// <summary>
@@ -340,7 +447,13 @@ public sealed class PluginRegistry
 
             // STEP 1: DEREGISTER. Removed from the list under the same lock CurrentTools reads
             // through, so no turn beginning after this line can be offered this plugin's tools.
+            // Commands come out here too, before the drain below — a command still dispatchable
+            // could start a new call into an instance about to be stopped, the exact race the tool
+            // half of this step already exists to close.
             _plugins.Remove(plugin);
+            if (plugin.Commands is not null)
+                foreach (var command in plugin.Manifest.Commands)
+                    plugin.Commands.Deregister("/" + command.Name);
         }
 
         // STEP 2: DRAIN. Polls rather than a signal, because InFlight is decremented from whatever
