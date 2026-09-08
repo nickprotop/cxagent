@@ -1,9 +1,7 @@
-# The ABI surface (Task 9a)
+# The ABI surface
 
 The `extern "C"` functions are `cxagent_plugin.h`, in this directory. This file is the JSON
-vocabulary they exchange, and the reasoning behind it. Nothing here builds a host process (9b) or
-a managed shim (9c) — this is the contract those two are built against, so it is written down and
-locked by tests before either exists.
+vocabulary they exchange, and the reasoning behind it.
 
 ## The calls, and what crosses each one
 
@@ -15,6 +13,7 @@ locked by tests before either exists.
 | `cxagent_plugin_gate` | `IPluginGateSource.Gate` | `AbiInvokeCall` | a gate object, or NULL |
 | `cxagent_plugin_invoke` | `IPlugin.Invoke` | `AbiInvokeCall` | `AbiResultEnvelope` (JobResult) |
 | `cxagent_plugin_stop` | `IPlugin.Stop` | — | `AbiResultEnvelope` (void) |
+| `cxagent_plugin_poll` (optional) | `IPluginClient.Submit`, originated by the plugin rather than called into it | — | a submit request, or NULL |
 
 `IPlugin.Load` is split across two ABI calls deliberately: `describe` returns the manifest with no
 context (matching `plugin_describe` in ConsoleEx's spec, called before the plugin has seen
@@ -32,13 +31,22 @@ exempt from "everything is JSON," for the same reason ConsoleEx's spec states: *
 check has to precede parsing**, so it cannot itself depend on a JSON shape the host might not
 understand yet. Its signature can never change.
 
-The current constant is `2`. **Exact equality, not a floor** — see `cxagent_plugin.h`'s own
-comment. A host meeting a version it does not know refuses the load and names both versions in its
-error; it does not attempt to read an unfamiliar manifest with familiar assumptions.
+The current constant is `3`. **A range, not exact equality** — see `cxagent_plugin.h`'s own
+comment. The host refuses a version above what it understands (it may require something never
+seen) and a version below its floor (support for it was dropped); a version within the range may
+omit a capability a newer contract added — `cxagent_plugin_poll` among them — without failing the
+handshake. A host meeting a version outside that range refuses the load and names both versions in
+its error; it does not attempt to read an unfamiliar manifest with familiar assumptions.
 
 **v2 added `cxagent_plugin_gate`, so every v1 plugin is refused rather than degraded.** That is the
 handshake working as intended: a v1 library has no gate to call, and a host that guessed at the
-absence would be deciding permission questions on behalf of a plugin that never answered one.
+absence would be deciding permission questions on behalf of a plugin that never answered one. The
+floor sits at 2 today for exactly this reason — see `cxagent_plugin.h`'s handshake comment.
+
+**v3 added `cxagent_plugin_poll`, and it is the one export that does NOT raise the floor.** Unlike
+`gate`, `poll` is optional: a v2 library omits it entirely and loads on a v3 host exactly as it
+always did, because a plugin that never originates work has nothing wrong with omitting the ability
+to. See "`poll` — a plugin originates work" below.
 
 ## `describe` — the manifest
 
@@ -155,6 +163,43 @@ standing grant".
 and abandons a gate that takes longer than a few hundred milliseconds — an abandoned gate asks.
 Inspect the arguments; do not open a connection.
 
+## `poll` — a plugin originates work
+
+Contract 3 lets a plugin start a turn in its own session (`IPluginClient.Submit`, managed-side).
+`cxagent_plugin_poll` is how a native plugin reaches for the same ability without this host having to
+call into unmanaged code on its own initiative: the host calls `poll` periodically instead, and the
+plugin hands back a request only when it has one.
+
+**Optional, unlike every export above it.** A library built before contract 3, or one that never
+originates work, omits it entirely — resolved by name at load time, and its absence is not a load
+failure. Declaring the client capability (`"client": true` in the manifest) without exporting `poll`
+is the native-side equivalent of a managed plugin declaring it without implementing
+`IPluginClientConsumer`: refused at load, naming the missing piece.
+
+**Returns NULL far more often than not**, and that is the ordinary case, not a failure — an explicit
+exception to "a plugin must never return NULL" elsewhere on this surface. A plugin that allocated an
+empty object instead, to avoid ever returning NULL, would hand the host a fresh string to parse and
+free on every poll for no information gained.
+
+**The non-NULL shape:**
+
+```json
+{ "goal": "run the tests", "wantResult": false }
+```
+
+`goal` is required. `wantResult` is optional, defaults to `false`, and on this contract **must be
+false or omitted** — `true` is refused by name, not silently downgraded. Answering `true` would mean
+holding a call open across a turn that may run for minutes, over a pipe whose only inbound channel is
+a poll this plugin itself controls; the reply would have to arrive on some later poll, needing its
+own correlation on top of the one the host-to-plugin wire already has, for a capability no plugin has
+asked for yet. The field exists on the wire so a later contract can serve it without changing this
+shape again — this contract does not walk through that door. **Fire-and-forget is therefore the
+whole contract**: a plugin that polls a submit gets no reply on this channel, ever — not success, not
+failure, not the turn's own result.
+
+**May be called concurrently with `cxagent_plugin_invoke`** — nothing on this host serializes the
+two, matching `invoke`'s own concurrency note above.
+
 ## The result envelope
 
 One shape answers `start`, `invoke`, and `stop` — deliberately one envelope for all three, because
@@ -236,11 +281,11 @@ allocated a string frees it, using its own allocator. Concretely:
 - `context_json` and `call_json` (host → plugin): host-owned, valid only for the duration of the
   call the plugin is currently inside. A plugin that needs the value after the call returns must
   copy it before returning.
-- Every return value (`describe`, `start`, `invoke`, `stop`): plugin-owned. The host copies the
-  UTF-8 bytes out into its own managed string and then calls `cxagent_plugin_free` on the original
-  pointer — always, in a `finally`, including when the envelope failed to parse. The plugin's own
-  `free()` (or whatever its runtime's deallocator is) runs inside `cxagent_plugin_free`, never the
-  host's.
+- Every return value (`describe`, `start`, `invoke`, `stop`, and `poll` when it is not NULL):
+  plugin-owned. The host copies the UTF-8 bytes out into its own managed string and then calls
+  `cxagent_plugin_free` on the original pointer — always, in a `finally`, including when the envelope
+  failed to parse. The plugin's own `free()` (or whatever its runtime's deallocator is) runs inside
+  `cxagent_plugin_free`, never the host's.
 
 This is exactly ConsoleEx's §10 rule, unchanged, because there is no plugin-specific reason to
 diverge: it is the only ownership rule that has no ambiguous case, which is the property an ABI
@@ -288,7 +333,7 @@ designs solving the same boundary problem landing on the same shape is evidence 
 right, not a coincidence to explain away.
 
 **Agrees:**
-- Five fixed, name-resolved `extern "C"` exports; a version-handshake function whose own signature
+- Seven mandatory, name-resolved `extern "C"` exports (plus `poll`, optional as of contract 3); a version-handshake function whose own signature
   never changes, checked with exact-equality before anything else is trusted.
 - One ownership rule: producer allocates, producer frees, via a dedicated `plugin_free` — no
   cross-allocator frees, ever.

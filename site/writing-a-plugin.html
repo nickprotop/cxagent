@@ -72,12 +72,14 @@ with no config file to edit:</p>
 
 <p>Your sidecar names the contract version it was written against:</p>
 
-<pre><code>{ "pluginContract": 2, "name": "my-plugin", ... }</code></pre>
+<pre><code>{ "pluginContract": 3, "name": "my-plugin", ... }</code></pre>
 
-<p>The host compares this for <strong>exact equality</strong>. A contract-1 plugin is refused by a
-contract-2 host exactly as a contract-3 one would be, and that is deliberate: a plugin written for a
-different contract may omit something whose absence changes behaviour silently, so the host refuses
-rather than guessing.</p>
+<p>The host compares this against a <strong>range</strong>, not exact equality. A version above what
+the host understands is refused — it may require something the host has never heard of — and a
+version below the host's floor is refused too, because support for it was dropped rather than merely
+unimplemented. A contract-1 plugin is refused by a host whose floor has since risen past it exactly
+as an unfamiliar future contract would be refused for being too new: either direction, the host
+refuses rather than guessing at a shape it cannot verify.</p>
 
 <p><strong>Check it back from your own <code>Load</code>.</strong> A host <em>older</em> than your
 contract has never heard of it and reads your manifest with its own rules — a cxagent predating
@@ -118,7 +120,24 @@ gate with your own wording, or <code>null</code> for no prompt. <strong>Declarin
 the sidecar promised a decision the assembly cannot make, and silently gating nothing is the wrong
 answer.</p>
 
-<h2>4. Publish a release with your artifact</h2>
+<h2>4. Start work in your own session, if you need to</h2>
+
+<p>A plugin that only answers tool calls waits to be asked. Declare <code>"client": true</code> in
+your sidecar and a managed plugin can start a turn on its own — a scheduled wake, a watcher that
+noticed something — through <code>IPluginContext.Client</code>:</p>
+
+<pre><code>{ "name": "watcher", "client": true, "version": "1.0.0", ... }</code></pre>
+
+<p>A managed plugin also implements the marker interface <code>IPluginClientConsumer</code>, so the
+loader can check the binary against what the sidecar promised. <code>Client.Submit(goal, wantResult,
+ct)</code> asks the agent to do something, worded as a user would type it — fire-and-forget by
+default, or wait for the turn's final answer with <code>wantResult: true</code>. Its reach is your
+own session and nothing else; there is no target parameter.</p>
+
+<p>Most plugins never need this. It exists for the ones that originate work rather than only
+answering it.</p>
+
+<h2>5. Publish a release with your artifact</h2>
 
 <p>Publish the built plugin as a release asset on your own repository, and publish a
 <code>SHA256SUMS</code> — or the hash of the artifact itself — alongside it. Your catalog entry pins
@@ -128,7 +147,7 @@ control.</p>
 <p>Version the plugin, and keep the version in the sidecar in step with the release that carries it.
 A catalog entry naming an asset no release carries is worse than no entry at all.</p>
 
-<h2>5. Submit it to the catalog</h2>
+<h2>6. Submit it to the catalog</h2>
 
 <p>The <a href="plugins.html">catalog</a> is a committed file in the cxagent repository. To add an
 entry, open an issue from the plugin submission template:</p>

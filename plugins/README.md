@@ -7,6 +7,7 @@ Each has its own page with its download and settings.
 | --- | --- | --- | --- |
 | **csharp-lsp** | Go-to-definition, find-references and diagnostics for C#, across project boundaries | a C# language server (`csharp-ls` by default) | [details](csharp-lsp/README.md) |
 | **calculator** | Arithmetic a model can trust — one tool takes a whole expression | nothing | [details](calculator/README.md) |
+| **clone-finder** | Duplicated code found without reading the repository — one tool returns the duplicated blocks ranked by size | nothing | [details](clone-finder/README.md) |
 
 ## Installing one
 

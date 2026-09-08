@@ -71,7 +71,7 @@ Copy the one whose `source` shape matches what you are adding.
   "file": "lsp-rust.dll",
   "kind": "managed",
   "compatibility": {
-    "pluginContract": 2,
+    "pluginContract": 3,
     "platforms": [
       "any"
     ]
@@ -103,7 +103,7 @@ Copy the one whose `source` shape matches what you are adding.
   "repository": "https://github.com/someone-else/cxagent-ripgrep",
   "kind": "abi",
   "compatibility": {
-    "pluginContract": 2,
+    "pluginContract": 3,
     "platforms": [
       "linux-x64",
       "osx-arm64"

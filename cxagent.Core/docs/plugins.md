@@ -40,7 +40,7 @@ everywhere cxagent does:
        the host's copy. Ship your own beside the plugin and Assembly.LoadFrom gives it a DIFFERENT
        type identity — so the host's `is IPlugin` check fails on a class that plainly implements it,
        and the cast throws at load. In-repo, a ProjectReference with Private="false" does the same. -->
-  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="2.0.0" ExcludeAssets="runtime" />
+  <PackageReference Include="CxAgent.Plugins.Abstractions" Version="3.0.0" ExcludeAssets="runtime" />
 </ItemGroup>
 
 <ItemGroup>
@@ -53,8 +53,12 @@ everywhere cxagent does:
 does not compile against an agent runtime, its database and its HTTP stack to implement seven
 interfaces. Referencing `CxAgent.Core` also works and always did; it just brings all of that with it.
 
-**Its version IS the contract number.** `2.0.0` is `"pluginContract": 2` — the same fact your sidecar
-declares, so there is one number to keep straight rather than two.
+**Its package version IS the contract number.** `3.0.0` is `"pluginContract": 3` — the same fact your
+sidecar declares, so there is one number to keep straight rather than two. This is the `Version` a
+NuGet consumer sees, not the assembly's own `AssemblyVersion`, which is frozen at `1.0.0.0` and never
+moves: that is the identity .NET resolves your reference against, and bumping it at a contract change
+would refuse your plugin at assembly load, before `PluginContract.Version` — the check that can say
+why in words — is ever consulted.
 
 What ships is three files: your DLL, its sidecar, and `README.md`.
 
@@ -169,13 +173,18 @@ someone installs the second one, and by then your name is in their config.
 
 ## Permission
 
-**cxagent asks once, at load, whether to trust the binary.** That prompt names the plugin, says what
-it will contribute — how many tools, and whether it adds guidance to the model's instructions — and
-shows a content hash covering its whole load set. Change any byte and the user is asked again. This
-is the only boundary cxagent can enforce on your behalf, and nothing in config can pre-approve it.
+**cxagent asks once, at load, whether to trust the binary.** That prompt names the plugin, what it
+wants to do (read files in this folder, or run a process and read files in this folder), what it
+contributes — how many tools, whether it adds guidance to the model's instructions, whether any tool
+decides per call whether to ask — and shows a content hash covering its whole load set. Change any
+byte and the user is asked again. This is the only boundary cxagent can enforce on your behalf, and
+nothing in config can pre-approve it.
 
 The contribution matters to the person answering: a plugin that adds no tools and only prompt text
-shapes every later turn without ever appearing as a tool call they can watch.
+shapes every later turn without ever appearing as a tool call they can watch. Declare `"client": true`
+and the prompt says so too — "It can also start work in this conversation on its own." — in the
+user's terms rather than the contract's, because a person approving a load should not have to know
+what `IPluginClient` means to weigh what they are agreeing to.
 
 **Per-call gating is `"gated": true` in your manifest.** A gated tool asks before each call, and the
 prompt offers "Always" like any other. The stored rule names your plugin as well as your tool
@@ -242,17 +251,23 @@ unfalsifiable.
 ### The one field the host checks before your code runs
 
 ```json
-{ "pluginContract": 2, "name": "my-plugin", ... }
+{ "pluginContract": 3, "name": "my-plugin", ... }
 ```
 
-**Required, and checked with exact equality.** It says which shape you were built against — the
-manifest fields, the gating vocabulary, the lifecycle. A host cannot know whether an unfamiliar
-contract omits something whose absence changes behaviour silently, so it refuses rather than
-guesses. Omit it and the load is refused too: a manifest that does not say what it was built against
-cannot be checked, and assuming compatible is the least safe reading available.
+**Required, and checked against a range.** It says which shape you were built against — the
+manifest fields, the gating vocabulary, the lifecycle. A contract above what this host understands
+is refused: it may require something the host has never heard of, and there is no reading of a
+higher number that is safe to guess at. A contract below the host's floor is refused too — support
+for it was dropped, not merely unimplemented. Omit the field and the load is refused for the same
+reason: a manifest that does not say what it was built against cannot be checked, and assuming
+compatible is the least safe reading available.
 
-Exact equality cuts both ways, and that is deliberate — a contract-1 plugin is refused by a
-contract-2 host exactly as a contract-3 one would be. One comparison answers both directions.
+**A range, where this was once exact equality**, so a host that gains a capability stops refusing
+every plugin that never asked for it — a contract-1 plugin written before per-call gating existed
+still loads on a host that has since added the client capability, as long as it sits at or above the
+floor. The floor today is 2, the first contract that can express `"gated": "dynamic"`; a contract-1
+manifest cannot say it, so its tools would load ungated rather than refused, and the floor exists to
+catch that silently wrong reading rather than let it happen.
 
 **There is no version floor beside it**, and adding one would be a step backwards. What a plugin
 needs is never really "cxagent 0.9.5"; it is "a host that understands `dynamic`" — which *is* the
@@ -370,9 +385,81 @@ exactly that case.
 - `Lifetime` — cancelled when the plugin stops. Not a per-call token: use it for a long-lived
   backend, and a call's own token for the call.
 - `RegisterChildProcess(pid)`.
+- `SessionId` — which session this instance was loaded into, or null when the host does not scope by
+  session. Without it, two sessions rooted in the same folder are indistinguishable to anything you
+  hold in a static — a cache, a connection, a map of pending work.
+- `Client` — this session's handle for starting a turn, present only when your sidecar asked for it.
+  See "Starting work in your own session", below.
 
 **You are not handed the transcript, the model, or the permission store.** That is deliberate and
-permanent.
+permanent: a plugin acts on a session, through its own tools and through `Client`, without watching
+it. There is no token stream here, no tool rows, no view of what the user typed — the nearest thing
+is the answer to a goal the plugin itself submitted, and only when it asked for one.
+
+## Starting work in your own session
+
+A plugin that only answers tool calls waits to be asked. `IPluginContext.Client` lets one start a
+turn on its own — a scheduled wake, a watcher that noticed something, a long-running job reporting
+back — without a tool call to hang the trigger on.
+
+**Declared, not universal.** Ask for it in your sidecar:
+
+```json
+{ "name": "watcher", "client": true, "version": "1.0.0", ... }
+```
+
+A plugin that never declares `"client"` never sees a non-null `Client` — the declaration is what
+gates whether the reference exists at all.
+
+**A managed plugin also implements the marker interface, `IPluginClientConsumer`:**
+
+```csharp
+public sealed class WatcherPlugin : IPlugin, IPluginClientConsumer
+{
+    // context.Client is non-null here because the sidecar declared "client": true AND this class
+    // implements IPluginClientConsumer — the second gate the loader checks once there is code to
+    // check it against.
+}
+```
+
+Two gates answer two different questions, and a plugin author debugging a refusal needs to know
+which one fired. A sidecar that declares `"client": true` on a class that does not implement
+`IPluginClientConsumer` is refused at load, naming `IPluginClientConsumer` — the manifest and the
+binary disagree about what this plugin is. A sidecar and binary that DO agree, but where the host's
+own manifest match fails for some other reason, is refused naming that check instead
+(`PluginManifestMatch`). The marker cannot be satisfied by accident — implementing an empty
+interface is not something a plugin does without meaning to declare the capability.
+
+**`Submit` starts a turn:**
+
+```csharp
+SubmitResult result = await context.Client.Submit("run the tests", wantResult: true, ct);
+```
+
+`goal` is what to ask the agent to do, worded as a user would type it — there is no separate
+structured shape. `Submit` is **fire-and-forget by default**: with `wantResult: false` it returns as
+soon as the session accepts the goal — queued or started — which is what a scheduled wake wants, since
+it has nobody to hand an answer to and should not hold a call open across a turn that may run for
+minutes. With `wantResult: true` it waits for the turn and returns the final assistant text in
+`SubmitResult.Text`. That is the only pull on this interface, and it only ever answers "what came of
+the thing I just asked for" — there is no way to read anything else about the session.
+
+**A submit while the session is busy is queued, not refused and not interleaved** — bounded, and it
+runs when the session next goes idle. A queue that is full refuses, saying so in
+`SubmitResult.Refusal`.
+
+**Its reach is its own session, full stop.** There is no target parameter and there will not be one:
+a plugin that could start work in another session is a back door around the boundary that makes
+plugins safe to install per project.
+
+**It can be severed.** Every member of `Client` throws `ObjectDisposedException` once the plugin is
+unwired — unwiring cancels a turn the plugin itself started, defers to one the user started instead
+of interrupting it, and drops any goals still queued.
+
+**On the ABI side, `wantResult: true` is refused.** A native plugin reaches for the same ability
+through the optional `cxagent_plugin_poll` export rather than a method call — see
+[`Abi/README.md`](../Core/Plugins/Abi/README.md) — and that channel has no reply path back to the
+plugin at all: fire-and-forget is the whole contract there, not a default.
 
 ## Settings
 

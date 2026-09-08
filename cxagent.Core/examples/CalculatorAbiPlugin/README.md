@@ -1,6 +1,7 @@
 # CalculatorAbiPlugin — the same calculator, in C
 
-One file, seven exported functions, no JSON library.
+One file, seven exported functions, no JSON library. (An eighth, `cxagent_plugin_poll`, is optional
+as of contract 3 — a plugin that only answers calls, like this one, has no reason to export it.)
 
 ```bash
 cc -shared -fPIC -o calculator.so calculator_abi.c
