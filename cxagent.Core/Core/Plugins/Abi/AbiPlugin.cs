@@ -33,6 +33,13 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
     {
         _host = host;
         _manifest = manifest;
+
+        // SUBSCRIBED HERE, IN THE CONSTRUCTOR, not in Load or Start — AbiPluginLoader.Load
+        // constructs this instance and only afterward calls this.Load(context, ct), so a submit
+        // line arriving between those two calls (the host process starts polling the moment its
+        // request loop is up, independent of whether cxagent has called Start yet) must already
+        // have a listener, or it is dropped on the floor exactly like an unmatched reply.
+        _host.PluginSubmitted += OnPluginSubmitted;
     }
 
     /// <summary>
@@ -48,7 +55,79 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
     {
         _workingDirectory = context.WorkingDirectory;
         _settings = context.Settings;
+
+        // NULL WHEN THE SIDECAR DID NOT DECLARE "client": true — IPluginContext.Client's own gate,
+        // the identical one a managed plugin is held to. This shim does not re-check the
+        // declaration itself; by the time Load runs, AbiPluginLoader has already matched the wire
+        // manifest against the sidecar and the caller has already decided whether context.Client is
+        // non-null (see PluginResolver.PluginRuntime.Client's own doc).
+        _client = context.Client;
+        _logger = context.Logger;
         return Task.FromResult(_manifest);
+    }
+
+    /// <summary>
+    /// A poll's submit, reaching this instance across the process boundary — see
+    /// <see cref="AbiHostProcess.PluginSubmitted"/> and <see cref="AbiSubmit"/>'s own doc for the
+    /// wire mechanism. FIRE-AND-FORGET: the plugin gets no reply on this line (poll's own contract
+    /// has no channel for one), so a refusal here — no client, or <c>wantResult:true</c> — is
+    /// reported to the plugin's own logger and otherwise swallowed, the same "nowhere to throw"
+    /// position <see cref="Stop"/> is already in for a dead host.
+    /// </summary>
+    private void OnPluginSubmitted(AbiSubmit submit)
+    {
+        if (_client is null)
+        {
+            // A PLUGIN THAT NEVER DECLARED THE CAPABILITY POLLED ITS WAY TO ONE ANYWAY — the sidecar
+            // gate stops the reference from ever existing (see Load's own doc), but nothing stops a
+            // native plugin's own poll() from returning a submit regardless; this is that refusal,
+            // named rather than silently dropped, so a plugin author sees why nothing happened.
+            LogRefusal($"plugin '{_manifest.Name}' polled a submit but never declared the client capability — refused.");
+            return;
+        }
+
+        if (submit.WantResult)
+        {
+            // REFUSED BY NAME, NOT DOWNGRADED — see AbiSubmit's own doc for why: silently turning
+            // this into wantResult:false would let a native author believe an answer is coming that
+            // this contract has no channel to deliver.
+            LogRefusal($"plugin '{_manifest.Name}' polled a submit with wantResult:true, which contract 3's ABI "
+                + "surface refuses — an ABI plugin may only fire-and-forget.");
+            return;
+        }
+
+        // FIRE-AND-FORGET ON PURPOSE: this handler runs on AbiHostProcess's own reader loop, which
+        // must keep reading the next line rather than block on a turn that may run minutes — the
+        // same reasoning IPluginClient.Submit's own doc gives for wantResult:false. The returned
+        // Task is intentionally not awaited; a submit that the session refuses (queue full, no
+        // agent configured) is reported to the plugin's own logger rather than thrown into a loop
+        // with nothing to catch it.
+        _ = ReportIfRefused(submit.Goal);
+    }
+
+    private async Task ReportIfRefused(string goal)
+    {
+        try
+        {
+            var result = await _client!.Submit(goal, wantResult: false);
+            if (!result.Accepted)
+                LogRefusal($"plugin '{_manifest.Name}' submitted '{goal}' and the session refused it: {result.Refusal}");
+        }
+        catch (Exception ex)
+        {
+            // THE SESSION CAN THROW (ObjectDisposedException once severed, chiefly) — this runs on
+            // the reader loop's own background task, which nothing else awaits, so an uncaught
+            // exception here would be silent rather than merely unhelpful.
+            LogRefusal($"plugin '{_manifest.Name}' submitted '{goal}' and the session threw: {ex.Message}");
+        }
+    }
+
+    // BEST-EFFORT, NEVER THROWS — a plugin's own logger is not this refusal-reporting path's to
+    // fail over; see cxagent_plugin.h's "no exception may cross this boundary" discipline, which
+    // this handler (running entirely managed-side, off the reader loop) still honours in spirit.
+    private void LogRefusal(string message)
+    {
+        try { _logger?.Log(message); } catch (Exception) { }
     }
 
     /// <summary>
@@ -176,6 +255,11 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
     /// </summary>
     public async Task Stop(CancellationToken ct)
     {
+        // UNSUBSCRIBED BEFORE THE HOST IS TORN DOWN — belt and braces alongside SessionPluginClient's
+        // own severed-flag check inside Submit: a submit line already in flight when Stop runs must
+        // not call into a client the caller may sever moments later, and once this instance is
+        // stopped it has nothing left to do with one anyway.
+        _host.PluginSubmitted -= OnPluginSubmitted;
         await _host.Stop(ct).ConfigureAwait(false);
         await _host.DisposeAsync().ConfigureAwait(false);
     }
@@ -186,4 +270,10 @@ public sealed class AbiPlugin : IPlugin, IPluginGateSource
     // than smuggling the context in earlier through a constructor IPlugin has no parameter list for.
     private string _workingDirectory = "";
     private JsonElement _settings = JsonDocument.Parse("{}").RootElement;
+
+    // NULL UNTIL Load RUNS, THEN FIXED — the same declared-not-universal gate IPluginContext.Client
+    // documents: null for a plugin whose sidecar never asked for it, and never reassigned afterward,
+    // matching a managed plugin's own one-shot capture of its context at Load.
+    private IPluginClient? _client;
+    private IPluginLogger? _logger;
 }

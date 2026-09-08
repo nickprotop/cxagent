@@ -142,6 +142,27 @@ public class AbiCodecTests
         Assert.Equal(managed.Tools.Count, translated.Tools.Count);
         Assert.Equal(managed.Tools[0].Name, translated.Tools[0].Name);
         Assert.Equal(managed.Tools[0].Gated, translated.Tools[0].Gated);
+
+        // NEITHER MANIFEST DECLARES "client" — both must read false, the same absent-means-false
+        // default PluginManifest.Client documents, proving the ABI codec agrees with the managed
+        // sidecar reader on a library that never asked.
+        Assert.False(managed.Client);
+        Assert.False(translated.Client);
+    }
+
+    [Fact]
+    public void ToPluginManifestCarriesTheClientDeclarationThrough()
+    {
+        // Task 10b: PluginManifestMatch.Mismatch compares Client between a sidecar and what the
+        // plugin itself reported, exactly as it already compares Spawns — this proves an ABI
+        // manifest that DOES declare "client" survives the ToPluginManifest translation rather than
+        // silently dropping the one field that gates whether AbiPlugin ever holds an IPluginClient.
+        var json = WellFormedManifestJson.Replace("\"spawns\": true,", "\"spawns\": true, \"client\": true,");
+        var abi = AbiCodec.ParseManifest(json).Value;
+
+        var translated = AbiCodec.ToPluginManifest(abi);
+
+        Assert.True(translated.Client);
     }
 
     // ---- context / invoke call: written shapes are never null where the header promises non-null ----

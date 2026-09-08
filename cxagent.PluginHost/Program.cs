@@ -95,6 +95,14 @@ if (!manifestResult.IsSuccess)
 var manifest = AbiCodec.ToPluginManifest(manifestResult.Value);
 await WriteLine(new HostReady(true, manifest));
 
+// THE POLL LOOP, STARTED ONLY WHEN THE LIBRARY EXPORTS cxagent_plugin_poll — a library built
+// before contract 3 (NativePlugin.HasPoll false) is never asked, matching cxagent_plugin.h's own
+// "resolved by name at load time; its absence is not a load failure." Cancelled from the request
+// loop's own exit below, alongside the pending-request drain, so this process does not linger
+// polling a plugin whose parent has already gone.
+var pollLoopCts = new CancellationTokenSource();
+var pollLoop = plugin.HasPoll ? Task.Run(() => PollLoop(plugin, pollLoopCts.Token)) : Task.CompletedTask;
+
 // THE REQUEST LOOP. One line in, one line out — see HostProtocol's own doc for why this vocabulary
 // exists separately from the ABI JSON. Each request runs on its own Task so a slow or concurrent
 // cxagent_plugin_invoke (the ABI explicitly allows concurrent invokes) does not block a reply to a
@@ -131,10 +139,86 @@ while (await stdin.ReadLineAsync() is { } line)
 // to finish and write its reply before this process exits; a request whose plugin call never
 // returns is exactly what the parent's own cancellation-by-abandonment (Abi/README.md,
 // "Cancellation") is for, not something this loop should wait on indefinitely.
+await pollLoopCts.CancelAsync();
 await Task.WhenAll(pending);
+// AWAITED, NOT FIRE-AND-FORGET: PollLoop's own cancellation is cooperative (Task.Delay observes
+// the token), so this gives it the chance to actually stop before the process exits, matching how
+// AbiHostProcess.DisposeAsync awaits its own reader loop for the same reason on the managed side.
+await pollLoop;
 return 0;
 
 // ---- local functions ----
+
+/// <summary>
+/// Calls <c>cxagent_plugin_poll</c> on an interval and forwards a non-null return as an
+/// <see cref="AbiSubmit"/> line with the next NEGATIVE id — see <see cref="AbiSubmit"/>'s own doc
+/// for why negative and <see cref="AbiHostProcess"/>'s reader loop for the branch that receives it.
+///
+/// <para>ONE THREAD OF POLLS, NOT ONE PER TICK LEFT RUNNING — the loop awaits each
+/// <see cref="NativePlugin.Poll"/> call before scheduling the next <see cref="Task.Delay"/>, so a
+/// plugin that is slow to answer poll simply polls less often rather than piling up concurrent
+/// calls the ABI never promised to tolerate (contract 3 says poll MAY run concurrently with invoke,
+/// never that poll may run concurrently with ITSELF).</para>
+/// </summary>
+static async Task PollLoop(NativePlugin plugin, CancellationToken ct)
+{
+    // 200ms: FREQUENT ENOUGH THAT A SCHEDULED WAKE FEELS PROMPT, RARE ENOUGH THAT AN IDLE PLUGIN'S
+    // poll (the ordinary case — see cxagent_plugin.h, "MAY RETURN NULL, AND ORDINARILY DOES") is not
+    // a meaningful CPU cost. Not a named constant — top-level statements cannot declare a field
+    // (OutputWriter's own comment, above), and this value has exactly one reader.
+    var pollInterval = TimeSpan.FromMilliseconds(200);
+
+    // NEGATIVE AND COUNTING DOWN FROM -1 — mirrors AbiHostProcess.Send's own _nextId, which counts
+    // up from 1, so the two ranges can never meet regardless of how long either process runs.
+    long nextId = -1;
+
+    while (!ct.IsCancellationRequested)
+    {
+        string? json;
+        try
+        {
+            json = plugin.Poll();
+        }
+        catch (Exception ex)
+        {
+            // A THROW FROM POLL IS A PLUGIN BUG cxagent_plugin.h FORBIDS ("no exception may cross
+            // this boundary") — reported to stderr rather than crashing this process over a call
+            // that has no reply channel to carry the error back on anyway, and the loop keeps
+            // running: one bad poll must not silence every poll after it.
+            await Console.Error.WriteLineAsync($"cxagent_plugin_poll threw: {ex.Message}");
+            json = null;
+        }
+
+        if (json is not null)
+        {
+            AbiSubmit? parsed = null;
+            try
+            {
+                parsed = JsonSerializer.Deserialize<AbiSubmit>(json);
+            }
+            catch (JsonException ex)
+            {
+                await Console.Error.WriteLineAsync($"cxagent_plugin_poll returned unparseable JSON: {ex.Message}");
+            }
+
+            // THE ID ON THE WIRE IS THIS LOOP'S, NEVER THE PLUGIN'S OWN — poll's return carries only
+            // {"goal":...,"wantResult":...} (cxagent_plugin.h's own doc: "the JSON shape ... is not
+            // yet part of this contract" beyond that), so the id is assigned here, the same way
+            // AbiHostProcess.Send assigns one to a HostRequest the far side never gets to pick.
+            if (parsed is not null)
+                await WriteLine(parsed with { Id = nextId-- });
+        }
+
+        try
+        {
+            await Task.Delay(pollInterval, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+    }
+}
 
 static async Task HandleRequest(NativePlugin plugin, HostRequest request)
 {

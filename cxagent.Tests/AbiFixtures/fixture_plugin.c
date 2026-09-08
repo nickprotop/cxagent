@@ -11,6 +11,10 @@
  * host survives a native crash rather than merely a well-behaved error path.
  * FIXTURE_BADVERSION: cxagent_plugin_abi_version reports a version this host does not understand.
  * FIXTURE_NOINVOKE: omits cxagent_plugin_invoke entirely — a library missing a required export.
+ * FIXTURE_SUBMITS: exports cxagent_plugin_poll, which returns one submit
+ * ({"goal":"run the tests","wantResult":false}) on its FIRST call and NULL on every call after —
+ * once, not every tick, so a test waiting for exactly one submit line does not have to distinguish
+ * "the host stopped polling" from "the plugin keeps sending the same one."
  * FIXTURE_MALFORMED also counts cxagent_plugin_free calls to a file (see FREE_COUNT_PATH env var,
  * read once at process start) — AbiPluginHostTests.FreeIsCalledExactlyOnce_EvenOnAParseFailure
  * reads it back to prove the host's free-exactly-once discipline holds on the parse-failure path,
@@ -43,7 +47,14 @@ int32_t cxagent_plugin_abi_version(void) {
 const char* cxagent_plugin_describe(void) {
     return dup_str(
         "{\"pluginContract\":2,\"name\":\"fixture\",\"version\":\"1.0.0\",\"instructions\":null,"
-        "\"spawns\":false,\"tools\":[{\"name\":\"echo\",\"description\":\"echoes its argument\","
+        "\"spawns\":false,"
+#ifdef FIXTURE_SUBMITS
+        /* client:true — MUST MATCH THE SIDECAR (fixture-submits.plugin.json), which is what
+         * AbiPluginLoader checks describe() against; without this, PluginManifestMatch.Mismatch
+         * refuses the load before poll ever gets a chance to run. */
+        "\"client\":true,"
+#endif
+        "\"tools\":[{\"name\":\"echo\",\"description\":\"echoes its argument\","
         "\"inputSchema\":{\"type\":\"object\"},\"gated\":false},"
         "{\"name\":\"echo_dynamic\",\"description\":\"echoes, asking about some arguments\","
         "\"inputSchema\":{\"type\":\"object\"},\"gated\":\"dynamic\"}]}");
@@ -95,6 +106,19 @@ const char* cxagent_plugin_invoke(const char* tool_name, const char* call_json) 
 const char* cxagent_plugin_stop(void) {
     return dup_str("{\"ok\":true}");
 }
+
+#ifdef FIXTURE_SUBMITS
+/* ONE SUBMIT, EVER — a static flag rather than a counter because the test reading this only cares
+ * about "did exactly one arrive", and returning NULL forever after is what a real plugin does once
+ * it has nothing further to say (cxagent_plugin.h: "NULL here means nothing to say right now"). */
+static int submitted = 0;
+
+const char* cxagent_plugin_poll(void) {
+    if (submitted) return NULL;
+    submitted = 1;
+    return dup_str("{\"goal\":\"run the tests\",\"wantResult\":false}");
+}
+#endif
 
 /* A count of every cxagent_plugin_free call, appended as one line per call to the path named by
  * FREE_COUNT_PATH — present only under FIXTURE_MALFORMED, where the test that reads it exercises

@@ -63,7 +63,7 @@ public class AbiPluginLoaderTests
     /// <summary>Records every pid this context was asked to register — RegisterChildProcess is the
     /// obligation the brief calls out by name: the host process is itself a child process this
     /// loader must register, exactly as CxagentLspPlugin.Start registers its own language server.</summary>
-    private sealed class FakeContext(string workingDirectory) : IPluginContext
+    private sealed class FakeContext(string workingDirectory, IPluginClient? client = null) : IPluginContext
     {
         public List<int> RegisteredPids { get; } = [];
         public string WorkingDirectory { get; } = workingDirectory;
@@ -71,8 +71,24 @@ public class AbiPluginLoaderTests
         public int HostContract => PluginContract.Version;
         public string HostVersion => PluginContract.HostVersionOf(GetType().Assembly);
         public IPluginLogger Logger { get; } = new FakeLogger();
+        public IPluginClient? Client { get; } = client;
         public CancellationToken Lifetime { get; } = CancellationToken.None;
         public void RegisterChildProcess(int processId) => RegisteredPids.Add(processId);
+    }
+
+    /// <summary>Stands in for <c>SessionPluginClient</c> — records every submit rather than actually
+    /// starting a turn, because these tests prove what crosses the ABI boundary INTO
+    /// <see cref="IPluginClient.Submit"/>, not what a real session does with a goal once it has one
+    /// (<c>SessionPluginClientTests</c> already owns that half).</summary>
+    private sealed class FakeClient : IPluginClient
+    {
+        public List<(string Goal, bool WantResult)> Submits { get; } = [];
+
+        public Task<SubmitResult> Submit(string goal, bool wantResult = false, CancellationToken ct = default)
+        {
+            Submits.Add((goal, wantResult));
+            return Task.FromResult(new SubmitResult(true, null, null));
+        }
     }
 
     private static FakeContext Context() => new(OutputDir);
@@ -285,4 +301,138 @@ public class AbiPluginLoaderTests
     }
 
     private static IJobContext FakeJobContext() => new TestJobContext();
+
+    // ---- Task 10b: an ABI plugin can submit --------------------------------------------------------
+
+    /// <summary>
+    /// THE END-TO-END PATH, against a REAL host process and a REAL native poll: fixture-submits'
+    /// own cxagent_plugin_poll returns one submit on its first call
+    /// (AbiFixtures/fixture_plugin.c's own doc), cxagent.PluginHost's poll loop forwards it as a
+    /// negative-id line, AbiHostProcess's reader loop dispatches on that sign, and AbiPlugin calls
+    /// the client it was handed at Load — proving every hop this task's brief describes, not just
+    /// the plumbing at one seam of it.
+    /// </summary>
+    [Fact]
+    public async Task ANativePluginsPolledSubmitReachesTheSessionClient()
+    {
+        if (!RequireFixture("fixture-submits", out var lib)) return;
+
+        var client = new FakeClient();
+        var context = new FakeContext(OutputDir, client);
+        var result = await AbiPluginLoader.Load(HostDllPath, lib, context, CancellationToken.None);
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
+        var plugin = loaded.Instance;
+
+        try
+        {
+            await plugin.Start(CancellationToken.None);
+
+            // THE POLL LOOP RUNS ON A TIMER (cxagent.PluginHost's PollLoop, 200ms) — this is not a
+            // request this test can send and await a reply to, since fire-and-forget means there is
+            // no reply. Polling FakeClient's own list is the only channel available, matching
+            // AbiPluginHostTests.FreeIsCalledExactlyOnce's own reasoning for why a separate process's
+            // side effect is observed by reading something back rather than awaiting a call.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (client.Submits.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(50);
+
+            var submit = Assert.Single(client.Submits);
+            Assert.Equal("run the tests", submit.Goal);
+            Assert.False(submit.WantResult);
+        }
+        finally
+        {
+            await plugin.Stop(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// A plugin that never declared the client capability gets no reference to hold — see
+    /// <c>IPluginContext.Client</c>'s own doc — but nothing on the NATIVE side stops
+    /// cxagent_plugin_poll from returning a submit anyway (fixture-submits' poll does not know or
+    /// care what its own sidecar declared). This proves the refusal happens cleanly — the log line
+    /// AbiPlugin.OnPluginSubmitted's own doc promises — rather than a null-reference throw on
+    /// AbiHostProcess's reader loop, which would take the whole process's poll handling down with
+    /// it for every OTHER line waiting behind this one.
+    /// </summary>
+    [Fact]
+    public async Task ASubmitWithNoDeclaredClientIsRefusedNotThrown()
+    {
+        if (!RequireFixture("fixture-submits", out var lib)) return;
+
+        var context = Context(); // NO CLIENT — built without one, unlike ANativePluginsPolledSubmitReachesTheSessionClient's.
+        var result = await AbiPluginLoader.Load(HostDllPath, lib, context, CancellationToken.None);
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
+        var plugin = loaded.Instance;
+
+        try
+        {
+            await plugin.Start(CancellationToken.None);
+
+            // NOTHING TO AWAIT FOR A REFUSAL — there is no reply channel and no exception to catch,
+            // which is exactly the property under test. This waits out the same window the happy-path
+            // test polls FakeClient across, then proves the process is still alive and answering
+            // ordinary calls: a call that reached AbiHostProcess.ReadLoop and threw out of the
+            // PluginSubmitted branch would break every OTHER reply this instance is waiting on too,
+            // so "the very next Invoke still works" is what actually distinguishes "refused" from
+            // "silently broke the reader loop."
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+
+            var jobResult = await plugin.Invoke("echo",
+                new JobParameters(new Dictionary<string, object?> { ["value"] = "hi" }),
+                FakeJobContext(), CancellationToken.None);
+            Assert.True(jobResult.Success);
+        }
+        finally
+        {
+            await plugin.Stop(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// <c>wantResult:true</c> is refused BY NAME, never silently downgraded to fire-and-forget — see
+    /// <see cref="AbiSubmit"/>'s own doc for why. Driven directly against
+    /// <see cref="AbiHostProcess.PluginSubmitted"/> rather than through a fixture: no fixture in this
+    /// suite's C source sends wantResult:true (fixture-submits always sends false), and writing a
+    /// second native build only to flip one JSON field would test AbiFixtures/build.sh, not
+    /// AbiPlugin's own refusal — the event is what every wantResult:true line reaches regardless of
+    /// which fixture produced it, so raising it directly proves the same branch a real one would hit.
+    /// </summary>
+    [Fact]
+    public async Task AWantResultTrueSubmitIsRefusedByName()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var client = new FakeClient();
+        var context = new FakeContext(OutputDir, client);
+        var result = await AbiPluginLoader.Load(HostDllPath, lib, context, CancellationToken.None);
+        var loaded = Assert.IsType<AbiPluginLoadResult.Loaded>(result);
+        var plugin = loaded.Instance;
+
+        try
+        {
+            await plugin.Start(CancellationToken.None);
+
+            // RAISED VIA REFLECTION — PluginSubmitted is a public event but, like every C# event,
+            // invokable only from inside its declaring type; AbiHostProcess exposes no other way to
+            // simulate "the host process wrote this negative-id line" without a fixture built to send
+            // exactly this payload (see this test's own doc for why that is not worth a new .so).
+            var hostField = typeof(AbiPluginLoadResult.Loaded).GetProperty("Instance")!;
+            var abiPlugin = (AbiPlugin)hostField.GetValue(loaded)!;
+            var hostProcessField = typeof(AbiPlugin).GetField("_host",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var host = hostProcessField.GetValue(abiPlugin)!;
+            var eventField = typeof(AbiHostProcess).GetField("PluginSubmitted",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var handler = (Action<AbiSubmit>)eventField.GetValue(host)!;
+            handler.Invoke(new AbiSubmit(-1, "should be refused", WantResult: true));
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+            Assert.Empty(client.Submits);
+        }
+        finally
+        {
+            await plugin.Stop(CancellationToken.None);
+        }
+    }
 }

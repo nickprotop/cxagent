@@ -83,6 +83,39 @@ public sealed record AbiGate(
     [property: JsonPropertyName("alwaysAskable")] bool AlwaysAskable = true);
 
 /// <summary>
+/// The ONE PLUGIN-ORIGINATED SHAPE — what a non-null <c>cxagent_plugin_poll</c> return means,
+/// forwarded by the host process as an ordinary <see cref="HostProtocol"/> line with a NEGATIVE
+/// <see cref="HostRequest.Id"/> (see cxagent_plugin.h's own "OPTIONAL EXPORT: POLL"). The spec that
+/// named this contract talked about "Submit and Answer"; Answer was the permission answerer, which
+/// is cut from contract 3, so this is the only shape a plugin ever sends — there is no <c>kind</c>
+/// enum here because there is nothing to discriminate between yet.
+///
+/// <para><see cref="WantResult"/> IS CARRIED BUT REFUSED. The shape has room for a plugin to ask for
+/// its turn's text because a later contract may serve that; THIS contract does not, because
+/// answering it would mean holding a call open across a turn that may run minutes, over a pipe
+/// whose only inbound channel is a poll the plugin itself controls — the plugin would need its own
+/// correlation to match a later poll's answer back to the submit that asked for it, a second
+/// correlation layer inside a protocol that already has one, for a capability no plugin has yet
+/// asked for. <see cref="AbiPlugin"/> refuses <c>wantResult:true</c> by name rather than silently
+/// downgrading it to false, so a native author sees why their result never came back instead of
+/// guessing.</para>
+/// </summary>
+/// <param name="Id">NEGATIVE, always — the whole correlation trick <see cref="HostProtocol"/>'s own
+/// doc names: a host-assigned <see cref="HostRequest.Id"/> only ever counts up from 1
+/// (<see cref="AbiHostProcess.Send"/>), so a negative id can never collide with one outstanding, and
+/// <see cref="AbiHostProcess"/>'s reader loop tells "a reply to something I asked" from "something
+/// the plugin volunteered" by sign alone. Assigned by the host process (<c>cxagent.PluginHost</c>'s
+/// own poll loop), not by <see cref="AbiHostProcess"/> — unlike every <see cref="HostRequest"/>,
+/// this line originates on the OTHER side of the pipe.</param>
+/// <param name="Goal">What to ask the agent to do, as a user would type it — forwarded verbatim to
+/// <see cref="IPluginClient.Submit"/>.</param>
+/// <param name="WantResult">Always refused when true — see this record's own doc.</param>
+public sealed record AbiSubmit(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("goal")] string Goal,
+    [property: JsonPropertyName("wantResult")] bool WantResult = false);
+
+/// <summary>
 /// The one line the host process writes before reading any request — the library loaded, the ABI
 /// version handshake passed, and <c>cxagent_plugin_describe</c> returned a manifest that parsed.
 /// <see cref="Manifest"/> is the SAME <see cref="PluginManifest"/> a managed plugin's <c>Load</c>

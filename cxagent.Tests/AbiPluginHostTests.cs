@@ -281,6 +281,48 @@ public class AbiPluginHostTests
         Assert.True(results[1].Result!.Success);
     }
 
+    // ---- A plugin-originated line, correlated by sign rather than by a waiter ---------------------
+
+    /// <summary>
+    /// THE PLUMBING ITSELF, at the seam <see cref="AbiHostProcess"/> owns — a negative-id line from
+    /// cxagent.PluginHost's own poll loop reaches <see cref="AbiHostProcess.PluginSubmitted"/>
+    /// without ever touching <see cref="AbiHostProcess.Send"/>'s waiter table, proving the branch
+    /// HostProtocol's own doc calls "unmatched and negative" independent of what
+    /// <see cref="AbiPlugin"/> does with it afterward (that layer is
+    /// <c>AbiPluginLoaderTests.ANativePluginsPolledSubmitReachesTheSessionClient</c>'s own job).
+    /// </summary>
+    [Fact]
+    public async Task APolledSubmitFiresPluginSubmittedWithoutTouchingAnyOutstandingWaiter()
+    {
+        if (!RequireFixture("fixture-submits", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        Assert.True(handshake.Ready);
+
+        AbiSubmit? received = null;
+        var signal = new TaskCompletionSource();
+        host.PluginSubmitted += submit => { received = submit; signal.TrySetResult(); };
+
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        // fixture-submits' own cxagent_plugin_poll answers on its FIRST call (fixture_plugin.c's own
+        // doc) — cxagent.PluginHost's poll loop ticks every 200ms, so this bounds the wait rather
+        // than assuming the very first tick lands before this line runs.
+        await signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(received);
+        Assert.Equal("run the tests", received!.Goal);
+        Assert.False(received.WantResult);
+        Assert.True(received.Id < 0);
+
+        // AN ORDINARY CALL STILL WORKS AFTERWARD — the negative-id branch must not have consumed or
+        // corrupted anything Send's own waiter table depends on.
+        var invokeReply = await host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "hi" }),
+            CancellationToken.None);
+        Assert.True(invokeReply.Ok);
+    }
+
     // ---- A dead pipe fails every outstanding waiter, not just the one that noticed -----------------
 
     [Fact]

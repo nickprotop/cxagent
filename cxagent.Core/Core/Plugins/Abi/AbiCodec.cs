@@ -135,6 +135,12 @@ public static class AbiCodec
         // against downstream; leaving it null here would make every ABI plugin look like one whose
         // code declared nothing.
         Contract = abi.AbiVersion,
+
+        // CARRIED THE SAME WAY — PluginManifestMatch.Mismatch compares this against the SIDECAR's
+        // own "client" the identical way it already compares Spawns, so an ABI plugin's declaration
+        // is held to the same load-time promise a managed one is: the file a user approved must
+        // describe what actually runs.
+        Client = abi.Client,
     };
 
     // ---- start context (host -> plugin) ----

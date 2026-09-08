@@ -35,3 +35,4 @@ build fixture-malformed -DFIXTURE_MALFORMED
 build fixture-crash -DFIXTURE_CRASH
 build fixture-badversion -DFIXTURE_BADVERSION
 build fixture-noinvoke -DFIXTURE_NOINVOKE
+build fixture-submits -DFIXTURE_SUBMITS

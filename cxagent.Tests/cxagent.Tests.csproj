@@ -133,6 +133,8 @@
          path the native fixture itself does (AbiFixtures/build.sh's own OUT_DIR). -->
     <None Include="AbiPluginFixtures/fixture-wellformed.plugin.json" CopyToOutputDirectory="PreserveNewest"
           TargetPath="fixture-wellformed.plugin.json" />
+    <None Include="AbiPluginFixtures/fixture-submits.plugin.json" CopyToOutputDirectory="PreserveNewest"
+          TargetPath="fixture-submits.plugin.json" />
   </ItemGroup>
 
 </Project>

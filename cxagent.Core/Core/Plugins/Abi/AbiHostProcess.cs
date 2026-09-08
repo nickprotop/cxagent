@@ -30,6 +30,17 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     // call.
     private readonly ConcurrentDictionary<long, TaskCompletionSource<HostReply>> _outstanding = new();
 
+    /// <summary>
+    /// Fired for a line this instance never asked for — a plugin-originated <see cref="AbiSubmit"/>,
+    /// see <see cref="HostProtocol"/>'s own doc. <see cref="AbiPlugin"/> is the only subscriber in
+    /// production, wired in its own constructor so no submit line arrives before something is
+    /// listening — an event rather than a constructor parameter because <see cref="AbiPlugin"/> does
+    /// not exist yet when <see cref="Launch"/> creates this instance (<c>AbiPluginLoader</c> builds
+    /// the two in that order: host first, so its handshake can be read, then the plugin shim around
+    /// it).
+    /// </summary>
+    public event Action<AbiSubmit>? PluginSubmitted;
+
     // ONE READER FOR THE LIFETIME OF THE PROCESS, not one per call — two concurrent Sends used to
     // race their own ReadLineAsync against the same StandardOutput, which StreamReader forbids
     // ("stream is currently in use") and which would let one call's line satisfy the other's read
@@ -95,10 +106,17 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                     return;
                 }
 
-                HostReply? reply;
+                // THE ID'S SIGN IS CHECKED BEFORE EITHER SHAPE IS TRUSTED — a negative id can only be
+                // an AbiSubmit (see that record's own doc: the host process never assigns one to a
+                // HostRequest), so this line is read as JSON once, generically, before committing to
+                // either JsonSerializer.Deserialize<HostReply> below or the AbiSubmit branch.
+                long id;
                 try
                 {
-                    reply = JsonSerializer.Deserialize<HostReply>(line);
+                    using var peek = JsonDocument.Parse(line);
+                    if (!peek.RootElement.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number)
+                        continue; // NO ID AT ALL — same as an unparseable line, below: nothing to attribute this to.
+                    id = idEl.GetInt64();
                 }
                 catch (JsonException)
                 {
@@ -106,6 +124,44 @@ internal sealed class AbiHostProcess : IAsyncDisposable
                     // was for, so it can only report and move on, never fail a specific call over it
                     // (the call it was meant for still gets its own answer, or its own eventual
                     // stream-end failure, from a later line).
+                    continue;
+                }
+
+                if (id < 0)
+                {
+                    // UNMATCHED AND NEGATIVE: the branch HostProtocol's own doc calls "the whole
+                    // correlation trick" — this id was never handed out by Send, so it cannot be a
+                    // reply to anything this instance asked; it is the plugin volunteering a line of
+                    // its own. A malformed AbiSubmit is reported and skipped, the same tolerance an
+                    // unparseable line already gets above — the plugin gets no reply channel for this
+                    // (poll's own contract is fire-and-forget), so there is nothing to fail here, only
+                    // something to log and move past.
+                    try
+                    {
+                        var submit = JsonSerializer.Deserialize<AbiSubmit>(line);
+                        // A SUBSCRIBER'S OWN EXCEPTION MUST NOT REACH THIS LOOP'S outer catch —
+                        // AbiPlugin's handler never throws by construction (see its own doc), but
+                        // this loop is the only reader this process has; one bad line taking it down
+                        // would fail every OTHER outstanding call too, not just this submit.
+                        if (submit is not null) PluginSubmitted?.Invoke(submit);
+                    }
+                    catch (Exception)
+                    {
+                        // Covers both an unparseable AbiSubmit (nobody is waiting on this id by
+                        // construction, so there is no waiter to fail, only a line to drop) and a
+                        // subscriber throwing — the same "report and move on" tolerance the
+                        // unparseable-HostReply branch above already applies.
+                    }
+                    continue;
+                }
+
+                HostReply? reply;
+                try
+                {
+                    reply = JsonSerializer.Deserialize<HostReply>(line);
+                }
+                catch (JsonException)
+                {
                     continue;
                 }
 

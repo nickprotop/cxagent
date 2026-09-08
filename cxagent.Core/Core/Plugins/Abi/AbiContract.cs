@@ -16,7 +16,11 @@ public sealed record AbiManifest(
     [property: JsonPropertyName("version")] string Version,
     [property: JsonPropertyName("instructions")] string? Instructions,
     [property: JsonPropertyName("spawns")] bool Spawns,
-    [property: JsonPropertyName("tools")] IReadOnlyList<AbiToolManifest> Tools);
+    [property: JsonPropertyName("tools")] IReadOnlyList<AbiToolManifest> Tools,
+    // ABSENT MEANS FALSE — a library built before contract 3 (or one that just never asks) has no
+    // "client" key in its describe() JSON at all, and PluginManifest.Client's own default is false
+    // for exactly that reason: silence reads as "did not ask," never as "host too old to tell."
+    [property: JsonPropertyName("client")] bool Client = false);
 
 /// <summary>One tool entry inside <see cref="AbiManifest"/> — mirrors <see cref="PluginToolManifest"/>.</summary>
 public sealed record AbiToolManifest(

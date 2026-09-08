@@ -1,0 +1,11 @@
+{
+  "pluginContract": 2,
+  "client": true,
+  "name": "fixture",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "echo", "description": "echoes its argument", "inputSchema": { "type": "object" }, "gated": false },
+    { "name": "echo_dynamic", "description": "echoes, asking about some arguments", "inputSchema": { "type": "object" }, "gated": "dynamic" }
+  ]
+}

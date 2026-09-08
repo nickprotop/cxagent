@@ -165,9 +165,41 @@ const char* cxagent_plugin_stop(void);
  *
  * MAY BE CALLED CONCURRENTLY WITH cxagent_plugin_invoke — see the note on invoke, above. Returns a
  * freshly allocated UTF-8 JSON string when the plugin has something to send, released via
- * cxagent_plugin_free like every other non-NULL return. The JSON shape carried in a non-NULL
- * return is not yet part of this contract — a later revision defines it once a native plugin
- * actually submits work this way.
+ * cxagent_plugin_free like every other non-NULL return.
+ *
+ * THE NON-NULL SHAPE, AS OF CONTRACT 3:
+ *
+ *   {"goal":"run the tests","wantResult":false}
+ *
+ * "goal" is required — what to ask the agent to do, as a user would type it. "wantResult" is
+ * optional (defaults false) and, on this contract, MUST be false or omitted: a value of true is
+ * REFUSED BY NAME, not silently downgraded — see WHY WANTRESULT IS REFUSED, below. There is no
+ * "kind" field. The spec this contract grew from named two shapes, "Submit and Answer"; Answer was
+ * the permission answerer and is cut, so submit is the only shape a plugin ever sends and nothing
+ * here discriminates between two.
+ *
+ * WHY WANTRESULT IS REFUSED. Answering it would mean holding a call open across a turn that may
+ * run for minutes, over a pipe whose only inbound channel is a poll THIS PLUGIN itself controls —
+ * the answer would have to arrive on some later poll, and the plugin would need its own
+ * correlation to match it back to the submit that asked for it: a second correlation layer inside
+ * a protocol that already has one (see HOST-TO-PLUGIN ID CORRELATION, below), for a capability no
+ * plugin has yet asked for. The field exists on the wire so a later contract can serve it without
+ * changing this shape again; this contract does not walk through that door.
+ *
+ * FIRE-AND-FORGET, THEREFORE, IS THE WHOLE CONTRACT: a plugin that polls a submit gets no reply on
+ * this channel, ever, on contract 3 — not success, not failure, not the turn's own result. A
+ * plugin that needs to know what happened has nothing here to ask.
+ *
+ * HOST-TO-PLUGIN ID CORRELATION, AND WHY THIS EXPORT NEEDS NONE OF ITS OWN. Every call the host
+ * makes INTO this library (start/invoke/gate/stop, carried over cxagent-plugin-host's own internal
+ * wire protocol, HostProtocol.cs) is tagged with a positive id the host assigns and matches its own
+ * reply against. A submit crossing the OTHER direction — plugin to host — is tagged with a
+ * NEGATIVE id instead, assigned by the host process forwarding this call, not by this library: a
+ * negative id can never collide with a positive one, so the host's reader loop tells "a reply to
+ * something it asked" from "something the plugin volunteered" by sign alone, with no new envelope
+ * and no correlation this library has to construct. Nothing described above is visible to a plugin
+ * author — cxagent_plugin_poll's own C signature carries no id at all — it exists here only so the
+ * shape of "fire-and-forget, no reply channel" is not mysterious.
  */
 const char* cxagent_plugin_poll(void);
 
