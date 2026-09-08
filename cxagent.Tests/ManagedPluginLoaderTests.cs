@@ -188,23 +188,27 @@ public class ManagedPluginLoaderTests
 
     // ---- "client": true declared but not implemented -----------------------------------------
 
+    /// <summary>Sidecar and Load() DISAGREE about "client" — a PluginManifestMatch failure, not the
+    /// capability check. See <see cref="ASidecarAndLoadAgreeingOnTheClientButATypeThatDoesNotImplementItIsRefused"/>
+    /// below for the failure this one is NOT: that test exercises the capability check itself.</summary>
     [Fact]
-    public async Task AManifestClaimingTheClientAgainstAFixtureThatNeverReturnsItIsRefused()
+    public async Task ASidecarClaimingTheClientAgainstAFixtureWhoseLoadNeverReturnsItIsRefused()
     {
         // MATCHES THE FIXTURE'S OWN Load() EXACTLY (name, version, spawns, its one tool) except for
         // "client" — PluginManifestMatch checks every other field first, so a sidecar that differs
-        // anywhere else would be refused for THAT mismatch rather than the collision this test means
-        // to exercise. See PluginFixtures/WellFormedPlugin.plugin.json for the shape being echoed.
+        // anywhere else would be refused for THAT mismatch rather than the disagreement this test
+        // means to exercise. See PluginFixtures/WellFormedPlugin.plugin.json for the shape echoed.
         //
         // THE REFUSAL IS THE SIDECAR/LOAD MISMATCH, NOT THE IPluginClientConsumer CHECK — and that is
-        // not a bug in either check, it is their order. WellFormedPlugin.Load() is hardcoded to
-        // Client=false (see its own doc comment: it exists to return exactly what its sidecar
-        // declares), so no sidecar can make Load() agree with "client": true using this fixture.
-        // PluginManifestMatch runs before the IPluginClientConsumer check and is symmetric — it
-        // already applies the same rule to "gated" (compare its per-tool Gated check) — so a sidecar
-        // that disagrees with Load() is always caught here first. The IPluginClientConsumer check
-        // exists for the narrower case this fixture cannot produce: sidecar and Load() AGREEING that
-        // client=true, but the constructed TYPE not implementing the marker.
+        // not a bug in either check, it is a difference in what they each verify. Mismatch catches a
+        // manifest that disagrees with what the plugin's own code returned; the capability check
+        // catches an AGREED manifest the binary cannot honour. Precedent: Mismatch already applies
+        // the identical rule to "gated" (its per-tool Gated comparison), so a sidecar disagreeing
+        // with Load() on gated:"dynamic" is caught there too, before IPluginGateSource is reached.
+        // WellFormedPlugin.Load() is hardcoded to Client=false (its own doc comment: it exists to
+        // return exactly what its sidecar declares), so no sidecar here can ever AGREE with
+        // "client": true — which is exactly why this test can only prove the Mismatch half.
+        //
         // THIS SIDECAR IS SHARED WITH PluginCommandTests, which copies it as a template outside this
         // class entirely — so the original content is saved and restored here rather than deleted,
         // unlike every sidecar elsewhere in this file that this class alone ever writes.
@@ -232,6 +236,24 @@ public class ManagedPluginLoaderTests
             Assert.Contains("client", failed.Reason);
         }
         finally { await File.WriteAllTextAsync(sidecar, original); }
+    }
+
+    /// <summary>Sidecar and Load() AGREE that client=true — PluginManifestMatch has nothing to
+    /// refuse — but ClaimsClientPlugin implements only IPlugin, not IPluginClientConsumer. This is
+    /// the capability check itself, and it needs its own fixture: WellFormedPlugin.Load() cannot be
+    /// made to return Client=true (see the test above), so no sidecar reaches this branch through
+    /// it. ClaimsClientPlugin's Load() sets Client = true honestly and matches its own sidecar
+    /// (ClaimsClientPlugin.plugin.json) on every other field — it is not lying, it is missing the
+    /// marker interface, which is exactly the gap this check exists to catch.</summary>
+    [Fact]
+    public async Task ASidecarAndLoadAgreeingOnTheClientButATypeThatDoesNotImplementItIsRefused()
+    {
+        var result = await ManagedPluginLoader.Load(
+            FixtureDll("cxagent.Tests.PluginFixture.ClaimsClient"), Context(), CancellationToken.None);
+
+        var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+        Assert.Contains("client", failed.Reason);
+        Assert.Contains(nameof(IPluginClientConsumer), failed.Reason);
     }
 
     [Fact]

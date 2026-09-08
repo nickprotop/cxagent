@@ -1,0 +1,10 @@
+{
+  "pluginContract": 2,
+  "client": true,
+  "name": "claims-client",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "cc_tool", "description": "a fixture tool", "inputSchema": { "type": "object" }, "gated": false }
+  ]
+}
