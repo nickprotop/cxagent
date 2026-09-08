@@ -49,8 +49,12 @@ internal static class FireAndForget
             }
             catch (Exception ex)
             {
+                // THE FIRST FRAME, NOT THE WHOLE TRACE. A NullReferenceException's Message names
+                // nothing at all; the file and line that threw is the smallest thing that turns it
+                // into something a reader can act on, and a full trace would not fit a toast.
+                var where = ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim() ?? "";
                 system.EnqueueOnUIThread(
-                    () => say($"could not {what}: {ex.GetType().Name} — {ex.Message}"));
+                    () => say($"could not {what}: {ex.GetType().Name} — {ex.Message} {where}"));
             }
         }
     }
@@ -79,9 +83,11 @@ internal static class FireAndForget
             {
                 // THE TYPE AS WELL AS THE MESSAGE. A NullReferenceException's Message says nothing
                 // at all on its own, and it is exactly the exception a silent discard hides best.
+                var where = ex.StackTrace?.Split('\n').FirstOrDefault()?.Trim() ?? "";
                 system.EnqueueOnUIThread(() => ChatTranscriptSink.Post(window.Chat,
                     ChatTranscriptSink.Row(new Message(
-                        $"could not {what}: {ex.GetType().Name} — {ex.Message}", Severity.Error))));
+                        $"could not {what}: {ex.GetType().Name} — {ex.Message} {where}",
+                        Severity.Error))));
             }
         }
     }
