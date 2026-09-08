@@ -813,7 +813,9 @@ public sealed partial class Session
         // The load set is where the plugin's files were found; rooting a server there aims it at a
         // folder containing the plugin binary and nothing else, so every lookup answers empty.
         var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(WorkingDirectory, settings,
-            SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName);
+            SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName,
+            // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
+            sessionId: Id);
 
         var result = await CxAgent.Core.Plugins.ManagedPluginLoader.Load(assemblyPath, context, ct);
         if (result is CxAgent.Core.Plugins.ManagedPluginLoadResult.Failed failed)

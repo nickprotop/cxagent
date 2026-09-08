@@ -160,7 +160,7 @@ public static class PluginResolver
     /// </summary>
     public sealed class RuntimeContext(
         string workingDirectory, JsonElement settings, Action<string> report,
-        ChildProcessStore children, string pluginName) : IPluginContext
+        ChildProcessStore children, string pluginName, string? sessionId = null) : IPluginContext
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
@@ -182,7 +182,11 @@ public static class PluginResolver
             try
             {
                 var process = Process.GetProcessById(processId);
-                children.Add(new ChildProcessRecord(processId, process.StartTime.ToUniversalTime(), pluginName));
+                // WHOSE CHILD IT IS, not only which plugin's. A plugin is loaded per session, so a
+                // record naming the plugin alone made one session's unwire reap every session's
+                // children — see ChildProcessRecord.Session.
+                children.Add(new ChildProcessRecord(
+                    processId, process.StartTime.ToUniversalTime(), pluginName, sessionId));
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {

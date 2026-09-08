@@ -61,7 +61,10 @@ internal static class SessionFactory
         // simpler than a one-shot guard for an operation that costs nothing to repeat.
         if (shared.GlobalInstructionsDir is { } configDir)
             session.Plugins.AttachChildProcessStore(new Plugins.ChildProcessStore(configDir),
-                session.SayPluginLifecycle);
+                session.SayPluginLifecycle,
+                // WHOSE CHILDREN THESE ARE. Without it an unwire here reaps every
+                // session's copy of the same plugin — see ChildProcessRecord.Session.
+                sessionId: session.Id);
 
         // THE SESSION'S OWN PLUGINS, COMPOSED WITH WHATEVER THE EMBEDDER ALSO SUPPLIES. Plugins load
         // through Session.LoadPlugin rather than through ports, so session.Plugins.CurrentTools is a

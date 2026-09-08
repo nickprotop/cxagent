@@ -245,9 +245,17 @@ public static class PluginDiscovery
             // folder being worked in; loadSetDirectory is where the plugin's FILES live, and rooting
             // a language server there points it at a directory holding one DLL and a sidecar. It
             // indexes nothing and every lookup returns empty, with no error to explain why.
-            var context = new StartupPluginContext(session.WorkingDirectory,
+            // CORE'S CONTEXT, NOT A SECOND ONE. This path had its own near-identical copy —
+            // same seven members, differing only in which assembly it read a version from, and the
+            // doc for HostVersionOf names Core and the front end as interchangeable there. The
+            // duplication cost a real bug: threading the session into child-process records was
+            // applied to Core's context and missed this one, so an unwire went on reaping every
+            // session's children while the fix looked complete.
+            var context = new PluginResolver.RuntimeContext(session.WorkingDirectory,
                 config.Settings ?? JsonDocument.Parse("{}").RootElement,
-                report, children, declaredName);
+                report, children, declaredName,
+                // WHOSE PLUGIN THIS IS, so an unwire here reaps only what THIS session spawned.
+                sessionId: session.Id);
 
             var result = await ManagedPluginLoader.Load(assemblyPath, context, ct);
             if (result is ManagedPluginLoadResult.Failed failed)
@@ -261,53 +269,4 @@ public static class PluginDiscovery
         }
     }
 
-    /// <summary>
-    /// <see cref="IPluginContext"/> for a plugin loaded at startup, before any turn exists to hand it
-    /// a per-call token — <see cref="Lifetime"/> is <see cref="CancellationToken.None"/> here, the
-    /// same "nothing has cancelled this yet" starting point every session-scoped resource in
-    /// <c>AppBootstrap</c> gets before its owning session begins tearing down.
-    /// </summary>
-    private sealed class StartupPluginContext(
-        string workingDirectory, JsonElement settings, Action<string> report,
-        ChildProcessStore children, string pluginName) : IPluginContext
-    {
-        public string WorkingDirectory { get; } = workingDirectory;
-        public JsonElement Settings { get; } = settings;
-        public int HostContract => CxAgent.Core.Plugins.PluginContract.Version;
-        // THIS ASSEMBLY'S VERSION, not the contract's — the contract's is frozen so a plugin's
-        // binding survives a release, and would report the same number forever.
-        public string HostVersion =>
-            CxAgent.Core.Plugins.PluginContract.HostVersionOf(typeof(PluginDiscovery).Assembly);
-        public IPluginLogger Logger { get; } = new ReportingLogger(report);
-        public CancellationToken Lifetime { get; } = CancellationToken.None;
-
-        /// <summary>
-        /// Records the process by the SAME store <c>SessionFactory.Wire</c> already attached to
-        /// <c>session.Plugins</c> — so a pid registered during this plugin's own <c>Load()</c> is
-        /// reaped exactly like one registered after the session considers the plugin loaded. The
-        /// START TIME IS READ BACK FROM THE OS, not stamped as <c>DateTime.UtcNow</c> — see
-        /// <see cref="ChildProcessRecord.StartTimeUtc"/>'s own doc: only the OS's own value can later
-        /// prove a pid was not reused by an unrelated process.
-        /// </summary>
-        public void RegisterChildProcess(int processId)
-        {
-            try
-            {
-                var process = Process.GetProcessById(processId);
-                children.Add(new ChildProcessRecord(processId, process.StartTime.ToUniversalTime(), pluginName));
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-            {
-                // THE PROCESS ALREADY EXITED BETWEEN SPAWNING AND REGISTERING IT. Nothing to record
-                // and nothing to reap — the same "already gone" case ChildProcessStore.Kill treats as
-                // fine rather than an error.
-                report($"plugin '{pluginName}': process {processId} could not be recorded ({ex.Message}) — it may have already exited.");
-            }
-        }
-
-        private sealed class ReportingLogger(Action<string> report) : IPluginLogger
-        {
-            public void Log(string message) => report(message);
-        }
-    }
 }

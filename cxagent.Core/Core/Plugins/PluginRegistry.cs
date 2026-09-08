@@ -115,11 +115,21 @@ public sealed class PluginRegistry
     /// the plugin design gives for why reaping is Core's obligation rather than the plugin's bookkeeping.
     /// This is the session's own log line, the same sink <c>Say</c> writes an ordinary notice to.</para>
     /// </summary>
-    internal void AttachChildProcessStore(ChildProcessStore store, Action<string> log)
+    /// <param name="sessionId">
+    /// Whose registry this is, so an unwire reaps only what THIS session's copy of a plugin spawned.
+    /// A plugin is loaded per session; matching on the plugin name alone made one session's unwire
+    /// kill every other session's children — see <see cref="ChildProcessRecord.Session"/>.
+    /// </param>
+    internal void AttachChildProcessStore(ChildProcessStore store, Action<string> log,
+                                          string? sessionId = null)
     {
         _childProcesses = store;
         _log = log;
+        _sessionId = sessionId;
     }
+
+    /// <inheritdoc cref="AttachChildProcessStore"/>
+    private string? _sessionId;
 
     /// <summary>
     /// Registers a plugin's tools, refusing the whole plugin on any name collision — with a
@@ -302,7 +312,7 @@ public sealed class PluginRegistry
         // STEP 4: REAP. Kills any process this plugin registered whose recorded start time still
         // matches — see ChildProcessStore.ReapPlugin. A plugin that Stopped cleanly already exited
         // its own children, so this ordinarily finds nothing; it exists for the plugin that did not.
-        _childProcesses?.ReapPlugin(pluginName, _log);
+        _childProcesses?.ReapPlugin(pluginName, _log, _sessionId);
 
         return true;
     }

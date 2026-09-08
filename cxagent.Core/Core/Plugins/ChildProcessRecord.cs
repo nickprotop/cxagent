@@ -21,7 +21,21 @@ namespace CxAgent.Core.Plugins;
 /// </param>
 /// <param name="Plugin">Which plugin registered this child — named in the log line when a startup
 /// reap kills or skips one, so a stray process is attributable rather than a silent kill.</param>
-public sealed record ChildProcessRecord(int Pid, DateTime StartTimeUtc, string Plugin);
+/// <param name="Session">
+/// The session whose plugin spawned this, or null for a record written before the field existed.
+///
+/// <para>WITHOUT IT, UNWIRING IN ONE SESSION KILLED EVERY SESSION'S CHILDREN. `ReapPlugin` matched on
+/// the plugin NAME alone, and a plugin is loaded per session — so `/plugin unwire csharp-lsp` in the
+/// third tab killed the language servers of the first two, which went on advertising three LSP tools
+/// backed by nothing. Drive-verified: three sessions, three `csharp-ls` processes, one unwire, zero
+/// left.</para>
+///
+/// <para>NULL IS A RECORD FROM AN EARLIER RUN, and it is reaped by the plugin name alone as before —
+/// a startup sweep has no session to match against, and leaving a previous crash's children running
+/// is the worse failure.</para>
+/// </param>
+public sealed record ChildProcessRecord(int Pid, DateTime StartTimeUtc, string Plugin,
+    string? Session = null);
 
 /// <summary>
 /// Persists <see cref="ChildProcessRecord"/>s across a crash — one JSON file
@@ -135,10 +149,24 @@ public sealed class ChildProcessStore
     /// registration from the manifest name the plugin was loaded under.</param>
     /// <param name="log">Told which pid was killed or found already gone — see
     /// <see cref="ReapOrphans"/>'s own parameter of the same name.</param>
-    public void ReapPlugin(string pluginName, Action<string> log)
+    /// <param name="sessionId">
+    /// Whose copy of the plugin is going. Only that session's children are killed — a plugin is
+    /// loaded per session, so matching on the name alone reaped every other session's too.
+    ///
+    /// <para>NULL MEANS EVERY SESSION'S, which is what process shutdown wants and what a caller with
+    /// no session to name must ask for explicitly rather than get by omission.</para>
+    /// </param>
+    public void ReapPlugin(string pluginName, Action<string> log, string? sessionId = null)
     {
+        // A RECORD WITH NO SESSION BELONGS TO NOBODY LIVING — it was written before the field
+        // existed, or by a run that has since died. Reaped either way: leaving a previous crash's
+        // children running is the failure this store exists to prevent.
+        bool Mine(ChildProcessRecord r) =>
+            r.Plugin == pluginName
+            && (sessionId is null || r.Session is null || r.Session == sessionId);
+
         List<ChildProcessRecord> mine;
-        lock (_lock) mine = Load(_path).Where(r => r.Plugin == pluginName).ToList();
+        lock (_lock) mine = Load(_path).Where(Mine).ToList();
 
         if (mine.Count == 0) return;
 
@@ -146,7 +174,7 @@ public sealed class ChildProcessStore
 
         lock (_lock)
         {
-            var remaining = Load(_path).Where(r => r.Plugin != pluginName).ToList();
+            var remaining = Load(_path).Where(r => !Mine(r)).ToList();
             Save(remaining);
         }
     }
