@@ -160,7 +160,8 @@ public static class PluginResolver
     /// </summary>
     public sealed class RuntimeContext(
         string workingDirectory, JsonElement settings, Action<string> report,
-        ChildProcessStore children, string pluginName, string? sessionId = null) : IPluginContext
+        ChildProcessStore children, string pluginName, string? sessionId = null)
+        : IPluginContext, IDisposable
     {
         public string WorkingDirectory { get; } = workingDirectory;
         public JsonElement Settings { get; } = settings;
@@ -172,10 +173,24 @@ public static class PluginResolver
             PluginContract.HostVersionOf(typeof(PluginResolver).Assembly);
         public IPluginLogger Logger { get; } = new ReportingLogger(report);
 
-        // CANCELLED AT STOP, AND ONLY AT STOP — see IPluginContext.Lifetime's own doc. Nothing has
-        // stopped this plugin yet at the moment /plugin load constructs its context, so
-        // CancellationToken.None is the correct starting point, matching the startup path.
-        public CancellationToken Lifetime { get; } = CancellationToken.None;
+        // CANCELLED AT STOP, AND ONLY AT STOP. A plugin that starts a timer needs a signal that its
+        // session is done with it, or the timer outlives the plugin and keeps running against a
+        // session nobody is watching — which matters more now that a plugin can submit work.
+        private readonly CancellationTokenSource _lifetime = new();
+
+        public CancellationToken Lifetime => _lifetime.Token;
+
+        /// <summary>Fires <see cref="Lifetime"/>. Step one of cancel-drain-sever.</summary>
+        public void Dispose()
+        {
+            // CANCEL, DON'T DISPOSE THE SOURCE. A plugin's Stop reads Lifetime to learn it WAS
+            // cancelled — the exact moment Dispose runs — and CancellationTokenSource.Token throws
+            // ObjectDisposedException once the source itself is torn down, which would turn "ask
+            // whether my session ended" into a crash for any caller reading Lifetime after this.
+            // Leaving the source undisposed costs one small object per plugin load; the alternative
+            // costs a token nobody can safely read past the moment it matters.
+            try { _lifetime.Cancel(); } catch (Exception) { }
+        }
 
         public void RegisterChildProcess(int processId)
         {

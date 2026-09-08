@@ -267,11 +267,14 @@ public sealed class PluginRegistry
     /// call is abandoned (its Task is left running rather than awaited further) and the hang is
     /// logged naming the plugin, exactly as that section specifies. AN ABANDONED STOP CANNOT BE
     /// CANCELLED FROM HERE — <paramref name="ct"/> is not passed to it, deliberately: a plugin's
-    /// Stop is handed its OWN token (<see cref="IPluginContext.Lifetime"/>, cancelled by the loader
-    /// that owns the instance) and this method has no authority to interrupt code it does not
-    /// control, only to stop waiting for it. THE ABI HALF OF THIS ASYMMETRY — killing a host process
-    /// after the same timeout — has no loader to implement it against yet; this is the managed half
-    /// the plugin design asks Task 6 to ship, with the process-kill path left for the ABI task to fill.</para>
+    /// Stop is handed its OWN token (<see cref="IPluginContext.Lifetime"/>) and this method has no
+    /// authority to interrupt code it does not control, only to stop waiting for it. THE ABI HALF OF
+    /// THIS ASYMMETRY — killing a host process after the same timeout — has no loader to implement it
+    /// against yet; this is the managed half the plugin design asks Task 6 to ship, with the
+    /// process-kill path left for the ABI task to fill. Lifetime itself now fires for real on
+    /// <see cref="PluginResolver.RuntimeContext.Dispose"/> — but nothing in this method reaches that
+    /// context to dispose it yet, so a plugin's own Stop cannot observe it cancelled from here; that
+    /// wiring is unbuilt, not merely undocumented.</para>
     /// </summary>
     /// <returns>False when no plugin of this name is loaded — there was nothing to unwire.</returns>
     public async Task<bool> UnwireAsync(string pluginName, CancellationToken ct)
@@ -301,7 +304,10 @@ public sealed class PluginRegistry
         // token passed to Stop would ask a MANAGED plugin's own code to observe cancellation it may
         // never check, which is indistinguishable from the hang this timeout exists to survive. The
         // await here is abandoned, not cancelled — the Task keeps running until the plugin's own
-        // Lifetime token (cancelled by whoever owns the instance) eventually stops it, if ever.
+        // Lifetime token eventually stops it, if ever. NOTHING CANCELS THAT TOKEN TODAY: the
+        // RuntimeContext built for this plugin at load is not reachable from here to dispose, so an
+        // abandoned Stop currently runs to completion or hangs forever rather than observing
+        // cancellation — see this method's own doc.
         var stop = plugin.Instance.Stop(ct);
         var finished = await Task.WhenAny(stop, Task.Delay(_stopTimeout, ct));
         if (finished != stop)
