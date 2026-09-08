@@ -39,10 +39,10 @@ public class PhaseTwoSeamTests
     {
         var snapshot = JobSnapshot.Of(Sample());
 
-        Assert.True(snapshot.Reviewing);
-        Assert.Equal(2, snapshot.RetryCount);
-        Assert.Equal("half way", snapshot.ProgressBody);
-        Assert.NotNull(snapshot.CreatedAt);
+        Assert.True(snapshot.Outcome.Reviewing);
+        Assert.Equal(2, snapshot.Outcome.RetryCount);
+        Assert.Equal("half way", snapshot.Progress.Body);
+        Assert.NotNull(snapshot.Timing.CreatedAt);
     }
 
     /// <summary>AND IT STILL SHARES NOTHING WITH THE LIVE JOB — the reason the DTO exists. Mutating
@@ -56,8 +56,8 @@ public class PhaseTwoSeamTests
         job.Reviewing = false;
         job.RetryCount = 99;
 
-        Assert.True(snapshot.Reviewing);
-        Assert.Equal(2, snapshot.RetryCount);
+        Assert.True(snapshot.Outcome.Reviewing);
+        Assert.Equal(2, snapshot.Outcome.RetryCount);
     }
 
     /// <summary>

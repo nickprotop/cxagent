@@ -11,10 +11,12 @@ namespace CxAgent.Core.Plugins;
 /// <see cref="PluginRegistry.UnwireAsync"/> can hold a reference to all of it after removing the
 /// plugin from the registry's own list.
 /// </summary>
+/// <param name="instance">The plugin itself — what <see cref="PluginRegistry.UnwireAsync"/> stops.</param>
+/// <param name="manifest">What it declared: its tools, its commands, and the name everything keys on.</param>
 /// <param name="context">
 /// The context THIS plugin was loaded with, retained so <see cref="PluginRegistry.UnwireAsync"/> can
-/// dispose it — the retention Task 1 could not solve, because nothing before this held a reference
-/// to a runtime-loaded plugin's context past its own construction. Disposing it is what cancels
+/// dispose it — without the reference, a runtime-loaded plugin's context is unreachable past its own
+/// construction and nothing can dispose it. Disposing it is what cancels
 /// <see cref="IPluginContext.Lifetime"/>, which is what lets an abandoned Stop ever observe its
 /// session ending rather than running to completion or hanging forever.
 /// </param>
@@ -155,6 +157,8 @@ public sealed class PluginRegistry
     /// obligation rather than the plugin's bookkeeping. This is the session's own log line, the same
     /// sink <c>Say</c> writes an ordinary notice to.</para>
     /// </summary>
+    /// <param name="store">Where a plugin's spawned processes are recorded, so they can be reaped.</param>
+    /// <param name="log">Where reaping says what it did.</param>
     /// <param name="sessionId">
     /// Whose registry this is, so an unwire reaps only what THIS session's copy of a plugin spawned.
     /// A plugin is loaded per session; matching on the plugin name alone made one session's unwire

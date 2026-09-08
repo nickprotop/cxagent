@@ -83,7 +83,6 @@ public sealed record CompactionRecord(
     string? WorkingDir = null);
 
 /// <summary>One permission decision.</summary>
-/// <param name="AgentId">Which agent made the request.</param>
 /// <param name="At">When it was decided.</param>
 /// <param name="Kind">Which permission kind it was — Shell, FileRead, FileWrite, Http, Mcp, or Tool.</param>
 /// <param name="Decision">How it was resolved — allowed, denied, silent, auto-allowed, auto-refused.</param>

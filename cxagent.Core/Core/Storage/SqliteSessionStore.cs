@@ -369,6 +369,7 @@ public sealed class SqliteSessionStore
     /// <para>AMBIGUITY IS REPORTED, NEVER RESOLVED. Picking the newest match silently is how someone
     /// restores the wrong conversation and does not find out for ten minutes.</para>
     /// </summary>
+    /// <param name="prefix">The id, or enough of its start to be unambiguous.</param>
     /// <param name="withinFolder">
     /// When given, only sessions recorded against this working directory can match.
     ///
@@ -661,6 +662,19 @@ public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> A
 /// <param name="InputTokens">Tokens the session had sent when saved.</param>
 /// <param name="OutputTokens">Tokens it had generated.</param>
 /// <param name="UpdatedAt">When it was last written.</param>
+/// <param name="WorkingDir">
+/// The folder the conversation was working in, or null for a row written before the column
+/// existed.
+///
+/// <para>CARRIED SO A RESUME CAN GO THERE. The column was always stored — it is what scopes the
+/// listing — but the snapshot dropped it, so resuming a conversation from another project left
+/// the session working in the folder it was already in: the model remembered one project while
+/// its tools acted on another.</para>
+///
+/// <para>NULL IS NOT A FOLDER. An older row says nothing about where it ran, and guessing is
+/// worse than staying put — a resume that silently re-scoped to the wrong project would change
+/// which files a turn may touch.</para>
+/// </param>
 public sealed record SessionSnapshot(
     string AgentId,
     IReadOnlyList<ChatMessage> Context,
@@ -669,17 +683,4 @@ public sealed record SessionSnapshot(
     DateTimeOffset UpdatedAt,
     EditMode? Edits = null,
 
-    /// <param name="WorkingDir">
-    /// The folder the conversation was working in, or null for a row written before the column
-    /// existed.
-    ///
-    /// <para>CARRIED SO A RESUME CAN GO THERE. The column was always stored — it is what scopes the
-    /// listing — but the snapshot dropped it, so resuming a conversation from another project left
-    /// the session working in the folder it was already in: the model remembered one project while
-    /// its tools acted on another.</para>
-    ///
-    /// <para>NULL IS NOT A FOLDER. An older row says nothing about where it ran, and guessing is
-    /// worse than staying put — a resume that silently re-scoped to the wrong project would change
-    /// which files a turn may touch.</para>
-    /// </param>
     string? WorkingDir = null);

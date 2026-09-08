@@ -23,39 +23,56 @@ namespace CxAgent.Core.Sessions;
 /// re-renders on every change; this is for anything that has to remember what a job LOOKED LIKE.
 /// </para>
 /// </summary>
+/// <summary>Which job this is, and what to call it.</summary>
+/// <param name="Id">The job's own id, stable for its life.</param>
+/// <param name="AgentId">Which agent ran it — replaced by a re-wire, so not a session key.</param>
+/// <param name="JobType">The tool behind it.</param>
+/// <param name="DisplayName">What a row calls it.</param>
+public sealed record JobIdentity(string Id, string AgentId, string JobType, string DisplayName);
+
+/// <summary>What the job did, once it had done it.</summary>
+/// <param name="State">Its state at the moment of capture, as text — the live enum is not the DTO's to carry.</param>
+/// <param name="Parameters">The call's arguments, rendered to JSON at capture.</param>
+/// <param name="Output">What the tool returned, capped. An echo, not the answer.</param>
+/// <param name="Error">Why it failed, capped, or null when it did not.</param>
+/// <param name="DecidedBy">Who answered the permission question, when one was asked.</param>
+/// <param name="Reviewing">
+/// Whether the gate is asking a model about this job right now.
+///
+/// <para>A ROW RENDERS IT, so a DTO without it loses the "reviewing…" state a client shows while a
+/// classifier is being consulted — which is exactly the moment a user wonders why nothing is
+/// happening. There is no reason a remote client needs it less than a local one.</para>
+/// </param>
+/// <param name="RetryCount">How many times this job has been retried.</param>
+public sealed record JobOutcome(
+    string State, string? Parameters, string? Output, string? Error, string? DecidedBy,
+    bool Reviewing = false, int RetryCount = 0);
+
+/// <summary>How far along it is, as a client would show it.</summary>
+/// <param name="Fraction">How far along, 0 to 1, when the job reports it.</param>
+/// <param name="Message">The short progress line a row shows.</param>
+/// <param name="Body">The longer progress text, where a job reports one beside its short message.</param>
+public sealed record JobProgress(double? Fraction, string? Message, string? Body = null);
+
+/// <summary>
+/// When it happened.
+///
+/// <para>CREATED IS NOT STARTED, for a queued job — the gap between them is the wait, which is the
+/// only thing a user staring at a pending row wants to know.</para>
+/// </summary>
+/// <param name="CreatedAt">When the job was created.</param>
+/// <param name="StartedAt">When it began running.</param>
+/// <param name="CompletedAt">When it finished, or null while it runs.</param>
+public sealed record JobTiming(
+    DateTimeOffset? CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt);
+
+/// <summary>Which job, what came of it, how far along, and when — see each part's own doc.</summary>
+/// <param name="Identity">Which job this is.</param>
+/// <param name="Outcome">What it did.</param>
+/// <param name="Progress">How far along.</param>
+/// <param name="Timing">When.</param>
 public sealed record JobSnapshot(
-    string Id,
-    string AgentId,
-    string JobType,
-    string DisplayName,
-    string State,
-    string? Parameters,
-    string? ResultOutput,
-    string? Error,
-    string? DecidedBy,
-    double? Progress,
-    string? ProgressMessage,
-    DateTimeOffset? StartedAt,
-    DateTimeOffset? CompletedAt,
-
-    /// <summary>Whether the gate is asking a model about this job right now.</summary>
-    /// <remarks>
-    /// A ROW RENDERS IT, so a DTO without it loses the "reviewing…" state a client shows while a
-    /// classifier is being consulted — which is exactly the moment a user wonders why nothing is
-    /// happening. It was omitted rather than declined; there is no reason a remote client needs it
-    /// less than a local one.
-    /// </remarks>
-    bool Reviewing = false,
-
-    /// <summary>How many times this job has been retried.</summary>
-    /// <inheritdoc cref="Reviewing"/>
-    int RetryCount = 0,
-
-    /// <summary>The longer progress text, where a job reports one beside its short message.</summary>
-    string? ProgressBody = null,
-
-    /// <summary>When the job was created — which is not when it STARTED, for a queued one.</summary>
-    DateTimeOffset? CreatedAt = null)
+    JobIdentity Identity, JobOutcome Outcome, JobProgress Progress, JobTiming Timing)
 {
     /// <summary>How much of a result or a parameter set is kept.</summary>
     /// <remarks>
@@ -66,23 +83,17 @@ public sealed record JobSnapshot(
 
     /// <summary>Captures a job as it stands, sharing nothing with it afterwards.</summary>
     public static JobSnapshot Of(Job job) => new(
-        Id: job.Id,
-        AgentId: job.AgentId,
-        JobType: job.JobType,
-        DisplayName: job.DisplayName,
-        State: job.State.ToString(),
-        Parameters: Render(job.Parameters?.Values),
-        ResultOutput: Render(job.Result?.Output),
-        Error: Cap(job.Result?.ErrorMessage),
-        DecidedBy: job.DecidedBy,
-        Progress: job.Progress,
-        ProgressMessage: job.ProgressMessage,
-        StartedAt: job.StartedAt,
-        CompletedAt: job.CompletedAt,
-        Reviewing: job.Reviewing,
-        RetryCount: job.RetryCount,
-        ProgressBody: Cap(job.ProgressBody),
-        CreatedAt: job.CreatedAt);
+        new JobIdentity(job.Id, job.AgentId, job.JobType, job.DisplayName),
+        new JobOutcome(
+            State: job.State.ToString(),
+            Parameters: Render(job.Parameters?.Values),
+            Output: Render(job.Result?.Output),
+            Error: Cap(job.Result?.ErrorMessage),
+            DecidedBy: job.DecidedBy,
+            Reviewing: job.Reviewing,
+            RetryCount: job.RetryCount),
+        new JobProgress(job.Progress, job.ProgressMessage, Cap(job.ProgressBody)),
+        new JobTiming(job.CreatedAt, job.StartedAt, job.CompletedAt));
 
     /// <summary>
     /// A parameter dictionary as text.
