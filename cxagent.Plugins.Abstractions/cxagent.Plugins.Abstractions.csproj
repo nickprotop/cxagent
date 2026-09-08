@@ -21,10 +21,12 @@
     <PackageId>CxAgent.Plugins.Abstractions</PackageId>
 
     <!-- THE PACKAGE VERSION IS THE CONTRACT NUMBER. A plugin author reading
-         Version="2.0.0" is reading the same fact their sidecar declares as
-         "pluginContract": 2, so the two compatibility signals are one signal said twice.
-         The release workflow passes -p:Version; this is the local placeholder. -->
-    <Version>2.0.0</Version>
+         Version="3.0.0" is reading the same fact their sidecar declares as
+         "pluginContract": 3, so the two compatibility signals are one signal said twice.
+         KEEP THIS MAJOR IN STEP WITH PluginContract.Version: a placeholder that disagrees with the
+         constant makes a liar of the sentence above, and it is the sentence a plugin author trusts.
+         The release workflow passes -p:Version from the tag; this is the local placeholder. -->
+    <Version>3.0.0</Version>
 
     <!-- FROZEN, AND NEVER BUMPED — not even at a contract change. This is the identity .NET
          resolves by exact match, so moving it would refuse an old plugin at LOAD, before
