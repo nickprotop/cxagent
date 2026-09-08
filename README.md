@@ -119,6 +119,21 @@ under an old name gets `no such tool`, with the current names listed beside it.
 `todowrite` keeps its unusual spelling deliberately — it is what Claude Code calls it, and models
 distilled from it recognise the exact string.
 
+### Sessions
+
+**One window holds several conversations.** `/sessions new [folder]` opens another in its own tab —
+on the same project or a different one. Each is a whole session end to end: its own history, model,
+working directory, plugins and permissions.
+
+That last part is the one worth stating plainly. **A permission answered in one session has not been
+answered for the others**, a plugin unwired in one keeps running in the rest, and a turn stopped in
+one leaves the others alone. Two conversations in one window are two conversations, not one
+conversation with two views.
+
+`F6` focuses the tab strip, `←` and `→` change tabs, `F6` returns to the composer. A tab whose
+session is waiting on a permission prompt says so, so a session that needs you cannot sit quietly
+behind the one you are reading.
+
 ### Permissions
 
 Reading and writing inside the working folder is free, and so are commands that can only look —
@@ -339,6 +354,7 @@ the argument wins when both are present.
 | `F1` | Help |
 | `F3` | Session panel (show / hide / automatic) |
 | `F4` | Put the cursor back in the composer |
+| `F6` | Focus the tab strip — then `←` `→` to change session, `F6` back to the composer |
 | `F9` | Theme |
 | `Shift+Tab` | Cycle the edit mode — see [COMMANDS.md](COMMANDS.md) |
 | `Ctrl+Q` | Quit |

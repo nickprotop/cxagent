@@ -36,6 +36,7 @@ but not completed.
 | `/diff` | What has changed in the working tree |
 | `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
 | `/sessions` | Earlier conversations in this folder |
+| `/sessions new [folder]` | Open another conversation in its own tab |
 | `/sessions resume <n\|id>` | Restore one, by its number in the list or its id |
 | `/sessions all` | Every folder, not just this one |
 | `/shell` | Open a terminal you can type in — Linux and Windows |
@@ -407,6 +408,15 @@ Sessions · 3 here
   /sessions resume <number|id>  ·  /sessions all
   sessions closed cleanly are removed after 30 days
 ```
+
+**`/sessions new` OPENS ONE BESIDE THE OTHERS, rather than replacing what you were doing.** With a
+folder, it opens there; without one, it asks. Each session is its own conversation end to end — its
+own history, model, working directory, plugins and permissions — so a question answered in one has
+not been answered for the rest, and a plugin unwired in one keeps running in the others.
+
+**THE TABS ARE KEYBOARD-DRIVEN.** `F6` moves focus to the tab strip, `←` and `→` change tabs, and
+`F6` returns to the composer. A tab whose session is waiting on a permission prompt says so on the
+strip — a session that needs an answer cannot sit quietly behind the one you are looking at.
 
 **A session is named twice, because the two names are different promises.** The number belongs to
 the listing on screen — renumbered every time, useless in a script, ideal at a prompt. The id is the

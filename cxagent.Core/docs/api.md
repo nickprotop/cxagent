@@ -66,6 +66,23 @@ conversation. That is what a model switch or a settings change uses.
 **Creates, per session:** the `Session`, its `AgentHost` and `Agent`, the job registry (each tool
 wrapped in the gate), the sub-agent spawner, the agent-type catalog.
 
+**CALL IT MORE THAN ONCE AND YOU HAVE MORE THAN ONE SESSION.** A manager holds them all — the TUI
+opens a tab per session, and an embedder can hold as many as it wants, on the same folder or on
+different ones. `Sessions` enumerates them; `Close(Session)` answers false rather than throwing when
+one is mid-turn.
+
+**WHAT IS PER SESSION, AND WHAT IS NOT.** Each session owns its history, its `Agent`, its working
+directory, its plugin registry and its `PermissionPolicy` — so a permission answered in one is not
+answered in another, and a plugin unwired in one keeps serving the rest. What is shared is the
+process: one gate, one config, one set of stores. **A gate serving several sessions is the part that
+bites**: a `PermissionRequest` must carry the policy of the session it belongs to, or it is judged
+against another session's root. Every path Core owns stamps it; a caller reaching the gate directly
+has to stamp it too.
+
+**AND A SESSION'S OWN ID IS NOT ITS AGENT'S.** `Session.Id` is minted at construction and survives a
+re-wire; the agent id does not. Anything you file per session — permissions, history rows, child
+processes — keys on `Session.Id`, or a model switch silently orphans it.
+
 ## The rest
 
 | Member | | Called by |
