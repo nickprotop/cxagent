@@ -245,6 +245,51 @@ public class PluginLoadGateTests : IDisposable
         Assert.Contains(expected, request.Display, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A plugin that can start turns says so at the one moment the user decides whether to trust it.
+    ///
+    /// <para>EVERY OTHER CLAUSE IN THAT PROMPT DESCRIBES WHAT THE MODEL CAN CALL. This one describes
+    /// what the PLUGIN can do on its own, unprompted — which is why the capability is declared in the
+    /// manifest rather than inferred from the binary, and why a prompt that omitted it would be
+    /// asking for trust it never described.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheLoadPromptSaysWhenAPluginCanStartWorkOnItsOwn()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+
+        var manifest = new PluginManifest("scheduler", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("wake", "wakes the agent", EmptySchema())]) { Client = true };
+
+        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+
+        var request = Assert.Single(gate.Requests);
+        Assert.Contains("start work in this conversation on its own", request.Display, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And a plugin that CANNOT does not say it — or the sentence would mean nothing.
+    /// </summary>
+    [Fact]
+    public async Task TheLoadPromptIsSilentAboutStartingWorkWhenAPluginCannot()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+
+        var manifest = new PluginManifest("plain", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("thing", "does something", EmptySchema())]);
+
+        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+
+        var request = Assert.Single(gate.Requests);
+        Assert.DoesNotContain("start work in this conversation", request.Display, StringComparison.Ordinal);
+    }
+
     // ---- Config cannot pre-approve a plugin --------------------------------------------------------
 
     /// <summary>the plugin design, "Loading is refused mid-turn": "A runtime load always prompts... A

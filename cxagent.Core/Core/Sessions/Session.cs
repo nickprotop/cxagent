@@ -563,6 +563,16 @@ public sealed partial class Session
                     ? " One of them decides per call whether to ask you."
                     : $" {dynamic} of them decide per call whether to ask you.";
 
+            // AND THE CLIENT IS THE ONE WORTH SAYING PLAINLY. Every other clause above describes
+            // what a plugin ADDS for the model to call; this one describes what the plugin can do on
+            // its OWN — start a turn in this session, unprompted, at a moment nobody chose. That is
+            // materially more than answering a tool call, it is the reason the capability is declared
+            // in the manifest rather than inferred from the binary, and a load prompt that omitted it
+            // would be asking for trust it never described. Said in the user's terms — what happens to
+            // their session — not the contract's.
+            if (manifest.Client)
+                contributes += " It can also start work in this conversation on its own.";
+
             var request = new Permissions.PermissionRequest(
                 Permissions.PermissionKind.Plugin,
                 $"{manifest.Name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",
