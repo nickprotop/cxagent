@@ -552,6 +552,13 @@ public sealed class AgentHost : IDisposable
     /// exists here; re-deriving it from the observer stream would duplicate what <c>SendAsync</c>
     /// already computed. Every existing caller only awaited this for its falling edge, so widening it
     /// to <c>Task&lt;SendResult&gt;</c> — itself a <c>Task</c> — costs them nothing.
+    ///
+    /// <para><see cref="SendResult.Text"/> IS THE SAME STRING <see cref="ISessionObserver.AssistantTextAppended"/>
+    /// STREAMED, handed back rather than accumulated a second time: both read off the one
+    /// <c>StringBuilder</c> the streaming loop appends each <c>TextDelta</c> into. And it is set only
+    /// on the lap that ends the tool-calling loop without a tool call — a lap that calls tools never
+    /// returns, it loops again inside <c>SendAsync</c> — so this is already "the last assistant
+    /// message", not every lap concatenated.</para>
     /// </returns>
     public Task<SendResult> RunAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
