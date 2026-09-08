@@ -245,6 +245,48 @@ public class PluginLoadGateTests : IDisposable
     }
 
     /// <summary>
+    /// COUNTED, NOT LISTED — same reason as <see cref="TheLoadPromptSaysWhenAPluginCanStartWorkOnItsOwn"/>'s
+    /// own sentence: a name the user has not seen before tells them less than the count does, and
+    /// `/plugin` lists them once loaded.
+    /// </summary>
+    [Fact]
+    public async Task TheLoadPromptCountsCommands()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+
+        var manifest = new PluginManifest("sched", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("t", "does something", EmptySchema())],
+            [new PluginCommandManifest("schedule", "Wake the agent later")]);
+
+        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+
+        var request = Assert.Single(gate.Requests);
+        Assert.Contains("1 command", request.Display, StringComparison.Ordinal);
+    }
+
+    /// <summary>And a plugin that declares none does not say so — or the sentence would mean nothing,
+    /// same reason as <see cref="TheLoadPromptIsSilentAboutStartingWorkWhenAPluginCannot"/>.</summary>
+    [Fact]
+    public async Task TheLoadPromptIsSilentAboutCommandsWhenAPluginDeclaresNone()
+    {
+        File.WriteAllText(Path.Combine(_dir, "plugin.dll"), "content");
+        var gate = new ScriptedGate(PermissionOutcome.Allow);
+        var session = SessionWithGate(gate, out var manager);
+        using var _ = manager;
+
+        var manifest = new PluginManifest("plain", "1.0.0", Instructions: null, Spawns: false,
+            [new PluginToolManifest("thing", "does something", EmptySchema())]);
+
+        await session.LoadPlugin(new FakePlugin(), manifest, _dir);
+
+        var request = Assert.Single(gate.Requests);
+        Assert.DoesNotContain("command", request.Display, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A plugin that can start turns says so at the one moment the user decides whether to trust it.
     ///
     /// <para>EVERY OTHER CLAUSE IN THAT PROMPT DESCRIBES WHAT THE MODEL CAN CALL. This one describes

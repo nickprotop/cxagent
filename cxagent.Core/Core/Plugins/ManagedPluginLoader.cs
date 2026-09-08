@@ -197,6 +197,15 @@ public static class ManagedPluginLoader
                 $"'{sidecar.Name}' declares \"client\": true but '{pluginType.FullName}' does not "
               + $"implement {nameof(IPluginClientConsumer)}.");
 
+        // DECLARED BUT NOT IMPLEMENTED IS A LIE, refused for the reason a dynamic gate without
+        // IPluginGateSource is: the manifest is what the user approved. THE CONVERSE IS NOT AN ERROR
+        // — a type may implement more than its manifest declares, which is the shipped case for
+        // IPluginGateSource on calculator and csharp-lsp. One direction only.
+        if (loaded.Commands.Count > 0 && instance is not IPluginCommandHandler)
+            return new ManagedPluginLoadResult.Failed(
+                $"'{sidecar.Name}' declares {loaded.Commands.Count} command(s) but "
+              + $"'{pluginType.FullName}' does not implement {nameof(IPluginCommandHandler)}.");
+
         return new ManagedPluginLoadResult.Loaded(instance, loaded);
     }
 

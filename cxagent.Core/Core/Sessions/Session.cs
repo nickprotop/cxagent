@@ -572,6 +572,15 @@ public sealed partial class Session
             if (manifest.Client)
                 contributes += " It can also start work in this conversation on its own.";
 
+            // COUNTED, NOT LISTED. The prompt says what a plugin ADDS, and a name a user has not seen
+            // before tells them less than the count does; `/plugin` lists them once loaded. Its own
+            // sentence for the reason the dynamic clause has one — an arm per combination would be a
+            // dozen arms for a clause most plugins never show.
+            if (manifest.Commands.Count > 0)
+                contributes += manifest.Commands.Count == 1
+                    ? " It adds 1 command you can type."
+                    : $" It adds {manifest.Commands.Count} commands you can type.";
+
             var request = new Permissions.PermissionRequest(
                 Permissions.PermissionKind.Plugin,
                 $"{manifest.Name} wants to {capability}.\n{contributes}\n{loadSetDirectory}",

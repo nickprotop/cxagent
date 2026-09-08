@@ -1,0 +1,12 @@
+{
+  "pluginContract": 2,
+  "name": "claims-command",
+  "version": "1.0.0",
+  "spawns": false,
+  "tools": [
+    { "name": "cmd_tool", "description": "a fixture tool", "inputSchema": { "type": "object" }, "gated": false }
+  ],
+  "commands": [
+    { "name": "nope", "summary": "cannot run" }
+  ]
+}

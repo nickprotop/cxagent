@@ -45,6 +45,15 @@ internal static class PluginManifestMatch
         if (sidecar.Client != actual.Client)
             return $"sidecar declares client={sidecar.Client}, {actualSource} returned client={actual.Client}.";
 
+        // COMMAND NAMES, IN ORDER — a sidecar declaring "/schedule" while Load() returns none is
+        // drift exactly like a tool the sidecar declared and the binary did not return, so it joins
+        // the same check rather than getting a parallel one only the command feature would trip.
+        var sidecarCommands = sidecar.Commands.Select(c => c.Name).ToList();
+        var actualCommands = actual.Commands.Select(c => c.Name).ToList();
+        if (!sidecarCommands.SequenceEqual(actualCommands))
+            return $"sidecar declares command(s) {string.Join(", ", sidecarCommands)}, "
+                 + $"{actualSource} returned {string.Join(", ", actualCommands)}.";
+
         var sidecarTools = sidecar.Tools.ToDictionary(t => t.Name);
         var actualTools = actual.Tools.ToDictionary(t => t.Name);
 

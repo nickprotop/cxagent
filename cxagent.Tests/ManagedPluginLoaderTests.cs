@@ -256,6 +256,22 @@ public class ManagedPluginLoaderTests
         Assert.Contains(nameof(IPluginClientConsumer), failed.Reason);
     }
 
+    /// <summary>The same shape as <see cref="ASidecarAndLoadAgreeingOnTheClientButATypeThatDoesNotImplementItIsRefused"/>,
+    /// for commands. A sidecar that DISAGREES with Load() about which commands exist is caught by
+    /// PluginManifestMatch before this branch is ever reached — see PluginManifestMatch's own
+    /// command-name comparison — so a fixture proving the capability check itself needs Load() to
+    /// AGREE with its sidecar while the type lacks IPluginCommandHandler. ClaimsCommandPlugin does
+    /// exactly that, the way ClaimsClientPlugin does for the client capability.</summary>
+    [Fact]
+    public async Task ASidecarAndLoadAgreeingOnACommandButATypeThatDoesNotImplementTheHandlerIsRefused()
+    {
+        var result = await ManagedPluginLoader.Load(
+            FixtureDll("cxagent.Tests.PluginFixture.ClaimsCommand"), Context(), CancellationToken.None);
+
+        var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+        Assert.Contains(nameof(IPluginCommandHandler), failed.Reason);
+    }
+
     [Fact]
     public async Task AManifestThatDoesNotDeclareTheClientLoadsWhateverTheTypeImplements()
     {
