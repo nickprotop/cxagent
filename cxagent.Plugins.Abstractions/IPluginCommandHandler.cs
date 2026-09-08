@@ -3,43 +3,46 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Plugins;
 
 /// <summary>
-/// Whether a plugin's command ran, and how — the same four-way answer Core's own commands give
-/// (<c>CxAgent.Core.Commands.CommandStatus</c>), duplicated here rather than referenced.
+/// How a plugin's own command turned out — this package's vocabulary, not Core's.
 ///
 /// <para>THIS PACKAGE DOES NOT REFERENCE cxagent.Core — see <see cref="JobLogLevel"/> for the same
 /// reason applied to a job's severity, and <see cref="JobResult"/> for a result shape that stayed
-/// self-contained rather than returning a Core-side type. <c>CommandStatus</c> is load-bearing across
-/// 50+ call sites in Session's own dispatch and cannot become a dependency of the package a plugin
-/// author installs stand-alone. Core converts between the two one-for-one at the boundary that calls
-/// <see cref="IPluginCommandHandler.RunCommand"/>.</para>
+/// self-contained rather than returning a Core-side type. Core's own <c>CommandStatus</c> is
+/// load-bearing across its session dispatch and cannot become a dependency of the package a plugin
+/// author installs stand-alone: the abstractions package is the leaf, and Core depends on IT, never
+/// the other way.</para>
+///
+/// <para>THREE VALUES, NOT CORE'S FOUR. Core's <c>CommandStatus</c> also has <c>Unknown</c> — "nothing
+/// here services this line", a dispatcher's answer to "did anyone claim this?" before it even reaches
+/// a handler. A plugin implementing this interface was ASKED for a command it itself declared in its
+/// manifest, so "I do not know this command" is not an outcome it can honestly return; if it wants to
+/// decline, it refuses and says why in <see cref="CommandResult.Message"/>. Core maps these three
+/// values onto its own four-value enum at the registration site — the one place a translation between
+/// a public contract and an internal enum belongs.</para>
 /// </summary>
-public enum CommandOutcome
+public enum PluginCommandOutcome
 {
-    /// <summary>Nothing here services this. Mirrors <c>CommandStatus.Unknown</c>.</summary>
-    Unknown,
-
-    /// <summary>It ran and said its result; nothing about the session changed. Mirrors
-    /// <c>CommandStatus.Reported</c>.</summary>
+    /// <summary>It ran and said its result. Nothing about the session changed.</summary>
     Reported,
 
-    /// <summary>It ran and something changed. Mirrors <c>CommandStatus.Changed</c>.</summary>
+    /// <summary>It ran and changed something the session holds.</summary>
     Changed,
 
-    /// <summary>It could not run now, and said why. Mirrors <c>CommandStatus.Refused</c>.</summary>
+    /// <summary>It declined — a bad argument, a precondition unmet. The Message says why.</summary>
     Refused,
 }
 
 /// <summary>What a plugin's command did, as the user sees it.</summary>
 /// <param name="Message">Text for the transcript, or null when the command says nothing.</param>
 /// <param name="Status">
-/// Whether it was handled — the same answer Core's own commands give, in this package's own
-/// vocabulary. See <see cref="CommandOutcome"/> for why it is not the Core type itself.
+/// How the command turned out, in this package's own vocabulary. See
+/// <see cref="PluginCommandOutcome"/> for why it is not Core's <c>CommandStatus</c>.
 ///
 /// <para>NOT A <see cref="JobResult"/>. A tool's result is shaped for a MODEL to read and carries an
 /// error field a model reasons about; a command's reader is the person who typed it, and what Core
 /// needs back is whether anything serviced the line.</para>
 /// </param>
-public sealed record CommandResult(string? Message, CommandOutcome Status);
+public sealed record CommandResult(string? Message, PluginCommandOutcome Status);
 
 /// <summary>
 /// A plugin that services commands it declared in its manifest.
