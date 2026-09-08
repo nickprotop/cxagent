@@ -69,6 +69,23 @@ public sealed record PluginGate(string Display, bool AlwaysAskable = true);
 public sealed record PluginToolManifest(string Name, string Description, JsonElement InputSchema,
     PluginGating Gated = PluginGating.Never, bool AlwaysAskable = true);
 
+/// <summary>One argument a command takes — its name and what it means.</summary>
+/// <remarks>
+/// NAMES, NOT A SCHEMA. The palette renders these as a hint (`[when|goal]` — see
+/// <c>SessionCommand.Hint</c>), and completion offers them; the argument itself crosses as the raw
+/// string the user typed. A person types prose, so validating against a JSON schema would reject
+/// what they meant rather than help them.
+/// </remarks>
+public sealed record PluginCommandArgument(string Name, string Summary);
+
+/// <summary>One command a plugin contributes, shaped like the <c>SessionCommand</c> it becomes.</summary>
+public sealed record PluginCommandManifest(
+    string Name, string Summary, IReadOnlyList<PluginCommandArgument>? Arguments = null)
+{
+    /// <summary>Never null, so every consumer can enumerate without a guard.</summary>
+    public IReadOnlyList<PluginCommandArgument> Args => Arguments ?? [];
+}
+
 /// <summary>
 /// The sidecar shape and what <c>Describe</c> returns once a plugin is running — deliberately one
 /// type for both, because the config-time collision check that catches two plugins declaring the
@@ -87,9 +104,13 @@ public sealed record PluginToolManifest(string Name, string Description, JsonEle
 /// record from it rather than treating an absent one as a bug.
 /// </param>
 /// <param name="Tools">The tools this plugin contributes.</param>
+/// <param name="DeclaredCommands">The commands this plugin contributes, or null when it declares none.</param>
 public sealed record PluginManifest(string Name, string Version, string? Instructions, bool Spawns,
-    IReadOnlyList<PluginToolManifest> Tools)
+    IReadOnlyList<PluginToolManifest> Tools, IReadOnlyList<PluginCommandManifest>? DeclaredCommands = null)
 {
+    /// <summary>Never null, so every consumer can enumerate without a guard.</summary>
+    public IReadOnlyList<PluginCommandManifest> Commands => DeclaredCommands ?? [];
+
     /// <summary>
     /// The contract this plugin was built against, or null when its manifest does not say.
     ///
@@ -111,10 +132,10 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
 
     /// <summary>
     /// Every hook-point key this build knows how to service. Anything else in a manifest is refused
-    /// by name rather than silently dropped — v1 honours <c>tools</c> and <c>permission</c>; the rest
-    /// are refused by name.
+    /// by name rather than silently dropped — v1 honours <c>tools</c>, <c>permission</c> and
+    /// <c>commands</c>; the rest are refused by name.
     /// </summary>
-    private static readonly string[] KnownKinds = ["tools", "permission"];
+    private static readonly string[] KnownKinds = ["tools", "permission", "commands"];
 
     /// <summary>
     /// Every hook-point key any version of this contract has ever named, known or not — used only to
@@ -207,10 +228,48 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
                 }
             }
 
-            // A KIND THIS BUILD DOES NOT SERVICE IS REFUSED BY NAME. `tools` and `permission` are
-            // read above; every other known hook point is reported if present, so a manifest
-            // declaring `commands` against a build that services only tools is told so rather than
-            // left believing the declaration took effect.
+            var commands = new List<PluginCommandManifest>();
+            if (root.TryGetProperty("commands", out var commandsEl) && commandsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in commandsEl.EnumerateArray())
+                {
+                    var commandName = c.TryGetProperty("name", out var cn) && cn.ValueKind == JsonValueKind.String
+                        ? cn.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(commandName))
+                    {
+                        errors.Add("a command in 'commands' is missing required field 'name'.");
+                        continue;
+                    }
+                    // SUMMARY DEFAULTS TO EMPTY, same as a tool's 'description' above — the field is
+                    // what a palette row and /help show, not something a parse should fail over.
+                    var summary = c.TryGetProperty("summary", out var cs) && cs.ValueKind == JsonValueKind.String
+                        ? cs.GetString() ?? "" : "";
+
+                    var arguments = new List<PluginCommandArgument>();
+                    if (c.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var a in argsEl.EnumerateArray())
+                        {
+                            var argName = a.TryGetProperty("name", out var an) && an.ValueKind == JsonValueKind.String
+                                ? an.GetString() : null;
+                            if (string.IsNullOrWhiteSpace(argName))
+                            {
+                                errors.Add($"an argument of command '{commandName}' is missing required field 'name'.");
+                                continue;
+                            }
+                            var argSummary = a.TryGetProperty("summary", out var asum) && asum.ValueKind == JsonValueKind.String
+                                ? asum.GetString() ?? "" : "";
+                            arguments.Add(new PluginCommandArgument(argName, argSummary));
+                        }
+                    }
+
+                    commands.Add(new PluginCommandManifest(commandName, summary, arguments));
+                }
+            }
+
+            // A KIND THIS BUILD DOES NOT SERVICE IS REFUSED BY NAME. `tools`, `permission` and
+            // `commands` are read above; every other known hook point is reported if present, so a
+            // manifest declaring one of those is told so rather than left believing it took effect.
             foreach (var kind in AllDeclaredKinds)
             {
                 if (KnownKinds.Contains(kind)) continue;
@@ -228,7 +287,7 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
 
             bool client = root.TryGetProperty("client", out var cl) && cl.ValueKind == JsonValueKind.True;
 
-            var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools)
+            var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools, commands)
             {
                 Contract = contract,
                 Client = client,

@@ -38,9 +38,10 @@ public class PluginManifestTests
     }
 
     /// <summary>
-    /// AN UNKNOWN KIND IS REFUSED BY NAME, not ignored. A plugin declaring `commands` against a
-    /// build that services only tools is told so; silence would leave its author believing the
-    /// declaration took effect.
+    /// AN UNKNOWN KIND IS REFUSED BY NAME, not ignored. A plugin declaring `observers` against a
+    /// build that does not yet service it is told so; silence would leave its author believing the
+    /// declaration took effect. `commands` moved out of this set — see
+    /// <see cref="PluginCommandManifestTests"/> — so this test now exercises a kind still unserviced.
     /// </summary>
     [Fact]
     public void AnUnknownKindIsReportedRatherThanIgnored()
@@ -49,7 +50,7 @@ public class PluginManifestTests
         {
           "name": "lsp-rust",
           "version": "1.0.0",
-          "commands": [ { "name": "lsp.restart" } ],
+          "observers": [ { "name": "lsp.restart" } ],
           "tools": [
             { "name": "lsp_definition", "description": "Jump to a symbol's definition.",
               "inputSchema": { "type": "object" } }
@@ -60,7 +61,7 @@ public class PluginManifestTests
         var result = PluginManifest.Parse(json);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains(result.Errors, e => e.Contains("commands"));
+        Assert.Contains(result.Errors, e => e.Contains("observers"));
     }
 
     /// <summary>
