@@ -74,6 +74,18 @@
                       Private="false" />
   </ItemGroup>
 
+  <!-- AND INTO THE TOOL PACKAGE, so `dotnet tool install -g cxagent` and install.sh agree. Without
+       this the tool ships a cxagent that loads managed plugins and silently cannot load native ones —
+       PluginResolver.PluginHostDllPath looks for plugin-host/ beside the executable, which for a tool
+       is tools/<tfm>/any/. Both install paths are advertised in the README and on the site, so one of
+       them quietly lacking a capability is a difference a user discovers by failing. -->
+  <ItemGroup>
+    <None Include="../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.dll;../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.json"
+          Pack="true"
+          PackagePath="tools/$(TargetFramework)/any/plugin-host"
+          Visible="false" />
+  </ItemGroup>
+
   <Target Name="CopyPluginHost" AfterTargets="Build">
     <ItemGroup>
       <PluginHostFiles Include="../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.dll" />
