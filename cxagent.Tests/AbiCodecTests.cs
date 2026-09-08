@@ -82,7 +82,7 @@ public class AbiCodecTests
         var result = AbiCodec.ParseManifest(json);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("2", result.Error);
+        Assert.Contains(PluginContract.Version.ToString(), result.Error);
     }
 
     [Fact]

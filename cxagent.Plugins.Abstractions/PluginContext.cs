@@ -9,15 +9,17 @@ public interface IPluginLogger
 }
 
 /// <summary>
-/// Everything a plugin is handed at Load, and nothing else — see the plugin design, "What a plugin is
-/// handed at Load".
+/// Everything a plugin is handed at Load, and nothing else — see plugins.md, "What a plugin is
+/// handed".
 ///
 /// <para>NO TRANSCRIPT, NO MODEL, NO PERMISSION STORE. A plugin sees the arguments of its own calls
 /// and nothing else: it cannot read the user's messages, the model's replies, or another tool's
-/// result, and it cannot start a turn or grant itself a permission. Those are not oversights to be
-/// added later — the plugin design, "What a plugin is not" states passive transcript reading is removed on
-/// purpose, and "The plugin provides its own policy; Core enforces it" states a plugin declares
-/// permission gates rather than reading or writing grants itself.</para>
+/// result, and it cannot grant itself a permission. Passive transcript reading is removed on purpose
+/// and stays removed — see plugins.md, "What a plugin is handed".</para>
+///
+/// <para>BUT A PLUGIN THAT DECLARES THE CLIENT CAN START A TURN, through <see cref="Client"/>. That is
+/// the one thing contract 3 adds and it is disclosed at load, because starting work in someone's
+/// session is materially more than answering a tool call.</para>
 /// </summary>
 public interface IPluginContext
 {
@@ -64,6 +66,14 @@ public interface IPluginContext
 
     /// <summary>Where this plugin logs. See <see cref="IPluginLogger"/>.</summary>
     IPluginLogger Logger { get; }
+
+    /// <summary>
+    /// This session, when the plugin declared the client capability — null when it did not.
+    ///
+    /// <para>A DEFAULT MEMBER, so an embedder's own <see cref="IPluginContext"/> still compiles: this
+    /// is additive and costs no floor rise.</para>
+    /// </summary>
+    IPluginClient? Client => null;
 
     /// <summary>
     /// Cancelled at Stop, and only at Stop.

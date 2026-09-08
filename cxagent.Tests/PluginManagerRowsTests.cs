@@ -1,4 +1,5 @@
 using CxAgent.Core.Llm;
+using CxAgent.Core.Plugins;
 using CxAgent.UI;
 using Xunit;
 
@@ -91,11 +92,19 @@ public class PluginManagerRowsTests
     /// CONTRACT MISMATCH SPLITS BY DIRECTION, because the remedies differ: an older plugin needs a
     /// newer build, which the catalog may have; a newer one needs a newer cxagent, which nothing in
     /// this dialog can supply.
+    ///
+    /// <para>THE "TOO NEW" CASE IS <c>Version + 1</c>, NOT A LITERAL — it means "one past whatever
+    /// this build speaks", and a hardcoded number stops meaning that the moment <c>Version</c> moves
+    /// past it, as happened here once already.</para>
     /// </summary>
-    [Theory]
-    [InlineData(1, "needs a newer build")]
-    [InlineData(3, "needs a newer cxagent")]
-    public void AContractMismatchSaysWhichWayItIsWrong(int contract, string expected)
+    [Fact]
+    public void AContractMismatchSaysWhichWayItIsWrong()
+    {
+        AssertMismatch(PluginContract.Oldest - 1, "needs a newer build");
+        AssertMismatch(PluginContract.Version + 1, "needs a newer cxagent");
+    }
+
+    private void AssertMismatch(int contract, string expected)
     {
         var rows = PluginManagerRows.Build(Inputs(
             configured: new Dictionary<string, PluginConfig> { ["odd"] = new("odd.dll") },
@@ -193,7 +202,7 @@ public class PluginManagerRowsTests
     [Fact]
     public void ACatalogEntryWithAWrongContractIsAvailableWithAReason()
     {
-        var rows = PluginManagerRows.Build(Inputs(catalog: [Entry("future", contract: 3)]));
+        var rows = PluginManagerRows.Build(Inputs(catalog: [Entry("future", contract: PluginContract.Version + 1)]));
 
         var row = Row(rows, "future");
         Assert.Equal(PluginRowSection.Available, row.Section);

@@ -15,9 +15,10 @@ public static class PluginContract
     /// Bumped when the shape a plugin must produce changes. This host speaks it, and every contract
     /// down to <see cref="Oldest"/>.
     ///
-    /// <para>2 added the per-call gate — <c>"gated": "dynamic"</c> and the callback behind it.</para>
+    /// <para>2 added the per-call gate — <c>"gated": "dynamic"</c> and the callback behind it. 3 added
+    /// <see cref="IPluginClient"/> — a plugin that declares it can start a turn in its own session.</para>
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>
     /// The oldest contract this host still loads.
