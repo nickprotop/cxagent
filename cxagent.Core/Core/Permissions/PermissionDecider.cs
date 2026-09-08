@@ -443,7 +443,16 @@ public sealed class PermissionDecider : IPermissionGate
             //
             // ONCE PER TURN, not per action: a shell-heavy turn would otherwise bury the transcript
             // in identical warnings — the same flooding the suppressed per-allow echo below avoids.
-            if (Classifier.LastFailure is { } failure && !_reportedClassifierFailure)
+            // THE RESOLVED CLASSIFIER, NOT THE FIELD. `Classifier` is the PROCESS-WIDE fallback and
+            // this app never sets it — a session's classifier rides its policy, because one gate
+            // serves every session and binding the field for one would rebind it for all (see
+            // BindClassifier's own note). Reading the field here asked the one source guaranteed to
+            // be null, and the NRE it threw was swallowed by a fire-and-forget caller, so a download
+            // did nothing and said nothing.
+            //
+            // AND NO CLASSIFIER MEANS NO FAILURE TO REPORT: this block says a classifier stopped
+            // answering, which is not a fact about a gate that never had one.
+            if (classifier?.LastFailure is { } failure && !_reportedClassifierFailure)
             {
                 _reportedClassifierFailure = true;
 
@@ -452,7 +461,7 @@ public sealed class PermissionDecider : IPermissionGate
                 // been going on all session — which is how a classifier too slow to ever answer looks
                 // exactly like one that hiccuped.
                 _notice?.Invoke(request.Policy?.SessionId, new(
-                    ClassifierNoticeForTest(failure, Classifier.FailureCount), Severity.Warning));
+                    ClassifierNoticeForTest(failure, classifier.FailureCount), Severity.Warning));
             }
         }
 
