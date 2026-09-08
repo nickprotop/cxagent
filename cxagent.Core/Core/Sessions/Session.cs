@@ -510,8 +510,16 @@ public sealed partial class Session
     /// user as where the plugin came from.</param>
     /// <param name="ct">Only observed while awaiting the load prompt — the plugin itself is already
     /// past its own Load call by the time this method is reached.</param>
+    /// <param name="context">
+    /// The context this plugin was loaded with, retained so unwire can dispose it and cancel
+    /// <see cref="Plugins.IPluginContext.Lifetime"/> — see <see cref="Plugins.LoadedPlugin"/>'s own
+    /// doc. Null for a caller with nothing to retain (a plugin loaded some other way than
+    /// <see cref="RunLoadRequest"/>, or a test).
+    /// </param>
+    /// <param name="client">This plugin's handle on this session, retained so unwire can sever it.</param>
     public async Task<CommandStatus> LoadPlugin(Plugins.IPlugin plugin, Plugins.PluginManifest manifest,
-        string loadSetDirectory, CancellationToken ct = default)
+        string loadSetDirectory, CancellationToken ct = default, IDisposable? context = null,
+        Plugins.SessionPluginClient? client = null)
     {
         if (RefusedWhileBusy()) return CommandStatus.Refused;
 
@@ -579,7 +587,7 @@ public sealed partial class Session
             ? name => Jobs.ToolBindings.IsBuiltinName(name) || host.KnowsInjectedTool(name)
             : (Func<string, bool>)Jobs.ToolBindings.IsBuiltinName;
 
-        var result = Plugins.Load(plugin, manifest, isNameTaken);
+        var result = Plugins.Load(plugin, manifest, isNameTaken, context, client);
 
         if (result is Plugins.PluginLoadResult.NameCollision collision)
         {
@@ -619,19 +627,37 @@ public sealed partial class Session
     }
 
     /// <summary>
-    /// Unwires one loaded plugin — deregister, drain, Stop, reap, in that order — see
-    /// <see cref="Plugins.PluginRegistry.UnwireAsync"/> and the plugin design, "Unwire is one ordered
-    /// operation".
+    /// Unwires one loaded plugin — cancel (if this plugin's own turn), deregister, drain, sever,
+    /// Stop, reap, in that order — see <see cref="Plugins.PluginRegistry.UnwireAsync"/> and the
+    /// plugin design, "Unwire is one ordered operation".
     ///
-    /// <para>REFUSED MID-TURN, for the same reason loading is: a call already in flight for one of
-    /// this plugin's tools would fail for a reason nobody could trace back to a plugin command if
-    /// its tools vanished out from under a running turn. Refusing here rather than only draining is
-    /// what keeps the tool list — the thing the invariant is actually about — fixed for the whole
-    /// turn, not just eventually consistent with it.</para>
+    /// <para>REFUSED MID-TURN — A USER'S TURN — for the same reason loading is: a call already in
+    /// flight for one of this plugin's tools would fail for a reason nobody could trace back to a
+    /// plugin command if its tools vanished out from under a running turn. Refusing here rather than
+    /// only draining is what keeps the tool list — the thing the invariant is actually about — fixed
+    /// for the whole turn, not just eventually consistent with it.</para>
+    ///
+    /// <para>BUT NOT MID A TURN THIS PLUGIN ITSELF STARTED. A plugin that submits makes the session
+    /// busy (<see cref="Plugins.IPluginClient.Submit"/>), and unwire deferring to that would let a
+    /// plugin hold off its own revocation for as long as it keeps submitting — the exact hole
+    /// <see cref="TurnOriginator"/> exists to close. So THIS turn is cancelled and the busy check is
+    /// SKIPPED rather than raced against it: <see cref="CancelTurn"/> only requests cancellation —
+    /// the turn's own provider call has to observe the token and unwind, on its own schedule, before
+    /// <see cref="IsBusy"/> actually clears — so asking <see cref="RefusedWhileBusy"/> right after
+    /// would read stale-busy and refuse the very revocation the cancel just asked for. A null
+    /// originator — <see cref="PretendBusyForTesting"/>'s shape — answers false to <c>IsFrom</c> and
+    /// falls through to the ordinary busy check, which is the only safe reading of "nobody claimed
+    /// this busy state".</para>
     /// </summary>
     public async Task<CommandStatus> UnwirePluginAsync(string pluginName, CancellationToken ct)
     {
-        if (RefusedWhileBusy()) return CommandStatus.Refused;
+        // CANCEL AND PROCEED, rather than cancel-then-check — see this method's own doc for why
+        // RefusedWhileBusy cannot be trusted to have already observed the cancellation.
+        var severingOwnTurn = CurrentOriginator?.IsFrom(pluginName) == true;
+        if (severingOwnTurn)
+            CancelTurn();
+        else if (RefusedWhileBusy())
+            return CommandStatus.Refused;
 
         if (!await Plugins.UnwireAsync(pluginName, ct))
         {
@@ -808,14 +834,22 @@ public sealed partial class Session
                 : System.Text.Json.JsonDocument.Parse("{}").RootElement;
         }
 
+        // THE CLIENT IS BUILT UP FRONT, ALONGSIDE THE CONTEXT, not conditioned on the manifest's own
+        // "client" declaration: ManagedPluginLoader checks that declaration against
+        // IPluginClientConsumer only AFTER Load returns, so at this point the sidecar has not even
+        // been matched against what Load produced. A plugin whose code never reaches IPluginClient
+        // simply has no way to call it — see PluginResolver.PluginRuntime's own doc.
+        var client = new CxAgent.Core.Plugins.SessionPluginClient(this, declaredName, Plugins.SubmitQueue);
+
         // WorkingDirectory IS THIS SESSION'S FOLDER, not loadSetDirectory — see that member's own
         // contract ("where the plugin should root itself — an LSP plugin starts its server here").
         // The load set is where the plugin's files were found; rooting a server there aims it at a
         // folder containing the plugin binary and nothing else, so every lookup answers empty.
-        var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(WorkingDirectory, settings,
-            SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName,
-            // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
-            sessionId: Id);
+        var context = new CxAgent.Core.Plugins.PluginResolver.RuntimeContext(
+            new CxAgent.Core.Plugins.PluginResolver.PluginRuntime(WorkingDirectory, settings,
+                SayPluginLifecycle, new CxAgent.Core.Plugins.ChildProcessStore(configDir), declaredName,
+                // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
+                SessionId: Id, Client: client));
 
         var result = await CxAgent.Core.Plugins.ManagedPluginLoader.Load(assemblyPath, context, ct);
         if (result is CxAgent.Core.Plugins.ManagedPluginLoadResult.Failed failed)
@@ -825,7 +859,7 @@ public sealed partial class Session
         }
 
         var loaded = (CxAgent.Core.Plugins.ManagedPluginLoadResult.Loaded)result;
-        return await LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct);
+        return await LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client);
     }
 
     /// <summary>Records the catalog this session was wired against, so it can answer

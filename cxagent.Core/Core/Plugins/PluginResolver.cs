@@ -153,25 +153,43 @@ public static class PluginResolver
         return PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest?.Name;
     }
 
+    /// <summary>What a runtime context needs to serve one plugin in one session.</summary>
+    /// <param name="WorkingDirectory">Where the session works.</param>
+    /// <param name="Settings">The plugin's own configuration.</param>
+    /// <param name="Report">Where the plugin's log lines go.</param>
+    /// <param name="Children">Where spawned processes are recorded.</param>
+    /// <param name="PluginName">Which plugin this is, for child-process scoping and sever.</param>
+    /// <param name="SessionId">Which session, so two in one folder are distinguishable.</param>
+    /// <param name="Client">
+    /// This plugin's handle on the session it is loaded into. NEVER NULL FROM A CALLER — the manifest
+    /// declaration <see cref="IPluginContext.Client"/>'s own doc describes is enforced by
+    /// <see cref="ManagedPluginLoader"/> checking <see cref="IPluginClientConsumer"/> AFTER Load
+    /// returns, not by withholding the client before Load runs; the sidecar is not even read as
+    /// trustworthy until the mismatch check past Load, so there is nothing yet to condition this on.
+    /// A plugin that never implements the marker interface simply has no code that can reach it.
+    /// </param>
+    public sealed record PluginRuntime(
+        string WorkingDirectory, JsonElement Settings, Action<string> Report,
+        ChildProcessStore Children, string PluginName, string? SessionId, IPluginClient Client);
+
     /// <summary>
     /// <see cref="IPluginContext"/> for a plugin loaded at RUNTIME, through <c>/plugin load</c> —
     /// the counterpart to the front end's startup-only context: this one exists because a runtime
     /// load is not startup and nothing before this command needed one.
     /// </summary>
-    public sealed class RuntimeContext(
-        string workingDirectory, JsonElement settings, Action<string> report,
-        ChildProcessStore children, string pluginName, string? sessionId = null)
-        : IPluginContext, IDisposable
+    public sealed class RuntimeContext(PluginRuntime runtime) : IPluginContext, IDisposable
     {
-        public string WorkingDirectory { get; } = workingDirectory;
-        public JsonElement Settings { get; } = settings;
+        public string WorkingDirectory { get; } = runtime.WorkingDirectory;
+        public JsonElement Settings { get; } = runtime.Settings;
         public int HostContract => PluginContract.Version;
         // THIS ASSEMBLY'S VERSION, not the contract's. Core carries the release the workflow
         // stamped; the contract assembly's own version is frozen so a plugin's binding survives a
         // release, and asking it for a release number returns that frozen identity instead.
         public string HostVersion =>
             PluginContract.HostVersionOf(typeof(PluginResolver).Assembly);
-        public IPluginLogger Logger { get; } = new ReportingLogger(report);
+        public IPluginLogger Logger { get; } = new ReportingLogger(runtime.Report);
+
+        public IPluginClient? Client { get; } = runtime.Client;
 
         // CANCELLED AT STOP, AND ONLY AT STOP. A plugin that starts a timer needs a signal that its
         // session is done with it, or the timer outlives the plugin and keeps running against a
@@ -200,12 +218,12 @@ public static class PluginResolver
                 // WHOSE CHILD IT IS, not only which plugin's. A plugin is loaded per session, so a
                 // record naming the plugin alone made one session's unwire reap every session's
                 // children — see ChildProcessRecord.Session.
-                children.Add(new ChildProcessRecord(
-                    processId, process.StartTime.ToUniversalTime(), pluginName, sessionId));
+                runtime.Children.Add(new ChildProcessRecord(
+                    processId, process.StartTime.ToUniversalTime(), runtime.PluginName, runtime.SessionId));
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
-                report($"plugin '{pluginName}': process {processId} could not be recorded ({ex.Message}) — it may have already exited.");
+                runtime.Report($"plugin '{runtime.PluginName}': process {processId} could not be recorded ({ex.Message}) — it may have already exited.");
             }
         }
 

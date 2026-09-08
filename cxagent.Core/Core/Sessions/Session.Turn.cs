@@ -457,6 +457,20 @@ public sealed partial class Session
                 // carries "" (see SendOutcome.Silent), which is the same "nothing to report" this
                 // member promises null for.
                 result.TrySetResult(string.IsNullOrWhiteSpace(sent.Text) ? null : sent.Text);
+
+                // A DIFFERENT QUEUE FROM THE STEER ABOVE, and drained only here, once this loop is
+                // truly done rather than on every lap. Steer JOINS the running turn — the text above
+                // becomes a later lap of THIS SAME RunTurnAsync, still under the originator this
+                // method was called with. Plugins.SubmitQueue starts a NEW turn after this one ends,
+                // through Session.Submit, which stamps its OWN originator (Plugin, not whatever this
+                // turn carried) — routing a plugin's goal through the steer queue instead would hand
+                // it the CALLING turn's originator, which for a user-started turn would let a plugin's
+                // work masquerade as the user's and defeat UnwirePluginAsync's sever check. ONE GOAL,
+                // NOT A LOOP: draining more than one here would let a plugin monopolise the session by
+                // keeping the queue non-empty, turn after turn, ahead of whatever the user typed next.
+                if (Plugins.SubmitQueue.DrainOne() is { } drained)
+                    Submit(drained.Goal, origin: TurnOriginator.Plugin(drained.PluginName));
+
                 return;
             }
 

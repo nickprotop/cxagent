@@ -5,14 +5,30 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Plugins;
 
 /// <summary>
-/// One loaded plugin: the running instance, what it declared, and how many of its calls are
-/// currently in flight — kept as one record so <see cref="PluginRegistry.UnwireAsync"/> can hold a
-/// reference to all three after removing the plugin from the registry's own list.
+/// One loaded plugin: the running instance, what it declared, how many of its calls are currently
+/// in flight, and the two things unwire must sever — kept as one record so
+/// <see cref="PluginRegistry.UnwireAsync"/> can hold a reference to all of it after removing the
+/// plugin from the registry's own list.
 /// </summary>
-internal sealed class LoadedPlugin(IPlugin instance, PluginManifest manifest)
+/// <param name="context">
+/// The context THIS plugin was loaded with, retained so <see cref="PluginRegistry.UnwireAsync"/> can
+/// dispose it — the retention Task 1 could not solve, because nothing before this held a reference
+/// to a runtime-loaded plugin's context past its own construction. Disposing it is what cancels
+/// <see cref="IPluginContext.Lifetime"/>, which is what lets an abandoned Stop ever observe its
+/// session ending rather than running to completion or hanging forever.
+/// </param>
+/// <param name="client">
+/// This plugin's own handle on the session, severed at unwire before Stop runs — see
+/// <see cref="PluginRegistry.UnwireAsync"/>. Null for a context built without one (a test fixture,
+/// mainly); a plugin loaded through <see cref="Sessions.Session.LoadPlugin"/> always has one.
+/// </param>
+internal sealed class LoadedPlugin(IPlugin instance, PluginManifest manifest,
+    IDisposable? context = null, SessionPluginClient? client = null)
 {
     public IPlugin Instance { get; } = instance;
     public PluginManifest Manifest { get; } = manifest;
+    public IDisposable? Context { get; } = context;
+    public SessionPluginClient? Client { get; } = client;
 
     /// <summary>
     /// Calls into this plugin's tools currently in flight. Incremented before dispatch, decremented
@@ -84,6 +100,14 @@ public sealed class PluginRegistry
     // and the fact recorded here has to outlive exactly that removal.
     private readonly HashSet<string> _everLoaded = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// One queue shared by every plugin this registry loads — see <see cref="PluginSubmitQueue"/>'s
+    /// own doc. ONE PER SESSION, NOT ONE PER PLUGIN: the bound on how much submitted work a session
+    /// tolerates is a fact about the session, not about any one plugin, so two plugins each staying
+    /// under a per-plugin cap could otherwise queue an unbounded total between them.
+    /// </summary>
+    public PluginSubmitQueue SubmitQueue { get; } = new();
+
     private readonly object _gate = new();
     private readonly TimeSpan _stopTimeout;
     private ChildProcessStore? _childProcesses;
@@ -142,8 +166,17 @@ public sealed class PluginRegistry
     /// Answers whether a name is already occupied outside this registry. The registry only knows
     /// its own plugins' names; a built-in's or an injected tool's name is Session's to judge.
     /// </param>
+    /// <param name="context">
+    /// The context this plugin was loaded with, retained so <see cref="UnwireAsync"/> can dispose it
+    /// and cancel <see cref="IPluginContext.Lifetime"/>. Null for a caller with no runtime context to
+    /// retain — most of this registry's own test fixtures.
+    /// </param>
+    /// <param name="client">
+    /// This plugin's handle on the session, retained so <see cref="UnwireAsync"/> can sever it before
+    /// Stop runs. Null when this plugin was loaded without one.
+    /// </param>
     public PluginLoadResult Load(IPlugin plugin, PluginManifest manifest,
-        Func<string, bool> isNameTaken)
+        Func<string, bool> isNameTaken, IDisposable? context = null, SessionPluginClient? client = null)
     {
         lock (_gate)
         {
@@ -153,7 +186,7 @@ public sealed class PluginRegistry
                     return new PluginLoadResult.NameCollision(tool.Name);
             }
 
-            _plugins.Add(new LoadedPlugin(plugin, manifest));
+            _plugins.Add(new LoadedPlugin(plugin, manifest, context, client));
             _everLoaded.Add(manifest.Name);
             return new PluginLoadResult.Loaded();
         }
@@ -243,8 +276,8 @@ public sealed class PluginRegistry
     }
 
     /// <summary>
-    /// Unwires one plugin: deregister, drain, Stop, reap — in that order, and the order is the
-    /// contract. See the plugin design, "Unwire is one ordered operation".
+    /// Unwires one plugin: deregister, drain, sever, Stop, reap — in that order, and the order is
+    /// the contract. See the plugin design, "Unwire is one ordered operation".
     ///
     /// <para>DEREGISTER FIRST. Removing the plugin from <see cref="_plugins"/> before anything else
     /// is what makes the drain below finite: a plugin still reachable from <see cref="CurrentTools"/>
@@ -254,6 +287,14 @@ public sealed class PluginRegistry
     /// keeps a call already accepted from failing for a reason nobody could trace to a plugin
     /// command — an executor's job can outlive the turn that started it, so refusing loads mid-turn
     /// does not by itself mean nothing of this plugin's is running.</para>
+    ///
+    /// <para>SEVER BEFORE STOP, not after. A plugin's own Stop may itself try to submit through
+    /// <see cref="IPluginClient"/> — nothing here forbids it — and a client that still worked during
+    /// Stop would let a plugin queue one more goal on its way out. Severing first makes that call
+    /// throw <see cref="ObjectDisposedException"/> instead, and disposing the context here is what
+    /// cancels <see cref="IPluginContext.Lifetime"/> — the signal a well-behaved Stop reads to learn
+    /// its session is done with it, so a long-lived timer or connection this plugin started has
+    /// something to observe rather than outliving a session nobody is watching.</para>
     ///
     /// <para>REAP KILLS WHATEVER OUTLIVED STOP. A well-behaved plugin's own Stop already exits its
     /// children, so the ordinary case finds nothing left; reap exists for the plugin that did not —
@@ -268,13 +309,10 @@ public sealed class PluginRegistry
     /// logged naming the plugin, exactly as that section specifies. AN ABANDONED STOP CANNOT BE
     /// CANCELLED FROM HERE — <paramref name="ct"/> is not passed to it, deliberately: a plugin's
     /// Stop is handed its OWN token (<see cref="IPluginContext.Lifetime"/>) and this method has no
-    /// authority to interrupt code it does not control, only to stop waiting for it. THE ABI HALF OF
-    /// THIS ASYMMETRY — killing a host process after the same timeout — has no loader to implement it
-    /// against yet; this is the managed half the plugin design asks Task 6 to ship, with the
-    /// process-kill path left for the ABI task to fill. Lifetime itself now fires for real on
-    /// <see cref="PluginResolver.RuntimeContext.Dispose"/> — but nothing in this method reaches that
-    /// context to dispose it yet, so a plugin's own Stop cannot observe it cancelled from here; that
-    /// wiring is unbuilt, not merely undocumented.</para>
+    /// authority to interrupt code it does not control, only to stop waiting for it — which is why
+    /// disposing the context above, to cancel that token, is the only lever this method has over an
+    /// abandoned Stop's own code. THE ABI HALF OF THIS ASYMMETRY — killing a host process after the
+    /// same timeout — has no loader to implement it against yet; that is the ABI task's to fill.</para>
     /// </summary>
     /// <returns>False when no plugin of this name is loaded — there was nothing to unwire.</returns>
     public async Task<bool> UnwireAsync(string pluginName, CancellationToken ct)
@@ -299,15 +337,20 @@ public sealed class PluginRegistry
             await Task.Delay(10, ct);
         }
 
-        // STEP 3: STOP, bounded by _stopTimeout — see this method's own doc for the managed/ABI
+        // STEP 3: SEVER. The client goes dead before Stop, and the context is disposed here — see
+        // this method's own doc for why both happen at this point rather than after Stop returns.
+        var dropped = plugin.Client?.Sever() ?? 0;
+        if (dropped > 0)
+            _log($"plugin '{pluginName}': dropped {dropped} queued goal(s) at unwire.");
+        plugin.Context?.Dispose();
+
+        // STEP 4: STOP, bounded by _stopTimeout — see this method's own doc for the managed/ABI
         // asymmetry. Task.WhenAny rather than a CancellationTokenSource on `ct` above: cancelling the
         // token passed to Stop would ask a MANAGED plugin's own code to observe cancellation it may
         // never check, which is indistinguishable from the hang this timeout exists to survive. The
         // await here is abandoned, not cancelled — the Task keeps running until the plugin's own
-        // Lifetime token eventually stops it, if ever. NOTHING CANCELS THAT TOKEN TODAY: the
-        // RuntimeContext built for this plugin at load is not reachable from here to dispose, so an
-        // abandoned Stop currently runs to completion or hangs forever rather than observing
-        // cancellation — see this method's own doc.
+        // Lifetime token (already cancelled by the dispose above) eventually stops it, if the plugin
+        // reads it at all.
         var stop = plugin.Instance.Stop(ct);
         var finished = await Task.WhenAny(stop, Task.Delay(_stopTimeout, ct));
         if (finished != stop)
@@ -315,7 +358,7 @@ public sealed class PluginRegistry
                 + "abandoning it and closing the session around it. Any process this plugin spawned "
                 + "is left to the pid record to reap.");
 
-        // STEP 4: REAP. Kills any process this plugin registered whose recorded start time still
+        // STEP 5: REAP. Kills any process this plugin registered whose recorded start time still
         // matches — see ChildProcessStore.ReapPlugin. A plugin that Stopped cleanly already exited
         // its own children, so this ordinarily finds nothing; it exists for the plugin that did not.
         _childProcesses?.ReapPlugin(pluginName, _log, _sessionId);

@@ -70,7 +70,16 @@ public sealed partial class Session
     public event Action<string, string?>? Cancelled;
 
     /// <summary>Adds to what is waiting, starting it if nothing was. Newline-separated: the lines
-    /// were separate thoughts when they were typed, and the break is structure a model reads.</summary>
+    /// were separate thoughts when they were typed, and the break is structure a model reads.
+    ///
+    /// <para>THIS JOINS THE RUNNING TURN — NOT <see cref="Plugins.PluginSubmitQueue"/>, which starts
+    /// a NEW turn after this one ends. What is queued here is drained by RunTurnAsync into a later
+    /// lap of the SAME turn, under the originator that turn already started with; a plugin's goal
+    /// routed through here instead of its own queue would inherit that originator rather than
+    /// carrying <see cref="TurnOriginator.Plugin"/>, which would let it masquerade as whoever started
+    /// the running turn and defeat <see cref="UnwirePluginAsync"/>'s sever check. The two queues
+    /// share a trigger — a turn ending — and nothing else; keep them separate.</para>
+    /// </summary>
     public void Steer(string text)
     {
         string whole;

@@ -251,11 +251,17 @@ public static class PluginDiscovery
             // duplication cost a real bug: threading the session into child-process records was
             // applied to Core's context and missed this one, so an unwire went on reaping every
             // session's children while the fix looked complete.
-            var context = new PluginResolver.RuntimeContext(session.WorkingDirectory,
+            // BUILT UP FRONT, ALONGSIDE THE CONTEXT — see PluginResolver.PluginRuntime's own doc for
+            // why this is not conditioned on the manifest's "client" declaration, which is not even
+            // checked against Load's result until ManagedPluginLoader.Load returns below.
+            var client = new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue);
+
+            var context = new PluginResolver.RuntimeContext(new PluginResolver.PluginRuntime(
+                session.WorkingDirectory,
                 config.Settings ?? JsonDocument.Parse("{}").RootElement,
                 report, children, declaredName,
                 // WHOSE PLUGIN THIS IS, so an unwire here reaps only what THIS session spawned.
-                sessionId: session.Id);
+                SessionId: session.Id, Client: client));
 
             var result = await ManagedPluginLoader.Load(assemblyPath, context, ct);
             if (result is ManagedPluginLoadResult.Failed failed)
@@ -265,7 +271,7 @@ public static class PluginDiscovery
             }
 
             var loaded = (ManagedPluginLoadResult.Loaded)result;
-            await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct);
+            await session.LoadPlugin(loaded.Instance, loaded.Manifest, loadSetDirectory, ct, context, client);
         }
     }
 
