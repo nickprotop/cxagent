@@ -57,7 +57,7 @@
   </ItemGroup>
   <!-- CI/release: use NuGet package -->
   <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
-    <PackageReference Include="SharpConsoleUI" Version="2.6.5" />
+    <PackageReference Include="SharpConsoleUI" Version="2.6.6" />
   </ItemGroup>
 
   <!-- THE PLUGIN HOST, INTO plugin-host/ RATHER THAN BESIDE THE APP. A native plugin is loaded by a
