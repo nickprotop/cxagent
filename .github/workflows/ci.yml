@@ -1,0 +1,27 @@
+name: ci
+# ENABLE THESE WHEN THE PHASE LANDS. Left commented so the workflow exists, is reviewable, and fires
+# nothing until someone decides it should:
+#   push:
+#     branches: [master]
+#   pull_request:
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and test
+        run: dotnet test --nologo
+      # THE ABI EXAMPLE IS THE HEADER'S ONLY EXECUTABLE PROOF. The doc comments in cxagent_plugin.h
+      # are the whole specification a C author reads, and nothing else checks that a plugin written
+      # against them compiles. A contract change that breaks the header should fail here.
+      - name: Compile the ABI example
+        run: |
+          gcc -shared -fPIC -Icxagent.Core/Core/Plugins/Abi \
+            -o /tmp/calculator_abi.so \
+            cxagent.Core/examples/CalculatorAbiPlugin/calculator_abi.c
