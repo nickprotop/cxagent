@@ -20,7 +20,36 @@ public class SessionPluginClientTests : IDisposable
         Path.Combine(Path.GetTempPath(), "plugin-client-" + Guid.NewGuid().ToString("N"));
 
     public SessionPluginClientTests() => Directory.CreateDirectory(_dir);
-    public void Dispose() { if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true); }
+
+    /// <summary>
+    /// Removes the temp root, tolerating a write that is still landing in it.
+    ///
+    /// <para>A FIRE-AND-FORGET SUBMIT OUTLIVES THE TEST THAT MADE IT. One case here deliberately does
+    /// not wait for its turn — that is the behaviour under test — so the turn is still running when
+    /// teardown arrives, and a log write landing between the recursive delete's scan and its rmdir
+    /// makes the directory non-empty again. <c>SessionLifecycleLog</c> documents the same race from
+    /// the other side: "a test tearing down a temp directory then fails with 'directory not empty'".
+    /// </para>
+    ///
+    /// <para>RETRIED, THEN IGNORED, because this is cleanup of a temp folder the OS will reap anyway.
+    /// A test that FAILS on its own teardown reports a defect that does not exist, which is worse
+    /// than a stray directory under /tmp.</para>
+    /// </summary>
+    public void Dispose()
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
+                return;
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(50);
+            }
+        }
+    }
 
     /// <summary>Answers with a fixed reply, optionally blocking until the test releases it.</summary>
     private sealed class RecordingProvider : ILlmProvider
