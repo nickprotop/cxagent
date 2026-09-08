@@ -47,3 +47,7 @@ plans/
 # Working design notes — internal, not part of the published repo.
 # The reasoning behind decisions, kept where the person making the next one can read it.
 .design/
+
+# BUILT BESIDE ITS SOURCE, not under bin/. The experimental ABI plugin is compiled in place by its
+# own README's gcc line — the .so is output, and committing it would ship a binary nobody rebuilt.
+plugins/experiment-abi/*.so
