@@ -259,7 +259,11 @@ public static class PluginDiscovery
             // returns from cleanly. ManagedPluginLoader's own check (IPluginClientConsumer, after
             // Load returns) is a DIFFERENT question — whether the binary can honestly use what it
             // asked for — and gates nothing about whether the reference exists at all.
-            var client = sidecarManifest.Client
+            // `?.` RATHER THAN AN ASSERTION — sidecarManifest is null only for a plugin with no usable
+            // sidecar, which the declaredName check above already refuses before this line is
+            // reached; the guard here is defence for that invariant, and "no declaration read" has to
+            // mean "no client" regardless, so the null-safe read is also the correct one.
+            var client = sidecarManifest?.Client == true
                 ? new SessionPluginClient(session, declaredName, session.Plugins.SubmitQueue)
                 : null;
 

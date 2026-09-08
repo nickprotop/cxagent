@@ -847,7 +847,11 @@ public sealed partial class Session
         // The declaration is what the load prompt disclosed and the user approved; a plugin that
         // never asked must never hold a reference it could stash during its own Load, before this
         // caller has even seen what ManagedPluginLoader.Load's IPluginClientConsumer check decides.
-        var client = sidecarManifest.Client
+        // `?.` RATHER THAN AN ASSERTION — sidecarManifest is null only for a plugin with no usable
+        // sidecar, which the declaredName check above already refuses before this line is reached;
+        // the guard here is defence for that invariant, not a live case, and "no declaration read"
+        // has to mean "no client" regardless, so the null-safe read is also the correct one.
+        var client = sidecarManifest?.Client == true
             ? new CxAgent.Core.Plugins.SessionPluginClient(this, declaredName, Plugins.SubmitQueue)
             : null;
 
