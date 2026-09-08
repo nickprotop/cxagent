@@ -171,6 +171,83 @@ has equal claim to, which makes a C# one and a Rust one mutually exclusive. `csh
 Prefer the specific name even when yours is the only such plugin today. The collision arrives when
 someone installs the second one, and by then your name is in their config.
 
+## Commands
+
+A tool is something the model calls. A command is something a **person** types — `/schedule
+tomorrow 9am` — and its answer goes straight to the transcript rather than through a model turn.
+Declare one in your sidecar alongside `tools`:
+
+```json
+{
+  "name": "scheduler",
+  "commands": [
+    {
+      "name": "schedule",
+      "summary": "Queue a reminder for later in this session.",
+      "arguments": [ { "name": "when", "summary": "e.g. \"tomorrow 9am\"." } ]
+    }
+  ]
+}
+```
+
+**Declare the bare name, never the slash.** `"schedule"`, not `"/schedule"`. cxagent adds the slash
+when it registers your command into the session's table and strips it again before calling
+`RunCommand` — your own code never sees it either way. The slash exists at the boundary between
+plugins because two plugins declaring names that differ only by it would otherwise collide
+invisibly; inside your plugin, a command is just its bare name.
+
+`arguments` is for the palette hint (`/schedule <when>`) and completion — **not validation**. A
+person types prose, not JSON matching a schema, so nothing here rejects what they wrote. Implement
+it with `IPluginCommandHandler`:
+
+```csharp
+public sealed class SchedulerPlugin : IPlugin, IPluginCommandHandler
+{
+    public Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct)
+    {
+        // `arguments` is everything the user typed after "/schedule", trimmed — never null, "" when
+        // they typed nothing after the name.
+        ...
+        return Task.FromResult(new CommandResult("queued for tomorrow 9am.", PluginCommandOutcome.Changed));
+    }
+}
+```
+
+**Declared and type-tested, exactly like `IPluginGateSource`.** The sidecar is what the load prompt
+disclosed, so a manifest promising a command your type cannot run is refused at load, naming
+`IPluginCommandHandler` — not left to fail the first time someone types it. The check runs in one
+direction only: implementing the interface without declaring any command in the manifest is merely
+unused, never refused.
+
+**A command name collides, and a collision refuses the whole plugin** — the same rule tool names
+follow, and for the same reason: a plugin that half-loaded is one whose behaviour nobody can
+predict from its manifest. A command name is checked against every built-in (`/model`, `/clear`,
+...) and every other loaded plugin's commands before any of yours are registered, so a plugin whose
+second command collides never leaves its first — or its tools — registered behind it.
+
+**`CommandResult` carries a message and one of three outcomes** — `PluginCommandOutcome.Reported`
+(it ran and said its result; nothing changed), `.Changed` (it ran and changed something the session
+holds), or `.Refused` (it declined — a bad argument, a precondition unmet; say why in `Message`).
+**There is no `Unknown`.** Core's own command dispatch has a fourth value for "nothing here services
+this line" — the answer to "did anyone claim this?" before it reaches a handler at all. Your
+`RunCommand` is only ever called for a command your own manifest declared, so "I don't recognise
+this" is not an honest answer for you to give; if you want to decline, refuse and say why.
+
+**Top-level commands only.** A plugin declares `/schedule`; it cannot declare a verb on an existing
+command (`/mode agent <mode>` is a shape only built-ins use). Give a command with several forms a
+name of its own, or let its own argument distinguish them — `RunCommand` sees the whole string after
+the name and can parse it however you like.
+
+**The ABI differs here of necessity.** A managed plugin's `IPluginCommandHandler` is checked against
+its declared commands at load — the loader can inspect a .NET type before running any of its code.
+A native plugin has no equivalent static check: there is no way to inspect a shared library's
+exports without calling into it, so a native plugin that declares a command in `describe()`'s
+`commands` array but never exports `cxagent_plugin_command` is refused **the first time that command
+is actually run**, not at load, naming the missing export. See
+[`Abi/README.md`](../Core/Plugins/Abi/README.md#command---one-command-a-person-typed) and
+[`Abi/cxagent_plugin.h`](../Core/Plugins/Abi/cxagent_plugin.h) for the wire shape, which mirrors
+`CommandResult` field for field.
+
 ## Permission
 
 **cxagent asks once, at load, whether to trust the binary.** That prompt names the plugin, what it
