@@ -1145,7 +1145,8 @@ public static class PluginManagerDialog
             case PluginRowSection.Installed:
                 if (row.Section == PluginRowSection.Updates && !HasNote(row))
                     yield return Controls.Button(" Update ")
-                        .OnClick((_, _) => _ = UpdateFlowAsync(row)).Build();
+                        .OnClick((_, _) => FireAndForget.Run(UpdateFlowAsync(row), $"update {row.Name}",
+                            text => Toast(text, NotificationSeverity.Danger), _ws!)).Build();
 
                 // THE CALLING SESSION'S VIEW decides which of the two shows — the same view the
                 // rail's state word renders, so the button never contradicts the row it sits under.
@@ -1162,12 +1163,14 @@ public static class PluginManagerDialog
                 // it claims can be falsified by that.
                 yield return _session!.Plugins.LoadedPluginNames.Contains(row.Name, StringComparer.Ordinal)
                     ? Controls.Button(" Deactivate ")
-                        .OnClick((_, _) => _ = RunAsync($"unwire {row.Name}",
-                            $"'{row.Name}' deactivated for this session"))
+                        .OnClick((_, _) => FireAndForget.Run(RunAsync($"unwire {row.Name}",
+                            $"'{row.Name}' deactivated for this session"),
+                            "complete that", text => Toast(text, NotificationSeverity.Danger), _ws!))
                         .Build()
                     : Controls.Button(" Activate ")
-                        .OnClick((_, _) => _ = LoadAsync(LoadArgument(row),
-                            $"'{row.Name}' activated for this session"))
+                        .OnClick((_, _) => FireAndForget.Run(LoadAsync(LoadArgument(row),
+                            $"'{row.Name}' activated for this session"),
+                            "complete that", text => Toast(text, NotificationSeverity.Danger), _ws!))
                         .Build();
 
                 // TWO AXES, NAMED APART. Activate/Deactivate is THIS SESSION — is the plugin in
@@ -1184,12 +1187,14 @@ public static class PluginManagerDialog
                 if (row.Configured is { } config)
                     yield return config.Enabled
                         ? Controls.Button(" Disable auto-load ")
-                            .OnClick((_, _) => _ = RunAsync($"disable {row.Name}",
-                                $"'{row.Name}' will not load at start — config.json updated"))
+                            .OnClick((_, _) => FireAndForget.Run(RunAsync($"disable {row.Name}",
+                                $"'{row.Name}' will not load at start — config.json updated"),
+                                "complete that", text => Toast(text, NotificationSeverity.Danger), _ws!))
                             .Build()
                         : Controls.Button(" Enable auto-load ")
-                            .OnClick((_, _) => _ = RunAsync($"enable {row.Name}",
-                                $"'{row.Name}' will load at start — config.json updated"))
+                            .OnClick((_, _) => FireAndForget.Run(RunAsync($"enable {row.Name}",
+                                $"'{row.Name}' will load at start — config.json updated"),
+                                "complete that", text => Toast(text, NotificationSeverity.Danger), _ws!))
                             .Build();
 
                 // GAP A: A DISCOVERED PLUGIN HAD NO WAY TO BECOME CONFIGURED. Its row said "no auto

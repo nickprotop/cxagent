@@ -725,12 +725,22 @@ public static class AppBootstrap
         // store, which no library should do on its host's behalf.
         manager.Commands.RegisterVerb("/mcp",
             new CommandArgument("reload", "re-read config.json and reconnect"),
-            (session, arguments) => { _ = session; _ = mcpCommand.HandleAsync(arguments); return true; });
+            (session, arguments) =>
+            {
+                _ = session;
+                FireAndForget.Run(mcpCommand.HandleAsync(arguments), "run that", mainWindow, system);
+                return true;
+            });
 
         manager.Commands.RegisterVerb("/mcp",
             new CommandArgument("login <name>", "authorise a server that needs OAuth",
                 Completes: false, Values: ValueSources.McpServers),
-            (session, arguments) => { _ = session; _ = mcpCommand.HandleAsync(arguments); return true; });
+            (session, arguments) =>
+            {
+                _ = session;
+                FireAndForget.Run(mcpCommand.HandleAsync(arguments), "run that", mainWindow, system);
+                return true;
+            });
 
         // THE VERB IS THE FRONT END'S, because a browser is not a word Core has. A headless embedder
         // does not register it and /plugin still lists, loads and unwires.
@@ -754,7 +764,12 @@ public static class AppBootstrap
             manager.Commands.RegisterVerb("/plugin",
                 new CommandArgument("get <name>", "download a plugin from the catalog",
                     Completes: false),
-                (s, arguments) => { _ = pluginGet.HandleAsync(s, arguments); return true; });
+                (s, arguments) =>
+                {
+                    FireAndForget.Run(pluginGet.HandleAsync(s, arguments),
+                        $"get {PluginGetCommand.NameFrom(arguments)}", mainWindow, system);
+                    return true;
+                });
         }
 
         // DECLARED HERE, NOT IN CORE'S TABLE. A library cannot end its host's process, and a
