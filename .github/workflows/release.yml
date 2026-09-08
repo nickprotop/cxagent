@@ -130,7 +130,10 @@ jobs:
       # right version rather than having one committed into it afterwards. This step only reads it.
       - name: Build or carry forward the csharp-lsp plugin
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # RELEASE TAGS ONLY. Without --match, a working tag someone pushed between releases wins,
+          # and this compares against a mid-development commit rather than the last shipped version:
+          # the carry-forward then measures the wrong range and the changelog lists the wrong commits.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
           SIDECAR=plugins/csharp-lsp/csharp-lsp.plugin.json
           VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
 
@@ -188,7 +191,8 @@ jobs:
       # untouched.
       - name: Build or carry forward the calculator plugin
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
           SIDECAR=plugins/calculator/calculator.plugin.json
           VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
 
@@ -229,7 +233,8 @@ jobs:
       # would have to describe every plugin at once.
       - name: Build or carry forward the clone-finder plugin
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
           SIDECAR=plugins/clone-finder/clone-finder.plugin.json
           VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
 
@@ -293,7 +298,8 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
             CHANGELOG=$(git log "$PREV_TAG..HEAD" --pretty=format:"- %s" --no-merges)
           else
