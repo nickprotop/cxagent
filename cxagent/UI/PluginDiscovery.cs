@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Plugins;
+using CxAgent.Core.Plugins.Abi;
 using CxAgent.Core.Sessions;
 
 namespace CxAgent.UI;
@@ -271,6 +272,25 @@ public static class PluginDiscovery
                 report, children, declaredName,
                 // WHOSE PLUGIN THIS IS, so an unwire here reaps only what THIS session spawned.
                 SessionId: session.Id, Client: client));
+
+            // ROUTED ON THE FILE EXTENSION, THE ONE SHARED DECISION — see PluginResolver.IsNativeLibrary's
+            // own doc. This is the startup path's copy of the same routing Session.RunLoadRequest does
+            // for /plugin load; both call the same PluginResolver method rather than each growing its
+            // own test, for the reason FindLoadSetDirectory's own doc already gives for this file.
+            if (PluginResolver.IsNativeLibrary(assemblyPath))
+            {
+                var hostDllPath = PluginResolver.PluginHostDllPath();
+                var abiResult = await AbiPluginLoader.Load(hostDllPath, assemblyPath, context, ct);
+                if (abiResult is AbiPluginLoadResult.Failed abiFailed)
+                {
+                    report($"plugin '{name}': {abiFailed.Reason}");
+                    continue;
+                }
+
+                var abiLoaded = (AbiPluginLoadResult.Loaded)abiResult;
+                await session.LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client);
+                continue;
+            }
 
             var result = await ManagedPluginLoader.Load(assemblyPath, context, ct);
             if (result is ManagedPluginLoadResult.Failed failed)

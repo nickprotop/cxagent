@@ -19,15 +19,15 @@ ARCH=$(uname -m)
 case "$OS" in
     Linux)
         case "$ARCH" in
-            x86_64)  BINARY="cxagent-linux-x64" ;;
-            aarch64) BINARY="cxagent-linux-arm64" ;;
+            x86_64)  BINARY="cxagent-linux-x64"; HOST_ZIP="cxagent-plugin-host-linux-x64.zip" ;;
+            aarch64) BINARY="cxagent-linux-arm64"; HOST_ZIP="cxagent-plugin-host-linux-arm64.zip" ;;
             *) echo "Error: Unsupported Linux architecture: $ARCH"; exit 1 ;;
         esac
         ;;
     Darwin)
         case "$ARCH" in
-            x86_64)  BINARY="cxagent-osx-x64" ;;
-            arm64)   BINARY="cxagent-osx-arm64" ;;
+            x86_64)  BINARY="cxagent-osx-x64"; HOST_ZIP="cxagent-plugin-host-osx-x64.zip" ;;
+            arm64)   BINARY="cxagent-osx-arm64"; HOST_ZIP="cxagent-plugin-host-osx-arm64.zip" ;;
             *) echo "Error: Unsupported macOS architecture: $ARCH"; exit 1 ;;
         esac
         ;;
@@ -68,6 +68,28 @@ if ! curl -fsSL "https://github.com/$REPO/releases/download/$TAG/uninstall.sh" -
     curl -fsSL "https://raw.githubusercontent.com/$REPO/master/uninstall.sh" -o "$INSTALL_DIR/cxagent-uninstall.sh"
 fi
 chmod +x "$INSTALL_DIR/cxagent-uninstall.sh"
+
+# THE ABI PLUGIN HOST — cxagent-plugin-host.dll runs a native (.so/.dylib) plugin in its own
+# subprocess, and PluginResolver.PluginHostDllPath looks for it at plugin-host/cxagent-plugin-host.dll
+# beside the running executable. It ships as a zip because it is a whole framework-dependent publish
+# folder (its .deps.json, runtimeconfig.json and a native SQLite provider), not a single file — see
+# the release workflow's own comment on why it cannot be the self-contained binary above.
+#
+# OPTIONAL, NOT FATAL. A user with no native plugin installed has no use for this, and a release
+# missing the asset (an older tag, a fork without the workflow) must not fail an otherwise-working
+# install over a feature nothing loaded yet needs.
+echo "Installing ABI plugin host..."
+HOST_URL="https://github.com/$REPO/releases/download/$TAG/$HOST_ZIP"
+HOST_TMP="$(mktemp -d)"
+if curl -fsSL "$HOST_URL" -o "$HOST_TMP/host.zip" 2>/dev/null; then
+    rm -rf "$INSTALL_DIR/plugin-host"
+    mkdir -p "$INSTALL_DIR/plugin-host"
+    unzip -q -o "$HOST_TMP/host.zip" -d "$INSTALL_DIR/plugin-host"
+    chmod +x "$INSTALL_DIR/plugin-host/cxagent-plugin-host" 2>/dev/null || true
+else
+    echo "  (skipped — $HOST_ZIP not found on this release; native plugins will not load)"
+fi
+rm -rf "$HOST_TMP"
 
 # Ensure PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then

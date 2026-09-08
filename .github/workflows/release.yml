@@ -16,16 +16,22 @@ jobs:
         include:
           - rid: linux-x64
             name: cxagent-linux-x64
+            hostZip: cxagent-plugin-host-linux-x64.zip
           - rid: linux-arm64
             name: cxagent-linux-arm64
+            hostZip: cxagent-plugin-host-linux-arm64.zip
           - rid: osx-x64
             name: cxagent-osx-x64
+            hostZip: cxagent-plugin-host-osx-x64.zip
           - rid: osx-arm64
             name: cxagent-osx-arm64
+            hostZip: cxagent-plugin-host-osx-arm64.zip
           - rid: win-x64
             name: cxagent-win-x64.exe
+            hostZip: cxagent-plugin-host-win-x64.zip
           - rid: win-arm64
             name: cxagent-win-arm64.exe
+            hostZip: cxagent-plugin-host-win-arm64.zip
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +70,31 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: ./publish/${{ matrix.rid }}/${{ matrix.name }}
+
+      # THE ABI PLUGIN HOST, one zip per RID — AbiHostProcess.Launch runs it as `dotnet
+      # cxagent-plugin-host.dll`, NOT a native apphost (see that method's own doc), so what ships is
+      # a framework-dependent publish, not the single-file binary above. It still needs its own RID:
+      # Microsoft.Data.Sqlite pulls in a native SQLite provider, so the folder differs by platform
+      # even though the managed DLL at its centre would run anywhere with a net10 runtime.
+      #
+      # A FOLDER, ZIPPED, not a lone DLL — cxagent-plugin-host.dll fails to even start without its
+      # own .deps.json/.runtimeconfig.json and the native SQLite library beside it, the same way
+      # calculator.zip below cannot ship without Jace.dll.
+      - name: Build the ABI plugin host
+        run: |
+          dotnet publish cxagent.PluginHost/cxagent.PluginHost.csproj -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained false \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            -o ./publish-host/${{ matrix.rid }}
+
+          (cd ./publish-host/${{ matrix.rid }} && zip -q -r "../../${{ matrix.hostZip }}" .)
+
+      - name: Upload plugin host artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.hostZip }}
+          path: ./${{ matrix.hostZip }}
 
   release:
     needs: build
@@ -239,6 +270,8 @@ jobs:
           # release notes tell users to curl them from raw.githubusercontent — which pins them to
           # whatever master happens to be, not to the release they are installing. cxshell's app
           # manager needs them ON THE RELEASE, so a version can be installed by its own scripts.
+          # THE GLOB ALSO CATCHES cxagent-plugin-host-*.zip — its artifact name starts with
+          # "cxagent-" like the binaries, so one loop stages both without a second copy of it.
           mkdir -p release
           for dir in ./artifacts/*/; do
             cp "$dir"/cxagent-* release/ 2>/dev/null || true
@@ -324,6 +357,11 @@ jobs:
             **An installed csharp-lsp asks its load prompt once more after this update**: its
             README now travels in the zip, so it joins the plugin's load set and the hash the
             prompt shows covers it. That is the gate noticing a real change, not a fault.
+
+            **Native (`.so`/`.dylib`) plugins** need `cxagent-plugin-host-<platform>.zip` —
+            `install.sh`/`install.ps1` fetch and place it for you, beside the `cxagent` binary. It is
+            not a plugin itself; nothing loads without it once a native plugin's file is on disk, the
+            same way csharp-lsp needs `csharp-ls` on PATH.
 
             ## Changes
 

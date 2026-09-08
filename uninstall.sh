@@ -22,6 +22,12 @@ if [ -f "$INSTALL_DIR/cxagent-uninstall.sh" ]; then
     rm "$INSTALL_DIR/cxagent-uninstall.sh"
 fi
 
+# Remove the ABI plugin host, installed beside the binary by install.sh.
+if [ -d "$INSTALL_DIR/plugin-host" ]; then
+    rm -rf "$INSTALL_DIR/plugin-host"
+    echo "✓ Removed $INSTALL_DIR/plugin-host"
+fi
+
 # Clean PATH from shell config
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$RC" ] && grep -q "$INSTALL_DIR" "$RC" 2>/dev/null; then

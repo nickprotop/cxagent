@@ -13,8 +13,8 @@ Write-Host "Installing cxagent..." -ForegroundColor Cyan
 # Detect architecture
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 switch ($arch) {
-    "X64"   { $binary = "cxagent-win-x64.exe" }
-    "Arm64" { $binary = "cxagent-win-arm64.exe" }
+    "X64"   { $binary = "cxagent-win-x64.exe"; $hostZip = "cxagent-plugin-host-win-x64.zip" }
+    "Arm64" { $binary = "cxagent-win-arm64.exe"; $hostZip = "cxagent-plugin-host-win-arm64.zip" }
     default {
         Write-Host "Error: Unsupported architecture: $arch" -ForegroundColor Red
         exit 1
@@ -53,6 +53,22 @@ if ($uninstallAsset) {
     Invoke-WebRequest -Uri $uninstallAsset.browser_download_url -OutFile $uninstallPath
 } else {
     Invoke-WebRequest -Uri "https://raw.githubusercontent.com/$repo/master/uninstall.ps1" -OutFile $uninstallPath
+}
+
+# THE ABI PLUGIN HOST — matches install.sh's own comment: PluginResolver.PluginHostDllPath looks for
+# it at plugin-host/cxagent-plugin-host.dll beside the running executable. OPTIONAL: a release
+# missing the asset must not fail an otherwise-working install.
+Write-Host "Installing ABI plugin host..."
+$hostAsset = $release.assets | Where-Object { $_.name -eq $hostZip }
+if ($hostAsset) {
+    $hostZipPath = Join-Path $env:TEMP "cxagent-plugin-host.zip"
+    Invoke-WebRequest -Uri $hostAsset.browser_download_url -OutFile $hostZipPath
+    $hostDir = Join-Path $installDir "plugin-host"
+    if (Test-Path $hostDir) { Remove-Item -Recurse -Force $hostDir }
+    Expand-Archive -Path $hostZipPath -DestinationPath $hostDir -Force
+    Remove-Item $hostZipPath
+} else {
+    Write-Host "  (skipped — $hostZip not found on this release; native plugins will not load)" -ForegroundColor Yellow
 }
 
 # Add to PATH if not already there

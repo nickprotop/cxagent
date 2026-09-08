@@ -20,6 +20,12 @@ if (Test-Path "$installDir\cxagent-uninstall.ps1") {
     Remove-Item "$installDir\cxagent-uninstall.ps1" -Force
 }
 
+# Remove the ABI plugin host, installed beside the binary by install.ps1.
+if (Test-Path "$installDir\plugin-host") {
+    Remove-Item "$installDir\plugin-host" -Recurse -Force
+    Write-Host "Removed $installDir\plugin-host" -ForegroundColor Green
+}
+
 # Remove install dir if empty
 if ((Test-Path $installDir) -and (Get-ChildItem $installDir | Measure-Object).Count -eq 0) {
     Remove-Item $installDir -Force

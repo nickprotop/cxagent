@@ -165,6 +165,47 @@ public static class PluginResolver
         return PluginManifest.Parse(File.ReadAllText(sidecarPath)).Manifest;
     }
 
+    /// <summary>
+    /// Whether <paramref name="file"/> is a native shared library rather than a managed assembly —
+    /// the one decision every load path needs before choosing <see cref="Abi.AbiPluginLoader"/> over
+    /// <see cref="ManagedPluginLoader"/>, made HERE so it is made once. <c>PluginDiscovery.cs:176</c>
+    /// already used <c>.so</c> for a narrower purpose (listing an unconfigured find); this is the
+    /// same test, promoted to the one both loaders route on, so a plugin near-duplicate does not grow
+    /// a second, driftable copy of the check <c>FindLoadSetDirectory</c>'s own doc already warns
+    /// about for this file.
+    ///
+    /// <para><c>.dll</c> ALWAYS MEANS MANAGED. A native Windows plugin would also carry a <c>.dll</c>
+    /// extension and nothing in this codebase can tell the two apart by name alone — the sidecar
+    /// carries no <c>kind</c> field, and every ABI fixture built so far is <c>.so</c>. Extension-only
+    /// routing is exact for Linux and macOS and silently wrong only for a case that does not exist
+    /// yet; a manifest-declared kind would remove the ambiguity but is a contract change, not a
+    /// routing fix.</para>
+    /// </summary>
+    public static bool IsNativeLibrary(string file) =>
+        file.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+        || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Where <c>cxagent-plugin-host.dll</c> lives for THIS running process — the resolution
+    /// <see cref="Abi.AbiPluginLoader.Load"/> deliberately leaves to its caller, because
+    /// <c>AppContext.BaseDirectory</c> answers correctly only under a test runner and, for a release
+    /// built with <c>PublishSingleFile</c>, points at a temporary extraction directory that changes
+    /// between runs (the exact trap <c>cxagent/UI/Installation.ExecutableDirectory</c> already
+    /// documents and works around for the app's own version lookup). <see cref="Environment.ProcessPath"/>
+    /// is the real executable's path regardless of how it was published; the host is installed beside
+    /// it, in the fixed <c>plugin-host/</c> subfolder <c>install.sh</c> places it in — sibling to,
+    /// not inside, the user's own <c>plugins/</c> folder, because the host is infrastructure this
+    /// build ships, not something a user configured.
+    /// </summary>
+    public static string PluginHostDllPath()
+    {
+        var exe = Environment.ProcessPath;
+        var executableDirectory = exe is not null
+            ? Path.GetDirectoryName(exe) ?? AppContext.BaseDirectory
+            : AppContext.BaseDirectory;
+        return Path.Combine(executableDirectory, "plugin-host", "cxagent-plugin-host.dll");
+    }
+
     /// <summary>What a runtime context needs to serve one plugin in one session.</summary>
     /// <param name="WorkingDirectory">Where the session works.</param>
     /// <param name="Settings">The plugin's own configuration.</param>

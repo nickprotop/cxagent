@@ -873,6 +873,23 @@ public sealed partial class Session
                 // WHOSE PLUGIN THIS IS, so unwiring it here reaps only what THIS session spawned.
                 SessionId: Id, Client: client));
 
+        // ROUTED ON THE FILE EXTENSION, THE ONE SHARED DECISION — see PluginResolver.IsNativeLibrary's
+        // own doc for why that check lives there and not duplicated here.
+        if (CxAgent.Core.Plugins.PluginResolver.IsNativeLibrary(assemblyPath))
+        {
+            var hostDllPath = CxAgent.Core.Plugins.PluginResolver.PluginHostDllPath();
+            var abiResult = await CxAgent.Core.Plugins.Abi.AbiPluginLoader.Load(
+                hostDllPath, assemblyPath, context, ct);
+            if (abiResult is CxAgent.Core.Plugins.Abi.AbiPluginLoadResult.Failed abiFailed)
+            {
+                Say(new Message($"plugin '{target}': {abiFailed.Reason}", Severity.Warning));
+                return CommandStatus.Reported;
+            }
+
+            var abiLoaded = (CxAgent.Core.Plugins.Abi.AbiPluginLoadResult.Loaded)abiResult;
+            return await LoadPlugin(abiLoaded.Instance, abiLoaded.Manifest, loadSetDirectory, ct, context, client);
+        }
+
         var result = await CxAgent.Core.Plugins.ManagedPluginLoader.Load(assemblyPath, context, ct);
         if (result is CxAgent.Core.Plugins.ManagedPluginLoadResult.Failed failed)
         {
