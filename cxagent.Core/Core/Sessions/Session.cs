@@ -648,15 +648,21 @@ public sealed partial class Session
     /// originator — <see cref="PretendBusyForTesting"/>'s shape — answers false to <c>IsFrom</c> and
     /// falls through to the ordinary busy check, which is the only safe reading of "nobody claimed
     /// this busy state".</para>
+    ///
+    /// <para>CANCELLING SAYS "Stopped." OF ITS OWN ACCORD — <see cref="CancelTurn"/>'s own doc. That
+    /// is correct on its own (a turn really did stop) but reads as unexplained beside an unwire
+    /// notice a moment later, so THIS METHOD NAMES THE PLUGIN when it was the cause: "stopped
+    /// '{pluginName}''s turn to unwire it" rather than a bare "unwired" beside someone else's
+    /// "Stopped.".</para>
     /// </summary>
     public async Task<CommandStatus> UnwirePluginAsync(string pluginName, CancellationToken ct)
     {
         // CANCEL AND PROCEED, rather than cancel-then-check — see this method's own doc for why
-        // RefusedWhileBusy cannot be trusted to have already observed the cancellation.
-        var severingOwnTurn = CurrentOriginator?.IsFrom(pluginName) == true;
-        if (severingOwnTurn)
-            CancelTurn();
-        else if (RefusedWhileBusy())
+        // RefusedWhileBusy cannot be trusted to have already observed the cancellation. CancelTurn
+        // itself answers false and says nothing when idle (an ordinary race, not an error), so
+        // there is nothing to pre-check before calling it.
+        var cancelledOwnTurn = CurrentOriginator?.IsFrom(pluginName) == true && CancelTurn();
+        if (!cancelledOwnTurn && RefusedWhileBusy())
             return CommandStatus.Refused;
 
         if (!await Plugins.UnwireAsync(pluginName, ct))
@@ -666,7 +672,9 @@ public sealed partial class Session
         }
 
         Announce(SessionChangeKind.Plugins);
-        Say(new Message($"plugin '{pluginName}' unwired.", Severity.Info));
+        Say(new Message(cancelledOwnTurn
+            ? $"stopped '{pluginName}''s turn to unwire it — plugin '{pluginName}' unwired."
+            : $"plugin '{pluginName}' unwired.", Severity.Info));
         return CommandStatus.Changed;
     }
 

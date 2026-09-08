@@ -108,4 +108,21 @@ public class PluginSeverTests : IDisposable
         Assert.Equal(CommandStatus.Refused, status);
         provider.Release();
     }
+
+    [Fact]
+    public async Task Unwire_defers_when_busy_has_no_originator()
+    {
+        var provider = new RecordingProvider();
+        var session = Wired(provider, out var manager);
+        using var _ = manager;
+
+        // PretendBusyForTesting makes the session busy with no turn and therefore no originator —
+        // the shape CurrentOriginator?.IsFrom answers false for. A null originator must defer, the
+        // same as a user's turn: "nobody claimed this busy state" is not "the plugin claimed it".
+        using (session.PretendBusyForTesting())
+        {
+            var status = await session.UnwirePluginAsync("experiment", CancellationToken.None);
+            Assert.Equal(CommandStatus.Refused, status);
+        }
+    }
 }
