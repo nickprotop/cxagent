@@ -60,6 +60,31 @@
     <PackageReference Include="SharpConsoleUI" Version="2.6.5" />
   </ItemGroup>
 
+  <!-- THE PLUGIN HOST, INTO plugin-host/ RATHER THAN BESIDE THE APP. A native plugin is loaded by a
+       separate process (see PluginResolver.PluginHostDllPath), and the release installers place it in
+       this same subfolder. Without this, `dotnet build` produces no host at all and a DEV BUILD
+       silently cannot load native plugins — which is the build every contributor and every drive uses.
+
+       ReferenceOutputAssembly=false, not a plain reference: the host is a program we LAUNCH, not a
+       library we link. A normal ProjectReference would copy its assemblies beside cxagent's own and
+       have us binding against a process boundary. This only orders the build. -->
+  <ItemGroup>
+    <ProjectReference Include="../cxagent.PluginHost/cxagent.PluginHost.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyPluginHost" AfterTargets="Build">
+    <ItemGroup>
+      <PluginHostFiles Include="../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.dll" />
+      <PluginHostFiles Include="../cxagent.PluginHost/bin/$(Configuration)/$(TargetFramework)/*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginHostFiles)"
+          DestinationFolder="$(OutDir)plugin-host"
+          SkipUnchangedFiles="true"
+          Condition="'@(PluginHostFiles)' != ''" />
+  </Target>
+
   <ItemGroup>
     <!-- SESSIONS, AGENTS AND THE TURN LOOP. Everything this app does to a conversation happens
          through CxAgent.Core; what stays here is the terminal — a window, a message loop, and the
