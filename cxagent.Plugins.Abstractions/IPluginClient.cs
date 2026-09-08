@@ -51,3 +51,12 @@ public interface IPluginClient
     /// <exception cref="ObjectDisposedException">The plugin has been unwired from this session.</exception>
     Task<SubmitResult> Submit(string goal, bool wantResult = false, CancellationToken ct = default);
 }
+
+/// <summary>
+/// A plugin that wants <see cref="IPluginContext.Client"/>.
+///
+/// <para>A MARKER, NOT A METHOD. The client arrives on the context at Load like everything else; this
+/// exists so the loader can check the binary against what the manifest promised, which is the only
+/// way "declares the client" can be verified before the plugin runs.</para>
+/// </summary>
+public interface IPluginClientConsumer;

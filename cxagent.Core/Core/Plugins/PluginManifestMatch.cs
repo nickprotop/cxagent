@@ -42,6 +42,8 @@ internal static class PluginManifestMatch
             return $"sidecar and {actualSource} disagree on 'instructions'.";
         if (sidecar.Spawns != actual.Spawns)
             return $"sidecar declares spawns={sidecar.Spawns}, {actualSource} returned spawns={actual.Spawns}.";
+        if (sidecar.Client != actual.Client)
+            return $"sidecar declares client={sidecar.Client}, {actualSource} returned client={actual.Client}.";
 
         var sidecarTools = sidecar.Tools.ToDictionary(t => t.Name);
         var actualTools = actual.Tools.ToDictionary(t => t.Name);

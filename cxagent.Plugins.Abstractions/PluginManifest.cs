@@ -101,6 +101,16 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
     public int? Contract { get; init; }
 
     /// <summary>
+    /// Whether this plugin asks for <see cref="IPluginClient"/> — the ability to start work in its
+    /// session.
+    ///
+    /// <para>DECLARED IN THE MANIFEST RATHER THAN INFERRED FROM THE TYPE, because the load prompt must
+    /// disclose it BEFORE any binary is loaded. A capability discovered by reflection after the user
+    /// approved a tool count is a capability the user was never asked about.</para>
+    /// </summary>
+    public bool Client { get; init; }
+
+    /// <summary>
     /// Every hook-point key this build knows how to service. Anything else in a manifest is refused
     /// by name rather than silently dropped — see the plugin design, "Hook points": "v1 honours `tools` and
     /// `permission`; the rest are refused by name."
@@ -217,9 +227,12 @@ public sealed record PluginManifest(string Name, string Version, string? Instruc
                 : root.TryGetProperty("abiVersion", out var av) && av.TryGetInt32(out var avv) ? avv
                 : null;
 
+            bool client = root.TryGetProperty("client", out var cl) && cl.ValueKind == JsonValueKind.True;
+
             var manifest = new PluginManifest(name ?? "", version ?? "", instructions, spawns, tools)
             {
                 Contract = contract,
+                Client = client,
             };
             return new PluginManifestParseResult(manifest, errors);
         }

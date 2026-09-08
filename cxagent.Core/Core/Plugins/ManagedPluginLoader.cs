@@ -185,6 +185,19 @@ public static class ManagedPluginLoader
                 $"'{sidecar.Name}' declares gated:\"dynamic\" for {string.Join(", ", dynamicTools)} "
               + $"but '{pluginType.FullName}' does not implement {nameof(IPluginGateSource)}.");
 
+        // DECLARED BUT NOT IMPLEMENTED IS A LIE, and it is refused here for the same reason a dynamic
+        // gate without IPluginGateSource is: the manifest is what the user approved, so a manifest
+        // promising something the binary cannot do misrepresents what was approved.
+        //
+        // THE CONVERSE IS NOT AN ERROR. A type may implement more than its manifest declares — the
+        // shipped calculator and csharp-lsp both implement IPluginGateSource while declaring
+        // "gated": false — so this check runs in ONE direction only. A symmetric rule would refuse
+        // both plugins we publish.
+        if (loaded.Client && instance is not IPluginClientConsumer)
+            return new ManagedPluginLoadResult.Failed(
+                $"'{sidecar.Name}' declares \"client\": true but '{pluginType.FullName}' does not "
+              + $"implement {nameof(IPluginClientConsumer)}.");
+
         return new ManagedPluginLoadResult.Loaded(instance, loaded);
     }
 

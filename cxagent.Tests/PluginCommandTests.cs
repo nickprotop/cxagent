@@ -25,6 +25,11 @@ namespace CxAgent.Tests;
 /// assembly for the same reason that test class states: a fixture inside this project would already
 /// be loaded as part of the running process.</para>
 /// </summary>
+// SAME COLLECTION AS ManagedPluginLoaderTests: DropFixture above reads the shared
+// 'cxagent.Tests.PluginFixture.plugin.json' sidecar at the test output path as a template to copy,
+// and that class writes scenario sidecars over the same file (deleting them in `finally`). xUnit
+// runs different classes' tests in parallel by default, so without this they can race.
+[Collection("plugin-fixture-sidecar")]
 public class PluginCommandTests : IDisposable
 {
     private readonly string _dir =

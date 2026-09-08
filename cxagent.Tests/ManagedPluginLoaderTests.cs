@@ -11,6 +11,12 @@ namespace CxAgent.Tests;
 /// <c>Assembly.LoadFrom</c>, so a fixture declared inside this project would never exercise the
 /// thing being tested — it would already be loaded as part of the running process.
 /// </summary>
+// SAME COLLECTION AS PluginCommandTests: both read or write the shared
+// 'cxagent.Tests.PluginFixture.plugin.json' sidecar at the test output path (this class writes
+// a scenario sidecar there and deletes it in `finally`; PluginCommandTests.DropFixture reads it as
+// a template to copy). xUnit runs different classes' tests in parallel by default, so without this
+// they can race — one test's write or delete lands mid another test's read of the same file.
+[Collection("plugin-fixture-sidecar")]
 public class ManagedPluginLoaderTests
 {
     private static readonly string OutputDir = AppContext.BaseDirectory;
@@ -178,5 +184,88 @@ public class ManagedPluginLoaderTests
         // NAMES WHICH TOOL DIFFERED, not just "something differed" — sidecar_tool is what the
         // sidecar declared and Load never returned; a_different_tool is the reverse.
         Assert.Contains("sidecar_tool", failed.Reason);
+    }
+
+    // ---- "client": true declared but not implemented -----------------------------------------
+
+    [Fact]
+    public async Task AManifestClaimingTheClientAgainstAFixtureThatNeverReturnsItIsRefused()
+    {
+        // MATCHES THE FIXTURE'S OWN Load() EXACTLY (name, version, spawns, its one tool) except for
+        // "client" — PluginManifestMatch checks every other field first, so a sidecar that differs
+        // anywhere else would be refused for THAT mismatch rather than the collision this test means
+        // to exercise. See PluginFixtures/WellFormedPlugin.plugin.json for the shape being echoed.
+        //
+        // THE REFUSAL IS THE SIDECAR/LOAD MISMATCH, NOT THE IPluginClientConsumer CHECK — and that is
+        // not a bug in either check, it is their order. WellFormedPlugin.Load() is hardcoded to
+        // Client=false (see its own doc comment: it exists to return exactly what its sidecar
+        // declares), so no sidecar can make Load() agree with "client": true using this fixture.
+        // PluginManifestMatch runs before the IPluginClientConsumer check and is symmetric — it
+        // already applies the same rule to "gated" (compare its per-tool Gated check) — so a sidecar
+        // that disagrees with Load() is always caught here first. The IPluginClientConsumer check
+        // exists for the narrower case this fixture cannot produce: sidecar and Load() AGREEING that
+        // client=true, but the constructed TYPE not implementing the marker.
+        // THIS SIDECAR IS SHARED WITH PluginCommandTests, which copies it as a template outside this
+        // class entirely — so the original content is saved and restored here rather than deleted,
+        // unlike every sidecar elsewhere in this file that this class alone ever writes.
+        var dll = FixtureDll("cxagent.Tests.PluginFixture");
+        var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
+        var original = await File.ReadAllTextAsync(sidecar);
+        await File.WriteAllTextAsync(sidecar,
+            """
+            {
+              "pluginContract": 2,
+              "client": true,
+              "name": "well-formed",
+              "version": "1.0.0",
+              "spawns": false,
+              "tools": [
+                { "name": "wf_tool", "description": "a fixture tool", "inputSchema": { "type": "object" }, "gated": false }
+              ]
+            }
+            """);
+        try
+        {
+            var result = await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None);
+
+            var failed = Assert.IsType<ManagedPluginLoadResult.Failed>(result);
+            Assert.Contains("client", failed.Reason);
+        }
+        finally { await File.WriteAllTextAsync(sidecar, original); }
+    }
+
+    [Fact]
+    public async Task AManifestThatDoesNotDeclareTheClientLoadsWhateverTheTypeImplements()
+    {
+        // THE CONVERSE IS NOT AN ERROR, and this is not hypothetical: calculator.plugin.json declares
+        // "gated": false while CalculatorPlugin implements IPluginGateSource, and csharp-lsp does the
+        // same. A symmetric "manifest and type must agree" rule would refuse both plugins we ship.
+        // SAME SIDECAR AS ABOVE, MINUS "client" — the fixture's type implements no client-consuming
+        // interface either way; what is under test is that OMITTING the declaration is not itself a
+        // mismatch, not that this particular type has nothing to declare.
+        //
+        // RESTORED RATHER THAN DELETED, same reason as above: PluginCommandTests copies this exact
+        // file as a template and expects it to still exist afterward.
+        var dll = FixtureDll("cxagent.Tests.PluginFixture");
+        var sidecar = Path.ChangeExtension(dll, null) + ".plugin.json";
+        var original = await File.ReadAllTextAsync(sidecar);
+        await File.WriteAllTextAsync(sidecar,
+            """
+            {
+              "pluginContract": 2,
+              "name": "well-formed",
+              "version": "1.0.0",
+              "spawns": false,
+              "tools": [
+                { "name": "wf_tool", "description": "a fixture tool", "inputSchema": { "type": "object" }, "gated": false }
+              ]
+            }
+            """);
+        try
+        {
+            Assert.IsType<ManagedPluginLoadResult.Loaded>(
+                await ManagedPluginLoader.Load(dll, Context(), CancellationToken.None));
+        }
+        finally { await File.WriteAllTextAsync(sidecar, original); }
     }
 }
