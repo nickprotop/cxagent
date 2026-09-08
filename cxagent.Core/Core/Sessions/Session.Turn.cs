@@ -1,3 +1,4 @@
+using CxAgent.Core.Agents;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 
@@ -146,7 +147,16 @@ public sealed partial class Session
         /// awaits it, and a fire-and-forget caller ignores it. Awaiting inside Send would make the
         /// first of those impossible.</para>
         /// </summary>
-        public sealed record Started(Task Turn) : SubmitOutcome;
+        /// <param name="Turn">Completes when the turn does.</param>
+        /// <param name="Result">
+        /// The turn's final assistant text, or null when it produced none.
+        ///
+        /// <para>SEPARATE FROM <paramref name="Turn"/> BECAUSE MOST CALLERS DO NOT WANT IT. An input
+        /// loop waits on the turn and renders through the observer; only a caller that asked for the
+        /// answer — a plugin submitting with wantResult — awaits this. Keeping them apart means the
+        /// common path allocates nothing extra.</para>
+        /// </param>
+        public sealed record Started(Task Turn, Task<string?> Result) : SubmitOutcome;
 
         /// <summary>
         /// The text named a command, which has run. Nothing was sent to the model.
@@ -310,7 +320,13 @@ public sealed partial class Session
         // REMEMBERED AS PASSED, not composed: the comparison above asks whether a later caller sent
         // the same thing, and a composed value carries S1 and S2 terms the caller never wrote.
         _turnTools = tools;
-        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin));
+
+        // RunContinuationsAsynchronously: without it, whoever completes the source — RunTurnAsync,
+        // on the turn's own thread — runs the awaiter's continuation inline, which for a plugin
+        // awaiting Result means the plugin's own work executes on the turn loop's thread before
+        // RunTurnAsync has unwound from the lap that produced the text.
+        var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin, result), result.Task);
     }
 
     /// <summary>
@@ -325,7 +341,7 @@ public sealed partial class Session
     /// handed the queue back; saying anything further would report one event twice.</para>
     /// </summary>
     private async Task RunTurnAsync(string text, string? echo, Jobs.ToolSelection? tools,
-        TurnOriginator? origin)
+        TurnOriginator? origin, TaskCompletionSource<string?> result)
     {
         // A LOOP, NOT RECURSION. Text left over after a turn starts another one, and a caller queuing
         // faster than the model answers would grow the stack with a recursive call. This is also why
@@ -361,6 +377,7 @@ public sealed partial class Session
 
             Volatile.Write(ref _busy, true);
             Volatile.Write(ref _originator, origin ?? TurnOriginator.User);
+            SendResult sent;
             try
             {
                 // THE TRANSCRIPT'S OWN TURNS, announced before the model is called so a watcher has a
@@ -373,13 +390,18 @@ public sealed partial class Session
                 _sink?.AssistantTurnBegan(assistantId);
                 _sink?.AssistantTurnEnded(assistantId);   // the agent opens its own turns
 
-                await Host!.RunAsync(text, scope.Token, tools);
+                sent = await Host!.RunAsync(text, scope.Token, tools);
             }
             catch (OperationCanceledException)
             {
                 // CANCELLATION ENDS THE DRAIN, and nothing is said: CancelTurn already said
                 // "Stopped." and handed the queue back through CancelPending. Continuing the loop
                 // would send text the user just took back.
+                //
+                // TRYSETRESULT, NOT SETRESULT: a caller awaiting Result while this fires gets null
+                // rather than a hang, and Try tolerates the source already being completed from
+                // another exit of this same method — SetResult would throw on the second call.
+                result.TrySetResult(null);
                 return;
             }
             catch (Exception ex)
@@ -394,6 +416,10 @@ public sealed partial class Session
                 // the Task is awaited for its falling edge, not its result — so an exception escaping
                 // silently would leave a session that stopped working with nothing on screen.
                 Say(new Message(ex.Message, Severity.Error));
+
+                // A CALLER AWAITING Result MUST NOT HANG just because the turn failed rather than
+                // answered — null is the same "no text" signal a silent turn produces.
+                result.TrySetResult(null);
                 return;
             }
 
@@ -422,7 +448,17 @@ public sealed partial class Session
 
             // WHOLE OR NOT AT ALL, and never an echo: what goes in on a later lap is exactly what the
             // user typed, so it is displayed as itself.
-            if (TakePendingSteer() is not { Length: > 0 } queued) return;
+            if (TakePendingSteer() is not { Length: > 0 } queued)
+            {
+                // THE LAST LAP'S TEXT IS THE ANSWER TO THIS Submit, not the first: a caller that
+                // queued mid-turn asked a follow-up, and the reply to the follow-up is what
+                // wantResult means by "the result" — not whatever the turn said before the queue
+                // was drained. String.IsNullOrWhiteSpace, not null-check: a Silent turn's SendResult
+                // carries "" (see SendOutcome.Silent), which is the same "nothing to report" this
+                // member promises null for.
+                result.TrySetResult(string.IsNullOrWhiteSpace(sent.Text) ? null : sent.Text);
+                return;
+            }
 
             text = queued;
             echo = null;

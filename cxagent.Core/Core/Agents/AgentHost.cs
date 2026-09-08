@@ -546,7 +546,14 @@ public sealed class AgentHost : IDisposable
     /// the normal case: a front end that narrows once per session passes nothing here.</param>
     /// <param name="prompt">What the user asked for.</param>
     /// <param name="ct">Cancels the goal mid-run.</param>
-    public Task RunAsync(string prompt, CancellationToken ct,
+    /// <returns>
+    /// The agent's own <see cref="SendResult"/> rather than a bare <c>Task</c> — Session.Turn.cs needs
+    /// the final assistant text to back <c>SubmitOutcome.Started.Result</c>, and the answer already
+    /// exists here; re-deriving it from the observer stream would duplicate what <c>SendAsync</c>
+    /// already computed. Every existing caller only awaited this for its falling edge, so widening it
+    /// to <c>Task&lt;SendResult&gt;</c> — itself a <c>Task</c> — costs them nothing.
+    /// </returns>
+    public Task<SendResult> RunAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
 
 
