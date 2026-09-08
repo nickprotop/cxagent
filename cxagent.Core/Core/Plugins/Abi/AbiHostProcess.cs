@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 
@@ -22,9 +23,127 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     private readonly Process _process;
     private long _nextId;
 
+    // OUTSTANDING CALLS, KEYED BY THE ID THIS INSTANCE ASSIGNED THEM. HostProtocol documents that
+    // replies MAY arrive out of order — cxagent_plugin_invoke "MAY BE CALLED CONCURRENTLY" and the
+    // host does not serialise invokes onto one at a time — so a single shared read loop below
+    // matches each line back to its own waiter rather than assuming the Nth line answers the Nth
+    // call.
+    private readonly ConcurrentDictionary<long, TaskCompletionSource<HostReply>> _outstanding = new();
+
+    // ONE READER FOR THE LIFETIME OF THE PROCESS, not one per call — two concurrent Sends used to
+    // race their own ReadLineAsync against the same StandardOutput, which StreamReader forbids
+    // ("stream is currently in use") and which would let one call's line satisfy the other's read
+    // even if it didn't throw. Assigned by StartReadLoop, called from Launch only AFTER the startup
+    // line is already consumed off the same stream by a plain ReadLineAsync — starting it any
+    // earlier would race that first read for the same bytes.
+    private Task _readLoop = Task.CompletedTask;
+
+    // THE HOST PROCESS ALREADY SERIALISES ITS OWN REPLY WRITES, and its own comment says why: two
+    // replies racing to write could interleave their bytes mid-line and hand the parent a line
+    // neither JSON. The parent side has the same hazard in the other direction — two Sends writing
+    // a request line concurrently — so it gets the same discipline.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     private AbiHostProcess(Process process)
     {
         _process = process;
+    }
+
+    /// <summary>Starts the background reply reader — called once, from <see cref="Launch"/>, only
+    /// after the one startup line has already been read off <c>StandardOutput</c> directly. Every
+    /// line the loop itself reads is therefore a reply to a request this instance sent, never the
+    /// handshake line.</summary>
+    private void StartReadLoop()
+    {
+        _readLoop = Task.Run(ReadLoop);
+    }
+
+    /// <summary>
+    /// Reads reply lines until the stream ends, completing each line's matching waiter. A line
+    /// whose id matches nothing outstanding is LOGGED AND SKIPPED, not fatal — the id this instance
+    /// once assigned to a call whose <see cref="Send"/> already gave up and returned (its own
+    /// <see cref="CancellationToken"/> fired, or <see cref="Gate"/>'s own timeout expired): the
+    /// answer arrives late, nobody is waiting for it any more, and reading it as anything else would
+    /// mean guessing which live call it belongs to — exactly the risk <see cref="Send"/>'s old
+    /// per-call id check existed to refuse. When the stream ends (<c>null</c>, or the process died
+    /// out from under the read), every waiter still in <see cref="_outstanding"/> is failed — a
+    /// caller no longer has any read of its own to notice that, now that this loop owns the only one.
+    /// </summary>
+    private async Task ReadLoop()
+    {
+        try
+        {
+            while (true)
+            {
+                string? line;
+                try
+                {
+                    line = await _process.StandardOutput.ReadLineAsync();
+                }
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                {
+                    FailAllOutstanding($"lost connection to plugin host process while reading a reply: {ex.Message}");
+                    return;
+                }
+
+                if (line is null)
+                {
+                    var stderr = await TryReadStderr(_process);
+                    FailAllOutstanding(
+                        $"plugin host process exited without a reply (exit code {SafeExitCode(_process)})"
+                        + (string.IsNullOrEmpty(stderr) ? "." : $" — stderr: {stderr}"));
+                    return;
+                }
+
+                HostReply? reply;
+                try
+                {
+                    reply = JsonSerializer.Deserialize<HostReply>(line);
+                }
+                catch (JsonException)
+                {
+                    // AN UNPARSEABLE LINE HAS NO ID TO MATCH — this loop cannot know which waiter it
+                    // was for, so it can only report and move on, never fail a specific call over it
+                    // (the call it was meant for still gets its own answer, or its own eventual
+                    // stream-end failure, from a later line).
+                    continue;
+                }
+
+                if (reply is null) continue;
+
+                if (!_outstanding.TryRemove(reply.Id, out var tcs))
+                {
+                    // A REPLY WITH NO ONE WAITING — a gate that timed out (AbiPlugin's 500ms
+                    // GateTimeout) is the routine case: Send already returned its own timeout
+                    // failure and moved on, and this is that call's answer arriving after the fact.
+                    // Skipped rather than fatal, matching what HostProtocol documents.
+                    continue;
+                }
+
+                tcs.TrySetResult(reply);
+            }
+        }
+        catch (Exception ex)
+        {
+            // BELT AND BRACES: nothing above should throw uncaught, but a waiter left forever
+            // pending because this loop died some other way would be a hang with no diagnostic —
+            // worse than over-catching here.
+            FailAllOutstanding($"plugin host reader loop failed: {ex.Message}");
+        }
+    }
+
+    private void FailAllOutstanding(string message)
+    {
+        // TryRemove, not just enumerate-and-set: a Send racing this same moment to register its own
+        // waiter (see Send's ordering) must not have that waiter left uncompleted because the sweep
+        // ran just before it was added — the loop has already ended, so nothing will ever complete
+        // it otherwise. Draining in a loop, rather than one Keys pass, catches exactly that race.
+        while (!_outstanding.IsEmpty)
+        {
+            foreach (var id in _outstanding.Keys.ToArray())
+                if (_outstanding.TryRemove(id, out var tcs))
+                    tcs.TrySetResult(new HostReply(id, false, null, message));
+        }
     }
 
     /// <summary>The process id of the running host — <see cref="AbiPluginLoader"/> registers this
@@ -115,6 +234,10 @@ internal sealed class AbiHostProcess : IAsyncDisposable
             return (host, new StartResult(false, null, error ?? "host reported a startup failure with no reason given."));
         }
 
+        // ONLY NOW, after the one startup line is off the stream — starting the loop any earlier
+        // would race Launch's own ReadLineAsync above for the same bytes (StreamReader forbids two
+        // reads in flight at once, same as two concurrent Sends used to race each other).
+        host.StartReadLoop();
         return (host, new StartResult(true, ready.Manifest, null));
     }
 
@@ -152,102 +275,100 @@ internal sealed class AbiHostProcess : IAsyncDisposable
     /// this method. Three ways this can end besides an ordinary reply:
     ///
     /// <para>1. <paramref name="ct"/> FIRES WHILE WAITING — Abi/README.md, "Cancellation": the wait
-    /// is ABANDONED, not the native call cancelled. This method stops awaiting the read and returns
-    /// a failure immediately; whatever the host eventually writes for this id is left unread on the
-    /// pipe (or consumed and discarded by a later read racing ahead of it — either is fine, because
-    /// nothing is still waiting on this id specifically).</para>
+    /// is ABANDONED, not the native call cancelled. This method stops awaiting the reply and returns
+    /// a failure immediately, removing its own waiter from <see cref="_outstanding"/> as it does —
+    /// so whatever the host eventually writes for this id lands in <see cref="ReadLoop"/>'s "no
+    /// waiter" branch and is logged and skipped, rather than mistaken for a later call reusing the
+    /// same id (which cannot happen, since ids only ever increase) or left registered forever.</para>
     ///
-    /// <para>2. THE WRITE ITSELF FAILS — the host died between the last successful read and this
-    /// send (a killed process, a broken pipe). <see cref="IOException"/>/<see cref="ObjectDisposedException"/>
+    /// <para>2. THE WRITE ITSELF FAILS — the host died between the last successful send and this
+    /// one (a killed process, a broken pipe). <see cref="IOException"/>/<see cref="ObjectDisposedException"/>
     /// from the write are caught here, not left to propagate into <see cref="AbiPlugin"/> as an
     /// unhandled exception — exactly the "killed host BETWEEN calls" case this task's test proves.</para>
     ///
-    /// <para>3. THE READ RETURNS NULL — stdout closed with no reply: the host exited (crashed, or
-    /// was killed) after accepting the write but before answering. Reported naming the exit code and
-    /// stderr, the same shape a crash INSIDE the call already produces via the ABI envelope.</para>
+    /// <para>3. THE READ LOOP ENDS WITHOUT EVER ANSWERING THIS ID — stdout closed, the process
+    /// exited, or the loop itself faulted. <see cref="ReadLoop"/> fails every waiter it still holds
+    /// when that happens, so this method only needs to await the same <see cref="TaskCompletionSource{TResult}"/>
+    /// the loop completes either way; it does not read stdout itself any more.</para>
     /// </summary>
     private async Task<HostReply> Send(HostProtocol.RequestKind kind, string? toolName,
         JsonElement? arguments, CancellationToken ct)
     {
         var id = Interlocked.Increment(ref _nextId);
         var request = new HostRequest(id, kind, toolName, arguments);
+        var tcs = new TaskCompletionSource<HostReply>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // REGISTERED BEFORE THE WRITE, not after — the host could answer (and ReadLoop could read
+        // that answer) faster than this method gets back from awaiting the write, and a waiter
+        // added after that race would miss its own reply forever.
+        _outstanding[id] = tcs;
+
+        // THE READ LOOP MAY HAVE ALREADY ENDED before this waiter was registered — it drains
+        // _outstanding once, on the way out, and cannot know a call that hadn't registered yet was
+        // coming. Re-checking after registering (and after the write, below) closes that window:
+        // either the loop's own drain catches this waiter, or this call catches the loop already
+        // being done and fails itself the same way FailAllOutstanding would have.
+        if (_readLoop.IsCompleted)
+        {
+            _outstanding.TryRemove(id, out _);
+            return new HostReply(id, false, null, "plugin host reader loop is no longer running.");
+        }
 
         try
         {
-            await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request));
-            await _process.StandardInput.FlushAsync(ct);
+            // THE WRITE ITSELF IS SERIALISED, matching the host process's own discipline on its
+            // reply writes for the same reason: two requests racing to write could interleave their
+            // bytes mid-line and hand the host a line neither JSON.
+            await _writeLock.WaitAsync(ct);
+            try
+            {
+                await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request));
+                await _process.StandardInput.FlushAsync(ct);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {
+            _outstanding.TryRemove(id, out _);
             return new HostReply(id, false, null,
                 $"could not send to plugin host process (it may have died): {ex.Message}");
         }
         catch (OperationCanceledException)
         {
+            _outstanding.TryRemove(id, out _);
             return new HostReply(id, false, null, "call abandoned: cancelled before the host could be sent the request.");
         }
 
-        Task<string?> readTask;
-        try
+        // A SECOND CHECK, after the write: the loop could have ended (and run its drain) in the gap
+        // between the check above and the write landing, which would leave this waiter registered
+        // after the drain already swept past it.
+        if (_readLoop.IsCompleted && _outstanding.TryRemove(id, out var stillWaiting))
         {
-            readTask = _process.StandardOutput.ReadLineAsync(ct).AsTask();
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        {
-            return new HostReply(id, false, null,
-                $"could not read from plugin host process (it may have died): {ex.Message}");
+            stillWaiting.TrySetResult(new HostReply(id, false, null, "plugin host reader loop is no longer running."));
         }
 
-        string? line;
-        try
-        {
-            line = await readTask;
-        }
-        catch (OperationCanceledException)
-        {
-            // ABANDONED, NOT CANCELLED — see this method's own doc, point 1. The read keeps running
-            // in the background against the process's actual stdout; this call simply stops waiting
-            // on it, matching PluginRegistry.UnwireAsync's own "the await here is abandoned, not
-            // cancelled" language for a managed plugin's hung Stop.
-            return new HostReply(id, false, null, "call abandoned: cancelled while waiting for the plugin host's reply.");
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        {
-            return new HostReply(id, false, null,
-                $"lost connection to plugin host process while waiting for a reply: {ex.Message}");
-        }
+        await using var registration = ct.CanBeCanceled
+            ? ct.Register(() =>
+            {
+                // REMOVED, NOT LEFT REGISTERED — this call stops waiting, but the host still owns
+                // this id and may answer it later; leaving the entry behind would hold a completed
+                // TCS in the map forever (ReadLoop only ever removes an id it can match). Once
+                // removed, ReadLoop's own "no waiter" branch is what safely discards that late reply.
+                _outstanding.TryRemove(id, out _);
+                tcs.TrySetResult(
+                    new HostReply(id, false, null, "call abandoned: cancelled while waiting for the plugin host's reply."));
+            })
+            : default;
 
-        if (line is null)
-        {
-            var stderr = await TryReadStderr(_process);
-            return new HostReply(id, false, null,
-                $"plugin host process exited without a reply (exit code {SafeExitCode(_process)})"
-                + (string.IsNullOrEmpty(stderr) ? "." : $" — stderr: {stderr}"));
-        }
-
-        HostReply? reply;
-        try
-        {
-            reply = JsonSerializer.Deserialize<HostReply>(line);
-        }
-        catch (JsonException ex)
-        {
-            return new HostReply(id, false, null, $"plugin host wrote an unparseable reply: {ex.Message}");
-        }
-
-        if (reply is null)
-            return new HostReply(id, false, null, $"plugin host wrote a reply line that parsed to null: '{line}'");
-
-        // A REPLY WE DID NOT ASK FOR IS NOT AN ANSWER. A gate that timed out stops waiting but its
-        // reply still arrives eventually, so the next call would otherwise read someone else's line
-        // and believe it. Failing the call is the honest reading: this request has no answer, and
-        // silently accepting a stale one would decide a PERMISSION question from the wrong call.
-        if (reply.Id != id)
-            return new HostReply(id, false, null,
-                $"plugin host replied to request {reply.Id} while {id} was outstanding — "
-                + "a reply from an abandoned call, discarded rather than mistaken for this one.");
-
-        return reply;
+        // ABANDONED, NOT CANCELLED — see this method's own doc, point 1. The read loop keeps running
+        // and will still complete this same TCS if the reply arrives later; ReadLoop's "no waiter"
+        // branch is exactly what makes that safe once nobody is awaiting it any more, matching
+        // PluginRegistry.UnwireAsync's own "the await here is abandoned, not cancelled" language for
+        // a managed plugin's hung Stop.
+        return await tcs.Task;
     }
 
     /// <summary>Best-effort stderr capture for an error message — never throws, because a process
@@ -294,6 +415,21 @@ internal sealed class AbiHostProcess : IAsyncDisposable
         {
             _process.Dispose();
         }
-        await Task.CompletedTask;
+
+        // KILLING THE PROCESS CLOSES ITS STDOUT, which is what makes ReadLoop's own ReadLineAsync
+        // return null and run FailAllOutstanding — the death fan-out is a consequence of the
+        // teardown above, not something this method does itself. Awaited here only so a caller's
+        // own await of DisposeAsync does not return before every outstanding waiter has actually
+        // been failed, and so the loop's task is observed rather than left to fault silently in the
+        // background.
+        try
+        {
+            await _readLoop;
+        }
+        catch (Exception)
+        {
+            // ReadLoop itself never lets an exception escape — it catches everything down to
+            // FailAllOutstanding — but nothing here depends on that holding forever either.
+        }
     }
 }

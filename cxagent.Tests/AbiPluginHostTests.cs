@@ -251,4 +251,57 @@ public class AbiPluginHostTests
         // higher contract may require something this build has never heard of.
         Assert.Contains($"{PluginContract.Version} at most", handshake.Error);
     }
+
+    // ---- Replies correlated by id, not by arrival order ------------------------------------------
+
+    [Fact]
+    public async Task TwoConcurrentInvokesEachGetTheReplyMatchingTheirOwnId()
+    {
+        if (!RequireFixture("fixture-wellformed", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        await using var disposeHost = host;
+        Assert.True(handshake.Ready);
+
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        // HostProtocol documents that replies MAY arrive out of order and a caller matches on id
+        // rather than on arrival — fixture-wellformed's echo ignores its arguments and always
+        // returns the same output, so the content can't tell these two calls apart; what proves
+        // correlation is that both awaits resolve to Ok replies rather than one of them either
+        // hanging (an unmatched id dropped on the floor) or stealing the other's line off the pipe
+        // (read-per-call racing two ReadLineAsync calls against the same stream).
+        var first = host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "one" }), CancellationToken.None);
+        var second = host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "two" }), CancellationToken.None);
+
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(results[0].Ok);
+        Assert.True(results[1].Ok);
+        Assert.True(results[0].Result!.Success);
+        Assert.True(results[1].Result!.Success);
+    }
+
+    // ---- A dead pipe fails every outstanding waiter, not just the one that noticed -----------------
+
+    [Fact]
+    public async Task APipeThatClosesFailsEveryOutstandingWaiter()
+    {
+        // FIXTURE-CRASH, NOT FIXTURE-WELLFORMED — its invoke segfaults before ever writing a reply,
+        // so the call is DETERMINISTICALLY still outstanding when DisposeAsync runs below. A
+        // well-formed fixture answers near-instantly and the call would usually finish before
+        // dispose even starts, proving nothing about the death fan-out this test exists to check:
+        // without it, the call that is still in flight when the process dies owns no read of its
+        // own to notice that any more, now that the reader loop owns the only read.
+        if (!RequireFixture("fixture-crash", out var lib)) return;
+
+        var (host, handshake) = await AbiHostProcess.Launch(HostDllPath, lib);
+        Assert.True(handshake.Ready);
+        await host.Start(OutputDir, JsonSerializer.SerializeToElement(new { }), CancellationToken.None);
+
+        var inFlight = host.Invoke("echo", JsonSerializer.SerializeToElement(new { value = "x" }), CancellationToken.None);
+        await host.DisposeAsync();
+
+        var result = await inFlight.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(result.Ok);
+    }
 }
