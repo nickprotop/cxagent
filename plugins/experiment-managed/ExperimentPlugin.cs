@@ -5,7 +5,7 @@ using CxAgent.Core.Plugins;
 namespace CxAgent.Plugins.ExperimentManaged;
 
 /// <summary>
-/// Exercises <see cref="IPluginClient"/> and nothing else.
+/// Exercises <see cref="IPluginClient"/> and the command surface, and nothing else.
 ///
 /// <para>DELIBERATELY TRIVIAL, AND NOT IN THE CATALOG. The three plugins cxagent ships — calculator,
 /// clone-finder, csharp-lsp — evaluate expressions, find clones, and wrap a language server; none of
@@ -13,13 +13,14 @@ namespace CxAgent.Plugins.ExperimentManaged;
 /// reason to start work in its own session. Without a plugin that DOES ask for it, a drive of the
 /// published set exercises contract 2 twice and contract 3 never. This plugin exists solely to be
 /// driven: one tool a model can call so a drive can trigger <see cref="IPluginClient.Submit"/> from
-/// inside a turn. <c>plugins.json</c> does not list it — nobody installs an experiment by accident.</para>
+/// inside a turn, and one command a person can type so the same drive exercises a plugin command
+/// too. <c>plugins.json</c> does not list it — nobody installs an experiment by accident.</para>
 ///
 /// <para>An experimental plugin that grows features grows reasons for its own bugs, and then a
 /// failed drive tells you nothing about the contract it was meant to exercise. So this stays at one
-/// tool, one call, one thing reported back.</para>
+/// tool, one command, one thing reported back for each.</para>
 /// </summary>
-public sealed class ExperimentPlugin : IPlugin, IPluginClientConsumer
+public sealed class ExperimentPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler
 {
     private PluginManifest? _manifest;
     private IPluginClient? _client;
@@ -123,5 +124,26 @@ public sealed class ExperimentPlugin : IPlugin, IPluginClientConsumer
     {
         _log?.Log($"experiment-managed stopping, rooted at {_workingDirectory}");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// ECHOES ITS ARGUMENT AND NOTHING ELSE — the same "prove the wire works, not the feature"
+    /// choice as <see cref="Invoke"/>. A person types <c>/experiment-say hello</c>; the transcript
+    /// gets back a line built from that same word, so a drive can tell the argument actually
+    /// crossed from the typed command into this handler rather than just that some reply came back.
+    /// </summary>
+    public Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct)
+    {
+        if (!string.Equals(name, "experiment-say", StringComparison.Ordinal))
+            // UNREACHABLE IN PRACTICE — Core dispatches by the name this plugin itself declared in
+            // its manifest, so arriving here with anything else is this plugin's own bug, not a
+            // caller mistake. Refused rather than thrown: RunCommand's contract is to report, not
+            // to crash the session over a defensive check.
+            return Task.FromResult(new CommandResult(
+                $"experiment-managed has no command named '{name}'.", PluginCommandOutcome.Refused));
+
+        // Reported, never Changed: an echo has nothing in the session to have changed.
+        return Task.FromResult(new CommandResult($"experiment-managed says: {arguments}",
+            PluginCommandOutcome.Reported));
     }
 }

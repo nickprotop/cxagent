@@ -18,5 +18,14 @@
       },
       "gated": false
     }
+  ],
+  "commands": [
+    {
+      "name": "experiment-say",
+      "summary": "Echo the argument back into the transcript.",
+      "arguments": [
+        { "name": "text", "summary": "What to echo back." }
+      ]
+    }
   ]
 }

@@ -19,6 +19,13 @@ does not offer to.
 **One pending goal at a time.** A second `experiment_submit` before the first is polled replaces it,
 reported back to the caller rather than silently dropped.
 
+## The one command
+
+`/experiment-say <text>` — exported as `cxagent_plugin_command`, one of the two optional exports a v3
+plugin may omit (`cxagent_plugin.h`); this one implements it so a drive has a command to type, not
+only a tool to call. It echoes `text` straight back into the transcript, the ABI twin of
+`experiment-managed`'s `IPluginCommandHandler.RunCommand`.
+
 ## Building
 
 ```

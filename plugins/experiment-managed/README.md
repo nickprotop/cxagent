@@ -23,6 +23,13 @@ plugin's own session and reports what came back:
 A refusal (queue full, no client because this host predates contract 3) comes back as a failed call,
 not a successful one that merely describes a problem.
 
+## The one command
+
+`/experiment-say <text>` — echoes `text` back into the transcript. It exists so a drive exercises a
+plugin command as well as a plugin tool: the tool above is something a model calls, this is something
+a person types, and cxagent dispatches the two through different entry points
+(`IPlugin.Invoke` vs. `IPluginCommandHandler.RunCommand`).
+
 ## What it deliberately does not do
 
 Grow. An experimental plugin that grows features grows reasons for its own bugs, and then a failed

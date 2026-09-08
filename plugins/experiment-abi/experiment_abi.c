@@ -1,7 +1,7 @@
 /*
- * experiment-abi — the native twin of ../experiment-managed, exercising the SAME single capability
- * contract 3 added (IPluginClient.Submit, reached here through cxagent_plugin_poll) but across the
- * ABI boundary instead of in-process.
+ * experiment-abi — the native twin of ../experiment-managed, exercising the SAME two capabilities
+ * (IPluginClient.Submit, reached here through cxagent_plugin_poll, and a plugin command) but across
+ * the ABI boundary instead of in-process.
  *
  * NOT IN THE CATALOG, DELIBERATELY. plugins.json does not list this plugin — nobody installs an
  * experiment by accident. It exists to be DRIVEN, not used: a drive of the three shipped plugins
@@ -9,10 +9,10 @@
  * (csharp-lsp), and never contract 3, because none of the three has a reason to start work in its
  * own session. This plugin's only job is to give a drive something that does.
  *
- * ONE TOOL, ONE MECHANISM, NOTHING ELSE. experiment_submit takes a goal and returns immediately,
- * having recorded it; cxagent_plugin_poll hands that goal to the host on its next tick. That is the
- * whole plugin — see ../experiment-managed/README.md for why growing this any further would defeat
- * the point of an experiment.
+ * ONE TOOL, ONE COMMAND, NOTHING ELSE. experiment_submit takes a goal and returns immediately,
+ * having recorded it; cxagent_plugin_poll hands that goal to the host on its next tick. The command,
+ * experiment-say, echoes its argument straight back — see ../experiment-managed/README.md for why
+ * growing this any further would defeat the point of an experiment.
  *
  * WANT_RESULT IS NOT OFFERED. AbiPlugin.cs refuses wantResult:true from a polled submit by design —
  * fire-and-forget is the whole ABI surface on contract 3 (cxagent_plugin.h, "WHY WANTRESULT IS
@@ -84,6 +84,13 @@ static const char MANIFEST[] =
             "\"required\":[\"goal\"]"
           "},"
           "\"gated\":false"
+        "}"
+      "],"
+      "\"commands\":["
+        "{"
+          "\"name\":\"experiment-say\","
+          "\"summary\":\"Echo the argument back into the transcript.\","
+          "\"arguments\":[{\"name\":\"text\",\"summary\":\"What to echo back.\"}]"
         "}"
       "]"
     "}";
@@ -203,6 +210,34 @@ const char* cxagent_plugin_poll(void)
 
     char buffer[4224];
     snprintf(buffer, sizeof buffer, "{\"goal\":\"%s\",\"wantResult\":false}", pending_goal);
+
+    const char* p = heap(buffer);
+    return p != NULL ? p : OOM;
+}
+
+/* ---- command -------------------------------------------------------------------------------------
+ *
+ * OPTIONAL EXPORT — cxagent_plugin.h lists this alongside cxagent_plugin_poll as one of the two
+ * functions a v3 plugin may omit entirely; NativePlugin.HasCommand resolves it as an optional
+ * symbol, so a library built without it still loads. This one exports it to give a drive something
+ * to type, matching FIXTURE_COMMANDS in cxagent.Tests/AbiFixtures/fixture_plugin.c, the known-good
+ * shape for this export.
+ *
+ * "arguments" IS THE RAW TEXT A PERSON TYPED, already trimmed by the host before it crosses this
+ * boundary (cxagent_plugin.h) — never JSON, unlike every other argument this file receives. So this
+ * echoes it back inside a JSON string literal rather than parsing it as one.
+ */
+const char* cxagent_plugin_command(const char* name, const char* arguments)
+{
+    if (name == NULL || strcmp(name, "experiment-say") != 0)
+        /* A NAME THIS PLUGIN NEVER DECLARED — see cxagent_plugin_invoke's identical unknown-tool
+           guard above for why reaching here is this plugin's own bug, not a caller mistake. */
+        return heap("{\"message\":\"experiment-abi has no command named that.\",\"status\":\"refused\"}");
+
+    char buffer[4224];
+    snprintf(buffer, sizeof buffer,
+        "{\"message\":\"experiment-abi says: %s\",\"status\":\"reported\"}",
+        arguments != NULL ? arguments : "");
 
     const char* p = heap(buffer);
     return p != NULL ? p : OOM;
