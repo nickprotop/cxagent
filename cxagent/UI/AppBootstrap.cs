@@ -1180,7 +1180,7 @@ public static class AppBootstrap
         // CONFIGURED PLUGINS, AFTER THE FIRST WIRE — unlike MCP servers above, a plugin load asks
         // through Session.LoadPlugin's own load gate (Services?.Gate), and Services is only set once
         // SessionFactory.Wire has run (Session.NoteServices). Loading before the first wire would
-        // find no gate and load every plugin unasked — the "headless host" path the plugin design's
+        // find no gate and load every plugin unasked — the "headless host" path that plugins.md's
         // Permission section describes, silently applied to a session that has a gate coming.
         //
         // ON THE FIRST PUMP, NOT HERE — see LoadConfiguredPluginsAsync below and the deferral beside
@@ -1188,8 +1188,8 @@ public static class AppBootstrap
         // gate builds a control in the composer cell and awaits an answer, which needs a render loop
         // that has not started yet. Blocking on it here waits forever for a dialog nothing can draw.
         //
-        // DISCOVERY LIVES HERE, NOT IN CORE — the plugin design, "Configuration": "Core accepts 'here is a
-        // plugin at this path' and does not care how it was found." PluginDiscovery enumerates the
+        // DISCOVERY LIVES HERE, NOT IN CORE — Core accepts "here is a plugin at this path" and does
+        // not care how it was found. PluginDiscovery enumerates the
         // search folders (config's own pluginPaths, then the project directory, then this process's
         // global config directory — project over global) and calls the loader; this file only decides
         // WHAT EXISTS, the same split /mcp already draws.

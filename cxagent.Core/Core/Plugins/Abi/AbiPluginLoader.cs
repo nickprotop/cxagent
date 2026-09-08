@@ -4,7 +4,7 @@ namespace CxAgent.Core.Plugins.Abi;
 /// What a load attempt against the ABI host produced — the same two-shape result
 /// <see cref="ManagedPluginLoadResult"/> already gives the managed loader's callers, so a caller
 /// choosing between the two loaders (config says "kind": "abi" vs a plain assembly) handles both
-/// the identical way. See the plugin design, "Failure": a load failure is reported, never silent.
+/// the identical way. A load failure is reported, never silent.
 /// </summary>
 public abstract record AbiPluginLoadResult
 {
@@ -25,9 +25,8 @@ public abstract record AbiPluginLoadResult
 
 /// <summary>
 /// Constructs an <see cref="IPlugin"/> backed by a <c>cxagent-plugin-host</c> subprocess — the
-/// second of the two v1 loaders (the plugin design, "The v1 cut": "Both loaders ship in v1. Managed
-/// in-process and ABI out-of-process, against one contract."), and the counterpart
-/// <see cref="ManagedPluginLoader"/> already documents its own doc as needing.
+/// second of the two loaders, managed in-process and ABI out-of-process against one shared contract,
+/// and the counterpart <see cref="ManagedPluginLoader"/> already documents its own doc as needing.
 ///
 /// <para>ONE HOST PROCESS PER PLUGIN INSTANCE — Task 9's brief: "so a faulting plugin does not take
 /// its neighbours with it." Each call to <see cref="Load"/> spawns its own subprocess; nothing here

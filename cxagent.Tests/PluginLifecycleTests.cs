@@ -7,9 +7,9 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The pid record and reaping — the plugin design, "Lifecycle": "Whatever cannot be closed on the way
-/// down must be collectable on the way up." A plugin that crashed cannot clean up after itself,
-/// which is why Core records and reaps rather than trusting the plugin's own bookkeeping.
+/// The pid record and reaping: whatever cannot be closed on the way down must be collectable on the
+/// way up. A plugin that crashed cannot clean up after itself, which is why Core records and reaps
+/// rather than trusting the plugin's own bookkeeping.
 ///
 /// <para>A REAL PROCESS, DELIBERATELY. Reaping means killing a pid, and the only honest way to prove
 /// that is to spawn something and check whether it is actually gone afterwards — a fake "process"
@@ -134,8 +134,8 @@ public class PluginLifecycleTests : IDisposable
         public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
             CancellationToken ct) => Task.FromResult(new JobResult { Success = true });
 
-        // NEVER RETURNS. A managed plugin's Stop that hangs — the case the plugin design says can only be
-        // abandoned, since there is no host process to kill for an in-process plugin.
+        // NEVER RETURNS. A managed plugin's Stop that hangs can only be abandoned, since there is no
+        // host process to kill for an in-process plugin.
         public async Task Stop(CancellationToken ct)
         {
             _stopCalled.TrySetResult();

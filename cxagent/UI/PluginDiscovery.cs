@@ -7,10 +7,10 @@ using CxAgent.Core.Sessions;
 namespace CxAgent.UI;
 
 /// <summary>
-/// Finds a configured plugin's entry-point file on disk and loads it into a session — the piece
-/// the plugin design, "Configuration" puts on the APPLICATION rather than Core: "Core accepts 'here is a
-/// plugin at this path' and does not care how it was found. Enumerating folders, presenting a picker
-/// and deciding what to load is orchestration — Core is the infrastructure underneath it."
+/// Finds a configured plugin's entry-point file on disk and loads it into a session — the piece the
+/// APPLICATION owns rather than Core: Core accepts "here is a plugin at this path" and does not care
+/// how it was found. Enumerating folders, presenting a picker and deciding what to load is
+/// orchestration; Core is the infrastructure underneath it.
 ///
 /// <para><see cref="Session.LoadPlugin"/> is the wiring nothing before this class provided: a loader
 /// (<see cref="ManagedPluginLoader"/>) that can construct an <see cref="IPlugin"/> from disk existed,
@@ -29,8 +29,7 @@ public static class PluginDiscovery
 
     /// <summary>
     /// The folders searched for a plugin's <see cref="PluginConfig.File"/>, nearest (most specific)
-    /// first — the plugin design, "Two locations, project wins": "A project overrides a globally installed
-    /// plugin rather than colliding with it."
+    /// first — a project overrides a globally installed plugin rather than colliding with it.
     ///
     /// <para>CONFIGURED PATHS COME FIRST, IN THE ORDER WRITTEN, because a user who bothered to list
     /// <c>pluginPaths</c> stated their own precedence and this must not silently reorder it. The two
@@ -42,9 +41,9 @@ public static class PluginDiscovery
     /// <para>RELATIVE ENTRIES RESOLVE AGAINST THE PROJECT DIRECTORY, not the config directory —
     /// unlike <c>ProviderConfigLoader</c>'s config-time collision check, which has no project
     /// directory to resolve against and falls back to the config directory instead. This is the
-    /// richer resolution that check's own doc says the runtime load has and it does not: the plugin design's
-    /// example <c>.cxagent/plugins</c> is meant to be read relative to the repo being worked in, and
-    /// a plugin only findable that way is exactly the case config-time validation cannot see.</para>
+    /// richer resolution that check's own doc says the runtime load has and it does not:
+    /// <c>.cxagent/plugins</c> is meant to be read relative to the repo being worked in, and a
+    /// plugin only findable that way is exactly the case config-time validation cannot see.</para>
     /// </summary>
     public static IReadOnlyList<string> SearchFolders(
         IReadOnlyList<string> configuredPaths, string projectDirectory, string configDir)
@@ -209,9 +208,8 @@ public static class PluginDiscovery
 
         foreach (var (name, config) in plugins.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
-            // THE GATE, NOT A FILTER — the plugin design, "Overriding is forbidden": false means no
-            // process, no tools, no prompt, nothing. A disabled plugin is skipped before anything
-            // about it is even looked up.
+            // THE GATE, NOT A FILTER — false means no process, no tools, no prompt, nothing. A
+            // disabled plugin is skipped before anything about it is even looked up.
             if (!config.Enabled) continue;
 
             var loadSetDirectory = FindLoadSetDirectory(config.File, searchFolders);

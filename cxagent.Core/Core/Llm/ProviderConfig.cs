@@ -238,16 +238,16 @@ public record McpServerConfig(
 /// <summary>
 /// One configured plugin — config.json's <c>plugins.&lt;name&gt;</c> entry, in code.
 ///
-/// <para>THE KEY IS THE NAME; THE VALUE POINTS AT A FILENAME, NOT A PATH — see the plugin design,
-/// "Configuration": "The file is resolved against the search folders, so a config is portable
-/// between machines. A path would not be." Resolving <see cref="File"/> against the search folders
-/// is discovery's job (AppBootstrap), not this record's.</para>
+/// <para>THE KEY IS THE NAME; THE VALUE POINTS AT A FILENAME, NOT A PATH. The file is resolved
+/// against the search folders, so a config is portable between machines — a path would not be.
+/// Resolving <see cref="File"/> against the search folders is discovery's job (AppBootstrap), not
+/// this record's.</para>
 /// </summary>
 /// <param name="File">The plugin's entry-point filename, resolved against <c>pluginPaths</c>.</param>
 /// <param name="Enabled">
-/// THE OVERALL GATE, not a filter — the plugin design, "Overriding is forbidden": "False and the plugin
-/// does not load: no process spawned, no tools registered, no load prompt, nothing to select from."
-/// Defaults to true for the same reason <see cref="McpConfig.Enabled"/> does: a plugin someone
+/// THE OVERALL GATE, not a filter. False and the plugin does not load: no process spawned, no tools
+/// registered, no load prompt, nothing to select from. Defaults to true for the same reason
+/// <see cref="McpConfig.Enabled"/> does: a plugin someone
 /// bothered to configure is one they want, and requiring <c>"enabled": true</c> on every entry is a
 /// footgun where the plugin silently never appears.
 /// </param>
@@ -375,18 +375,18 @@ public record ProviderSettings(
         new Dictionary<string, McpServerConfig>();
 
     /// <summary>
-    /// Configured plugins, by name — empty when the block is absent, the common case. See
-    /// the plugin design, "Configuration": the same name-to-object shape <c>mcp</c> already uses.
+    /// Configured plugins, by name — empty when the block is absent, the common case. The same
+    /// name-to-object shape <c>mcp</c> already uses.
     /// </summary>
     public IReadOnlyDictionary<string, PluginConfig> Plugins { get; init; } =
         new Dictionary<string, PluginConfig>();
 
     /// <summary>
     /// Where a <see cref="PluginConfig.File"/> is searched for, in order — a SIBLING of
-    /// <c>plugins</c>, never a key inside it. The plugin design, "Configuration": "A settings key living
-    /// among name-keyed entries collides with a plugin of that name." Empty when the block is absent;
-    /// discovery (AppBootstrap) supplies its own defaults when this is empty, since Core does not
-    /// know what a reasonable default search folder is for the host it is embedded in.
+    /// <c>plugins</c>, never a key inside it: a settings key living among name-keyed entries would
+    /// collide with a plugin of that name. Empty when the block is absent; discovery (AppBootstrap)
+    /// supplies its own defaults when this is empty, since Core does not know what a reasonable
+    /// default search folder is for the host it is embedded in.
     /// </summary>
     public IReadOnlyList<string> PluginPaths { get; init; } = [];
 
@@ -534,12 +534,13 @@ public static class ProviderConfigLoader
     }
 
     /// <summary>
-    /// Refuses a STATICALLY CERTAIN plugin tool-name collision — matrix rows 2 and 4-plugin
-    /// (the plugin design, "Name collisions"). Both sides of either row are declared before anything runs,
-    /// so a clash is knowable at config read and refuses to start, naming the file and the key,
-    /// exactly as an unknown provider kind does. Shared between <see cref="LoadAndValidate"/> (reading
-    /// config.json) and <see cref="AgentConfig.Resolve"/> (an embedder's plugins in code), so an
-    /// embedder gets the same check a config.json author does rather than a second, drifting copy.
+    /// Refuses a STATICALLY CERTAIN plugin tool-name collision: two plugins whose sidecars declare
+    /// the same tool name, or a plugin whose sidecar claims a built-in's name. Both sides of either
+    /// case are declared before anything runs, so a clash is knowable at config read and refuses to
+    /// start, naming the file and the key, exactly as an unknown provider kind does. Shared between
+    /// <see cref="LoadAndValidate"/> (reading config.json) and <see cref="AgentConfig.Resolve"/> (an
+    /// embedder's plugins in code), so an embedder gets the same check a config.json author does
+    /// rather than a second, drifting copy.
     /// </summary>
     /// <param name="plugins">Every configured plugin, by name.</param>
     /// <param name="findSidecar">
@@ -976,8 +977,8 @@ public static class ProviderConfigLoader
                         pluginPaths.Add(s);
 
             // PLUGINS — read AFTER pluginPaths exists, so a collision check below can resolve each
-            // entry's `file` against the search folders and read its sidecar. See the plugin design,
-            // "Configuration": the key is a name, the value points at a filename.
+            // entry's `file` against the search folders and read its sidecar. The key is a name, the
+            // value points at a filename.
             var plugins = new Dictionary<string, PluginConfig>(StringComparer.Ordinal);
             if (root.TryGetProperty("plugins", out var pl) && pl.ValueKind == JsonValueKind.Object)
                 foreach (var entry in pl.EnumerateObject())

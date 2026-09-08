@@ -135,10 +135,10 @@ public static class PluginCommand
     }
 
     /// <summary>
-    /// Every configured plugin's row — the plugin design's three states. <paramref name="configured"/> is
-    /// <see cref="ResolvedConfig.Plugins"/>: Core knows every name and whether config permits it,
-    /// which is what makes the disabled row and the loaded row both answerable without asking the
-    /// registry for anything it does not hold.
+    /// Every configured plugin's row, in one of the three <see cref="PluginRowState"/> values.
+    /// <paramref name="configured"/> is <see cref="ResolvedConfig.Plugins"/>: Core knows every name
+    /// and whether config permits it, which is what makes the disabled row and the loaded row both
+    /// answerable without asking the registry for anything it does not hold.
     /// </summary>
     public static IReadOnlyList<PluginRow> Rows(
         IReadOnlyDictionary<string, PluginConfig> configured, IReadOnlyList<string> loadedNames)
@@ -188,9 +188,9 @@ public static class PluginCommand
     }
 
     /// <summary>
-    /// The refusal for <c>/plugin load</c> on a name config disables — the plugin design's gate: false
-    /// means no process, no tools, no prompt, nothing to select from. Names <c>--once</c>, or the
-    /// exception is undiscoverable and the feature may as well not exist.
+    /// The refusal for <c>/plugin load</c> on a name config disables: false means no process, no
+    /// tools, no prompt, nothing to select from. Names <c>--once</c>, or the exception is
+    /// undiscoverable and the feature may as well not exist.
     /// </summary>
     public static string DisabledRefusal(string name) =>
         $"plugin '{name}' is disabled in config.\n"

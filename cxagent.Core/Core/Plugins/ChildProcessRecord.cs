@@ -5,8 +5,8 @@ using CxAgent.Core.Storage;
 namespace CxAgent.Core.Plugins;
 
 /// <summary>
-/// One process a plugin registered — see the plugin design, "Lifecycle": "a plugin declares the processes
-/// it spawns, Core records them, and Core reaps them."
+/// One process a plugin registered: a plugin declares the processes it spawns, Core records them,
+/// and Core reaps them.
 ///
 /// <para><see cref="StartTimeUtc"/> IS WHAT MAKES A PID SAFE TO KILL. A bare pid is reused by the
 /// OS the moment the original process exits, so a record written for one process and reaped after
@@ -43,9 +43,9 @@ public sealed record ChildProcessRecord(int Pid, DateTime StartTimeUtc, string P
 /// run never got to.
 ///
 /// <para>WHY A FILE, NOT IN-MEMORY BOOKKEEPING. Everything in-process dies with the process, which
-/// is exactly the case this exists for: the plugin design, "Lifecycle" — "Whatever cannot be closed on the
-/// way down must be collectable on the way up." A crash never runs <c>Close</c>, so the only place
-/// left to record a child's existence is somewhere that survives the crash.</para>
+/// is exactly the case this exists for: whatever cannot be closed on the way down must be
+/// collectable on the way up. A crash never runs <c>Close</c>, so the only place left to record a
+/// child's existence is somewhere that survives the crash.</para>
 ///
 /// <para>MULTIPLE PROCESSES CAN WRITE THIS FILE — two cxagent windows, each loading their own
 /// plugins. <see cref="Add"/> and <see cref="Remove"/> therefore re-read the file under the lock
@@ -107,10 +107,9 @@ public sealed class ChildProcessStore
     /// Kills every recorded process that is STILL the one that was recorded, and clears the file.
     ///
     /// <para>RUNS AT STARTUP, WHERE <c>SessionManager.Create</c> AND <c>SessionManager.Over</c> ARE
-    /// — see the plugin design, "Lifecycle": "a pid record
-    /// written where the next run can find it, and reaped at startup." Not in a UI layer: a headless
-    /// embedder leaks exactly as readily as a windowed one, and only the manager's construction is
-    /// common to both.</para>
+    /// — a pid record written where the next run can find it, and reaped at startup. Not in a UI
+    /// layer: a headless embedder leaks exactly as readily as a windowed one, and only the manager's
+    /// construction is common to both.</para>
     ///
     /// <para>MATCHES <see cref="ChildProcessRecord.Pid"/> AND <see cref="ChildProcessRecord.StartTimeUtc"/>
     /// BOTH before killing anything — see that type's own doc. A pid that is not running at all, or
@@ -139,8 +138,8 @@ public sealed class ChildProcessStore
     /// plugin's record untouched.
     ///
     /// <para>THE UNWIRE-TIME HALF OF REAPING, next to <see cref="ReapOrphans"/>'s startup-time
-    /// sweep — the plugin design, "Unwiring must reap": "a host process that startup reaping will not see,
-    /// because startup is not coming." Called from <see cref="PluginRegistry.UnwireAsync"/>'s own
+    /// sweep — a host process that startup reaping will not see, because startup is not coming.
+    /// Called from <see cref="PluginRegistry.UnwireAsync"/>'s own
     /// step 4, after Stop, so a plugin unwired mid-session (or whose Stop hung and was abandoned)
     /// does not leave its children running for the rest of THIS process's life, only to be caught by
     /// a startup this run may never reach.</para>

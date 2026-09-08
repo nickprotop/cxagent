@@ -170,9 +170,9 @@ public class ManagedPluginLoaderTests
 
     // ---- Sidecar / Load mismatch -----------------------------------------------------------------
 
-    /// <summary>THE IDENTITY CHECK the plugin design IS EXPLICIT ABOUT: a plugin whose Load returns a
-    /// manifest differing from its sidecar refuses to load, naming the difference — otherwise the
-    /// file the user was asked to approve describes something other than what runs.</summary>
+    /// <summary>THE IDENTITY CHECK: a plugin whose Load returns a manifest differing from its
+    /// sidecar refuses to load, naming the difference — otherwise the file the user was asked to
+    /// approve describes something other than what runs.</summary>
     [Fact]
     public async Task ASidecarLoadMismatchFailsAndNamesTheDifference()
     {

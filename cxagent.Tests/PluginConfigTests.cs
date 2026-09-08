@@ -5,9 +5,10 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The CONFIG layer of the plugin design's "Name collisions" matrix — rows 2 and 4-plugin, the only ones
-/// catchable before anything runs, plus row 9 (a runtime load still catches what config-time
-/// validation could not see) and the shape of <c>plugins</c>/<c>pluginPaths</c> themselves.
+/// The CONFIG layer of name-collision checking: rows 2 and 4-plugin (two plugins declaring the same
+/// tool name, and a plugin claiming a built-in's) are the only ones catchable before anything runs;
+/// row 9 (a runtime load still catches what config-time validation could not see) and the shape of
+/// <c>plugins</c>/<c>pluginPaths</c> themselves round out the picture.
 ///
 /// <para>NO ASSEMBLIES, ONLY SIDECARS. A fixture here is a bare directory holding a <c>.dll</c> stub
 /// (never loaded — <see cref="ProviderConfigLoader"/> must not need to) and a real

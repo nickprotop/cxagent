@@ -13,10 +13,9 @@ using Xunit;
 namespace CxAgent.Tests;
 
 /// <summary>
-/// The load gate — the plugin design, "Permission": "the load gate is the only boundary Core can enforce".
-/// Task 5's three obligations, one test class each below: identity is a content hash over the whole
-/// load set, config can never pre-approve a binary, and a plugin's tools are gated like any other
-/// once loaded.
+/// The load gate — the only boundary Core can enforce on a binary it did not write. Three
+/// obligations, one test class each below: identity is a content hash over the whole load set,
+/// config can never pre-approve a binary, and a plugin's tools are gated like any other once loaded.
 /// </summary>
 public class PluginLoadGateTests : IDisposable
 {
@@ -107,10 +106,10 @@ public class PluginLoadGateTests : IDisposable
 
     // ---- Identity: a content hash over the WHOLE load set, not one file --------------------------
 
-    /// <summary>the plugin design, "Identity is a content hash, not a filename": "The hash covers everything
-    /// loaded, not one file. A managed plugin with dependency assemblies is a directory, and hashing
-    /// only its entry point leaves a swapped dependency changing the code without changing the
-    /// identity — the grant would carry over to something the user never approved."</summary>
+    /// <summary>Identity is a content hash, not a filename: the hash covers everything loaded, not
+    /// one file. A managed plugin with dependency assemblies is a directory, and hashing only its
+    /// entry point leaves a swapped dependency changing the code without changing the identity — the
+    /// grant would carry over to something the user never approved.</summary>
     [Fact]
     public void ChangingAnyLoadedFileReAsks()
     {
@@ -122,7 +121,7 @@ public class PluginLoadGateTests : IDisposable
         var before = PluginIdentity.HashLoadSet(_dir);
 
         // ONLY THE DEPENDENCY CHANGES — the entry point is untouched. Hashing the entry point alone
-        // would miss this entirely, which is the exact failure the plugin design names.
+        // would miss this entirely.
         File.WriteAllText(dependency, "dependency v2 — a swapped dependency, same entry point");
 
         var after = PluginIdentity.HashLoadSet(_dir);
@@ -131,8 +130,8 @@ public class PluginLoadGateTests : IDisposable
     }
 
     /// <summary>The companion fact: identical bytes hash identically regardless of where the load set
-    /// sits, because a grant names the content, not a path — the plugin design: "A grant names this binary,
-    /// not this path."</summary>
+    /// sits, because a grant names the content, not a path — a grant names this binary, not this
+    /// path.</summary>
     [Fact]
     public void IdenticalContentHashesTheSameFromADifferentDirectory()
     {
@@ -292,9 +291,9 @@ public class PluginLoadGateTests : IDisposable
 
     // ---- Config cannot pre-approve a plugin --------------------------------------------------------
 
-    /// <summary>the plugin design, "Loading is refused mid-turn": "A runtime load always prompts... A
-    /// configuration that could pre-approve an arbitrary binary would dissolve the boundary this
-    /// design rests on." There is no config-shaped input to <see cref="Session.LoadPlugin"/> at all —
+    /// <summary>A runtime load always prompts. A configuration that could pre-approve an arbitrary
+    /// binary would dissolve the boundary this design rests on. There is no config-shaped input to
+    /// <see cref="Session.LoadPlugin"/> at all —
     /// it takes only the running plugin, its manifest and its load-set path — so this test proves the
     /// absence the strongest way available: every load with a gate wired reaches that gate, with no
     /// parameter or flag able to skip it.</summary>
@@ -332,8 +331,8 @@ public class PluginLoadGateTests : IDisposable
         Assert.Empty(session.Plugins.CurrentTools());
     }
 
-    /// <summary>The prompt names origin and declared capability — the plugin design's own example:
-    /// "lsp-rust wants to run a process and read files in this folder." / the plugin's path.</summary>
+    /// <summary>The prompt names origin and declared capability: "lsp-rust wants to run a process
+    /// and read files in this folder." / the plugin's path.</summary>
     [Fact]
     public async Task ThePromptNamesOriginAndDeclaredCapability()
     {
@@ -351,8 +350,7 @@ public class PluginLoadGateTests : IDisposable
     }
 
     /// <summary>Identity, not a filename, is what a stored "Always" rule would key on — the request's
-    /// AlwaysRule is the content hash, matching the plugin design's "a grant names this binary, not this
-    /// path."</summary>
+    /// AlwaysRule is the content hash: a grant names this binary, not this path.</summary>
     [Fact]
     public async Task TheStoredRuleSubjectIsTheContentHashNotThePath()
     {
@@ -394,9 +392,9 @@ public class PluginLoadGateTests : IDisposable
 
     // ---- A plugin's tools are gated like any other -------------------------------------------------
 
-    /// <summary>the plugin design, "The load gate is the only boundary Core can enforce" describes the load
-    /// itself; this proves the OTHER half — once loaded, a plugin's tools still go through the same
-    /// per-call gate every tool does. SessionFactory.Wire wraps the live plugin source INSIDE the
+    /// <summary>The load gate is the only boundary Core can enforce on the plugin itself; this proves
+    /// the OTHER half — once loaded, a plugin's tools still go through the same per-call gate every
+    /// tool does. SessionFactory.Wire wraps the live plugin source INSIDE the
     /// dynamic-tools lambda (SessionFactory.cs ~64-73) specifically so a tool that starts existing
     /// after wiring — which is exactly what a runtime plugin load is — is never handed to the model
     /// ungated. This test exercises that wrap end to end: load a plugin whose tool always asks

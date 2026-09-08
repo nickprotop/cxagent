@@ -41,12 +41,12 @@ internal sealed class LoadedPlugin(IPlugin instance, PluginManifest manifest,
 /// <summary>
 /// What happened to a load attempt.
 ///
-/// <para>A DUPLICATE NAME REFUSES THE WHOLE PLUGIN, never just the colliding tool — see the plugin design,
-/// "Name collisions": a plugin that half-loaded is a plugin whose behaviour nobody can predict from
-/// its manifest. This is deliberately NOT <see cref="Jobs.AgentToolset"/>'s rule, which resolves a
-/// duplicate name last-registration-wins; that is right for one embedder's own tools composed
-/// together and wrong for a plugin, where silently winning a name is exactly what the plugin design
-/// forbids.</para>
+/// <para>A DUPLICATE NAME REFUSES THE WHOLE PLUGIN, never just the colliding tool: a plugin that
+/// half-loaded is a plugin whose behaviour nobody can predict from its manifest. This is
+/// deliberately NOT <see cref="Jobs.AgentToolset"/>'s rule, which resolves a duplicate name
+/// last-registration-wins; that is right for one embedder's own tools composed together and wrong
+/// for a plugin, where silently winning a name it collided with is a collision a user approved
+/// neither instance of.</para>
 /// </summary>
 public abstract record PluginLoadResult
 {
@@ -70,12 +70,12 @@ public abstract record PluginLoadResult
 public sealed record PluginInstructions(string Plugin, IReadOnlyList<string> Tools, string Text);
 
 /// <summary>
-/// The mutable set of tools plugins contribute to one session — the registry the plugin design's whole
-/// design rests on: "a registry that can be mutated at a turn boundary and that refuses collisions,
-/// sitting in the same chain position rather than inside the existing set."
+/// The mutable set of tools plugins contribute to one session: a registry that can be mutated at a
+/// turn boundary and that refuses collisions, sitting in the same chain position rather than inside
+/// the existing set.
 ///
-/// <para>ONE PER SESSION, like <see cref="Jobs.AgentToolset"/> and everything else a plugin touches
-/// — see the plugin design, "Scope: one instance per session".</para>
+/// <para>ONE PER SESSION, like <see cref="Jobs.AgentToolset"/> and everything else a plugin
+/// touches.</para>
 ///
 /// <para><see cref="CurrentTools"/> IS THE SEAM. It is handed to <c>SessionPorts.DynamicTools</c> as
 /// a live delegate, exactly the shape <c>DynamicToolSourceTests</c> already exercises: consulted
@@ -135,9 +135,9 @@ public sealed class PluginRegistry
     /// of wiring already uses for an absent dependency.</para>
     ///
     /// <para><paramref name="log"/> IS NOT A PLUGIN'S OWN <see cref="IPluginLogger"/> — a hung or
-    /// crashed plugin cannot be trusted to relay its own diagnosis, which is the same reasoning
-    /// the plugin design gives for why reaping is Core's obligation rather than the plugin's bookkeeping.
-    /// This is the session's own log line, the same sink <c>Say</c> writes an ordinary notice to.</para>
+    /// crashed plugin cannot be trusted to relay its own diagnosis, which is why reaping is Core's
+    /// obligation rather than the plugin's bookkeeping. This is the session's own log line, the same
+    /// sink <c>Say</c> writes an ordinary notice to.</para>
     /// </summary>
     /// <param name="sessionId">
     /// Whose registry this is, so an unwire reaps only what THIS session's copy of a plugin spawned.
@@ -292,7 +292,7 @@ public sealed class PluginRegistry
 
     /// <summary>
     /// Unwires one plugin: deregister, drain, sever, Stop, reap — in that order, and the order is
-    /// the contract. See the plugin design, "Unwire is one ordered operation".
+    /// the contract.
     ///
     /// <para>DEREGISTER FIRST. Removing the plugin from <see cref="_plugins"/> before anything else
     /// is what makes the drain below finite: a plugin still reachable from <see cref="CurrentTools"/>
@@ -313,15 +313,15 @@ public sealed class PluginRegistry
     ///
     /// <para>REAP KILLS WHATEVER OUTLIVED STOP. A well-behaved plugin's own Stop already exits its
     /// children, so the ordinary case finds nothing left; reap exists for the plugin that did not —
-    /// crashed inside Stop, or is the timed-out case below — and closes the plugin design's stated gap:
-    /// "an orphaned subprocess is the one failure in this feature that outlives the app." Reaping
-    /// here, not only at startup, is what "Unwiring must reap" asks for: a host killed only at
-    /// startup survives for the rest of THIS run if the plugin was merely unwired, not crashed.</para>
+    /// crashed inside Stop, or is the timed-out case below. An orphaned subprocess is the one failure
+    /// in this feature that outlives the app, and reaping here, not only at startup, is what closes
+    /// that gap: a host killed only at startup survives for the rest of THIS run if the plugin was
+    /// merely unwired, not crashed.</para>
     ///
-    /// <para>STOP HAS A TIMEOUT — the plugin design, "Stop has a timeout, and the remedy differs by
-    /// loader". A managed plugin runs in-process, so there is no host to kill when it hangs: the
+    /// <para>STOP HAS A TIMEOUT, and the remedy differs by loader. A managed plugin runs in-process,
+    /// so there is no host to kill when it hangs: the
     /// call is abandoned (its Task is left running rather than awaited further) and the hang is
-    /// logged naming the plugin, exactly as that section specifies. AN ABANDONED STOP CANNOT BE
+    /// logged naming the plugin. AN ABANDONED STOP CANNOT BE
     /// CANCELLED FROM HERE — <paramref name="ct"/> is not passed to it, deliberately: a plugin's
     /// Stop is handed its OWN token (<see cref="IPluginContext.Lifetime"/>) and this method has no
     /// authority to interrupt code it does not control, only to stop waiting for it — which is why
@@ -382,9 +382,9 @@ public sealed class PluginRegistry
     }
 
     /// <summary>
-    /// Unwires every loaded plugin, in no particular order — session close runs this. The plugin design:
-    /// "closing a session is unwiring every plugin it loaded, and a plugin cannot tell the
-    /// difference" from the four-step path above, so this is that path, once per plugin.
+    /// Unwires every loaded plugin, in no particular order — session close runs this. Closing a
+    /// session is unwiring every plugin it loaded, and a plugin cannot tell the difference from the
+    /// four-step path above, so this is that path, once per plugin.
     /// </summary>
     public async Task UnwireAllAsync(CancellationToken ct)
     {

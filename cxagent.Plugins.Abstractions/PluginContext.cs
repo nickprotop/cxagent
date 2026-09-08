@@ -104,10 +104,10 @@ public interface IPluginContext
     /// Registers a process this plugin spawned, so Core can record its pid and reap it — at Stop, at
     /// unwire, and at startup if the previous run never reached either.
     ///
-    /// <para>NOT THE PLUGIN'S OWN BOOKKEEPING. The plugin design, "Lifecycle": a plugin that crashed is a
-    /// plugin that cannot clean up after itself, which is the entire scenario reaping exists for.
-    /// Calling this is not optional for a plugin that spawns a child process — an unregistered child
-    /// is exactly the leak the pid record exists to close.</para>
+    /// <para>NOT THE PLUGIN'S OWN BOOKKEEPING. A plugin that crashed is a plugin that cannot clean up
+    /// after itself, which is the entire scenario reaping exists for. Calling this is not optional
+    /// for a plugin that spawns a child process — an unregistered child is exactly the leak the pid
+    /// record exists to close.</para>
     /// </summary>
     void RegisterChildProcess(int processId);
 }

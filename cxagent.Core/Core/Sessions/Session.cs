@@ -479,8 +479,7 @@ public sealed partial class Session
 
     /// <summary>
     /// Loads a plugin into this session's registry, offering its tools from the next turn boundary
-    /// on — see <see cref="Plugins.PluginRegistry.Load"/> and the plugin design, "Loading is refused
-    /// mid-turn".
+    /// on — see <see cref="Plugins.PluginRegistry.Load"/>.
     ///
     /// <para>REFUSED MID-TURN, not queued, for the SAME reason <see cref="SetMode(WorkingMode)"/>
     /// refuses: the tool list is fixed once a request begins, so a tool cannot appear or vanish
@@ -492,16 +491,16 @@ public sealed partial class Session
     /// <see cref="Plugins.IPlugin"/> from disk — that is a loader's job, not the session's; this
     /// method is what runs once a loader has one in hand.</para>
     ///
-    /// <para>THE LOAD GATE — the plugin design, "The load gate is the only boundary Core can enforce".
-    /// Runs before the collision check, because a plugin the user declined must never be probed for
-    /// name collisions or offered to the model at all — declining is the end of the story, not a
-    /// step toward one. Asked ONLY when <see cref="Services"/> carries a gate: a headless session or
-    /// a test with no gate wired has nothing to ask and nothing to enforce with, matching every other
+    /// <para>THE LOAD GATE — the only boundary Core can enforce on a binary it did not write. Runs
+    /// before the collision check, because a plugin the user declined must never be probed for name
+    /// collisions or offered to the model at all — declining is the end of the story, not a step
+    /// toward one. Asked ONLY when <see cref="Services"/> carries a gate: a headless session or a
+    /// test with no gate wired has nothing to ask and nothing to enforce with, matching every other
     /// "no gate, no prompt" path this session already has (see SessionFactory.Wire's own tools
     /// wrapping). <paramref name="loadSetDirectory"/> feeds <see cref="Plugins.PluginIdentity"/> —
     /// the grant is over the CONTENT, not the path — while the path itself is what the prompt shows,
-    /// because the plugin design's prompt names origin and declared capability and nothing else Core can
-    /// honestly offer.</para>
+    /// because origin and declared capability are the only things about a plugin Core can honestly
+    /// vouch for.</para>
     /// </summary>
     /// <param name="plugin">The running instance, past its own Load call.</param>
     /// <param name="manifest">What it declared it contributes.</param>
@@ -638,8 +637,7 @@ public sealed partial class Session
 
     /// <summary>
     /// Unwires one loaded plugin — cancel (if this plugin's own turn), deregister, drain, sever,
-    /// Stop, reap, in that order — see <see cref="Plugins.PluginRegistry.UnwireAsync"/> and the
-    /// plugin design, "Unwire is one ordered operation".
+    /// Stop, reap, in that order — see <see cref="Plugins.PluginRegistry.UnwireAsync"/>.
     ///
     /// <para>REFUSED MID-TURN — A USER'S TURN — for the same reason loading is: a call already in
     /// flight for one of this plugin's tools would fail for a reason nobody could trace back to a
@@ -775,10 +773,10 @@ public sealed partial class Session
     /// assembly, honouring the disabled gate and <c>--once</c>, and handing an already-loaded plugin
     /// to <see cref="LoadPlugin"/>.
     ///
-    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK, because the plugin design's gate
-    /// is "no process spawned, no tools registered, no load prompt, nothing to select from" — loading
-    /// the assembly first and refusing afterward would already have run arbitrary code the config
-    /// said not to.</para>
+    /// <para>THE DISABLED CHECK IS HERE, AHEAD OF ANYTHING TOUCHING DISK: a disabled plugin means no
+    /// process spawned, no tools registered, no load prompt, nothing to select from — loading the
+    /// assembly first and refusing afterward would already have run arbitrary code the config said
+    /// not to.</para>
     /// </summary>
     private async Task<CommandStatus> RunLoadRequest(string target, string? inlineSettings,
         IReadOnlyDictionary<string, PluginConfig> configured, CancellationToken ct)
@@ -1223,9 +1221,9 @@ public sealed partial class Session
         _ => [],
     };
 
-    /// <summary>Every configured plugin, disabled ones included and marked as such — the plugin design's
-    /// design: hiding a disabled name would make it unreachable and unexplained when the user knows
-    /// they wrote it into config.</summary>
+    /// <summary>Every configured plugin, disabled ones included and marked as such: hiding a disabled
+    /// name would make it unreachable and unexplained when the user knows they wrote it into
+    /// config.</summary>
     private IReadOnlyList<CompletionValue> PluginValues() =>
         Resolution?.Plugins is not { Count: > 0 } configured
             ? []
