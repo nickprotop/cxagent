@@ -574,9 +574,28 @@ currently in force.
 | File | What it is |
 |---|---|
 | `config.json` | This file. `0600`. |
-| `cxagent.db` | The resume buffer — one row per agent, replaced every turn, worthless once a session ends cleanly. Pruned on startup. |
 | `history.db` | Usage history for `/stats`. An archive: append-only, never pruned. `/stats clear` empties it. |
-| `logs/<agent-id>/` | Per-turn context dumps and per-tool output. A sub-agent's logs nest **inside** its parent's directory, so the tree mirrors who spawned whom. |
+| `logs/<agent-id>/` | Everything about one agent: its session, its context, its transcript, and its logs. A sub-agent's directory nests **inside** its parent's, so the tree mirrors who spawned whom. |
 | `CXAGENT.md` | Your global instructions, if you wrote any. |
 
-Deleting `cxagent.db` costs a crash recovery and nothing else. Deleting `history.db` costs `/stats`.
+### A folder is a session
+
+Each agent's directory holds four kinds of thing:
+
+| File | What it is |
+|---|---|
+| `session.json` | The header a listing reads — title, folder, token counts, when it last ran. Small on purpose, so `/sessions` never opens a context. |
+| `context.json` | The conversation. Read only when something actually resumes or wakes it. |
+| `transcript.jsonl` | Scrollback, one line per entry. A line rewritten supersedes the earlier one with the same sequence. |
+| `<job-id>.{log,stdout,stderr}` | Per-tool output, as before. |
+
+Deleting one directory removes that conversation completely — which is the point, since a context holds
+whatever the agent touched: file contents, command output, a token that appeared in a command. The
+directory is `0700`.
+
+Cleanly-ended sessions are swept after 30 days. A session you resumed is kept however old: it is the
+history behind a conversation that is still going. Deleting `history.db` costs `/stats`.
+
+**Upgrading from a version before this?** `cxagent.db` and `transcript.db` are no longer read. They are
+left where they are rather than deleted — remove them if you want the space. An unfinished session from
+the older build is not offered for resume.

@@ -109,6 +109,14 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `todowrite` | Keep a task list across a long job |
 | `ask_user` | Ask the user questions — options with descriptions, several per call |
 | `agent` | Delegate a job to a sub-agent (fan-out mode) |
+| `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
+| `agent_list` | See which sub-agents this session has spawned |
+
+**A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran
+and concluded — stays for the life of the session, and `agent_send` asks it more on that same
+conversation. That is far cheaper than spawning a second agent to cover the ground the first already
+covered, which would have to redo the work to get back to where the first one already was. The three
+tools are offered only to an agent that can spawn, so a sub-agent cannot reach a sibling.
 
 **One name per tool, and no aliases.** Several of these have been renamed — `glob` was
 `list_files`, `grep` was `search_files`, `agent` was `spawn_agent` then `task`, `ask_user` was

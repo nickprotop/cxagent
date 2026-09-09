@@ -224,8 +224,9 @@ outlier is a question about many runs. `capped` is counted apart from `failed` �
 its turn cap did not fail, it ran out of room, which is a fact about the briefing rather than the
 work.
 
-A separate database from resume (`history.db` beside `cxagent.db`) and **never pruned**: the resume
-store is a buffer worth nothing once a session ends cleanly, this is the archive. Recording is
+Separate from session state, which lives in `logs/<agent-id>/` rather than in a database at all — and
+**never pruned**, where a session's own folder is swept 30 days after it ends cleanly. This is the
+archive. Recording is
 best-effort throughout — a locked file costs statistics and never a session.
 
 **Nothing is recorded before this version.** A fresh install says so rather than showing an empty
