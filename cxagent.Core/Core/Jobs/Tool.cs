@@ -59,6 +59,15 @@ public static class Tool
     /// grant it on its own.</summary>
     public const string Agent = "agent";
 
+    /// <summary>
+    /// Ask a sub-agent this session already spawned. Rides on <see cref="Agent"/>'s own gating: an
+    /// agent that cannot spawn has nothing it could have spawned, so it is offered neither of these.
+    /// </summary>
+    public const string AgentSend = "agent_send";
+
+    /// <summary>See which sub-agents this session has spawned. Gated exactly as <see cref="AgentSend"/>.</summary>
+    public const string AgentList = "agent_list";
+
     public const string TodoWrite = "todowrite";
 
     /// <summary>Ask the user. Never available to a sub-agent, whatever a selection says.</summary>
@@ -86,7 +95,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
-        Agent, TodoWrite, AskUser, Skill,
+        Agent, AgentSend, AgentList, TodoWrite, AskUser, Skill,
     };
 
     /// <summary>

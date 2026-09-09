@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using CxAgent.Core.Llm;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Models;
 
 namespace CxAgent.Core.Agents;
@@ -21,15 +22,15 @@ namespace CxAgent.Core.Agents;
 public sealed class AgentReachTools(SubAgentStore store)
 {
     /// <summary>Whether this handles a call by that name.</summary>
-    public bool Claims(string name) => name is "agent_send" or "agent_list";
+    public bool Claims(string name) => name == Tool.AgentSend || name == Tool.AgentList;
 
     /// <summary>Runs one call and answers what the parent's model should read.</summary>
     public async Task<string> InvokeAsync(string toolName, string agentName, string prompt,
         CancellationToken ct) =>
         toolName switch
         {
-            "agent_list" => List(),
-            "agent_send" => await Send(agentName, prompt, ct),
+            Tool.AgentList => List(),
+            Tool.AgentSend => await Send(agentName, prompt, ct),
             _ => $"error: '{toolName}' is not a tool this handles.",
         };
 
@@ -100,7 +101,7 @@ public sealed class AgentReachTools(SubAgentStore store)
     /// </summary>
     public static IReadOnlyList<ToolDefinition> Definitions =>
     [
-        new ToolDefinition("agent_send",
+        new ToolDefinition(Tool.AgentSend,
             "Ask a sub-agent you already spawned for more. It REMEMBERS its own work — everything it "
             + "read, ran and concluded — so ask for what is still needed rather than restating what "
             + "it was originally told. Far cheaper than spawning a second agent over the same ground.",
@@ -122,7 +123,7 @@ public sealed class AgentReachTools(SubAgentStore store)
                 }
                 """).RootElement),
 
-        new ToolDefinition("agent_list",
+        new ToolDefinition(Tool.AgentList,
             "The sub-agents spawned in this session, by name. Nothing else tells you what you "
             + "spawned once the call falls out of context.",
             JsonDocument.Parse(

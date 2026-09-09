@@ -35,22 +35,22 @@ public class CommandSelectionTests
     }
 
     [Fact]
-    public void TheTwelveNamesInConfigMdAreTheTwelveNamesInCode()
+    public void TheNamesInConfigMdAreTheNamesInCode()
     {
-        // CONFIG.md lists these twelve. A thirteenth built-in, or a rename, must fail here rather
-        // than leave the reference silently short.
+        // CONFIG.md lists exactly these. A new built-in, or a rename, must fail here rather than
+        // leave the reference silently short.
         string[] documented =
         [
             Tool.ReadFile, Tool.WriteFile, Tool.ReplaceInFile, Tool.Glob, Tool.Grep, Tool.RunShell,
-            Tool.WebFetch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent, Tool.Skill,
+            Tool.WebFetch, Tool.HttpRequest, Tool.TodoWrite, Tool.AskUser, Tool.Agent,
+            Tool.AgentSend, Tool.AgentList, Tool.Skill,
         ];
 
-        Assert.Equal(12, documented.Length);
         Assert.All(documented, n => Assert.True(Tool.IsKnown(n), n + " is not a known tool"));
 
         // AND NOTHING ELSE IS KNOWN. Without this the test passes while a new built-in goes
         // undocumented — the failure mode that matters, since the list reads as complete.
-        Assert.Equal(12, Tool.KnownNames.Count);
+        Assert.Equal(documented.Length, Tool.KnownNames.Count);
     }
 
     // --- /skills -------------------------------------------------------------------------
