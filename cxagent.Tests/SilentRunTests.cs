@@ -66,7 +66,7 @@ public class SilentRunTests
     [Fact]
     public void TheEnvelopeExplainsASilentChild()
     {
-        var rendered = SubAgentEnvelope.Render("child-1", SendOutcome.Silent, "");
+        var rendered = SubAgentEnvelope.Render("child-1", null, SendOutcome.Silent, "");
 
         Assert.Contains("no-answer", rendered);
         Assert.Contains("did not come back", rendered);

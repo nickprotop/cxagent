@@ -199,7 +199,10 @@ internal static class SessionFactory
             MaxConcurrentAgents = resolution.MaxConcurrentAgents,
             WorkingDir = session.WorkingDirectory,
         }),
-            agentTypes);
+            agentTypes,
+            // THE SESSION'S STORE, so a child survives a re-wire that replaces the agent that spawned
+            // it. Passing a fresh one here would silently empty the fridge on every model switch.
+            session.SubAgents);
 
         // THE PORTS' OBSERVERS BECOME SUBSCRIBER ONE OF A FAN-OUT, and everything downstream is
         // handed the fan-out instead. Behaviour is identical with one subscriber; what it buys is

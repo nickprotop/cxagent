@@ -25,11 +25,21 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// `general` — so an error can always name something valid.
     /// </param>
     /// <param name="factory">Builds each child, carrying what every child shares.</param>
-    public SubAgentSpawner(SubAgentFactory factory, AgentTypeCatalog? types = null)
+    public SubAgentSpawner(SubAgentFactory factory, AgentTypeCatalog? types = null,
+        SubAgentStore? store = null)
     {
         _factory = factory;
         _types = types ?? new AgentTypeCatalog(new Dictionary<string, Llm.AgentTypeConfig>(), null);
+        // OPTIONAL, so every existing construction site keeps working and a caller with no interest
+        // in reaching children again — a test, a headless run — spawns exactly as it did.
+        _store = store;
     }
+
+    /// <summary>Where finished children are kept, so the model can ask them more. Null means none are.</summary>
+    private readonly SubAgentStore? _store;
+
+    /// <inheritdoc />
+    public SubAgentStore? Store => _store;
 
     public string ToolName => "agent";
 
@@ -106,6 +116,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         they need must appear in your reply.
 
         It cannot spawn sub-agents of its own.
+
+        A sub-agent you spawned is still there, by name, with everything it read and did — ask IT with
+        agent_send rather than spawning another to cover the same ground. Call agent_list to see which
+        ones there are; you will not remember them once the spawn falls out of context.
         """;
 
     /// <summary>
@@ -273,7 +287,14 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         try
         {
             var result = await child.Agent.SendAsync(prompt, ct);
-            return SubAgentEnvelope.Render(child.Agent.Id, result.Outcome,
+
+            // KEPT, BECAUSE THE CONTEXT IS THE AGENT. Everything else this child has is shared or
+            // reconstructible; its conversation is not, and re-running the same parameters later
+            // would rebuild an agent that must REDO the work to reach where this one already is.
+            // The name goes into the envelope so the model can reach it without a listing call.
+            var name = _store?.Keep(child, Read(call, "description"));
+
+            return SubAgentEnvelope.Render(child.Agent.Id, name, result.Outcome,
                 WithPlanOutcome(result.Text, planPath));
         }
         finally

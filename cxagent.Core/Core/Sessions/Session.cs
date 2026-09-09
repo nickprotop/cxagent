@@ -323,6 +323,17 @@ public sealed partial class Session
     /// </summary>
     public Plugins.PluginRegistry Plugins { get; } = new();
 
+    /// <summary>
+    /// The sub-agents spawned in this session, kept so the model can ask them more.
+    ///
+    /// <para>THE SESSION'S, NOT THE AGENT'S, AND THAT IS THE POINT. A re-wire mints a new
+    /// <c>Agent</c> — a model switch, a resume — and children spawned before it would otherwise be
+    /// lost to a change that has nothing to do with them. Held here, they outlive every re-wire and
+    /// die with the conversation that made them, which is the same lifetime <see cref="Plugins"/>
+    /// has and for the same reason.</para>
+    /// </summary>
+    public Agents.SubAgentStore SubAgents { get; } = new();
+
     /// <summary>Public form of <see cref="RefusedWhileBusy"/>, for the manager's resume — which is a
     /// session operation performed from outside because the store belongs to the manager.</summary>
     public bool RefuseIfBusy() => RefusedWhileBusy();

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text;
 using System.Threading;
 using CxAgent.Core.Commands;
@@ -159,6 +160,15 @@ public sealed class Agent
     /// to follow, a tool it was never given.</para>
     /// </summary>
     private readonly ISubAgentSpawner? _spawner;
+
+    /// <summary>
+    /// Reaching sub-agents this agent already spawned. Null when nothing keeps them.
+    ///
+    /// <para>SEPARATE FROM THE SPAWNER because the two answer different questions and a spawner with
+    /// no store is a perfectly good spawner — every existing construction site keeps working, and a
+    /// caller with no interest in reaching children again pays nothing.</para>
+    /// </summary>
+    private readonly AgentReachTools? _reach;
 
     /// <summary>
     /// Loads skill bodies on demand. Built here rather than injected because it needs nothing from
@@ -555,6 +565,20 @@ public sealed class Agent
     private bool CanSpawn => Mode.CanDelegate && _spawner is not null;
 
     /// <summary>
+    /// One string argument, or empty when the call did not carry it.
+    ///
+    /// <para>EMPTY RATHER THAN NULL, because the reach tools answer a missing name with a message
+    /// naming the remedy — a null would have to be re-checked at every call site to say the same
+    /// thing less well.</para>
+    /// </summary>
+    private static string ArgOrEmpty(ToolCall call, string name) =>
+        call.Arguments.ValueKind == JsonValueKind.Object
+        && call.Arguments.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
+
+    /// <summary>
     /// Whether this agent is a CHILD, fixed at construction.
     ///
     /// <para>Not derived from <c>_spawner is null</c>, which would be the tempting shortcut and is
@@ -909,6 +933,9 @@ public sealed class Agent
             : null;
         _mcp = mcp;
         _spawner = spawner;
+        // DERIVED FROM THE SPAWNER, never passed separately: reaching a child is only meaningful for
+        // an agent that could have made one, and a spawner keeping nothing yields no reach tools.
+        _reach = spawner?.Store is { } kept ? new AgentReachTools(kept) : null;
 
         // RESOLVED PER CALL, not captured here: the catalog is read from disk each turn, so a skill
         // added mid-session is loadable from the same turn its description reaches the prompt. A
@@ -1182,6 +1209,13 @@ public sealed class Agent
             // with. Two independent reasons not to offer it, and both matter: a child has no spawner
             // (the no-nesting mechanism), and a single-mode parent has one but is not using it.
             .Concat(CanSpawn ? new[] { _spawner!.Definition } : [])
+            // THE REACH TOOLS, GATED ON THE SAME CanSpawn — which is what keeps a child from waking a
+            // sibling. A child has no spawner, so it has nothing it could have spawned and nothing to
+            // reach; offering these to one would widen "it cannot spawn sub-agents of its own" into
+            // recursion by another name, without any of the reasoning that forbids spawning having
+            // been consulted. And an agent with no kept children still gets them: agent_list saying
+            // "none yet" is an answer, where a missing tool is a capability the model cannot ask about.
+            .Concat(CanSpawn && _reach is not null ? AgentReachTools.Definitions : [])
             // THE LOAD TOOL, only when there is something to load. Offering it with an empty catalog
             // advertises a capability whose every call can only fail, and costs schema bytes in the
             // request for every session that has no skills — the same reasoning that keeps the
@@ -2313,6 +2347,13 @@ public sealed class Agent
             if (Withheld(call.Name) is { } refusal) outcome = refusal;
             else
             outcome = Text(CanSpawn ? await _spawner!.TryInvokeAsync(call, OnChildSpawned, ct, Id, _turnTools) : null)
+                // REACHING A KEPT CHILD, beside the tool that made it. The token is THIS turn's, not
+                // the one that spawned the child — that one died with its turn, and a wake is
+                // governed by whoever asked for it.
+                ?? Text(CanSpawn && _reach is not null && _reach.Claims(call.Name)
+                    ? await _reach.InvokeAsync(call.Name, ArgOrEmpty(call, "name"),
+                        ArgOrEmpty(call, "prompt"), ct)
+                    : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
                 // any name, and a skill load answered by an MCP server would be silently wrong.
                 // Reads _context.Messages — the agent's own conversation, which is what lets it
@@ -2398,7 +2439,8 @@ public sealed class Agent
             // most means the failure arrives in a shape it was never told about.
             outcome = childId is null
                 ? $"error: {ex.Message}"
-                : SubAgentEnvelope.Render(childId, SendOutcome.Failed, ex.Message);
+                // NO NAME: a spawn that threw was never kept, so there is nothing to reach.
+                : SubAgentEnvelope.Render(childId, null, SendOutcome.Failed, ex.Message);
         }
         catch (OperationCanceledException)
         {

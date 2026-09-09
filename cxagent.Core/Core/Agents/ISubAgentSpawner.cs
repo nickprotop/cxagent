@@ -57,6 +57,19 @@ public interface ISubAgentSpawner
     /// </param>
     /// <param name="call">The spawn call the model issued.</param>
     /// <param name="ct">Cancels the child mid-run.</param>
+    /// <summary>
+    /// Where this spawner keeps the children it made, or null when it keeps none.
+    ///
+    /// <para>ON THE INTERFACE RATHER THAN AS ANOTHER <c>Agent</c> CONSTRUCTOR PARAMETER. That list is
+    /// already long, and the store is not an independent thing an agent is given — it belongs to the
+    /// spawner, and an agent that cannot spawn has nothing to reach. Reading it from here keeps the
+    /// two facts in one place instead of letting a caller pair a spawner with somebody else's store.</para>
+    ///
+    /// <para>A DEFAULT MEMBER, so an existing implementation — the test fakes among them — keeps
+    /// compiling and simply keeps nothing.</para>
+    /// </summary>
+    SubAgentStore? Store => null;
+
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
         string? parentAgentId = null, Jobs.ToolSelection? turnTools = null);
 }
@@ -136,7 +149,14 @@ public static class SubAgentEnvelope
         return end > start ? envelope[start..end] : null;
     }
 
-    public static string Render(string childId, SendOutcome outcome, string text)
+    /// <param name="name">
+    /// The handle this child is reachable by, or null when nothing kept it.
+    ///
+    /// <para>IN THE ENVELOPE RATHER THAN LEFT TO A LISTING CALL, because it is what a later
+    /// <c>agent_send</c> takes. Without it the model must call <c>agent_list</c> after every spawn
+    /// just to learn what it created a moment ago.</para>
+    /// </param>
+    public static string Render(string childId, string? name, SendOutcome outcome, string text)
     {
         var state = outcome switch
         {
@@ -170,6 +190,10 @@ public static class SubAgentEnvelope
             _ => "",
         };
 
-        return $"<sub_agent id=\"{childId}\" state=\"{state}\">{note}\n{text}\n</sub_agent>";
+        // THE NAME IS AN ATTRIBUTE, AND ABSENT WHEN NOTHING KEPT THIS CHILD. An empty name= would
+        // read as a handle that happens to be blank, which is a name the model would then try to
+        // send to; omitting the attribute says plainly that there is nothing to reach.
+        var handle = name is null ? "" : $" name=\"{name}\"";
+        return $"<sub_agent id=\"{childId}\"{handle} state=\"{state}\">{note}\n{text}\n</sub_agent>";
     }
 }
