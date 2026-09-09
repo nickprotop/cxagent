@@ -237,6 +237,19 @@ public sealed class PluginRegistry
             foreach (var command in manifest.Commands)
             {
                 var name = "/" + command.Name;
+
+                // THE SAME PLUGIN IN ANOTHER SESSION IS NOT A COLLISION. The command table is the
+                // MANAGER's, shared by every session, so the FIRST session to load a plugin registers
+                // its commands for the whole process — and a second session loading the same plugin
+                // would otherwise find its own commands taken and refuse the whole plugin, tools
+                // included, saying they are "already offered by this session" about a registration
+                // another session made.
+                //
+                // SAFE BECAUSE DISPATCH RESOLVES PER SESSION: RunPluginCommand takes a plugin NAME and
+                // asks the typing session's registry for its own instance, so one registration serves
+                // every session correctly and a session without the plugin loaded is told so.
+                if (commands?.IsOwnedByPlugin(name, manifest.Name) ?? false) continue;
+
                 if ((isCommandNameTaken?.Invoke(name) ?? false)
                     || _plugins.Any(p => p.Manifest.Commands.Any(c => "/" + c.Name == name)))
                     return new PluginLoadResult.CommandNameCollision(command.Name);
@@ -253,10 +266,12 @@ public sealed class PluginRegistry
             // not yet know about.
             if (commands is not null)
                 foreach (var command in manifest.Commands)
-                    commands.Register(
+                    commands.RegisterForPlugin(
+                        manifest.Name,
                         new SessionCommand("/" + command.Name, command.Summary,
                             [.. command.Args.Select(a => new CommandArgument(a.Name, a.Summary))]),
-                        (session, arguments) => RunPluginCommand(loaded, command.Name, session, arguments));
+                        (session, arguments) =>
+                            RunPluginCommand(manifest.Name, command.Name, session, arguments));
 
             return new PluginLoadResult.Loaded();
         }
@@ -281,9 +296,26 @@ public sealed class PluginRegistry
     /// does not implement it would be that loader's own bug, not a caller's mistake to guard
     /// against a second time.</para>
     /// </summary>
-    private static bool RunPluginCommand(LoadedPlugin plugin, string name, Sessions.Session session,
+    private static bool RunPluginCommand(string pluginName, string name, Sessions.Session session,
         string arguments)
     {
+        // THE TYPING SESSION'S INSTANCE, NOT THE LOADING ONE'S. The command table is the MANAGER's,
+        // shared by every session, so a handler that closed over the instance present at
+        // registration would run session one's plugin for a command typed in session two — a
+        // plugin's reach is its own session, and dispatching across sessions breaks that through
+        // the command surface rather than through the client it is written to guard.
+        var plugin = session.Plugins.Find(pluginName);
+        if (plugin is null)
+        {
+            // REGISTERED BUT NOT LOADED HERE. Another session declared this command and this one
+            // never loaded the plugin — or unwired it. Saying so beats a silent no-op, which is
+            // indistinguishable from a command that ran and did nothing.
+            session.SayPluginCommandResult(
+                $"'/{name}' belongs to plugin '{pluginName}', which is not loaded in this session.",
+                PluginCommandOutcome.Refused);
+            return true;
+        }
+
         _ = Task.Run(async () =>
         {
             try
@@ -356,6 +388,21 @@ public sealed class PluginRegistry
     {
         get { lock (_gate) return _plugins.Select(p => p.Manifest.Name).ToList(); }
     }
+    /// <summary>
+    /// This session's copy of a loaded plugin, or null when it holds none by that name.
+    ///
+    /// <para>FOR DISPATCH THAT ARRIVES BY NAME rather than by reference — a plugin command is
+    /// registered in the MANAGER's table, shared by every session, so the handler is given a name
+    /// and resolves the instance from the session actually typing.</para>
+    /// </summary>
+    internal LoadedPlugin? Find(string pluginName)
+    {
+        lock (_gate)
+            return _plugins.FirstOrDefault(p =>
+                string.Equals(p.Manifest.Name, pluginName, StringComparison.Ordinal));
+    }
+
+
 
     /// <summary>
     /// Every plugin name this registry has loaded, including ones since unwired.

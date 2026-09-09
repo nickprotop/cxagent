@@ -48,8 +48,14 @@ public class PluginCommandRegistrationTests : IDisposable
 
         public Task Stop(CancellationToken ct) => Task.CompletedTask;
 
-        public Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct) =>
-            Task.FromResult(new CommandResult($"hello, {arguments}", PluginCommandOutcome.Reported));
+        /// <summary>Which instance actually ran — the point of the cross-session dispatch test.</summary>
+        public bool Ran { get; private set; }
+
+        public Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct)
+        {
+            Ran = true;
+            return Task.FromResult(new CommandResult($"hello, {arguments}", PluginCommandOutcome.Reported));
+        }
     }
 
     private Session Wired(out SessionManager manager)
@@ -58,6 +64,61 @@ public class PluginCommandRegistrationTests : IDisposable
         return manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
+    }
+
+    /// <summary>
+    /// A SECOND SESSION CAN LOAD THE SAME COMMAND-DECLARING PLUGIN.
+    ///
+    /// <para>The command table is the MANAGER's, shared by every session, so the first session to load
+    /// a plugin registers its commands for the whole process. Without knowing who owns a name, the
+    /// second session's load found its OWN commands taken and refused the whole plugin — tools
+    /// included — reporting that they were "already offered by this session" about a registration
+    /// another session made.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheSamePluginLoadsInASecondSession()
+    {
+        var first = Wired(out var manager);
+        using var _ = manager;
+        Assert.Equal(CommandStatus.Changed,
+            await first.LoadPlugin(new CommandPlugin(), ManifestWith("greet"), _dir));
+
+        var second = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        Assert.Equal(CommandStatus.Changed,
+            await second.LoadPlugin(new CommandPlugin(), ManifestWith("greet"), _dir));
+        Assert.Contains("cmd", second.Plugins.LoadedPluginNames);
+    }
+
+    /// <summary>
+    /// AND THE COMMAND RUNS AGAINST THE SESSION THAT TYPED IT, not the one that loaded it first.
+    ///
+    /// <para>One registration serves every session, so the handler is given a plugin NAME and resolves
+    /// the instance from the typing session. A handler closing over the loading session's instance
+    /// would run session one's plugin for a command typed in session two — a plugin's reach is its own
+    /// session, and dispatching across sessions breaks that through the command surface.</para>
+    /// </summary>
+    [Fact]
+    public async Task ACommandRunsAgainstTheSessionThatTypedIt()
+    {
+        var first = Wired(out var manager);
+        using var _ = manager;
+        var firstPlugin = new CommandPlugin();
+        await first.LoadPlugin(firstPlugin, ManifestWith("greet"), _dir);
+
+        var second = manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+        var secondPlugin = new CommandPlugin();
+        await second.LoadPlugin(secondPlugin, ManifestWith("greet"), _dir);
+
+        manager.Commands.Run(second, "/greet world");
+        await Task.Delay(200);
+
+        Assert.True(secondPlugin.Ran, "the typing session's own instance should have run it");
+        Assert.False(firstPlugin.Ran, "the loading session's instance must not run another's command");
     }
 
     [Fact]

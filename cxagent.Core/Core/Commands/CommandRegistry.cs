@@ -31,7 +31,16 @@ public sealed class CommandRegistry
     private readonly Dictionary<string, Entry> _byName = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A declaration and the code behind it.</summary>
-    private readonly record struct Entry(SessionCommand Command, CommandHandler Handle);
+    /// <param name="Owner">
+    /// The plugin that declared this command, or null for one the app or Core registered.
+    ///
+    /// <para>REMEMBERED SO A SECOND SESSION CAN LOAD THE SAME PLUGIN. This table is the manager's,
+    /// shared by every session, so the first session to load a plugin registers its commands for the
+    /// whole process; without knowing who owns a name, the second session's load sees its own
+    /// commands taken and refuses the whole plugin.</para>
+    /// </param>
+    private readonly record struct Entry(SessionCommand Command, CommandHandler Handle,
+                                         string? Owner = null);
 
     /// <summary>
     /// Adds a command, replacing any earlier one of the same name.
@@ -43,6 +52,10 @@ public sealed class CommandRegistry
     public void Register(SessionCommand command, CommandHandler handle) =>
         _byName[command.Name] = new Entry(command, handle);
 
+    /// <summary>Adds a command a PLUGIN declared, remembering which one — see <see cref="Entry.Owner"/>.</summary>
+    public void RegisterForPlugin(string plugin, SessionCommand command, CommandHandler handle) =>
+        _byName[command.Name] = new Entry(command, handle, plugin);
+
     /// <summary>
     /// Whether a command of this name is currently registered — a plugin's collision check, which
     /// asks about the same table <see cref="Register"/> writes rather than <c>SessionCommands.All</c>,
@@ -50,6 +63,16 @@ public sealed class CommandRegistry
     /// map, a quit) is exactly as taken as one that does.
     /// </summary>
     public bool IsRegistered(string name) => _byName.ContainsKey(name);
+
+    /// <summary>Whether <paramref name="name"/> is already registered BY <paramref name="plugin"/>.</summary>
+    /// <remarks>
+    /// A NAME THIS PLUGIN ALREADY OWNS IS NOT A COLLISION FOR IT. Dispatch resolves the instance from
+    /// the session that typed the command, so one registration serves every session that loads the
+    /// plugin — and a session that has not loaded it is told so rather than running another's.
+    /// </remarks>
+    public bool IsOwnedByPlugin(string name, string plugin) =>
+        _byName.TryGetValue(name, out var entry)
+        && string.Equals(entry.Owner, plugin, StringComparison.Ordinal);
 
     /// <summary>
     /// Removes a command, for a plugin's unwire. <see cref="Register"/> REPLACES rather than
