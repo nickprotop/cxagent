@@ -69,13 +69,39 @@ public sealed class AgentReachTools(SubAgentStore store)
             return $"error: no sub-agent named '{agentName}' in this session. "
                  + "Call agent_list to see which ones there are.";
 
-        // REFUSED RATHER THAN QUEUED — see SubAgentStore.TryBeginSend. A blocked tool call cannot say
-        // why it is waiting; a refusal can, and the model can act on it now.
+        // A RUNNING CHILD IS SENT TO, NOT REFUSED — and the state decides the shape of the answer, so
+        // the model never has to be told which mode it is in. It observes: an idle child answers, a
+        // busy one confirms delivery, and the two returns do not look alike.
+        //
+        // THE 54 SECONDS ARE THE ARGUMENT. A live drive measured that for one file read, and for all
+        // of it the parent could only wait — including when it had just learned something the child
+        // needed. Spawning a replacement to carry one correction throws away everything the first
+        // one already knows, which is the opposite of what keeping its context is for.
         if (!store.TryBeginSend(agentName))
-            return $"error: '{agentName}' is busy with another request. Try again once it answers.";
+        {
+            if (!stored.Agent.Agent.Mailbox.TryEnqueue(prompt, out var full))
+                return $"error: could not reach '{agentName}' — {full}";
+
+            // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call
+            // this again expecting a reply, which is the loop this exists to prevent.
+            return $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. "
+                 + "It will not answer here; ask agent_send again later, or read its final report.";
+        }
 
         try
         {
+            // ANYTHING WAITING GOES FIRST. A message queued while this child was running, on a lap it
+            // never took, would otherwise arrive after a prompt that was sent later — and two
+            // corrections read in the wrong order are worse than one arriving late.
+            //
+            // THIS IS ALSO WHY NOTHING IS EVER STRANDED. A mailbox can only be filled while a loop is
+            // running to drain it; a child that finished without draining is IDLE, and idle is this
+            // path, which empties it before appending. The state that would lose a message is the
+            // state that delivers it.
+            foreach (var waiting in stored.Agent.Agent.Mailbox.Drain())
+                stored.Agent.Agent.Context.Messages.Add(
+                    new ChatMessage { Role = "user", Content = waiting });
+
             // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child died
             // with the turn that called `agent`; a wake is governed by the turn that ASKED, so Escape
             // cancels it like any other tool call.
@@ -85,7 +111,7 @@ public sealed class AgentReachTools(SubAgentStore store)
         finally
         {
             // RELEASED WHATEVER HAPPENED. A throw that left the claim set would make this agent
-            // permanently unreachable, with the refusal above as the only symptom.
+            // permanently unreachable, with a delivery confirmation as the only symptom.
             store.EndSend(agentName);
         }
     }
@@ -104,7 +130,10 @@ public sealed class AgentReachTools(SubAgentStore store)
         new ToolDefinition(Tool.AgentSend,
             "Ask a sub-agent you already spawned for more. It REMEMBERS its own work — everything it "
             + "read, ran and concluded — so ask for what is still needed rather than restating what "
-            + "it was originally told. Far cheaper than spawning a second agent over the same ground.",
+            + "it was originally told. Far cheaper than spawning a second agent over the same ground. "
+            + "Works while it is still running: a message sent to a busy agent reaches it on its next "
+            + "turn, so tell it as soon as you know rather than waiting for it to finish and "
+            + "re-spawning. That call confirms delivery instead of answering.",
             JsonDocument.Parse(
                 """
                 {

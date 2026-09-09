@@ -95,6 +95,88 @@ public class SubAgentFridgeTests
             m => m.Content.Contains("look at the parser"));
     }
 
+    /// <summary>
+    /// A SEND TO A RUNNING CHILD IS DELIVERED, NOT REFUSED — and says so instead of answering, so
+    /// the model can tell the two apart without being told which mode it is in.
+    /// </summary>
+    [Fact]
+    public async Task A_send_to_a_busy_child_confirms_delivery_rather_than_answering()
+    {
+        var store = new SubAgentStore();
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("done")), null, store);
+        await spawner.TryInvokeAsync(Spawn("check the parser", "look"),
+            onChild: null, CancellationToken.None);
+        // Claim it, as a send in flight would.
+        Assert.True(store.TryBeginSend("check-the-parser"));
+
+        var answer = await new AgentReachTools(store).InvokeAsync(
+            "agent_send", "check-the-parser", "the schema changed", CancellationToken.None);
+
+        Assert.Contains("delivered", answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("next turn", answer, StringComparison.OrdinalIgnoreCase);
+        // AND IT NAMES WHERE THE ANSWER IS NOT, or the model calls again expecting a reply.
+        Assert.Contains("will not answer here", answer, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// NOTHING IS STRANDED. A child that finished without draining is IDLE, and idle is the
+    /// synchronous path — which empties the mailbox before appending, so the queued message is
+    /// delivered by the very next call rather than needing a policy of its own.
+    /// </summary>
+    [Fact]
+    public async Task A_message_queued_while_busy_is_delivered_by_the_next_idle_send()
+    {
+        var store = new SubAgentStore();
+        var spawner = new SubAgentSpawner(
+            FactoryOver(Answering("done", "acknowledged")), null, store);
+        await spawner.TryInvokeAsync(Spawn("check the parser", "look"),
+            onChild: null, CancellationToken.None);
+
+        // Queued while busy, and the child never laps again.
+        Assert.True(store.TryBeginSend("check-the-parser"));
+        var reach = new AgentReachTools(store);
+        await reach.InvokeAsync("agent_send", "check-the-parser", "the schema changed",
+            CancellationToken.None);
+        store.EndSend("check-the-parser");
+
+        await reach.InvokeAsync("agent_send", "check-the-parser", "anything else?",
+            CancellationToken.None);
+
+        // BOTH reached its context, the queued one first.
+        var kept = store.Find("check-the-parser")!;
+        var texts = kept.Agent.Agent.Context.Messages.Select(m => m.Content).ToList();
+        var queued = texts.FindIndex(t => t.Contains("the schema changed"));
+        var later = texts.FindIndex(t => t.Contains("anything else?"));
+        Assert.True(queued >= 0, "the queued message never arrived");
+        Assert.True(queued < later, "the queued message arrived after the later one");
+    }
+
+    /// <summary>
+    /// THE DRAIN ITSELF: a message left in the mailbox is in front of the model on the agent's next
+    /// request, not merely in its context list. MockLlmProvider records what it was sent, which is
+    /// the only place that distinction is visible.
+    /// </summary>
+    [Fact]
+    public async Task A_mailbox_message_reaches_the_model_on_the_agents_next_request()
+    {
+        var provider = Answering("first", "second");
+        var store = new SubAgentStore();
+        var spawner = new SubAgentSpawner(FactoryOver(provider), null, store);
+        await spawner.TryInvokeAsync(Spawn("worker", "do the thing"),
+            onChild: null, CancellationToken.None);
+
+        // Left in the mailbox as a mid-run send would leave it, then the agent takes another lap.
+        var kept = store.Find("worker")!;
+        kept.Agent.Agent.Mailbox.TryEnqueue("STOP: the schema changed", out _);
+
+        await new AgentReachTools(store).InvokeAsync("agent_send", "worker", "carry on",
+            CancellationToken.None);
+
+        Assert.NotNull(provider.LastMessages);
+        Assert.Contains(provider.LastMessages!,
+            m => m.Content.Contains("STOP: the schema changed"));
+    }
+
     [Fact]
     public async Task Listing_names_a_child_that_was_spawned()
     {

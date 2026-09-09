@@ -171,6 +171,14 @@ public sealed class Agent
     private readonly AgentReachTools? _reach;
 
     /// <summary>
+    /// Messages sent to this agent while it was mid-task. Drained at the top of each lap.
+    ///
+    /// <para>ALWAYS PRESENT, never null: an empty drain costs nothing, and a nullable one would put
+    /// a check in the hot path of every turn for a field that is cheap to simply have.</para>
+    /// </summary>
+    public AgentMailbox Mailbox { get; } = new();
+
+    /// <summary>
     /// Loads skill bodies on demand. Built here rather than injected because it needs nothing from
     /// the outside: its catalog comes from the same per-turn discovery the prompt uses, so parent and
     /// child each get their own without anything being threaded through the factory.
@@ -1328,6 +1336,21 @@ public sealed class Agent
             // loop has to reach the model on the following turn — which is precisely when the model
             // is acting on it.
             PlaceTaskList();
+
+            // MESSAGES THAT ARRIVED WHILE THIS TURN WAS RUNNING, delivered here for the reason
+            // PlaceTaskList runs here: something reached this agent DURING the loop and has to be in
+            // front of the model on the following turn, which is precisely when it can still act on
+            // it. Sent from another thread, so it waits in a mailbox rather than being appended
+            // there — the live list is being rewritten by this loop and by the compressor.
+            //
+            // AFTER MaybeCompressAsync, not before. Compaction rewrites the list wholesale, and a
+            // message placed ahead of it can be cut or left stranded mid-conversation when the whole
+            // point is that it is the newest thing the model sees.
+            //
+            // AND AFTER THE CANCELLATION CHECK, so a turn already cancelled delivers nothing.
+            if (Mailbox.Drain() is { Count: > 0 } arrived)
+                foreach (var arrival in arrived)
+                    messages.Add(new ChatMessage { Role = "user", Content = arrival });
 
             // AT THE CAP, ASK FOR A HANDOFF rather than discarding the run. Hitting the cap used to
             // print one line and throw away everything the model had learned — the user was left
