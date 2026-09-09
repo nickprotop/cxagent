@@ -40,10 +40,54 @@ public sealed class FolderTranscriptStore(AppPaths paths)
     /// <summary>Tells the store which agent's folder a session's entries belong in.</summary>
     public void BindAgent(string sessionId, string agentId) => _agentOf[sessionId] = agentId;
 
-    private SessionFolder? FolderFor(string sessionId) =>
-        _agentOf.TryGetValue(sessionId, out var agentId)
-            ? new SessionFolder(paths, agentId)
-            : null;
+    /// <summary>
+    /// Which folder this session's entries live in.
+    ///
+    /// <para>FALLS BACK TO A SEARCH WHEN NOTHING BOUND IT, and that fallback is what makes replay
+    /// work across a restart. A fresh process has no bindings — they are made by the live session
+    /// that is writing — so a client reattaching to a conversation from yesterday would otherwise
+    /// find every window empty, which reads as a session that said nothing rather than one nobody
+    /// looked up.</para>
+    ///
+    /// <para>THE SEARCH IS BY READ, NOT BY NAME, because the session id is inside the lines rather
+    /// than in the path — the deliberate consequence of naming folders for the agent. It runs once
+    /// per session and the answer is cached, so a reattach pays it and nothing else does.</para>
+    /// </summary>
+    private SessionFolder? FolderFor(string sessionId)
+    {
+        if (_agentOf.TryGetValue(sessionId, out var bound))
+            return new SessionFolder(paths, bound);
+
+        foreach (var id in SessionFolder.AgentIdsUnder(paths))
+        {
+            var candidate = new SessionFolder(paths, id);
+            if (!File.Exists(candidate.TranscriptPath)) continue;
+            if (!Mentions(candidate.TranscriptPath, sessionId)) continue;
+            _agentOf[sessionId] = id;
+            return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>Whether this file holds any line for that session.</summary>
+    private static bool Mentions(string path, string sessionId)
+    {
+        try
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    if (JsonSerializer.Deserialize<TranscriptLine>(line, Json)?.SessionId
+                        == sessionId) return true;
+                }
+                catch (JsonException) { }
+            }
+        }
+        catch (Exception) { }
+        return false;
+    }
 
     /// <summary>
     /// Appends one entry. A seq written again supersedes what came before it.
@@ -158,3 +202,11 @@ public sealed class FolderTranscriptStore(AppPaths paths)
         catch (Exception) { }
     }
 }
+/// <summary>One entry of a session's transcript.</summary>
+/// <param name="Seq">Its place in the session's order — assigned by the writer, not by arrival.</param>
+/// <param name="At">When it was recorded.</param>
+/// <param name="Kind">What it is: a message, a tool row, a system note.</param>
+/// <param name="Role">Whose message, when it is one.</param>
+/// <param name="Body">The text as it was shown, already coalesced.</param>
+public sealed record TranscriptEntry(
+    long Seq, DateTimeOffset At, string Kind, string? Role, string? Body);

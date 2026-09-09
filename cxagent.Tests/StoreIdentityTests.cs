@@ -75,7 +75,13 @@ public class StoreIdentityTests : IDisposable
     [Fact]
     public void TranscriptRowsAreKeyedByTheSession()
     {
-        var store = new TranscriptStore(new AppPaths(_dir));
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        var store = new FolderTranscriptStore(paths);
+        // BOUND TO AN AGENT WHOSE ID IS NOT THE SESSION'S, which is the whole point: the file lives
+        // under the agent and the entries are still the session's, so asking for the agent's id
+        // finds nothing.
+        store.BindAgent("session-1", "agent-1");
 
         store.Append("session-1", 1, "user", "User", "hello");
 

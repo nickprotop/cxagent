@@ -16,12 +16,12 @@ public class LoadByUidFolderTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "cxagent-uidscope-" + Guid.NewGuid().ToString("N"));
 
-    private readonly SqliteSessionStore _store;
+    private readonly FolderSessionStore _store;
 
     public LoadByUidFolderTests()
     {
         Directory.CreateDirectory(_dir);
-        _store = new SqliteSessionStore(new AppPaths(_dir));
+        _store = new FolderSessionStore(new AppPaths(_dir));
 
         _store.SaveTurn("01AAAAAAAAAAAAAAAAAAAAAAAA", [], 1, 1, workingDir: "/work/alpha");
         _store.SaveTurn("01BBBBBBBBBBBBBBBBBBBBBBBB", [], 1, 1, workingDir: "/work/beta");

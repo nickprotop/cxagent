@@ -15,12 +15,18 @@ public class TranscriptStoreTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "cxagent-transcript-" + Guid.NewGuid().ToString("N"));
 
-    private readonly TranscriptStore _store;
+    private readonly FolderTranscriptStore _store;
 
     public TranscriptStoreTests()
     {
         Directory.CreateDirectory(_dir);
-        _store = new TranscriptStore(new AppPaths(_dir));
+        var paths = new AppPaths(_dir);
+        paths.EnsureCreated();
+        _store = new FolderTranscriptStore(paths);
+        // EACH SESSION IS BOUND TO ITS OWN AGENT FOLDER, as the composition root does at ReplaceHost.
+        // A store writes into the AGENT's directory while entries key on the SESSION, so a session it
+        // was never told about has nowhere to put anything and drops it silently.
+        foreach (var s in new[] { "s1", "s2" }) _store.BindAgent(s, "agent-" + s);
     }
 
     public void Dispose()
@@ -122,7 +128,7 @@ public class TranscriptStoreTests : IDisposable
     {
         _store.Append("s1", 1, "message", "user", "remembered");
 
-        var reopened = new TranscriptStore(new AppPaths(_dir));
+        var reopened = new FolderTranscriptStore(new AppPaths(_dir));
 
         Assert.Equal("remembered", Assert.Single(reopened.Window("s1")).Body);
     }

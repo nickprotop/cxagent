@@ -51,7 +51,7 @@ public class ResumeMovesFolderTests : IDisposable
     [Fact]
     public void ASnapshotCarriesTheFolderItWasSavedIn()
     {
-        var store = new SqliteSessionStore(new AppPaths(_root));
+        var store = new FolderSessionStore(new AppPaths(_root));
         store.SaveTurn("01THERE0000000000000000000", [], 1, 1, workingDir: _there);
 
         var found = store.LoadByUid("01THERE0000000000000000000");

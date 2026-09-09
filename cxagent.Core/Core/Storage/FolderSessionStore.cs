@@ -156,8 +156,16 @@ public sealed class FolderSessionStore(AppPaths paths)
     /// </summary>
     public UidLookup LoadByUid(string prefix, string? withinFolder = null)
     {
+        // EITHER END, because a ULID starts with a timestamp. Sessions begun in the same few minutes
+        // share their opening characters, so the listing shows the TAIL — the random half — and a
+        // leading match alone could never resolve what a user reads off the screen. A full uid pasted
+        // from --sessions or an exit hint still matches from the front.
+        //
+        // AND CASE-INSENSITIVE, because a ULID is stored uppercase and a user retypes what they see
+        // in whatever case their fingers produce.
         var matches = Headers()
-            .Where(h => h.AgentId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Where(h => h.AgentId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                     || h.AgentId.EndsWith(prefix, StringComparison.OrdinalIgnoreCase))
             .Where(h => withinFolder is null || PathsMatch(h.WorkingDir, withinFolder))
             .Select(h => h.AgentId)
             .ToList();
@@ -200,7 +208,11 @@ public sealed class FolderSessionStore(AppPaths paths)
         {
             var folder = new SessionFolder(paths, id);
             if (SessionHeader.Read(folder) is not { } h) continue;
-            if (h.State == SessionEndState.Running) continue;
+
+            // EXITED ONLY, NEVER SUPERSEDED. A session someone continued is the history behind a
+            // conversation that is still going — deleting it would cut the past off a live thread.
+            // Running is likewise untouched: it has not ended at all.
+            if (h.State != SessionEndState.Exited) continue;
             if (h.UpdatedAt > cutoff) continue;
             try
             {
@@ -238,3 +250,60 @@ public sealed class FolderSessionStore(AppPaths paths)
         return text.Length <= 80 ? text : text[..80].TrimEnd() + "…";
     }
 }
+/// <param name="Title">The first user message, clipped, or null for a session that never got one.</param>
+/// <param name="Finished">
+/// Ended cleanly, OR superseded by a resume. Two meanings in one flag: see the resume path, which
+/// retires the row it restored so one conversation cannot be accepted twice.
+/// </param>
+/// <param name="WorkingDir">Which project the session ran in.</param>
+/// <param name="InputTokens">Tokens sent across the session.</param>
+/// <param name="OutputTokens">Tokens generated across the session.</param>
+/// <param name="UpdatedAt">When it last did anything — what orders a resume list.</param>
+public sealed record SessionInfo(
+    string Uid,
+    string? Title,
+    string? WorkingDir,
+    int InputTokens,
+    int OutputTokens,
+    bool Finished,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>What a uid lookup found. Ambiguity is REPORTED, never resolved to the newest match —
+/// silently picking is how someone restores the wrong conversation and does not notice.</summary>
+public sealed record UidLookup(SessionSnapshot? Session, IReadOnlyList<string> Ambiguous)
+{
+    public bool IsAmbiguous => Ambiguous.Count > 1;
+}
+
+/// <param name="Edits">
+    /// The session's edit mode, so resume does not silently widen it. NULLABLE because a row from a
+    /// database predating the column genuinely has no mode, and that absence must stay
+    /// distinguishable from a recorded choice — see <c>LoadLatestUnfinished</c> for how it resolves.
+    /// </param>
+/// <param name="AgentId">The session's own id.</param>
+/// <param name="Context">The restored conversation.</param>
+/// <param name="InputTokens">Tokens the session had sent when saved.</param>
+/// <param name="OutputTokens">Tokens it had generated.</param>
+/// <param name="UpdatedAt">When it was last written.</param>
+/// <param name="WorkingDir">
+/// The folder the conversation was working in, or null for a row written before the column
+/// existed.
+///
+/// <para>CARRIED SO A RESUME CAN GO THERE. The column was always stored — it is what scopes the
+/// listing — but the snapshot dropped it, so resuming a conversation from another project left
+/// the session working in the folder it was already in: the model remembered one project while
+/// its tools acted on another.</para>
+///
+/// <para>NULL IS NOT A FOLDER. An older row says nothing about where it ran, and guessing is
+/// worse than staying put — a resume that silently re-scoped to the wrong project would change
+/// which files a turn may touch.</para>
+/// </param>
+public sealed record SessionSnapshot(
+    string AgentId,
+    IReadOnlyList<ChatMessage> Context,
+    int InputTokens,
+    int OutputTokens,
+    DateTimeOffset UpdatedAt,
+    EditMode? Edits = null,
+
+    string? WorkingDir = null);

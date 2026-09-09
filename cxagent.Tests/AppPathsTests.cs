@@ -74,7 +74,6 @@ public class AppPathsTests
         {
             var paths = new AppPaths(tmp);
             Assert.Equal(tmp, paths.ConfigDir);
-            Assert.Equal(Path.Combine(tmp, "cxagent.db"), paths.DatabasePath);
             Assert.Equal(Path.Combine(tmp, "logs"), paths.LogsDir);
 
             paths.EnsureCreated();
@@ -92,6 +91,6 @@ public class AppPathsTests
     {
         var paths = new AppPaths();
         Assert.Contains("cxagent", paths.ConfigDir);
-        Assert.EndsWith("cxagent.db", paths.DatabasePath);
+        Assert.EndsWith("logs", paths.LogsDir);
     }
 }

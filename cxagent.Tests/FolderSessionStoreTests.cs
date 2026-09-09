@@ -140,6 +140,55 @@ public class FolderSessionStoreTests : IDisposable
         Assert.NotNull(_store.LoadById("kept"));
     }
 
+    /// <summary>
+    /// A SESSION WITH NO WORKING DIRECTORY IS NEVER OFFERED for a folder. It could be from anywhere,
+    /// and the cost of guessing is restoring a stranger's context into this project.
+    /// </summary>
+    [Fact]
+    public void A_session_with_no_folder_is_never_offered_to_one()
+    {
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("nowhere", Talk("adrift"), 1, 1));
+
+        Assert.Null(_store.LoadLatestUnfinished("/projects/alpha"));
+        Assert.Empty(_store.List("/projects/alpha"));
+    }
+
+    /// <summary>
+    /// SUPERSEDED IS KEPT HOWEVER OLD. It is the history behind a conversation that is still going;
+    /// deleting it would cut the past off a live thread. Only a cleanly-EXITED session is swept.
+    /// </summary>
+    [Fact]
+    public void Pruning_keeps_a_superseded_session_however_old()
+    {
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn("continued", Talk("history"), 1, 1));
+        _store.MarkSuperseded("continued");
+        var folder = new SessionFolder(_paths, "continued");
+        var header = SessionHeader.Read(folder)!;
+        SessionHeader.Write(folder, header with { UpdatedAt = DateTimeOffset.UtcNow.AddDays(-900) });
+
+        _store.Prune(TimeSpan.FromDays(30));
+
+        Assert.NotNull(_store.LoadById("continued"));
+    }
+
+    /// <summary>
+    /// FOUND BY ITS TAIL, which is the form the listing prints. A ULID begins with a timestamp, so
+    /// sessions minutes apart share their leading characters — abbreviating from the front, the git
+    /// habit, is exactly wrong here. The random half is at the end.
+    /// </summary>
+    [Fact]
+    public void A_session_is_found_by_the_tail_the_listing_shows()
+    {
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn(
+            "01KZXC5H9QXNND4VH6W0GR07R2", Talk("one"), 1, 1));
+        _store.SaveTurn(new FolderSessionStore.ResumeTurn(
+            "01KZXC96Z5CSTJC6C9QF7WVD8H", Talk("two"), 1, 1));
+
+        Assert.True(_store.LoadByUid("01KZXC").IsAmbiguous);
+        Assert.Equal("01KZXC5H9QXNND4VH6W0GR07R2", _store.LoadByUid("GR07R2").Session!.AgentId);
+        Assert.Equal("01KZXC96Z5CSTJC6C9QF7WVD8H", _store.LoadByUid("wvd8h").Session!.AgentId);
+    }
+
     [Fact]
     public void A_directory_with_no_readable_header_is_never_swept()
     {

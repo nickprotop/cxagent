@@ -10,7 +10,7 @@ namespace CxAgent.Tests;
 /// TWO SESSIONS, ONE PROCESS, TWO FOLDERS — the property the whole isolation effort exists for.
 ///
 /// <para>The stores are deliberately NOT split per session: every one of them is already keyed or
-/// scoped so that sharing is safe. SqliteSessionStore and UsageHistoryStore key by agent id and run
+/// scoped so that sharing is safe. FolderSessionStore and UsageHistoryStore key by agent id and run
 /// in WAL with a busy timeout; PermissionRulesStore scopes by folder and merges another writer's
 /// newer rules; LogFileManager is immutable and nests by agent ancestry. Splitting them would break
 /// features that depend on the sharing — /stats spanning sessions, a trust decision surviving a
@@ -101,7 +101,7 @@ public class TwoSessionsTests : IDisposable
     [Fact]
     public void TheResumeStore_SeparatesSessionsByFolder()
     {
-        var store = new SqliteSessionStore(Paths());
+        var store = new FolderSessionStore(Paths());
 
         store.SaveTurn("agent-a", [], 0, 0, _a);
         store.SaveTurn("agent-b", [], 0, 0, _b);

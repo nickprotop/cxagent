@@ -7,7 +7,6 @@ namespace CxAgent.Core.Storage;
 public class AppPaths
 {
     public string ConfigDir { get; }
-    public string DatabasePath => Path.Combine(ConfigDir, "cxagent.db");
 
     /// <summary>
     /// Usage history — a SEPARATE file from the resume database, deliberately.
@@ -21,21 +20,22 @@ public class AppPaths
     public string HistoryPath => Path.Combine(ConfigDir, "history.db");
 
     /// <summary>
-    /// The transcript store: what each session's front end was SHOWN, so a client attaching later
-    /// can be shown the same thing.
+    /// Where every agent's own directory lives — logs, and now its session too.
     ///
-    /// <para>A FOURTH FILE, AND DELIBERATELY NOT THE ARCHIVE. <see cref="HistoryPath"/> holds
-    /// measurements — how long a call took, how many characters came back — and its own comment
-    /// calls it the place a question like "is planner worth spawning" gets answered. Tool arguments
-    /// and results are neither measurements nor safe there: they carry whatever the agent touched,
-    /// including a token in a command or a key in a file, and that store is append-only and never
-    /// rewritten.</para>
+    /// <para>A FOLDER IS A SESSION. <c>logs/&lt;agent-id&gt;/</c> holds that agent's
+    /// <c>session.json</c>, <c>context.json</c> and <c>transcript.jsonl</c> beside its diagnostics,
+    /// so deleting a conversation is one removal that provably takes all of it — where several
+    /// coordinated deletes across databases leave an invisible orphan when one is missed. It matters
+    /// here because a context carries whatever the agent touched: file contents, command output, a
+    /// token that appeared in a command.</para>
     ///
-    /// <para>SO THIS ONE IS DISPOSABLE. It exists to replay a conversation to a front end, it is
-    /// deleted with its session, and losing it costs nothing but scrollback.</para>
+    /// <para>AND THIS DIRECTORY IS ALREADY 0700, which is the posture that content needs and which a
+    /// separate database would have had to be given on its own.</para>
+    ///
+    /// <para>USAGE HISTORY DOES NOT LIVE HERE, deliberately — see <see cref="HistoryPath"/>. Its
+    /// whole purpose is the question spanning MANY sessions, which a per-session folder cannot
+    /// answer and which breaks the moment one is deleted.</para>
     /// </summary>
-    public string TranscriptPath => Path.Combine(ConfigDir, "transcript.db");
-
     public string LogsDir => Path.Combine(ConfigDir, "logs");
 
     public AppPaths(string? overrideDir = null)

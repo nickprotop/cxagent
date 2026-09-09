@@ -204,7 +204,11 @@ public class TranscriptRecorderTests : IDisposable
     {
         _ = Recorder();
 
-        Assert.False(File.Exists(new AppPaths(_dir).TranscriptPath));
+        // NOTHING UNDER logs/ EITHER: a recorder that has been handed no entry has no folder to
+        // make, and creating one on construction would leave an empty directory per wire.
+        var logs = new AppPaths(_dir).LogsDir;
+        Assert.True(!Directory.Exists(logs) || Directory.GetFiles(logs, "transcript.jsonl",
+            SearchOption.AllDirectories).Length == 0);
     }
 }
 
