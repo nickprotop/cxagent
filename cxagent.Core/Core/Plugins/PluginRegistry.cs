@@ -321,7 +321,20 @@ public sealed class PluginRegistry
             try
             {
                 var handler = (IPluginCommandHandler)plugin.Instance;
-                var result = await handler.RunCommand(name, arguments, CancellationToken.None);
+
+                // THE PLUGIN'S OWN LIFETIME, NOT A FRESH None. RunCommand's doc promises a token
+                // "cancelled if the session ends", and Lifetime is the token that keeps that
+                // promise: sever cancels it before Stop is awaited, so a command still running when
+                // its session unwires is told, rather than running on against a severed client.
+                //
+                // NOT A TURN'S TOKEN, though the doc's "or the user interrupts" reads that way. A
+                // command is dispatched outside the turn loop and there is no turn scope to borrow
+                // here; Escape cancels the model's work, not a command the user typed themselves.
+                // PATTERN-MATCHED RATHER THAN A WIDER FIELD: LoadedPlugin.Context is IDisposable
+                // because disposing is all the registry does with it, and an embedder's context need
+                // not be one of ours. No token is the honest answer when it is not.
+                var ct = plugin.Context is IPluginContext c ? c.Lifetime : CancellationToken.None;
+                var result = await handler.RunCommand(name, arguments, ct);
                 if (result.Message is { } text)
                     session.SayPluginCommandResult(text, result.Status);
             }

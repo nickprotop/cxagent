@@ -46,7 +46,19 @@ public interface IPlugin
 
     /// <summary>
     /// Shuts the plugin down; its children exit. Runs as one step of unwiring's fixed order —
-    /// deregister, drain, Stop, reap — so a call already accepted can still finish before this runs.
+    /// deregister, drain, sever, Stop, reap — so a call already accepted can still finish before
+    /// this runs.
+    ///
+    /// <para>SEVER HAS ALREADY HAPPENED BY THE TIME THIS IS CALLED, and a plugin holding long-lived
+    /// work must be written for it: the context is disposed and
+    /// <see cref="IPluginContext.Lifetime"/> is cancelled BEFORE this is awaited, so a timer or a
+    /// blocked wait registered against that token has already ended by itself. Do not try to cancel
+    /// such work from inside this method — it is bounded by a timeout and abandoned if it overruns,
+    /// so work that only stops here is work that may never stop.</para>
+    ///
+    /// <para>AND <see cref="IPluginContext.Client"/> IS DEAD HERE. Submitting from Stop throws
+    /// <see cref="ObjectDisposedException"/>; a plugin with something to say must have said it
+    /// before unwiring began.</para>
     /// </summary>
     Task Stop(CancellationToken ct);
 }

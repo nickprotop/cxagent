@@ -60,6 +60,12 @@ public interface IPluginCommandHandler
 {
     /// <param name="name">The declared command, without its leading slash.</param>
     /// <param name="arguments">Everything the user typed after the name, trimmed. Empty, never null.</param>
-    /// <param name="ct">Cancelled if the session ends or the user interrupts while this is running.</param>
+    /// <param name="ct">
+    /// Cancelled when the session this plugin was loaded into ends — the same token as
+    /// <see cref="IPluginContext.Lifetime"/>.
+    ///
+    /// <para>NOT A TURN'S TOKEN. A command is typed by a person and dispatched outside the turn
+    /// loop, so interrupting the model does not cancel it; only the session ending does.</para>
+    /// </param>
     Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct);
 }
