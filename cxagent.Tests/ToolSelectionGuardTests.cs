@@ -31,7 +31,7 @@ public class ToolSelectionGuardTests : IDisposable
             ResolvedConfig.ForTesting(new MockLlmProvider()),
             new SharedServices
             {
-                Resume = new SqliteSessionStore(paths),
+                Resume = new FolderSessionStore(paths),
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
             },

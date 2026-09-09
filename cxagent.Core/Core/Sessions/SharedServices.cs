@@ -15,7 +15,7 @@ namespace CxAgent.Core.Sessions;
 ///
 /// <para>SHARING IS SAFE BY CONSTRUCTION, not by luck, and TwoSessionsTests proves each one:
 /// <see cref="LogFileManager"/> is immutable and nests by agent ancestry;
-/// <see cref="SqliteSessionStore"/> and <see cref="UsageHistoryStore"/> key by agent id and run WAL
+/// <see cref="FolderSessionStore"/> and <see cref="UsageHistoryStore"/> key by agent id and run WAL
 /// with a busy timeout; the rules store behind <see cref="Gate"/> scopes by folder and merges
 /// another writer's newer rules. Splitting them would break the features that depend on the
 /// sharing.</para>
@@ -39,7 +39,7 @@ public sealed record SharedServices
     public LogFileManager? Logs { get; init; }
 
     /// <summary>The resume buffer — every completed turn, so a crash leaves something to come back to.</summary>
-    public SqliteSessionStore? Resume { get; init; }
+    public FolderSessionStore? Resume { get; init; }
 
     /// <summary>
     /// Where a session's transcript is recorded, so another front end can be shown the same.
@@ -55,7 +55,7 @@ public sealed record SharedServices
     /// should leave no file behind — the store is disposable by design, and an empty one is still a
     /// file somebody has to explain.
     /// </remarks>
-    public Lazy<TranscriptStore>? Transcripts { get; init; }
+    public Lazy<FolderTranscriptStore>? Transcripts { get; init; }
 
     /// <summary>The usage archive behind <c>/stats</c>. A different database from Resume, deliberately.</summary>
     public UsageHistoryStore? History { get; init; }

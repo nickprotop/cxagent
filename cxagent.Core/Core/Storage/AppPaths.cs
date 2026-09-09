@@ -12,7 +12,7 @@ public class AppPaths
     /// <summary>
     /// Usage history — a SEPARATE file from the resume database, deliberately.
     ///
-    /// <para><see cref="SqliteSessionStore"/>'s own doc draws this line: it is "a RESUME BUFFER, not
+    /// <para><see cref="FolderSessionStore"/>'s own doc draws this line: it is "a RESUME BUFFER, not
     /// an archive: persistence-as-history is a different feature with different requirements, and
     /// pretending one is the other produces a database that grows forever and a schema that serves
     /// neither." Two files keep both truths — resume stays small and disposable (delete it and you

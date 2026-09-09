@@ -112,7 +112,7 @@ public sealed partial class Session
 
             var rows = store.List(all ? null : WorkingDirectory, all);
             var result = Commands.SessionsCommand.Decide(
-                arguments, rows, Storage.SqliteSessionStore.DefaultRetention, all);
+                arguments, rows, Storage.FolderSessionStore.DefaultRetention, all);
 
             if (result.ResumeUid is null)
             {

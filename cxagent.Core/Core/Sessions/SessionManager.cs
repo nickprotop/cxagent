@@ -325,8 +325,8 @@ public sealed class SessionManager : IDisposable
         var mcp = setup.Mcp;
         var config = setup.Config;
 
-        var resume = new SqliteSessionStore(paths);
-        resume.Prune(SqliteSessionStore.DefaultRetention);
+        var resume = new FolderSessionStore(paths);
+        resume.Prune(FolderSessionStore.DefaultRetention);
 
         var rules = new PermissionRulesStore(paths);
 
@@ -340,7 +340,7 @@ public sealed class SessionManager : IDisposable
                 // transcript.db behind, and the file appearing in the config directory changes what
                 // is there for anything that reads the directory as a whole (a plugin load set is
                 // hashed by its contents, which is how a test caught this).
-                Transcripts = new Lazy<TranscriptStore>(() => new TranscriptStore(paths)),
+                Transcripts = new Lazy<FolderTranscriptStore>(() => new FolderTranscriptStore(paths)),
                 History = new UsageHistoryStore(paths),
                 Gate = buildGate?.Invoke(rules),
                 Mcp = mcp,

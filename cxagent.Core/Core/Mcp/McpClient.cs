@@ -24,7 +24,7 @@ public sealed record McpToolDef(string Name, string Description, JsonElement Inp
 /// <para>NOTHING HERE THROWS AT THE CALLER. A server that will not start, dies mid-session, or never
 /// answers produces a false or an error string; the session carries on without those tools. This is
 /// third-party code on the end of a pipe, and it must not be able to take the app down — the same
-/// contract <see cref="Storage.LogFileManager"/> and <see cref="Storage.SqliteSessionStore"/> hold.</para>
+/// contract <see cref="Storage.LogFileManager"/> and <see cref="Storage.FolderSessionStore"/> hold.</para>
 /// </summary>
 public sealed class McpClient : IMcpConnection
 {

@@ -13,7 +13,7 @@ namespace CxAgent.Core.Mcp.Auth;
 /// same mode, separate concern.</para>
 ///
 /// <para>BEST-EFFORT THROUGHOUT, like <c>PermissionRulesStore</c> and
-/// <see cref="SqliteSessionStore"/>. An unreadable token file means "you are not logged in", which is
+/// <see cref="FolderSessionStore"/>. An unreadable token file means "you are not logged in", which is
 /// recoverable by logging in again; throwing would take down a session over a cache.</para>
 /// </summary>
 public sealed class TokenStore

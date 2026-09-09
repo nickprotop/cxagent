@@ -73,7 +73,7 @@ public class ToolSelectionLevelsTests : IDisposable
             ResolvedConfig.ForTesting(provider),
             new SharedServices
             {
-                Resume = new SqliteSessionStore(paths),
+                Resume = new FolderSessionStore(paths),
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
                 ToolSelection = manager,

@@ -347,7 +347,7 @@ public sealed class AgentHost : IDisposable
     public sealed record SessionStores
     {
         /// <summary>Every completed turn lands here, so a crash leaves something to resume from.</summary>
-        public Storage.SqliteSessionStore? Resume { get; init; }
+        public Storage.FolderSessionStore? Resume { get; init; }
 
         /// <summary>The archive <c>/stats</c> reads — a separate database that outlives the session.</summary>
         public Storage.UsageHistoryStore? History { get; init; }
@@ -724,7 +724,7 @@ public sealed class AgentHost : IDisposable
             // THE EDIT MODE GOES WITH IT. A session saved in always-ask that came back in the
             // accept-edits default would silently undo a decision the user made, at the moment they
             // are least likely to be watching.
-            _stores.Resume?.SaveTurn(new SqliteSessionStore.ResumeTurn(
+            _stores.Resume?.SaveTurn(new FolderSessionStore.ResumeTurn(
                 agent.Id, Context.Messages, Ledger.InputTokens, Ledger.OutputTokens,
                 _runtime.WorkingDir, Mode.Edits));
 

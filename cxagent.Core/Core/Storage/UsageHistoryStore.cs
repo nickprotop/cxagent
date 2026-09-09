@@ -124,7 +124,7 @@ public sealed record PermissionRecord(
 /// Usage history: what this installation has actually done, kept across sessions.
 ///
 /// <para>A SEPARATE DATABASE FROM RESUME, and the distinction is the point.
-/// <see cref="SqliteSessionStore"/> is a resume buffer — one row per agent, replaced every turn,
+/// <see cref="FolderSessionStore"/> is a resume buffer — one row per agent, replaced every turn,
 /// worthless once the session ends cleanly. This is an archive: append-only, never rewritten, and the
 /// only place a question like "is <c>planner</c> worth spawning" can be answered, because that needs
 /// many runs and one session holds one.</para>

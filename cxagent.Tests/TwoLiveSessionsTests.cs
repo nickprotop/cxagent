@@ -59,7 +59,7 @@ public class TwoLiveSessionsTests : IDisposable
             {
                 // SHARED ON PURPOSE — see TwoSessionsTests for why splitting these would break the
                 // features that depend on the sharing.
-                Resume = new SqliteSessionStore(paths),
+                Resume = new FolderSessionStore(paths),
                 History = new UsageHistoryStore(paths),
                 Logs = new LogFileManager(paths),
             },

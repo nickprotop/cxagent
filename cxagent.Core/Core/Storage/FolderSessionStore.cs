@@ -125,14 +125,23 @@ public sealed class FolderSessionStore(AppPaths paths)
         return null;
     }
 
-    /// <summary>The sessions worth showing, newest first.</summary>
+    /// <summary>
+    /// The sessions, newest first.
+    ///
+    /// <para><paramref name="all"/> WIDENS THE FOLDER, NOT THE STATE. Every session is listed
+    /// whatever its ending — the palette offers finished ones too, and always has; what
+    /// <c>Finished</c> stops is the STARTUP offer proposing a context already resumed. A row hidden
+    /// here would be a conversation the user could no longer reach by name.</para>
+    ///
+    /// <para>AND A ROW WITH NO WORKING DIRECTORY IS NOT IN ANY FOLDER, so a folder-scoped listing
+    /// omits it — matching the row store's <c>working_dir IS NOT NULL AND working_dir = $dir</c>.</para>
+    /// </summary>
     public IReadOnlyList<SessionInfo> List(string? workingDir = null, bool all = false)
     {
         var rows = new List<SessionInfo>();
         foreach (var h in Headers())
         {
-            if (!all && h.State == SessionEndState.Superseded) continue;
-            if (workingDir is not null && !PathsMatch(h.WorkingDir, workingDir)) continue;
+            if (!all && (h.WorkingDir is null || !PathsMatch(h.WorkingDir, workingDir))) continue;
             rows.Add(new SessionInfo(h.AgentId, h.Title, h.WorkingDir, h.InputTokens,
                 h.OutputTokens, h.State != SessionEndState.Running, h.UpdatedAt));
         }

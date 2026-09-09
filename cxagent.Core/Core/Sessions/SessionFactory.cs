@@ -355,6 +355,17 @@ internal static class SessionFactory
 
         session.ReplaceHost(host, resolution.Provider!, resolution.InstanceName, executors);
 
+        // THE TRANSCRIPT KEYS ON THE SESSION AND ITS FILE LIVES IN THE AGENT'S FOLDER, so the store
+        // is told the mapping here — the first point where both ids are in hand, since SessionId
+        // reads through Host and ReplaceHost is what sets it. Re-bound on every wire, because a
+        // re-wire mints a new agent and the session's later entries belong in the new folder.
+        //
+        // WITHOUT THIS A SESSION'S ENTRIES HAVE NOWHERE TO GO and are silently dropped: the store
+        // cannot invent a folder for a session it was never told about, and a replay that comes back
+        // empty looks like a session that said nothing.
+        if (shared.Transcripts is { } bind && session.SessionId is { } agentId)
+            bind.Value.BindAgent(session.Id, agentId);
+
         // AFTER ReplaceHost, which is what sets Host — the property this reads. Withdrawal is
         // decided inside Agent's constructor, so nothing earlier in this method has a host to ask.
         session.SayWithdrawnAgentTools();

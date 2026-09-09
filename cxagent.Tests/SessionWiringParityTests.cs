@@ -112,8 +112,23 @@ public class SessionWiringParityTests
     [Fact]
     public void TheCompositionRootSuppliesATranscriptStore()
     {
-        Assert.Contains("Transcripts = new Lazy<Core.Storage.TranscriptStore>(",
+        Assert.Contains("Transcripts = new Lazy<Core.Storage.FolderTranscriptStore>(",
             Read("cxagent/UI/AppBootstrap.cs"));
+    }
+
+    /// <summary>
+    /// AND THE STORE IS TOLD WHICH FOLDER EACH SESSION WRITES INTO.
+    ///
+    /// <para>The same class of defect one layer down: the store keys entries on the SESSION and puts
+    /// its file in the AGENT's directory, so a session nobody bound has nowhere to write and drops
+    /// everything silently. A replay that comes back empty is indistinguishable from a session that
+    /// said nothing, which is exactly the failure this suite exists to catch.</para>
+    /// </summary>
+    [Fact]
+    public void TheCompositionRootBindsEachSessionToItsAgentsFolder()
+    {
+        Assert.Contains("bind.Value.BindAgent(session.Id, agentId)",
+            Read("cxagent.Core/Core/Sessions/SessionFactory.cs"));
     }
 
     /// <summary>AND BOTH CALL THE SHARED ROUTINE, so the check above cannot be satisfied by a path

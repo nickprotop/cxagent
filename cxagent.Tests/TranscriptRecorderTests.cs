@@ -18,12 +18,12 @@ public class TranscriptRecorderTests : IDisposable
     private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "cxagent-recorder-" + Guid.NewGuid().ToString("N"));
 
-    private readonly Lazy<TranscriptStore> _store;
+    private readonly Lazy<FolderTranscriptStore> _store;
 
     public TranscriptRecorderTests()
     {
         Directory.CreateDirectory(_dir);
-        _store = new Lazy<TranscriptStore>(() => new TranscriptStore(new AppPaths(_dir)));
+        _store = new Lazy<FolderTranscriptStore>(() => new FolderTranscriptStore(new AppPaths(_dir)));
     }
 
     public void Dispose()
@@ -31,7 +31,19 @@ public class TranscriptRecorderTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    private TranscriptRecorder Recorder(string sessionId = "session-1") => new(_store, sessionId);
+    /// <summary>
+    /// A recorder for one session, with its folder bound.
+    ///
+    /// <para>THE BIND IS NOT CEREMONY: the store writes into the AGENT's directory while entries key
+    /// on the SESSION, so a session it was never told about has nowhere to put anything and drops it
+    /// silently. The composition root does this at ReplaceHost; here each session gets its own agent
+    /// id so the tests exercise the same separation two live sessions have.</para>
+    /// </summary>
+    private TranscriptRecorder Recorder(string sessionId = "session-1")
+    {
+        _store.Value.BindAgent(sessionId, "agent-for-" + sessionId);
+        return new(_store, sessionId);
+    }
 
     /// <summary>
     /// ASSISTANT TEXT IS ONE ROW, NOT ONE PER TOKEN.

@@ -80,7 +80,7 @@ public static class AppBootstrap
     /// in AssemblyWiring covers Core's assemble members, not the app's own entry point.</para>
     /// </summary>
     public static (SessionSnapshot? Snapshot, string Problem) FindResumeTarget(
-        SqliteSessionStore store, string workingDir, string? uid)
+        FolderSessionStore store, string workingDir, string? uid)
     {
         // BARE --resume MEANS THE MOST RECENT UNFINISHED ONE HERE, which is the session the startup
         // offer would have proposed. Scoped to the folder for the same reason it is: restoring
@@ -162,7 +162,7 @@ public static class AppBootstrap
         // plain tab-separated text rather than through the transcript.
         if (options.ListSessions)
         {
-            var listing = new SqliteSessionStore(paths);
+            var listing = new FolderSessionStore(paths);
             var all = options.ListAllSessions;
             Console.WriteLine(SessionsCommand.RenderPlain(
                 listing.List(all ? null : Path.GetFullPath(Environment.CurrentDirectory), all), all));
@@ -274,8 +274,8 @@ public static class AppBootstrap
         // THE RESUME BUFFER. Built before the host so it can be handed in at construction, and
         // pruned once here rather than on a timer: startup is the only moment nothing is mid-turn,
         // and finished sessions are the only rows old enough to be worth dropping.
-        var sessions = new SqliteSessionStore(paths);
-        sessions.Prune(SqliteSessionStore.DefaultRetention);
+        var sessions = new FolderSessionStore(paths);
+        sessions.Prune(FolderSessionStore.DefaultRetention);
 
         // USAGE HISTORY — a different file, and NOT pruned. The resume database above is a buffer
         // whose rows are worthless once a session ends cleanly; this is the archive, and pruning an
@@ -599,8 +599,8 @@ public static class AppBootstrap
                 // WHAT EACH SESSION WAS SHOWN, so a front end attaching later can be shown the same.
                 // LAZY: constructing the store creates its database, and a run that records nothing
                 // should leave no file behind.
-                Transcripts = new Lazy<Core.Storage.TranscriptStore>(
-                    () => new Core.Storage.TranscriptStore(paths)),
+                Transcripts = new Lazy<Core.Storage.FolderTranscriptStore>(
+                    () => new Core.Storage.FolderTranscriptStore(paths)),
 
                 GlobalInstructionsDir = paths.ConfigDir,
             },

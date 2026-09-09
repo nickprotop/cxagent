@@ -135,7 +135,7 @@ public class AgentHostTests
         paths.EnsureCreated();
         try
         {
-            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var store = new CxAgent.Core.Storage.FolderSessionStore(paths);
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
@@ -171,7 +171,7 @@ public class AgentHostTests
 
         try
         {
-            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var store = new CxAgent.Core.Storage.FolderSessionStore(paths);
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 
@@ -223,7 +223,7 @@ public class AgentHostTests
         paths.EnsureCreated();
         try
         {
-            var store = new CxAgent.Core.Storage.SqliteSessionStore(paths);
+            var store = new CxAgent.Core.Storage.FolderSessionStore(paths);
             var mock = new MockLlmProvider();
             mock.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
 

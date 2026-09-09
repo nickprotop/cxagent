@@ -4,7 +4,7 @@ using CxAgent.Core.Sessions;
 namespace CxAgent.Core.Storage;
 
 /// <summary>
-/// Writes what a session was shown into its <see cref="TranscriptStore"/>.
+/// Writes what a session was shown into its <see cref="FolderTranscriptStore"/>.
 ///
 /// <para>AN OBSERVER, NOT A HOOK INSIDE THE TURN LOOP. The events a front end renders are exactly the
 /// events worth replaying to another one, so the store subscribes to the same fan-out the TUI does
@@ -42,7 +42,7 @@ public sealed class TranscriptRecorder : ISessionObserver
     /// directory changes what is there for anything reading the directory as a whole, which is how a
     /// plugin-load-set hash caught it.
     /// </remarks>
-    private readonly Lazy<TranscriptStore> _store;
+    private readonly Lazy<FolderTranscriptStore> _store;
 
     private readonly string _sessionId;
 
@@ -67,7 +67,7 @@ public sealed class TranscriptRecorder : ISessionObserver
     /// </remarks>
     private long _noticeSeq;
 
-    public TranscriptRecorder(Lazy<TranscriptStore> store, string sessionId)
+    public TranscriptRecorder(Lazy<FolderTranscriptStore> store, string sessionId)
     {
         _store = store;
         _sessionId = sessionId;
