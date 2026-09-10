@@ -94,13 +94,22 @@ public static class CommandLine
         return false;
     }
 
-    /// <summary>The listing shown by both the <c>trigger_list</c> tool and the slash command.</summary>
+    /// <summary>
+    /// The listing shown by both the <c>trigger_list</c> tool and the slash command.
+    ///
+    /// <para>NO LINE MAY START WITH A BARE <c>N.</c>. The slash command's text is rendered as
+    /// markdown, and a leading "4." reads to that renderer as an ordered-list item, which it
+    /// renumbers from 1 — so the id a user reads on screen would stop being the id they must
+    /// retype into <c>/triggers-cancel</c>. <c>#4</c> carries the same digits but is not
+    /// list-item syntax, so it survives both the tool's plain output and the command's markdown
+    /// rendering unchanged.</para>
+    /// </summary>
     public static string Render(IReadOnlyList<Trigger> triggers)
     {
         if (triggers.Count == 0) return "no triggers pending in this session.";
 
         return string.Join('\n', triggers.Select(t =>
-            $"{t.Id}. {t.When.Describe()} — {Clip(FirstLine(t.Prompt), 60)}"));
+            $"#{t.Id} {t.When.Describe()} — {Clip(FirstLine(t.Prompt), 60)}"));
     }
 
     private static string FirstLine(string prompt)
