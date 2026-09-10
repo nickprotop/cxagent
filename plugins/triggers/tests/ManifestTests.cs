@@ -54,7 +54,9 @@ public class ManifestTests
             .Where(t => t.TryGetProperty("gated", out var g)
                         && g.ValueKind == JsonValueKind.String
                         && g.GetString() == "dynamic")
-            .Select(t => t.GetProperty("name").GetString())
+            // NON-NULL BY CONSTRUCTION: every tool in the sidecar has a name, and a manifest that
+            // lost one would fail the count assertions above long before reaching here.
+            .Select(t => t.GetProperty("name").GetString()!)
             .ToArray();
 
         Assert.Equal(["trigger_on_exit"], gated);

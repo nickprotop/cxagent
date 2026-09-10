@@ -37,6 +37,19 @@ public interface ISubAgentSpawner
     ToolDefinition Definition { get; }
 
     /// <summary>
+    /// Where this spawner keeps the children it made, or null when it keeps none.
+    ///
+    /// <para>ON THE INTERFACE RATHER THAN AS ANOTHER <c>Agent</c> CONSTRUCTOR PARAMETER. That list is
+    /// already long, and the store is not an independent thing an agent is given — it belongs to the
+    /// spawner, and an agent that cannot spawn has nothing to reach. Reading it from here keeps the
+    /// two facts in one place instead of letting a caller pair a spawner with somebody else's store.</para>
+    ///
+    /// <para>A DEFAULT MEMBER, so an existing implementation — the test fakes among them — keeps
+    /// compiling and simply keeps nothing.</para>
+    /// </summary>
+    SubAgentStore? Store => null;
+
+    /// <summary>
     /// Runs the child and returns the envelope, or null if <paramref name="call"/> is not this
     /// spawner's tool.
     /// </summary>
@@ -57,18 +70,6 @@ public interface ISubAgentSpawner
     /// </param>
     /// <param name="call">The spawn call the model issued.</param>
     /// <param name="ct">Cancels the child mid-run.</param>
-    /// <summary>
-    /// Where this spawner keeps the children it made, or null when it keeps none.
-    ///
-    /// <para>ON THE INTERFACE RATHER THAN AS ANOTHER <c>Agent</c> CONSTRUCTOR PARAMETER. That list is
-    /// already long, and the store is not an independent thing an agent is given — it belongs to the
-    /// spawner, and an agent that cannot spawn has nothing to reach. Reading it from here keeps the
-    /// two facts in one place instead of letting a caller pair a spawner with somebody else's store.</para>
-    ///
-    /// <para>A DEFAULT MEMBER, so an existing implementation — the test fakes among them — keeps
-    /// compiling and simply keeps nothing.</para>
-    /// </summary>
-    SubAgentStore? Store => null;
 
     Task<string?> TryInvokeAsync(ToolCall call, Action<SubAgent>? onChild, CancellationToken ct,
         string? parentAgentId = null, Jobs.ToolSelection? turnTools = null);
@@ -149,6 +150,8 @@ public static class SubAgentEnvelope
         return end > start ? envelope[start..end] : null;
     }
 
+    /// <summary>Renders the envelope the parent's model reads as this spawn's tool result.</summary>
+    /// <param name="childId">The child's own agent id, for a reader tracing it back to its logs.</param>
     /// <param name="name">
     /// The handle this child is reachable by, or null when nothing kept it.
     ///
@@ -156,6 +159,8 @@ public static class SubAgentEnvelope
     /// <c>agent_send</c> takes. Without it the model must call <c>agent_list</c> after every spawn
     /// just to learn what it created a moment ago.</para>
     /// </param>
+    /// <param name="outcome">How the run ended — completed, capped, stuck, cancelled or failed.</param>
+    /// <param name="text">The child's answer, or its account of why there is not one.</param>
     public static string Render(string childId, string? name, SendOutcome outcome, string text)
     {
         var state = outcome switch

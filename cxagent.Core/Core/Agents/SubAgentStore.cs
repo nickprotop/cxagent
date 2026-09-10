@@ -65,6 +65,7 @@ public sealed class SubAgentStore
     /// five parameters and a sixth would be the one nobody reads positionally (AV1561). Both sides
     /// hold the call, so the call is the key they already share.</para>
     /// </param>
+    /// <param name="description">What the spawn called this child; the handle is slugged from it.</param>
     public string Reserve(string? description, string callId)
     {
         lock (_naming)

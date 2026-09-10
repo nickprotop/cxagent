@@ -178,11 +178,12 @@ public class SubAgentFridgeTests
     }
 
     /// <summary>
-    /// THE SPAWN RETURNS A RECEIPT, NOT AN ANSWER — the parent is no longer parked while its child
-    /// works, which is what makes agent_send reachable at the moment it is useful.
+    /// A HANDLE IS CLAIMED BEFORE THE CHILD EXISTS, so the name the store ends up holding is decided
+    /// at dispatch rather than at completion — which is what lets agent_list name a child while it is
+    /// still running, instead of answering "no sub-agents" for the whole of its run.
     /// </summary>
     [Fact]
-    public async Task A_spawn_answers_with_a_receipt_naming_the_handle()
+    public async Task A_handle_is_reserved_before_the_child_exists()
     {
         var store = new SubAgentStore();
         var name = store.Reserve("survey the notes", "call-1");

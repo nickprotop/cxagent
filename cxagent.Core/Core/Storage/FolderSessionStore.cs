@@ -259,6 +259,7 @@ public sealed class FolderSessionStore(AppPaths paths)
 /// <param name="InputTokens">Tokens sent across the session.</param>
 /// <param name="OutputTokens">Tokens generated across the session.</param>
 /// <param name="UpdatedAt">When it last did anything — what orders a resume list.</param>
+/// <param name="Uid">The agent's id, which is what a listing prints and what /sessions resume takes.</param>
 public sealed record SessionInfo(
     string Uid,
     string? Title,

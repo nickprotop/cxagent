@@ -25,6 +25,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// `general` — so an error can always name something valid.
     /// </param>
     /// <param name="factory">Builds each child, carrying what every child shares.</param>
+    /// <param name="store">
+    /// Where finished children are kept so the model can ask them more. Null keeps none, which is
+    /// what every caller with no interest in reaching a child again gets by default.
+    /// </param>
     public SubAgentSpawner(SubAgentFactory factory, AgentTypeCatalog? types = null,
         SubAgentStore? store = null)
     {

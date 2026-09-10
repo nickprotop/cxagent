@@ -39,6 +39,8 @@ public sealed class CommandRegistry
     /// whole process; without knowing who owns a name, the second session's load sees its own
     /// commands taken and refuses the whole plugin.</para>
     /// </param>
+    /// <param name="Command">What the palette shows and what the user types.</param>
+    /// <param name="Handle">What runs when they do.</param>
     private readonly record struct Entry(SessionCommand Command, CommandHandler Handle,
                                          string? Owner = null);
 

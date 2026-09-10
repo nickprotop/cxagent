@@ -438,12 +438,7 @@ public class SubAgentSpawnerTests
             ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
-        // ENOUGH TO OUTLAST THE WAIT. A parent no longer blocks at the spawn, so every "done" it
-        // gives while a child is still running is answered with a reminder to wait — and these tests
-        // hold their children open ON PURPOSE, to prove concurrency, so the parent laps until its
-        // turn cap. What they assert is the CHILDREN's behaviour, not the parent's lap count.
-        for (var i = 0; i < 60; i++)
-            provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         // Both children must be INSIDE their provider call before either may return.
         var arrived = new SemaphoreSlim(0, 2);
@@ -508,11 +503,7 @@ public class SubAgentSpawnerTests
                 Spawn("s1", "after the read"),
             ],
         });
-        // ENOUGH TO OUTLAST THE WAIT: a parent no longer blocks at the spawn, so its first "done"
-        // arrives while the child is still running and is answered with a reminder to wait. What
-        // this asserts is the ORDER the calls were made in, not how many laps the parent took.
-        for (var i = 0; i < 60; i++)
-            provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var childProvider = new RecordingOrderProvider(order, "child-started");
 
@@ -549,12 +540,7 @@ public class SubAgentSpawnerTests
             ToolCalls = [Spawn("s1", "explodes"), Spawn("s2", "succeeds")],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
-        // ENOUGH TO OUTLAST THE WAIT. A parent no longer blocks at the spawn, so every "done" it
-        // gives while a child is still running is answered with a reminder to wait — and these tests
-        // hold their children open ON PURPOSE, to prove concurrency, so the parent laps until its
-        // turn cap. What they assert is the CHILDREN's behaviour, not the parent's lap count.
-        for (var i = 0; i < 60; i++)
-            provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var parent = new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
             new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
@@ -712,12 +698,7 @@ public class SubAgentSpawnerTests
             ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
-        // ENOUGH TO OUTLAST THE WAIT. A parent no longer blocks at the spawn, so every "done" it
-        // gives while a child is still running is answered with a reminder to wait — and these tests
-        // hold their children open ON PURPOSE, to prove concurrency, so the parent laps until its
-        // turn cap. What they assert is the CHILDREN's behaviour, not the parent's lap count.
-        for (var i = 0; i < 60; i++)
-            provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var arrived = new SemaphoreSlim(0, 2);
         var release = new TaskCompletionSource();
@@ -765,12 +746,7 @@ public class SubAgentSpawnerTests
             ToolCalls = [Spawn("s1", "first"), Spawn("s2", "second")],
         });
         provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
-        // ENOUGH TO OUTLAST THE WAIT. A parent no longer blocks at the spawn, so every "done" it
-        // gives while a child is still running is answered with a reminder to wait — and these tests
-        // hold their children open ON PURPOSE, to prove concurrency, so the parent laps until its
-        // turn cap. What they assert is the CHILDREN's behaviour, not the parent's lap count.
-        for (var i = 0; i < 60; i++)
-            provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
+        provider.EnqueueResponse(new LlmResponse { Text = "parent done", StopReason = "end_turn" });
 
         var arrived = new SemaphoreSlim(0, 2);
         var release = new TaskCompletionSource();
