@@ -26,13 +26,27 @@ timeout elapses, then wakes with the exit code and output appended to the prompt
 gated tool: it starts a process now, with arguments the model composed, and nothing downstream asks
 about it again.
 
+## The commands
+
+`/triggers-add <when> <prompt>` — schedule a wake. `<when>` is a delay (`20m`), a time (`09:00`), or
+a quoted cron line (`"0 9 * * 1-5"`); same three shapes `trigger_wake` accepts, from the command line
+instead of a tool call.
+
+`/triggers-list` — what is pending.
+
+`/triggers-update <id> <when> <prompt>` — change a trigger's schedule and prompt, keeping its id.
+
+`/triggers-cancel <id>` — stop a pending trigger.
+
 ## What it will not do
 
 **Survive the process.** A trigger dies with the session that scheduled it. There is nowhere durable
 to put one — a session is a folder, and this plugin is handed no path to it.
 
 **Fire outside cxagent.** A trigger is not a system cron entry; it exists only while the process that
-scheduled it is running.
+scheduled it is running. **Triggers fire only while cxagent is running** — a cron line set for 3am
+with no terminal open does nothing at 3am. That changes with phase three, a daemon this plugin does
+not have yet; until then, a trigger is only as reliable as the session that holds it.
 
 ## What it needs
 

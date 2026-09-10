@@ -150,6 +150,55 @@
       ]
     },
     {
+      "name": "triggers",
+      "displayName": "Triggers",
+      "version": "0.1.0",
+      "description": "Work that starts without anybody typing — on a clock, or when a process exits. Schedules a prompt to arrive later in the same session; fires only while cxagent is running.",
+      "publisher": "nickprotop",
+      "license": "MIT",
+      "repository": "https://github.com/nickprotop/cxagent",
+      "sourceUrl": "https://github.com/nickprotop/cxagent/tree/master/plugins/triggers",
+      "readme": "triggers/README.md",
+      "directory": "triggers",
+      "source": {
+        "kind": "release",
+        "checksums": "SHA256SUMS",
+        "sha256": null,
+        "latest": "https://github.com/nickprotop/cxagent/releases/latest/download/triggers.zip"
+      },
+      "file": "triggers.dll",
+      "kind": "managed",
+      "compatibility": {
+        "pluginContract": 3,
+        "platforms": [
+          "any"
+        ]
+      },
+      "spawns": true,
+      "tools": [
+        {
+          "name": "trigger_wake",
+          "gated": false
+        },
+        {
+          "name": "trigger_list",
+          "gated": false
+        },
+        {
+          "name": "trigger_update",
+          "gated": false
+        },
+        {
+          "name": "trigger_cancel",
+          "gated": false
+        },
+        {
+          "name": "trigger_on_exit",
+          "gated": "dynamic"
+        }
+      ]
+    },
+    {
       "name": "clone-finder",
       "displayName": "Clone Finder",
       "version": "0.9.8",

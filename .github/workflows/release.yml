@@ -269,6 +269,47 @@ jobs:
           (cd clone-build && zip -q ../plugin-out/clone-finder.zip \
              clone-finder.dll clone-finder.plugin.json README.md)
 
+      # THE SAME BUILD-OR-CARRY SCHEME, and the fourth plugin to use it.
+      - name: Build or carry forward the triggers plugin
+        run: |
+          # RELEASE TAGS ONLY — see the csharp-lsp step above for why --match matters.
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || echo "")
+          SIDECAR=plugins/triggers/triggers.plugin.json
+          VERSION=$(python3 -c "import json;print(json.load(open('$SIDECAR'))['version'])")
+
+          mkdir -p plugin-out
+
+          PLUGIN_INPUTS="plugins/triggers/ cxagent.Plugins.Abstractions/"
+
+          if [ -n "$PREV_TAG" ] && git diff --quiet "$PREV_TAG" HEAD -- $PLUGIN_INPUTS; then
+            echo "plugin unchanged since $PREV_TAG — carrying its zip forward."
+
+            if curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/$PREV_TAG/triggers.zip" \
+                 -o plugin-out/triggers.zip; then
+              echo "carried forward from $PREV_TAG"
+              exit 0
+            fi
+
+            echo "no zip on $PREV_TAG — building instead."
+          fi
+
+          echo "building triggers $VERSION"
+
+          dotnet build plugins/triggers/triggers.csproj -c Release -o ./triggers-build \
+            -p:Version="$VERSION"
+
+          # NCrontab.dll IS PART OF THE LOAD SET, the same as Jace.dll for calculator above:
+          # Assembly.LoadFrom resolves the plugin's dependencies from the plugin's own folder, so a
+          # zip missing it produces a plugin that fails only when a user tries to load it — nothing
+          # else in this pipeline would notice.
+          test -f ./triggers-build/triggers.dll
+          test -f ./triggers-build/NCrontab.dll
+          test -f ./triggers-build/triggers.plugin.json
+          test -f ./triggers-build/README.md
+
+          (cd triggers-build && zip -q ../plugin-out/triggers.zip \
+             triggers.dll NCrontab.dll triggers.plugin.json README.md)
+
       - name: Generate checksums
         run: |
           # STAGE INSTALL SCRIPTS AS ASSETS, matching cxpost/cxnet. They live in the repo and the
@@ -288,6 +329,7 @@ jobs:
           cp plugin-out/csharp-lsp.zip release/
           cp plugin-out/calculator.zip release/
           cp plugin-out/clone-finder.zip release/
+          cp plugin-out/triggers.zip release/
 
           # Checksums cover the scripts too: an installer fetched from a release is exactly the kind
           # of thing worth being able to verify.
