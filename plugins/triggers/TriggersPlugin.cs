@@ -19,7 +19,8 @@ namespace CxAgent.Plugins.Triggers;
 /// there is nowhere to write that would be deleted with the conversation. Phase three owns
 /// durability, because a daemon has to answer missed-fire policy anyway.</para>
 /// </summary>
-public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler
+public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler,
+    IPluginGateSource
 {
     private IPluginContext? _context;
 
@@ -184,8 +185,79 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
         return Say($"trigger {id} cancelled.");
     }
 
-    private static Task<JobResult> OnExit(string session, JobParameters call) =>
-        Task.FromResult(Fail("not yet"));
+    /// <summary>
+    /// Starts the watch and RETURNS — the tool call must not block on a process that may run for
+    /// half an hour. The wait itself continues on a task this plugin owns, registered against
+    /// <see cref="IPluginContext.Lifetime"/> so Stop's cancellation reaches it the same way a
+    /// trigger's timer does.
+    /// </summary>
+    private Task<JobResult> OnExit(string session, JobParameters call)
+    {
+        var command = call.Get<string>("command");
+        var timeoutText = call.Get<string>("timeout");
+        var prompt = call.Get<string>("prompt");
+
+        if (!When.TryParseDuration(timeoutText, out var timeout))
+            return Task.FromResult(Fail(
+                $"'{timeoutText}' is not a duration: an integer and one unit suffix, s/m/h/d — "
+                + "\"30m\", \"2h\". No compound forms."));
+
+        // NOT AWAITED BY THE TOOL CALL. The watch runs on its own task, ended by Lifetime exactly as
+        // the clock's Tick is — see Start's comment on why Stop must not be the thing that cancels it.
+        _ = Watch(command, timeout, prompt, _context!.Lifetime);
+
+        return Task.FromResult(Say($"watching `{command}`; you'll be woken in up to "
+            + $"{timeoutText} when it exits."));
+    }
+
+    private async Task Watch(string command, TimeSpan timeout, string prompt, CancellationToken lifetime)
+    {
+        var outcome = await ProcessWatch.Run(command, timeout, _context!.RegisterChildProcess, lifetime);
+        var composed = ProcessWatch.Compose(prompt, outcome);
+
+        try
+        {
+            if (_context.Client is { } client)
+                await client.Submit(composed, wantResult: false, lifetime);
+        }
+        catch (ObjectDisposedException)
+        {
+            // THE SEVERED CLIENT IS THE CUE TO DROP THE WAKE, exactly as FireDue treats it — this
+            // runs on a task nobody awaits, so an uncaught throw here disappears silently.
+        }
+        catch (Exception ex)
+        {
+            _context.Logger.Log($"trigger_on_exit for '{command}' failed to submit: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The gate a dynamic tool is asked for, once, when the tool is CALLED.
+    ///
+    /// <para>NAMING THE COMMAND IN THE PROMPT IS WHAT THIS BUYS. `gated: "dynamic"` hands this the
+    /// ARGUMENTS, so the prompt says "run `gh run watch 12345` in the background until it exits"
+    /// rather than "run trigger_on_exit" — a decision someone can actually make, against one nobody
+    /// can.</para>
+    ///
+    /// <para>AND THE SUBJECT IS THE COMMAND, not the sentence around it: PermissionRequest.What is
+    /// Subject ?? Display, and ActionClassifier reads What.</para>
+    ///
+    /// <para>ONCE AT CREATION IS ALL THERE IS. The gate fires when trigger_on_exit is CALLED, not
+    /// when the process exits, so the user approves the command once and the firing carries no
+    /// further question. That is not an optimisation — it is what a tool gate already does.</para>
+    /// </summary>
+    public PluginGate? Gate(string toolName, JobParameters call)
+    {
+        if (toolName != "trigger_on_exit") return null;
+
+        var command = call.Get<string?>("command", null);
+        if (string.IsNullOrWhiteSpace(command)) return null;
+
+        return new PluginGate($"run `{command}` in the background until it exits")
+        {
+            Subject = command,
+        };
+    }
 
     private static JobResult Fail(string why) =>
         new() { Success = false, ErrorMessage = why };
