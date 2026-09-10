@@ -23,8 +23,12 @@ public class TriggersPluginLoadTests
         if (dir is null)
             throw new InvalidOperationException("Could not find repo root (cxagent.slnx) above " + AppContext.BaseDirectory);
 
-        return Path.Combine(dir.FullName, "plugins", "triggers", "bin", "Debug", "net10.0",
-            "triggers.plugin.json");
+        // THE SOURCE SIDECAR, NOT A BUILD OUTPUT. Reading bin/Debug/ makes this test pass or fail on
+        // whether somebody happened to build that configuration: green on a developer machine with a
+        // Debug build lying around, and a DirectoryNotFoundException in CI, which builds Release and
+        // has no reason to build this plugin at all. The csproj copies this exact file to the output,
+        // so the source copy is the same bytes without the dependency on how the tree was built.
+        return Path.Combine(dir.FullName, "plugins", "triggers", "triggers.plugin.json");
     }
 
     [Fact]
