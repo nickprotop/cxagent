@@ -1,3 +1,4 @@
+using System.Globalization;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Models;
 using CxAgent.Core.Plugins;
@@ -18,7 +19,7 @@ namespace CxAgent.Plugins.Triggers;
 /// there is nowhere to write that would be deleted with the conversation. Phase three owns
 /// durability, because a daemon has to answer missed-fire policy anyway.</para>
 /// </summary>
-public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer
+public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler
 {
     private IPluginContext? _context;
 
@@ -191,6 +192,90 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer
 
     private static JobResult Say(string text) =>
         new() { Success = true, Output = new Dictionary<string, object?> { ["content"] = text } };
+
+    /// <summary>
+    /// The four commands a person types.
+    ///
+    /// <para>NAMED WITHOUT THE SLASH, which is what the manifest declares and what Core hands back —
+    /// Core adds the slash on both sides, so a manifest cannot smuggle a namespace into a name.</para>
+    /// </summary>
+    public Task<CommandResult> RunCommand(string name, string arguments, CancellationToken ct)
+    {
+        var session = _context?.SessionId;
+        if (session is null)
+            return Task.FromResult(new CommandResult(
+                "this host does not scope plugins by session.", PluginCommandOutcome.Refused));
+
+        return Task.FromResult(name switch
+        {
+            "triggers-list" => new CommandResult(
+                CommandLine.Render(TriggerStore.For(session)), PluginCommandOutcome.Reported),
+            "triggers-add" => Add(session, arguments),
+            "triggers-update" => UpdateFrom(session, arguments),
+            "triggers-cancel" => CancelFrom(session, arguments),
+            _ => new CommandResult($"'{name}' is not a triggers command.",
+                PluginCommandOutcome.Refused),
+        });
+    }
+
+    private static CommandResult Add(string session, string arguments)
+    {
+        if (!CommandLine.TrySplit(arguments, out var whenText, out var prompt, out var splitRefusal))
+            return new CommandResult(splitRefusal, PluginCommandOutcome.Refused);
+
+        if (!CommandLine.TryReadWhen(whenText!, out var when, out var whenRefusal))
+            return new CommandResult(whenRefusal, PluginCommandOutcome.Refused);
+
+        var trigger = TriggerStore.Add(session, when!, prompt!);
+        return new CommandResult($"trigger {trigger.Id} set: fires {when!.Describe()}.",
+            PluginCommandOutcome.Changed);
+    }
+
+    private static CommandResult UpdateFrom(string session, string arguments)
+    {
+        // <id> <when> <prompt> — an id token first, then the same grammar TrySplit already knows,
+        // so a quoted cron line still gets its one boundary.
+        var text = arguments.Trim();
+        var idSplit = text.IndexOf(' ');
+        if (idSplit < 0)
+            return new CommandResult(
+                "say the id, when and what: `<id> <when> <prompt>` — for example "
+                + "`3 30m check the deploy again`.", PluginCommandOutcome.Refused);
+
+        var idText = text[..idSplit];
+        if (!int.TryParse(idText, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+            return new CommandResult($"'{idText}' is not a trigger id. Use the number from "
+                + "/triggers-list.", PluginCommandOutcome.Refused);
+
+        if (!CommandLine.TrySplit(text[idSplit..], out var whenText, out var prompt,
+                out var splitRefusal))
+            return new CommandResult(splitRefusal, PluginCommandOutcome.Refused);
+
+        if (!CommandLine.TryReadWhen(whenText!, out var when, out var whenRefusal))
+            return new CommandResult(whenRefusal, PluginCommandOutcome.Refused);
+
+        var updated = TriggerStore.Update(session, id, when!, prompt!);
+        if (updated is null)
+            return new CommandResult($"no trigger {id} in this session.",
+                PluginCommandOutcome.Refused);
+
+        return new CommandResult($"trigger {updated.Id} updated: fires {updated.When.Describe()}.",
+            PluginCommandOutcome.Changed);
+    }
+
+    private static CommandResult CancelFrom(string session, string arguments)
+    {
+        var text = arguments.Trim();
+        if (!int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+            return new CommandResult($"'{text}' is not a trigger id. Use the number from "
+                + "/triggers-list.", PluginCommandOutcome.Refused);
+
+        if (!TriggerStore.Cancel(session, id))
+            return new CommandResult($"no trigger {id} in this session.",
+                PluginCommandOutcome.Refused);
+
+        return new CommandResult($"trigger {id} cancelled.", PluginCommandOutcome.Changed);
+    }
 
     public Task Stop(CancellationToken ct) => Task.CompletedTask;
 }
