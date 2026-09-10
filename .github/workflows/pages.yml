@@ -42,6 +42,16 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      # WHETHER THIS RUN PRODUCED A SITE AT ALL. The catalogue may list a plugin no release has
+      # shipped yet — an ordinary state between merging a plugin and tagging the release that
+      # carries it — and this job then deliberately builds nothing, keeping the published site as it
+      # is rather than replacing it with one whose download 404s.
+      #
+      # THE DEPLOY JOB HAS TO SEE THAT. It only depends on `build` SUCCEEDING, and a deliberate
+      # no-op is a success — so without this it runs, finds no artifact, and fails a push that did
+      # exactly what it was designed to do.
+      skipped: ${{ steps.shipped.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
 
@@ -150,6 +160,10 @@ jobs:
 
   deploy:
     needs: build
+    # NOTHING TO DEPLOY IS NOT A FAILURE. See the `skipped` output above: when the catalogue names a
+    # plugin the current release does not carry, build uploads no artifact on purpose, and deploying
+    # is the one thing that must not happen — the site already serves the last good catalogue.
+    if: needs.build.outputs.skipped != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
