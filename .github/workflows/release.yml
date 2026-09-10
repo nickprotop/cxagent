@@ -445,6 +445,13 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/pages.yml
+    with:
+      # THE TAG THIS RUN JUST PUBLISHED, rather than letting Pages ask for "latest". At the moment
+      # this job starts, the release exists but "latest" is not reliably it — and a Pages run
+      # dispatched by hand while this one publishes would race it, hashing the previous release's
+      # zips into a catalog that then overwrites the correct one. Naming the tag removes the
+      # question rather than narrowing the window.
+      release_tag: ${{ github.ref_name }}
 
   # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
   # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an

@@ -11,6 +11,14 @@ name: Pages
 # catalog until someone notices. release.yml calls this workflow directly instead.
 on:
   workflow_call:
+    inputs:
+      release_tag:
+        description: >-
+          The release whose assets this catalog describes. Passed by release.yml, which knows the tag
+          it just published — asking for "latest" from inside a release would be asking a question
+          whose answer is still changing.
+        required: false
+        type: string
   push:
     branches: [master]
     paths:
@@ -62,14 +70,38 @@ jobs:
         # AFTER RENDERING, so an authored file always wins over a generated one of the same name.
         run: cp -r site/. _site/ && rm -rf _site/build
 
-      - name: Download the current release's plugin artifacts
+      - name: Decide which release this catalog describes
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # RESOLVED ONCE AND PINNED, because three separate "what is the latest release?" questions
+          # can straddle a release that publishes mid-run and come back with three different answers:
+          # the bytes from one, the asset list from another, the version from a third. The catalog
+          # that comes out is internally inconsistent and passes every check in this file — the
+          # failure surfaces later, as an installer refusing a plugin because the hash it was
+          # promised is not the hash it downloaded.
+          #
+          # THE CALLER'S TAG WINS WHEN THERE IS ONE. release.yml has just published a release and
+          # knows its tag; "latest" is not reliably that release yet, and a manual run dispatched
+          # while a release is publishing races it outright — which is exactly how the published
+          # catalog once ended up describing the previous release's zips.
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName -q .tagName)
+          fi
+
+          echo "catalog describes release $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download that release's plugin artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p _artifact
           # THE ASSETS A USER WOULD ACTUALLY GET. Hashing anything else -- a local build, a previous
           # release -- would publish a value that does not match what the download URL serves.
-          gh release download --repo "${GITHUB_REPOSITORY}" \
+          gh release download "${{ steps.release.outputs.tag }}" --repo "${GITHUB_REPOSITORY}" \
               --pattern csharp-lsp.zip --pattern calculator.zip \
               --pattern clone-finder.zip --pattern triggers.zip --dir _artifact
 
@@ -89,7 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view --repo "${GITHUB_REPOSITORY}" --json assets \
+          gh release view "${{ steps.release.outputs.tag }}" --repo "${GITHUB_REPOSITORY}" --json assets \
               -q '.assets[].name' > /tmp/release-assets.txt
           echo "assets on the current release:"; sed 's/^/  /' /tmp/release-assets.txt
 
@@ -130,15 +162,13 @@ jobs:
 
       - name: Generate the catalog
         if: steps.shipped.outputs.skip != 'true'
-        env:
-          # `gh release view` below needs it; the download step's env does not reach this step.
-          GH_TOKEN: ${{ github.token }}
         run: |
           # THE VERSION COMES FROM THE RELEASE THE ASSETS CAME FROM, not from the ref that
           # triggered this run: a push to master builds the site for whatever release is current,
-          # and naming the ref would label those pages with a tag that has not shipped. Read from
-          # the same release the step above downloaded, so the hashes and the number agree.
-          VERSION=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName -q .tagName)
+          # and naming the ref would label those pages with a tag that has not shipped. It is the
+          # tag resolved once at the top of this job, so the hashes, the asset list and the number
+          # all describe one release rather than three answers to the same question.
+          VERSION="${{ steps.release.outputs.tag }}"
           VERSION="${VERSION#v}"
           echo "cxagent version for the site: $VERSION"
 
