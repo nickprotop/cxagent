@@ -647,7 +647,12 @@ public sealed class PluginRegistry
             return Ask(string.IsNullOrWhiteSpace(gate.Display)
                     ? $"run '{tool.Name}' from the '{plugin.Manifest.Name}' plugin"
                     : gate.Display,
-                gate.AlwaysAskable && tool.AlwaysAskable);
+                gate.AlwaysAskable && tool.AlwaysAskable,
+                // THE COMMAND, NOT THE SENTENCE AROUND IT. ActionClassifier reads
+                // PermissionRequest.What, which is Subject ?? Display — so without this a plugin's
+                // annotation is judged on prose the plugin wrote to explain itself rather than on
+                // the thing that will actually run.
+                gate.Subject);
         }
 
         /// <summary>
@@ -655,9 +660,10 @@ public sealed class PluginRegistry
         /// doc. The plugin declaring alwaysAskable:false is marking its own sharp edge: the tool it
         /// believes should never hold a standing grant, which is a judgement only its author can make.
         /// </summary>
-        private Permissions.PermissionRequest Ask(string display, bool alwaysAskable) =>
+        private Permissions.PermissionRequest Ask(string display, bool alwaysAskable, string? subject = null) =>
             new(Permissions.PermissionKind.Tool, display,
-                AlwaysRule: alwaysAskable ? $"plugin {plugin.Manifest.Name} tool {tool.Name}" : null);
+                AlwaysRule: alwaysAskable ? $"plugin {plugin.Manifest.Name} tool {tool.Name}" : null,
+                Subject: subject);
 
         public async Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context, CancellationToken ct)
         {

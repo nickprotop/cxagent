@@ -40,7 +40,23 @@ public enum PluginGating
 /// <param name="AlwaysAskable">Whether this particular call may be granted standing permission.
 /// ANDs with the manifest's own flag, which is a floor: a sidecar that withheld "Always" cannot
 /// have it handed back at runtime.</param>
-public sealed record PluginGate(string Display, bool AlwaysAskable = true);
+public sealed record PluginGate(string Display, bool AlwaysAskable = true)
+{
+    /// <summary>
+    /// The undecorated thing this request is about — the command, the path — or null when the
+    /// display text is already it.
+    ///
+    /// <para>AN INIT-ONLY PROPERTY RATHER THAN A THIRD POSITIONAL PARAMETER, because this record is
+    /// PUBLISHED. A new positional parameter changes the constructor and the generated Deconstruct,
+    /// so a plugin compiled against the old shape fails at LOAD with MissingMethodException — no
+    /// build error, no warning, just a plugin that stops working after a host upgrade.</para>
+    ///
+    /// <para>WHAT IT BUYS: PermissionRequest.What is `Subject ?? Display`, and ActionClassifier
+    /// reads What. Without a subject a plugin's annotation is judged on the sentence wrapped around
+    /// the command rather than on the command.</para>
+    /// </summary>
+    public string? Subject { get; init; }
+}
 
 /// <param name="Name">The tool's name, as offered to the model.</param>
 /// <param name="Description">What the model is told the tool does.</param>
