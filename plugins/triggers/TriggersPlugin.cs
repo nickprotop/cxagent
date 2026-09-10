@@ -349,5 +349,23 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
         return new CommandResult($"trigger {id} cancelled.", PluginCommandOutcome.Changed);
     }
 
-    public Task Stop(CancellationToken ct) => Task.CompletedTask;
+    /// <summary>
+    /// A BACKSTOP FOR A TIMER THAT NEVER STARTED. Tick's finally block is the sweep that matters in
+    /// the normal path — it runs at sever, before Stop is even awaited — but Session.LoadPlugin calls
+    /// Start inside a try/catch (Session.cs) and unwires the plugin on a throw. If Start threw, or
+    /// this instance never reached the point of registering its timer, Tick's finally never ran and
+    /// this session's triggers would sit in the process-wide store forever: unreachable, since FireDue
+    /// only fires a trigger whose SessionId matches the live instance, but never freed either.
+    ///
+    /// <para>SweepSession is idempotent, so sweeping here even when Tick already did costs nothing.
+    /// Reading _context here is safe: SessionId is captured at construction (PluginResolver.cs), not
+    /// looked up live, so it survives past Unwire disposing the context. Stop is timeout-bounded and
+    /// abandoned if it overruns, which is exactly why the timer's own finally — not this — is the path
+    /// that normally does the work.</para>
+    /// </summary>
+    public Task Stop(CancellationToken ct)
+    {
+        if (_context?.SessionId is { } id) TriggerStore.SweepSession(id);
+        return Task.CompletedTask;
+    }
 }

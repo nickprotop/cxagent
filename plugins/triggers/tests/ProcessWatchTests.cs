@@ -81,13 +81,14 @@ public class ProcessWatchTests
         var outcome = await ProcessWatch.Run(
             $"seq 1 200000", TimeSpan.FromSeconds(60), _ => { }, CancellationToken.None);
 
-        Assert.NotNull(outcome.SpillPath);
-        Assert.True(File.Exists(outcome.SpillPath));
+        Assert.NotNull(outcome.Spill);
+        Assert.True(File.Exists(outcome.Spill!.Path));
+        Assert.True(outcome.Spill.TotalBytes > ProcessWatch.InlineCap);
         Assert.True(outcome.Output.Length <= ProcessWatch.InlineCap + 200,
             $"inline output was {outcome.Output.Length} characters");
         Assert.Contains("200000", outcome.Output);
 
-        File.Delete(outcome.SpillPath!);
+        File.Delete(outcome.Spill.Path);
     }
 
     /// <summary>
@@ -99,7 +100,7 @@ public class ProcessWatchTests
     public void Composing_appends_the_code_then_the_output_under_the_prompt()
     {
         var composed = ProcessWatch.Compose("Look at what CI reported.",
-            new WatchOutcome(1, false, "build failed", null));
+            new WatchOutcome(1, false, "build failed", Spill: null));
 
         var lines = composed.ReplaceLineEndings("\n").Split('\n');
         Assert.Equal("Look at what CI reported.", lines[0]);
@@ -113,7 +114,7 @@ public class ProcessWatchTests
     public void Composing_a_timeout_says_so_instead_of_an_exit_code()
     {
         var composed = ProcessWatch.Compose("Check on it.",
-            new WatchOutcome(null, true, "still going", null));
+            new WatchOutcome(null, true, "still going", Spill: null));
 
         Assert.Contains("timed out", composed, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("exit ", composed, StringComparison.OrdinalIgnoreCase);
@@ -128,8 +129,10 @@ public class ProcessWatchTests
     public void A_spilled_composition_names_the_file_and_the_size()
     {
         var composed = ProcessWatch.Compose("Look.",
-            new WatchOutcome(1, false, "the tail", "/tmp/cxagent-trigger-3.log"));
+            new WatchOutcome(1, false, "the tail",
+                new Spill("/tmp/cxagent-trigger-3.log", 4_404_019)));
 
         Assert.Contains("/tmp/cxagent-trigger-3.log", composed);
+        Assert.Contains("4.2 MB", composed);
     }
 }

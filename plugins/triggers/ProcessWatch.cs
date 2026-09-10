@@ -3,12 +3,23 @@ using System.Text;
 
 namespace CxAgent.Plugins.Triggers;
 
+/// <summary>
+/// Where the FULL output went, when it did not fit inline, and how big that full output was.
+///
+/// <para>ONE RECORD, NOT TWO FIELDS ON WatchOutcome, because a path with no size is half the story a
+/// spill message has to tell: Compose needs both together or not at all, so making a caller pass one
+/// without the other is a bug the type system should catch rather than a convention to remember.</para>
+/// </summary>
+/// <param name="Path">Where the whole output was written.</param>
+/// <param name="TotalBytes">The full output's size, before it was cut down to the inline tail.</param>
+public sealed record Spill(string Path, long TotalBytes);
+
 /// <summary>What a watched process left behind.</summary>
 /// <param name="ExitCode">Its code, or null when it was killed at the timeout.</param>
 /// <param name="TimedOut">True when nothing exited and the wait gave up.</param>
 /// <param name="Output">The merged streams, tail-capped at <see cref="ProcessWatch.InlineCap"/>.</param>
-/// <param name="SpillPath">Where the whole output went, when it did not fit.</param>
-public sealed record WatchOutcome(int? ExitCode, bool TimedOut, string Output, string? SpillPath);
+/// <param name="Spill">Set when the output did not fit and had to be written out in full.</param>
+public sealed record WatchOutcome(int? ExitCode, bool TimedOut, string Output, Spill? Spill);
 
 /// <summary>
 /// Runs a command and waits for it to end.
@@ -95,15 +106,20 @@ public static class ProcessWatch
         // WRITTEN WHOLE AND NAMED, rather than truncated. A submitted turn cannot be taken back: an
         // uncapped build on a large solution is megabytes, unattended, and one wake could exhaust the
         // window with nobody there to stop it.
-        var spill = Path.Combine(Path.GetTempPath(),
+        var spillPath = Path.Combine(Path.GetTempPath(),
             $"cxagent-trigger-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Environment.ProcessId}.log");
+        Spill? spill;
         try
         {
-            await File.WriteAllTextAsync(spill, text, CancellationToken.None);
+            await File.WriteAllTextAsync(spillPath, text, CancellationToken.None);
+            // THE BYTE COUNT WRITTEN, NOT text.Length: those diverge once the merged output holds
+            // anything outside ASCII, and the size that matters here is what landed on disk.
+            spill = new Spill(spillPath, Encoding.UTF8.GetByteCount(text));
         }
         catch (Exception)
         {
-            // A file we cannot write is not a wake we cannot send. The tail still travels.
+            // A file we cannot write is not a wake we cannot send. The tail still travels, and with
+            // no path to name there is nothing a size would tell the reader either.
             spill = null;
         }
 
@@ -128,10 +144,19 @@ public static class ProcessWatch
         // distinguish them if both arrive as a number.
         sb.AppendLine(outcome.TimedOut ? "timed out" : $"exit {outcome.ExitCode}");
 
-        if (outcome.SpillPath is { } path)
-            sb.AppendLine($"… output too long to include in full; all of it is at {path} …");
+        if (outcome.Spill is { } spill)
+            sb.AppendLine($"… {FormatSize(spill.TotalBytes)} of output, in full at {spill.Path} …");
 
         sb.Append(outcome.Output);
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Bytes at the scale a reader compares by, the way <c>Cap</c> already says a character count —
+    /// this one just says how big the thing that got cut down actually was.
+    /// </summary>
+    private static string FormatSize(long bytes) =>
+        bytes < 1024 ? $"{bytes} B"
+        : bytes < 1024 * 1024 ? $"{bytes / 1024.0:0.#} KB"
+        : $"{bytes / (1024.0 * 1024.0):0.#} MB";
 }
