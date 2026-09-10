@@ -35,19 +35,79 @@ public sealed class SubAgentStore
     private readonly ConcurrentDictionary<string, byte> _busy = new(StringComparer.Ordinal);
     private readonly object _naming = new();
 
-    /// <summary>Keeps this child under a fresh name and answers what it was called.</summary>
-    public string Keep(SubAgent agent, string? description)
+    /// <summary>
+    /// Handles claimed by a spawn that has not finished starting.
+    ///
+    /// <para>SEPARATE FROM <c>_byName</c> because a reserved name has no agent behind it yet: putting
+    /// a placeholder in the store would make <c>Find</c> answer with something nobody can send to,
+    /// and <c>All</c> list a child that does not exist.</para>
+    /// </summary>
+    private readonly HashSet<string> _reserved = new(StringComparer.Ordinal);
+
+    /// <summary>Which reservation belongs to which tool call, so the spawner can claim it.</summary>
+    private readonly Dictionary<string, string> _reservedFor = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Claims the handle a child will answer to, before it exists.
+    ///
+    /// <para>NEEDED BECAUSE THE RECEIPT IS WRITTEN FIRST. A parent no longer waits for its children,
+    /// so it names one in a tool result while the child is still starting — and that name has to be
+    /// the one the child actually gets, or the model is told a handle that never resolves.</para>
+    ///
+    /// <para>THE RESERVATION IS WHAT MAKES THE SUFFIX RULE STILL WORK. Two children described the
+    /// same way are spawned in one response; without holding the first name at dispatch, both would
+    /// slug identically and the second would take the first one's handle.</para>
+    /// </summary>
+    /// <param name="callId">
+    /// The tool call this reservation belongs to — how the spawner finds it again.
+    ///
+    /// <para>KEYED ON THE CALL RATHER THAN PASSED DOWN, because <c>TryInvokeAsync</c> already takes
+    /// five parameters and a sixth would be the one nobody reads positionally (AV1561). Both sides
+    /// hold the call, so the call is the key they already share.</para>
+    /// </param>
+    public string Reserve(string? description, string callId)
     {
-        // NAMED UNDER A LOCK because two spawns racing would otherwise both read the same taken-set
-        // and mint the same name, silently replacing one child with the other. Spawns ARE concurrent
-        // — SubAgentSpawner has a concurrency slot precisely because several run at once.
         lock (_naming)
         {
-            var name = Slug(description, _byName.Keys.ToArray());
+            var name = Slug(description, [.. _byName.Keys, .. _reserved]);
+            _reserved.Add(name);
+            _reservedFor[callId] = name;
+            return name;
+        }
+    }
+
+    /// <summary>The handle reserved for this call, or null when nothing reserved one.</summary>
+    public string? ReservationFor(string callId)
+    {
+        lock (_naming) return _reservedFor.GetValueOrDefault(callId);
+    }
+
+    /// <summary>
+    /// Keeps this child, under <paramref name="reserved"/> when one was claimed for it.
+    ///
+    /// <para>NAMED UNDER A LOCK because two spawns racing would otherwise both read the same
+    /// taken-set and mint the same name, silently replacing one child with the other. Spawns ARE
+    /// concurrent — SubAgentSpawner has a concurrency slot precisely because several run at once.</para>
+    /// </summary>
+    public string Keep(SubAgent agent, string? description, string? reserved = null)
+    {
+        lock (_naming)
+        {
+            var name = reserved ?? Slug(description, [.. _byName.Keys, .. _reserved]);
+            _reserved.Remove(name);
+            foreach (var (k, v) in _reservedFor.Where(e => e.Value == name).ToList())
+                _reservedFor.Remove(k);
             _byName[name] = new StoredAgent(name, agent.TypeName, description,
                 DateTimeOffset.UtcNow, agent);
             return name;
         }
+    }
+
+    /// <summary>What this child was kept under, or null when nothing keeps it.</summary>
+    public string? NameOf(SubAgent agent)
+    {
+        lock (_naming)
+            return _byName.Values.FirstOrDefault(a => ReferenceEquals(a.Agent, agent))?.Name;
     }
 
     /// <summary>This session's agent of that name, or null when nothing holds it.</summary>

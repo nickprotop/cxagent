@@ -117,9 +117,16 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         It cannot spawn sub-agents of its own.
 
+        SPAWNING RETURNS IMMEDIATELY. You get a receipt naming the agent, not its answer — the work
+        runs in the background and the answer reaches you on a later turn. So spawn everything you
+        want running, then keep working; do NOT write your final reply until the answers have
+        actually arrived, because until then you have not seen the work you are reporting on.
+
         A sub-agent you spawned is still there, by name, with everything it read and did — ask IT with
-        agent_send rather than spawning another to cover the same ground. Call agent_list to see which
-        ones there are; you will not remember them once the spawn falls out of context.
+        agent_send rather than spawning another to cover the same ground. That works while it is still
+        running, so tell it as soon as you learn something it needs, and use it to ask how far it has
+        got. Call agent_list to see which ones there are; you will not remember them once the spawn
+        falls out of context.
         """;
 
     /// <summary>
@@ -277,6 +284,19 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             turnTools: turnTools);
         onChild?.Invoke(child);
 
+        // KEPT THE MOMENT IT EXISTS, NOT WHEN IT FINISHES. A parent no longer waits at the spawn, so
+        // a child added only on completion is unreachable for the whole time it is running — which is
+        // exactly when the parent wants to ask how far it has got, or tell it something it needs. A
+        // live drive found this immediately: agent_list answered "no sub-agents have been spawned"
+        // while one was mid-run.
+        var keptAs = _store?.Keep(child, Read(call, "description"),
+            call.Id is { } spawnId ? _store.ReservationFor(spawnId) : null);
+
+        // AND MARKED BUSY FOR ITS WHOLE RUN, so a send while it works goes to its mailbox rather
+        // than starting a second turn on a context this one is actively appending to — the
+        // corruption SubAgentStore.TryBeginSend exists to prevent.
+        if (keptAs is not null) _store!.TryBeginSend(keptAs);
+
         // THE CAP, WAITED HERE — inside the started task, never on the parent's walk. Waiting on the
         // walk would stall the turn's INLINE tools behind a queued child, turning a limit on
         // concurrency into a serialiser for work that was never capped.
@@ -292,7 +312,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // reconstructible; its conversation is not, and re-running the same parameters later
             // would rebuild an agent that must REDO the work to reach where this one already is.
             // The name goes into the envelope so the model can reach it without a listing call.
-            var name = _store?.Keep(child, Read(call, "description"));
+            // THE NAME IT WAS KEPT UNDER at spawn — a lookup, not a second Keep, which would
+            // re-register the same child and mint a second handle for it.
+            var name = keptAs;
 
             return SubAgentEnvelope.Render(child.Agent.Id, name, result.Outcome,
                 WithPlanOutcome(result.Text, planPath));
@@ -300,6 +322,10 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         finally
         {
             slot?.Release();
+
+            // RELEASED WHATEVER HAPPENED, or a child that threw stays busy forever and every later
+            // send to it is answered with a delivery confirmation nobody drains.
+            if (keptAs is not null) _store!.EndSend(keptAs);
         }
     }
 

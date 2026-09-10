@@ -179,6 +179,19 @@ public sealed class Agent
     public AgentMailbox Mailbox { get; } = new();
 
     /// <summary>
+    /// Children spawned in this goal whose answers have not arrived yet.
+    ///
+    /// <para>WHAT STOPS THE GOAL ENDING EARLY. The parent no longer waits at the spawn, so this is
+    /// the only thing that knows work is outstanding — and a goal that ends while it is above zero
+    /// discards answers into a mailbox nothing will drain.</para>
+    ///
+    /// <para>INTERLOCKED because the decrement happens on whichever thread the child finished on,
+    /// while the turn loop reads it.</para>
+    /// </summary>
+    private int _outstandingChildren;
+
+
+    /// <summary>
     /// Loads skill bodies on demand. Built here rather than injected because it needs nothing from
     /// the outside: its catalog comes from the same per-turn discovery the prompt uses, so parent and
     /// child each get their own without anything being threaded through the factory.
@@ -579,6 +592,74 @@ public sealed class Agent
     /// naming the remedy — a null would have to be re-checked at every call site to say the same
     /// thing less well.</para>
     /// </summary>
+    /// <summary>
+    /// The handle a spawn will be reachable by, reserved before the child has finished.
+    ///
+    /// <para>RESERVED AT DISPATCH, NOT AT COMPLETION, because the receipt has to name it and the
+    /// receipt is written now. The store mints the same slug it would have minted later — from the
+    /// call's own description — so the name in the receipt is the name the child ends up with, and a
+    /// second spawn described the same way gets the suffix rather than stealing the handle.</para>
+    /// </summary>
+    private string? PendingChildName(ToolCall call) =>
+        _reach?.Store.Reserve(ArgOrEmpty(call, "description"), call.Id ?? call.Name);
+
+    /// <summary>
+    /// What the model reads the moment it spawns: that the work is running, and how to reach it.
+    ///
+    /// <para>SAYS THE ANSWER IS COMING RATHER THAN LEAVING IT IMPLIED. A model handed "started"
+    /// alone will write its final reply immediately, having learned nothing — the failure this
+    /// wording exists to prevent. It must know a result is still owed to it.</para>
+    /// </summary>
+    private static string ReceiptFor(string? handle) =>
+        handle is null
+            ? "started — it is running in the background. Its answer will arrive on a later turn."
+            : $"started as '{handle}' — it is running in the background. Its answer will arrive on a "
+            + "later turn; do not finish your reply until it does. You can ask it how far it has got "
+            + $"with agent_send name '{handle}'.";
+
+    /// <summary>
+    /// Puts a child's answer in this agent's mailbox when it finishes.
+    ///
+    /// <para>UNAWAITED ON PURPOSE — that is the point of the change — but never discarded silently:
+    /// a throw here would otherwise take the child's whole run with it, leaving a parent that was
+    /// told an answer was coming and never gets one. The failure goes to the mailbox too, because a
+    /// parent waiting for a child needs to learn that it will not arrive.</para>
+    /// </summary>
+    private void DeliverWhenDone(Task<string> task, string? handle)
+    {
+        var named = handle is null ? "a sub-agent" : $"'{handle}'";
+        _ = Report();
+
+        async Task Report()
+        {
+            string text;
+            try
+            {
+                text = await task;
+            }
+            catch (OperationCanceledException)
+            {
+                // A CANCELLED CHILD IS NOT NEWS. The turn that spawned it is going away too, and the
+                // mailbox it would land in belongs to an agent about to stop reading. Still counted
+                // down, or the goal could never end.
+                Interlocked.Decrement(ref _outstandingChildren);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Decrement(ref _outstandingChildren);
+                Mailbox.TryEnqueue($"{named} failed: {ex.Message}", out _);
+                return;
+            }
+
+            // ENQUEUED BEFORE THE COUNT DROPS, so the loop can never see zero outstanding while the
+            // answer is still on its way to the mailbox — which would let the goal end one lap before
+            // the thing it was waiting for arrives.
+            Mailbox.TryEnqueue($"{named} has finished. Its answer:\n{text}", out _);
+            Interlocked.Decrement(ref _outstandingChildren);
+        }
+    }
+
     private static string ArgOrEmpty(ToolCall call, string name) =>
         call.Arguments.ValueKind == JsonValueKind.Object
         && call.Arguments.TryGetProperty(name, out var value)
@@ -1312,6 +1393,7 @@ public sealed class Agent
         // instead. So a session of one-turn exchanges logged every prompt as context-000, each
         // silently overwriting the last: the exact log fragmentation this counter exists to prevent,
         // reintroduced by the one path that never reaches a `continue`.
+
         for (var turn = 0; ; turn++)
         {
             ct.ThrowIfCancellationRequested();
@@ -1503,6 +1585,66 @@ public sealed class Agent
                     Role = "user",
                     Content = "Your last response was cut off before its tool call arrived. Re-issue "
                             + "the call you intended, or say what you want to do next.",
+                    Timestamp = DateTimeOffset.UtcNow,
+                });
+                continue;
+            }
+
+            // CHILDREN STILL RUNNING HOLD THE GOAL OPEN, and without this the whole change is a
+            // regression. A parent no longer waits at the spawn, so a model that answers in the next
+            // breath ends the goal while its children are mid-flight — their answers land in a
+            // mailbox nobody will drain, and the user gets a confident reply about work that never
+            // happened. The wording is the same shape as the stuck-repeat nudge: say what is missing
+            // and what to do instead, rather than refusing silently.
+            //
+            // NOT BOUNDED BY A REMINDER COUNT, and a live drive is why. A child ran for 156 seconds
+            // — far more laps than any small bound — and a parent allowed to give up after three
+            // reminders ended its goal before the answer arrived, delivering a confident report on
+            // work it never saw. That is the exact failure this exists to prevent, so the only bound
+            // is the turn cap, which bounds everything else here too.
+            //
+            // THE COST IS A REQUEST PER LAP while a child works, and it is paid knowingly: the model
+            // usually spends those laps calling agent_send to ask how far the child has got, which is
+            // the behaviour that makes waiting useful rather than idle.
+            // OR A MAILBOX WITH SOMETHING IN IT, which is the race a live drive found. A child that
+            // finished while the parent was composing its reply has already decremented the count,
+            // so checking outstanding work alone let the goal end with the answer sitting in a
+            // mailbox no lap would ever drain — the parent went idle having reported nothing, and
+            // the work was simply lost. What is owed to this agent is "children still running" PLUS
+            // "answers that arrived but have not been read".
+            if (response.ToolCalls.Count == 0
+                && (_outstandingChildren > 0 || Mailbox.HasPending))
+            {
+                if (!string.IsNullOrWhiteSpace(response.Text))
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = response.Text,
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+
+                // ALREADY HERE, JUST UNREAD: the drain at the top of the next lap will place it, so
+                // the nudge only has to make sure there IS a next lap.
+                if (_outstandingChildren == 0)
+                {
+                    messages.Add(new ChatMessage
+                    {
+                        Role = "user",
+                        Content = "A sub-agent's answer has arrived. Read it before you reply.",
+                        Timestamp = DateTimeOffset.UtcNow,
+                    });
+                    continue;
+                }
+
+                messages.Add(new ChatMessage
+                {
+                    Role = "user",
+                    Content = $"{_outstandingChildren} sub-agent"
+                            + (_outstandingChildren == 1 ? " is" : "s are") + " still running and "
+                            + (_outstandingChildren == 1 ? "its answer has" : "their answers have")
+                            + " not reached you yet. Do not finish your reply on work you have not "
+                            + "seen. Wait for the result, or use agent_send to ask how far it has "
+                            + "got — and only then answer.",
                     Timestamp = DateTimeOffset.UtcNow,
                 });
                 continue;
@@ -1739,8 +1881,27 @@ public sealed class Agent
                 // results to "fix" the order would be worse than useless — the cancellation backfill
                 // reads `messages` to find what is already answered, so buffered results would be
                 // invisible to it and every one of them double-answered.
+                // THE PARENT DOES NOT WAIT FOR ITS CHILDREN, and this is the whole of that change.
+                // Each spawn is answered NOW with a receipt naming the handle, and the child's real
+                // answer arrives in the mailbox — drained at the top of a later lap, which is the
+                // mechanism that already exists for "something reached this agent during the loop".
+                //
+                // A TOOL CALL MUST BE ANSWERED IN THE SAME TURN IT WAS MADE. ToolCallId is the only
+                // field marking a message as a tool result, and a call left without one is a call
+                // the model never sees resolved — so the receipt is not a courtesy, it is what keeps
+                // the conversation well-formed while the work continues behind it.
+                //
+                // WHY THE PARENT WAITED BEFORE: it was the only way to get the answer back. With a
+                // mailbox there is another, and waiting cost the parent every ability it has while
+                // parked — it could not send to a child it had just learned something about, could
+                // not answer "are you done?", and queued anything the user typed.
                 foreach (var (call, task) in spawned)
-                    Record(call, await task);
+                {
+                    var handle = _reach is null ? null : PendingChildName(call);
+                    Interlocked.Increment(ref _outstandingChildren);
+                    Record(call, ReceiptFor(handle));
+                    DeliverWhenDone(task, handle);
+                }
 
                 spawned.Clear();
 

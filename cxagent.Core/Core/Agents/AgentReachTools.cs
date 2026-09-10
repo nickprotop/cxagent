@@ -21,6 +21,9 @@ namespace CxAgent.Core.Agents;
 /// </summary>
 public sealed class AgentReachTools(SubAgentStore store)
 {
+    /// <summary>The store behind these tools, for a caller that must reserve a handle at dispatch.</summary>
+    public SubAgentStore Store => store;
+
     /// <summary>Whether this handles a call by that name.</summary>
     public bool Claims(string name) => name == Tool.AgentSend || name == Tool.AgentList;
 

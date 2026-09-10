@@ -177,6 +177,59 @@ public class SubAgentFridgeTests
             m => m.Content.Contains("STOP: the schema changed"));
     }
 
+    /// <summary>
+    /// THE SPAWN RETURNS A RECEIPT, NOT AN ANSWER — the parent is no longer parked while its child
+    /// works, which is what makes agent_send reachable at the moment it is useful.
+    /// </summary>
+    [Fact]
+    public async Task A_spawn_answers_with_a_receipt_naming_the_handle()
+    {
+        var store = new SubAgentStore();
+        var name = store.Reserve("survey the notes", "call-1");
+
+        Assert.Equal("survey-the-notes", name);
+        // AND THE RESERVATION IS FINDABLE BY THE CALL, which is how the spawner claims it later.
+        Assert.Equal("survey-the-notes", store.ReservationFor("call-1"));
+    }
+
+    /// <summary>
+    /// A RESERVED NAME IS NOT AVAILABLE TO THE NEXT SPAWN. Two children described the same way in
+    /// one response would otherwise slug identically, and the second would take the first's handle —
+    /// leaving a receipt naming an agent the model can no longer reach.
+    /// </summary>
+    [Fact]
+    public void A_second_reservation_of_the_same_description_is_suffixed()
+    {
+        var store = new SubAgentStore();
+
+        Assert.Equal("review-auth", store.Reserve("review auth", "c1"));
+        Assert.Equal("review-auth-2", store.Reserve("review auth", "c2"));
+    }
+
+    /// <summary>
+    /// AND THE CHILD ENDS UP UNDER THE NAME THE RECEIPT PUBLISHED, rather than a freshly minted one.
+    /// </summary>
+    [Fact]
+    public async Task A_kept_child_takes_the_handle_that_was_reserved_for_it()
+    {
+        var store = new SubAgentStore();
+        var reserved = store.Reserve("survey the notes", "call-1");
+        var spawner = new SubAgentSpawner(FactoryOver(Answering("done")), null, store);
+
+        await spawner.TryInvokeAsync(
+            new ToolCall
+            {
+                Id = "call-1",
+                Name = "agent",
+                Arguments = JsonSerializer.SerializeToElement(
+                    new { description = "survey the notes", prompt = "read them" }),
+            },
+            onChild: null, CancellationToken.None);
+
+        Assert.NotNull(store.Find(reserved));
+        Assert.Single(store.All());
+    }
+
     [Fact]
     public async Task Listing_names_a_child_that_was_spawned()
     {
