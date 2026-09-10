@@ -1419,7 +1419,13 @@ public static class AppBootstrap
                 var nextEdits = cycling.Mode.Edits switch
                 {
                     EditMode.AlwaysAsk => EditMode.AcceptEdits,
-                    EditMode.AcceptEdits when permissionGate.Classifier is not null => EditMode.Auto,
+                    // THE SESSION'S CLASSIFIER, NOT THE GATE'S. One gate serves every session, so its
+                    // own Classifier is a process-wide FALLBACK that cxagent never binds — see
+                    // PermissionDecider.BindClassifier, which says so and points here. A session's
+                    // classifier rides on its policy, set on every re-wire. Asking the gate meant the
+                    // cycle skipped `auto` for everybody: config named a classifier, one was built and
+                    // handed to the policy, and shift+tab still offered two modes out of three.
+                    EditMode.AcceptEdits when cycling.Policy?.Classifier is not null => EditMode.Auto,
                     _ => EditMode.AlwaysAsk,
                 };
 
