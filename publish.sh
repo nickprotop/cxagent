@@ -71,7 +71,15 @@ NEW_TAG="v$NEW_VERSION"
 # the name alone derives every path below. The change decisions feed ONE commit and ONE prompt:
 # a copy of this block per plugin would leave those deciding between changed/unchanged combinations
 # by hand, which is where a plugin silently ships with an unbumped version.
-PLUGINS="csharp-lsp calculator clone-finder"
+#
+# DISCOVERED, NOT LISTED. A hardcoded name is one more place to remember when a plugin is added, and
+# the thing forgotten there is invisible: the release simply ships that plugin at whatever version it
+# already had, which is the exact failure the paragraph above describes. A plugin IS a directory
+# under plugins/ with a matching sidecar, so asking the tree costs nothing and cannot go stale.
+PLUGINS=$(for d in plugins/*/; do
+    n=$(basename "$d")
+    [ -f "plugins/$n/$n.plugin.json" ] && printf '%s ' "$n"
+done)
 
 declare -A PLUGIN_VERSION
 CHANGED_PLUGINS=""
