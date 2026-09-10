@@ -59,11 +59,138 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer
     /// timer by not returning would hang the session that asked for it. The timer lives on a task
     /// this plugin owns, ended by Lifetime cancelling at Stop.</para>
     /// </summary>
-    public Task Start(CancellationToken ct) => Task.CompletedTask;
+    public Task Start(CancellationToken ct)
+    {
+        // A TASK THIS PLUGIN OWNS, ENDED BY Lifetime — not by Stop. Unwire disposes the context and
+        // cancels Lifetime BEFORE Stop is awaited, so a timer registered against this token has
+        // already ended by the time Stop runs. A plugin that instead tried to cancel its own timers
+        // inside Stop would be racing a Stop that is timeout-bounded and abandoned if it overruns.
+        _ = Tick(_context!.Lifetime);
+        return Task.CompletedTask;
 
-    public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
-        CancellationToken ct) =>
-        Task.FromResult(new JobResult { Success = false, ErrorMessage = $"unknown tool '{toolName}'" });
+        async Task Tick(CancellationToken lifetime)
+        {
+            // A SECOND IS THE RESOLUTION A CRON LINE NEEDS AND NO MORE. Anything finer burns wakeups
+            // for a schedule whose smallest unit is a minute.
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(lifetime))
+                    await FireDue(DateTimeOffset.Now);
+            }
+            catch (OperationCanceledException)
+            {
+                // The session ended. Its triggers go with it.
+            }
+            finally
+            {
+                if (_context?.SessionId is { } id) TriggerStore.SweepSession(id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires everything due, and reschedules what repeats.
+    ///
+    /// <para>INTERNAL AND TAKING A CLOCK, so a test can advance time rather than sleep. The timer
+    /// calls this with DateTimeOffset.Now.</para>
+    /// </summary>
+    internal async Task FireDue(DateTimeOffset now)
+    {
+        foreach (var trigger in TriggerStore.Due(now))
+        {
+            // ONLY THIS SESSION'S. The store is process-wide and this instance belongs to one
+            // session; firing another's would put a stranger's goal into this client.
+            if (trigger.SessionId != _context?.SessionId) continue;
+
+            try
+            {
+                // wantResult: false — a wake needs no answer, so the scheduler does not ask for one.
+                if (_context.Client is { } client)
+                    await client.Submit(trigger.Prompt, wantResult: false, _context.Lifetime);
+            }
+            catch (ObjectDisposedException)
+            {
+                // THE SEVERED CLIENT IS THE CUE TO DROP THE WAKE, and it only arrives if something
+                // catches it. This runs on a timer nobody awaits: an uncaught throw here disappears
+                // and the trigger simply stops working with no message — the same class of silent
+                // failure a discarded task produced in the plugin manager.
+                TriggerStore.SweepSession(trigger.SessionId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _context?.Logger.Log($"trigger {trigger.Id} failed to submit: {ex.Message}");
+            }
+
+            TriggerStore.Reschedule(trigger, now);
+        }
+    }
+
+    public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+        CancellationToken ct)
+    {
+        var session = _context?.SessionId;
+        if (session is null)
+            return Fail("this host does not scope plugins by session, so triggers cannot be kept apart.");
+
+        return toolName switch
+        {
+            "trigger_wake" => Wake(session, call),
+            "trigger_list" => Listing(session),
+            "trigger_update" => UpdateOne(session, call),
+            "trigger_cancel" => CancelOne(session, call),
+            "trigger_on_exit" => await OnExit(session, call),
+            _ => Fail($"unknown tool '{toolName}'"),
+        };
+    }
+
+    private static JobResult Wake(string session, JobParameters call)
+    {
+        var prompt = call.Get<string>("prompt");
+        if (!When.TryParse(call.Get<string?>("after", null), call.Get<string?>("at", null),
+                call.Get<string?>("every", null), out var when, out var refusal))
+            return Fail(refusal!);
+
+        var trigger = TriggerStore.Add(session, when!, prompt);
+        return Say($"trigger {trigger.Id} set: fires {when!.Describe()}.");
+    }
+
+    private static JobResult Listing(string session) =>
+        Say(CommandLine.Render(TriggerStore.For(session)));
+
+    private static JobResult UpdateOne(string session, JobParameters call)
+    {
+        var id = call.Get<int>("id");
+        var prompt = call.Get<string>("prompt");
+        if (!When.TryParse(call.Get<string?>("after", null), call.Get<string?>("at", null),
+                call.Get<string?>("every", null), out var when, out var refusal))
+            return Fail(refusal!);
+
+        var updated = TriggerStore.Update(session, id, when!, prompt);
+        if (updated is null)
+            return Fail($"no trigger {id} in this session.");
+
+        return Say($"trigger {updated.Id} updated: fires {updated.When.Describe()}.");
+    }
+
+    private static JobResult CancelOne(string session, JobParameters call)
+    {
+        var id = call.Get<int>("id");
+        if (!TriggerStore.Cancel(session, id))
+            return Fail($"no trigger {id} in this session.");
+
+        return Say($"trigger {id} cancelled.");
+    }
+
+    private static Task<JobResult> OnExit(string session, JobParameters call) =>
+        Task.FromResult(Fail("not yet"));
+
+    private static JobResult Fail(string why) =>
+        new() { Success = false, ErrorMessage = why };
+
+    private static JobResult Say(string text) =>
+        new() { Success = true, Output = new Dictionary<string, object?> { ["content"] = text } };
 
     public Task Stop(CancellationToken ct) => Task.CompletedTask;
 }

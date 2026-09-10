@@ -18,6 +18,12 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
+  <!-- FireDue IS INTERNAL because Start's timer is the only production caller — tests need it to
+       advance the clock without sleeping real seconds, and that is the one reason to open it up. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="triggers.Tests" />
+  </ItemGroup>
+
   <!-- THE TEST PROJECT IS NESTED UNDER tests/, SO ITS SOURCE MUST BE EXCLUDED HERE. An SDK project
        globs **/*.cs beneath itself, which would otherwise sweep the tests into this library too. -->
   <ItemGroup>
