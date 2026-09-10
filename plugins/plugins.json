@@ -152,8 +152,8 @@
     {
       "name": "triggers",
       "displayName": "Triggers",
-      "version": "0.1.0",
-      "description": "Work that starts without anybody typing — on a clock, or when a process exits. Schedules a prompt to arrive later in the same session; fires only while cxagent is running.",
+      "version": "0.9.17",
+      "description": "Work that starts without anybody typing \u2014 on a clock, or when a process exits. Schedules a prompt to arrive later in the same session; fires only while cxagent is running.",
       "publisher": "nickprotop",
       "license": "MIT",
       "repository": "https://github.com/nickprotop/cxagent",

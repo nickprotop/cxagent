@@ -1,45 +1,80 @@
 {
   "pluginContract": 3,
   "name": "triggers",
-  "version": "0.1.0",
+  "version": "0.9.17",
   "spawns": true,
   "client": true,
-  "instructions": "You can schedule work for later in this session. `trigger_wake` takes exactly one of `after`, `at` or `every`; `every` is a cron expression. `trigger_on_exit` runs a command and wakes you when it ends. Call `trigger_list` to see what is pending — you will not remember what you scheduled once it falls out of context. Triggers fire only while cxagent is running.",
+  "instructions": "You can schedule work for later in this session. `trigger_wake` takes exactly one of `after`, `at` or `every`; `every` is a cron expression. `trigger_on_exit` runs a command and wakes you when it ends. Call `trigger_list` to see what is pending \u2014 you will not remember what you scheduled once it falls out of context. Triggers fire only while cxagent is running.",
   "tools": [
     {
       "name": "trigger_wake",
-      "description": "Schedules a prompt to be sent to you later in this session. Set EXACTLY ONE of after, at or every — the call is refused if you set none or more than one. `every` is a five-field cron expression, not a duration. The prompt arrives as a fresh turn with no conversation around it, so write it for a reader who has forgotten why it was scheduled.",
+      "description": "Schedules a prompt to be sent to you later in this session. Set EXACTLY ONE of after, at or every \u2014 the call is refused if you set none or more than one. `every` is a five-field cron expression, not a duration. The prompt arrives as a fresh turn with no conversation around it, so write it for a reader who has forgotten why it was scheduled.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "after": { "type": "string", "description": "A delay from now: an integer and one unit suffix, s/m/h/d. \"90m\", \"2h\". No compound forms." },
-          "at": { "type": "string", "description": "A moment, local time: \"2026-09-10 09:00\" or \"2026-09-10T09:00\". An explicit offset wins." },
-          "every": { "type": "string", "description": "A five-field cron expression: minute hour day-of-month month day-of-week. \"0 9 * * 1-5\"." },
-          "prompt": { "type": "string", "description": "What to send you when it fires. Written for a reader with no context." }
+          "after": {
+            "type": "string",
+            "description": "A delay from now: an integer and one unit suffix, s/m/h/d. \"90m\", \"2h\". No compound forms."
+          },
+          "at": {
+            "type": "string",
+            "description": "A moment, local time: \"2026-09-10 09:00\" or \"2026-09-10T09:00\". An explicit offset wins."
+          },
+          "every": {
+            "type": "string",
+            "description": "A five-field cron expression: minute hour day-of-month month day-of-week. \"0 9 * * 1-5\"."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What to send you when it fires. Written for a reader with no context."
+          }
         },
-        "required": ["prompt"]
+        "required": [
+          "prompt"
+        ]
       },
       "gated": false
     },
     {
       "name": "trigger_list",
       "description": "The triggers pending in this session: id, when each next fires, and the first line of its prompt. This is how you find out what you scheduled, since nothing else tells you.",
-      "inputSchema": { "type": "object", "properties": {} },
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
       "gated": false
     },
     {
       "name": "trigger_update",
-      "description": "Replaces a trigger's schedule and prompt, KEEPING its id — which is what makes it different from cancel-and-recreate, since a recreated trigger loses the id a user has already seen. Takes the same arguments as trigger_wake and obeys the same exactly-one-of rule.",
+      "description": "Replaces a trigger's schedule and prompt, KEEPING its id \u2014 which is what makes it different from cancel-and-recreate, since a recreated trigger loses the id a user has already seen. Takes the same arguments as trigger_wake and obeys the same exactly-one-of rule.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer", "description": "From trigger_list." },
-          "after": { "type": "string", "description": "A delay from now: an integer and one unit suffix, s/m/h/d." },
-          "at": { "type": "string", "description": "A moment, local time." },
-          "every": { "type": "string", "description": "A five-field cron expression." },
-          "prompt": { "type": "string", "description": "What to send you when it fires." }
+          "id": {
+            "type": "integer",
+            "description": "From trigger_list."
+          },
+          "after": {
+            "type": "string",
+            "description": "A delay from now: an integer and one unit suffix, s/m/h/d."
+          },
+          "at": {
+            "type": "string",
+            "description": "A moment, local time."
+          },
+          "every": {
+            "type": "string",
+            "description": "A five-field cron expression."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What to send you when it fires."
+          }
         },
-        "required": ["id", "prompt"]
+        "required": [
+          "id",
+          "prompt"
+        ]
       },
       "gated": false
     },
@@ -49,31 +84,91 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer", "description": "From trigger_list." }
+          "id": {
+            "type": "integer",
+            "description": "From trigger_list."
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "gated": false
     },
     {
       "name": "trigger_on_exit",
-      "description": "Runs a command UNATTENDED until it exits or times out, then wakes you. Fires on ANY exit, whatever the code — a CI watch that exits non-zero is precisely when waking matters. The exit code and the command's output are APPENDED to your prompt automatically, so say what to DO with them rather than how to format them.",
+      "description": "Runs a command UNATTENDED until it exits or times out, then wakes you. Fires on ANY exit, whatever the code \u2014 a CI watch that exits non-zero is precisely when waking matters. The exit code and the command's output are APPENDED to your prompt automatically, so say what to DO with them rather than how to format them.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "command": { "type": "string", "description": "The command to run and wait on, e.g. gh run watch 12345." },
-          "timeout": { "type": "string", "description": "How long to wait before giving up, in the same units after takes: \"30m\", \"2h\". Required." },
-          "prompt": { "type": "string", "description": "What to send you when it ends. The exit code and output are appended for you." }
+          "command": {
+            "type": "string",
+            "description": "The command to run and wait on, e.g. gh run watch 12345."
+          },
+          "timeout": {
+            "type": "string",
+            "description": "How long to wait before giving up, in the same units after takes: \"30m\", \"2h\". Required."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What to send you when it ends. The exit code and output are appended for you."
+          }
         },
-        "required": ["command", "timeout", "prompt"]
+        "required": [
+          "command",
+          "timeout",
+          "prompt"
+        ]
       },
       "gated": "dynamic"
     }
   ],
   "commands": [
-    { "name": "triggers-add", "summary": "Schedule a wake", "arguments": [{ "name": "when", "summary": "20m, 09:00, or \"0 9 * * 1-5\"" }, { "name": "prompt", "summary": "What to send" }] },
-    { "name": "triggers-list", "summary": "Show pending triggers" },
-    { "name": "triggers-update", "summary": "Change a trigger, keeping its id", "arguments": [{ "name": "id", "summary": "From /triggers-list" }, { "name": "when", "summary": "20m, 09:00, or a cron line" }, { "name": "prompt", "summary": "What to send" }] },
-    { "name": "triggers-cancel", "summary": "Stop a trigger", "arguments": [{ "name": "id", "summary": "From /triggers-list" }] }
+    {
+      "name": "triggers-add",
+      "summary": "Schedule a wake",
+      "arguments": [
+        {
+          "name": "when",
+          "summary": "20m, 09:00, or \"0 9 * * 1-5\""
+        },
+        {
+          "name": "prompt",
+          "summary": "What to send"
+        }
+      ]
+    },
+    {
+      "name": "triggers-list",
+      "summary": "Show pending triggers"
+    },
+    {
+      "name": "triggers-update",
+      "summary": "Change a trigger, keeping its id",
+      "arguments": [
+        {
+          "name": "id",
+          "summary": "From /triggers-list"
+        },
+        {
+          "name": "when",
+          "summary": "20m, 09:00, or a cron line"
+        },
+        {
+          "name": "prompt",
+          "summary": "What to send"
+        }
+      ]
+    },
+    {
+      "name": "triggers-cancel",
+      "summary": "Stop a trigger",
+      "arguments": [
+        {
+          "name": "id",
+          "summary": "From /triggers-list"
+        }
+      ]
+    }
   ]
 }
