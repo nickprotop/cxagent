@@ -30,13 +30,20 @@ public sealed record When(WhenKind Kind, TimeSpan? After, DateTimeOffset? At, st
     public bool Repeats => Kind == WhenKind.Every;
 
     // PARSED ONCE FROM Cron, AS PART OF CONSTRUCTION, AND NEVER REASSIGNED. A `When` lives in
-    // TriggerStore's static list, read by the timer thread while tools and commands read (and in
-    // TryParse, construct) others — a field that could still be written after construction would
-    // need every reader to reason about a race, even a benign one, to trust it. Re-parsing here
-    // duplicates TryParse's own CrontabSchedule.TryParse(every) call, but Cron can be null or an
-    // already-known-bad string for the After/At kinds, so this has to tolerate that rather than
-    // assume the caller already validated it.
+    // TriggerStore's static list, read by the timer thread while tools and commands read others — a
+    // field that could still be written after construction would need every reader to reason about a
+    // race, even a benign one, to trust it.
+    //
+    // AND THIS IS THE ONLY PLACE THE CRON STRING IS PARSED. TryParse validates by constructing a
+    // `When` and asking whether this came out null, rather than parsing separately and throwing the
+    // result away — one parse, and no way for the validity check and the schedule that actually
+    // fires to disagree about the same string.
+    //
+    // NULL FOR THE OTHER TWO KINDS, which carry no Cron at all.
     private readonly CrontabSchedule? _schedule = Cron is null ? null : CrontabSchedule.TryParse(Cron);
+
+    /// <summary>Whether this parsed into something that can actually answer <see cref="NextAfter"/>.</summary>
+    private bool HasSchedule => _schedule is not null;
 
     /// <summary>
     /// A duration: one integer and one unit suffix.
@@ -123,14 +130,18 @@ public sealed record When(WhenKind Kind, TimeSpan? After, DateTimeOffset? At, st
 
         // PARSED WHEN IT IS WRITTEN, NEVER WHEN IT FIRES. A scheduler that stored an unparseable
         // line and discovered it at 09:00 has turned a typo into silence.
-        if (CrontabSchedule.TryParse(every) is null)
+        // BUILT FIRST, THEN CHECKED — the record parses the string once in its own initialiser, so
+        // asking the built value whether it has a schedule is the same question as parsing again,
+        // minus the second parse and minus any chance the two answers differ.
+        var candidate = new When(WhenKind.Every, null, null, every);
+        if (!candidate.HasSchedule)
         {
             refusal = $"'{every}' is not a five-field cron expression. "
                     + "Minute hour day-of-month month day-of-week, e.g. 0 9 * * 1-5.";
             return false;
         }
 
-        when = new When(WhenKind.Every, null, null, every);
+        when = candidate;
         refusal = null;
         return true;
     }
