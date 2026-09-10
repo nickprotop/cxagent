@@ -1,6 +1,14 @@
 <Solution>
+  <Folder Name="/plugins/">
+    <Project Path="plugins/triggers/triggers.csproj" />
+  </Folder>
+  <Folder Name="/plugins/triggers/" />
+  <Folder Name="/plugins/triggers/tests/">
+    <Project Path="plugins/triggers/tests/triggers.Tests.csproj" />
+  </Folder>
   <Project Path="../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
   <Project Path="cxagent.Core/cxagent.Core.csproj" />
+  <Project Path="cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" />
   <Project Path="cxagent.Tests/cxagent.Tests.csproj" />
   <Project Path="cxagent.Tests/fixtures/cxagent.Tests.PluginFixture/cxagent.Tests.PluginFixture.csproj" />
   <Project Path="cxagent.Tests/fixtures/cxagent.Tests.PluginFixture.Mismatched/cxagent.Tests.PluginFixture.Mismatched.csproj" />

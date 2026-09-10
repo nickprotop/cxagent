@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A MANAGED PLUGIN IS A PLAIN LIBRARY ManagedPluginLoader loads by path (Assembly.LoadFrom),
+       not an executable — the same shape calculator and csharp-lsp take. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>triggers</AssemblyName>
+    <RootNamespace>CxAgent.Plugins.Triggers</RootNamespace>
+
+    <!-- A CLASS LIBRARY DOES NOT COPY ITS PACKAGE DEPENDENCIES BY DEFAULT — that copy only happens
+         for an executable's own apphost build. Without this, NCrontab.dll stays in the NuGet cache
+         and never reaches bin/, so Assembly.LoadFrom's directory-relative probe finds nothing beside
+         triggers.dll wherever the plugin is actually loaded from. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- THE TEST PROJECT IS NESTED UNDER tests/, SO ITS SOURCE MUST BE EXCLUDED HERE. An SDK project
+       globs **/*.cs beneath itself, which would otherwise sweep the tests into this library too. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+    <EmbeddedResource Remove="tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- THE CONTRACT, NOT THE RUNTIME. Private="false" stays: the host loads this assembly and the
+         plugin must bind to the host's copy, because Assembly.LoadFrom gives a shipped duplicate a
+         distinct type identity and the host's `is IPlugin` check would fail. -->
+    <ProjectReference Include="../../cxagent.Plugins.Abstractions/cxagent.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NCRONTAB SHIPS BESIDE THE PLUGIN, and belongs to the PLUGIN rather than to Core — which is
+         exactly what shipping the scheduler as a plugin buys. .NET has no cron parser, and writing
+         one is not the half-hour it looks like: `*/7` on day-of-month, the day-of-month/day-of-week
+         OR rule, and rolling to the next valid instant across a month boundary are where hand-rolled
+         cron parsers are wrong rather than absent. -->
+    <PackageReference Include="NCrontab" Version="3.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="triggers.plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
