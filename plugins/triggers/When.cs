@@ -29,7 +29,14 @@ public sealed record When(WhenKind Kind, TimeSpan? After, DateTimeOffset? At, st
     /// <summary>Only a cron expression repeats; the other two fire once and are done.</summary>
     public bool Repeats => Kind == WhenKind.Every;
 
-    private CrontabSchedule? _schedule;
+    // PARSED ONCE FROM Cron, AS PART OF CONSTRUCTION, AND NEVER REASSIGNED. A `When` lives in
+    // TriggerStore's static list, read by the timer thread while tools and commands read (and in
+    // TryParse, construct) others — a field that could still be written after construction would
+    // need every reader to reason about a race, even a benign one, to trust it. Re-parsing here
+    // duplicates TryParse's own CrontabSchedule.TryParse(every) call, but Cron can be null or an
+    // already-known-bad string for the After/At kinds, so this has to tolerate that rather than
+    // assume the caller already validated it.
+    private readonly CrontabSchedule? _schedule = Cron is null ? null : CrontabSchedule.TryParse(Cron);
 
     /// <summary>
     /// A duration: one integer and one unit suffix.
@@ -116,15 +123,14 @@ public sealed record When(WhenKind Kind, TimeSpan? After, DateTimeOffset? At, st
 
         // PARSED WHEN IT IS WRITTEN, NEVER WHEN IT FIRES. A scheduler that stored an unparseable
         // line and discovered it at 09:00 has turned a typo into silence.
-        var parsed = CrontabSchedule.TryParse(every);
-        if (parsed is null)
+        if (CrontabSchedule.TryParse(every) is null)
         {
             refusal = $"'{every}' is not a five-field cron expression. "
                     + "Minute hour day-of-month month day-of-week, e.g. 0 9 * * 1-5.";
             return false;
         }
 
-        when = new When(WhenKind.Every, null, null, every) { _schedule = parsed };
+        when = new When(WhenKind.Every, null, null, every);
         refusal = null;
         return true;
     }
@@ -141,7 +147,6 @@ public sealed record When(WhenKind Kind, TimeSpan? After, DateTimeOffset? At, st
 
     private DateTimeOffset? Next(DateTimeOffset now)
     {
-        _schedule ??= CrontabSchedule.TryParse(Cron);
         if (_schedule is null) return null;
 
         // NCrontab works in DateTime; the local wall clock is what a cron line means.

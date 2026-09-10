@@ -113,6 +113,13 @@ public static class TriggerStore
     /// <para>MATCHED BY IDENTITY, not by reference: the record may have been replaced by an update
     /// between the fire and this call, and rescheduling a stale copy would resurrect the old prompt.
     /// </para>
+    ///
+    /// <para>AND SKIPPED ENTIRELY WHEN THE MATCH IS NO LONGER THE SAME SCHEDULE. (SessionId, Id)
+    /// survives an Update — only the id is kept — so finding a row is not enough to know it is still
+    /// the trigger that fired: Update may have replaced When and Prompt while this fire's submit was
+    /// still awaiting. Advancing THAT row from THIS fire's `now` would push a schedule Update never
+    /// meant off by one cycle, and Update already computed NextFire against the current clock when it
+    /// ran — there is nothing here to correct.</para>
     /// </summary>
     public static void Reschedule(Trigger fired, DateTimeOffset now)
     {
@@ -122,10 +129,12 @@ public static class TriggerStore
                 t => t.SessionId == fired.SessionId && t.Id == fired.Id);
             if (index < 0) return;
 
+            var current = Pending[index];
+            if (current.When != fired.When || current.Prompt != fired.Prompt) return;
+
             // REPEATS DECIDES, NOT NextAfter's RESULT: an "after" one-shot's NextAfter(now) is
             // always now + delay, never null — null only ever comes from a spent "at". Reading
             // Repeats is the only way that is true for all three kinds at once.
-            var current = Pending[index];
             if (!current.When.Repeats)
             {
                 Pending.RemoveAt(index);

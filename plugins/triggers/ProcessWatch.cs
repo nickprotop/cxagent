@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace CxAgent.Plugins.Triggers;
@@ -48,13 +49,17 @@ public static class ProcessWatch
     public static async Task<WatchOutcome> Run(string command, TimeSpan timeout,
         Action<int> registerPid, CancellationToken ct)
     {
-        var info = new ProcessStartInfo("/bin/sh")
+        // THE CATALOG DECLARES "any" PLATFORM, AND A WATCH FAILS SILENTLY IF THAT IS WRONG: the
+        // watch task runs unattended and unawaited, so a shell that does not exist on this OS throws
+        // there instead of here, and the wake this trigger promised simply never arrives.
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        var info = new ProcessStartInfo(isWindows ? "cmd.exe" : "/bin/sh")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        info.ArgumentList.Add("-c");
+        info.ArgumentList.Add(isWindows ? "/c" : "-c");
         info.ArgumentList.Add(command);
 
         using var process = new Process { StartInfo = info };

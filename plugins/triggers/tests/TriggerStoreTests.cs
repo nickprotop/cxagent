@@ -134,6 +134,30 @@ public class TriggerStoreTests : IDisposable
         Assert.Single(left);
         Assert.Equal("repeating", left[0].Prompt);
     }
+
+    /// <summary>
+    /// A TRIGGER UPDATED WHILE ITS FIRE IS STILL AWAITING SUBMIT keeps the update's own NextFire —
+    /// Reschedule must not advance it from the fired copy's schedule against the old fire's `now`,
+    /// which would place the next fire one cycle earlier than Update intended.
+    /// </summary>
+    [Fact]
+    public void Rescheduling_a_trigger_replaced_mid_flight_leaves_the_update_in_place()
+    {
+        Assert.True(When.TryParse(null, null, "* * * * *", out var cron, out _));
+        var fired = TriggerStore.Add(_a, cron!, "original");
+
+        // THE UPDATE THAT LANDS DURING THE AWAIT: same id, a new schedule and prompt, computing
+        // its own NextFire from "now" at update time — not the fire tick Reschedule below still holds.
+        var updated = TriggerStore.Update(_a, fired.Id, Wake("2h"), "replaced");
+        Assert.NotNull(updated);
+
+        // THE STALE now: whatever Reschedule computes from this must not touch the row above.
+        TriggerStore.Reschedule(fired, DateTimeOffset.Now.AddDays(1));
+
+        var left = TriggerStore.For(_a).Single();
+        Assert.Equal("replaced", left.Prompt);
+        Assert.Equal(updated!.NextFire, left.NextFire);
+    }
 }
 
 [CollectionDefinition("TriggerStore", DisableParallelization = true)]
