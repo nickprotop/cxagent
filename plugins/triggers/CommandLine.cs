@@ -115,7 +115,11 @@ public static class CommandLine
     private static string FirstLine(string prompt)
     {
         var newline = prompt.IndexOf('\n');
-        return newline < 0 ? prompt : prompt[..newline];
+        if (newline < 0) return prompt;
+
+        // TRIMEND THE '\r', not just the '\n': a CRLF prompt leaves one behind after splitting on
+        // '\n' alone, and it renders as a stray box or space at the end of the listing line.
+        return prompt[..newline].TrimEnd('\r');
     }
 
     // AN ELLIPSIS, NOT A HARD CUT, so a listing of long prompts still fits one line per trigger

@@ -117,8 +117,13 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
                 // catches it. This runs on a timer nobody awaits: an uncaught throw here disappears
                 // and the trigger simply stops working with no message — the same class of silent
                 // failure a discarded task produced in the plugin manager.
+                //
+                // BREAK, NOT RETURN: this instance only ever acts on its own session (the guard
+                // above), so severing ends its part of the tick either way — but `return` would also
+                // abandon every OTHER session's due trigger still left in this loop, and the store is
+                // process-wide.
                 TriggerStore.SweepSession(trigger.SessionId);
-                return;
+                break;
             }
             catch (Exception ex)
             {
@@ -212,11 +217,14 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
 
     private async Task Watch(string command, TimeSpan timeout, string prompt, CancellationToken lifetime)
     {
-        var outcome = await ProcessWatch.Run(command, timeout, _context!.RegisterChildProcess, lifetime);
-        var composed = ProcessWatch.Compose(prompt, outcome);
-
+        // RUN AND COMPOSE ARE INSIDE THE TRY TOO. This runs on a task nobody awaits, so a throw
+        // from either — not just from Submit — would otherwise disappear with no message and the
+        // wake simply never arrives, the same silent failure the catch blocks below exist to avoid.
         try
         {
+            var outcome = await ProcessWatch.Run(command, timeout, _context!.RegisterChildProcess, lifetime);
+            var composed = ProcessWatch.Compose(prompt, outcome);
+
             if (_context.Client is { } client)
                 await client.Submit(composed, wantResult: false, lifetime);
         }
@@ -227,7 +235,7 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
         }
         catch (Exception ex)
         {
-            _context.Logger.Log($"trigger_on_exit for '{command}' failed to submit: {ex.Message}");
+            _context?.Logger.Log($"trigger_on_exit for '{command}' failed to submit: {ex.Message}");
         }
     }
 
@@ -362,6 +370,11 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
     /// looked up live, so it survives past Unwire disposing the context. Stop is timeout-bounded and
     /// abandoned if it overruns, which is exactly why the timer's own finally — not this — is the path
     /// that normally does the work.</para>
+    ///
+    /// <para>STOP DOES NOT CANCEL THE TIMER ITSELF, and must not start to: Lifetime already did that
+    /// at sever, before Stop is even awaited, so the timer and the watch are already ending by the
+    /// time this runs. Stop is timeout-bounded and abandoned if it overruns — work that depended on
+    /// Stop to stop it would be work that might never stop.</para>
     /// </summary>
     public Task Stop(CancellationToken ct)
     {

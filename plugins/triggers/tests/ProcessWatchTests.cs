@@ -59,6 +59,31 @@ public class ProcessWatchTests
         Assert.Null(outcome.ExitCode);
     }
 
+    /// <summary>
+    /// THE OUTER TOKEN IS A DIFFERENT PATH FROM THE TIMEOUT, and the two must not be confused: when
+    /// ct itself is cancelled (the session ending, not the wait expiring), timedOut is false and the
+    /// code still reads ExitCode after killing the process — which throws InvalidOperationException
+    /// if the kill has not been waited out. A watch that could not learn how its command ended must
+    /// still hand back an outcome, not an unhandled throw on a task nobody awaits.
+    /// </summary>
+    [Fact]
+    public async Task Cancelling_through_ct_rather_than_the_timeout_still_returns_an_outcome()
+    {
+        using var cts = new CancellationTokenSource();
+        var run = ProcessWatch.Run("sleep 30", Generous, _ => { }, cts.Token);
+
+        cts.Cancel();
+
+        // NO THROW IS THE ASSERTION: awaiting run must not raise InvalidOperationException from an
+        // ExitCode read before the kill was waited out. timedOut is false on this path — it is ct
+        // that fired, not the deadline — and the killed process still has a real exit code once its
+        // exit has actually been awaited, which is what makes the read safe rather than what the
+        // outcome's numeric value happens to be.
+        var outcome = await run;
+
+        Assert.False(outcome.TimedOut);
+    }
+
     [Fact]
     public async Task The_pid_is_registered_so_a_crashed_host_does_not_strand_it()
     {

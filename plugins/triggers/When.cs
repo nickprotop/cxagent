@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Linq;
 using NCrontab;
 
 namespace CxAgent.Plugins.Triggers;

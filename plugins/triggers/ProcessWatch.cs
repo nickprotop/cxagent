@@ -93,15 +93,29 @@ public static class ProcessWatch
         catch (OperationCanceledException)
         {
             timedOut = !ct.IsCancellationRequested;
-            try { process.Kill(entireProcessTree: true); }
+            try
+            {
+                process.Kill(entireProcessTree: true);
+                // KILL ONLY ASKS; IT DOES NOT WAIT. Reading ExitCode before the process has actually
+                // exited throws InvalidOperationException — and that is not only the timeout path:
+                // when the OUTER ct fires instead, timedOut is false and the code below still reads
+                // ExitCode, so the wait belongs here rather than behind the timedOut branch.
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
             catch (Exception) { /* Already gone; the outcome is the same. */ }
         }
 
         string text;
         lock (sync) text = merged.ToString();
 
+        // EXITCODE READ THROUGH A HELPER ON EVERY PATH: even after the wait above, a process that
+        // could not be killed (already reaped, or permissions) leaves HasExited false, and reading
+        // ExitCode then still throws. A watch that could not learn how the command ended is not a
+        // watch that should throw instead of waking.
+        var exitCode = timedOut ? null : TryExitCode(process);
+
         if (text.Length <= InlineCap)
-            return new WatchOutcome(timedOut ? null : process.ExitCode, timedOut, text, null);
+            return new WatchOutcome(exitCode, timedOut, text, null);
 
         // WRITTEN WHOLE AND NAMED, rather than truncated. A submitted turn cannot be taken back: an
         // uncapped build on a large solution is megabytes, unattended, and one wake could exhaust the
@@ -123,8 +137,17 @@ public static class ProcessWatch
             spill = null;
         }
 
-        return new WatchOutcome(timedOut ? null : process.ExitCode, timedOut,
-            text[^InlineCap..], spill);
+        return new WatchOutcome(exitCode, timedOut, text[^InlineCap..], spill);
+    }
+
+    /// <summary>
+    /// ExitCode without the throw: it demands HasExited, which a killed-but-not-yet-reaped or
+    /// already-gone process can still fail even after an explicit wait.
+    /// </summary>
+    private static int? TryExitCode(Process process)
+    {
+        try { return process.ExitCode; }
+        catch (InvalidOperationException) { return null; }
     }
 
     /// <summary>
