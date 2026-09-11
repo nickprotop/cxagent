@@ -75,6 +75,11 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         """
         Run a prompt in a separate agent that has its own context, and get back what it found.
 
+        This STARTS A NEW ONE, which knows nothing. If an agent you already spawned has done work the
+        request builds on — redo it differently, go deeper, check what it told you — send to THAT one
+        with agent_send instead. "Use the agent again", "have it also do X", "tell it to keep going"
+        are all sends, not spawns.
+
         Reach for it when answering would mean reading across several files — delegate it and you keep
         the conclusion, not the file dumps. Searching a large codebase for where something is done,
         reading through many files to answer one question, any open-ended hunt whose intermediate
@@ -121,15 +126,14 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
         It cannot spawn sub-agents of its own.
 
-        SPAWNING RETURNS IMMEDIATELY. You get a receipt naming the agent, not its answer — the work
-        runs in the background and the answer reaches you on a later turn. So spawn everything you
-        want running, then keep working; do NOT write your final reply until the answers have
-        actually arrived, because until then you have not seen the work you are reporting on.
+        Spawning waits for the answer: the call returns when the agent is done, and its report IS the
+        result. Several spawned in one turn run at the same time and report together.
 
-        A sub-agent you spawned is still there, by name, with everything it read and did — ask IT with
-        agent_send rather than spawning another to cover the same ground. That works while it is still
-        running, so tell it as soon as you learn something it needs, and use it to ask how far it has
-        got. Call agent_list to see which ones there are; you will not remember them once the spawn
+        A sub-agent you spawned is still there, by name, with everything it read and did. When more is
+        wanted from work an agent has ALREADY done — a correction, a deeper pass, a check on what it
+        told you — use agent_send on that agent. Spawning a second one over the same ground starts
+        from nothing: it has not read what the first read and cannot see what the first concluded.
+        Call agent_list to see which ones there are; you will not remember them once the spawn
         falls out of context.
         """;
 
