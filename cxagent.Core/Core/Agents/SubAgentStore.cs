@@ -114,6 +114,20 @@ public sealed class SubAgentStore
     /// <summary>This session's agent of that name, or null when nothing holds it.</summary>
     public StoredAgent? Find(string name) => _byName.GetValueOrDefault(name);
 
+    /// <summary>
+    /// The kept child with that AGENT id, or null when nothing holds it.
+    ///
+    /// <para>BY AGENT RATHER THAN BY HANDLE, for a caller that only ever sees the id: a child's tool
+    /// calls carry its agent id and nothing else, so a front end tracking what a child is doing has
+    /// no handle to look one up by.</para>
+    ///
+    /// <para>AND THIS IS WHY A CONSUMER NEED NOT KEEP ITS OWN REFERENCE. Every child kept here is
+    /// pinned for the life of the session already, because agent_send resumes it on the context its
+    /// spawn left behind; a second set of references elsewhere would pin the same Agents twice.</para>
+    /// </summary>
+    public StoredAgent? FindByAgentId(string agentId) =>
+        _byName.Values.FirstOrDefault(a => a.Agent.Agent.Id == agentId);
+
     /// <summary>Every kept agent, oldest first — the order they were spawned in.</summary>
     public IReadOnlyList<StoredAgent> All() => _byName.Values.OrderBy(a => a.At).ToList();
 
@@ -128,9 +142,50 @@ public sealed class SubAgentStore
     /// unrelated work with no way to report why; a refusal naming the state is something the model
     /// can act on immediately.</para>
     /// </summary>
-    public bool TryBeginSend(string name) => _busy.TryAdd(name, 0);
+    public bool TryBeginSend(string name)
+    {
+        if (!_busy.TryAdd(name, 0)) return false;
 
-    public void EndSend(string name) => _busy.TryRemove(name, out _);
+        // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE START OF A SEND. agent_send never becomes a job,
+        // so no row is created for it and no tool report fires until the child's first call FINISHES
+        // — which on a slow first call is long after the child started working. A front end showing
+        // the child as settled has no earlier moment to start showing it working again.
+        //
+        // ALSO RAISED WHEN A SPAWN CLAIMS ITS OWN CHILD (SubAgentSpawner takes the same claim so a
+        // send cannot corrupt a context the spawn is still appending to). A consumer cannot tell
+        // the two apart from here and must not need to: during a spawn its row is already live, so
+        // "the agent is working" is simply true both times.
+        //
+        // Find can miss only for a claim on a name nothing keeps, which is a claim no send can
+        // follow — nothing to announce.
+        if (Find(name) is { } began) SendBegan?.Invoke(began.Agent.Agent.Id);
+        return true;
+    }
+
+    public void EndSend(string name)
+    {
+        // ONLY WHEN A CLAIM WAS ACTUALLY RELEASED. EndSend runs in two finallys (the spawner's and
+        // agent_send's), so an unconditional announcement would say "stopped" twice for one stop.
+        if (!_busy.TryRemove(name, out _)) return;
+
+        // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE END OF A SEND. agent_send never becomes a job,
+        // so no tool report fires when it returns; and a child raises nothing when it goes idle,
+        // because a turn ending and a goal ending look identical from outside. A front end that
+        // started showing the child working has no other moment to stop.
+        if (Find(name) is { } ended) SendEnded?.Invoke(ended.Agent.Agent.Id);
+    }
+
+    /// <summary>
+    /// Raised with a child's AGENT id when a send-claim on it is taken, and when it is released.
+    ///
+    /// <para>THE AGENT ID RATHER THAN THE HANDLE, because a consumer that tracks children tracks
+    /// them by the id their tool calls carry — a handle is this store's own naming and means nothing
+    /// to a panel keyed on agents.</para>
+    /// </summary>
+    public event Action<string>? SendBegan;
+
+    /// <inheritdoc cref="SendBegan"/>
+    public event Action<string>? SendEnded;
 
     /// <summary>
     /// A handle from a description: lower-cased, non-alphanumerics folded to single hyphens.

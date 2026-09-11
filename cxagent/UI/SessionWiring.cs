@@ -108,6 +108,23 @@ public static class SessionWiring
         // now as the last line.
         session.ChildSpawned += spawned => jobs.NoteChild(spawned.JobId, spawned.Child);
 
+        // THE STORE IS WHERE A FINISHED CHILD STILL LIVES. The sink releases its own reference when
+        // a spawn settles — a fan-out session must not pin every Agent it ever spawned — so a row
+        // that has to follow a resumed agent asks here instead of keeping a second set of
+        // references.
+        jobs.SubAgents = session.SubAgents;
+
+        // AND THE ROW FOLLOWS agent_send THROUGH THE STORE'S SEND-CLAIM, because the send is
+        // invisible everywhere else: it never becomes a job, and the child's first tool report
+        // fires only when that call finishes. Routed through the TAB'S CURRENT SINK rather than
+        // captured `jobs`: the store lives as long as the session while a sink lives only until the
+        // next re-wire (/model, resume), so a captured sink would keep reopening rows on a
+        // transcript a newer sink now owns — and the newer sink would draw the same row again.
+        session.SubAgents.SendBegan += agentId =>
+            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerResumed(agentId));
+        session.SubAgents.SendEnded += agentId =>
+            system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId));
+
         session.TokensUpdated += (_, _) => system.EnqueueOnUIThread(() =>
         {
             // THE PARENT'S OWN SPEND, not the event's total. The event carries Ledger.TotalTokens,

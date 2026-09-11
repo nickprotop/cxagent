@@ -1186,7 +1186,7 @@ public sealed class InlineJobSink : IToolObserver
 
     /// <summary>Whether this worker's child filed any finished call — the timetable's content.</summary>
     private bool HasRecordedCalls(Job job) =>
-        _workerChildren.TryGetValue(job.Id, out var child)
+        ChildFor(job.Id) is { } child
         && _workerCalls.TryGetValue(child.Agent.Id, out var calls)
         && Snapshot(calls).Count > 0;
 
@@ -1312,8 +1312,11 @@ public sealed class InlineJobSink : IToolObserver
     /// which is the same reason <see cref="_lines"/> is; and it is READ from the UI thread when a
     /// worker's row closes.</para>
     ///
-    /// <para>EMPTIED WHEN A WORKER FINISHES. Without that, a session that spawns thirty workers
-    /// keeps every call any of them ever made for as long as the process lives.</para>
+    /// <para>EMPTIED WHEN A WORKER FINISHES — unless the session's store still keeps its agent.
+    /// Without the emptying, a session that spawns thirty workers keeps every call any of them ever
+    /// made for as long as the process lives; a KEPT child is the exception because agent_send can
+    /// resume it and its row's table must then continue from the spawn's calls, not restart — see
+    /// the kept-child note in <see cref="WorkerBody"/>.</para>
     /// </summary>
     private readonly ConcurrentDictionary<string, List<ToolCallReport>> _workerCalls = new();
 
@@ -1725,6 +1728,126 @@ public sealed class InlineJobSink : IToolObserver
 
         // AND ITS AGENT ID, so a call arriving under it is never mistaken for the parent's.
         _childAgentIds[child.Agent.Id] = 0;
+
+        // THE PAIRING IN BOTH DIRECTIONS, KEPT AFTER THE CHILD ITSELF IS RELEASED, because each is
+        // only a pair of strings. The map above is emptied when the spawn goes terminal so the
+        // session does not pin every Agent it ever spawned; these survive, and are what lets a
+        // child agent_send resumes find its way back to the row its spawn drew.
+        _spawnRowOf[child.Agent.Id] = jobId;
+        _workerIdOf[jobId] = child.Agent.Id;
+    }
+
+    /// <summary>Which spawn row belongs to which child agent, outliving the spawn.</summary>
+    private readonly ConcurrentDictionary<string, string> _spawnRowOf = new();
+
+    /// <summary>The inverse — which child agent a spawn row started, outliving the spawn.</summary>
+    private readonly ConcurrentDictionary<string, string> _workerIdOf = new();
+
+    /// <summary>
+    /// This session's kept children, for a row whose spawn has ended but whose agent has not.
+    ///
+    /// <para>ASKED RATHER THAN HELD. <see cref="_workerChildren"/> releases a child the moment its
+    /// spawn goes terminal, deliberately: a fan-out session must not pin every Agent and context it
+    /// ever spawned. But agent_send resumes a finished child, and the row has to follow it — so the
+    /// child has to be reachable again. The store already retains exactly these agents for exactly
+    /// this lifetime, because agent_send requires it, which makes a lookup here free where a second
+    /// set of references would double what the session pins.</para>
+    ///
+    /// <para>NULL IN A HEADLESS SINK, and every use is guarded: the test sinks have no session.</para>
+    /// </summary>
+    public SubAgentStore? SubAgents { get; set; }
+
+    /// <summary>
+    /// The child behind a worker row, from whichever place still holds it.
+    ///
+    /// <para>THE LIVE MAP FIRST, because during a spawn it is authoritative and needs no search.</para>
+    /// </summary>
+    private SubAgent? ChildFor(string jobId) =>
+        _workerChildren.TryGetValue(jobId, out var live) ? live
+        : _workerIdOf.TryGetValue(jobId, out var agentId) ? SubAgents?.FindByAgentId(agentId)?.Agent
+        : null;
+
+    /// <summary>How each reopened row's spawn had settled, so it can settle that way again.</summary>
+    private readonly ConcurrentDictionary<string, JobState> _reopenedFrom = new();
+
+    /// <summary>
+    /// Puts a settled worker's row back into its running shape, because its agent is working again —
+    /// <c>agent_send</c> has resumed it on the context its spawn left behind.
+    ///
+    /// <para>DRIVEN BY THE STORE'S SEND-CLAIM rather than by anything the child raises, because the
+    /// child raises nothing a row can key on: agent_send runs inside the parent's turn and never
+    /// becomes a job, and the child's first tool REPORT fires only when that call finishes — on a
+    /// slow first call, long after the user watched their send apparently ignored. The claim is
+    /// taken before the send's first token, which is the moment the row should start spinning.</para>
+    ///
+    /// <para>THE ROW IS THE AGENT'S LIFE, NOT ONE TASK WITHIN IT, so nothing is cleared. The table
+    /// keeps every call the agent has ever made and appends the new ones, and StartedAt is left
+    /// alone so the elapsed time still measures the agent rather than the latest thing asked of
+    /// it.</para>
+    ///
+    /// <para>AND THE ROW MOVES TO THE END OF THE TRANSCRIPT. It was drawn where the spawn happened,
+    /// which may be far above the scroll by now — a row that starts spinning three screens up is
+    /// indistinguishable from no row at all. Removing the message and adopting a fresh one at the
+    /// bottom is the transcript's only move primitive, and it is enough: the body is a projection
+    /// of the sink's own maps, so nothing is lost with the old message.</para>
+    ///
+    /// <para>A SPAWN'S OWN CLAIM ALSO LANDS HERE (the spawner takes one so a send cannot corrupt a
+    /// context it is appending to), and falls out at the terminal check: its row is live, so there
+    /// is nothing to reopen. The same check is what makes a duplicate subscription harmless — the
+    /// first call flips the row to Running and the second finds nothing terminal.</para>
+    ///
+    /// <para>Must be on the UI thread; the wiring's enqueue is what guarantees it.</para>
+    /// </summary>
+    public void WorkerResumed(string agentId)
+    {
+        if (!_spawnRowOf.TryGetValue(agentId, out var jobId)) return;
+        if (!_known.TryGetValue(jobId, out var job)) return;
+        if (!IsTerminal(job.State)) return;
+
+        _reopenedFrom[jobId] = job.State;
+        job.State = JobState.Running;
+        job.CompletedAt = null;
+
+        // THE SPAWN'S LAST PROGRESS REPORT IS CLEARED, not kept for continuity: its trailing "· 14s"
+        // age is exactly the shape ReportsItsOwnAge suppresses the header's own clock for, so a
+        // reopened row would carry a frozen age instead of a ticking elapsed time — a spinner beside
+        // a clock that never moves, which is this file's definition of looking hung.
+        job.ProgressMessage = null;
+
+        if (_lines.TryRemove(jobId, out var old)) _chat.RemoveMessage(old);
+
+        // THE RUNNING SHAPE ToolsChangedNow GIVES A LIVE WORKER: compact chrome, no status row, no
+        // auto-expand — a worker's growing body stays one keypress away — and the body is the same
+        // cumulative timetable the tick will keep redrawing from here on.
+        var id = _chat.AddMessage(ChatRole.Tool, Title(job), author: AuthorFor(job));
+        _lines[jobId] = id;
+        _chat.SetHeader(id, CompactHeader(job));
+        _chat.ClearStatus(id);
+        _chat.UpdateMessage(id, RunningWorkerBody(job) ?? string.Empty);
+        _chat.SetCompactFooter(id, true);
+    }
+
+    /// <summary>
+    /// Settles a reopened row, now that the send driving it has returned.
+    ///
+    /// <para>ON THE CLAIM'S RELEASE, which is the one moment that certainly means the send is over:
+    /// agent_send never becomes a job, so no tool report marks its return, and the child raises
+    /// nothing when it goes idle because a turn ending and a goal ending look identical from
+    /// outside.</para>
+    ///
+    /// <para>BACK TO THE STATE ITS SPAWN LEFT IT IN, not to a fresh "completed": a child that was
+    /// capped or stuck when it was spawned is still that, and overwriting the outcome would launder
+    /// a bad run into a good one.</para>
+    /// </summary>
+    public void WorkerSettled(string agentId)
+    {
+        if (!_spawnRowOf.TryGetValue(agentId, out var jobId)) return;
+        if (!_reopenedFrom.TryRemove(jobId, out var was)) return;
+        if (!_known.TryGetValue(jobId, out var job)) return;
+
+        job.State = was;
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        ToolUpdated(job);
     }
 
     /// <summary>Test seam for <see cref="RunningWorkerBody"/>, which reads the sink's own maps and
@@ -1790,7 +1913,10 @@ public sealed class InlineJobSink : IToolObserver
     private string? RunningWorkerBody(Job job)
     {
         if (job.JobType != "llm_agent") return null;
-        if (!_workerChildren.TryGetValue(job.Id, out var child)) return null;
+        // THROUGH ChildFor, NOT THE LIVE MAP DIRECTLY: a row reopened by agent_send has no entry
+        // there — the child was released when its spawn settled — and the store is what still holds
+        // it.
+        if (ChildFor(job.Id) is not { } child) return null;
 
         // THE CHILD'S OWN ID, held rather than parsed. This is the same key RecordToolCall files
         // under, and while the child is running there is no envelope to read it back out of.
@@ -1928,9 +2054,10 @@ public sealed class InlineJobSink : IToolObserver
         // StripEnvelope keeps it deliberately. A table in its place would drop the one line saying
         // the answer above it is unfinished.
         //
-        // THE CALLS ARE STILL DROPPED. The body is one question and the accumulator is another: a
-        // failed child's calls are no less finished for its having failed, and forgetting them here
-        // leaks exactly the runs a long session has most of.
+        // THE CALLS ARE STILL DROPPED — for a child nothing retains; the kept-child rule below
+        // applies here too. The body is one question and the accumulator is another: a failed
+        // child's calls are no less finished for its having failed, and forgetting them here leaks
+        // exactly the runs a long session has most of.
         // A RUN THE USER STOPPED IS NOT A FAILED ONE. A failure has an error to read and a capped
         // run has the envelope's "hit its turn limit… NOT a completed answer" note — in both the
         // prose says something a table cannot, and the reasoning above holds. A run stopped by hand
@@ -1943,15 +2070,27 @@ public sealed class InlineJobSink : IToolObserver
         var stoppedByHand = job.State == JobState.Cancelled
             && SubAgentEnvelope.IdOf(RawContent(job)) is null;
 
+        // A KEPT CHILD'S CALLS ARE KEPT WITH IT. The removals below exist so a long session does not
+        // grow a dictionary of every call ever made — but a child the store still holds can be
+        // resumed by agent_send, and its row's table is the AGENT's whole life: drop the spawn's
+        // calls at the finish line and a resumed run renders a table that begins mid-story. The
+        // store already pins that child's entire Agent and context for the session, so a list of
+        // its call reports adds nothing the fridge has not already decided to pay; what the removal
+        // still protects is the child NOBODY retains, which is exactly the case the lookup misses.
+        var kept = SubAgents?.FindByAgentId(childId) is not null;
+
         if (job.State != JobState.Succeeded && !stoppedByHand)
         {
-            _workerCalls.TryRemove(childId, out _);
+            if (!kept) _workerCalls.TryRemove(childId, out _);
             return null;
         }
 
-        // REMOVED, NOT READ. This is the terminal transition, so nothing more will be filed under
-        // this id; leaving it would grow a dictionary of every call the session ever made.
-        var calls = _workerCalls.TryRemove(childId, out var recorded) ? recorded : [];
+        // REMOVED, NOT READ — unless the child is kept. This is the spawn's terminal transition, so
+        // for an unretained child nothing more will be filed under this id and leaving the list
+        // would only grow the dictionary.
+        var calls = kept
+            ? _workerCalls.GetValueOrDefault(childId) ?? []
+            : _workerCalls.TryRemove(childId, out var recorded) ? recorded : [];
 
         List<ToolCallReport> callsCopy;
         lock (calls) callsCopy = [.. calls];
