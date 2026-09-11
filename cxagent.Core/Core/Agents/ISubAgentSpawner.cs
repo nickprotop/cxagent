@@ -50,6 +50,23 @@ public interface ISubAgentSpawner
     SubAgentStore? Store => null;
 
     /// <summary>
+    /// The cap on children running at once, or null when uncapped.
+    ///
+    /// <para>ON THE INTERFACE FOR THE REASON <see cref="Store"/> GIVES: an agent that cannot spawn
+    /// has nothing to cap, and the slot belongs to the spawner rather than being an independent
+    /// thing an agent is handed — reading it from here is what stops a caller pairing a spawner with
+    /// somebody else's cap.</para>
+    ///
+    /// <para>EXPOSED AT ALL BECAUSE A RESUME IS ALSO A CHILD RUNNING. agent_send does not pass
+    /// through the spawn method that waits this, so without a way to reach the same semaphore a
+    /// configured cap silently bounds only half the work it was set to bound.</para>
+    ///
+    /// <para>A DEFAULT MEMBER, so existing implementations — the test fakes among them — keep
+    /// compiling and simply cap nothing.</para>
+    /// </summary>
+    SemaphoreSlim? ConcurrencySlot => null;
+
+    /// <summary>
     /// Runs the child and returns the envelope, or null if <paramref name="call"/> is not this
     /// spawner's tool.
     /// </summary>

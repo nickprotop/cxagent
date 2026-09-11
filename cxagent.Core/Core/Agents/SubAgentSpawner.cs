@@ -45,6 +45,9 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
     /// <inheritdoc />
     public SubAgentStore? Store => _store;
 
+    /// <inheritdoc />
+    public SemaphoreSlim? ConcurrencySlot => _factory.ConcurrencySlot;
+
     public string ToolName => "agent";
 
     /// <summary>

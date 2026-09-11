@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text;
-using System.Threading;
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Execution;
@@ -945,7 +944,12 @@ public sealed class Agent
         _spawner = spawner;
         // DERIVED FROM THE SPAWNER, never passed separately: reaching a child is only meaningful for
         // an agent that could have made one, and a spawner keeping nothing yields no reach tools.
-        _reach = spawner?.Store is { } kept ? new AgentReachTools(kept) : null;
+        //
+        // THE SPAWNER'S OWN CAP, handed over with its own store: a resume is a child running, and
+        // the two have to be the same semaphore or the limit bounds only the path that waits it.
+        _reach = spawner?.Store is { } kept
+            ? new AgentReachTools(kept, spawner.ConcurrencySlot)
+            : null;
 
         // RESOLVED PER CALL, not captured here: the catalog is read from disk each turn, so a skill
         // added mid-session is loadable from the same turn its description reaches the prompt. A

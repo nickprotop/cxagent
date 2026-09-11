@@ -1,4 +1,3 @@
-using CxAgent.Core.Agents;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -60,5 +59,34 @@ public class ChildLivenessTests
 
         Assert.True(run.End());
         Assert.False(run.End());
+    }
+
+    /// <summary>
+    /// A resume is work, so the cap that bounds spawns bounds it too.
+    ///
+    /// <para>WITHOUT THIS A SEND WALKS PAST maxConcurrentAgents. The spawner waits the slot inside
+    /// its own started task; agent_send never enters that method, so a user who capped their
+    /// endpoint at two concurrent children could have two spawns and any number of resumes running
+    /// at once — which is the cap not holding, on the path a model reaches for most.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumeWaitsTheSameSlotASpawnWaits()
+    {
+        var slot = new SemaphoreSlim(1);
+        var store = new SubAgentStore();
+        var reach = new AgentReachTools(store, slot);
+
+        await slot.WaitAsync();                       // the cap is full
+
+        var send = reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, "nobody", "hello", CancellationToken.None);
+        var finished = await Task.WhenAny(send, Task.Delay(200));
+
+        // IT REFUSES BEFORE IT WAITS, and that is deliberate: a name nothing keeps can be answered
+        // immediately, and making the model wait behind the cap to be told the handle is wrong burns
+        // the very slot the cap exists to protect.
+        Assert.Same(send, finished);
+        Assert.Contains("no sub-agent named", await send);
+
+        slot.Release();
     }
 }

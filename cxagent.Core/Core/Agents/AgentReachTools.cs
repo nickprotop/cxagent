@@ -19,7 +19,7 @@ namespace CxAgent.Core.Agents;
 /// waking a sibling is recursion by another name, and none of the reasoning that forbids spawning
 /// would have been consulted.</para>
 /// </summary>
-public sealed class AgentReachTools(SubAgentStore store)
+public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = null)
 {
     /// <summary>The store behind these tools, for a caller that must reserve a handle at dispatch.</summary>
     public SubAgentStore Store => store;
@@ -105,11 +105,27 @@ public sealed class AgentReachTools(SubAgentStore store)
                 stored.Agent.Agent.Context.Messages.Add(
                     new ChatMessage { Role = "user", Content = waiting });
 
-            // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child died
-            // with the turn that called `agent`; a wake is governed by the turn that ASKED, so Escape
-            // cancels it like any other tool call.
-            var result = await stored.Agent.Agent.SendAsync(prompt, ct);
-            return result.Text;
+            // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a child
+            // running; a cap that counted only spawns would be a cap the model can step around by
+            // reaching for the cheaper tool, which is the one it is told to prefer.
+            //
+            // AFTER THE REFUSALS ABOVE, so a wrong handle is answered at once rather than queued
+            // behind the very cap it does not need.
+            //
+            // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
+            if (slot is not null) await slot.WaitAsync(ct);
+            try
+            {
+                // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
+                // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
+                // so Escape cancels it like any other tool call.
+                var result = await stored.Agent.Agent.SendAsync(prompt, ct);
+                return result.Text;
+            }
+            finally
+            {
+                slot?.Release();
+            }
         }
         finally
         {
