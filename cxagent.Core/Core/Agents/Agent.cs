@@ -977,6 +977,19 @@ public sealed class Agent
             ? new AgentReachTools(kept, spawner.ConcurrencySlot)
             : null;
 
+        // THE CLAIM IS THE SIGNAL, AND IT IS THE ONLY ONE BOTH PATHS RAISE. A spawn takes the same
+        // claim a send takes — the spawner does it so a send cannot corrupt a context it is still
+        // appending to — so subscribing here is what makes one mechanism serve four ways of starting
+        // a child working, rather than the spawn call serving one and the other three serving none.
+        //
+        // ONCE, AT CONSTRUCTION, not per call: a per-call subscription would accumulate one handler
+        // per spawn for the session's life, and every one of them would repaint every child.
+        if (spawner?.Store is { } claims)
+        {
+            claims.SendBegan += OnChildBegan;
+            claims.SendEnded += OnChildEnded;
+        }
+
         // RESOLVED PER CALL, not captured here: the catalog is read from disk each turn, so a skill
         // added mid-session is loadable from the same turn its description reaches the prompt. A
         // snapshot taken at construction would let the two disagree — the model reading about a skill
@@ -2110,7 +2123,77 @@ public sealed class Agent
     /// a live child and no row, and a painter that assumed one would throw once a second forever.
     /// </para>
     /// </summary>
-    private void ReportChild(ChildRun run)
+     /// <summary>
+    /// Starts a child's repaint, whatever set it working.
+    ///
+    /// <para>IGNORES AN ID IT DOES NOT KNOW, which is ordinary rather than exceptional: the store is
+    /// the session's and announces every claim on it, including claims on children some other agent
+    /// spawned. A handler that treated an unknown id as a fault would fire on every sibling's
+    /// child.</para>
+    /// </summary>
+    private void OnChildBegan(string agentId)
+    {
+        if (_childRuns.GetValueOrDefault(agentId) is not { } run) return;
+
+        // THE FIRST PAINT IS IMMEDIATE, not a second away. A row that reopens and then shows nothing
+        // for a full tick is exactly the "is this thing even running" gap the timer exists to close.
+        if (run.Begin(_ => ReportChild(run))) ReportChild(run);
+    }
+
+    /// <summary>
+    /// Stops the repaint and states what the stretch cost.
+    ///
+    /// <para>ON THE CLAIM'S RELEASE, which is the one moment that certainly means the work is over.
+    /// A child raises nothing when it goes idle, because a turn ending and a goal ending look
+    /// identical from outside; agent_send never becomes a job, so no tool report marks its
+    /// return.</para>
+    /// </summary>
+    private void OnChildEnded(string agentId)
+    {
+        if (_childRuns.GetValueOrDefault(agentId) is not { } run) return;
+
+        // FALSE MEANS IT WAS NOT WORKING, and writing a finished account for a stop that did not
+        // happen would overwrite a settled row's numbers and raise a duplicate archive row.
+        if (!run.End()) return;
+
+        ArchiveChildRun(run);
+    }
+
+    /// <summary>
+    /// Records what one stretch of a child's work cost.
+    ///
+    /// <para>PER STRETCH, NOT PER CHILD. The row on screen is for a user reading this session; this
+    /// is for a user asking "is planner worth spawning" — a question one session cannot answer — and
+    /// an agent asked three things did three pieces of work whose costs are only comparable if they
+    /// are recorded apart.</para>
+    /// </summary>
+    private void ArchiveChildRun(ChildRun run)
+    {
+        var child = run.Child;
+        var (spentIn, spentOut) = child.Agent.Spend;
+        var took = DateTimeOffset.UtcNow - run.Started;
+
+        ChildFinished?.Invoke(new ChildRunReport(
+            // THE STRETCH IN THE ID, because every stretch is its own row: the agent id alone would
+            // collide on the second one and lose a run. The agent id stays the prefix so rows for one
+            // child still group.
+            RunId: run.Stretch > 1 ? $"{child.Agent.Id}#{run.Stretch}" : child.Agent.Id,
+            ParentAgentId: Id,
+            TypeName: child.TypeName,
+            ModelId: child.ModelId,
+            InputTokens: spentIn,
+            OutputTokens: spentOut,
+            Turns: run.Turns,
+            ToolCalls: child.Jobs.Jobs.Count,
+            Outcome: "completed",
+            StartedAt: run.Started,
+            DurationMs: (long)took.TotalMilliseconds)
+        {
+            Skills = run.Skills.Count > 0 ? string.Join(", ", run.Skills) : null,
+        });
+    }
+
+   private void ReportChild(ChildRun run)
     {
         if (!_liveJobs.TryGetValue(run.JobId, out var job)) return;
         var child = run.Child;

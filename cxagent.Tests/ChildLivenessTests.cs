@@ -113,4 +113,58 @@ public class ChildLivenessTests
         // needs: the begin handler has nothing to start a timer on otherwise.
         Assert.NotNull(parent.ChildRunFor(beganFor!));
     }
+
+    /// <summary>
+    /// A resumed child gets the same ticking row a spawned one gets.
+    ///
+    /// <para>THE DEFECT THIS PINS: everything that made a row live used to be scoped to the `agent`
+    /// tool call, so a child woken by agent_send had its turn counter (a closure that outlived the
+    /// call) but no timer — and elapsed time froze between turns while the counter climbed. Half the
+    /// apparatus survived and half did not, and nothing decided which.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumedChild_TicksLikeASpawnedOne()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out var store);
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        var kept = Assert.Single(store.All());
+        var run = parent.ChildRunFor(kept.Agent.Agent.Id);
+        Assert.NotNull(run);
+
+        // The spawn has returned, so the run is settled — exactly the state a resume starts from.
+        Assert.False(run!.Working);
+
+        Assert.True(store.TryBeginSend(kept.Name));
+        Assert.True(run.Working);          // the claim alone starts the repaint
+
+        store.EndSend(kept.Name);
+        Assert.False(run.Working);
+    }
+
+    /// <summary>
+    /// Each stretch of work is its own archive row.
+    ///
+    /// <para>ChildFinished used to be raised inside the spawn method, so a resumed run's turns and
+    /// tokens never reached history at all — a real gap in the data, not only in the row. Raising it
+    /// per stretch is what closes that; a per-agent row that silently grew would make "what did this
+    /// cost" unanswerable for any agent asked more than once.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumedChild_ReachesTheUsageArchive()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out var store);
+        var runs = new List<ChildRunReport>();
+        parent.ChildFinished += r => runs.Add(r);
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+        var kept = Assert.Single(store.All());
+
+        store.TryBeginSend(kept.Name);
+        store.EndSend(kept.Name);
+
+        Assert.Equal(2, runs.Count);
+        // DISTINCT IDS, or the second write collides with the first and one run goes missing.
+        Assert.NotEqual(runs[0].RunId, runs[1].RunId);
+    }
 }
