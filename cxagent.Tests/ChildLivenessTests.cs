@@ -104,14 +104,24 @@ public class ChildLivenessTests
         var parent = SubAgentSpawnerTests.ParentWithSpawning(out var store);
 
         string? beganFor = null;
-        store.SendBegan += id => beganFor ??= id;
 
-        var text = await parent.SendAsync("spawn a worker", CancellationToken.None);
+        // LOOKED UP INSIDE THE HANDLER, which is the only place the ordering is observable. A lookup
+        // after the await finds the run registered whatever order onChild, Keep and TryBeginSend ran
+        // in — it asserts the run exists EVENTUALLY, which is not the contract. The contract is that
+        // it existed BY THEN, and only a read taken at the announcement can tell the two apart.
+        ChildRun? runAtBegin = null;
+        store.SendBegan += id =>
+        {
+            beganFor ??= id;
+            runAtBegin ??= parent.ChildRunFor(id);
+        };
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
 
         Assert.NotNull(beganFor);
         // The run was already registered when the claim was announced, which is what a live row
         // needs: the begin handler has nothing to start a timer on otherwise.
-        Assert.NotNull(parent.ChildRunFor(beganFor!));
+        Assert.NotNull(runAtBegin);
     }
 
     /// <summary>
@@ -166,5 +176,44 @@ public class ChildLivenessTests
         Assert.Equal(2, runs.Count);
         // DISTINCT IDS, or the second write collides with the first and one run goes missing.
         Assert.NotEqual(runs[0].RunId, runs[1].RunId);
+    }
+
+    /// <summary>
+    /// A spawned child's clock is set before anything renders an age from it.
+    ///
+    /// <para>THE DEFECT THIS PINS: Started is rebased by Begin, and nothing but the store's claim
+    /// calls Begin. With the repaint wired to a child's turn boundaries but nothing taking the
+    /// claim, a run's clock stays default(DateTimeOffset) and the first paint renders the age as
+    /// "1065212m47s" — the millennia since year one — rather than "3s".</para>
+    ///
+    /// <para>ASSERTED ON Started RATHER THAN ON THE RENDERED STRING because ReportChild derives the
+    /// age from this one value and nothing else; a sane stamp here is a sane age everywhere it is
+    /// drawn. The rendered header is not reachable from this file — ParentWithSpawning builds its
+    /// own panel — so the string itself stays unasserted, which is how a 2000-year age passed a
+    /// green suite.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnedChildsClock_IsSetBeforeAnAgeIsRenderedFromIt()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out var store);
+
+        // CAPTURED AT THE CLAIM, not after the await: this is the moment the first paint happens,
+        // and the stamp has to be good already by then rather than merely good eventually.
+        DateTimeOffset? clockAtBegin = null;
+        store.SendBegan += id => clockAtBegin ??= parent.ChildRunFor(id)?.Started;
+
+        var before = DateTimeOffset.UtcNow;
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        Assert.NotNull(clockAtBegin);
+        // NOT default(DateTimeOffset), which is the whole failure: an unset clock is not merely
+        // imprecise, it renders an age in the millions of minutes.
+        Assert.NotEqual(default, clockAtBegin!.Value);
+        Assert.InRange(clockAtBegin.Value, before, DateTimeOffset.UtcNow);
+
+        // And the age that stamp yields is the one a reader would accept, rather than a geological
+        // one — the same subtraction ReportChild does.
+        var age = DateTimeOffset.UtcNow - clockAtBegin.Value;
+        Assert.True(age < TimeSpan.FromMinutes(1), $"age rendered as {age.TotalMinutes:0}m");
     }
 }
