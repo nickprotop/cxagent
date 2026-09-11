@@ -121,6 +121,8 @@ public static class ValueSources
 
     /// <summary>Sessions in this folder, for <c>/sessions resume</c>.</summary>
     public const string Sessions = Core.Sessions.CompletionSets.Sessions;
+    /// <summary>Sub-agents this session has spawned, for <c>/agents send</c>.</summary>
+    public const string SpawnedAgents = Core.Sessions.CompletionSets.SpawnedAgents;
 
     /// <summary>Edit modes, for <c>/mode edits</c>.</summary>
     public const string EditModes = Core.Sessions.CompletionSets.EditModes;

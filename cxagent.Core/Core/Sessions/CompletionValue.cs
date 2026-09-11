@@ -35,6 +35,10 @@ public static class CompletionSets
     /// <summary>Sessions in this folder, for <c>/sessions resume</c>. Answered by the manager, which
     /// owns the resume store.</summary>
     public const string Sessions = "sessions";
+    /// <summary>Sub-agents this session has spawned, for <c>/agents send</c>. Answered by the
+    /// session, because the fridge that keeps them is the session's own — another tab's agents are
+    /// not reachable from here and must not be offered as though they were.</summary>
+    public const string SpawnedAgents = "spawned-agents";
 
     /// <summary>Edit modes this session can be put into, for <c>/mode edits</c>. Answered by the
     /// session, because whether <c>auto</c> is among them depends on its own classifier.</summary>

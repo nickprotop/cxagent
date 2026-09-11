@@ -648,6 +648,27 @@ public static class AppBootstrap
             // A SECOND CONVERSATION, IN ITS OWN TAB. A verb on the command that already lists
             // sessions rather than a `/session` sibling, which would be a mistype waiting to happen.
             // Injected here for /exit's reason: opening a tab needs a window.
+            // THE SPAWNED AGENTS, BESIDE THE TYPES. `/agents` already lists the KINDS a session can
+            // spawn; these two reach the ones it actually made. A user needs them because the model
+            // decides for itself whether to reuse an agent or start a fresh one and gets it wrong —
+            // "re use the agent" produced a second spawn that had read none of the first one's work.
+            // Reaching a child must not depend on the model seeing the situation correctly, which is
+            // the argument /triggers-cancel already won.
+            if (declared.Name == "/agents")
+            {
+                manager.Commands.RegisterVerb("/agents",
+                    new CommandArgument("list", "the sub-agents this session has spawned"),
+                    (current, _) => current.ListSpawnedAgents().Handled());
+
+                // COMPLETABLE ON THE HANDLE: it is a slug of a description the user may never have
+                // typed, so nobody should have to run `list` first and retype what they read.
+                manager.Commands.RegisterVerb("/agents",
+                    new CommandArgument("send <name> <prompt>",
+                        "ask a sub-agent you already spawned for more",
+                        Completes: false, Values: ValueSources.SpawnedAgents),
+                    (current, arguments) => current.SendToSpawnedAgent(arguments).Handled());
+            }
+
             if (declared.Name == "/sessions")
                 manager.Commands.RegisterVerb("/sessions",
                     // COMPLETES, because the folder is OPTIONAL: "new" on its own is a finished

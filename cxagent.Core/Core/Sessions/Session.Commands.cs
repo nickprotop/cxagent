@@ -262,6 +262,54 @@ public sealed partial class Session
     }
 
     /// <summary>Says what changed in this session's working folder, per <c>git diff</c>.</summary>
+    /// <summary>Lists the sub-agents this session has spawned, with what each was asked to do.</summary>
+    public CommandStatus ListSpawnedAgents()
+    {
+        Say(new Commands.SpawnedAgentsCommand(SubAgents).Render());
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
+    /// Sends a prompt to a sub-agent this session already spawned, and says what it answered.
+    ///
+    /// <para>THE SEND IS UNAWAITED AND THE REFUSALS ARE NOT. A send runs a whole turn on the child's
+    /// context — a minute is ordinary — so blocking the command would freeze the palette on it.
+    /// Anything knowably wrong (no such agent, busy, no prompt) is answered immediately instead, and
+    /// only a send that is actually going to happen is handed off.</para>
+    ///
+    /// <para>AND THE ANSWER IS SAID RATHER THAN RETURNED, because by the time it arrives the command
+    /// that asked for it is long finished. A throw inside the unawaited task would otherwise vanish
+    /// with it, which is why the catch is not optional.</para>
+    /// </summary>
+    public CommandStatus SendToSpawnedAgent(string arguments)
+    {
+        var command = new Commands.SpawnedAgentsCommand(SubAgents);
+        if (command.RefuseSend(arguments, out var name, out var prompt) is { } refusal)
+        {
+            Say(new Message(refusal, Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        Say(new Message($"asking '{name}'…", Severity.Info));
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var reach = new Agents.AgentReachTools(SubAgents);
+                var answer = await reach.InvokeAsync(
+                    Jobs.Tool.AgentSend, name, prompt, CancellationToken.None);
+                Say(new Message(answer, Severity.Info));
+            }
+            catch (Exception ex)
+            {
+                Say(new Message($"'{name}' failed: {ex.Message}", Severity.Error));
+            }
+        });
+
+        return CommandStatus.Changed;
+    }
+
     public CommandStatus ShowDiff(string arguments)
     {
         Say(Commands.DiffCommand.Render(arguments, WorkingDirectory));

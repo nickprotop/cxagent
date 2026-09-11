@@ -1289,8 +1289,28 @@ public sealed partial class Session
         CompletionSets.AgentModes => AgentModeValues(),
         CompletionSets.AgentTypes => AgentTypeValues(),
         CompletionSets.Plugins => PluginValues(),
+        CompletionSets.SpawnedAgents => SpawnedAgentValues(),
         _ => [],
     };
+
+    /// <summary>
+    /// The sub-agents this session can still be sent to, newest last.
+    ///
+    /// <para>THE HINT SAYS WHAT EACH ONE DID, because a handle alone — "explore-the-auth-code"
+    /// — is a slug of a description the user may never have typed. The type and the description are
+    /// what let someone pick the right agent out of five.</para>
+    ///
+    /// <para>AND A BUSY ONE IS STILL OFFERED, marked. A send to a working agent is refused
+    /// rather than queued, so hiding it would leave the user wondering where their agent went; saying
+    /// "busy" tells them to wait, which is the actual answer.</para>
+    /// </summary>
+    private IReadOnlyList<CompletionValue> SpawnedAgentValues() =>
+    [
+        .. SubAgents.All().Select(a => new CompletionValue(
+            a.Name,
+            (a.Description is { Length: > 0 } d ? d : a.TypeName)
+            + (SubAgents.IsBusy(a.Name) ? " · busy" : ""))),
+    ];
 
     /// <summary>Every configured plugin, disabled ones included and marked as such: hiding a disabled
     /// name would make it unreachable and unexplained when the user knows they wrote it into
