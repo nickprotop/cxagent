@@ -89,8 +89,19 @@ public class SubAgentSpawnerTests
     /// <para>FanOut because CanSpawn gates on the mode's ability to delegate — a parent left in the
     /// default mode answers the spawn call with a refusal instead of building a child.</para>
     /// </summary>
-    internal static Agent ParentWithSpawning(out SubAgentStore store)
+    internal static Agent ParentWithSpawning(out SubAgentStore store) =>
+        ParentWithSpawning(out store, out _);
+
+    /// <summary>
+    /// The same parent, with its panel handed back as well.
+    ///
+    /// <para>THE PANEL IS WHERE A ROW'S RENDERED TEXT EXISTS AT ALL. A job is mutated in place and
+    /// reported to the observer; nothing else holds the caption a user would read, so a test that
+    /// asserts what a row SAYS — rather than what it was computed from — has no other source.</para>
+    /// </summary>
+    internal static Agent ParentWithSpawning(out SubAgentStore store, out NullJobPanel panel)
     {
+        panel = new NullJobPanel();
         var provider = new MockLlmProvider();
         provider.EnqueueResponse(new LlmResponse
         {
@@ -100,7 +111,7 @@ public class SubAgentSpawnerTests
 
         store = new SubAgentStore();
         return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
-            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            new RecordingSink(), panel, logs: null, maxTurns: 50,
             spawner: new SubAgentSpawner(FactoryOver(Answering("child done")), store: store))
         {
             Mode = AgentMode.FanOut,

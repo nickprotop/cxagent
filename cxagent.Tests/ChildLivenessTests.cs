@@ -186,11 +186,9 @@ public class ChildLivenessTests
     /// claim, a run's clock stays default(DateTimeOffset) and the first paint renders the age as
     /// "1065212m47s" — the millennia since year one — rather than "3s".</para>
     ///
-    /// <para>ASSERTED ON Started RATHER THAN ON THE RENDERED STRING because ReportChild derives the
-    /// age from this one value and nothing else; a sane stamp here is a sane age everywhere it is
-    /// drawn. The rendered header is not reachable from this file — ParentWithSpawning builds its
-    /// own panel — so the string itself stays unasserted, which is how a 2000-year age passed a
-    /// green suite.</para>
+    /// <para>ASSERTED ON Started, with the rendered caption asserted separately below: a sane stamp
+    /// is what a sane age is derived FROM, and the two fail for different reasons — a stamp left at
+    /// default and a formatter that renders a good stamp badly.</para>
     /// </summary>
     [Fact]
     public async Task ASpawnedChildsClock_IsSetBeforeAnAgeIsRenderedFromIt()
@@ -215,5 +213,83 @@ public class ChildLivenessTests
         // one — the same subtraction ReportChild does.
         var age = DateTimeOffset.UtcNow - clockAtBegin.Value;
         Assert.True(age < TimeSpan.FromMinutes(1), $"age rendered as {age.TotalMinutes:0}m");
+    }
+
+    /// <summary>
+    /// The age a spawn's row actually SHOWS is the age of this run, not of the epoch.
+    ///
+    /// <para>THE STRING ITSELF, which nothing else in the suite reads. Every other assertion here
+    /// checks a value the caption is computed from, and a caption is a second thing that can be
+    /// wrong on its own — the unset-clock defect rendered "1065212m47s" past a green suite precisely
+    /// because the rendered text was asserted nowhere.</para>
+    ///
+    /// <para>A BOUND RATHER THAN AN EXACT STRING: the caption carries turns and occupancy beside the
+    /// age, and a child that takes a fraction of a second longer on a loaded machine reads "1s"
+    /// rather than "0s". What must hold is that the figure is a handful of seconds — the minute
+    /// form, "NmSSs", is the shape a geological age takes.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnedChildsRow_RendersAnAgeInSeconds()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out _, out var panel);
+
+        // THE LIVE CAPTION, CAPTURED AS IT IS PAINTED. The finished account replaces it the moment
+        // the run stops, so the ticking line this test is about exists only while the child works.
+        string? live = null;
+        parent.ChildSpawned += spawned => parent.ChildSpend += () =>
+            live ??= panel.Jobs.FirstOrDefault(j => j.Id == spawned.JobId)?.ProgressMessage;
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        Assert.NotNull(live);
+
+        // THE LAST SEGMENT IS THE AGE — the caption is "N turns[ · P% ctx] · AGE" and only the age
+        // is at stake here. Read out rather than matched against the whole line so a later addition
+        // beside it does not turn this into a test of the caption's layout.
+        var rendered = live!.Split('·').Last().Trim();
+
+        // THE SECONDS FORM. "1065212m47s" — the millennia since year one, which is what an unset
+        // clock renders — is the minute form and fails here; so would "1m00s" from a run this suite
+        // could not plausibly take.
+        Assert.Matches(@"^\d{1,2}s$", rendered);
+    }
+
+    /// <summary>
+    /// A spawn archives exactly once.
+    ///
+    /// <para>THE ACCOUNT IS WRITTEN WHERE THE WORK STOPS, and a spawn stops the same way a resume
+    /// does — its claim is released in the spawner's own finally. A second copy left in the spawn
+    /// method would raise the same run twice: one row in history counted twice, and the settled row
+    /// on screen rewritten with an identical second copy at a slightly later clock.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawn_ArchivesExactlyOnce()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out _);
+        var runs = new List<ChildRunReport>();
+        parent.ChildFinished += r => runs.Add(r);
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        Assert.Single(runs);
+    }
+
+    /// <summary>
+    /// The envelope's own word reaches the archive, rather than a two-way completed/failed guess.
+    ///
+    /// <para>ONLY THE RELEASE CARRIES IT. The spawn method does not see its own envelope until after
+    /// the claim is released — and the account is written inside that release — so a run's outcome
+    /// has to travel with the release or be lost.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnsOutcome_ComesFromItsEnvelope()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out _);
+        var runs = new List<ChildRunReport>();
+        parent.ChildFinished += r => runs.Add(r);
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        Assert.Equal("completed", Assert.Single(runs).Outcome);
     }
 }

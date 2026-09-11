@@ -162,7 +162,17 @@ public sealed class SubAgentStore
         return true;
     }
 
-    public void EndSend(string name)
+    /// <summary>Releases this agent's claim, recording how the stretch ended.</summary>
+    /// <param name="name">The handle the child is kept under — the same one the claim was taken with.</param>
+    /// <param name="outcome">
+    /// The envelope's own word for a spawn, null for a send.
+    ///
+    /// <para>CARRIED THROUGH THE RELEASE because the release is what announces the stop, and the
+    /// listener that writes the account has no other way to learn a capped run was capped: the
+    /// spawn method does not see its own envelope until after the claim is released, by which time
+    /// the account is already written.</para>
+    /// </param>
+    public void EndSend(string name, string? outcome = null)
     {
         // ONLY WHEN A CLAIM WAS ACTUALLY RELEASED. EndSend runs in two finallys (the spawner's and
         // agent_send's), so an unconditional announcement would say "stopped" twice for one stop.
@@ -172,7 +182,7 @@ public sealed class SubAgentStore
         // so no tool report fires when it returns; and a child raises nothing when it goes idle,
         // because a turn ending and a goal ending look identical from outside. A front end that
         // started showing the child working has no other moment to stop.
-        if (Find(name) is { } ended) SendEnded?.Invoke(ended.Agent.Agent.Id);
+        if (Find(name) is { } ended) SendEnded?.Invoke(ended.Agent.Agent.Id, outcome);
     }
 
     /// <summary>
@@ -185,7 +195,12 @@ public sealed class SubAgentStore
     public event Action<string>? SendBegan;
 
     /// <inheritdoc cref="SendBegan"/>
-    public event Action<string>? SendEnded;
+    /// <remarks>
+    /// CARRIES THE OUTCOME WORD ALONGSIDE THE ID, null unless the release named one. The release is
+    /// the only announcement of a stop, so a listener writing the run's account has nowhere else to
+    /// learn that a capped run was capped rather than completed.
+    /// </remarks>
+    public event Action<string, string?>? SendEnded;
 
     /// <summary>
     /// A handle from a description: lower-cased, non-alphanumerics folded to single hyphens.

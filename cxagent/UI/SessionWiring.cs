@@ -122,7 +122,9 @@ public static class SessionWiring
         // transcript a newer sink now owns — and the newer sink would draw the same row again.
         session.SubAgents.SendBegan += agentId =>
             system.EnqueueOnUIThread(() => tab.JobSink?.WorkerResumed(agentId));
-        session.SubAgents.SendEnded += agentId =>
+        // The outcome word rides along for whoever records the run; a row only settles, so it is
+        // ignored here rather than rendered — the finished header already states what the run cost.
+        session.SubAgents.SendEnded += (agentId, _) =>
             system.EnqueueOnUIThread(() => tab.JobSink?.WorkerSettled(agentId));
 
         session.TokensUpdated += (_, _) => system.EnqueueOnUIThread(() =>

@@ -315,6 +315,12 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
         // Null when unconfigured, which is the default: whatever the model emits, runs.
         var slot = _factory.ConcurrencySlot;
         if (slot is not null) await slot.WaitAsync(ct);
+
+        // THE ENVELOPE, HOISTED SO THE RELEASE CAN READ ITS STATE. The release is what announces the
+        // stop, and the listener that writes this run's account runs inside it — so the outcome word
+        // has to be in hand before the finally, not after the call returns. Null on every path that
+        // threw, where "completed" is not a claim anyone should make.
+        string? envelope = null;
         try
         {
             var result = await child.Agent.SendAsync(prompt, ct);
@@ -327,7 +333,7 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
             // re-register the same child and mint a second handle for it.
             var name = keptAs;
 
-            return SubAgentEnvelope.Render(child.Agent.Id, name, result.Outcome,
+            return envelope = SubAgentEnvelope.Render(child.Agent.Id, name, result.Outcome,
                 WithPlanOutcome(result.Text, planPath));
         }
         finally
@@ -336,7 +342,12 @@ internal sealed class SubAgentSpawner : ISubAgentSpawner
 
             // RELEASED WHATEVER HAPPENED, or a child that threw stays busy forever and every later
             // send to it is answered with a delivery confirmation nobody drains.
-            if (keptAs is not null) _store!.EndSend(keptAs);
+            //
+            // READ BACK OUT OF THE ENVELOPE rather than passed from `result` directly: the envelope
+            // is the one artefact that always carries the state, so the word recorded here is the
+            // same word the parent's model reads — two copies of it could disagree, and both would
+            // be plausible strings.
+            if (keptAs is not null) _store!.EndSend(keptAs, SubAgentEnvelope.StateOf(envelope));
         }
     }
 

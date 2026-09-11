@@ -51,6 +51,20 @@ public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
     public string? Prompt { get; set; }
 
     /// <summary>
+    /// What the envelope said this stretch ended as, when there was one.
+    ///
+    /// <para>THE ENVELOPE'S OWN WORD, not a two-way failed/completed guess. A capped run — an
+    /// explore child burning all 30 turns hunting a schema nobody publishes — is neither, and
+    /// recording it as completed puts a wasted run in the success column, which is exactly the run
+    /// worth finding later.</para>
+    ///
+    /// <para>NULL FROM A RESUME, which has no envelope to read: a send answers with the child's own
+    /// text. "completed" is then the honest default — the work stopped and the caller got an
+    /// answer.</para>
+    /// </summary>
+    public string? Outcome { get; set; }
+
+    /// <summary>
     /// When the CURRENT stretch of work started.
     ///
     /// <para>REBASED AT EACH BEGIN, so the elapsed figure reads "working for 40s" rather than

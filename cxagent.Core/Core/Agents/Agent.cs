@@ -184,11 +184,16 @@ public sealed class Agent
     private readonly ConcurrentDictionary<string, ChildRun> _childRuns = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// The live jobs of children, by the parent row's job id.
+    /// The rows of SPAWN calls, by job id — the parent rows a child's repaint writes through.
     ///
     /// <para>WHAT A REPAINT WRITES THROUGH, since it no longer closes over the call's own job: a
     /// repaint driven by the store's claim knows an agent id, and reaches the row only by way of
     /// the run's job id.</para>
+    ///
+    /// <para>SPAWNS ONLY, which is why it is filled where the child is built rather than for every
+    /// tool call. Nothing evicts from here — a child is kept for the session and may be resumed, so
+    /// its row must stay reachable — and an entry per read_file, grep and shell would mean a long
+    /// session holding thousands of finished jobs alive by their progress text alone.</para>
     /// </summary>
     private readonly ConcurrentDictionary<string, Job> _liveJobs = new(StringComparer.Ordinal);
 
@@ -2110,20 +2115,6 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Repaints one child's live row from the run's own state.
-    ///
-    /// <para>A METHOD ON THE AGENT RATHER THAN A LOCAL IN THE SPAWN CALL, because a child is
-    /// repainted on every path it can be working on — the spawn that made it, an agent_send, a
-    /// /agents send, a mailbox wake — and only the first of those passes through that call. A
-    /// painter scoped to one of the four paths is a row that is alive on one and frozen on three.
-    /// </para>
-    ///
-    /// <para>THE JOB IS LOOKED UP RATHER THAN CLOSED OVER, for the same reason. It answers null for
-    /// a run whose row has gone, which is not a failure: a session cleared while a child works has
-    /// a live child and no row, and a painter that assumed one would throw once a second forever.
-    /// </para>
-    /// </summary>
-     /// <summary>
     /// Starts a child's repaint, whatever set it working.
     ///
     /// <para>IGNORES AN ID IT DOES NOT KNOW, which is ordinary rather than exceptional: the store is
@@ -2148,9 +2139,14 @@ public sealed class Agent
     /// identical from outside; agent_send never becomes a job, so no tool report marks its
     /// return.</para>
     /// </summary>
-    private void OnChildEnded(string agentId)
+    private void OnChildEnded(string agentId, string? outcome)
     {
         if (_childRuns.GetValueOrDefault(agentId) is not { } run) return;
+
+        // THE ENVELOPE'S WORD, TAKEN BEFORE THE ACCOUNT IS WRITTEN. Only the release carries it, and
+        // only for a spawn — a resume has no envelope, and leaving the previous stretch's word in
+        // place would report this one as whatever the last one was.
+        run.Outcome = outcome;
 
         // FALSE MEANS IT WAS NOT WORKING, and writing a finished account for a stop that did not
         // happen would overwrite a settled row's numbers and raise a duplicate archive row.
@@ -2173,6 +2169,63 @@ public sealed class Agent
         var (spentIn, spentOut) = child.Agent.Spend;
         var took = DateTimeOffset.UtcNow - run.Started;
 
+        // A FINISHED CHILD'S HEADER STATES THE COST, not its last live tick. While running, the
+        // header answers "is it alive"; once done, that question is settled and the numbers that
+        // remain interesting are what the run took. Leaving the ticking line in place also reads as
+        // though it were still going — the elapsed figure simply stops, which looks like a freeze
+        // rather than a finish.
+        //
+        // THE ROW IS OPTIONAL AND THE ARCHIVE IS NOT. A session cleared while a child worked has a
+        // live child and no row, and a resume through agent_send never had one at all; the run still
+        // happened and still belongs in history, so the raise below sits outside this.
+        if (_liveJobs.TryGetValue(run.JobId, out var job))
+        {
+            var duration = took.TotalMinutes >= 1
+                ? $"{(int)took.TotalMinutes}m{took.Seconds:00}s"
+                : $"{took.TotalSeconds:0}s";
+
+            // WHAT IT COST, on the header. The session panel says what all workers spent together;
+            // only here can a user see that THIS planner cost 41k while that explore cost 3k — which
+            // is the comparison that decides whether a type is worth spawning again.
+            var cost = spentIn + spentOut > 0 ? $" · {spentIn + spentOut:N0} tokens" : "";
+
+            job.ProgressMessage = $"done · {duration}{cost}";
+
+            // AND THE FULL ACCOUNT IN THE BODY, which survives the row being collapsed and is what
+            // a run is read back from later. The live turn counter is replaced rather than joined:
+            // once finished, "3 turns" is a fact about the run, not a thing still moving.
+            var account = new List<string> { $"  type: {child.TypeName}" };
+            if (!string.IsNullOrWhiteSpace(child.ModelId))
+                account.Add($"  model: {child.ModelId}");
+            if (!string.IsNullOrWhiteSpace(run.Prompt))
+            {
+                var first = run.Prompt!.Split('\n', 2)[0].Trim();
+                // UNCLIPPED, so the finished account matches what the live caption already showed —
+                // see ReportChild's facts block for why a shortened task line is the wrong trade.
+                if (first.Length > 0) account.Add($"  task: {first}");
+            }
+            // THE SKILLS IT LOADED, from the copy captured onto the run rather than a live read: by
+            // here the child has finished and its context is gone. A live read would depend on the
+            // thing that has vanished.
+            //
+            // ITS OWN LINE IN THIS LIST because ProgressBody is REPLACED here, not appended to — a
+            // change made only to ReportChild's `facts` would pass a live-row test and silently drop
+            // this from the finished row, which is the surface that outlives the run.
+            if (run.Skills.Count > 0)
+                account.Add($"  skills: {Clip(string.Join(", ", run.Skills), 60)}");
+
+            // NO DURATION HERE. The row's own header already states it (ProgressMessage above, and
+            // the UI header's own DurationSuffix reading the same JobResult.Duration) — a second
+            // copy in the caption agreed with it only until the two were touched by different code,
+            // which is exactly the defect a caption sitting beside a header is supposed to avoid
+            // repeating.
+            account.Add($"  {run.Turns} turn{(run.Turns == 1 ? "" : "s")}");
+            if (spentIn + spentOut > 0)
+                account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
+
+            job.ProgressBody = string.Join("\n", account);
+        }
+
         ChildFinished?.Invoke(new ChildRunReport(
             // THE STRETCH IN THE ID, because every stretch is its own row: the agent id alone would
             // collide on the second one and lose a run. The agent id stays the prefix so rows for one
@@ -2184,8 +2237,14 @@ public sealed class Agent
             InputTokens: spentIn,
             OutputTokens: spentOut,
             Turns: run.Turns,
+            // The child's own panel already holds every row it drew — that is what keeps them out of
+            // the parent's transcript — so this is a read, not new bookkeeping.
             ToolCalls: child.Jobs.Jobs.Count,
-            Outcome: "completed",
+            // THE ENVELOPE'S OWN WORD WHEN THERE WAS ONE, not a two-way failed/completed guess. A
+            // capped run is neither, and recording it as completed puts a wasted run in the success
+            // column. A resume has no envelope, and "completed" is then honest: the work stopped and
+            // the caller got an answer.
+            Outcome: run.Outcome ?? "completed",
             StartedAt: run.Started,
             DurationMs: (long)took.TotalMilliseconds)
         {
@@ -2193,7 +2252,42 @@ public sealed class Agent
         });
     }
 
-   private void ReportChild(ChildRun run)
+    /// <summary>
+    /// Reports one child's progress: its row, and the session's spend readout.
+    ///
+    /// <para>TWO PARTS BECAUSE ONLY ONE OF THEM NEEDS A ROW, and conflating them silenced the
+    /// readout. The row is addressed through the run's job id and may simply not exist — a session
+    /// cleared mid-run, or a child resumed through agent_send, which never had one — while the spend
+    /// panel reads a shared ledger and is keyed on nothing the row lookup touches. Bailing out on a
+    /// missing row therefore stopped reporting spend for exactly the children whose spend was
+    /// already the hardest to see.</para>
+    /// </summary>
+    private void ReportChild(ChildRun run)
+    {
+        PaintChildRow(run);
+
+        // AND THE SESSION READOUT. Raised from here rather than from the child's TurnCompleted
+        // because this is also driven by the one-second tick — a child that spends four minutes
+        // inside a single turn completes no turns to hang this on, which is precisely the run whose
+        // spend the panel was missing.
+        ChildSpend?.Invoke();
+    }
+
+    /// <summary>
+    /// Draws one child's live row from the run's own state, or does nothing when there is no row.
+    ///
+    /// <para>A METHOD ON THE AGENT RATHER THAN A LOCAL IN THE SPAWN CALL, because a child is
+    /// repainted on every path it can be working on — the spawn that made it, an agent_send, a
+    /// /agents send, a mailbox wake — and only the first of those passes through that call. A
+    /// painter scoped to one of the four paths is a row that is alive on one and frozen on three.
+    /// </para>
+    ///
+    /// <para>THE JOB IS LOOKED UP RATHER THAN CLOSED OVER, for the same reason. It finds nothing for
+    /// a run whose row has gone, which is not a failure: a session cleared while a child works has
+    /// a live child and no row, and a painter that assumed one would throw once a second forever.
+    /// </para>
+    /// </summary>
+    private void PaintChildRow(ChildRun run)
     {
         if (!_liveJobs.TryGetValue(run.JobId, out var job)) return;
         var child = run.Child;
@@ -2291,12 +2385,6 @@ public sealed class Agent
             : string.Join("\n", facts);
 
         _jobs.ToolProgressed(job);
-
-        // AND THE SESSION READOUT. Raised from Report rather than from the child's TurnCompleted
-        // because Report is also driven by the one-second tick — a child that spends four minutes
-        // inside a single turn completes no turns to hang this on, which is precisely the run
-        // whose spend the panel was missing.
-        ChildSpend?.Invoke();
     }
 
     private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
@@ -2315,11 +2403,6 @@ public sealed class Agent
         };
         _jobs.ToolsChanged(new[] { job });
 
-        // REACHABLE BY ID FROM HERE ON, because a child's repaint no longer closes over this local:
-        // it arrives from the store's claim announcement, which knows an agent id and nothing about
-        // this call.
-        _liveJobs[job.Id] = job;
-
         var started = DateTimeOffset.UtcNow;   // rebased by ctx.WorkStarted below
 
         // THE CHILD'S ID ADDRESSES THIS ROW (D14). Rows key on job.Id, minted per tool call above;
@@ -2337,15 +2420,19 @@ public sealed class Agent
         // the row to the message layout. Read once — it never changes.
         var childPrompt = ReadArg(call, "prompt");
 
-        // THE CHILD ITSELF, once built — so the finished row can account for it after SendAsync has
-        // returned. Null on every failure path before the child exists, which is why every read of
-        // it is guarded rather than assumed.
-        SubAgent? spawned = null;
-
         void OnChildSpawned(SubAgent child)
         {
             childId = child.Agent.Id;
-            spawned = child;
+
+            // REACHABLE BY ID FROM HERE ON, because a child's repaint no longer closes over this
+            // local: it arrives from the store's claim announcement, which knows an agent id and
+            // nothing about this call.
+            //
+            // REGISTERED HERE RATHER THAN FOR EVERY TOOL CALL. This method services reads, greps and
+            // shells too, and nothing is ever removed — a session's worth of finished jobs would be
+            // held alive by their progress text for a lookup only a spawn row can ever satisfy.
+            _liveJobs[job.Id] = job;
+
             job.ProgressMessage = "starting…";
             // ToolProgressed, NEVER ToolUpdated, for anything that fires repeatedly: ToolUpdated
             // force-expands the row and blanks its body on every call, so a per-second tick would
@@ -2357,6 +2444,16 @@ public sealed class Agent
             // repaint. A run registered any later would miss its own begin.
             var run = _childRuns.GetOrAdd(child.Agent.Id, _ => new ChildRun(child, job.Id));
             run.Prompt = childPrompt;
+
+            // AND STARTED HERE TOO, because a claim is not guaranteed. The store's claim is what
+            // normally begins a run — one mechanism serving spawn, agent_send, /agents send and a
+            // mailbox drain alike — but a spawner built without a store takes no claim and announces
+            // nothing, and this call is then the only thing that knows work has begun. Without it
+            // such a run's clock stays unset and its row renders the millennia since year one.
+            //
+            // A NO-OP WHEN THE CLAIM GETS THERE FIRST: Begin answers false while already working, so
+            // whichever of the two arrives first starts the single timer and the other does nothing.
+            if (run.Begin(_ => ReportChild(run))) ReportChild(run);
 
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session
@@ -2652,6 +2749,26 @@ public sealed class Agent
             // feed "cancelled" back as though the tool had answered.
             throw;
         }
+        finally
+        {
+            // AND STOPPED HERE TOO, for the reason the begin above gives: a spawner built without a
+            // store releases no claim and announces no stop, so this return is the only thing that
+            // knows the work is over. A run left working holds a timer writing to a closed row once
+            // a second for the rest of the session, and its account is never written at all.
+            //
+            // A NO-OP WHEN THE CLAIM GOT THERE FIRST — End answers false once already stopped, and
+            // ArchiveChildRun is reached only through that true. So the account is written exactly
+            // once whichever path ends the run, which is the whole point of having one.
+            //
+            // IN A FINALLY because a cancelled spawn stops just as surely as a finished one; the
+            // catch above rethrows, and a stop written only on the straight-line path would leave
+            // the cancelled child's timer running.
+            if (childId is not null && _childRuns.GetValueOrDefault(childId) is { } spawnRun
+                && spawnRun.End())
+            {
+                ArchiveChildRun(spawnRun);
+            }
+        }
 
         // THE STRING, once, for everything below that reasons about the text the model was told —
         // the error message, the envelope's state, the recorded length.
@@ -2671,99 +2788,6 @@ public sealed class Agent
             : JobState.Succeeded;
         job.CompletedAt = DateTimeOffset.UtcNow;
 
-        // A FINISHED CHILD'S HEADER STATES THE COST, not its last live tick. While running, the
-        // header answers "is it alive"; once done, that question is settled and the numbers that
-        // remain interesting are what the run took. Leaving the ticking line in place also reads as
-        // though it were still going — the elapsed figure simply stops, which looks like a freeze
-        // rather than a finish.
-        if (childId is not null)
-        {
-            // THE RUN CARRIES WHAT THIS ACCOUNT STATES — the turns taken and the skills captured
-            // while the child's context still existed. Both are facts about the child rather than
-            // about this call, so they are read back from the child's own run rather than from
-            // locals that would have stopped counting the moment a resume took over.
-            var run = _childRuns.GetValueOrDefault(childId);
-            var childTurns = run?.Turns ?? 0;
-            var childSkills = run?.Skills ?? [];
-
-            var took = DateTimeOffset.UtcNow - started;
-            var duration = took.TotalMinutes >= 1
-                ? $"{(int)took.TotalMinutes}m{took.Seconds:00}s"
-                : $"{took.TotalSeconds:0}s";
-
-            // WHAT IT COST, on the header. The session panel says what all workers spent together;
-            // only here can a user see that THIS planner cost 41k while that explore cost 3k — which
-            // is the comparison that decides whether a type is worth spawning again.
-            var (spentIn, spentOut) = spawned?.Agent.Spend ?? (0, 0);
-            var cost = spentIn + spentOut > 0 ? $" · {spentIn + spentOut:N0} tokens" : "";
-
-            job.ProgressMessage = $"done · {duration}{cost}";
-
-            // AND THE FULL ACCOUNT IN THE BODY, which survives the row being collapsed and is what
-            // a run is read back from later. The live turn counter is replaced rather than joined:
-            // once finished, "3 turns" is a fact about the run, not a thing still moving.
-            if (spawned is not null)
-            {
-                var account = new List<string> { $"  type: {spawned.TypeName}" };
-                if (!string.IsNullOrWhiteSpace(spawned.ModelId))
-                    account.Add($"  model: {spawned.ModelId}");
-                if (!string.IsNullOrWhiteSpace(childPrompt))
-                {
-                    var first = childPrompt!.Split('\n', 2)[0].Trim();
-                    // UNCLIPPED, so the finished account matches what the live caption already
-                    // showed — see the facts block above for why a shortened task line is the wrong
-                    // trade.
-                    if (first.Length > 0) account.Add($"  task: {first}");
-                }
-                // THE SKILLS IT LOADED, from the captured copy rather than a live read: by here the
-                // child has finished and this section's own argument is that its context is gone.
-                // A live read would depend on the thing that has vanished.
-                //
-                // ITS OWN LINE IN THIS LIST because ProgressBody is REPLACED here, not appended to —
-                // a change made only to `facts` above would pass a live-row test and silently drop
-                // this from the finished row, which is the surface that outlives the run.
-                if (childSkills.Count > 0)
-                    account.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
-
-                // NO DURATION HERE. The row's own header already states it (ProgressMessage above,
-                // and the UI header's own DurationSuffix reading the same JobResult.Duration) — a
-                // second copy in the caption agreed with it only until the two were touched by
-                // different code, which is exactly the defect a caption sitting beside a header is
-                // supposed to avoid repeating.
-                account.Add($"  {childTurns} turn{(childTurns == 1 ? "" : "s")}");
-                if (spentIn + spentOut > 0)
-                    account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
-
-                job.ProgressBody = string.Join("\n", account);
-
-                // AND TO HISTORY, once. The row above is for a user reading this session; this is for
-                // a user asking "is planner worth spawning" — a question one session cannot answer.
-                ChildFinished?.Invoke(new ChildRunReport(
-                    RunId: childId,
-                    ParentAgentId: Id,
-                    TypeName: spawned.TypeName,
-                    ModelId: spawned.ModelId,
-                    InputTokens: spentIn,
-                    OutputTokens: spentOut,
-                    Turns: childTurns,
-                    // The child's own panel already holds every row it drew — that is what keeps them
-                    // out of the parent's transcript — so this is a read, not new bookkeeping.
-                    ToolCalls: spawned.Jobs.Jobs.Count,
-                    // THE ENVELOPE'S OWN WORD, not a two-way failed/completed guess. A capped run —
-                    // seen live: an explore child burned all 30 turns hunting a JSON schema that is
-                    // not published anywhere — is neither. Recording it as "completed" would put a
-                    // wasted run in the success column, which is exactly the run worth finding later.
-                    Outcome: SubAgentEnvelope.StateOf(result) ?? "completed",
-                    StartedAt: started,
-                    DurationMs: (long)took.TotalMilliseconds)
-                {
-                    // From the captured copy, like the row above: the child has finished and its
-                    // context is gone. Null rather than "" when nothing was loaded, so a later query
-                    // can tell "loaded nothing" from "ran before skills existed".
-                    Skills = childSkills.Count > 0 ? string.Join(", ", childSkills) : null,
-                });
-            }
-        }
         // FROM THE PLUGIN'S OWN RESULT, overriding only what this method genuinely owns. Building a
         // NEW JobResult from the returned string — which is what this did — split every field in
         // two: the ones Agent can re-derive survived, and the ones only the executor knows (Output,
