@@ -123,15 +123,15 @@ public class ChildLivenessTests
     }
 
     /// <summary>
-    /// A resume is work, so the cap that bounds spawns bounds it too.
+    /// A handle nothing keeps is refused at once, without queueing behind the cap.
     ///
-    /// <para>WITHOUT THIS A SEND WALKS PAST maxConcurrentAgents. The spawner waits the slot inside
-    /// its own started task; agent_send never enters that method, so a user who capped their
-    /// endpoint at two concurrent children could have two spawns and any number of resumes running
-    /// at once — which is the cap not holding, on the path a model reaches for most.</para>
+    /// <para>THIS PINS AN ORDERING, NOT THE CAP — the send never reaches the semaphore, so the wait
+    /// itself is unasserted here and AResumeIsHeldByAFullCap is what proves it. Making the model
+    /// wait behind a full cap to be told its handle is wrong burns the very permit the cap exists to
+    /// protect, on a call that was never going to start any work.</para>
     /// </summary>
     [Fact]
-    public async Task AResumeWaitsTheSameSlotASpawnWaits()
+    public async Task AnUnknownHandleIsRefusedWithoutWaitingTheCap()
     {
         var slot = new SemaphoreSlim(1);
         var store = new SubAgentStore();
@@ -149,6 +149,46 @@ public class ChildLivenessTests
         Assert.Contains("no sub-agent named", await send);
 
         slot.Release();
+    }
+
+    /// <summary>
+    /// A resume of a child that IS kept waits the cap, and runs when a permit frees.
+    ///
+    /// <para>WITHOUT THIS A SEND WALKS PAST maxConcurrentAgents. The spawner waits the slot inside
+    /// its own started task; agent_send never enters that method, so a user who capped their
+    /// endpoint at two concurrent children could have two spawns and any number of resumes running
+    /// at once — which is the cap not holding, on the path a model reaches for most.</para>
+    ///
+    /// <para>BOTH HALVES ARE THE TEST. That the send does not finish while the cap is full is what a
+    /// no-op WaitAsync would break; that it finishes once a permit is released is what a wait
+    /// nothing ever releases would break, and a test asserting only the first would pass for a send
+    /// that had simply deadlocked.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumeIsHeldByAFullCap_AndRunsWhenAPermitFrees()
+    {
+        var slot = new SemaphoreSlim(1);
+        var parent = ParentWhoseChildSpends(out var store);
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+        var kept = Assert.Single(store.All());
+
+        var reach = new AgentReachTools(store, slot);
+        await slot.WaitAsync();                       // the cap is full
+
+        var send = reach.InvokeAsync(
+            CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more please", CancellationToken.None);
+
+        // HELD. A genuinely kept child has passed every refusal, so the only thing that can stop it
+        // here is the semaphore.
+        Assert.NotSame(send, await Task.WhenAny(send, Task.Delay(200)));
+
+        // AND NOT SHOWN AS WORKING WHILE IT WAITS. The claim is what starts the row's timer, so a
+        // send holding one across the wait would paint a ticking row for a child sitting in a queue.
+        Assert.False(store.IsBusy(kept.Name));
+
+        slot.Release();
+        Assert.Same(send, await Task.WhenAny(send, Task.Delay(5000)));
+        await send;
     }
 
     /// <summary>

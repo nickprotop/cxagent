@@ -296,7 +296,12 @@ public sealed partial class Session
         {
             try
             {
-                var reach = new Agents.AgentReachTools(SubAgents);
+                // THE SPAWNER'S OWN CAP, as the agent_send tool path passes it. A resume is a child
+                // running, so a command that skipped the semaphore would let a user step around
+                // maxConcurrentAgents by typing what the model would have called — and the limit
+                // would bind whichever path happened to be wired rather than the concurrency it
+                // names.
+                var reach = new Agents.AgentReachTools(SubAgents, _spawner?.ConcurrencySlot);
                 var answer = await reach.InvokeAsync(
                     Jobs.Tool.AgentSend, name, prompt, CancellationToken.None);
                 Say(new Message(answer, Severity.Info));

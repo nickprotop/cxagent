@@ -80,15 +80,39 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // of it the parent could only wait — including when it had just learned something the child
         // needed. Spawning a replacement to carry one correction throws away everything the first
         // one already knows, which is the opposite of what keeping its context is for.
+        //
+        // THE CLAIM IS ALSO HOW BUSY-NESS IS DISCOVERED, and it is the only atomic way to ask: a
+        // separate IsBusy read would answer about a moment that has passed. So the claim is taken
+        // first, and — when it succeeds — handed back below so the cap can be waited without it.
         if (!store.TryBeginSend(agentName))
-        {
-            if (!stored.Agent.Agent.Mailbox.TryEnqueue(prompt, out var full))
-                return $"error: could not reach '{agentName}' — {full}";
+            return Deliver(stored, agentName, prompt);
 
-            // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call
-            // this again expecting a reply, which is the loop this exists to prevent.
-            return $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. "
-                 + "It will not answer here; ask agent_send again later, or read its final report.";
+        // HANDED BACK TO WAIT THE CAP, THEN RETAKEN. Taking the claim is what announces a child as
+        // working — SendBegan starts its row's timer and rebases its clock — so holding it across
+        // the semaphore would paint a ticking row for a child sitting in a queue doing nothing, and
+        // fold the queue wait into the duration the archive records as the run's cost.
+        //
+        // A MESSAGE FOR A BUSY CHILD NEVER REACHES HERE, and must not: the mailbox is delivery, not
+        // work, so it costs no concurrency and queueing it behind a full cap would make telling a
+        // running child something wait on unrelated children finishing. The refusals above are
+        // answered without waiting for the same reason — a wrong handle must not burn a permit to be
+        // told it is wrong.
+        if (slot is not null)
+        {
+            store.EndSend(agentName);
+
+            // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
+            await slot.WaitAsync(ct);
+
+            // THE GAP IS REAL AND THE MAILBOX IS ITS ANSWER. Another sender can claim this child
+            // while this one waits; it is then genuinely busy, and a delivery is exactly what a busy
+            // child's sender is told — the same reply it would have got had it arrived a moment
+            // later.
+            if (!store.TryBeginSend(agentName))
+            {
+                slot.Release();
+                return Deliver(stored, agentName, prompt);
+            }
         }
 
         try
@@ -105,34 +129,41 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
                 stored.Agent.Agent.Context.Messages.Add(
                     new ChatMessage { Role = "user", Content = waiting });
 
-            // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a child
-            // running; a cap that counted only spawns would be a cap the model can step around by
-            // reaching for the cheaper tool, which is the one it is told to prefer.
-            //
-            // AFTER THE REFUSALS ABOVE, so a wrong handle is answered at once rather than queued
-            // behind the very cap it does not need.
-            //
-            // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
-            if (slot is not null) await slot.WaitAsync(ct);
-            try
-            {
-                // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
-                // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
-                // so Escape cancels it like any other tool call.
-                var result = await stored.Agent.Agent.SendAsync(prompt, ct);
-                return result.Text;
-            }
-            finally
-            {
-                slot?.Release();
-            }
+            // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
+            // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
+            // so Escape cancels it like any other tool call.
+            var result = await stored.Agent.Agent.SendAsync(prompt, ct);
+            return result.Text;
         }
         finally
         {
+            // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a child
+            // running; a cap that counted only spawns would be a cap the model can step around by
+            // reaching for the cheaper tool, which is the one it is told to prefer.
+            slot?.Release();
+
             // RELEASED WHATEVER HAPPENED. A throw that left the claim set would make this agent
             // permanently unreachable, with a delivery confirmation as the only symptom.
             store.EndSend(agentName);
         }
+    }
+
+    /// <summary>
+    /// Leaves a message for a child that is mid-task, and says so.
+    ///
+    /// <para>NOT WORK, SO IT COSTS NO CONCURRENCY. A delivery appends to a mailbox a running loop
+    /// will drain on its own next turn; nothing new starts, so it waits no cap — which is what lets
+    /// a parent correct a running child while every permit is held by other children.</para>
+    /// </summary>
+    private static string Deliver(StoredAgent stored, string agentName, string prompt)
+    {
+        if (!stored.Agent.Agent.Mailbox.TryEnqueue(prompt, out var full))
+            return $"error: could not reach '{agentName}' — {full}";
+
+        // NAMES WHERE THE ANSWER IS NOT. Without that clause the obvious next move is to call
+        // this again expecting a reply, which is the loop this exists to prevent.
+        return $"delivered to '{agentName}' — it is mid-task and will see this on its next turn. "
+             + "It will not answer here; ask agent_send again later, or read its final report.";
     }
 
     /// <summary>
