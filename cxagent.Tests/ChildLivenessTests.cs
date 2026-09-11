@@ -172,6 +172,9 @@ public class ChildLivenessTests
         await parent.SendAsync("spawn a worker", CancellationToken.None);
         var kept = Assert.Single(store.All());
 
+        var began = new List<string>();
+        store.SendBegan += id => began.Add(id);
+
         var reach = new AgentReachTools(store, slot);
         await slot.WaitAsync();                       // the cap is full
 
@@ -182,13 +185,67 @@ public class ChildLivenessTests
         // here is the semaphore.
         Assert.NotSame(send, await Task.WhenAny(send, Task.Delay(200)));
 
-        // AND NOT SHOWN AS WORKING WHILE IT WAITS. The claim is what starts the row's timer, so a
-        // send holding one across the wait would paint a ticking row for a child sitting in a queue.
-        Assert.False(store.IsBusy(kept.Name));
+        // AND NOT SHOWN AS WORKING WHILE IT WAITS. The announcement is what starts the row's timer,
+        // so a send announcing before it holds a permit would paint a ticking row for a child
+        // sitting in a queue. The claim itself IS held across the wait — it is the exclusion that
+        // keeps another sender from taking the child — so busy-ness is not what this asks about.
+        Assert.Empty(began);
 
         slot.Release();
         Assert.Same(send, await Task.WhenAny(send, Task.Delay(5000)));
         await send;
+    }
+
+    /// <summary>
+    /// A resume held by a full cap archives ONE run, not a phantom beside it.
+    ///
+    /// <para>THE CAP AND THE ARCHIVE ARE ONE TEST, which is the gap this closes. A test that
+    /// subscribes to ChildFinished but passes no slot never enters the capped branch; a test that
+    /// passes a slot but watches no archive cannot see what the branch writes. Both pass while a
+    /// queued resume files a row of zero turns and zero tokens — and StatsQuery counts that row in
+    /// Runs and averages its zeroes into AvgTurns and AvgDurationMs, so a single capped resume drags
+    /// the reported cost of every sub-agent of that type toward nothing.</para>
+    ///
+    /// <para>THE CAUSE IT PINS: releasing the claim is the application's one announcement that a
+    /// child's work has STOPPED, so a send that hands its claim back in order to wait for a permit
+    /// says the child finished before it ever started.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumeQueuedBehindAFullCap_ArchivesNoPhantomRun()
+    {
+        var slot = new SemaphoreSlim(1);
+        var parent = ParentWhoseChildSpends(out var store, perAnswer: 1000);
+        var runs = new List<ChildRunReport>();
+        parent.ChildFinished += r => runs.Add(r);
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+        var kept = Assert.Single(store.All());
+        Assert.Single(runs);                          // the spawn's own row
+
+        var reach = new AgentReachTools(store, slot);
+        await slot.WaitAsync();                       // the cap is full
+
+        var send = reach.InvokeAsync(
+            CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more please", CancellationToken.None);
+
+        // QUEUED, AND NOTHING FILED FOR IT YET. A row written here is a run that has not happened.
+        Assert.NotSame(send, await Task.WhenAny(send, Task.Delay(200)));
+        Assert.Single(runs);
+
+        slot.Release();
+        Assert.Same(send, await Task.WhenAny(send, Task.Delay(5000)));
+        await send;
+
+        // EXACTLY TWO: the spawn and the one resume that ran.
+        Assert.Equal(2, runs.Count);
+
+        // AND THE SECOND IS THE REAL ONE. A phantom is recognisable by its emptiness, so asserting
+        // the resume's row carries its answer's cost is what distinguishes "two rows" from "two rows
+        // of which one is a ghost".
+        Assert.Equal(1000, runs[1].InputTokens);
+        Assert.Equal(1000, runs[1].OutputTokens);
+        Assert.Equal(1, runs[1].Turns);
+        Assert.DoesNotContain(runs, r => r.Turns == 0 && r.InputTokens == 0 && r.OutputTokens == 0);
     }
 
     /// <summary>

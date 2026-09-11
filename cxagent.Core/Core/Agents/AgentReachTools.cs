@@ -82,69 +82,79 @@ public sealed class AgentReachTools(SubAgentStore store, SemaphoreSlim? slot = n
         // one already knows, which is the opposite of what keeping its context is for.
         //
         // THE CLAIM IS ALSO HOW BUSY-NESS IS DISCOVERED, and it is the only atomic way to ask: a
-        // separate IsBusy read would answer about a moment that has passed. So the claim is taken
-        // first, and — when it succeeds — handed back below so the cap can be waited without it.
-        if (!store.TryBeginSend(agentName))
+        // separate IsBusy read would answer about a moment that has passed.
+        //
+        // SILENT, AND HELD ACROSS THE CAP. TryBeginSend would announce a start here, and its release
+        // is the application's one announcement that a stretch has STOPPED — a listener archives a
+        // run on it. So a send that claimed loudly and handed the claim back to wait for a permit
+        // would fabricate a finished run of zero turns and zero cost, and that phantom is counted by
+        // /stats exactly as a real one is. Claiming silently keeps the exclusion for the whole wait
+        // and announces nothing until work actually begins.
+        if (!store.TryClaim(agentName))
             return Deliver(stored, agentName, prompt);
 
-        // HANDED BACK TO WAIT THE CAP, THEN RETAKEN. Taking the claim is what announces a child as
-        // working — SendBegan starts its row's timer and rebases its clock — so holding it across
-        // the semaphore would paint a ticking row for a child sitting in a queue doing nothing, and
-        // fold the queue wait into the duration the archive records as the run's cost.
-        //
-        // A MESSAGE FOR A BUSY CHILD NEVER REACHES HERE, and must not: the mailbox is delivery, not
-        // work, so it costs no concurrency and queueing it behind a full cap would make telling a
-        // running child something wait on unrelated children finishing. The refusals above are
-        // answered without waiting for the same reason — a wrong handle must not burn a permit to be
-        // told it is wrong.
-        if (slot is not null)
-        {
-            store.EndSend(agentName);
-
-            // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
-            await slot.WaitAsync(ct);
-
-            // THE GAP IS REAL AND THE MAILBOX IS ITS ANSWER. Another sender can claim this child
-            // while this one waits; it is then genuinely busy, and a delivery is exactly what a busy
-            // child's sender is told — the same reply it would have got had it arrived a moment
-            // later.
-            if (!store.TryBeginSend(agentName))
-            {
-                slot.Release();
-                return Deliver(stored, agentName, prompt);
-            }
-        }
-
+        var announced = false;
         try
         {
-            // ANYTHING WAITING GOES FIRST. A message queued while this child was running, on a lap it
-            // never took, would otherwise arrive after a prompt that was sent later — and two
-            // corrections read in the wrong order are worse than one arriving late.
+            // WAITED WITHOUT SAYING THE CHILD IS WORKING, because it is not: SendBegan starts the
+            // row's timer and rebases its clock, so announcing before the permit is in hand paints a
+            // ticking row for a child sitting in a queue and folds the queue wait into the duration
+            // the archive records as the run's cost.
             //
-            // THIS IS ALSO WHY NOTHING IS EVER STRANDED. A mailbox can only be filled while a loop is
-            // running to drain it; a child that finished without draining is IDLE, and idle is this
-            // path, which empties it before appending. The state that would lose a message is the
-            // state that delivers it.
-            foreach (var waiting in stored.Agent.Agent.Mailbox.Drain())
-                stored.Agent.Agent.Context.Messages.Add(
-                    new ChatMessage { Role = "user", Content = waiting });
+            // A MESSAGE FOR A BUSY CHILD NEVER REACHES HERE, and must not: the mailbox is delivery,
+            // not work, so it costs no concurrency and queueing it behind a full cap would make
+            // telling a running child something wait on unrelated children finishing. The refusals
+            // above are answered without waiting for the same reason — a wrong handle must not burn
+            // a permit to be told it is wrong.
+            //
+            // THE ASKING TURN'S TOKEN, so Escape leaves the queue rather than stranding the caller.
+            if (slot is not null)
+                await slot.WaitAsync(ct);
 
-            // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
-            // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
-            // so Escape cancels it like any other tool call.
-            var result = await stored.Agent.Agent.SendAsync(prompt, ct);
-            return result.Text;
+            try
+            {
+                // ANNOUNCED ONLY NOW, WITH THE PERMIT IN HAND. From here the claim is released
+                // through EndSend rather than Release, which is what keeps one begin paired with
+                // exactly one end — the pairing a listener turns into one archive row.
+                // SET BEFORE THE CALL, not after: a listener that throws from SendBegan has already
+                // started the row, and an end must still be announced to settle it.
+                announced = true;
+                store.AnnounceBegin(agentName);
+                // ANYTHING WAITING GOES FIRST. A message queued while this child was running, on a
+                // lap it never took, would otherwise arrive after a prompt that was sent later — and
+                // two corrections read in the wrong order are worse than one arriving late.
+                //
+                // THIS IS ALSO WHY NOTHING IS EVER STRANDED. A mailbox can only be filled while a
+                // loop is running to drain it; a child that finished without draining is IDLE, and
+                // idle is this path, which empties it before appending. The state that would lose a
+                // message is the state that delivers it.
+                foreach (var waiting in stored.Agent.Agent.Mailbox.Drain())
+                    stored.Agent.Agent.Context.Messages.Add(
+                        new ChatMessage { Role = "user", Content = waiting });
+
+                // THE WAKING TURN'S TOKEN, NOT THE SPAWNING ONE'S. The token that created this child
+                // died with the turn that called `agent`; a wake is governed by the turn that ASKED,
+                // so Escape cancels it like any other tool call.
+                var result = await stored.Agent.Agent.SendAsync(prompt, ct);
+                return result.Text;
+            }
+            finally
+            {
+                // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a
+                // child running; a cap that counted only spawns would be a cap the model can step
+                // around by reaching for the cheaper tool, which is the one it is told to prefer.
+                slot?.Release();
+            }
         }
         finally
         {
-            // THE CAP, AND IT BINDS A RESUME EXACTLY AS IT BINDS A SPAWN. A woken child is a child
-            // running; a cap that counted only spawns would be a cap the model can step around by
-            // reaching for the cheaper tool, which is the one it is told to prefer.
-            slot?.Release();
-
-            // RELEASED WHATEVER HAPPENED. A throw that left the claim set would make this agent
-            // permanently unreachable, with a delivery confirmation as the only symptom.
-            store.EndSend(agentName);
+            // RELEASED WHATEVER HAPPENED, AND THROUGH WHICHEVER CALL MATCHES THE ANNOUNCEMENT. A
+            // throw that left the claim set would make this agent permanently unreachable, with a
+            // delivery confirmation as the only symptom; and a cancellation while queued must not
+            // announce a stop it never announced a start for, or the archive gains a run of zero
+            // turns that /stats averages in.
+            if (announced) store.EndSend(agentName);
+            else store.Release(agentName);
         }
     }
 

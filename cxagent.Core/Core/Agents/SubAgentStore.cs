@@ -144,8 +144,44 @@ public sealed class SubAgentStore
     /// </summary>
     public bool TryBeginSend(string name)
     {
-        if (!_busy.TryAdd(name, 0)) return false;
+        if (!TryClaim(name)) return false;
+        AnnounceBegin(name);
+        return true;
+    }
 
+    /// <summary>
+    /// Takes the claim WITHOUT announcing a start, or answers false when another already holds it.
+    ///
+    /// <para>SEPARATE FROM THE ANNOUNCEMENT BECAUSE THE TWO HAVE DIFFERENT LIFETIMES. A caller that
+    /// must hold the child against other senders while it waits for something else — a concurrency
+    /// permit, say — needs the exclusion for the whole wait but must not say the child is working
+    /// during it: SendBegan starts the row's timer and rebases its clock, and SendEnded is the
+    /// application's one announcement that a stretch of the child's work has STOPPED, which a
+    /// listener records as a finished run. Releasing the claim merely to wait would therefore
+    /// archive a run that never happened.</para>
+    ///
+    /// <para>AND THE CLAIM IS ALSO HOW BUSY-NESS IS DISCOVERED, so it must stay a test-and-set: a
+    /// separate <see cref="IsBusy"/> read answers about a moment that has already passed.</para>
+    /// </summary>
+    internal bool TryClaim(string name) => _busy.TryAdd(name, 0);
+
+    /// <summary>Releases a silent claim, announcing nothing.</summary>
+    /// <remarks>
+    /// PAIRS WITH <see cref="TryClaim"/> AND ONLY WITH IT. A claim whose begin was announced must be
+    /// released through <see cref="EndSend"/> instead, or the row is left ticking forever with no
+    /// archive row to settle it.
+    /// </remarks>
+    internal void Release(string name) => _busy.TryRemove(name, out _);
+
+    /// <summary>
+    /// Announces a start for a claim already held, as <see cref="TryBeginSend"/> does for its own.
+    ///
+    /// <para>FOR A CALLER THAT CLAIMED SILENTLY and has now reached the moment the child really
+    /// begins working. Pairing it with <see cref="EndSend"/> is what keeps the begin/end announcements
+    /// balanced; announcing twice for one claim would start two runs and archive one.</para>
+    /// </summary>
+    internal void AnnounceBegin(string name)
+    {
         // ANNOUNCED, BECAUSE NOTHING ELSE MARKS THE START OF A SEND. agent_send never becomes a job,
         // so no row is created for it and no tool report fires until the child's first call FINISHES
         // — which on a slow first call is long after the child started working. A front end showing
@@ -159,7 +195,6 @@ public sealed class SubAgentStore
         // Find can miss only for a claim on a name nothing keeps, which is a claim no send can
         // follow — nothing to announce.
         if (Find(name) is { } began) SendBegan?.Invoke(began.Agent.Agent.Id);
-        return true;
     }
 
     /// <summary>Releases this agent's claim, recording how the stretch ended.</summary>
