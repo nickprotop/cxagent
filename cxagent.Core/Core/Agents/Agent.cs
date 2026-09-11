@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text;
 using CxAgent.Core.Commands;
@@ -168,6 +169,28 @@ public sealed class Agent
     /// caller with no interest in reaching children again pays nothing.</para>
     /// </summary>
     private readonly AgentReachTools? _reach;
+
+    /// <summary>
+    /// The children this agent has running or has run, by their agent id.
+    ///
+    /// <para>KEYED ON THE CHILD'S AGENT ID because that is the only key both paths share. A spawn
+    /// knows its own tool call and its row; a resume arriving through SubAgentStore knows neither —
+    /// it carries the agent id its claim was announced with, and nothing else.</para>
+    ///
+    /// <para>NEVER EVICTED, matching the store: a child is kept for the session so it can be asked
+    /// more, and a run whose entry had been dropped would come back to life with no row to draw on
+    /// and no turn count to continue.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ChildRun> _childRuns = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The live jobs of children, by the parent row's job id.
+    ///
+    /// <para>WHAT A REPAINT WRITES THROUGH, since it no longer closes over the call's own job: a
+    /// repaint driven by the store's claim knows an agent id, and reaches the row only by way of
+    /// the run's job id.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Job> _liveJobs = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Messages sent to this agent while it was mid-task. Drained at the top of each lap.
@@ -485,6 +508,9 @@ public sealed class Agent
     /// source's per-turn re-read can be observed without a live provider round trip inspecting the
     /// wire request.</summary>
     internal IReadOnlyCollection<string> LastOfferedToolNamesForTest => _offeredNames;
+
+    /// <summary>Test seam: the run for a child, or null when this agent has never seen it.</summary>
+    internal ChildRun? ChildRunFor(string agentId) => _childRuns.GetValueOrDefault(agentId);
 
     /// <summary>Injected tool names withdrawn for colliding with another injected tool — see
     /// <see cref="Jobs.AgentToolset.Withdrawn"/>. Empty when no offered set was built at all, which
@@ -2070,6 +2096,126 @@ public sealed class Agent
         return $"tool '{name}' is not available. Available: {string.Join(", ", _offeredNames)}";
     }
 
+    /// <summary>
+    /// Repaints one child's live row from the run's own state.
+    ///
+    /// <para>A METHOD ON THE AGENT RATHER THAN A LOCAL IN THE SPAWN CALL, because a child is
+    /// repainted on every path it can be working on — the spawn that made it, an agent_send, a
+    /// /agents send, a mailbox wake — and only the first of those passes through that call. A
+    /// painter scoped to one of the four paths is a row that is alive on one and frozen on three.
+    /// </para>
+    ///
+    /// <para>THE JOB IS LOOKED UP RATHER THAN CLOSED OVER, for the same reason. It answers null for
+    /// a run whose row has gone, which is not a failure: a session cleared while a child works has
+    /// a live child and no row, and a painter that assumed one would throw once a second forever.
+    /// </para>
+    /// </summary>
+    private void ReportChild(ChildRun run)
+    {
+        if (!_liveJobs.TryGetValue(run.JobId, out var job)) return;
+        var child = run.Child;
+        var turns = run.Turns;
+
+        // ELAPSED, so a long-running child is visibly ALIVE rather than merely un-finished. A
+        // five-minute child otherwise shows one line of numbers that never moves between turns,
+        // which reads exactly like a frozen row.
+        var elapsed = DateTimeOffset.UtcNow - run.Started;
+        var age = elapsed.TotalMinutes >= 1
+            ? $" · {(int)elapsed.TotalMinutes}m{elapsed.Seconds:00}s"
+            : $" · {elapsed.TotalSeconds:0}s";
+
+        // UsedFraction is null until the provider first reports usage, so an early tick shows
+        // turns alone rather than "0% ctx", which would read as a measurement rather than as the
+        // absence of one.
+        var occupancy = child.Agent.Context.UsedFraction is { } f
+            ? $" · {Commands.StatsDashboard.Percent(f)} ctx"
+            : "";
+        // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
+        // at a prompt, so a row showing only those reads as working — and with several children
+        // up, the user cannot tell which one their answer would release. The state changes too,
+        // so anything reasoning about the row (not just the header text) sees it.
+        var waiting = child.Agent.IsWaitingOnPermission;
+        job.State = waiting ? JobState.WaitingOnPermission : JobState.Running;
+
+        job.ProgressMessage = waiting
+            ? $"waiting for permission · {turns} turn{(turns == 1 ? "" : "s")}{age}"
+            : $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
+
+        // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
+        // its tool calls say whether it is on the right track — which is the question a
+        // minutes-long run provokes and the one that decides whether to press Escape.
+        //
+        // The child's own BufferedJobPanel already holds every row it has drawn (that is what
+        // keeps them out of the parent's transcript), so this is a read of something recorded
+        // rather than new bookkeeping.
+        //
+        // THE LAST FEW ONLY. A child that has made forty calls has a scrollback nobody wants
+        // inline; the recent ones are what "on the right track" is judged from.
+        var recent = child.Jobs.Jobs
+            .OrderByDescending(j => j.StartedAt)
+            .Take(6)
+            .Reverse()
+            .Select(j => $"  {j.DisplayName}")
+            .ToList();
+
+        // WHAT IT IS, above what it is doing. The recent-tools list answers "on the right track",
+        // but not "what did I even start" — and the header cannot carry that: it is one truncated
+        // line, and the row's own name lost the type entirely until DescribeCall grew a spawn
+        // branch. These are STANDING FACTS, unchanged for the child's whole life, so they belong
+        // where they can be read at leisure rather than glanced at.
+        //
+        // The MODEL earns its line because a type may name its own provider: a worker running
+        // somewhere other than the session's model is a thing the user has no other way to learn,
+        // and by the time the row finishes the provider is gone.
+        var facts = new List<string> { $"  type: {child.TypeName}" };
+        if (!string.IsNullOrWhiteSpace(child.ModelId))
+            facts.Add($"  model: {child.ModelId}");
+
+        // WHAT IT LOADED, and this is the line the row earns most. A child's context is invisible
+        // by design, so a skill it chose is the one thing shaping its answer that the parent
+        // cannot otherwise learn — and the load itself appears in the recent-tools list below for
+        // six calls before scrolling away for good.
+        //
+        // CAPTURED ONTO THE RUN, not just rendered. The finished row is built after SendAsync
+        // returns and cannot read live state — this section argues the child's context is gone by
+        // then, and a finished row reading it would depend on the very thing it says has vanished.
+        // The run's turn count is carried for the same reason.
+        //
+        // NOT A STANDING FACT, unlike type and model: skills ACCUMULATE mid-run, so the line
+        // appears only once something is loaded rather than sitting empty — the same reason
+        // occupancy renders as "" until the provider first reports usage.
+        run.Skills = child.Agent.LoadedSkills;
+        if (run.Skills.Count > 0)
+            facts.Add($"  skills: {Clip(string.Join(", ", run.Skills), 60)}");
+
+        // ITS TASK, the first line in full. The prompt is the parent's own words and is often a
+        // page long — the first line is what the parent MEANT, and the rest is detail the row
+        // cannot hold, but that first line is shown whole rather than clipped: cutting it short
+        // can drop the very word that distinguishes this run from a sibling's. Shown only when it
+        // says something the row's name does not already.
+        if (!string.IsNullOrWhiteSpace(run.Prompt))
+        {
+            var first = run.Prompt!.Split('\n', 2)[0].Trim();
+            if (first.Length > 0) facts.Add($"  task: {first}");
+        }
+
+        // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
+        // that the header may be scrolled out of view, and these are the numbers being watched.
+        facts.Add($"  {turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}");
+
+        job.ProgressBody = recent.Count > 0
+            ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
+            : string.Join("\n", facts);
+
+        _jobs.ToolProgressed(job);
+
+        // AND THE SESSION READOUT. Raised from Report rather than from the child's TurnCompleted
+        // because Report is also driven by the one-second tick — a child that spends four minutes
+        // inside a single turn completes no turns to hang this on, which is precisely the run
+        // whose spend the panel was missing.
+        ChildSpend?.Invoke();
+    }
+
     private async Task<string> InvokeAndShowAsync(string agentId, ToolCall call, CancellationToken ct)
     {
         var jobId = Helpers.UlidGenerator.NewId();
@@ -2085,6 +2231,11 @@ public sealed class Agent
             StartedAt = DateTimeOffset.UtcNow,
         };
         _jobs.ToolsChanged(new[] { job });
+
+        // REACHABLE BY ID FROM HERE ON, because a child's repaint no longer closes over this local:
+        // it arrives from the store's claim announcement, which knows an agent id and nothing about
+        // this call.
+        _liveJobs[job.Id] = job;
 
         var started = DateTimeOffset.UtcNow;   // rebased by ctx.WorkStarted below
 
@@ -2107,20 +2258,6 @@ public sealed class Agent
         // returned. Null on every failure path before the child exists, which is why every read of
         // it is guarded rather than assumed.
         SubAgent? spawned = null;
-        var childTurns = 0;
-
-        // THE SKILLS IT LOADED, captured on each tick so the finished row can name them after the
-        // child's context is gone. The live row reads child.Agent directly; the finished row is built
-        // once SendAsync has returned, and cannot.
-        IReadOnlyList<string> childSkills = [];
-
-        // A PERIODIC TICK, owned by this call and disposed in its finally.
-        //
-        // Turn boundaries alone are not enough: a child spends most of a long run INSIDE one turn,
-        // waiting on a provider or a slow tool, and a row whose elapsed time only moves between
-        // turns reads exactly like a frozen one. MainWindow._panelClock cannot be borrowed for this
-        // — it refreshes nothing when the panel is hidden.
-        Timer? tick = null;
 
         void OnChildSpawned(SubAgent child)
         {
@@ -2132,17 +2269,24 @@ public sealed class Agent
             // re-open a row the user collapsed and erase whatever was in it.
             _jobs.ToolProgressed(job);
 
+            // THE RUN, BEFORE ANYTHING ELSE THAT COULD NEED IT. The spawner calls this, then keeps
+            // the child, then claims it — and that claim is announced, which is what starts the
+            // repaint. A run registered any later would miss its own begin.
+            var run = _childRuns.GetOrAdd(child.Agent.Id, _ => new ChildRun(child, job.Id));
+            run.Prompt = childPrompt;
+
             // The child's own events, straight onto the row. These are EVENTS now rather than
             // settable callbacks, which is what lets a per-child reporter and a later session
             // aggregator both subscribe to one signal.
-            // childTurns is the ENCLOSING local, not one scoped here: the finished row states how
-            // many turns the run took, and a counter that died with this closure could not say.
+            //
+            // The counter lives on the run, not here: turns are a fact about the child's whole life,
+            // and a counter scoped to this closure could not be continued by a later resume.
             child.Agent.TurnCompleted += _ =>
             {
-                childTurns++;
-                Report(child, childTurns);
+                run.Turns++;
+                ReportChild(run);
             };
-            child.Agent.ContextUsed += _ => Report(child, childTurns);
+            child.Agent.ContextUsed += _ => ReportChild(run);
 
             // A CHILD'S TOOL CALLS, FORWARDED. The child has no store and no host — that is the whole
             // isolation design — so its calls would otherwise be recorded nowhere, and a child's calls
@@ -2157,111 +2301,6 @@ public sealed class Agent
             // AFTER the wiring rather than before it, so a subscriber that reads the child on this
             // call finds it fully attached rather than half-built.
             ChildSpawned?.Invoke(new SpawnedChild(job.Id, child));
-
-            tick = new Timer(_ => Report(child, childTurns), null,
-                TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-        }
-
-        void Report(SubAgent child, int turns)
-        {
-            // ELAPSED, so a long-running child is visibly ALIVE rather than merely un-finished. A
-            // five-minute child otherwise shows one line of numbers that never moves between turns,
-            // which reads exactly like a frozen row.
-            var elapsed = DateTimeOffset.UtcNow - started;
-            var age = elapsed.TotalMinutes >= 1
-                ? $" · {(int)elapsed.TotalMinutes}m{elapsed.Seconds:00}s"
-                : $" · {elapsed.TotalSeconds:0}s";
-
-            // UsedFraction is null until the provider first reports usage, so an early tick shows
-            // turns alone rather than "0% ctx", which would read as a measurement rather than as the
-            // absence of one.
-            var occupancy = child.Agent.Context.UsedFraction is { } f
-                ? $" · {Commands.StatsDashboard.Percent(f)} ctx"
-                : "";
-            // WAITING SAYS SO, AND SAYS IT FIRST. Turns and occupancy keep ticking while a child sits
-            // at a prompt, so a row showing only those reads as working — and with several children
-            // up, the user cannot tell which one their answer would release. The state changes too,
-            // so anything reasoning about the row (not just the header text) sees it.
-            var waiting = child.Agent.IsWaitingOnPermission;
-            job.State = waiting ? JobState.WaitingOnPermission : JobState.Running;
-
-            job.ProgressMessage = waiting
-                ? $"waiting for permission · {turns} turn{(turns == 1 ? "" : "s")}{age}"
-                : $"{turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}";
-
-            // WHAT IT IS DOING, behind the expand. The header's counters say a child is ALIVE; only
-            // its tool calls say whether it is on the right track — which is the question a
-            // minutes-long run provokes and the one that decides whether to press Escape.
-            //
-            // The child's own BufferedJobPanel already holds every row it has drawn (that is what
-            // keeps them out of the parent's transcript), so this is a read of something recorded
-            // rather than new bookkeeping.
-            //
-            // THE LAST FEW ONLY. A child that has made forty calls has a scrollback nobody wants
-            // inline; the recent ones are what "on the right track" is judged from.
-            var recent = child.Jobs.Jobs
-                .OrderByDescending(j => j.StartedAt)
-                .Take(6)
-                .Reverse()
-                .Select(j => $"  {j.DisplayName}")
-                .ToList();
-
-            // WHAT IT IS, above what it is doing. The recent-tools list answers "on the right track",
-            // but not "what did I even start" — and the header cannot carry that: it is one truncated
-            // line, and the row's own name lost the type entirely until DescribeCall grew a spawn
-            // branch. These are STANDING FACTS, unchanged for the child's whole life, so they belong
-            // where they can be read at leisure rather than glanced at.
-            //
-            // The MODEL earns its line because a type may name its own provider: a worker running
-            // somewhere other than the session's model is a thing the user has no other way to learn,
-            // and by the time the row finishes the provider is gone.
-            var facts = new List<string> { $"  type: {child.TypeName}" };
-            if (!string.IsNullOrWhiteSpace(child.ModelId))
-                facts.Add($"  model: {child.ModelId}");
-
-            // WHAT IT LOADED, and this is the line the row earns most. A child's context is invisible
-            // by design, so a skill it chose is the one thing shaping its answer that the parent
-            // cannot otherwise learn — and the load itself appears in the recent-tools list below for
-            // six calls before scrolling away for good.
-            //
-            // CAPTURED INTO THE ENCLOSING LOCAL, not just rendered. The finished row is built after
-            // SendAsync returns and cannot read live state — this section argues the child's context
-            // is gone by then, and a finished row reading it would depend on the very thing it says
-            // has vanished. childTurns is captured for the same reason.
-            //
-            // NOT A STANDING FACT, unlike type and model: skills ACCUMULATE mid-run, so the line
-            // appears only once something is loaded rather than sitting empty — the same reason
-            // occupancy renders as "" until the provider first reports usage.
-            childSkills = child.Agent.LoadedSkills;
-            if (childSkills.Count > 0)
-                facts.Add($"  skills: {Clip(string.Join(", ", childSkills), 60)}");
-
-            // ITS TASK, the first line in full. The prompt is the parent's own words and is often a
-            // page long — the first line is what the parent MEANT, and the rest is detail the row
-            // cannot hold, but that first line is shown whole rather than clipped: cutting it short
-            // can drop the very word that distinguishes this run from a sibling's. Shown only when it
-            // says something the row's name does not already.
-            if (!string.IsNullOrWhiteSpace(childPrompt))
-            {
-                var first = childPrompt!.Split('\n', 2)[0].Trim();
-                if (first.Length > 0) facts.Add($"  task: {first}");
-            }
-
-            // The live counters repeat the header ON PURPOSE here: an expanded row is tall enough
-            // that the header may be scrolled out of view, and these are the numbers being watched.
-            facts.Add($"  {turns} turn{(turns == 1 ? "" : "s")}{occupancy}{age}");
-
-            job.ProgressBody = recent.Count > 0
-                ? string.Join("\n", facts) + "\n\n" + string.Join("\n", recent)
-                : string.Join("\n", facts);
-
-            _jobs.ToolProgressed(job);
-
-            // AND THE SESSION READOUT. Raised from Report rather than from the child's TurnCompleted
-            // because Report is also driven by the one-second tick — a child that spends four minutes
-            // inside a single turn completes no turns to hang this on, which is precisely the run
-            // whose spend the panel was missing.
-            ChildSpend?.Invoke();
         }
 
         var ctx = new JobContext(agentId, jobId, new Dictionary<string, JobResult>(), _logs)
@@ -2530,14 +2569,6 @@ public sealed class Agent
             // feed "cancelled" back as though the tool had answered.
             throw;
         }
-        finally
-        {
-            // THE TICK STOPS HOWEVER THIS ENDS — answer, error, or cancellation. A Timer left running
-            // holds a closure over the child and keeps writing to a row that has already closed, once
-            // a second, for the rest of the session. Null on every path that never spawned, which is
-            // almost all of them.
-            tick?.Dispose();
-        }
 
         // THE STRING, once, for everything below that reasons about the text the model was told —
         // the error message, the envelope's state, the recorded length.
@@ -2564,6 +2595,14 @@ public sealed class Agent
         // rather than a finish.
         if (childId is not null)
         {
+            // THE RUN CARRIES WHAT THIS ACCOUNT STATES — the turns taken and the skills captured
+            // while the child's context still existed. Both are facts about the child rather than
+            // about this call, so they are read back from the child's own run rather than from
+            // locals that would have stopped counting the moment a resume took over.
+            var run = _childRuns.GetValueOrDefault(childId);
+            var childTurns = run?.Turns ?? 0;
+            var childSkills = run?.Skills ?? [];
+
             var took = DateTimeOffset.UtcNow - started;
             var duration = took.TotalMinutes >= 1
                 ? $"{(int)took.TotalMinutes}m{took.Seconds:00}s"

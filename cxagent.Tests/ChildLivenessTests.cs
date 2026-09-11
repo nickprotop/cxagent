@@ -89,4 +89,28 @@ public class ChildLivenessTests
 
         slot.Release();
     }
+
+    /// <summary>
+    /// A spawn registers the run before the store announces the claim.
+    ///
+    /// <para>THE ORDER IS THE WHOLE CONTRACT. SubAgentSpawner calls onChild, then Keep, then
+    /// TryBeginSend — so the registry entry exists by the time SendBegan arrives. Reverse those and
+    /// the begin finds nothing, the timer never starts, and a freshly spawned row is as dead as the
+    /// resumed one this work exists to fix.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASpawnedChild_HasALiveRunBeforeItsClaimIsAnnounced()
+    {
+        var parent = SubAgentSpawnerTests.ParentWithSpawning(out var store);
+
+        string? beganFor = null;
+        store.SendBegan += id => beganFor ??= id;
+
+        var text = await parent.SendAsync("spawn a worker", CancellationToken.None);
+
+        Assert.NotNull(beganFor);
+        // The run was already registered when the claim was announced, which is what a live row
+        // needs: the begin handler has nothing to start a timer on otherwise.
+        Assert.NotNull(parent.ChildRunFor(beganFor!));
+    }
 }

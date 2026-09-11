@@ -79,6 +79,34 @@ public class SubAgentSpawnerTests
                 System.Text.Json.JsonSerializer.Serialize(new { description, prompt })).RootElement,
         };
 
+    /// <summary>
+    /// A parent wired to spawn one child and to keep it, with the store handed back.
+    ///
+    /// <para>THE STORE IS EXPLICIT AND RETURNED because a spawner built without one keeps nothing:
+    /// no claim is taken, so SendBegan and SendEnded never fire and there is nothing for a caller
+    /// watching a child's liveness to observe.</para>
+    ///
+    /// <para>FanOut because CanSpawn gates on the mode's ability to delegate — a parent left in the
+    /// default mode answers the spawn call with a refusal instead of building a child.</para>
+    /// </summary>
+    internal static Agent ParentWithSpawning(out SubAgentStore store)
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        store = new SubAgentStore();
+        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(Answering("child done")), store: store))
+        {
+            Mode = AgentMode.FanOut,
+        };
+    }
+
     /// <summary>A name it does not own is declined with null, so the dispatch chain falls through to
     /// MCP and then the built-ins — the same contract McpToolset.TryInvokeAsync holds.</summary>
     [Fact]
