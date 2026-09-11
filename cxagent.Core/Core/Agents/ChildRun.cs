@@ -27,7 +27,7 @@ namespace CxAgent.Core.Agents;
 /// <para>Not the child's agent id, which the registry already keys on: the row was created by the
 /// parent's turn and belongs to it, and a child's agent id addresses nothing the parent draws.</para>
 /// </param>
-public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
+public sealed class ChildRun(SubAgent child, string jobId)
 {
     private Timer? _tick;
 
@@ -47,7 +47,14 @@ public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
     /// </summary>
     public IReadOnlyList<string> Skills { get; set; } = [];
 
-    /// <summary>The latest thing this child was asked, for the row's task line.</summary>
+    /// <summary>
+    /// The brief this child was SPAWNED with, which is what the row's task line names.
+    ///
+    /// <para>NOT THE LATEST THING ASKED. It is written once, at spawn, and a resume never reaches
+    /// it: SendBegan carries an agent id and nothing else, so the prompt that woke a child is not
+    /// available where a run is begun. A resumed row therefore keeps naming the original task, and
+    /// that is what this field means.</para>
+    /// </summary>
     public string? Prompt { get; set; }
 
     /// <summary>
@@ -83,6 +90,26 @@ public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
     /// </summary>
     public int Stretch { get; private set; }
 
+    /// <summary>
+    /// What the child had already spent and taken when THIS stretch began, so the archive can
+    /// subtract it.
+    ///
+    /// <para>THE CHILD'S TALLIES ARE LIFETIME ONES AND THE ARCHIVE'S ROWS ARE NOT. Every stretch
+    /// writes its own row under its own id, and history answers "what is this agent type worth" by
+    /// SUMMING those rows — so a row carrying the running total counts the first stretch again in
+    /// the second and again in the third. A child costing 30k across three sends would be archived
+    /// as 60k, growing quadratically with the number of resumes.</para>
+    ///
+    /// <para>TAKEN IN Begin, which is the one place every path — spawn, agent_send, /agents send,
+    /// mailbox drain — funnels through, and the same place the clock is rebased. A snapshot taken
+    /// anywhere else would be right for whichever path took it and silently wrong for the rest.</para>
+    /// </summary>
+    public (int Input, int Output) SpentAtStart { get; private set; }
+
+    /// <inheritdoc cref="SpentAtStart"/>
+    public int TurnsAtStart { get; private set; }
+
+    /// <summary>Whether the repaint is running. A TEST SEAM — nothing in the app reads it.</summary>
     public bool Working => _tick is not null;
 
     /// <summary>
@@ -100,6 +127,11 @@ public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
         if (_tick is not null) return false;
         Started = DateTimeOffset.UtcNow;
         Stretch++;
+        // THE BASELINE FOR THIS STRETCH'S COST — see SpentAtStart for why a lifetime tally cannot be
+        // archived directly. Child is null in the unit tests that exercise the timer alone, which
+        // have no agent to read a tally from.
+        SpentAtStart = Child?.Agent.Spend ?? default;
+        TurnsAtStart = Turns;
         _tick = new Timer(onTick, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         return true;
     }
@@ -122,6 +154,4 @@ public sealed class ChildRun(SubAgent child, string jobId) : IDisposable
         t.Dispose();
         return true;
     }
-
-    public void Dispose() => End();
 }

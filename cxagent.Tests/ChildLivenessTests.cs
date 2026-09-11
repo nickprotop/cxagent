@@ -1,3 +1,6 @@
+using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
+using CxAgent.Core.Jobs;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -12,6 +15,64 @@ namespace CxAgent.Tests;
 /// </summary>
 public class ChildLivenessTests
 {
+    /// <summary>
+    /// A parent whose child can be resumed and whose every answer carries usage.
+    ///
+    /// <para>SubAgentSpawnerTests.ParentWithSpawning GIVES ITS CHILD ONE ANSWER AND NO USAGE, which
+    /// is right for a spawn and wrong for both things tested here: a second send dequeues from an
+    /// empty queue and throws, and a child that reports no tokens cannot distinguish a per-stretch
+    /// figure from a lifetime one — every arithmetic would agree at zero.</para>
+    /// </summary>
+    /// <param name="perAnswer">Input and output tokens each of the child's answers reports.</param>
+    private static Agent ParentWhoseChildSpends(out SubAgentStore store, int perAnswer = 1000)
+    {
+        var parent = new MockLlmProvider();
+        parent.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls =
+            [
+                new ToolCall
+                {
+                    Id = "call-1",
+                    Name = CxAgent.Core.Jobs.Tool.Agent,
+                    Arguments = System.Text.Json.JsonDocument.Parse(
+                        System.Text.Json.JsonSerializer.Serialize(
+                            new { description = "find thing", prompt = "find the thing" })).RootElement,
+                },
+            ],
+        });
+        parent.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var child = new MockLlmProvider();
+        // ENOUGH FOR THE SPAWN AND SEVERAL RESUMES. A Dequeue on an empty queue throws, and that
+        // throw surfaces as the send's own failure rather than as a missing answer.
+        for (var i = 0; i < 6; i++)
+            child.EnqueueResponse(new LlmResponse
+            {
+                Text = $"answer {i}", StopReason = "end_turn",
+                Usage = new LlmUsage { InputTokens = perAnswer, OutputTokens = perAnswer },
+            });
+
+        store = new SubAgentStore();
+        var factory = new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+        {
+            Provider = child,
+            Executors = JobRegistry.CreateWithBuiltins(),
+            Ledger = new TokenLedger(),
+            MaxTurns = 50,
+            CompressAbove = 40_000,
+            ContextWindow = 200_000,
+        });
+
+        return new Agent(parent, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(factory, store: store))
+        {
+            Mode = AgentMode.FanOut,
+        };
+    }
+
     [Fact]
     public void ARunsTurns_AccumulateAcrossStretches()
     {
@@ -176,6 +237,59 @@ public class ChildLivenessTests
         Assert.Equal(2, runs.Count);
         // DISTINCT IDS, or the second write collides with the first and one run goes missing.
         Assert.NotEqual(runs[0].RunId, runs[1].RunId);
+    }
+
+    /// <summary>
+    /// Each archive row carries what ITS stretch cost, not the child's running total.
+    ///
+    /// <para>THE COUNT AND THE IDS ARE NOT ENOUGH, which is why this sits beside the test above.
+    /// Rows keyed apart are summed by StatsQuery — <c>Sum(InputTokens + OutputTokens)</c> per type —
+    /// so a row carrying the lifetime tally counts the first stretch again in the second and again
+    /// in the third. A child costing 30k across three sends is then reported as 60k, and the error
+    /// grows with the number of resumes rather than staying a fixed offset.</para>
+    ///
+    /// <para>SUMMING THE ROWS IS THE ASSERTION, because that is what the consumer does. A test
+    /// checking only the last row would pass for figures that are individually plausible and wrong
+    /// in aggregate, which is exactly the shape of this defect.</para>
+    /// </summary>
+    [Fact]
+    public async Task EachStretchsArchiveRow_CarriesThatStretchsCost()
+    {
+        var parent = ParentWhoseChildSpends(out var store, perAnswer: 1000);
+        var runs = new List<ChildRunReport>();
+        parent.ChildFinished += r => runs.Add(r);
+
+        await parent.SendAsync("spawn a worker", CancellationToken.None);
+        var kept = Assert.Single(store.All());
+        var spentAfterSpawn = kept.Agent.Agent.Spend;
+
+        var reach = new AgentReachTools(store);
+        await reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more", CancellationToken.None);
+        await reach.InvokeAsync(CxAgent.Core.Jobs.Tool.AgentSend, kept.Name, "more again", CancellationToken.None);
+
+        Assert.Equal(3, runs.Count);
+
+        // The spawn's row is the child's whole cost so far, because nothing preceded it.
+        Assert.Equal(spentAfterSpawn.Input, runs[0].InputTokens);
+        Assert.Equal(spentAfterSpawn.Output, runs[0].OutputTokens);
+
+        // AND THE RESUMES CARRY ONLY THEIR OWN. Each is one answer of 1000/1000; a lifetime tally
+        // would report 2000 and then 3000 here.
+        Assert.Equal(1000, runs[1].InputTokens);
+        Assert.Equal(1000, runs[1].OutputTokens);
+        Assert.Equal(1000, runs[2].InputTokens);
+        Assert.Equal(1000, runs[2].OutputTokens);
+
+        // WHAT THE ARCHIVE'S CONSUMER COMPUTES: the rows sum to what the child actually cost, which
+        // is the property the per-stretch split exists to preserve.
+        var (finalIn, finalOut) = kept.Agent.Agent.Spend;
+        Assert.Equal(finalIn + finalOut, runs.Sum(r => r.InputTokens + r.OutputTokens));
+
+        // TURNS THE SAME WAY. StatsQuery AVERAGES them per type, so a cumulative count would make
+        // "turns per run" climb with every resume of any one child — two identical resumes must
+        // report the same figure rather than 1 and then 2.
+        Assert.Equal(runs[1].Turns, runs[2].Turns);
+        Assert.Equal(1, runs[1].Turns);
     }
 
     /// <summary>

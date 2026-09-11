@@ -2166,7 +2166,15 @@ public sealed class Agent
     private void ArchiveChildRun(ChildRun run)
     {
         var child = run.Child;
-        var (spentIn, spentOut) = child.Agent.Spend;
+        var (lifetimeIn, lifetimeOut) = child.Agent.Spend;
+
+        // THIS STRETCH'S COST, NOT THE CHILD'S LIFETIME ONE. The child's own tallies only ever climb,
+        // and every stretch writes its own archive row — so history, which answers "what is this
+        // agent type worth" by summing rows, would count the first stretch again in the second and
+        // again in the third. See ChildRun.SpentAtStart.
+        var spentIn = lifetimeIn - run.SpentAtStart.Input;
+        var spentOut = lifetimeOut - run.SpentAtStart.Output;
+        var turns = run.Turns - run.TurnsAtStart;
         var took = DateTimeOffset.UtcNow - run.Started;
 
         // A FINISHED CHILD'S HEADER STATES THE COST, not its last live tick. While running, the
@@ -2187,6 +2195,13 @@ public sealed class Agent
             // WHAT IT COST, on the header. The session panel says what all workers spent together;
             // only here can a user see that THIS planner cost 41k while that explore cost 3k — which
             // is the comparison that decides whether a type is worth spawning again.
+            //
+            // THE STRETCH'S FIGURE, MATCHING THE DURATION BESIDE IT. Everything else this header
+            // states is about one piece of work — the elapsed time is rebased at each begin, and the
+            // task line names one brief — so a lifetime token count sitting next to a stretch's
+            // duration invites exactly the division that yields nonsense ("30k in 4s"). The row
+            // answers "what did this piece of work cost"; the child's running total is not a figure
+            // this surface ever shows.
             var cost = spentIn + spentOut > 0 ? $" · {spentIn + spentOut:N0} tokens" : "";
 
             job.ProgressMessage = $"done · {duration}{cost}";
@@ -2219,6 +2234,11 @@ public sealed class Agent
             // copy in the caption agreed with it only until the two were touched by different code,
             // which is exactly the defect a caption sitting beside a header is supposed to avoid
             // repeating.
+            // THE LIFETIME COUNT, unlike the tokens beside it. This line REPLACES the live header's
+            // turn counter, which has been climbing across every stretch — printing this stretch's
+            // count alone would make the number visibly drop the moment a resumed row settles, which
+            // reads as a miscount rather than as a change of meaning. The tokens have no live
+            // counterpart to contradict, so they can state the stretch.
             account.Add($"  {run.Turns} turn{(run.Turns == 1 ? "" : "s")}");
             if (spentIn + spentOut > 0)
                 account.Add($"  tokens: {spentIn + spentOut:N0}  ↑{spentIn:N0} ↓{spentOut:N0}");
@@ -2236,7 +2256,7 @@ public sealed class Agent
             ModelId: child.ModelId,
             InputTokens: spentIn,
             OutputTokens: spentOut,
-            Turns: run.Turns,
+            Turns: turns,
             // The child's own panel already holds every row it drew — that is what keeps them out of
             // the parent's transcript — so this is a read, not new bookkeeping.
             ToolCalls: child.Jobs.Jobs.Count,
