@@ -187,8 +187,14 @@ public static class ToolBindings
             Params: ["path", "pattern", "replacement"],
             Required: ["path", "pattern", "replacement"])),
         // Unpinned: the shell executor serves one action, so its whole schema IS this tool's.
+        //
+        // THIS LIST IS WHAT THE MODEL MAY SEND, and ShellJobExecutor.GetSchema is what it is TOLD each
+        // one means. Neither is derived from the other, so a parameter in one and not the other is
+        // either unsendable or undocumented — `env` has been in the schema and absent here all along,
+        // which is why no model has ever set an environment variable. When adding one, add it to both.
         (BuiltinTool.RunShell, new ToolBinding("run_shell", "shell", null,
-            Params: ["command", "working_dir", "timeout_seconds"], Required: ["command"])),
+            Params: ["command", "working_dir", "timeout_seconds", Builtin.ShellArguments.Background],
+            Required: ["command"])),
         (BuiltinTool.HttpRequest, new ToolBinding("http_request", "http", null,
             Params: ["url", "method", "headers", "body"], Required: ["url"])),
         // THE SAME PLUGIN, READING RATHER THAN CALLING. http_request hands back what the server

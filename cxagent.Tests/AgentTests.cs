@@ -2,6 +2,7 @@ using CxAgent.Core.Sessions;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Jobs;
+using CxAgent.Core.Jobs.Builtin;
 using CxAgent.UI;
 using Xunit;
 
@@ -419,16 +420,13 @@ public class AgentTests
     {
         public string TypeName => "shell";   // takes over run_shell: AllBuiltins is a fixed enum
         public string DisplayName => "Blocking";
-        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
-        {
-            // MUST MATCH the real shell executor's params: ToolBindings.BuildDefinition throws if a
-            // tool advertises a param its executor does not accept, which is the drift guard doing
-            // its job — a stub with no params is itself a drift.
-            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
-            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
-            new JobParamSpec("env", "object", Required: false, "Environment variables"),
-            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
-        });
+        // BORROWED FROM THE REAL EXECUTOR rather than copied. ToolBindings.BuildDefinition throws
+        // when a tool advertises a param its executor does not accept, so a stub standing in for
+        // `shell` must accept every param run_shell offers — and four hand-written copies of that
+        // list meant every new shell parameter broke four unrelated tests with an error about tool
+        // wiring. Delegating means a stub cannot drift from what it is standing in for.
+        public JobSchema GetSchema() =>
+            new(TypeName, DisplayName, new ShellJobExecutor().GetSchema().Params);
         public JobValidation Validate(JobParameters p) => JobValidation.Valid();
 
         public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
@@ -556,16 +554,13 @@ public class AgentTests
     {
         public string TypeName => "shell";   // same reason as BlockingExecutor
         public string DisplayName => "Self cancelling";
-        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
-        {
-            // MUST MATCH the real shell executor's params: ToolBindings.BuildDefinition throws if a
-            // tool advertises a param its executor does not accept, which is the drift guard doing
-            // its job — a stub with no params is itself a drift.
-            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
-            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
-            new JobParamSpec("env", "object", Required: false, "Environment variables"),
-            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
-        });
+        // BORROWED FROM THE REAL EXECUTOR rather than copied. ToolBindings.BuildDefinition throws
+        // when a tool advertises a param its executor does not accept, so a stub standing in for
+        // `shell` must accept every param run_shell offers — and four hand-written copies of that
+        // list meant every new shell parameter broke four unrelated tests with an error about tool
+        // wiring. Delegating means a stub cannot drift from what it is standing in for.
+        public JobSchema GetSchema() =>
+            new(TypeName, DisplayName, new ShellJobExecutor().GetSchema().Params);
         public JobValidation Validate(JobParameters p) => JobValidation.Valid();
 
         public Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
@@ -585,13 +580,13 @@ public class AgentTests
     {
         public string TypeName => "shell";
         public string DisplayName => "Slow to approve";
-        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
-        {
-            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
-            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
-            new JobParamSpec("env", "object", Required: false, "Environment variables"),
-            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
-        });
+        // BORROWED FROM THE REAL EXECUTOR rather than copied. ToolBindings.BuildDefinition throws
+        // when a tool advertises a param its executor does not accept, so a stub standing in for
+        // `shell` must accept every param run_shell offers — and four hand-written copies of that
+        // list meant every new shell parameter broke four unrelated tests with an error about tool
+        // wiring. Delegating means a stub cannot drift from what it is standing in for.
+        public JobSchema GetSchema() =>
+            new(TypeName, DisplayName, new ShellJobExecutor().GetSchema().Params);
         public JobValidation Validate(JobParameters p) => JobValidation.Valid();
 
         public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)
@@ -643,13 +638,13 @@ public class AgentTests
     {
         public string TypeName => "shell";
         public string DisplayName => "Silent";
-        public JobSchema GetSchema() => new(TypeName, DisplayName, new[]
-        {
-            new JobParamSpec("command", "string", Required: true, "Shell command to execute"),
-            new JobParamSpec("working_dir", "string", Required: false, "Working directory"),
-            new JobParamSpec("env", "object", Required: false, "Environment variables"),
-            new JobParamSpec("timeout_seconds", "integer", Required: false, "Max execution time"),
-        });
+        // BORROWED FROM THE REAL EXECUTOR rather than copied. ToolBindings.BuildDefinition throws
+        // when a tool advertises a param its executor does not accept, so a stub standing in for
+        // `shell` must accept every param run_shell offers — and four hand-written copies of that
+        // list meant every new shell parameter broke four unrelated tests with an error about tool
+        // wiring. Delegating means a stub cannot drift from what it is standing in for.
+        public JobSchema GetSchema() =>
+            new(TypeName, DisplayName, new ShellJobExecutor().GetSchema().Params);
         public JobValidation Validate(JobParameters p) => JobValidation.Valid();
 
         public async Task<JobResult> ExecuteAsync(JobParameters p, IJobContext c, CancellationToken ct)

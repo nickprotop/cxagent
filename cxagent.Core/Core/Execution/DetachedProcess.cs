@@ -25,6 +25,7 @@ public sealed class DetachedProcess : IDisposable
     private readonly StreamWriter? _writer;
     private readonly object _gate = new();
     private bool _finished;
+    private int _exitCode;
 
     /// <summary>The child's process id — the only handle a caller outside this process has on it.</summary>
     public int Pid { get; }
@@ -104,6 +105,10 @@ public sealed class DetachedProcess : IDisposable
 
             try { code = _process.ExitCode; }
             catch (Exception) { code = -1; }
+
+            // KEPT, because the handle is disposed below and the event that carries this code is
+            // raised only once — see ExitCode.
+            _exitCode = code;
         }
 
         // OUTSIDE THE LOCK: a subscriber is free to call Kill or Dispose from its handler, and both
@@ -121,6 +126,18 @@ public sealed class DetachedProcess : IDisposable
     /// <summary>Whether the exit has already been reported, for a caller that subscribed too late to
     /// have heard it — see <see cref="DetachedProcessRegistry.Add"/>.</summary>
     public bool Finished { get { lock (_gate) return _finished; } }
+
+    /// <summary>
+    /// How the child ended, once <see cref="Finished"/> is true; 0 before that, which is meaningless.
+    ///
+    /// <para>STORED RATHER THAN READ BACK FROM THE PROCESS, because <see cref="Complete"/> disposes
+    /// the handle the moment it has the code — <c>Process.ExitCode</c> throws afterwards. Exists for
+    /// the caller that subscribes too late to hear <see cref="Exited"/>: the event is raised once and
+    /// never replayed, so a command short enough to finish before its subscriber exists — a failing
+    /// command, typically, since those fail fastest — would otherwise be reported by nothing. The
+    /// <see cref="Finished"/>-then-read pair is how such a caller covers that gap.</para>
+    /// </summary>
+    public int ExitCode { get { lock (_gate) return _exitCode; } }
 
     /// <summary>
     /// Appends one output line to the file, if there is one.
