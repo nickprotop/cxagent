@@ -432,9 +432,13 @@ public static class ProcessRunner
             // KILLED, NOT SILENTLY UNREGISTERED. An unregistered detached process is exactly the
             // orphan the registry exists to prevent, so refusing the cap means refusing the command.
             detached.Kill();
+            // ADVICE THE CALLER CAN ACT ON, AND ONLY THAT. Nothing in the app lists or kills a
+            // background command — the registry's only consumers are this method and the shutdown
+            // reap — so telling a model to "kill one" names an action it has no way to take, which
+            // reads as a refusal it could have avoided. Waiting is the one thing it can actually do.
             throw new InvalidOperationException(
                 $"already running {DetachedProcessRegistry.MaxConcurrent} background commands — "
-                + "wait for one to finish or kill it before starting another.");
+                + "wait for one to finish before starting another, or run this one in the foreground.");
         }
 
         return Task.FromResult(detached);
