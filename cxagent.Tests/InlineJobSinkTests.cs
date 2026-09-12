@@ -835,7 +835,16 @@ public class InlineJobSinkTests
             Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(4) },
         };
         sink.ToolsChangedNow(new[] { job });
+        // THE SETTLE THE APP MAKES, which is also what records how the run ended. WorkerBody runs
+        // on every terminal transition and is the sink's own hook for that; ToolUpdated marshals
+        // through the UI queue and cannot be driven from a test.
+        sink.WorkerBodyForTest(job);
         Assert.Equal(0, sink.RefreshRunningHeadersNow());   // settled: nothing to tick
+
+        // CORE WINS THE RACE, AND THAT IS THE DEFECT'S WHOLE SHAPE. The same claim reaches Agent's
+        // own repaint — subscribed first, run synchronously — which writes State = Running before
+        // this handler is dequeued. Reproduced literally: flip the state, THEN resume.
+        job.State = JobState.Running;
 
         sink.WorkerResumed(child.Agent.Id);
         Assert.Equal(1, sink.RefreshRunningHeadersNow());   // working again: it ticks
@@ -843,6 +852,7 @@ public class InlineJobSinkTests
         sink.WorkerSettled(child.Agent.Id);
 
         Assert.Equal(0, sink.RefreshRunningHeadersNow());
+        Assert.Equal(JobState.Succeeded, job.State);
     }
 
     /// <summary>
@@ -875,6 +885,7 @@ public class InlineJobSinkTests
             Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(4) },
         };
         sink.ToolsChangedNow(new[] { job });
+        sink.WorkerBodyForTest(job);
 
         sink.WorkerResumed(child.Agent.Id);
         sink.WorkerSettled(child.Agent.Id);

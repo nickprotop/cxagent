@@ -1782,6 +1782,21 @@ public sealed class InlineJobSink : IToolObserver
     private readonly ConcurrentDictionary<string, JobState> _reopenedFrom = new();
 
     /// <summary>
+    /// The terminal state each worker row settled into, kept so a later resume can restore it.
+    ///
+    /// <para>THE JOB CANNOT BE ASKED FOR THIS. Core's per-second repaint writes State = Running while
+    /// a child works and never writes it back, so by the time a resume's claim reaches the UI the
+    /// job says Running whether or not it had settled. This is the sink's own record of how the run
+    /// ENDED, written once when the row went terminal and read when it has to end that way again.
+    /// </para>
+    ///
+    /// <para>NOT EVICTED, matching <see cref="_spawnRowOf"/>: it is one enum per spawn row, and a
+    /// child stays reachable for the life of the session, so a row that can be resumed can always be
+    /// settled back.</para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, JobState> _settledAs = new();
+
+    /// <summary>
     /// Puts a settled worker's row back into its running shape, because its agent is working again —
     /// <c>agent_send</c> has resumed it on the context its spawn left behind.
     ///
@@ -1811,9 +1826,21 @@ public sealed class InlineJobSink : IToolObserver
     {
         if (!_spawnRowOf.TryGetValue(agentId, out var jobId)) return;
         if (!_known.TryGetValue(jobId, out var job)) return;
-        if (!IsTerminal(job.State)) return;
 
-        _reopenedFrom[jobId] = job.State;
+        // THE SETTLED STATE IS REMEMBERED, NOT READ OFF THE JOB, because by here the job may already
+        // say Running. The same claim that reaches this method also reaches Core's own repaint, which
+        // is subscribed first and runs synchronously, and its paint writes State = Running — while
+        // this handler arrives through the UI queue and is therefore always second. Reading the live
+        // state here found Running, concluded the row was not settled, and returned: the row was
+        // never marked reopened, so the matching settle had nothing to restore and the row kept a
+        // spinner for the rest of the session.
+        //
+        // KEYED ON THE ROW rather than tracked per send, so a second claim on an already-reopened row
+        // is a no-op instead of overwriting the outcome to restore with Running.
+        if (!_settledAs.TryGetValue(jobId, out var settled)) return;
+        if (_reopenedFrom.ContainsKey(jobId)) return;
+
+        _reopenedFrom[jobId] = settled;
         job.State = JobState.Running;
         job.CompletedAt = null;
 
@@ -2050,6 +2077,14 @@ public sealed class InlineJobSink : IToolObserver
         // has no envelope for the branch below to key on. Keyed by the parent's job id, which every
         // one of those paths still has.
         _workerChildren.TryRemove(job.Id, out var noted);
+
+        // AND HOW IT ENDED, RECORDED WHILE THAT IS STILL READABLE. This method runs on a terminal
+        // transition, which is the only moment the job's own State says how the run finished: Core's
+        // per-second repaint writes Running while a child works and never writes it back, so a later
+        // resume cannot recover the outcome from the job. A row that settles Cancelled must settle
+        // Cancelled again when the resume it was woken for returns, rather than being laundered into
+        // a success.
+        if (IsTerminal(job.State)) _settledAs[job.Id] = job.State;
 
         // THE ENVELOPE IS THE JOIN. A spawn's row is the PARENT's job, and its child's calls are
         // filed under the CHILD's agent id — which the envelope carries and nothing else on this
