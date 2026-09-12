@@ -20,11 +20,16 @@ public enum DeliveryOutcome
     /// <summary>
     /// Held for an agent that has stopped working, and read when it is next resumed.
     ///
-    /// <para>NOT A FAILURE, AND NOT THE SAME AS <see cref="Woke"/>. A settled sub-agent is not woken
-    /// because a wake needs somewhere for its answer to go: the parent that wanted the work has
-    /// already taken the child's final report and moved on. The mailbox is drained in front of
-    /// whatever the next resume asks, so nothing is lost — and if nobody ever resumes it, nothing was
-    /// spent.</para>
+    /// <para>NOTHING PRODUCES THIS TODAY, and the reason is the rule the port now keeps: an idle agent
+    /// is RUN, whoever is telling it. A settled child is the only place a background command's result
+    /// exists — the parent took its final report and moved on — so a message left waiting for a resume
+    /// that may never come is the same as a result that was lost, which is the cost this outcome used
+    /// to accept.</para>
+    ///
+    /// <para>KEPT BECAUSE A DESTINATION MAY YET HAVE NO LOOP TO START: an agent from a restored
+    /// session, or one a caller may only leave a note for. A consumer must therefore still handle it,
+    /// and handling it means the same thing it always did — the text is somewhere the agent reads
+    /// before its next answer, and nothing was spent to put it there.</para>
     /// </summary>
     Queued,
 

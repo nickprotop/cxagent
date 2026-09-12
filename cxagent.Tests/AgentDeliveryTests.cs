@@ -66,6 +66,14 @@ public class AgentDeliveryTests : IDisposable
     private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired() =>
         Wired(out _, out _);
 
+    /// <summary>The same wiring, handing back the provider the CHILD answers from.</summary>
+    private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) WiredWithChild(
+        out MockLlmProvider childProvider)
+    {
+        var wired = Wired(out _, out _, out childProvider);
+        return wired;
+    }
+
     /// <summary>The same wiring over any provider, for a test that needs one which blocks.</summary>
     private (SessionAgentDelivery Delivery, SubAgentStore Store, string SessionAgentId) WiredOn(
         ILlmProvider provider)
@@ -83,7 +91,11 @@ public class AgentDeliveryTests : IDisposable
     }
 
     private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired(
-        out MockLlmProvider provider, out string sessionAgentId)
+        out MockLlmProvider provider, out string sessionAgentId) =>
+        Wired(out provider, out sessionAgentId, out _);
+
+    private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired(
+        out MockLlmProvider provider, out string sessionAgentId, out MockLlmProvider childProvider)
     {
         _manager = SessionManager.Create(new AppPaths(_dir));
         provider = new MockLlmProvider();
@@ -94,7 +106,7 @@ public class AgentDeliveryTests : IDisposable
         _session = session;
         sessionAgentId = session.SessionId!;
         var store = new SubAgentStore();
-        return (new SessionAgentDelivery(session, store), store, Child());
+        return (new SessionAgentDelivery(session, store), store, Child(out childProvider));
     }
 
     /// <summary>
@@ -158,16 +170,28 @@ public class AgentDeliveryTests : IDisposable
     }
 
     /// <summary>A child agent with a context of its own, not kept until a test keeps it.</summary>
-    private static SubAgent Child() =>
-        new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
+    private static SubAgent Child() => Child(out _);
+
+    /// <summary>
+    /// The same child, handing back the provider IT answers from.
+    ///
+    /// <para>FOR A TEST THAT PROVES THE CHILD RAN. A child's run is a round trip on its own provider,
+    /// and <c>Wired</c>'s provider belongs to the SESSION — asserting on that one would pass against
+    /// a delivery that woke the parent instead, which is the exact defect this port exists to fix.</para>
+    /// </summary>
+    private static SubAgent Child(out MockLlmProvider provider)
+    {
+        provider = new MockLlmProvider();
+        return new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
-            Provider = new MockLlmProvider(),
+            Provider = provider,
             Executors = CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
             Ledger = new TokenLedger(),
             MaxTurns = 50,
             CompressAbove = 40_000,
             ContextWindow = 200_000,
         }).Create();
+    }
 
     [Fact]
     public void AnUnknownId_IsNotDelivered()
@@ -190,20 +214,6 @@ public class AgentDeliveryTests : IDisposable
 
         Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(child.Agent.Id, "also check the loader"));
         Assert.Equal(["also check the loader"], child.Agent.Mailbox.Drain());
-    }
-
-    /// <summary>
-    /// A SETTLED SUB-AGENT IS QUEUED, NOT WOKEN — see DeliveryOutcome.Queued for why. The text still
-    /// lands in the mailbox, which is what makes it readable on the next resume.
-    /// </summary>
-    [Fact]
-    public void ASettledSubAgent_IsQueued()
-    {
-        var (delivery, store, child) = Wired();
-        store.Keep(child, "find thing");             // kept, never claimed: settled
-
-        Assert.Equal(DeliveryOutcome.Queued, delivery.Tell(child.Agent.Id, "the build finished"));
-        Assert.Equal(["the build finished"], child.Agent.Mailbox.Drain());
     }
 
     /// <summary>
@@ -372,5 +382,70 @@ public class AgentDeliveryTests : IDisposable
         await agent.SendAsync("call the tool", CancellationToken.None);
 
         Assert.Same(delivery, seen);
+    }
+
+    /// <summary>
+    /// A SETTLED CHILD IS RUN, NOT LEFT QUEUED. A background command it started has finished, and a
+    /// message nobody reads is the same as a result that was lost — the child is the only place that
+    /// result exists, so waiting for somebody to resume it is waiting for nobody.
+    ///
+    /// <para>THE EMPTY MAILBOX IS THE PROOF, not the outcome word. A run drains the mailbox into the
+    /// child's context on its first lap, so an outcome of <c>Woke</c> beside a mailbox still holding
+    /// the text would be a method that named a wake and enqueued instead.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASettledSubAgent_IsRun()
+    {
+        var (delivery, store, child) = WiredWithChild(out var childProvider);
+        childProvider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
+        var name = store.Keep(child, "find thing");   // kept, never claimed: settled
+
+        var outcome = delivery.Tell(child.Agent.Id, "the build finished, exit 1");
+
+        Assert.Equal(DeliveryOutcome.Woke, outcome);
+
+        // THE RUN IS NOT AWAITED BY Tell — see the port's own doc for why a caller in a `finally`
+        // must not be made to block on somebody else's turn — so the drain happens on another
+        // thread and is polled for, exactly as Reached polls for a session's round trip.
+        for (var attempt = 0; attempt < 100 && store.IsBusy(name); attempt++) await Task.Delay(20);
+
+        Assert.Empty(child.Agent.Mailbox.Drain());
+
+        // AND THE CHILD'S OWN PROVIDER IS WHAT WAS ASKED, carrying the text. An empty mailbox alone
+        // would be satisfied by a drain that threw the message away; this says where it went, and
+        // says it about the CHILD rather than the session — the agent the old code woke instead.
+        Assert.True(Reached(childProvider));
+        Assert.Contains("the build finished, exit 1",
+            string.Join("\n", childProvider.LastMessages!.Select(m => m.Content)));
+
+        // AND THE CLAIM WAS GIVEN BACK. A run that held it forever would leave the child
+        // permanently unreachable, with a delivery confirmation as the only symptom.
+        Assert.False(store.IsBusy(name));
+    }
+
+    /// <summary>
+    /// A SYSTEM PROMPT TO A BUSY SESSION IS INJECTED, NOT STEERED. Steer joins the running turn, is
+    /// announced as a user turn and is drawn as the user's own queued block — all three wrong for
+    /// text nobody typed. A system fact gets the agent's next lap instead.
+    /// </summary>
+    [Fact]
+    public async Task ASystemPromptToABusySession_DoesNotJoinTheSteerQueue()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+
+        Assert.Equal(DeliveryOutcome.Woke, delivery.Tell(sessionAgentId, "start something"));
+        var session = _session!;
+        for (var attempt = 0; attempt < 200 && !session.IsBusy; attempt++) await Task.Delay(20);
+        Assert.True(session.IsBusy, "the wake did not make the session busy");
+
+        Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId, "the build finished"));
+
+        // THE STEER QUEUE IS THE OBSERVATION, because it is the thing that must NOT have happened:
+        // PendingSteer is what a front end draws as the user's queued block, so anything in it is a
+        // system message about to be attributed to the user.
+        Assert.Null(session.PendingSteer);
+
+        gated.Release();
     }
 }

@@ -38,6 +38,20 @@ public sealed class JobContext : IJobContext
         _logs = logs;
     }
 
+    /// <summary>
+    /// Which agent made this call — the id <see cref="Delivery"/> is addressed by.
+    ///
+    /// <para>NOT <see cref="Requester"/>, WHICH IS A HUMAN LABEL. <c>IJobContext</c> is emphatic that
+    /// Requester is a description to show ("find the loader"), not something to look an agent up by;
+    /// an executor that passed it to <c>Tell</c> would address nothing and be told so as
+    /// <c>Unknown</c>.</para>
+    ///
+    /// <para>ON THE CONCRETE TYPE, NOT THE INTERFACE, for the reason <see cref="Delivery"/> is:
+    /// <c>IJobContext</c> ships in CxAgent.Plugins.Abstractions, whose contract is published, and an
+    /// executor that needs to reach back already casts to reach the port.</para>
+    /// </summary>
+    public string AgentId => _agentId;
+
     public void ReportProgress(double percent, string? message = null)
     {
         // TODO(P5): raise a progress event the UI subscribes to. Headless P3 is a no-op.

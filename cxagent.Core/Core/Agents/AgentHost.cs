@@ -573,6 +573,24 @@ public sealed class AgentHost : IDisposable
     public Task<SendResult> RunAsync(string prompt, CancellationToken ct,
         Jobs.ToolSelection? turnTools = null) => _agent.SendAsync(prompt, ct, turnTools);
 
+    /// <summary>
+    /// Hands the running turn something to read on its next lap, or answers false when nothing can
+    /// wait for it.
+    ///
+    /// <para>THE MAILBOX, NOT THE STEER QUEUE, FOR TEXT NOBODY TYPED. A steer is announced through
+    /// <c>ISessionObserver.UserTurnAdded</c> and drawn as the user's own queued block, so routing a
+    /// command's result through it attributes to the user words they never wrote and offers them back
+    /// for editing on a cancel. The mailbox is drained into the conversation at the top of the next
+    /// lap with no such announcement, which is what "read right after the current turn" means for
+    /// something the APPLICATION knows.</para>
+    ///
+    /// <para>BOUNDED, so a sender in a loop is refused rather than growing a list — see
+    /// <see cref="AgentMailbox.MaxDepth"/>. The refusal is reported, not swallowed: a caller that
+    /// believes a message landed when it did not is worse off than one told to try later.</para>
+    /// </summary>
+    /// <param name="text">What the agent should read on its next lap.</param>
+    public bool TryDeliver(string text) => _agent.Mailbox.TryEnqueue(text, out _);
+
 
     /// <summary>
     /// A backstop, not a budget. The user's configured value when they set one, otherwise

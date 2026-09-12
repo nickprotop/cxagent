@@ -55,13 +55,18 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
             // THE OUTCOME IS THE ACCEPT DECISION, NOT THE TURN. Submit is synchronous and hands back
             // a receipt — Started carries the turn as a Task nobody waits on here, because a caller
             // inside a `finally` must not be made to block on somebody else's turn.
-            return session.Submit(text, origin: Origin) switch
+            // SYSTEM, NOT USER, AND THAT IS WHAT MAKES Injected TRUE. A delivery is something the
+            // application knows — a command that finished, a job's result — and Submit routes it to
+            // the agent's mailbox for the turn's next lap rather than steering it, which is announced
+            // as a user turn and drawn as the user's own queued block. See Session.SubmitSource for
+            // why this cannot ride on `origin`.
+            return session.Submit(text, origin: Origin, source: Session.SubmitSource.System) switch
             {
                 Session.SubmitOutcome.Started => wasBusy
                     ? Agents.DeliveryOutcome.Injected
                     : Agents.DeliveryOutcome.Woke,
 
-                // STEERED INTO THE RUNNING TURN, read at its next tool barrier.
+                // HANDED TO THE RUNNING TURN, read at the top of its next lap.
                 Session.SubmitOutcome.Queued => Agents.DeliveryOutcome.Injected,
 
                 // NO MODEL, OR THE TEXT RAN AS A COMMAND. Neither delivered anything an agent will
@@ -75,14 +80,83 @@ public sealed class SessionAgentDelivery(Session session, Agents.SubAgentStore s
         // that holds an id and no handle.
         if (store.FindByAgentId(agentId) is not { } kept) return Agents.DeliveryOutcome.Unknown;
 
-        // THE CLAIM IS THE ONE AUTHORITY ON WHETHER A LOOP IS TURNING. A child raises nothing when it
-        // goes idle, because a turn ending and a goal ending look identical from outside — so the
-        // send-claim the store already holds is what separates "reads this on its next lap" from
-        // "reads this whenever somebody resumes it".
-        var running = store.IsBusy(kept.Name);
+        // CLAIMED, NOT READ. The claim is the one authority on whether a loop is turning — a child
+        // raises nothing when it goes idle, because a turn ending and a goal ending look identical
+        // from outside — and it must be a TEST-AND-SET rather than an IsBusy read, because the idle
+        // branch below RUNS the child: a read that said idle a moment ago, followed by a send, is two
+        // loops appending to one live Context.Messages, which corrupts the conversation rather than
+        // throwing. TryClaim answering false IS the discovery that somebody else is running it.
+        if (!store.TryClaim(kept.Name))
+            // ALREADY RUNNING, SO THE MAILBOX IS ENOUGH: its loop drains that at the top of every
+            // lap, which is the next place it will look.
+            return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _)
+                ? Agents.DeliveryOutcome.Injected
+                : Agents.DeliveryOutcome.Refused;
 
-        return kept.Agent.Agent.Mailbox.TryEnqueue(text, out _)
-            ? running ? Agents.DeliveryOutcome.Injected : Agents.DeliveryOutcome.Queued
-            : Agents.DeliveryOutcome.Refused;
+        // SETTLED, SO IT IS RUN — and this is where a delivery differs from `agent_send`'s mailbox
+        // drop. Nothing else will ever resume a child that has finished its goal: the parent took its
+        // final report and moved on, so a message left waiting is a result that exists nowhere and is
+        // read by nobody. The text a background command produced is exactly that, which is why
+        // waking is worth the turn it costs.
+        if (!kept.Agent.Agent.Mailbox.TryEnqueue(text, out _))
+        {
+            store.Release(kept.Name);
+            return Agents.DeliveryOutcome.Refused;
+        }
+
+        RunSettled(store, kept);
+        return Agents.DeliveryOutcome.Woke;
     }
+
+    /// <summary>
+    /// Resumes a settled child on the message just left for it, releasing the claim however it ends.
+    ///
+    /// <para>NOT AWAITED BY <see cref="Tell"/>, WHICH IS SYNCHRONOUS ON PURPOSE: a caller inside a
+    /// <c>finally</c> — a process exiting, a watch firing — must not be made to block on somebody
+    /// else's turn. The claim taken before this starts is what keeps a second delivery from starting a
+    /// second loop on the same context while this one runs.</para>
+    ///
+    /// <para>THE MAILBOX BECOMES THE PROMPT, not a silent append ahead of an empty one. The text is
+    /// already enqueued when this begins — the enqueue is what proved there was room for it — and
+    /// <c>SendAsync</c> appends whatever prompt it is given unconditionally, so passing "" would put a
+    /// user message saying nothing in front of the model. Anything that was waiting from an earlier
+    /// delivery goes first, for the reason <c>agent_send</c> drains before it appends: two messages
+    /// read in the wrong order are worse than one arriving late.</para>
+    ///
+    /// <para>SILENT: <c>Release</c>, AND NEVER <c>AnnounceBegin</c>/<c>EndSend</c>. A begin starts the
+    /// child's row ticking and rebases its clock, and a listener records the matching end as a
+    /// finished RUN — but nobody asked a child for this work, so painting it as a run would put a
+    /// spend nobody requested into the archive /stats averages over. <c>Release</c> is the pair the
+    /// store documents for a claim that announced nothing.</para>
+    ///
+    /// <para>SWALLOWS WHAT THE TURN THROWS, because there is nobody to throw to: this runs on a thread
+    /// no caller holds, and an escaping exception there takes the process down rather than reporting
+    /// anything. The child's own sink already recorded whatever failed.</para>
+    /// </summary>
+    private static void RunSettled(Agents.SubAgentStore store, Agents.StoredAgent kept)
+        => _ = Task.Run(async () =>
+        {
+            try
+            {
+                // DRAINED, NOT READ THEN DRAINED. A second delivery cannot be running concurrently —
+                // it would have failed to claim — but the child's own loop drains this mailbox too,
+                // and taking it once is what keeps a message from being read in both places.
+                var waiting = kept.Agent.Agent.Mailbox.Drain();
+                if (waiting.Count == 0) return;
+
+                // CancellationToken.None, BECAUSE NO TURN OWNS THIS. Every other resume runs under
+                // the token of the turn that asked, so Escape cancels it; nothing asked for this one,
+                // and there is no token in scope that cancelling would be about.
+                await kept.Agent.Agent.SendAsync(string.Join("\n\n", waiting),
+                    CancellationToken.None);
+            }
+            catch
+            {
+                // Reported already by the child's own observer — see the doc above.
+            }
+            finally
+            {
+                store.Release(kept.Name);
+            }
+        });
 }

@@ -95,6 +95,35 @@ public sealed partial class Session
     }
 
     /// <summary>
+    /// Whether a submission is the human speaking, which is the one thing that decides what happens
+    /// to it when a turn is already running.
+    ///
+    /// <para>SEPARATE FROM <see cref="TurnOriginator"/>, WHICH CANNOT ANSWER THIS. An originator is a
+    /// CANCELLATION LICENCE — <c>UnwirePluginAsync</c> severs a turn when
+    /// <c>CurrentOriginator.IsFrom(pluginName)</c> — so <c>SessionAgentDelivery</c> deliberately
+    /// stamps <c>User</c> on plugin-caused deliveries to keep an unwire from destroying work the
+    /// plugin does not own. A field that means "do not sever this" therefore cannot also mean "this
+    /// is the human", and making one field carry both would tie a message's routing to whether
+    /// someone may cancel it.</para>
+    ///
+    /// <para>THE ROUTING IT DECIDES: a busy session steers what the user typed into the running turn,
+    /// where it is announced as their turn and drawn as their queued block; anything else goes to the
+    /// agent's mailbox for the next lap, announced as nobody's. Both reach the model promptly —
+    /// neither waits for the user to speak again — and only the attribution differs.</para>
+    /// </summary>
+    public enum SubmitSource
+    {
+        /// <summary>Somebody typed this. The default, because almost every caller is a front end.</summary>
+        User,
+
+        /// <summary>
+        /// The application has something to say: a command that finished, a job's result, a plugin's
+        /// late answer. Nobody typed it, so nothing may present it as though they had.
+        /// </summary>
+        System,
+    }
+
+    /// <summary>
     /// Refuses an action that cannot run mid-turn, and says why.
     ///
     /// <para>ONE COPY OF THE SENTENCE, and it belongs here rather than in a front end: five call
@@ -107,8 +136,8 @@ public sealed partial class Session
     /// <summary>
     /// What a caller asked to send, and what the session did with it.
     ///
-    /// <para>THE THREE OUTCOMES ARE DIFFERENT ACTIONS FOR THE CALLER, which is why this is not a
-    /// bool: a started turn needs a spinner and something to await, a queued one needs nothing (the
+    /// <para>EACH OUTCOME IS A DIFFERENT ACTION FOR THE CALLER, which is why this is not a bool: a
+    /// started turn needs a spinner and something to await, a queued one needs nothing (the
     /// <see cref="Pending"/> event already drew the block), and no-agent must leave the text in the
     /// composer rather than clearing it.</para>
     ///
@@ -127,7 +156,26 @@ public sealed partial class Session
         /// <summary>No host — nothing was sent and nothing was kept.</summary>
         public sealed record NoAgent : SubmitOutcome;
 
-        /// <summary>A turn was already running, so this was queued for its next tool barrier.</summary>
+        /// <summary>
+        /// There was somewhere to put this and it would not fit — nothing was kept.
+        ///
+        /// <para>DISTINCT FROM <see cref="NoAgent"/> BECAUSE THE REMEDY DIFFERS. A session with no
+        /// model will refuse the next message the same way; a refusal is about this moment, and the
+        /// same text sent again once the agent has read what is waiting will land.</para>
+        ///
+        /// <para>REACHABLE ONLY FROM <see cref="SubmitSource.System"/> ON A BUSY SESSION, which is
+        /// the one path with a bounded destination: a steer appends to a single string and a wake
+        /// starts a turn, and neither can be full.</para>
+        /// </summary>
+        /// <param name="Reason">What to tell whoever sent it, in words a model or a user can read.</param>
+        public sealed record Refused(string Reason) : SubmitOutcome;
+
+        /// <summary>
+        /// A turn was already running, so this joins it rather than starting a second one — at its
+        /// next tool barrier when the user typed it, at the top of its next lap otherwise. Either way
+        /// the model reads it during the running turn; see <see cref="SubmitSource"/> for why the two
+        /// arrive by different doors.
+        /// </summary>
         /// <param name="ToolsIgnored">
         /// True when this call passed a selection DIFFERENT from the one the running turn began
         /// with. Queued text joins that turn, whose tools were fixed when it started, so a different
@@ -196,7 +244,7 @@ public sealed partial class Session
     /// to consult and behaves exactly as <see cref="SubmitRaw"/>.</para>
     /// </summary>
     public SubmitOutcome Submit(string text, string? echo = null, Jobs.ToolSelection? tools = null,
-        TurnOriginator? origin = null)
+        TurnOriginator? origin = null, SubmitSource source = SubmitSource.User)
     {
         if (Manager is { } manager && text.TrimStart().StartsWith('/'))
         {
@@ -251,7 +299,7 @@ public sealed partial class Session
             text = injected + "\n\n" + text;
         }
 
-        return SubmitRaw(text, echo, tools, origin);
+        return SubmitRaw(text, echo, tools, origin, source);
     }
 
     /// <summary>
@@ -286,8 +334,13 @@ public sealed partial class Session
     /// every caller but a plugin driving its own session, which passes its own name so unwire can
     /// tell its turn from the user's.
     /// </param>
+    /// <param name="source">
+    /// Whether the human typed this. Only a busy session reads it, and only to choose between
+    /// steering into the running turn and the agent's mailbox — see <see cref="SubmitSource"/>.
+    /// </param>
     public SubmitOutcome SubmitRaw(string text, string? echo = null,
-        Jobs.ToolSelection? tools = null, TurnOriginator? origin = null)
+        Jobs.ToolSelection? tools = null, TurnOriginator? origin = null,
+        SubmitSource source = SubmitSource.User)
     {
         if (Host is null) return new SubmitOutcome.NoAgent();
 
@@ -296,6 +349,23 @@ public sealed partial class Session
         // beside the turn can.
         if (IsBusy)
         {
+            // NOBODY TYPED THIS, SO NOTHING MAY SAY THEY DID. Steer is announced through
+            // UserTurnAdded and drawn as the user's own queued block — offered back for editing when
+            // a cancel returns it — which for a command's result puts words on the transcript the
+            // user never wrote. The mailbox reaches the model on the turn's next lap with no such
+            // announcement, so a system fact is read just as promptly and attributed to no one.
+            //
+            // BEFORE THE TOOL-SELECTION REPORT BELOW, which speaks to whoever passed a selection: a
+            // system delivery passes none, and a warning about a selection it never sent would be
+            // addressed to nobody.
+            if (source is SubmitSource.System)
+                // REFUSED RATHER THAN GROWN. The mailbox is bounded (AgentMailbox.MaxDepth), and a
+                // full one means the agent has not read the earlier messages — Queued would tell the
+                // caller this landed when it did not.
+                return Host.TryDeliver(text)
+                    ? new SubmitOutcome.Queued()
+                    : new SubmitOutcome.Refused("the agent has messages it has not read yet.");
+
             // Steer raises Pending, so a watcher draws its own queued block. Nothing is said here:
             // the block IS the report, and a line saying "queued" beside it would say it twice.
             Steer(text);
