@@ -190,10 +190,16 @@ public static class ToolBindings
         //
         // THIS LIST IS WHAT THE MODEL MAY SEND, and ShellJobExecutor.GetSchema is what it is TOLD each
         // one means. Neither is derived from the other, so a parameter in one and not the other is
-        // either unsendable or undocumented — `env` has been in the schema and absent here all along,
-        // which is why no model has ever set an environment variable. When adding one, add it to both.
+        // either unsendable or undocumented — and only one of those two failures is loud.
+        //
+        // BuildDefinition walks THIS list and throws for a name the schema lacks; nothing walks the
+        // schema asking whether every param is advertised. So a name here that the executor rejects
+        // fails the build, and a schema param missing here is silently unreachable — which is a
+        // deliberate escape hatch for a param a HOST sets and a model must not, and a trap for one
+        // that was meant to be offered. When adding a parameter, add it to both.
         (BuiltinTool.RunShell, new ToolBinding("run_shell", "shell", null,
-            Params: ["command", "working_dir", "timeout_seconds", Builtin.ShellArguments.Background],
+            Params: ["command", "working_dir", "timeout_seconds", "env",
+                     Builtin.ShellArguments.Background],
             Required: ["command"])),
         (BuiltinTool.HttpRequest, new ToolBinding("http_request", "http", null,
             Params: ["url", "method", "headers", "body"], Required: ["url"])),

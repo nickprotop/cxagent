@@ -27,6 +27,32 @@ public class ShellJobExecutorTests
         Assert.True(v.IsValid);
     }
 
+    /// <summary>
+    /// AN `env` A MODEL SENDS REACHES THE PROCESS.
+    ///
+    /// <para>THE PLUMBING WAS COMPLETE AND THE ADVERTISEMENT WAS NOT, which is why this needs a test
+    /// rather than a glance: the schema described `env`, the executor read it and the runner applied it
+    /// to both the foreground and detached paths — but `ToolBindings.Params` omitted the name, so no
+    /// model was ever told it existed and nothing exercised the path end to end. Asserting that the
+    /// name appears in a list would only restate the fix; asserting the CHILD PROCESS saw the value is
+    /// the only thing that proves the chain.</para>
+    ///
+    /// <para>THE ASYMMETRY THAT HID IT: <c>BuildDefinition</c> throws for a name in <c>Params</c> that
+    /// the schema lacks, and nothing walks the schema asking whether every param is advertised. Loud
+    /// one way, silent the other.</para>
+    /// </summary>
+    [Fact]
+    public async Task Execute_PassesEnvToTheProcess()
+    {
+        var result = await new ShellJobExecutor().ExecuteAsync(
+            P(("command", "echo $CXAGENT_ENV_PROBE"),
+              ("env", new Dictionary<string, string> { ["CXAGENT_ENV_PROBE"] = "reached" })),
+            new CollectingContext(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("reached", result.Output["stdout"]?.ToString() ?? "");
+    }
+
     [Fact]
     public async Task Execute_EchoSucceeds_WithExitCodeZero()
     {
