@@ -96,6 +96,51 @@ public class PermissionPolicyTests
     }
 
     /// <summary>
+    /// AN UNATTENDED READ-ONLY COMMAND STILL ASKS.
+    ///
+    /// <para>The read-only exemption vouches for a command by its text, and `tail -f` cannot write by
+    /// any reasonable reading — so without this a model could start a never-exiting process that
+    /// outlives the turn that asked, with no prompt at all. What earns the prompt is not what the
+    /// command does but how long it does it for, which its text does not say.</para>
+    ///
+    /// <para>THE SAME SHAPE THE EXEMPTION ALREADY GUARDS AGAINST. Its own comment records five holes
+    /// of the form "verb vouched for, arguments ignored"; a parameter that changes the command's
+    /// lifetime is the sixth, one level further out than CommandSubjects can see.</para>
+    /// </summary>
+    [Fact]
+    public void AnUnattendedReadOnlyCommand_IsNotSilent()
+    {
+        var root = MakeTempDir();
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var policy = new PermissionPolicy(root, rules);
+
+        // THE SAME COMMAND BOTH WAYS, so the only thing under test is the flag.
+        Assert.True(policy.IsSilentlyAllowed(Shell("tail -f app.log")),
+            "a read-only command in a trusted folder is silent, and stays so");
+        Assert.False(policy.IsSilentlyAllowed(Shell("tail -f app.log") with { Unattended = true }),
+            "an unattended command must cost a prompt — nothing will be watching when it keeps running");
+    }
+
+    /// <summary>
+    /// AND THE FLAG COMES OFF THE CALL, not just off a hand-built request.
+    ///
+    /// <para>The gate and the executor must agree about what counts as backgrounded, so both read it
+    /// through <see cref="CxAgent.Core.Jobs.Builtin.ShellArguments.IsBackground"/>. A gate that read
+    /// the flag its own way would let a spelling the executor honours slip past unprompted — the
+    /// bypass is silent, so only a test that goes through RequestsFor can catch it.</para>
+    /// </summary>
+    [Fact]
+    public void RequestsFor_CarriesBackgroundThroughAsUnattended()
+    {
+        Assert.False(PermissionPolicy.RequestsFor("shell", Params(("command", "tail -f app.log")))
+            .Single().Unattended);
+        Assert.True(PermissionPolicy.RequestsFor("shell",
+                Params(("command", "tail -f app.log"), ("background", true)))
+            .Single().Unattended);
+    }
+
+    /// <summary>
     /// `cd &lt;dir&gt; &amp;&amp; &lt;read-only&gt;` IS THE IDIOM THE MODEL WRITES. Treat the `&amp;&amp;`
     /// as a chain on its own and `cd /repo &amp;&amp; ls` prompts while a bare `ls` does not — two of
     /// three prompts on a measured drive were this shape.

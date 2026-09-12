@@ -74,6 +74,20 @@ public sealed record PermissionRequest(PermissionKind Kind, string Display, stri
     public ActionFacts? Facts { get; init; }
 
     /// <summary>
+    /// Whether the thing being asked about will outlive the turn that asks.
+    ///
+    /// <para>A LIFETIME IS NOT A PROPERTY OF THE COMMAND'S TEXT, which is the whole reason this is a
+    /// field rather than something a checker could derive. `tail -f /var/log/syslog` is read-only
+    /// however long it runs; what makes it worth a prompt is that nothing will be watching when it
+    /// keeps running after the call returns.</para>
+    ///
+    /// <para>READ BY THE READ-ONLY FAST PATH, which vouches for a command by its text and would
+    /// otherwise pass this silently. That path's own comment names the shape: "verb vouched for,
+    /// arguments ignored" — this is the same hole one parameter further out.</para>
+    /// </summary>
+    public bool Unattended { get; init; }
+
+    /// <summary>
     /// WHICH SESSION IS ASKING — its working directory, and the edit mode it is running under.
     ///
     /// <para>THE QUESTION IS PER-SESSION; THE ANSWER IS NOT. The gate is one per process because

@@ -238,6 +238,10 @@ public class PermissionPolicy
             Subject: command)
         {
             Facts = facts,
+            // THROUGH ShellArguments, NOT Get("background") HERE, so the gate cannot come to a
+            // different answer than the executor does about the same JSON — see ShellArguments for
+            // why a disagreement is a silent bypass rather than a cosmetic split.
+            Unattended = Jobs.Builtin.ShellArguments.IsBackground(parameters),
         };
     }
 
@@ -415,7 +419,12 @@ public class PermissionPolicy
         // anything it cannot classify, so a shape nobody anticipated costs a prompt instead of
         // passing. It found a fifth hole on the way in — `grep --file=/etc/shadow .` was silent
         // while `grep -f /etc/shadow .` correctly asked, the same read spelled two ways.
+        // AND A SIXTH, ONE LEVEL FURTHER OUT: a command that outlives the turn is not vouched for by
+        // its text, because the text does not say how long it runs — `tail -f app.log` reads the same
+        // whether it returns at once or never. Tested first so the cheap flag settles it before
+        // IsReadOnly and CommandSubjects.Of parse anything.
         if (request.Kind == PermissionKind.Shell
+            && !request.Unattended
             && _rules.GetTrust(_root) == TrustState.Trusted
             && ReadOnlyCommands.IsReadOnly(request.What, out _))
         {
