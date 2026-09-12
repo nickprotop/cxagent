@@ -118,6 +118,117 @@ public class SubAgentSpawnerTests
         };
     }
 
+    /// <summary>
+    /// A parent that spawns a child, then in a later turn wakes it beside an unrelated read — with
+    /// the woken child held inside its provider until the test releases it.
+    ///
+    /// <para>TWO TURNS, BECAUSE A HANDLE DOES NOT EXIST UNTIL THE SPAWN RETURNS. The wake names the
+    /// slug the store minted, so it cannot be emitted in the same response that creates it.</para>
+    ///
+    /// <para>THE READ IS EMITTED AFTER THE WAKE, which is the whole point: it is the call whose
+    /// result proves whether the walk parked on the wake or carried on past it.</para>
+    /// </summary>
+    /// <param name="release">Releases the woken child from its provider.</param>
+    /// <param name="wokeUp">Signals that the woken child has reached its provider.</param>
+    internal static Agent ParentWhoseChildBlocksOnWake(out SubAgentStore store,
+        out TaskCompletionSource release, out SemaphoreSlim wokeUp)
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrived = new SemaphoreSlim(0, 1);
+        release = gate;
+        wokeUp = arrived;
+
+        var provider = new MockLlmProvider();
+        // Turn 1: spawn, so a handle exists to wake.
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use", ToolCalls = [SpawnCall()],
+        });
+        // Turn 2: wake it, and read a file AFTER it in the same response.
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "",
+            StopReason = "tool_use",
+            ToolCalls =
+            [
+                new ToolCall
+                {
+                    Id = "w1",
+                    Name = CxAgent.Core.Jobs.Tool.AgentSend,
+                    Arguments = System.Text.Json.JsonDocument.Parse(
+                        System.Text.Json.JsonSerializer.Serialize(
+                            new { name = "find-thing", prompt = "more please" })).RootElement,
+                },
+                // A GLOB, because it is read-only, needs no permission gate and answers in
+                // milliseconds — so a missing result means the walk was blocked, never that the
+                // tool was slow or waiting on a prompt.
+                new ToolCall
+                {
+                    Id = "r1",
+                    Name = CxAgent.Core.Jobs.Tool.Glob,
+                    Arguments = System.Text.Json.JsonDocument.Parse(
+                        System.Text.Json.JsonSerializer.Serialize(
+                            new { pattern = "*.nothing-matches-this" })).RootElement,
+                },
+            ],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        // The CHILD's provider: its first answer returns at once so the spawn settles, and every
+        // later one blocks — which is the wake.
+        var child = new WakeBlockingProvider(arrived, gate);
+
+        store = new SubAgentStore();
+        return new Agent(provider, JobRegistry.CreateWithBuiltins(), new TokenLedger(),
+            new RecordingSink(), new NullJobPanel(), logs: null, maxTurns: 50,
+            spawner: new SubAgentSpawner(FactoryOver(child), store: store))
+        {
+            Mode = AgentMode.FanOut,
+        };
+    }
+
+    /// <summary>
+    /// Answers the spawn immediately and blocks every later call — so a wake, and only a wake, hangs.
+    /// </summary>
+    private sealed class WakeBlockingProvider(SemaphoreSlim arrived, TaskCompletionSource release)
+        : StubProvider
+    {
+        private int _calls;
+
+        public override async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            List<ChatMessage> messages, List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _calls) > 1)
+            {
+                arrived.Release();
+                await release.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
+            }
+
+            yield return new LlmStreamChunk("child done", null, IsFinal: true, StopReason: "end_turn");
+        }
+    }
+
+    /// <summary>
+    /// Waits until a tool call id has a recorded result, or the deadline passes.
+    ///
+    /// <para>POLLED RATHER THAN AWAITED, because a result landing mid-walk raises nothing: the walk
+    /// appends to the live message list and there is no event to subscribe to. The deadline is what
+    /// turns "never arrived" into a failed assertion instead of a hung test.</para>
+    /// </summary>
+    internal static async Task<bool> WaitForToolResult(Agent agent, string callId, TimeSpan within)
+    {
+        var deadline = DateTimeOffset.UtcNow + within;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            // A SNAPSHOT, because the walk appends to this list from another thread.
+            if (agent.Context.Messages.ToList()
+                .Any(m => m.Role == "tool" && m.ToolCallId == callId)) return true;
+            await Task.Delay(25);
+        }
+        return false;
+    }
+
     /// <summary>A name it does not own is declined with null, so the dispatch chain falls through to
     /// MCP and then the built-ins — the same contract McpToolset.TryInvokeAsync holds.</summary>
     [Fact]

@@ -1770,7 +1770,18 @@ public sealed class Agent
                 {
                     var task = InvokeAndShowAsync(Id, call, ct);
 
-                    if (CanSpawn && string.Equals(call.Name, _spawner!.ToolName, StringComparison.Ordinal))
+                    // A WAKE IS HELD FOR THE SAME REASON A SPAWN IS. Both hand work to a child that
+                    // runs for minutes, and awaiting either here stops the walk: the turn's own
+                    // reads and greps wait on a sibling that has nothing to do with them, and the
+                    // child's row — which moves itself nowhere now — is the only thing on screen
+                    // that advances, so the call that started it looks like it finished afterwards.
+                    //
+                    // MATCHED ON agent_send TOO, NOT ONLY THE SPAWN NAME. The name comes from Tool
+                    // rather than from _reach, which claims agent_list as well; a listing answers
+                    // from a dictionary in microseconds and holding it would defer a result that is
+                    // already there.
+                    if (CanSpawn && (string.Equals(call.Name, _spawner!.ToolName, StringComparison.Ordinal)
+                                     || string.Equals(call.Name, Jobs.Tool.AgentSend, StringComparison.Ordinal)))
                     {
                         // HELD, NOT AWAITED. Its result is recorded after the walk.
                         spawned.Add((call, task));

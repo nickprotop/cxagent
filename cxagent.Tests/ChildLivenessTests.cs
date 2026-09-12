@@ -249,6 +249,54 @@ public class ChildLivenessTests
     }
 
     /// <summary>
+    /// A WAKE DOES NOT STOP THE TURN'S OTHER TOOLS, exactly as a spawn does not.
+    ///
+    /// <para>THE DEFECT THIS PINS: the walk's held-not-awaited branch matched only the SPAWN tool's
+    /// name, so an <c>agent_send</c> was awaited inline and blocked every call emitted after it. A
+    /// wake hands work to a child that runs for minutes, so a read emitted beside it waited on a
+    /// sibling with nothing to do with it — and on screen the send's own row sat unfinished while
+    /// the child's row advanced, which reads as the send completing after the work it started.</para>
+    ///
+    /// <para>ASSERTED BY CONSTRUCTION, NOT BY TIMING. The woken child blocks inside its provider
+    /// until this test releases it; the assertion is that the LATER tool call has already recorded
+    /// its result while that block is still held. Under an inline await the result cannot be there
+    /// yet, so the test fails on a deadline rather than hanging.</para>
+    /// </summary>
+    [Fact]
+    public async Task AWakeDoesNotBlockTheToolsEmittedAfterIt()
+    {
+        var parent = SubAgentSpawnerTests.ParentWhoseChildBlocksOnWake(
+            out var store, out var release, out var wokeUp);
+
+        var run = parent.SendAsync("spawn, then wake it and read a file", CancellationToken.None);
+
+        // The child must be inside its provider before anything is judged: until then a missing
+        // inline result proves nothing about ordering.
+        Assert.True(await wokeUp.WaitAsync(TimeSpan.FromSeconds(10)),
+            "the woken child never reached its provider");
+
+        // THE READ EMITTED AFTER THE WAKE HAS ALREADY ANSWERED, while the wake is still blocked.
+        // Under an inline await this is impossible — the walk would be parked on the send.
+        var answered = await SubAgentSpawnerTests.WaitForToolResult(parent, "r1",
+            TimeSpan.FromSeconds(10));
+        Assert.True(answered,
+            "the tool emitted after agent_send did not run while the wake was still in flight — "
+          + "the walk is awaiting the wake inline");
+
+        release.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(20));
+
+        // And the wake answered too: the barrier still holds every call to a result.
+        var results = parent.Context.Messages
+            .Where(m => m.Role == "tool" && m.ToolCallId is not null)
+            .Select(m => m.ToolCallId!)
+            .ToList();
+        Assert.Contains("w1", results);
+        Assert.Contains("r1", results);
+        Assert.NotNull(store);
+    }
+
+    /// <summary>
     /// A spawn registers the run before the store announces the claim.
     ///
     /// <para>THE ORDER IS THE WHOLE CONTRACT. SubAgentSpawner calls onChild, then Keep, then

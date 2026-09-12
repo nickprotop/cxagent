@@ -1785,11 +1785,9 @@ public sealed class InlineJobSink : IToolObserver
     /// alone so the elapsed time still measures the agent rather than the latest thing asked of
     /// it.</para>
     ///
-    /// <para>AND THE ROW MOVES TO THE END OF THE TRANSCRIPT. It was drawn where the spawn happened,
-    /// which may be far above the scroll by now — a row that starts spinning three screens up is
-    /// indistinguishable from no row at all. Removing the message and adopting a fresh one at the
-    /// bottom is the transcript's only move primitive, and it is enough: the body is a projection
-    /// of the sink's own maps, so nothing is lost with the old message.</para>
+    /// <para>AND THE ROW DOES NOT MOVE. It stays where the spawn drew it and is updated in place, so
+    /// the transcript keeps reading in the order things happened — see the reasoning at the update
+    /// itself for why moving it to the bottom reorders a resume against its own cause.</para>
     ///
     /// <para>A SPAWN'S OWN CLAIM ALSO LANDS HERE (the spawner takes one so a send cannot corrupt a
     /// context it is appending to), and falls out at the terminal check: its row is live, so there
@@ -1814,13 +1812,21 @@ public sealed class InlineJobSink : IToolObserver
         // a clock that never moves, which is this file's definition of looking hung.
         job.ProgressMessage = null;
 
-        if (_lines.TryRemove(jobId, out var old)) _chat.RemoveMessage(old);
+        // THE ROW STAYS WHERE THE SPAWN DREW IT. A transcript is a record of what happened in the
+        // order it happened, and moving a row to the bottom on every resume reorders it against
+        // causality: the `agent_send` call that woke the child is appended first, so a moved row
+        // lands BELOW the call that caused it and reads as though the send finished after the work.
+        // With several children, repeated resumes shuffle the history outright, and a settled row a
+        // user had scrolled to disappears from under them.
+        //
+        // DISCOVERABILITY IS NOT THIS ROW'S JOB. A resume far up the scroll is announced where a
+        // user is already looking — the send's own transcript row — which costs no rewriting of
+        // what came before.
+        if (!_lines.TryGetValue(jobId, out var id)) return;
 
         // THE RUNNING SHAPE ToolsChangedNow GIVES A LIVE WORKER: compact chrome, no status row, no
         // auto-expand — a worker's growing body stays one keypress away — and the body is the same
         // cumulative timetable the tick will keep redrawing from here on.
-        var id = _chat.AddMessage(ChatRole.Tool, Title(job), author: AuthorFor(job));
-        _lines[jobId] = id;
         _chat.SetHeader(id, CompactHeader(job));
         _chat.ClearStatus(id);
         _chat.UpdateMessage(id, RunningWorkerBody(job) ?? string.Empty);
