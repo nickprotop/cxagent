@@ -152,7 +152,7 @@
     {
       "name": "triggers",
       "displayName": "Triggers",
-      "version": "0.9.17",
+      "version": "0.9.18",
       "description": "Work that starts without anybody typing \u2014 on a clock, or when a process exits. Schedules a prompt to arrive later in the same session; fires only while cxagent is running.",
       "publisher": "nickprotop",
       "license": "MIT",
