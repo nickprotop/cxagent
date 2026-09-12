@@ -838,9 +838,20 @@ public sealed class InlineJobSink : IToolObserver
     private static bool ReportsItsOwnAge(Job job) =>
         job.ProgressMessage is { } text && AgeSuffix.IsMatch(text);
 
-    /// <summary>The trailing " · 14s" or " · 2m05s" a worker's report ends with.</summary>
+    /// <summary>
+    /// The " · 14s" or " · 2m05s" a worker's report states its own age with.
+    ///
+    /// <para>NOT ANCHORED TO THE END, because a finished worker states its COST after its age —
+    /// "done · 4s · 26,844 tokens" — and an end-anchored match misses it, so the header adds a second
+    /// clock beside the age already on the row. Seen live on a resumed worker: "done · 4s · 26,844
+    /// tokens · 00:02:22", the last figure still climbing minutes after the answer arrived.</para>
+    ///
+    /// <para>THE SEPARATOR IS WHAT KEEPS IT PRECISE. A bare digits-then-s would match inside a word
+    /// or a token count; requiring the " · " that introduces every field means this recognises a
+    /// field the row actually renders rather than any number that ends in s.</para>
+    /// </summary>
     private static readonly System.Text.RegularExpressions.Regex AgeSuffix =
-        new(@" · (\d+m)?\d+s$", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@" · (\d+m)?\d+s(\b|$)", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     /// <summary>Test seam: the header is a pure projection of the job.</summary>
     public static string CompactHeaderForTest(Job job) => CompactHeader(job);

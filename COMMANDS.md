@@ -32,6 +32,8 @@ but not completed.
 | `/skills` | List available skills, and any `SKILL.md` that was skipped |
 | `/agents` | The sub-agent types this session can spawn |
 | `/agents <name>` | The full briefing that type is given |
+| `/agents list` | The sub-agents this session has actually spawned, and which are busy |
+| `/agents send <name> <prompt>` | Ask one for more — it still has its own context |
 | `/init` | Write the project instruction file this agent reads each session |
 | `/diff` | What has changed in the working tree |
 | `/diff --staged` · `/diff <path>` | Narrow it to the index, or to one file |
@@ -288,9 +290,15 @@ See [CONFIG.md](CONFIG.md#skills) for where skills live and what a `SKILL.md` lo
 What this session can delegate to, and what each type is told.
 
 ```
-/agents            every type: where it runs, its turn cap, one line on when to choose it
-/agents planner    that type's briefing in full
+/agents                      every type: where it runs, its turn cap, one line on when to choose it
+/agents planner              that type's briefing in full
+/agents list                 the sub-agents this session has actually spawned
+/agents send <name> <ask>    ask one of them for more
 ```
+
+**TYPES AND INSTANCES ARE DIFFERENT LISTS.** `/agents` is the catalog — what *could* be spawned,
+fixed for the session. `/agents list` is what this conversation *did* spawn, with the handle each
+answers to and a `[busy]` marker on any still working.
 
 **The listing is what the model reads while choosing.** Each row shows the type's own description —
 the single line the spawn tool puts in front of the model — trimmed to its first sentence so the list
@@ -316,6 +324,17 @@ A built-in type says so in its detail view, along with the reminder that a `brie
 
 It lists; it does not spawn. Which type fits a task is the model's decision, made against this same
 catalog.
+
+**`send` REACHES A CHILD THAT ALREADY EXISTS, which is the one thing the catalog cannot do.** A
+spawned sub-agent keeps its context for the life of the session — everything it read, ran and
+concluded — so asking it more costs a turn instead of the minutes a replacement would spend
+rediscovering the same ground. The handle comes from `/agents list` or from the `name=` on the spawn
+result, and it completes in the palette, so nothing has to be retyped from a listing.
+
+The model has the same reach through the `agent_send` tool; this is the same door for a user who can
+see what the model has not noticed. One difference worth knowing: a child that is still working
+**refuses** a `/agents send` and tells you to try once it answers, where the tool queues the message
+for the child's next turn.
 
 ## `/init`
 

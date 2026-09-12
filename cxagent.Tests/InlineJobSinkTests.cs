@@ -806,6 +806,122 @@ public class InlineJobSinkTests
         Assert.Equal(0, sink.RefreshRunningHeadersNow());
     }
 
+    /// <summary>
+    /// A SETTLED RESUME IS DONE TICKING.
+    ///
+    /// <para>USER-REPORTED: after a resumed worker's row settled it kept a spinning glyph and a
+    /// second clock that climbed forever — "done · 4s · 26,844 tokens · 00:02:22" minutes after the
+    /// answer had arrived. A finished row that looks like it is still working is the same defect as a
+    /// live row that looks frozen, from the other side.</para>
+    ///
+    /// <para>THE COUNT IS THE ASSERTION, because the header would come out identical either way: the
+    /// tick skips terminal rows, so a row still being rewritten after it settled proves its state was
+    /// never restored. Asserting on the rendered string would pass on a row whose clock happened not
+    /// to cross a second boundary.</para>
+    /// </summary>
+    [Fact]
+    public void AResumedRow_StopsTickingOnceItSettles()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+
+        // A settled spawn: the state a resume starts from.
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Find main entry point", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(4) },
+        };
+        sink.ToolsChangedNow(new[] { job });
+        Assert.Equal(0, sink.RefreshRunningHeadersNow());   // settled: nothing to tick
+
+        sink.WorkerResumed(child.Agent.Id);
+        Assert.Equal(1, sink.RefreshRunningHeadersNow());   // working again: it ticks
+
+        sink.WorkerSettled(child.Agent.Id);
+
+        Assert.Equal(0, sink.RefreshRunningHeadersNow());
+    }
+
+    /// <summary>
+    /// A SETTLED RESUME LEAVES NOTHING IN FLIGHT FOR THE ROUND ROW EITHER.
+    ///
+    /// <para>USER-REPORTED, AND THE HALF THE ROW'S OWN STATE DOES NOT EXPLAIN: after a resumed
+    /// worker settled, a spinner and a second clock kept climbing beside it. The worker's header is
+    /// only one of two things the tick repaints — <c>RefreshRunningHeadersNow</c> also paints the
+    /// ROUND row, whose spinner tracks <c>InFlightOfRound</c>: the first non-terminal folded job in
+    /// the sink. A reopened worker IS one, so the round row adopts it for the whole resume and has no
+    /// boundary to settle at, because a <c>/agents send</c> runs outside the turn loop that would
+    /// normally end the round.</para>
+    ///
+    /// <para>ASSERTED THROUGH THE ROUND'S OWN IN-FLIGHT NOTION rather than the rendered row, so the
+    /// failure names the cause — something is still considered running — rather than a string that
+    /// happens to contain a braille glyph.</para>
+    /// </summary>
+    [Fact]
+    public void AResumedRow_LeavesNothingInFlight_OnceItSettles()
+    {
+        var sink = HeadlessSink();
+        var child = Child();
+        sink.NoteChild("j1", child);
+
+        var job = new Job
+        {
+            Id = "j1", AgentId = "g1", JobType = "llm_agent",
+            DisplayName = "Find main entry point", State = JobState.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, StartedAt = DateTimeOffset.UtcNow,
+            Result = new JobResult { Success = true, Duration = TimeSpan.FromSeconds(4) },
+        };
+        sink.ToolsChangedNow(new[] { job });
+
+        sink.WorkerResumed(child.Agent.Id);
+        sink.WorkerSettled(child.Agent.Id);
+
+        // NOT TERMINAL HERE MEANS A SPINNER SOMEWHERE. Whatever the round row does with it, a job the
+        // sink still considers running after its work stopped is the thing that keeps one alive.
+        Assert.True(IsTerminalState(job.State),
+            $"the resumed row settled into {job.State}, which the round row still counts as in flight");
+    }
+
+    private static bool IsTerminalState(JobState state) =>
+        state is JobState.Succeeded or JobState.Failed or JobState.Cancelled;
+
+    /// <summary>
+    /// A ROW THAT STATES ITS OWN AGE GETS NO SECOND CLOCK, EVEN WHEN IT STATES A COST AFTER IT.
+    ///
+    /// <para>USER-REPORTED: a resumed worker rendered "done · 4s · 26,844 tokens · 00:02:22" and the
+    /// last figure kept climbing minutes after the answer arrived. Two clocks on one row, disagreeing
+    /// — and the moving one measuring nothing a reader wants.</para>
+    ///
+    /// <para>THE CAUSE IS AN ANCHOR, NOT A STATE. <c>ReportsItsOwnAge</c> suppresses the header's
+    /// clock by matching a trailing " · 4s", and a worker's finished report puts its token count
+    /// AFTER the age — so the age is no longer last, the match fails, and the header adds a clock
+    /// beside the one already there. Every other row that reports an age ends with it, which is why
+    /// this surfaced only on a worker that had been resumed.</para>
+    ///
+    /// <para>PINNED ON THE PROJECTION rather than through the sink, because the header is a pure
+    /// function of the job: the defect is in what it reads, not in who called it.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("done · 4s · 26,844 tokens")]
+    [InlineData("done · 2m05s · 1,200 tokens")]
+    [InlineData("done · 4s")]
+    [InlineData("2 turns · 5% ctx · 43s")]
+    public void ARowStatingItsOwnAge_GetsNoSecondClock(string progress)
+    {
+        var job = RunningRow("j1", DateTimeOffset.UtcNow - TimeSpan.FromMinutes(2)) with
+        {
+            ProgressMessage = progress,
+        };
+
+        var header = InlineJobSink.CompactHeaderForTest(job);
+
+        Assert.DoesNotContain("00:02:0", header);
+        Assert.DoesNotContain("00:01:5", header);
+    }
+
     // ---- the clock does not count the review phase ----------------------------------------------
 
     /// <summary>
