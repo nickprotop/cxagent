@@ -99,4 +99,75 @@ public class ProcessRunnerTests
         Assert.True(elapsed < TimeSpan.FromSeconds(10), $"cancel should kill promptly, took {elapsed.TotalSeconds}s");
         Assert.False(result.TimedOut);
     }
+
+    /// <summary>
+    /// LARGE OUTPUT KEEPS THE TAIL, NOT THE HEAD.
+    ///
+    /// <para>Truncation always bets on which end matters, and for a command the end is where the
+    /// answer is: a failing test's assertion and summary are last, while a head shows the compiler
+    /// banner. The file removes the bet for anything the tail did not carry.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_LargeOutput_KeepsTheTailAndWritesTheRest()
+    {
+        var dir = NewSpillDir();
+        var ctx = new CollectingContext();
+
+        // A marker at each end, so which end survived is unambiguous. 4,000 padded lines is ~76 KB
+        // against an 8,192 cap — comfortably over, without the test's own runtime depending on how
+        // close to the cap it lands.
+        var result = await ProcessRunner.RunAsync(
+            new ProcessSpec("/bin/sh",
+                new[] { "-c", "echo FIRSTLINE; for i in $(seq 1 4000); do echo padpadpadpadpadpad; done; echo LASTLINE" },
+                SpillDir: dir),
+            ctx, CancellationToken.None);
+
+        Assert.Contains("LASTLINE", result.Stdout);
+        Assert.DoesNotContain("FIRSTLINE", result.Stdout);
+        Assert.True(result.Stdout.Length <= ProcessRunner.MaxCapturedChars + 200,
+            $"the inline extract must stay near the cap, was {result.Stdout.Length}");
+
+        // THE MARKER LEADS, because the elision happened at the START. Trailing, it would tell a
+        // model the output ENDS mid-stream — the opposite of what a tail means.
+        Assert.StartsWith("[...", result.Stdout);
+
+        Assert.NotNull(result.Spill);
+        Assert.True(File.Exists(result.Spill!.Path), $"no spill file at {result.Spill.Path}");
+
+        // THE WHOLE OUTPUT, not just the part the tail dropped: the file is the thing the agent is
+        // pointed at, so reading it must not require stitching it back onto the inline extract.
+        var spilled = await File.ReadAllTextAsync(result.Spill.Path);
+        Assert.Contains("FIRSTLINE", spilled);
+        Assert.Contains("LASTLINE", spilled);
+        Assert.True(result.Spill.TotalBytes > result.Stdout.Length,
+            $"the spill's size must describe the whole output, got {result.Spill.TotalBytes}");
+    }
+
+    /// <summary>Small output is whole and needs no file — a spill for everything would litter for
+    /// nothing.</summary>
+    [Fact]
+    public async Task RunAsync_SmallOutput_IsWholeAndUnspilled()
+    {
+        var dir = NewSpillDir();
+        var ctx = new CollectingContext();
+        var result = await ProcessRunner.RunAsync(
+            new ProcessSpec("/bin/sh", new[] { "-c", "echo hello" }, SpillDir: dir),
+            ctx, CancellationToken.None);
+
+        Assert.Contains("hello", result.Stdout);
+        Assert.Null(result.Spill);
+
+        // NOT MERELY "no Spill on the result": a file written and then not reported is still a file
+        // left behind, and the whole point of the small case is that nothing is.
+        Assert.Empty(Directory.Exists(dir) ? Directory.GetFiles(dir) : []);
+    }
+
+    /// <summary>A directory of its own per test, so one test's spill cannot satisfy another's
+    /// "nothing was written" assertion.</summary>
+    private static string NewSpillDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cxagent-spill-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
 }

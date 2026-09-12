@@ -618,10 +618,15 @@ public static class ToolBindings
             + "'glob' that restricts the file types, or a path further down the tree — or set a "
             + "smaller 'limit' and work through it. Do NOT repeat this call unchanged.",
 
+        // WHAT IS ABOVE IS THE END OF THE OUTPUT, AND THE WHOLE OF IT IS ON DISK. Both halves matter:
+        // a model that does not know it has the tail re-runs the command to see the summary it was
+        // already given, and one that does not know about the file pipes through `head` to hunt for
+        // what a read_file would hand it directly. `stdout_spill` names the path in the result.
         "run_shell" =>
-            "\n\nThe output was too large to return whole, and this tool cannot page. Re-run with "
-            + "the command itself narrowed — pipe through 'head', 'tail', 'grep', or 'wc -l' — "
-            + "rather than repeating the call unchanged.",
+            "\n\nThe output above is the END of it — the earlier part was elided, and the whole "
+            + "output was written to the file named by 'stdout_spill' (or 'stderr_spill') in this "
+            + "result. Read that file with read_file, narrowing by 'offset' and 'limit' or by "
+            + "grepping it, rather than re-running the command.",
 
         _ =>
             "\n\nThe result was too large to return whole and the middle was elided. Request less "

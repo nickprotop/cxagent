@@ -155,6 +155,31 @@ public sealed class JobContext : IJobContext
         WriteLog("tool", $"{toolName}: {summary}");
     }
 
+    /// <summary>
+    /// Where this job may write a file the agent will be pointed at, or null when no logs were wired.
+    ///
+    /// <para>WHERE A COMMAND'S OVER-LONG OUTPUT GOES. It is the job's own subdirectory of the tree
+    /// holding its <c>.log</c> files, on purpose: that tree is already per-session, already 0700, and
+    /// already the only thing <c>FolderSessionStore.Prune</c> sweeps — so the file expires with the
+    /// conversation that produced it and NOBODY HAS TO REMEMBER TO DELETE IT. Writing to
+    /// <c>Path.GetTempPath()</c> instead, as the trigger plugin does, would leak a file per
+    /// overflowing command forever, on the hot path of the most-used tool in the app.</para>
+    ///
+    /// <para>PER JOB RATHER THAN PER AGENT, which the sibling <c>.log</c> files are not. Those are
+    /// named <c>&lt;jobId&gt;.log</c> so they can share one directory; a spill is named for its STREAM,
+    /// so two shell jobs running at once under the same agent — the normal case under a fan-out —
+    /// would otherwise both write <c>stdout.spill</c> into one directory and serve each other's output
+    /// to the wrong model.</para>
+    ///
+    /// <para>NOT ON <see cref="IJobContext"/>, which plugins implement: a path only the built-in
+    /// shell path needs is not worth a member on every plugin's context. Callers that want it match
+    /// on this concrete type and treat its absence as "no spill", which is already a supported
+    /// case.</para>
+    /// </summary>
+    public string? JobDir => _logs is null
+        ? null
+        : Path.Combine(Path.GetDirectoryName(_logs.PathFor(_agentId, _jobId, "log"))!, _jobId);
+
     public void Log(string line) => WriteLog("log", line);
     public void Log(JobLogLevel level, string line) => WriteLog("log", $"[{level}] {line}");
 

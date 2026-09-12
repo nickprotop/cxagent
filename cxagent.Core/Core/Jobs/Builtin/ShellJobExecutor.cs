@@ -44,7 +44,14 @@ public class ShellJobExecutor : IJobExecutor
         var timeout = parameters.Get<int?>("timeout_seconds", null) ?? 120;
         var env = parameters.Get<Dictionary<string, string>?>("env", null);
 
-        var spec = new ProcessSpec("/bin/sh", new[] { "-c", command }, workingDir, env, timeout);
+        // WHERE THE REST OF A LONG OUTPUT GOES, when the session has a folder to put it in. Matched
+        // on the concrete context rather than read off IJobContext: the interface is what plugins
+        // implement, and only this built-in needs somewhere to write. A context without one (headless,
+        // a test, an embedder that wired no logs) yields null, and the runner then truncates as
+        // before — see ProcessSpec.SpillDir.
+        var spillDir = (context as JobContext)?.JobDir;
+
+        var spec = new ProcessSpec("/bin/sh", new[] { "-c", command }, workingDir, env, timeout, spillDir);
         var start = DateTimeOffset.UtcNow;
         var result = await ProcessRunner.RunAsync(spec, context, ct);
         var duration = DateTimeOffset.UtcNow - start;
@@ -58,27 +65,44 @@ public class ShellJobExecutor : IJobExecutor
                              + "for input, re-run it with a non-interactive flag — this shell has "
                              + "no stdin." };
 
+        // `stdout` is what makes a shell job USABLE by the next job. Without it the bag held only
+        // exit_code, so {{some_shell_job.stdout}} could never resolve and every goal that shelled
+        // out and fed the result onward failed — a live drive of "list ~/bin. what it does?"
+        // reported the directory EMPTY, because from the model's side the listing produced nothing.
+        //
+        // `content` mirrors stdout because that is the key JobDigest renders BARE (everything else
+        // is labelled) and the key `{{job}}` resolves to as shorthand. A shell job's substance IS
+        // its output, so it should read like one.
+        var output = new Dictionary<string, object?>
+        {
+            ["exit_code"] = result.ExitCode,
+            ["stdout"] = result.Stdout,
+            ["stderr"] = result.Stderr,
+            ["content"] = result.Stdout,
+        };
+
+        // A SPILL PATH IS PART OF THE ANSWER, not a diagnostic. `stdout` here is only the tail, so
+        // without a key naming the file "the rest is on disk" is a claim the model cannot act on — and
+        // ToolBindings' overflow advice tells it to read exactly these keys. Added only when something
+        // spilled, so their presence is itself the signal that the text above is incomplete.
+        if (result.StdoutSpill is { } outSpill)
+        {
+            output["stdout_spill"] = outSpill.Path;
+            output["stdout_bytes"] = outSpill.TotalBytes;
+        }
+        if (result.StderrSpill is { } errSpill)
+        {
+            output["stderr_spill"] = errSpill.Path;
+            output["stderr_bytes"] = errSpill.TotalBytes;
+        }
+
         return new JobResult
         {
             Success = result.ExitCode == 0,
             ExitCode = result.ExitCode,
             Duration = duration,
             ErrorMessage = result.ExitCode == 0 ? null : $"command exited with code {result.ExitCode}",
-            // `stdout` is what makes a shell job USABLE by the next job. Without it the bag held only
-            // exit_code, so {{some_shell_job.stdout}} could never resolve and every goal that shelled
-            // out and fed the result onward failed — a live drive of "list ~/bin. what it does?"
-            // reported the directory EMPTY, because from the model's side the listing produced nothing.
-            //
-            // `content` mirrors stdout because that is the key JobDigest renders BARE (everything else
-            // is labelled) and the key `{{job}}` resolves to as shorthand. A shell job's substance IS
-            // its output, so it should read like one.
-            Output = new Dictionary<string, object?>
-            {
-                ["exit_code"] = result.ExitCode,
-                ["stdout"] = result.Stdout,
-                ["stderr"] = result.Stderr,
-                ["content"] = result.Stdout,
-            },
+            Output = output,
         };
     }
 }
