@@ -31,7 +31,17 @@ public enum DeliveryOutcome
     /// <summary>Nothing holds that id — a child from an earlier session, or a stale reference.</summary>
     Unknown,
 
-    /// <summary>The agent is known and its queue is full. The only refusal there is.</summary>
+    /// <summary>
+    /// Nothing was delivered, and not because the agent could not be found.
+    ///
+    /// <para>TWO WAYS TO GET HERE, and they are one outcome rather than two because a caller does the
+    /// same thing about both: a full mailbox, and text with nothing in it. Neither is a lost message —
+    /// a full queue was never given one to lose, and an empty message carries nothing to deliver.</para>
+    ///
+    /// <para>DISTINCT FROM <see cref="Unknown"/> BECAUSE THE REMEDY DIFFERS. An unknown id is a
+    /// mistake in the addressing, and retrying it will fail the same way; a refusal is about this
+    /// message or this moment, and the same text to the same agent may well land later.</para>
+    /// </summary>
     Refused,
 }
 

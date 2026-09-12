@@ -165,4 +165,25 @@ public class AgentDeliveryTests : IDisposable
 
         Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(sessionAgentId, "the build finished"));
     }
+
+    /// <summary>
+    /// AN EMPTY MESSAGE IS REFUSED BEFORE ANYTHING IS ADDRESSED, and nothing is submitted for it.
+    ///
+    /// <para>MATCHING <c>SessionPluginClient</c>, which answers "a goal was empty — nothing was
+    /// submitted" rather than starting a turn with no content. A blank arrival would reach a model as
+    /// a user message saying nothing, which costs a turn to read and answers no question.</para>
+    ///
+    /// <para>ASSERTED ON THE CLIENT TOO, not only the outcome: the refusal has to happen before the
+    /// submit, or an empty turn is started and merely reported as refused.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AnEmptyMessage_IsRefusedAndNothingIsSubmitted(string text)
+    {
+        var (delivery, _, _) = Wired(out var client, out var sessionAgentId);
+
+        Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(sessionAgentId, text));
+        Assert.Empty(client.Submitted);
+    }
 }
