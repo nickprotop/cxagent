@@ -72,6 +72,20 @@ public record ProcessResult(int ExitCode, bool TimedOut, string Stdout = "", str
     /// genuinely needs to distinguish reads the two above.</para>
     /// </summary>
     public Spill? Spill => StdoutSpill ?? StderrSpill;
+
+    /// <summary>
+    /// The command is STILL RUNNING and this result describes its start, not its end.
+    ///
+    /// <para>A THIRD STATE, DISTINCT FROM <see cref="TimedOut"/>, because the two demand opposite
+    /// responses and share every other field. <c>ShellJobExecutor</c> answers a timeout by telling the
+    /// model to retry with a larger <c>timeout_seconds</c> — advice that, for a command still running,
+    /// starts a SECOND copy of it while the first keeps going. Anything reading <c>TimedOut</c> must
+    /// check this first.</para>
+    ///
+    /// <para>Null on every ordinary result; set to the live process when the run was detached, so the
+    /// pid and the output file travel with the state rather than being looked up from it.</para>
+    /// </summary>
+    public DetachedProcess? Detached { get; init; }
 }
 
 /// <summary>
@@ -314,6 +328,137 @@ public static class ProcessRunner
             StdoutSpill = outSpill,
             StderrSpill = errSpill,
         };
+    }
+
+    /// <summary>
+    /// The file a detached command's output goes to, inside the same per-job directory a spill uses.
+    ///
+    /// <para>A DIFFERENT NAME FROM <c>stdout.spill</c> so a job that both spills and backgrounds
+    /// cannot have one file mean two things, and ONE file for both streams — see
+    /// <see cref="DetachedProcess.Write"/>.</para>
+    /// </summary>
+    public const string DetachedOutputName = "background.out";
+
+    /// <summary>
+    /// Starts a command and hands it back still running, rather than waiting for it.
+    ///
+    /// <para>OWNERSHIP MOVES, WHICH IS THE ENTIRE DIFFERENCE FROM <see cref="RunAsync"/>. There is no
+    /// <c>using</c> on the process here: disposing it would tear down the very output handlers that
+    /// write the file, so the returned <see cref="DetachedProcess"/> holds the process, the handlers
+    /// and the writer, and disposes all three when the child exits. A caller that drops the return
+    /// value kills the command — the one thing worse than not backgrounding it is backgrounding it
+    /// where nothing can find it again.</para>
+    ///
+    /// <para>NOT ASYNC IN THE BODY, and named <c>Async</c> anyway — it returns the task shape callers
+    /// of <see cref="RunAsync"/> already have, and a later implementation that waits briefly to see
+    /// whether the command fails immediately would need it.</para>
+    ///
+    /// <para><paramref name="spec"/>'s <c>TimeoutSeconds</c> IS IGNORED. A deadline is a promise to
+    /// kill the process at it, and the caller that would have been told is gone; a background command
+    /// ends when it ends, when it is killed, or when the app exits.</para>
+    /// </summary>
+    /// <param name="spec">What to run and where — see <see cref="ProcessSpec"/>.</param>
+    /// <param name="ctx">Logged to as usual, best-effort: the job's <c>.log</c> keeps receiving lines
+    /// after the call returned, which is how a user watching the log sees progress.</param>
+    /// <param name="registry">Which registry reaps this one, or null for the process-wide
+    /// <see cref="DetachedProcessRegistry.Default"/>. Named by tests so one test's reap cannot kill
+    /// another's process.</param>
+    public static Task<DetachedProcess> DetachAsync(
+        ProcessSpec spec, IJobContext ctx, DetachedProcessRegistry? registry = null)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = spec.FileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            // Same reasoning as RunAsync: an unredirected stdin is inherited from the TUI, so a
+            // background `git commit` would silently steal the user's keystrokes for an editor
+            // nobody can see.
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+            WorkingDirectory = spec.WorkingDir ?? Environment.CurrentDirectory,
+        };
+        foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        if (spec.Env is not null)
+            foreach (var kv in spec.Env) psi.Environment[kv.Key] = kv.Value;
+
+        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+
+        var (writer, outputPath) = TryOpenDetachedOutput(spec.SpillDir);
+
+        // THE HOLDER EXISTS BECAUSE OF AN ORDERING BIND: handlers must be attached before Start (a
+        // command that prints instantly would otherwise lose its first lines), and DetachedProcess
+        // cannot be built before Start because Process.Id has no value until then. So the handlers
+        // close over a slot that is filled immediately after Start.
+        DetachedProcess? detached = null;
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            ctx.Log(e.Data);
+            detached?.Write(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            ctx.Log(JobLogLevel.Warning, e.Data);
+            detached?.Write(e.Data);
+        };
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception)
+        {
+            // NOTHING TO HAND BACK AND NOTHING TO REAP. The writer is closed here rather than left to
+            // the registry, which never learns about a process that failed to start.
+            try { writer?.Dispose(); } catch (Exception) { }
+            process.Dispose();
+            throw;
+        }
+
+        try { process.StandardInput.Close(); }
+        catch (Exception) { /* already gone: the command exited before we got here */ }
+
+        detached = new DetachedProcess(process, writer, outputPath);
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        var target = registry ?? DetachedProcessRegistry.Default;
+        if (!target.Add(detached))
+        {
+            // KILLED, NOT SILENTLY UNREGISTERED. An unregistered detached process is exactly the
+            // orphan the registry exists to prevent, so refusing the cap means refusing the command.
+            detached.Kill();
+            throw new InvalidOperationException(
+                $"already running {DetachedProcessRegistry.MaxConcurrent} background commands — "
+                + "wait for one to finish or kill it before starting another.");
+        }
+
+        return Task.FromResult(detached);
+    }
+
+    /// <summary>Opens the detached output file, or returns nulls when there is nowhere to write —
+    /// which is a supported case for the same reason <see cref="ProcessSpec.SpillDir"/>'s null is.</summary>
+    private static (StreamWriter? Writer, string? Path) TryOpenDetachedOutput(string? dir)
+    {
+        if (dir is null) return (null, null);
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, DetachedOutputName);
+
+            // AUTOFLUSH, UNLIKE THE SPILL WRITER. Nobody is waiting to read a spill until the command
+            // ends; a background command's file is read WHILE it runs, and a buffered writer would
+            // show an agent an empty file for a command that had been printing for a minute.
+            return (new StreamWriter(path, append: false, Encoding.UTF8) { AutoFlush = true }, path);
+        }
+        catch (Exception)
+        {
+            return (null, null);
+        }
     }
 
     private static void TryKillTree(Process process)

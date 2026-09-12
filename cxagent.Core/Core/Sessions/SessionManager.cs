@@ -909,6 +909,13 @@ public sealed class SessionManager : IDisposable
 
         try { Task.WaitAll(pending, TimeSpan.FromSeconds(15)); }
         catch (Exception) { /* a teardown's own failure is logged where it happened. */ }
+
+        // AND KILL WHAT A BACKGROUNDED COMMAND LEFT RUNNING. This is the ONLY reaping a detached
+        // process gets: it has no plugin, so ChildProcessStore — which matches on a plugin name —
+        // never recorded it, and nothing in the OS's process table says which app started it. Last,
+        // after the sessions, because a session's own teardown may still be the thing that finishes
+        // one normally.
+        Execution.DetachedProcessRegistry.Default.ReapAll();
     }
 
     /// <summary>Teardowns Close detached, so Dispose can wait for them. See Close.</summary>
