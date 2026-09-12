@@ -23,6 +23,9 @@ public class AgentDeliveryTests : IDisposable
 
     private SessionManager? _manager;
 
+    /// <summary>The session Wired built, for a test that must read its live busy state.</summary>
+    private Session? _session;
+
     public AgentDeliveryTests() => Directory.CreateDirectory(_dir);
 
     /// <summary>
@@ -63,6 +66,22 @@ public class AgentDeliveryTests : IDisposable
     private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired() =>
         Wired(out _, out _);
 
+    /// <summary>The same wiring over any provider, for a test that needs one which blocks.</summary>
+    private (SessionAgentDelivery Delivery, SubAgentStore Store, string SessionAgentId) WiredOn(
+        ILlmProvider provider)
+    {
+        _manager = SessionManager.Create(new AppPaths(_dir));
+        var session = _manager.Open(_dir, ResolvedConfig.ForTesting(provider),
+            new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
+            AgentMode.Single);
+
+        _session = session;
+        // ONE STORE, HANDED BACK — two would let a test keep a child in an object the delivery never
+        // consults, and the child branch would answer Unknown for a child the test thinks it kept.
+        var store = new SubAgentStore();
+        return (new SessionAgentDelivery(session, store), store, session.SessionId!);
+    }
+
     private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired(
         out MockLlmProvider provider, out string sessionAgentId)
     {
@@ -72,6 +91,7 @@ public class AgentDeliveryTests : IDisposable
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
+        _session = session;
         sessionAgentId = session.SessionId!;
         var store = new SubAgentStore();
         return (new SessionAgentDelivery(session, store), store, Child());
@@ -97,6 +117,44 @@ public class AgentDeliveryTests : IDisposable
             Thread.Sleep(20);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Answers only once the test releases it, so a session stays busy for an exact window.
+    ///
+    /// <para>MockLlmProvider CANNOT DO THIS, AND SHOULD NOT LEARN TO: it answers from a queue
+    /// immediately, which is what every other test wants. A session is busy for exactly as long as it
+    /// is INSIDE the model call, so holding that open needs a provider that does not return —
+    /// SessionPluginClientTests keeps its own for the same reason.</para>
+    /// </summary>
+    private sealed class GatedProvider : ILlmProvider
+    {
+        private readonly TaskCompletionSource _gate =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _gate.TrySetResult();
+
+        public string ProviderId => "gated";
+        public string ModelId => "gated-model";
+        public string DisplayName => "Gated";
+        public bool SupportsToolCalling => false;
+        public bool SupportsStreaming => false;
+
+        public async Task<LlmResponse> ChatAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools, CancellationToken ct)
+        {
+            // A DEADLINE, so a test that forgets to release fails rather than hanging the suite.
+            await _gate.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
+            return new LlmResponse { Text = "released", StopReason = "end_turn" };
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(List<ChatMessage> messages,
+            List<ToolDefinition>? tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var r = await ChatAsync(messages, tools, ct);
+            yield return new LlmStreamChunk(r.Text, null, true);
+        }
     }
 
     /// <summary>A child agent with a context of its own, not kept until a test keeps it.</summary>
@@ -167,10 +225,47 @@ public class AgentDeliveryTests : IDisposable
 
         var outcome = delivery.Tell(sessionAgentId, "the build finished");
 
-        Assert.True(outcome is DeliveryOutcome.Injected or DeliveryOutcome.Woke);
+        // WOKE, NOT MERELY ONE OF THE TWO. The session was idle when this was told to it, so a turn
+        // happened that would not otherwise have — and an assertion accepting either outcome would
+        // survive the two arms being swapped, which is the one thing the wasBusy read exists to get
+        // right. `Injected` is pinned separately, below.
+        Assert.Equal(DeliveryOutcome.Woke, outcome);
         Assert.True(Reached(provider));
         Assert.Contains("the build finished",
             string.Join("\n", provider.LastMessages!.Select(m => m.Content)));
+    }
+
+    /// <summary>
+    /// A BUSY SESSION IS INJECTED INTO, NOT WOKEN — the other arm of the <c>wasBusy</c> read.
+    ///
+    /// <para>WITHOUT THIS THE TWO ARMS COULD BE SWAPPED AND EVERY TEST WOULD STILL PASS. The wake case
+    /// above pins <c>Woke</c>; this pins <c>Injected</c>, and only the pair makes the read that
+    /// distinguishes them load-bearing.</para>
+    ///
+    /// <para>THE SESSION IS HELD BUSY BY ITS OWN PROVIDER, not by a flag a test sets: a turn is
+    /// started and blocked inside the model call, which is what being busy IS. Reading the state some
+    /// other way would prove the outcome against a condition the code does not consult.</para>
+    /// </summary>
+    [Fact]
+    public async Task ABusySession_IsInjected()
+    {
+        var gated = new GatedProvider();
+        var (delivery, _, sessionAgentId) = WiredOn(gated);
+
+        // BUSY IS OBSERVED, NOT ASSUMED. The wake starts a turn on a task nobody here holds, so the
+        // window opens asynchronously — asserting Injected before it opens would read the idle state
+        // and fail for a reason that is not the behaviour under test. The gated provider is what keeps
+        // the window open long enough to be read at all: MockLlmProvider answers instantly, so the
+        // turn it starts is over before any poll can see it.
+        Assert.Equal(DeliveryOutcome.Woke, delivery.Tell(sessionAgentId, "start something"));
+
+        var session = _session!;
+        for (var attempt = 0; attempt < 200 && !session.IsBusy; attempt++) await Task.Delay(20);
+        Assert.True(session.IsBusy, "the wake did not make the session busy");
+
+        Assert.Equal(DeliveryOutcome.Injected, delivery.Tell(sessionAgentId, "and also this"));
+
+        gated.Release();
     }
 
     /// <summary>
