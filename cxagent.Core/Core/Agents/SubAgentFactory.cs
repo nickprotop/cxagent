@@ -121,6 +121,17 @@ public sealed class SubAgentFactory
         public Func<IReadOnlyList<Plugins.PluginInstructions>>? PluginInstructions { get; init; }
 
         /// <summary>
+        /// Where a child's tools reach the CHILD, not its parent.
+        ///
+        /// <para>INHERITED BECAUSE A CHILD IS THE CASE THE PORT EXISTS FOR. A child inherits the whole
+        /// plugin surface, and every plugin client is built once per session against the session's own
+        /// agent — so a plugin tool a child calls woke the parent, with no error anywhere. The port
+        /// resolves by the agent id a tool call carries, and each Agent stamps its own, so passing the
+        /// same instance to every child is what makes each one reachable as itself.</para>
+        /// </summary>
+        public IAgentDelivery? Delivery { get; init; }
+
+        /// <summary>
         /// The session's tool selection (S1 composed with S2), inherited by every child.
         ///
         /// <para>NOT THE TURN'S. This record is built once when the session is wired, so a
@@ -377,6 +388,9 @@ public sealed class SubAgentFactory
             toolSelection: Jobs.ToolSelection.Then(
                 Jobs.ToolSelection.Then(_runtime.ToolSelection, turnTools), type?.Tools),
             policy: _runtime.Policy,
+            // THE SAME PORT THE PARENT GETS, resolving by agent id — so a tool this child calls
+            // reaches THIS child rather than the session's agent. See SubAgentRuntime.Delivery.
+            delivery: _runtime.Delivery,
             // THE SAME CLASSIFIER THE PARENT SPECULATES WITH. Null passes straight through —
             // Agent's own null check is what makes this "never speculate" rather than a crash.
             classifier: _runtime.Classifier);

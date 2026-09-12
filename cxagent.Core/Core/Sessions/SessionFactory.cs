@@ -142,6 +142,19 @@ internal static class SessionFactory
         // provider the session no longer uses.
         var agentTypes = new AgentTypeCatalog(resolution.AgentTypes, resolution.Providers);
 
+        // THE PORT A TOOL USES TO REACH THE AGENT THAT CALLED IT, built once and handed to this
+        // session's own agent and to every child alike — it resolves by the agent id a tool call
+        // carries, so one instance addresses all of them.
+        //
+        // BEFORE THE HOST EXISTS, WHICH IS SAFE BECAUSE NOTHING IS READ YET. It holds the session
+        // rather than its agent, and looks SessionId up per call — so the id the host is about to
+        // mint is the one it compares against, and a re-wire that replaces the agent needs no
+        // rebuilding here.
+        //
+        // THE SESSION'S OWN STORE, the same one the spawner below is given: a child is reachable for
+        // as long as the session keeps it, which outlives the agent that spawned it.
+        var delivery = new SessionAgentDelivery(session, session.SubAgents);
+
         var subAgents = new SubAgentSpawner(new SubAgentFactory(new SubAgentFactory.SubAgentRuntime
         {
             Provider = resolution.Provider!,
@@ -152,6 +165,11 @@ internal static class SessionFactory
             // show the result as its parent, or the showing is silently skipped.
             AgentTools = agentTools,
             DynamicTools = dynamicTools,
+
+            // SO A CHILD'S TOOLS REACH THE CHILD. This is the misdirection the port exists for: a
+            // child inherits every plugin, and a plugin's own client only ever addressed the
+            // session's agent.
+            Delivery = delivery,
 
             // THE SAME LIVE SOURCE THE TOOLS COME FROM. Read per turn, so a plugin loaded at a turn
             // boundary contributes its guidance on the same turn its tools appear, and unwiring
@@ -313,6 +331,10 @@ internal static class SessionFactory
                 AgentTools = agentTools,
                 DynamicTools = dynamicTools,
                 PluginInstructions = session.Plugins.InstructionsForPrompt,
+
+                // The same port every child gets, resolving by agent id — see its own construction
+                // above.
+                Delivery = delivery,
 
                 // THE HOST'S OWN AGENT ONLY, like AskUser above and for the same reason: a child has
                 // no user to type a command. SubAgentRuntime carries no such property at all, so the

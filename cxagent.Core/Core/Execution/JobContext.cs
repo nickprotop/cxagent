@@ -60,6 +60,19 @@ public sealed class JobContext : IJobContext
     /// would. Settable for the same reason <see cref="Requester"/> is.</summary>
     public string? WorkingDirectory { get; set; }
 
+    /// <summary>
+    /// Where to tell the agent that made this call something it should read later.
+    ///
+    /// <para>BESIDE <see cref="Requester"/> AND <see cref="WorkingDirectory"/> BECAUSE IT IS THE SAME
+    /// CATEGORY: a fact about who asked, travelling with the call so an executor does not have to be
+    /// told separately. An executor whose work outlives the call — a process it backgrounded, a watch
+    /// it armed — has an agent id in this context and nothing else to address.</para>
+    ///
+    /// <para>NULL WHEN NOBODY CAN BE TOLD: a headless run, a test, an embedder that wired no session.
+    /// Delivery is best-effort and an executor must treat it as such rather than assume a port.</para>
+    /// </summary>
+    public Agents.IAgentDelivery? Delivery { get; init; }
+
     private string? _decidedBy;
 
     /// <summary>

@@ -161,6 +161,10 @@ public sealed class Agent
     /// </summary>
     private readonly ISubAgentSpawner? _spawner;
 
+    /// <summary>Where this agent's tools can reach the agent that called them, or null when nothing
+    /// wired one — a headless run, a test. See <see cref="IAgentDelivery"/>.</summary>
+    private readonly IAgentDelivery? _delivery;
+
     /// <summary>
     /// Reaching sub-agents this agent already spawned. Null when nothing keeps them.
     ///
@@ -909,6 +913,11 @@ public sealed class Agent
     /// wherever no classifier is reachable (headless runs, most tests) — the agent simply never
     /// speculates, and every gated call falls back to paying its own synchronous cost.
     /// </param>
+    /// <param name="delivery">
+    /// Where a tool this agent calls can send text back to THIS agent, put on every
+    /// <see cref="Execution.JobContext"/> it builds. Null wherever no session wired one, and an
+    /// executor must treat delivery as best-effort rather than assume a port.
+    /// </param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -927,7 +936,8 @@ public sealed class Agent
         Func<IReadOnlyList<(string Name, string Summary)>>? modelFacingCommands = null,
         Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
-        Permissions.ActionClassifier? classifier = null)
+        Permissions.ActionClassifier? classifier = null,
+        IAgentDelivery? delivery = null)
     {
         // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
         // PermissionGatedExecutor. Without it the gate refuses every MCP call for want of a policy —
@@ -973,6 +983,7 @@ public sealed class Agent
             : null;
         _mcp = mcp;
         _spawner = spawner;
+        _delivery = delivery;
         // DERIVED FROM THE SPAWNER, never passed separately: reaching a child is only meaningful for
         // an agent that could have made one, and a spawner keeping nothing yields no reach tools.
         //
@@ -2523,6 +2534,11 @@ public sealed class Agent
             // than the process's. Identical today, because one process runs one session from the
             // directory it was launched in — and silently different the moment that stops holding.
             WorkingDirectory = TryGetWorkingDirectory(),
+
+            // AND HOW TO REACH BACK TO THIS AGENT, so an executor whose work outlives the call has
+            // somewhere to report it. It rides with the call because an agent id alone addresses
+            // nothing.
+            Delivery = _delivery,
         };
 
         // THIS AGENT MARKS ITSELF while one of its calls sits at a prompt. Set on the agent rather

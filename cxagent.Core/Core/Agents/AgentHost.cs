@@ -425,6 +425,16 @@ public sealed class AgentHost : IDisposable
         /// </summary>
         public Permissions.ActionClassifier? Classifier { get; init; }
 
+        /// <summary>
+        /// Where a tool this host's agent calls can send text back to that agent.
+        ///
+        /// <para>THE SAME INSTANCE EVERY CHILD GETS (see <c>SubAgentFactory.SubAgentRuntime.Delivery</c>),
+        /// because the port resolves by the agent id a tool call carries rather than by who holds it.
+        /// Null wherever nothing wired one — a headless host, most tests — and delivery is best-effort
+        /// for exactly that reason.</para>
+        /// </summary>
+        public IAgentDelivery? Delivery { get; init; }
+
         /// <summary>The servers themselves, held only so the session can dispose them.</summary>
         public IReadOnlyList<IAsyncDisposable>? McpServers { get; init; }
 
@@ -696,7 +706,8 @@ public sealed class AgentHost : IDisposable
             modelFacingCommands: _runtime.ModelFacingCommands,
             toolSelection: _runtime.ToolSelection,
             policy: _runtime.Policy,
-            classifier: _runtime.Classifier)
+            classifier: _runtime.Classifier,
+            delivery: _runtime.Delivery)
         {
             // THE STARTING MODE, applied here rather than passed to the constructor: Mode is a
             // settable property precisely so it can change later, and an initialiser says that more

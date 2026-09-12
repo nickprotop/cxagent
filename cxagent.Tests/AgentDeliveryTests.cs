@@ -1,6 +1,9 @@
+using System.Text.Json;
+using CxAgent.Core.Execution;
+using CxAgent.Core.Jobs;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
-using CxAgent.Core.Plugins;
+using CxAgent.Core.Permissions;
 using CxAgent.Core.Storage;
 using Xunit;
 
@@ -50,23 +53,6 @@ public class AgentDeliveryTests : IDisposable
         }
     }
 
-    /// <summary>A client that records what it was told and answers as instructed.</summary>
-    private sealed class FakeClient : IPluginClient
-    {
-        public List<string> Submitted { get; } = [];
-        public bool Accept { get; set; } = true;
-        public bool Busy { get; set; }
-
-        public Task<SubmitResult> Submit(string goal, bool wantResult = false,
-            CancellationToken ct = default)
-        {
-            Submitted.Add(goal);
-            return Task.FromResult(Accept
-                ? new SubmitResult(true, null, null)
-                : new SubmitResult(false, null, "queue is full"));
-        }
-    }
-
     /// <summary>
     /// A delivery over a real session, an empty store, and a child that is not yet kept.
     ///
@@ -78,17 +64,39 @@ public class AgentDeliveryTests : IDisposable
         Wired(out _, out _);
 
     private (SessionAgentDelivery Delivery, SubAgentStore Store, SubAgent Child) Wired(
-        out FakeClient client, out string sessionAgentId)
+        out MockLlmProvider provider, out string sessionAgentId)
     {
         _manager = SessionManager.Create(new AppPaths(_dir));
-        var session = _manager.Open(_dir, ResolvedConfig.ForTesting(new MockLlmProvider()),
+        provider = new MockLlmProvider();
+        var session = _manager.Open(_dir, ResolvedConfig.ForTesting(provider),
             new SessionPorts { Observer = new BufferedChatSink(), ToolObserver = new BufferedJobPanel() },
             AgentMode.Single);
 
-        client = new FakeClient();
         sessionAgentId = session.SessionId!;
         var store = new SubAgentStore();
-        return (new SessionAgentDelivery(session, store, client), store, Child());
+        return (new SessionAgentDelivery(session, store), store, Child());
+    }
+
+    /// <summary>
+    /// Waits for the session's provider to be asked for a completion, which is what a started turn
+    /// does first.
+    ///
+    /// <para>POLLED RATHER THAN AWAITED, because the behaviour under test is that nothing is awaited:
+    /// a wake starts a turn nobody holds a handle to, precisely so a caller inside a <c>finally</c>
+    /// cannot be made to block on it. There is therefore no Task for a test to await either, and the
+    /// only honest observation is that the round trip happened.</para>
+    ///
+    /// <para>ANSWERS RATHER THAN ASSERTS, so a caller proving the NEGATIVE — an empty message starts
+    /// no turn — uses the same wait and reads false from it.</para>
+    /// </summary>
+    private static bool Reached(MockLlmProvider provider)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (provider.ChatCallCount > 0) return true;
+            Thread.Sleep(20);
+        }
+        return false;
     }
 
     /// <summary>A child agent with a context of its own, not kept until a test keeps it.</summary>
@@ -141,49 +149,133 @@ public class AgentDeliveryTests : IDisposable
     }
 
     /// <summary>
-    /// THE SESSION AGENT GOES THROUGH THE CLIENT, whichever state it is in. The client already decides
-    /// between joining the running turn and starting a new one, and it is the only path that carries
-    /// the plugin originator the sever check depends on.
+    /// THE SESSION AGENT GOES THROUGH <c>Session.Submit</c>, whichever state it is in. Submit already
+    /// decides between joining the running turn and starting a new one, and it is the method that
+    /// owns the originator <c>UnwirePluginAsync</c>'s sever check reads — reaching past it to
+    /// <c>Steer</c> would let a delivery inherit the running turn's.
+    ///
+    /// <para>PROVED BY THE PROVIDER BEING ASKED, and by what it was asked. An idle session is woken,
+    /// so a round trip happens that would not otherwise, and the delivered text is in the messages
+    /// that went with it — which together say the branch was reached AND carried the text, where an
+    /// outcome alone would be satisfied by a method that returned <c>Woke</c> and did nothing.</para>
     /// </summary>
     [Fact]
-    public void TheSessionAgent_GoesThroughTheClient()
+    public void TheSessionAgent_GoesThroughSubmit()
     {
-        var (delivery, _, _) = Wired(out var client, out var sessionAgentId);
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+        provider.EnqueueResponse(new LlmResponse { Text = "noted", StopReason = "end_turn" });
 
         var outcome = delivery.Tell(sessionAgentId, "the build finished");
 
-        Assert.Equal(["the build finished"], client.Submitted);
         Assert.True(outcome is DeliveryOutcome.Injected or DeliveryOutcome.Woke);
-    }
-
-    /// <summary>A full queue is the only refusal, and it is reported rather than swallowed.</summary>
-    [Fact]
-    public void ARefusedSubmit_IsReported()
-    {
-        var (delivery, _, _) = Wired(out var client, out var sessionAgentId);
-        client.Accept = false;
-
-        Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(sessionAgentId, "the build finished"));
+        Assert.True(Reached(provider));
+        Assert.Contains("the build finished",
+            string.Join("\n", provider.LastMessages!.Select(m => m.Content)));
     }
 
     /// <summary>
-    /// AN EMPTY MESSAGE IS REFUSED BEFORE ANYTHING IS ADDRESSED, and nothing is submitted for it.
+    /// A DELIVERY THAT STARTED NO TURN IS REPORTED AS REFUSED rather than reported as delivered.
     ///
-    /// <para>MATCHING <c>SessionPluginClient</c>, which answers "a goal was empty — nothing was
-    /// submitted" rather than starting a turn with no content. A blank arrival would reach a model as
-    /// a user message saying nothing, which costs a turn to read and answers no question.</para>
+    /// <para>TEXT BEGINNING WITH A SLASH IS THE REACHABLE CASE. <c>Session.Submit</c> runs it as a
+    /// command and starts nothing, so nothing was put where the agent will read it — and telling a
+    /// caller its message landed when no agent will ever see it is the failure this pins.</para>
     ///
-    /// <para>ASSERTED ON THE CLIENT TOO, not only the outcome: the refusal has to happen before the
-    /// submit, or an empty turn is started and merely reported as refused.</para>
+    /// <para>NO FULL-QUEUE REFUSAL IS ASSERTED ON THIS BRANCH because none exists on it: the port
+    /// reaches <c>Session.Submit</c>, which steers into a running turn rather than into a bounded
+    /// queue, so nothing here can be filled. A sub-agent'''s mailbox does refuse when full, and the
+    /// child branch is where <see cref="DeliveryOutcome.Refused"/> is reachable that way.</para>
+    /// </summary>
+    [Fact]
+    public void ADeliveryThatRanAsACommand_IsReported()
+    {
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
+
+        Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(sessionAgentId, "/clear"));
+        Assert.Equal(0, provider.ChatCallCount);
+    }
+
+    /// <summary>
+    /// AN EMPTY MESSAGE IS REFUSED BEFORE ANYTHING IS ADDRESSED, and no turn is started for it.
+    ///
+    /// <para>A blank arrival would reach a model as a user message saying nothing, which costs a turn
+    /// to read and answers no question.</para>
+    ///
+    /// <para>ASSERTED ON THE PROVIDER TOO, not only the outcome: the refusal has to happen before the
+    /// submit, or an empty turn is started and merely reported as refused. <c>Reached</c> is given
+    /// the chance to see a round trip and must not — an outcome-only assertion would pass against a
+    /// port that woke the model first and returned Refused afterwards.</para>
     /// </summary>
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void AnEmptyMessage_IsRefusedAndNothingIsSubmitted(string text)
     {
-        var (delivery, _, _) = Wired(out var client, out var sessionAgentId);
+        var (delivery, _, _) = Wired(out var provider, out var sessionAgentId);
 
         Assert.Equal(DeliveryOutcome.Refused, delivery.Tell(sessionAgentId, text));
-        Assert.Empty(client.Submitted);
+        Assert.False(Reached(provider));
+    }
+
+    /// <summary>
+    /// A tool that hands its context to a callback and answers trivially.
+    ///
+    /// <para>THE CALLBACK TAKES THE CONCRETE <see cref="JobContext"/>, because that is where
+    /// <c>Delivery</c> lives: <see cref="IJobContext"/> ships in CxAgent.Plugins.Abstractions, a
+    /// package with no reference to Core at all, so a Core type cannot appear on it without changing
+    /// the published plugin contract. An in-process executor casts, exactly as this does.</para>
+    /// </summary>
+    private sealed class RecordingTool(Action<JobContext> seen) : CxAgent.Core.Jobs.IAgentTool
+    {
+        public const string Name = "record_context";
+
+        public ToolDefinition Definition { get; } = new(Name, "records the context it was called with",
+            JsonSerializer.SerializeToElement(new { type = "object", properties = new { } }));
+
+        public PermissionRequest? Gate(JobParameters call) => null;
+
+        public Task<JobResult> ExecuteAsync(JobParameters call, IJobContext context,
+            CancellationToken ct)
+        {
+            seen((JobContext)context);
+            return Task.FromResult(new JobResult { Success = true, Output = { ["content"] = "ok" } });
+        }
+    }
+
+    /// <summary>A port that accepts anything, so a test can assert on identity rather than effect.</summary>
+    private sealed class FakeDelivery : IAgentDelivery
+    {
+        public DeliveryOutcome Tell(string agentId, string text) => DeliveryOutcome.Woke;
+    }
+
+    /// <summary>
+    /// A TOOL CALL CARRIES THE PORT, which is the only way an executor can reach back to the agent
+    /// that called it: a JobContext holds an agent id, and an id alone addresses nothing.
+    ///
+    /// <para>ASSERTED ON THE CONTEXT A REAL TURN BUILDS, not on a hand-made one — the defect this
+    /// guards is the wiring being absent, and a context constructed by the test would carry whatever
+    /// the test put in it.</para>
+    /// </summary>
+    [Fact]
+    public async Task AToolCall_CarriesTheDeliveryPort()
+    {
+        IAgentDelivery? seen = null;
+        var tool = new RecordingTool(ctx => seen = ctx.Delivery);
+        var delivery = new FakeDelivery();
+
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "c1", Name = RecordingTool.Name, Arguments = default }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, CxAgent.Core.Jobs.JobRegistry.CreateWithBuiltins(),
+            new TokenLedger(), new BufferedChatSink(), new BufferedJobPanel(), logs: null,
+            maxTurns: 5, agentTools: [tool], delivery: delivery);
+
+        await agent.SendAsync("call the tool", CancellationToken.None);
+
+        Assert.Same(delivery, seen);
     }
 }
