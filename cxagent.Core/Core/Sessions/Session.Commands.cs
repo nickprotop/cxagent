@@ -290,7 +290,16 @@ public sealed partial class Session
             return CommandStatus.Reported;
         }
 
-        Say(new Message($"asking '{name}'…", Severity.Info));
+        // WHAT IS ACTUALLY HAPPENING, WHICH DEPENDS ON WHETHER IT IS WORKING. An idle agent is being
+        // asked and will answer here; a busy one is being told something it will read on its next
+        // turn lap, and "asking…" over that reads as a question whose answer never arrives. Read
+        // before the send rather than after: by the time the send returns the state has changed, and
+        // this line has to be on screen the moment the user presses enter.
+        Say(new Message(
+            SubAgents.IsBusy(name)
+                ? $"telling '{name}' — it is mid-task and will read this on its next turn…"
+                : $"asking '{name}'…",
+            Severity.Info));
 
         _ = Task.Run(async () =>
         {

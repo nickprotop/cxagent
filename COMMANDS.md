@@ -332,9 +332,14 @@ rediscovering the same ground. The handle comes from `/agents list` or from the 
 result, and it completes in the palette, so nothing has to be retyped from a listing.
 
 The model has the same reach through the `agent_send` tool; this is the same door for a user who can
-see what the model has not noticed. One difference worth knowing: a child that is still working
-**refuses** a `/agents send` and tells you to try once it answers, where the tool queues the message
-for the child's next turn.
+see what the model has not noticed, and it behaves the same way.
+
+**A WORKING CHILD IS TOLD, NOT REFUSED.** Send to one that is mid-task and the message goes to its
+mailbox, which it drains at the top of its next turn — so the reply confirms delivery rather than
+answering, and the child reads what you said on the next lap. Telling it the moment you know beats
+telling it after it has finished working on the wrong thing, which is the entire reason a running
+child can be reached at all. `/agents list` marks a busy one so you can see what your message will
+queue behind.
 
 ## `/init`
 

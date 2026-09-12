@@ -61,11 +61,15 @@ public sealed class SpawnedAgentsCommand(SubAgentStore store)
         if (store.Find(name) is null)
             return $"no sub-agent named '{name}' in this session. `/agents list` to see them.";
 
-        // REFUSED RATHER THAN QUEUED, matching agent_send: one turn at a time on an agent's context,
-        // and a user told "busy" can wait, where a user told nothing cannot.
-        if (store.IsBusy(name))
-            return $"'{name}' is busy with another request. Try again once it answers.";
-
+        // A BUSY AGENT IS SENT TO, NOT REFUSED. The message goes to its mailbox and is injected at
+        // the top of its next turn lap, which is the whole reason the mailbox exists — telling a
+        // running child something the moment you know it is worth more than telling it after it has
+        // finished working on the wrong thing. Refusing here made the user the only caller that
+        // could not do what agent_send does, and "try again once it answers" asks them to poll for a
+        // state the tool never made them wait on.
+        //
+        // NOT A REFUSAL PATH AT ALL, so nothing is returned: AgentReachTools decides between
+        // answering and confirming delivery from the claim it takes, and it reports which happened.
         return null;
     }
 }
