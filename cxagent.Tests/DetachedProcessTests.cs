@@ -229,13 +229,22 @@ public class DetachedProcessTests
     public void AThrowingExitHandlerNeitherEndsTheProcessNorSkipsTheOthers()
     {
         using var fixture = NewRegistry();
-        var owned = fixture.Detach("exit 0");
+
+        // A COMMAND SLOW ENOUGH TO SUBSCRIBE TO. `exit 0` finishes in milliseconds, so under a loaded
+        // machine it can exit BEFORE the two handlers below are attached — and Exited is raised once
+        // and never replayed, so they would simply never run and this would fail claiming the guard
+        // was broken. The sleep is not a delay for its own sake: it is the window the subscription
+        // needs, and the same reason production pairs every subscription here with a Finished check.
+        var owned = fixture.Detach("sleep 0.4");
 
         var reachedAfterTheThrower = false;
         owned.Exited += _ => throw new InvalidOperationException("a subscriber's own failure");
         owned.Exited += _ => reachedAfterTheThrower = true;
 
-        // The registry's own subscription already ran at Add; this waits for the exit to land.
+        // AND IF IT BEAT US ANYWAY, the test has proved nothing — say so rather than assert on
+        // handlers that were never invited to run.
+        Assert.False(owned.Finished, "the command exited before the handlers were attached");
+
         for (var i = 0; i < 200 && !owned.Finished; i++) Thread.Sleep(25);
 
         Assert.True(owned.Finished);

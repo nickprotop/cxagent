@@ -332,9 +332,21 @@ public class AbiPluginLoaderTests
             // no reply. Polling FakeClient's own list is the only channel available, matching
             // AbiPluginHostTests.FreeIsCalledExactlyOnce's own reasoning for why a separate process's
             // side effect is observed by reading something back rather than awaiting a call.
-            var deadline = DateTime.UtcNow.AddSeconds(5);
+            // THIRTY SECONDS FOR A 200ms LOOP, which is not generosity about the loop: what is being
+            // waited on is a SEPARATE PROCESS starting, JITting and reaching its first poll, and this
+            // suite runs sixteen-way parallel over a cold Release build during a release. Five seconds
+            // was ample for the loop and not for the launch, and the failure it produced —
+            // Assert.Single on an empty list — reads as "the submit never arrived" rather than "the
+            // host had not started yet". A deadline this far out only lengthens a genuine failure.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
             while (client.Submits.Count == 0 && DateTime.UtcNow < deadline)
                 await Task.Delay(50);
+
+            // SAID PLAINLY WHEN IT IS THE WAIT THAT FAILED, so a future reader is not left deciding
+            // between a broken poll loop and a slow machine from an empty-collection message.
+            Assert.True(client.Submits.Count > 0,
+                "the plugin host produced no submit within 30s — it never started, or its poll loop "
+                + "is not running; an empty list here is not evidence about the submit itself.");
 
             var submit = Assert.Single(client.Submits);
             Assert.Equal("run the tests", submit.Goal);

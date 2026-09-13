@@ -68,8 +68,17 @@ public class InjectedMessageTests : IDisposable
         using var _1 = manager;
 
         session.Inject("[cxagent] exited 0");
-        if (session.Submit("first") is Session.SubmitOutcome.Started a) await a.Turn;
-        if (session.Submit("second") is Session.SubmitOutcome.Started b) await b.Turn;
+
+        // ASSERTED, NOT PATTERN-MATCHED PAST. `if (Submit(...) is Started s) await s.Turn` silently
+        // awaits NOTHING when the outcome is anything else — and the second Submit can legitimately
+        // come back Queued when the first turn has not finished settling. The assertion below then
+        // reads LastMessages from a turn still in flight and fails claiming the injection was
+        // delivered twice, which is the opposite of what went wrong.
+        var first = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("first"));
+        await first.Turn;
+
+        var second = Assert.IsType<Session.SubmitOutcome.Started>(session.Submit("second"));
+        await second.Turn;
 
         Assert.DoesNotContain("[cxagent] exited 0",
             llm.LastMessages!.Last(m => m.Role == "user").Content);
