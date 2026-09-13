@@ -359,11 +359,18 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// </summary>
     /// <returns>True when an agent will be told the exit; false when there is nobody to tell, which
     /// the caller MUST say plainly rather than repeat a promise of a report nothing will keep.</returns>
-    private static bool ArrangeTheReport(DetachedProcess detached, string command,
+    private bool ArrangeTheReport(DetachedProcess detached, string command,
         IJobContext context, DateTimeOffset start)
     {
         var jc = context as JobContext;
-        if (jc?.Delivery is not { } delivery || jc.AgentId is not { } agentId) return false;
+        // "unknown" RATHER THAN SKIPPING THE DESCRIPTION when there is no delivery port or no
+        // AgentId. A row that cannot say who owns it is still worth listing in job_list, and an
+        // owner-less job is one the kill rule already handles: only the session may stop it.
+        var agentId = jc?.AgentId ?? "unknown";
+        _bg.Registry?.Describe(detached,
+            new BackgroundJob(detached.Pid, agentId, command, start, detached.OutputPath));
+
+        if (jc?.Delivery is not { } delivery || jc.AgentId is null) return false;
 
         // ONCE, WHICHEVER PATH GETS THERE FIRST, and both can. The subscription below is the
         // ordinary route; the by-hand check after it covers a command that finished BEFORE the
@@ -382,7 +389,8 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // outside it, so a subscription landing between them is reached by both. Interlocked makes
         // the first one win and the second a no-op — an agent told twice that a command finished
         // reports it twice, and a model reading two reports has no way to know it was one command.
-        var report = new BackgroundReport(delivery, agentId, command, start, detached.OutputPath);
+        var report = new BackgroundReport(delivery,
+            new BackgroundJob(detached.Pid, jc.AgentId, command, start, detached.OutputPath));
         var reported = 0;
         void ReportOnce(int code)
         {
@@ -399,19 +407,17 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     /// <summary>
     /// Everything needed to tell one agent about one finished background command.
     ///
-    /// <para>A RECORD BECAUSE THE PIECES ARE ONE THING and there were six of them as parameters —
-    /// three of which are strings. <c>AgentId</c>, <c>Command</c> and <c>OutputPath</c> are all
-    /// <c>string</c>, so transposing any two compiles cleanly and delivers a command line to an agent
-    /// named after a file path. Named members make that a build error.</para>
+    /// <para>THE <see cref="BackgroundJob"/> ITSELF, NOT A SECOND COPY OF ITS FIELDS. Four of its
+    /// facts are the same four this report used to carry as its own members — three of them strings
+    /// — so transposing any two compiled cleanly and delivered a command line to an agent named after
+    /// a file path. Holding the one record the registry also holds does not just avoid repeating that
+    /// hazard: it means the exit report and <c>job_list</c> read the same description and cannot
+    /// disagree about what the command was called.</para>
     /// </summary>
     /// <param name="Delivery">Where to say it.</param>
-    /// <param name="AgentId">Who to say it to — the id the command's own tool call carried.</param>
-    /// <param name="Command">The command line, quoted back because the message may be read in a
-    /// context that no longer holds why it was started.</param>
-    /// <param name="Started">When it was launched, for the elapsed time.</param>
-    /// <param name="OutputPath">Where its output went, or null when there was nowhere to write.</param>
-    private sealed record BackgroundReport(Agents.IAgentDelivery Delivery, string AgentId,
-        string Command, DateTimeOffset Started, string? OutputPath);
+    /// <param name="Job">Who started it, what it was, when, and where its output went — the same
+    /// description the registry lists it under.</param>
+    private sealed record BackgroundReport(Agents.IAgentDelivery Delivery, BackgroundJob Job);
 
     /// <summary>
     /// Tells the agent that started the command how it ended.
@@ -434,13 +440,13 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
     {
         try
         {
-            var elapsed = DateTimeOffset.UtcNow - report.Started;
-            var text = $"The background command `{report.Command}` finished with exit code "
+            var elapsed = DateTimeOffset.UtcNow - report.Job.Started;
+            var text = $"The background command `{report.Job.Command}` finished with exit code "
                      + $"{exitCode} after {Describe(elapsed)}.";
-            if (report.OutputPath is not null)
-                text += $" Its output is in {report.OutputPath} — read it with read_file.";
+            if (report.Job.OutputPath is not null)
+                text += $" Its output is in {report.Job.OutputPath} — read it with read_file.";
 
-            report.Delivery.Tell(report.AgentId, text);
+            report.Delivery.Tell(report.Job.AgentId, text);
         }
         catch (Exception)
         {

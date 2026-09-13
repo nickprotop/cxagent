@@ -208,6 +208,26 @@ public class ShellJobExecutorTests
         Assert.False(LiveProcess(pid), "shellDetachOnTimeout false must leave no process behind");
     }
 
+    /// <summary>
+    /// A BACKGROUNDED COMMAND IS DESCRIBED IN THE REGISTRY, not only reported to the agent that
+    /// started it — <c>job_list</c> reads this same entry, so a command backgrounded and never
+    /// listed would be invisible to everyone but the one agent waiting on its exit.
+    /// </summary>
+    [Fact]
+    public async Task ABackgroundedCommandIsListedWithItsCommandLine()
+    {
+        using var fx = new BackgroundFixture();
+
+        await fx.Executor.ExecuteAsync(
+            P(("command", "sleep 5"), (ShellArguments.Background, true)),
+            fx.Context, CancellationToken.None);
+
+        var live = Assert.Single(fx.Registry.Live);
+        Assert.Equal("sleep 5", live.Job?.Command);
+        Assert.Equal("agent-bg", live.Job?.AgentId);   // the context's own id reached the entry
+        Assert.NotNull(live.Job?.OutputPath);
+    }
+
     /// <summary>Whether a pid is a live process — see ProcessRunnerTests.ProcessExists for why this is
     /// HasExited and never a pgrep on a pattern.</summary>
     private static bool LiveProcess(int pid)
