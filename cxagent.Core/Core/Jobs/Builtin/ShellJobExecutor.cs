@@ -367,7 +367,14 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // AgentId. A row that cannot say who owns it is still worth listing in job_list, and an
         // owner-less job is one the kill rule already handles: only the session may stop it.
         var agentId = jc?.AgentId ?? "unknown";
-        _bg.Registry?.Describe(detached,
+
+        // THE SAME FALLBACK ProcessRunner APPLIES, and it has to be: `Registry` is null on every
+        // production path — SessionFactory builds ShellBackgrounding with DetachOnTimeout and Children
+        // and never a registry — so DetachAsync registered this process in Default. Describing through
+        // `_bg.Registry?.` instead would skip silently on exactly those paths, and every real row
+        // would read "unowned · (unknown — started outside the shell tool)" for a command this
+        // executor had just started.
+        (_bg.Registry ?? Execution.DetachedProcessRegistry.Default).Describe(detached,
             new BackgroundJob(detached.Pid, agentId, command, start, detached.OutputPath));
 
         if (jc?.Delivery is not { } delivery || jc.AgentId is null) return false;

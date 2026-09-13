@@ -492,4 +492,37 @@ public class ShellJobExecutorTests
         var timeout = Assert.Single(schema.Params, p => p.Name == "timeout_seconds");
         Assert.Contains("background", timeout.Description!, StringComparison.OrdinalIgnoreCase);
     }
+    /// <summary>
+    /// THE DEFECT THIS CATCHES SHIPPED AND WAS FOUND BY A LIVE DRIVE, not by the suite. Every test in
+    /// this file injects a registry, so `_bg.Registry` is non-null here and the description lands. On
+    /// EVERY production path it is null — SessionFactory builds ShellBackgrounding with DetachOnTimeout
+    /// and Children and never a registry — so a `_bg.Registry?.Describe(...)` skipped silently while
+    /// DetachAsync registered the process in Default. `/jobs` then listed real commands as
+    /// "unowned · (unknown — started outside the shell tool)".
+    ///
+    /// ASSERTED ON THE SOURCE BECAUSE THE SHARED DEFAULT CANNOT BE ASSERTED ON HERE. This class runs
+    /// in parallel, and a test that backgrounded through Default would see sibling tests' jobs and
+    /// leak its own into theirs. What is actually wrong in the failing version is the null-conditional,
+    /// so that is what this pins: the describe must resolve the same fallback ProcessRunner does.
+    /// </summary>
+    [Fact]
+    public void DescribingAJobUsesTheRegistryTheProcessWasActuallyRegisteredIn()
+    {
+        var source = File.ReadAllText(Path.Combine(RepoRoot(),
+            "cxagent.Core", "Core", "Jobs", "Builtin", "ShellJobExecutor.cs"));
+
+        Assert.DoesNotContain("_bg.Registry?.Describe", source);
+        Assert.Contains("_bg.Registry ?? Execution.DetachedProcessRegistry.Default", source);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "cxagent.Core")))
+            dir = Path.GetDirectoryName(dir);
+
+        return dir ?? throw new DirectoryNotFoundException(
+            "repository root not found from " + AppContext.BaseDirectory);
+    }
+
 }
