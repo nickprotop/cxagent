@@ -68,6 +68,13 @@ public static class Tool
     /// <summary>See which sub-agents this session has spawned. Gated exactly as <see cref="AgentSend"/>.</summary>
     public const string AgentList = "agent_list";
 
+    /// <summary>See every background command still running, not only this agent's own — the registry
+    /// backing it is process-wide, and hiding a job that is still killable by pid is no boundary at all.</summary>
+    public const string JobList = "job_list";
+
+    /// <summary>Stop a background command. The session may stop any job; a sub-agent only its own.</summary>
+    public const string JobKill = "job_kill";
+
     public const string TodoWrite = "todowrite";
 
     /// <summary>Ask the user. Never available to a sub-agent, whatever a selection says.</summary>
