@@ -348,6 +348,28 @@ public sealed class DetachedProcess : IDisposable
 }
 
 /// <summary>
+/// What a background command IS, as against the process running it.
+///
+/// <para>SEPARATE FROM <see cref="DetachedProcess"/> BECAUSE THAT IS A PROCESS WRAPPER. It knows a
+/// pid, a stream and an exit code; an agent id is a concept from three layers up, and putting it
+/// there would make every caller that starts a process reason about who owns it.</para>
+///
+/// <para>ONE RECORD FOR BOTH READERS. The exit report and the listing need the same four facts about
+/// the same command, and two copies could disagree about what it was called — which is exactly what
+/// naming them together prevents.</para>
+/// </summary>
+/// <param name="Pid">The process, for a caller that has only the description.</param>
+/// <param name="AgentId">Who started it, and so who may stop it.</param>
+/// <param name="Command">The command line, quoted back because a row may be read long after.</param>
+/// <param name="Started">When it launched, for the elapsed time a row shows.</param>
+/// <param name="OutputPath">Where its output goes, or null when there was nowhere to write.</param>
+public sealed record BackgroundJob(int Pid, string AgentId, string Command,
+    DateTimeOffset Started, string? OutputPath);
+
+/// <summary>A live detached process and what it was started to do.</summary>
+public sealed record LiveJob(DetachedProcess Process, BackgroundJob? Job);
+
+/// <summary>
 /// Every detached process this app started, and the one thing that kills them all.
 ///
 /// <para>WHY IT EXISTS AT ALL: a detached child has no plugin, so
@@ -374,7 +396,7 @@ public sealed class DetachedProcessRegistry
     public static DetachedProcessRegistry Default { get; } = new();
 
     private readonly object _gate = new();
-    private readonly List<DetachedProcess> _live = [];
+    private readonly List<LiveJob> _live = [];
 
     /// <summary>
     /// How many detached processes may run at once, after which <see cref="Add"/> refuses.
@@ -386,8 +408,9 @@ public sealed class DetachedProcessRegistry
     /// </summary>
     public const int MaxConcurrent = 16;
 
-    /// <summary>The ones still running, for a caller that lists background work.</summary>
-    public IReadOnlyList<DetachedProcess> Live
+    /// <summary>The ones still running, each paired with what it was started to do — <c>null</c> when
+    /// nothing has called <see cref="Describe"/> for it, for a caller that lists background work.</summary>
+    public IReadOnlyList<LiveJob> Live
     {
         get { lock (_gate) return [.. _live]; }
     }
@@ -396,25 +419,54 @@ public sealed class DetachedProcessRegistry
     /// Records a detached process and drops it again when it exits, so the list is the LIVE set
     /// rather than a log. Returns false when <see cref="MaxConcurrent"/> is already reached, and the
     /// caller must then kill what it was about to hand over.
+    ///
+    /// <para>TAKES NO DESCRIPTION. <see cref="ProcessRunner.DetachAsync"/> is the only caller and
+    /// holds a <see cref="ProcessSpec"/>, not an agent id — the execution layer does not know about
+    /// agents and should not start. An entry added here reads as <c>Job: null</c> until
+    /// <see cref="Describe"/> annotates it, which is the honest state for a process the app started
+    /// without going through the shell tool.</para>
     /// </summary>
     public bool Add(DetachedProcess detached)
     {
         lock (_gate)
         {
             if (_live.Count >= MaxConcurrent) return false;
-            _live.Add(detached);
+            _live.Add(new LiveJob(detached, null));
         }
 
         // SELF-REMOVING, so a long session's registry does not grow one dead entry per command and
         // so the MaxConcurrent bound counts what is running rather than what ever ran. Subscribing
         // after the Add above means an exit racing this line still finds itself in the list.
-        detached.Exited += _ => { lock (_gate) _live.Remove(detached); };
+        // MATCHED ON THE DetachedProcess REFERENCE, not the LiveJob, so a later Describe swapping the
+        // entry's Job in does not orphan this subscription's removal.
+        detached.Exited += _ => { lock (_gate) _live.RemoveAll(j => j.Process == detached); };
 
         // AND AGAIN BY HAND for the process that exited while it was being registered: the
         // constructor may already have raised Exited before this subscription existed.
-        if (detached.Finished) { lock (_gate) _live.Remove(detached); }
+        if (detached.Finished) { lock (_gate) _live.RemoveAll(j => j.Process == detached); }
 
         return true;
+    }
+
+    /// <summary>
+    /// Attaches what a background command IS to an entry <see cref="Add"/> already made, so
+    /// <see cref="Live"/> can describe it rather than merely list its pid.
+    ///
+    /// <para>A SEPARATE CALL RATHER THAN AN Add ARGUMENT — see <see cref="Add"/>'s own comment for
+    /// why the executor, not the runner, is the one that can supply <paramref name="job"/>.</para>
+    ///
+    /// <para>A NO-OP WHEN THE PROCESS IS NOT FOUND. A command short enough to finish and be pruned
+    /// between <c>DetachAsync</c> returning and its caller annotating the entry is not an error —
+    /// there is nothing left to label, and the exit report the caller is about to build from
+    /// <paramref name="job"/> stands on its own regardless.</para>
+    /// </summary>
+    public void Describe(DetachedProcess detached, BackgroundJob job)
+    {
+        lock (_gate)
+        {
+            var index = _live.FindIndex(j => j.Process == detached);
+            if (index >= 0) _live[index] = _live[index] with { Job = job };
+        }
     }
 
     /// <summary>
@@ -425,12 +477,12 @@ public sealed class DetachedProcessRegistry
     /// </summary>
     public void ReapAll()
     {
-        DetachedProcess[] doomed;
+        LiveJob[] doomed;
         lock (_gate) doomed = [.. _live];
 
         // ITERATED OVER A COPY, because each Kill raises Exited, which removes the entry under the
         // same lock — mutating the list being walked.
-        foreach (var process in doomed) process.Kill();
+        foreach (var job in doomed) job.Process.Kill();
 
         lock (_gate) _live.Clear();
     }

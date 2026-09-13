@@ -87,6 +87,26 @@ public class DetachedProcessTests
         Assert.Equal(9, exited.Task.Result);
     }
 
+    /// <summary>
+    /// A LIVE JOB CARRIES WHAT WAS STARTED, once something has told the registry.
+    ///
+    /// <para>Add alone leaves the entry's Job null — see <see cref="DetachedProcessRegistry.Add"/>'s
+    /// own comment for why the runner cannot supply it. Describe is the annotation step, matched on
+    /// the DetachedProcess this fixture already holds.</para>
+    /// </summary>
+    [Fact]
+    public void ALiveJobCarriesWhatWasStarted()
+    {
+        using var fixture = NewRegistry();          // existing helper: Fixture, own registry + spill dir
+        var owned = fixture.Detach("sleep 5");      // DetachAsync registers it already
+        fixture.Registry.Describe(owned, new BackgroundJob(owned.Pid, "AGENT1", "sleep 5",
+            DateTimeOffset.UtcNow, "/tmp/out.log"));
+
+        var live = Assert.Single(fixture.Registry.Live);
+        Assert.Equal("sleep 5", live.Job?.Command);
+        Assert.Equal("AGENT1", live.Job?.AgentId);
+    }
+
     /// <summary>Killing a detached process stops it and is safe to call twice.</summary>
     [Fact]
     public void ADetachedProcess_CanBeKilled_Idempotently()

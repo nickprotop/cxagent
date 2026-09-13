@@ -106,7 +106,7 @@ public class ProcessRunnerTests
 
             // AND THE REGISTRY HOLDS IT, which is what makes it reapable at shutdown. A handover that
             // registered nothing would leave exactly the orphan this feature risks introducing.
-            Assert.Contains(result.Detached, registry.Live);
+            Assert.Contains(result.Detached, registry.Live.Select(j => j.Process));
         }
         finally { registry.ReapAll(); }
     }
