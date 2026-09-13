@@ -77,6 +77,7 @@ public class NoProviderCommandTests
     [InlineData("/mcp")]
     [InlineData("/skills")]
     [InlineData("/agents")]
+    [InlineData("/jobs")]        // the process-wide registry, not the model
     [InlineData("/diff")]        // git, not the model
     [InlineData("/clear")]
     [InlineData("/trust")]       // the folder's classification, and the store is on disk
@@ -102,13 +103,13 @@ public class NoProviderCommandTests
     [Fact]
     public void EveryShippedCommandIsClassified()
     {
-        // A FOURTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
+        // A SIXTEENTH COMMAND MUST NOT DEFAULT TO BLOCKED. Match returns null for anything it does
         // not know, which reads as "not a command" — so a command added to the table but forgotten in
         // TheseRunWithNoModel silently becomes unavailable without a model. This fails when the
         // counts diverge.
         var commands = SessionCommands.All;
 
-        Assert.Equal(14, commands.Count);
+        Assert.Equal(15, commands.Count);
         Assert.All(commands, c => Assert.NotNull(SessionCommands.Match(c.Name)));
     }
 

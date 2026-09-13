@@ -1,6 +1,7 @@
 using CxAgent.Core.Commands;
 using CxAgent.Core.Llm;
 using CxAgent.Core.Jobs;
+using CxAgent.Core.Execution;
 using CxAgent.Core.Storage;
 
 namespace CxAgent.Core.Sessions;
@@ -266,6 +267,45 @@ public sealed partial class Session
     public CommandStatus ListSpawnedAgents()
     {
         Say(new Commands.SpawnedAgentsCommand(SubAgents).Render());
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
+    /// Lists every background command running right now, across every agent — the same rows
+    /// <c>job_list</c> answers, through the same process-wide registry.
+    ///
+    /// <para>NOT PER-SESSION. A job started by another tab is still killable by pid, so hiding its row
+    /// here would draw a boundary that does not actually stop anything — see
+    /// <see cref="Jobs.BackgroundJobTools"/> for the same reasoning on the model's side.</para>
+    /// </summary>
+    public CommandStatus ListBackgroundJobs()
+    {
+        Say(new Commands.JobsCommand(DetachedProcessRegistry.Default, SessionId ?? "")
+            .Render());
+        return CommandStatus.Reported;
+    }
+
+    /// <summary>
+    /// Stops one background command by pid, typed rather than called as <c>job_kill</c>.
+    ///
+    /// <para>NO OWNERSHIP CHECK HERE, unlike <see cref="Jobs.BackgroundJobTools"/>'s kill rule. This
+    /// command IS the session typing directly — there is no sub-agent identity to weigh it against,
+    /// so the only questions are whether the pid parses and whether it is still running.</para>
+    /// </summary>
+    public CommandStatus KillBackgroundJob(string arguments)
+    {
+        // THE VERB'S OWN WORD, STRIPPED. RegisterVerb hands the handler everything typed including
+        // "kill" itself — the same shape /agents send strips before reading a name.
+        var pidText = (arguments.Split(' ', 2) is [_, var rest] ? rest : "").Trim();
+        if (pidText.Length == 0)
+        {
+            Say(new Message("say which pid to stop: `/jobs kill <pid>`.", Severity.Warning));
+            return CommandStatus.Reported;
+        }
+
+        var result = new Commands.JobsCommand(DetachedProcessRegistry.Default, SessionId ?? "")
+            .Kill(pidText);
+        Say(new Message(result, Severity.Info));
         return CommandStatus.Reported;
     }
 

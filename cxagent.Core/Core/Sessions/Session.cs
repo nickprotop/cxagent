@@ -3,6 +3,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Jobs;
 using CxAgent.Core.Storage;
 using CxAgent.Core.Agents;
+using CxAgent.Core.Execution;
 using CxAgent.Core.Helpers;
 
 namespace CxAgent.Core.Sessions;
@@ -1290,6 +1291,7 @@ public sealed partial class Session
         CompletionSets.AgentTypes => AgentTypeValues(),
         CompletionSets.Plugins => PluginValues(),
         CompletionSets.SpawnedAgents => SpawnedAgentValues(),
+        CompletionSets.BackgroundJobs => BackgroundJobValues(),
         _ => [],
     };
 
@@ -1310,6 +1312,25 @@ public sealed partial class Session
             a.Name,
             (a.Description is { Length: > 0 } d ? d : a.TypeName)
             + (SubAgents.IsBusy(a.Name) ? " · busy" : ""))),
+    ];
+
+    /// <summary>
+    /// The live background commands, for <c>/jobs kill</c> — the same rows <c>/jobs</c> just printed,
+    /// so nobody has to retype a pid they just read.
+    ///
+    /// <para>THE COMMAND AND AGE AS THE SUMMARY, same instinct as <see cref="SpawnedAgentValues"/>:
+    /// a bare pid means nothing in a popup, so the row shows what it IS rather than making the user
+    /// scroll up to check.</para>
+    /// </summary>
+    private IReadOnlyList<CompletionValue> BackgroundJobValues() =>
+    [
+        .. DetachedProcessRegistry.Default.Live.Select(live =>
+        {
+            var pid = live.Process.Pid.ToString();
+            var command = live.Job?.Command ?? "(unknown)";
+            var age = live.Job is null ? "?" : Jobs.BackgroundJobTools.Age(live.Job.Started);
+            return new CompletionValue(pid, $"{command} · {age}");
+        }),
     ];
 
     /// <summary>Every configured plugin, disabled ones included and marked as such: hiding a disabled

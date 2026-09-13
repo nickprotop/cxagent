@@ -61,4 +61,9 @@ public static class CompletionSets
     /// name and whether config permits it, which is what lets the palette mark a disabled one rather
     /// than silently omitting a name the user knows they wrote.</summary>
     public const string Plugins = "plugins";
+
+    /// <summary>Live background commands, for <c>/jobs kill</c>. Answered by the session, reading the
+    /// same process-wide registry <c>job_list</c> already reads — a second view built independently
+    /// could show a pid the tool cannot, or the reverse.</summary>
+    public const string BackgroundJobs = "background-jobs";
 }

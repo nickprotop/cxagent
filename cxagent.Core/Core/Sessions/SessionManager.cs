@@ -185,6 +185,12 @@ public sealed class SessionManager : IDisposable
                     Commands.Register(command, (session, arguments) => session.ListAgentTypes(arguments).Handled());
                     break;
 
+                // KILL IS THE FRONT END'S — see AppBootstrap's /jobs block — because it is a verb, not
+                // the bare command. Reporting alone needs no window, so it lives here like /stats does.
+                case "/jobs":
+                    Commands.Register(command, (session, _) => session.ListBackgroundJobs().Handled());
+                    break;
+
                 case "/skills":
                     Commands.Register(command, (session, _) => session.ListSkills().Handled());
                     break;

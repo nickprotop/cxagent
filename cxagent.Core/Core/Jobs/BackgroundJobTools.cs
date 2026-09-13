@@ -82,8 +82,15 @@ public sealed class BackgroundJobTools(DetachedProcessRegistry registry, string 
         return job.AgentId;
     }
 
-    /// <summary>Elapsed time since a job started, coarse enough for a row and not a timestamp to parse.</summary>
-    private static string Age(DateTimeOffset started)
+    /// <summary>
+    /// Elapsed time since a job started, coarse enough for a row and not a timestamp to parse.
+    ///
+    /// <para>INTERNAL RATHER THAN PRIVATE, so <see cref="Commands.JobsCommand"/> renders the same
+    /// age a model reading <c>job_list</c> sees for the same row. A second formula here would drift
+    /// from this one silently — a row that says "3m" to a user and "180s" to the model is the exact
+    /// disagreement one shared registry was meant to rule out.</para>
+    /// </summary>
+    internal static string Age(DateTimeOffset started)
     {
         var elapsed = DateTimeOffset.UtcNow - started;
         if (elapsed.TotalMinutes < 1) return $"{(int)elapsed.TotalSeconds}s";

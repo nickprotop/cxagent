@@ -673,6 +673,16 @@ public static class AppBootstrap
                     (current, arguments) => current.SendToSpawnedAgent(arguments).Handled());
             }
 
+            // THE KILL VERB ONLY. The bare listing needs no window — it is registered in
+            // SessionManager, /stats's shape — but is not a UI dependency: this front end simply has
+            // nowhere else to put a verb, since SessionCommands.All is the shared table both layers
+            // read and Core's SeedCommands only seeds bare commands, never verbs.
+            if (declared.Name == "/jobs")
+                manager.Commands.RegisterVerb("/jobs",
+                    new CommandArgument("kill <pid>", "stop one", Completes: false,
+                        Values: ValueSources.BackgroundJobs),
+                    (current, arguments) => current.KillBackgroundJob(arguments).Handled());
+
             if (declared.Name == "/sessions")
                 manager.Commands.RegisterVerb("/sessions",
                     // COMPLETES, because the folder is OPTIONAL: "new" on its own is a finished
