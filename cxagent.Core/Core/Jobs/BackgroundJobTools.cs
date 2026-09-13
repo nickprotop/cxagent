@@ -118,9 +118,15 @@ public sealed class BackgroundJobTools(DetachedProcessRegistry registry, string 
         var owner = entry.Job?.AgentId;
         if (!isSession && owner != callerAgentId)
         {
-            var who = owner is null ? "the session" : owner;
-            return $"error: pid {pid} was started by {who}, not you — only {who} or the session can "
-                 + "stop it.";
+            // NAMED THE WAY THE LIST NAMES IT. A row calls the session's own job "session", so a
+            // refusal that answers with the raw session id describes the same owner two different
+            // ways — and when the owner IS the session the old wording said "only <id> or the
+            // session", naming one party twice as if they were two.
+            var who = owner is null || owner == sessionId ? "the session" : owner;
+            return who == "the session"
+                ? $"error: pid {pid} was started by the session, not you — only the session can stop it."
+                : $"error: pid {pid} was started by {who}, not you — only {who} or the session can "
+                + "stop it.";
         }
 
         entry.Process.Kill();

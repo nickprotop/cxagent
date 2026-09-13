@@ -125,4 +125,23 @@ public class BackgroundJobToolsTests
             try { Directory.Delete(_dir, recursive: true); } catch (Exception) { }
         }
     }
+    /// <summary>
+    /// A LIST AND A REFUSAL MUST NAME THE SAME OWNER THE SAME WAY. job_list renders the session's own
+    /// job as "session", so a refusal answering with the raw session id describes one owner two ways —
+    /// and it read "only &lt;id&gt; or the session can stop it", naming a single party twice as though
+    /// the caller had two routes when it has none.
+    /// </summary>
+    [Fact]
+    public void ARefusalCallsTheSessionTheSessionRatherThanAnId()
+    {
+        using var fx = new JobToolsFixture("SESSION");
+        var tools = new BackgroundJobTools(fx.Registry, "SESSION");
+
+        var answer = tools.Invoke(Tool.JobKill, "CHILD_B", fx.Process.Pid);
+
+        Assert.Contains("started by the session", answer);
+        Assert.DoesNotContain("SESSION or the session", answer);
+        Assert.False(fx.Process.Finished);
+    }
+
 }
