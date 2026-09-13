@@ -101,13 +101,120 @@ public class ShellJobExecutorTests
         Assert.Equal(2, result.ExitCode);
     }
 
+    /// <summary>
+    /// A DEADLINE IS STILL REPORTED, AND NOW REPORTED AS STILL RUNNING.
+    ///
+    /// <para>THE OLD MESSAGE IS THE HAZARD THIS PINS. It said the command "was killed" and told the
+    /// model to retry with a bigger timeout_seconds — for a command that is in fact still working,
+    /// that is a second `npm install`, a second migration, a second push. So the assertions are about
+    /// what the model is told, not only about Success: the word "killed" must be gone, and the advice
+    /// must be not to run it again.</para>
+    ///
+    /// <para>AND IT MUST STILL FAIL. The call did not produce what was asked for — a plan step that
+    /// read Success would otherwise move on believing the command was done.</para>
+    /// </summary>
     [Fact]
-    public async Task Execute_Timeout_FailsWithTimedOut()
+    public async Task Execute_Timeout_ReportsStillRunning_AndDoesNotSayItWasKilled()
     {
-        var result = await new ShellJobExecutor().ExecuteAsync(
-            P(("command", "sleep 30"), ("timeout_seconds", 1)), new CollectingContext(), CancellationToken.None);
+        using var fx = new BackgroundFixture();
+
+        var result = await fx.Executor.ExecuteAsync(
+            P(("command", "sleep 30"), ("timeout_seconds", 1)), fx.Context, CancellationToken.None);
+
         Assert.False(result.Success);
-        Assert.Contains("timed out", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("still running", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("killed", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DO NOT run it again", result.ErrorMessage!);
+
+        // THE PID AND THE FILE, so the model can find the command again — the same keys a
+        // `background: true` call returns, since the model is in the same position.
+        Assert.True(result.Output!.ContainsKey("pid"), "a handed-over command must carry its pid");
+        Assert.True(result.Output.ContainsKey("output_file"), "and the file its output is going to");
+
+        // NO exit_code AT ALL, not a zero: the command has not finished, and a zero would read as a
+        // command that succeeded.
+        Assert.False(result.Output.ContainsKey("exit_code"));
+
+        // AND THE PROCESS IS ACTUALLY THERE. Every assertion above is about text the executor wrote;
+        // this one asks the OS whether the claim is true.
+        Assert.True(LiveProcess(Convert.ToInt32(result.Output["pid"])),
+            "the command must still be running, not merely described as running");
+    }
+
+    /// <summary>
+    /// THE AGENT IS TOLD WHEN A HANDED-OVER COMMAND EXITS, through the same delivery a
+    /// `background: true` call uses.
+    ///
+    /// <para>THE COMMAND FAILS, AND FAILS FAST AFTER THE HANDOVER, which is the shape that catches a
+    /// report wired only to a subscription: <c>Exited</c> is raised once and never replayed, so a
+    /// command that ends in the instant after the handover reaches a subscriber that may not exist
+    /// yet. That is the defect this plan already shipped once on the background path — a happy-path
+    /// test passed on timing luck while every fast failure went unreported.</para>
+    /// </summary>
+    [Fact]
+    public async Task Execute_Timeout_TellsTheAgentWhenTheHandedOverCommandFails()
+    {
+        using var fx = new BackgroundFixture();
+
+        // Past the 1s deadline, then fails immediately — so the exit lands in the window between the
+        // handover and anything subscribing to it.
+        var result = await fx.Executor.ExecuteAsync(
+            P(("command", "sleep 2; exit 7"), ("timeout_seconds", 1)), fx.Context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("You will be told when it exits", result.ErrorMessage!);
+
+        var (agentId, text) = await fx.Told.Next();
+        Assert.Equal("agent-bg", agentId);
+        Assert.Contains("exit code 7", text);
+        Assert.Contains("sleep 2; exit 7", text);
+    }
+
+    /// <summary>
+    /// CONFIG'S <c>shellDetachOnTimeout: false</c> REACHES THE PROCESS, which is the only thing worth
+    /// asserting about it.
+    ///
+    /// <para>NOT THAT THE FLAG IS STORED ON A RECORD. A test that builds a RunOptions and reads its
+    /// member back proves the record works and says nothing about whether anything applies it — and
+    /// the chain here is four hops long (config.json, ProviderSettings, ProviderCatalog,
+    /// ResolvedConfig, JobRegistry, this constructor), any one of which can drop the value silently.
+    /// So the assertion is that the OS has no process left, reached by asking for the old behaviour
+    /// through the door a user's config actually opens.</para>
+    /// </summary>
+    [Fact]
+    public async Task Execute_Timeout_WithDetachTurnedOffInConfig_KillsTheCommand()
+    {
+        using var fx = new BackgroundFixture();
+        var executor = new ShellJobExecutor(fx.Registry, detachOnTimeout: false);
+
+        // A CollectingContext, NOT the fixture's JobContext, only because this test needs the pid the
+        // command printed and a JobContext's log write is fire-and-forget async — a race a test must
+        // not depend on. What is under test here is the executor's flag, and it reads neither.
+        var ctx = new CollectingContext();
+        var result = await executor.ExecuteAsync(
+            P(("command", "echo mypid $$; sleep 30"), ("timeout_seconds", 1)),
+            ctx, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("was killed", result.ErrorMessage!);
+        Assert.False(result.Output?.ContainsKey("pid") ?? false,
+            "a killed command has no pid worth handing back");
+        Assert.Empty(fx.Registry.Live);
+
+        // THE SHELL'S OWN PID, out of what the command itself printed — the executor cannot fake
+        // this the way it can fake a field on its own result.
+        var printed = ctx.Lines.First(l => l.Contains("mypid "));
+        var pid = int.Parse(printed[(printed.IndexOf("mypid ", StringComparison.Ordinal) + 6)..].Trim());
+        Assert.False(LiveProcess(pid), "shellDetachOnTimeout false must leave no process behind");
+    }
+
+    /// <summary>Whether a pid is a live process — see ProcessRunnerTests.ProcessExists for why this is
+    /// HasExited and never a pgrep on a pattern.</summary>
+    private static bool LiveProcess(int pid)
+    {
+        try { return !System.Diagnostics.Process.GetProcessById(pid).HasExited; }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
     }
 
     [Fact]

@@ -100,6 +100,10 @@ public sealed record ResolvedConfig(
     /// <summary>Seconds each classifier stage may take, or null for the default.</summary>
     public int? ClassifierTimeoutSeconds => Catalog.ClassifierTimeoutSeconds;
 
+    /// <summary>Whether a shell deadline hands the command over rather than killing it. Never null —
+    /// an unconfigured machine gets the default, true, so a caller need not know what that is.</summary>
+    public bool ShellDetachOnTimeout => Catalog.ShellDetachOnTimeout ?? true;
+
     /// <summary>The theme name from config, or null for cxagent's own. Resolved at startup, where
     /// an unknown name falls back rather than failing — the registry does not exist here.</summary>
     public string? Theme => Catalog.Theme;
@@ -177,7 +181,11 @@ public static class ConfigResolver
                     ClassifierInstance: settings.Classifier,
                     Theme: settings.Theme)
                 { Tools = settings.Tools, PluginPaths = settings.PluginPaths,
-                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds },
+                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds,
+                  // BOTH CONSTRUCTION SITES, for the reason the comment above gives about
+                  // PluginPaths: a key carried only by ResolveInstance takes effect after a /model
+                  // switch and not on launch.
+                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));
@@ -284,7 +292,11 @@ public static class ConfigResolver
                 // on launch is the same defect wearing a different key's name. Plugins themselves make
                 // the same trip via Entries below.
                 { Tools = settings.Tools, PluginPaths = settings.PluginPaths,
-                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds },
+                  ClassifierTimeoutSeconds = settings.ClassifierTimeoutSeconds,
+                  // BOTH CONSTRUCTION SITES, for the reason the comment above gives about
+                  // PluginPaths: a key carried only by ResolveInstance takes effect after a /model
+                  // switch and not on launch.
+                  ShellDetachOnTimeout = settings.ShellDetachOnTimeout },
                 [],
                 settings.Warnings,
                 Entries: new PluginEntries(settings.Plugins));

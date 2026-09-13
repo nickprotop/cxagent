@@ -72,32 +72,168 @@ public class ProcessRunnerTests
         Assert.Equal(3, result.ExitCode);
     }
 
+    /// <summary>
+    /// THE DEADLINE RETURNS PROMPTLY AND LEAVES THE COMMAND RUNNING.
+    ///
+    /// <para>Both halves, because either alone is satisfied by a bug. "Returns promptly" alone is
+    /// what killing did; "still running" alone would pass for a call that never had a deadline at
+    /// all. The pid check is against the OS, not against the result — the result says what the runner
+    /// BELIEVES, and this test exists to find out whether the process is actually there.</para>
+    /// </summary>
     [Fact]
-    public async Task RunAsync_TimeoutKillsProcess_AndReturnsPromptly()
+    public async Task RunAsync_Timeout_HandsTheCommandOverStillRunning()
     {
-        var ctx = new CollectingContext();
-        var start = DateTimeOffset.UtcNow;
-        var result = await ProcessRunner.RunAsync(
-            new ProcessSpec("/bin/sh", new[] { "-c", "sleep 30" }, new RunOptions(TimeoutSeconds: 1)), ctx, CancellationToken.None);
-        var elapsed = DateTimeOffset.UtcNow - start;
+        var registry = new DetachedProcessRegistry();
+        try
+        {
+            var ctx = new CollectingContext();
+            var start = DateTimeOffset.UtcNow;
+            var result = await ProcessRunner.RunAsync(
+                new ProcessSpec("/bin/sh", new[] { "-c", "sleep 30" }, new RunOptions(TimeoutSeconds: 1)),
+                ctx, CancellationToken.None, registry);
+            var elapsed = DateTimeOffset.UtcNow - start;
 
-        Assert.True(result.TimedOut);
-        Assert.True(elapsed < TimeSpan.FromSeconds(10), $"timeout should kill promptly, took {elapsed.TotalSeconds}s");
+            Assert.True(elapsed < TimeSpan.FromSeconds(10),
+                $"a deadline must answer the caller promptly, took {elapsed.TotalSeconds}s");
+
+            // STILL REPORTED AS A TIMEOUT: the deadline was a real outcome and the caller has to be
+            // able to say so. What changed is what happened to the process, not whether it is named.
+            Assert.True(result.TimedOut);
+
+            Assert.NotNull(result.Detached);
+            Assert.True(ProcessExists(result.Detached!.Pid),
+                $"the command must still be running; pid {result.Detached.Pid} is gone");
+
+            // AND THE REGISTRY HOLDS IT, which is what makes it reapable at shutdown. A handover that
+            // registered nothing would leave exactly the orphan this feature risks introducing.
+            Assert.Contains(result.Detached, registry.Live);
+        }
+        finally { registry.ReapAll(); }
     }
 
+    /// <summary>
+    /// A COMMAND THAT FINISHES BEFORE ITS DEADLINE IS NOT DETACHED, however generous the deadline.
+    ///
+    /// <para>The complement of the test above, and it is the one that would catch a handover wired to
+    /// fire unconditionally: every ordinary command has a deadline (the executor supplies 120s by
+    /// default), so a runner that handed over on the way out of every call would register a
+    /// DetachedProcess per shell command and hit the cap in sixteen calls.</para>
+    /// </summary>
     [Fact]
-    public async Task RunAsync_CancellationKillsProcess()
+    public async Task RunAsync_CommandThatBeatsItsDeadline_IsNotDetached()
+    {
+        var registry = new DetachedProcessRegistry();
+        try
+        {
+            var result = await ProcessRunner.RunAsync(
+                new ProcessSpec("/bin/sh", new[] { "-c", "echo quick" },
+                    new RunOptions(TimeoutSeconds: 30)),
+                new CollectingContext(), CancellationToken.None, registry);
+
+            Assert.False(result.TimedOut);
+            Assert.Null(result.Detached);
+            Assert.Empty(registry.Live);
+            Assert.Contains("quick", result.Stdout);
+        }
+        finally { registry.ReapAll(); }
+    }
+
+    /// <summary>
+    /// DetachOnTimeout FALSE STILL KILLS AT THE DEADLINE — the behaviour a machine running unattended
+    /// jobs may require, and the only way to get it once the default changed.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_TimeoutWithoutDetach_KillsTheProcess()
     {
         var ctx = new CollectingContext();
-        using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(300));
-        var start = DateTimeOffset.UtcNow;
-        // Cancellation kills the process; RunAsync returns (TimedOut false — it was cancelled, not timed out).
-        var result = await ProcessRunner.RunAsync(
-            new ProcessSpec("/bin/sh", new[] { "-c", "sleep 30" }), ctx, cts.Token);
-        var elapsed = DateTimeOffset.UtcNow - start;
-        Assert.True(elapsed < TimeSpan.FromSeconds(10), $"cancel should kill promptly, took {elapsed.TotalSeconds}s");
-        Assert.False(result.TimedOut);
+        var registry = new DetachedProcessRegistry();
+        try
+        {
+            var start = DateTimeOffset.UtcNow;
+            var result = await ProcessRunner.RunAsync(
+                new ProcessSpec("/bin/sh", new[] { "-c", "echo mypid $$; sleep 30" },
+                    new RunOptions(TimeoutSeconds: 1, DetachOnTimeout: false)),
+                ctx, CancellationToken.None, registry);
+            var elapsed = DateTimeOffset.UtcNow - start;
+
+            Assert.True(result.TimedOut);
+            Assert.Null(result.Detached);
+            Assert.Empty(registry.Live);
+            Assert.True(elapsed < TimeSpan.FromSeconds(10), $"a kill must be prompt, took {elapsed.TotalSeconds}s");
+
+            // THE SHELL'S OWN PID, PRINTED BY THE COMMAND, so this asserts against the OS rather than
+            // against a field the runner filled in. `entireProcessTree` is what the kill promises and
+            // a result field cannot evidence.
+            Assert.False(ProcessExists(PidFrom(result.Stdout)),
+                "a deadline with DetachOnTimeout false must leave no process behind");
+        }
+        finally { registry.ReapAll(); }
+    }
+
+    /// <summary>
+    /// AN EXTERNAL CANCEL KILLS, EVEN THOUGH THE DEADLINE NOW DOES NOT.
+    ///
+    /// <para>THE ASYMMETRY IS THE DECISION. Escape means the user wants the command stopped; a
+    /// deadline only means the caller stopped waiting. A handover on cancellation would leave a
+    /// process running that somebody explicitly asked to end — so this test asserts against the OS
+    /// that nothing is left, not merely that TimedOut is false.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_CancellationKillsProcess_EvenThoughTheDeadlineWouldNot()
+    {
+        var ctx = new CollectingContext();
+        var registry = new DetachedProcessRegistry();
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            cts.CancelAfter(TimeSpan.FromMilliseconds(300));
+            var start = DateTimeOffset.UtcNow;
+
+            // A DEADLINE IS SET AND DETACHING IS ON — the defaults — so the only thing that can make
+            // this a kill is the cancel being treated differently. Without that, this test passes
+            // trivially for want of anything to detach on.
+            var result = await ProcessRunner.RunAsync(
+                new ProcessSpec("/bin/sh", new[] { "-c", "echo mypid $$; sleep 30" },
+                    new RunOptions(TimeoutSeconds: 30)),
+                ctx, cts.Token, registry);
+            var elapsed = DateTimeOffset.UtcNow - start;
+
+            Assert.True(elapsed < TimeSpan.FromSeconds(10), $"cancel should kill promptly, took {elapsed.TotalSeconds}s");
+
+            // THE OS CHECK FIRST, because it is the assertion that matters and a cheaper one above it
+            // would shadow it: a runner that handed a cancelled command over reports TimedOut true,
+            // fails on that line, and the question of whether a process is still running never gets
+            // asked at all.
+            Assert.False(ProcessExists(PidFrom(result.Stdout)),
+                "Escape means stop: a cancelled command must leave no process behind");
+            Assert.Null(result.Detached);
+            Assert.Empty(registry.Live);
+            Assert.False(result.TimedOut);
+        }
+        finally { registry.ReapAll(); }
+    }
+
+    /// <summary>The pid a command printed with <c>$$</c>, so a test asserts against the process the
+    /// OS knows rather than against a number the runner reported.</summary>
+    private static int PidFrom(string stdout)
+    {
+        var line = stdout.Split('\n').First(l => l.StartsWith("mypid "));
+        return int.Parse(line["mypid ".Length..].Trim());
+    }
+
+    /// <summary>
+    /// Whether a pid is a live process — <c>HasExited</c>, never a <c>pgrep</c> on a pattern.
+    ///
+    /// <para>A PATTERN FOR `sleep 30` MATCHES THE TEST'S OWN SHELL, the harness that launched it and
+    /// any other test running the same command. And HasExited rather than bare presence matters on
+    /// Linux: a killed child stays in the table as a zombie until its parent reaps it, so "is the pid
+    /// there" would report a killed process as alive.</para>
+    /// </summary>
+    private static bool ProcessExists(int pid)
+    {
+        try { return !System.Diagnostics.Process.GetProcessById(pid).HasExited; }
+        catch (ArgumentException) { return false; }          // not in the process table at all
+        catch (InvalidOperationException) { return false; }
     }
 
     /// <summary>

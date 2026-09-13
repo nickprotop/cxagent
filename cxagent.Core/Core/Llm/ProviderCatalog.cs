@@ -56,6 +56,14 @@ public sealed record ProviderCatalog(
     /// </summary>
     public int? ClassifierTimeoutSeconds { get; init; }
 
+    /// <summary>Whether a shell command still running at its deadline is handed back alive rather
+    /// than killed, from config's <c>shellDetachOnTimeout</c>. Null takes the default, true — see
+    /// <see cref="ProviderSettings.ShellDetachOnTimeout"/>.
+    ///
+    /// <para>AN INIT PROPERTY for the same reason as the member above: the positional list is at
+    /// seven and this is a setting almost nobody passes.</para></summary>
+    public bool? ShellDetachOnTimeout { get; init; }
+
     /// <summary>Where a plugin's <c>file</c> is searched for, in order — matching config.json's
     /// <c>pluginPaths</c>. Search paths are resolved once and stay fixed for the process, unlike the
     /// plugin entries themselves — see <see cref="PluginEntries"/> for why those moved out.</summary>

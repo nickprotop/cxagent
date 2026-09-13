@@ -14,7 +14,17 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// parallel suite, where one test's reap kills another's command and a leaked entry makes a third
 /// test's cap accounting wrong. Production passes nothing; there is one construction site
 /// (<c>JobRegistry</c>) to keep honest.</para></param>
-public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobExecutor
+/// <param name="detachOnTimeout">
+/// Whether a command still running at its <c>timeout_seconds</c> is handed back alive rather than
+/// killed — config's <c>shellDetachOnTimeout</c>, default true.
+///
+/// <para>IT ARRIVES HERE RATHER THAN ON <see cref="RunOptions"/> BY ITSELF because
+/// <see cref="ProcessRunner"/> is static and has no config to read: somebody has to put the user's
+/// answer into the options, and this executor is the one place in the app that builds a
+/// <c>RunOptions</c> from what a session was configured with. The option on the record is what
+/// <c>ProcessRunner</c> obeys; this is what decides its value.</para></param>
+public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool detachOnTimeout = true)
+    : IJobExecutor
 {
     public string TypeName => "shell";
     public string DisplayName => "Shell Command";
@@ -76,7 +86,7 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
         var spillDir = (context as JobContext)?.JobDir;
 
         var spec = new ProcessSpec("/bin/sh", new[] { "-c", command },
-            new RunOptions(workingDir, env, timeout, spillDir));
+            new RunOptions(workingDir, env, timeout, spillDir, detachOnTimeout));
         var start = DateTimeOffset.UtcNow;
 
         // THROUGH ShellArguments, NOT Get("background") HERE. The permission gate reads the same
@@ -86,17 +96,23 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
         if (ShellArguments.IsBackground(parameters))
             return await StartInBackgroundAsync(command, spec, context, start);
 
-        var result = await ProcessRunner.RunAsync(spec, context, ct);
+        var result = await ProcessRunner.RunAsync(spec, context, ct, registry);
         var duration = DateTimeOffset.UtcNow - start;
+
+        // CHECKED BEFORE TimedOut, BECAUSE BOTH ARE SET AND THEY MEAN OPPOSITE THINGS. The deadline
+        // passed, and the command is still running — so nothing below may say it was killed, and the
+        // advice must not tell the model to run it again: a second `npm install` alongside the first
+        // is the failure the old message caused.
+        if (result.Detached is { } handedOver)
+            return StillRunning(command, timeout, handedOver, context, start, duration);
 
         if (result.TimedOut)
             return new JobResult { Success = false, ExitCode = -1, Duration = duration,
-                // NAME background FIRST, NOT A BIGGER TIMEOUT. "Retry with a larger
-                // timeout_seconds" was advice to run the identical command AGAIN — and a command
-                // that reached a two-minute deadline is usually one that is still doing something,
-                // so the retry starts a SECOND copy of a build, an install or a migration while the
-                // first is running. Backgrounding it is the same wait without the duplicate: the
-                // command runs once and its exit is reported when it happens.
+                // KILLED HERE, WHICH IS THE UNCOMMON CASE: either the run asked for the deadline to
+                // be a kill, or the hand-over was refused because sixteen commands are already
+                // detached. Naming `background` first is still the right advice — it is the same wait
+                // without a duplicate, whereas a bigger `timeout_seconds` re-runs a command that was
+                // probably still doing something.
                 ErrorMessage = $"timed out after {timeout}s and was killed. If it legitimately "
                              + "needs longer, re-run it with 'background': true rather than a "
                              + "bigger 'timeout_seconds' — you will be told when it exits, and you "
@@ -145,6 +161,59 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
     }
 
     /// <summary>
+    /// Reports a command whose DEADLINE passed while it was still working: handed over alive, not
+    /// killed.
+    ///
+    /// <para>THE SAME KEYS A <c>background: true</c> CALL RETURNS, because the model is in the same
+    /// position — a command running somewhere with a pid, a file and a report to come — and a second
+    /// vocabulary for it would be a second thing to learn. What differs is the one sentence saying
+    /// how it got here, since the model did not ask for this and would otherwise have no idea why a
+    /// command it expected to wait for came back unfinished.</para>
+    ///
+    /// <para>FAILURE, NOT SUCCESS, AND NO EXIT CODE. The call did not do what the model asked: it
+    /// asked for the command's result and is getting a pid instead. Reporting success would let a
+    /// plan step on to the next job believing this one was done, and there is no exit code to judge
+    /// it by yet — a zero here would make every eventual failure invisible.</para>
+    /// </summary>
+    private static JobResult StillRunning(string command, int timeout, DetachedProcess detached,
+        IJobContext context, DateTimeOffset start, TimeSpan duration)
+    {
+        var reporting = ArrangeTheReport(detached, command, context, start);
+
+        var output = new Dictionary<string, object?>
+        {
+            ["command"] = command,
+            ["pid"] = detached.Pid,
+            ["background"] = reporting
+                ? "running; you will be told when it exits"
+                : "running; nothing will report its exit here — read the output file to check on it",
+        };
+        if (detached.OutputPath is { } path) output["output_file"] = path;
+
+        return new JobResult
+        {
+            Success = false,
+            Duration = duration,
+            // SAYS "STILL RUNNING", NEVER "KILLED", and says NOT to run it again. The old message's
+            // "retry with a larger timeout_seconds" is actively dangerous here: the command is alive,
+            // so a retry is a second `npm install`, a second migration, a second push. And the model
+            // must not conclude the work was lost, because it was not.
+            // THE WORD "KILLED" APPEARS NOWHERE, not even to deny it. A model skimming a long
+            // result for a verb finds the one that is there, and "not killed" read as "killed" is
+            // precisely the wrong conclusion — it would decide the work was lost and start again.
+            ErrorMessage = $"still running after {timeout}s: the command was left to finish and this "
+                         + "call stopped waiting for it. DO NOT run it again — it is still working, "
+                         + "and a second copy would duplicate whatever it is doing. "
+                         + (reporting
+                            ? "You will be told when it exits, with its exit code."
+                            : "Nothing will report its exit here — read the output file to check "
+                            + "on it.")
+                         + " Its output is going to the file named in this result.",
+            Output = output,
+        };
+    }
+
+    /// <summary>
     /// Starts the command, hands back its pid and output file, and arranges for the agent to be told
     /// when it exits.
     ///
@@ -161,17 +230,6 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
     private async Task<JobResult> StartInBackgroundAsync(
         string command, ProcessSpec spec, IJobContext context, DateTimeOffset start)
     {
-        // THE PORT IS ON THE CONCRETE CONTEXT AND THIS MAY FIND NEITHER. IJobContext ships in
-        // CxAgent.Plugins.Abstractions, which has no reference to Core, so Delivery and AgentId
-        // cannot be members of it; matching on the concrete type is the only way to reach them.
-        // BEST-EFFORT RATHER THAN A THROW, because the miss is ordinary: a headless run, an embedder
-        // that wired no session, and several test doubles all implement the interface alone, and
-        // refusing to background a command for them would break the feature exactly where nothing is
-        // watching. What the model is told changes instead — see `background` below.
-        var jc = context as JobContext;
-        var delivery = jc?.Delivery;
-        var agentId = jc?.AgentId;
-
         DetachedProcess detached;
         try
         {
@@ -194,36 +252,13 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
             };
         }
 
-        if (delivery is not null && agentId is not null)
-        {
-            // ONCE, WHICHEVER PATH GETS THERE FIRST, and both can. The subscription below is the
-            // ordinary route; the by-hand check after it covers a command that finished BEFORE the
-            // subscription existed, because Exited is raised once and never replayed — `exit 7`, a
-            // failing `git push`, anything that rejects its arguments finishes in milliseconds, so
-            // without the second check the agent would hear nothing about exactly the commands that
-            // failed fastest. And the two can also RACE: Complete sets Finished inside its lock and
-            // raises Exited outside it, so a subscription landing between them is reached by both.
-            // Interlocked makes the first one win and the second a no-op — an agent told twice that
-            // a command finished reports it twice, and a model reading two reports has no way to know
-            // it was one command.
-            var report = new BackgroundReport(delivery, agentId, command, start, detached.OutputPath);
-            var reported = 0;
-            void ReportOnce(int code)
-            {
-                if (Interlocked.Exchange(ref reported, 1) == 0) Report(report, code);
-            }
-
-            // Tell is synchronous by contract precisely so a caller in this position — a handler on
-            // whatever thread noticed the exit — cannot be made to block on somebody else's turn.
-            detached.Exited += ReportOnce;
-            if (detached.Finished) ReportOnce(detached.ExitCode);
-        }
+        var reporting = ArrangeTheReport(detached, command, context, start);
 
         var output = new Dictionary<string, object?>
         {
             ["command"] = command,
             ["pid"] = detached.Pid,
-            ["background"] = delivery is not null && agentId is not null
+            ["background"] = reporting
                 ? "running; you will be told when it exits"
                 // SAID PLAINLY WHEN NOBODY CAN BE TOLD, because the schema promised a report. A model
                 // that believes one is coming waits for it instead of reading the file, and the wait
@@ -243,6 +278,55 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
             Duration = DateTimeOffset.UtcNow - start,
             Output = output,
         };
+    }
+
+    /// <summary>
+    /// Subscribes the agent's exit report to a command still running, and says whether anyone will
+    /// actually hear it.
+    ///
+    /// <para>SHARED BY BOTH WAYS A COMMAND ENDS UP DETACHED — an explicit <c>background: true</c>, and
+    /// a deadline that handed a slow command over. They differ in how the caller got here and in
+    /// nothing about what the agent needs told, so a second copy of this would be two places to fix
+    /// when the message changes and two chances for them to disagree.</para>
+    ///
+    /// <para>THE PORT IS ON THE CONCRETE CONTEXT AND THIS MAY FIND NEITHER. <c>IJobContext</c> ships
+    /// in CxAgent.Plugins.Abstractions, which has no reference to Core, so <c>Delivery</c> and
+    /// <c>AgentId</c> cannot be members of it; matching on the concrete type is the only way to reach
+    /// them. BEST-EFFORT RATHER THAN A THROW, because the miss is ordinary: a headless run, an
+    /// embedder that wired no session, and several test doubles all implement the interface alone,
+    /// and refusing to hand a command over for them would break the feature exactly where nothing is
+    /// watching. What the model is told changes instead — hence the return value.</para>
+    /// </summary>
+    /// <returns>True when an agent will be told the exit; false when there is nobody to tell, which
+    /// the caller MUST say plainly rather than repeat a promise of a report nothing will keep.</returns>
+    private static bool ArrangeTheReport(DetachedProcess detached, string command,
+        IJobContext context, DateTimeOffset start)
+    {
+        var jc = context as JobContext;
+        if (jc?.Delivery is not { } delivery || jc.AgentId is not { } agentId) return false;
+
+        // ONCE, WHICHEVER PATH GETS THERE FIRST, and both can. The subscription below is the
+        // ordinary route; the by-hand check after it covers a command that finished BEFORE the
+        // subscription existed, because Exited is raised once and never replayed — `exit 7`, a
+        // failing `git push`, anything that rejects its arguments finishes in milliseconds, so
+        // without the second check the agent would hear nothing about exactly the commands that
+        // failed fastest. And the two can also RACE: Complete sets Finished inside its lock and
+        // raises Exited outside it, so a subscription landing between them is reached by both.
+        // Interlocked makes the first one win and the second a no-op — an agent told twice that
+        // a command finished reports it twice, and a model reading two reports has no way to know
+        // it was one command.
+        var report = new BackgroundReport(delivery, agentId, command, start, detached.OutputPath);
+        var reported = 0;
+        void ReportOnce(int code)
+        {
+            if (Interlocked.Exchange(ref reported, 1) == 0) Report(report, code);
+        }
+
+        // Tell is synchronous by contract precisely so a caller in this position — a handler on
+        // whatever thread noticed the exit — cannot be made to block on somebody else's turn.
+        detached.Exited += ReportOnce;
+        if (detached.Finished) ReportOnce(detached.ExitCode);
+        return true;
     }
 
     /// <summary>

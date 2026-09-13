@@ -349,6 +349,18 @@ public record ProviderSettings(
     public int? ClassifierTimeoutSeconds { get; init; }
 
     /// <summary>
+    /// Whether a shell command still running at its <c>timeout_seconds</c> is handed back alive
+    /// rather than killed, from <c>shellDetachOnTimeout</c>. Null takes the default, which is true.
+    ///
+    /// <para>A KEY EXISTS BECAUSE THE OLD BEHAVIOUR IS SOMEBODY'S REQUIREMENT. A deadline that kills
+    /// is what a machine running unattended jobs may need — a command whose side effects must not
+    /// outlive the call that asked for it, or a host that will not be alive to hear the exit report.
+    /// The default is the other way round because for an interactive session a two-minute deadline
+    /// means the caller stopped waiting, not that the build should be destroyed.</para>
+    /// </summary>
+    public bool? ShellDetachOnTimeout { get; init; }
+
+    /// <summary>
     /// The name of the theme the terminal should start in, or null for cxagent's own.
     ///
     /// <para>A NAME RATHER THAN COLOURS. The window framework owns the theme registry and ships a
@@ -749,6 +761,19 @@ public static class ProviderConfigLoader
                         + "using the default.");
             }
 
+            // A MALFORMED VALUE WARNS AND KEEPS THE DEFAULT, like classifierTimeoutSeconds above:
+            // this is a behaviour switch, and refusing to start over it would take providers and
+            // session down with it — while silently ignoring it would leave a user believing their
+            // machine kills on a deadline when it hands the command over.
+            bool? shellDetachOnTimeout = null;
+            if (root.TryGetProperty("shellDetachOnTimeout", out var sdot))
+            {
+                if (sdot.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    shellDetachOnTimeout = sdot.GetBoolean();
+                else
+                    warnings.Add("shellDetachOnTimeout must be true or false — using the default (true).");
+            }
+
             // READ AFTER `warnings` EXISTS, not beside the other llmAgent fields above: a malformed
             // term warns rather than throwing, and there is nowhere to put a warning before this.
             var llmAgentTools = root.TryGetProperty("llmAgent", out var laTools)
@@ -1022,6 +1047,7 @@ public static class ProviderConfigLoader
                 Warnings = warnings,
                 Classifier = classifier,
                 ClassifierTimeoutSeconds = classifierTimeout,
+                ShellDetachOnTimeout = shellDetachOnTimeout,
                 Theme = theme,
                 Plugins = plugins,
                 PluginPaths = pluginPaths,

@@ -41,7 +41,11 @@ internal static class SessionFactory
         // SessionPorts.Policy.
         var executors = shared.Gate is null
             ? JobRegistry.CreateWithBuiltins()
-            : JobRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy);
+            // THE SHELL DEADLINE'S MEANING IS THIS MACHINE'S SETTING, carried in from config here
+            // because ProcessRunner is static and the executor is constructed here. The gate-less
+            // overload above keeps the default, which is what a headless or test caller wants.
+            : JobRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy,
+                resolution.ShellDetachOnTimeout);
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
         // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because

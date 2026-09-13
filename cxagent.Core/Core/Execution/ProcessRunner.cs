@@ -36,8 +36,9 @@ public record ProcessSpec(
 /// <param name="TimeoutSeconds">
 /// How long the caller will wait, or null to wait indefinitely.
 ///
-/// <para>THE TREE IS KILLED AT IT. Ignored entirely by <see cref="ProcessRunner.DetachAsync"/>, where
-/// no caller is waiting at all.</para>
+/// <para>THE CALLER'S PATIENCE, NOT THE COMMAND'S SENTENCE — see <see cref="DetachOnTimeout"/>.
+/// Ignored entirely by <see cref="ProcessRunner.DetachAsync"/>, where no caller is waiting at
+/// all.</para>
 /// </param>
 /// <param name="SpillDir">
 /// Where an over-long stream's full text is written, or null to write none and truncate outright.
@@ -51,11 +52,28 @@ public record ProcessSpec(
 /// wired no log directory has nowhere to put a file — and a runner that invented one (temp, say)
 /// would be writing files nobody sweeps on behalf of a caller that never asked for any.</para>
 /// </param>
+/// <param name="DetachOnTimeout">
+/// At the deadline, hand the still-running command back ALIVE instead of killing its tree.
+///
+/// <para>DEFAULT TRUE, BECAUSE A DEADLINE MEASURES THE CALLER'S PATIENCE AND NOT THE COMMAND'S
+/// WORTH. A build, an install or a migration still running at two minutes is usually working, and
+/// killing it discards the work and can leave a half-written tree — then the model runs it again and
+/// spends the same minutes a second time. Detaching answers the caller now, lets the command finish,
+/// and reports the exit when it comes.</para>
+///
+/// <para>AN EXTERNAL CANCEL STILL KILLS, EITHER WAY, and the asymmetry is the point: a user pressing
+/// Escape has decided the command should stop, while a deadline only says the caller has stopped
+/// waiting. Nothing about reaching a deadline is a decision to destroy work.</para>
+///
+/// <para>FALSE IS FOR A CALLER THAT NEEDS THE DEADLINE TO BE A KILL — a command whose side effects
+/// must not outlive its call, or a host that will not be alive to hear the exit report.</para>
+/// </param>
 public record RunOptions(
     string? WorkingDir = null,
     IReadOnlyDictionary<string, string>? Env = null,
     int? TimeoutSeconds = null,
-    string? SpillDir = null)
+    string? SpillDir = null,
+    bool DetachOnTimeout = true)
 {
     /// <summary>Every default: the process's own directory, an inherited environment, no deadline and
     /// no spill file. Shared rather than allocated per call, since the record is immutable.</summary>
@@ -249,7 +267,23 @@ public static class ProcessRunner
         }
     }
 
-    public static async Task<ProcessResult> RunAsync(ProcessSpec spec, IJobContext ctx, CancellationToken ct)
+    /// <summary>
+    /// Runs a command and waits for it, up to <see cref="RunOptions.TimeoutSeconds"/>.
+    ///
+    /// <para>AT THE DEADLINE IT HANDS THE COMMAND OVER RATHER THAN KILLING IT, unless
+    /// <see cref="RunOptions.DetachOnTimeout"/> is false — see that member for why. The result then
+    /// carries <see cref="ProcessResult.Detached"/>, the command keeps running, and the exit is
+    /// reported through whatever the caller wired to it. An external cancel still kills.</para>
+    /// </summary>
+    /// <param name="spec">What to run, and how — see <see cref="ProcessSpec"/>.</param>
+    /// <param name="ctx">Logged to, and told about resource usage.</param>
+    /// <param name="ct">Cancels the WAIT AND THE COMMAND: unlike the deadline, this is a decision
+    /// that it should stop.</param>
+    /// <param name="registry">Which registry owns a command this call hands over at its deadline, or
+    /// null for the process-wide <see cref="DetachedProcessRegistry.Default"/> that shutdown reaps.
+    /// Named by tests so one test's reap cannot kill another's process.</param>
+    public static async Task<ProcessResult> RunAsync(ProcessSpec spec, IJobContext ctx,
+        CancellationToken ct, DetachedProcessRegistry? registry = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -269,7 +303,11 @@ public static class ProcessRunner
         if (spec.Run.Env is not null)
             foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        // NO `using` ON THE PROCESS, because a deadline may hand it to a DetachedProcess that
+        // outlives this call — and disposing it would tear down the very output handlers still
+        // writing the command's file. Every path that does NOT hand it over disposes it by hand
+        // below, which is the cost of the one path that does.
+        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
         // Accumulated as well as logged — see ProcessResult.Stdout for why.
         //
@@ -281,8 +319,11 @@ public static class ProcessRunner
         // A NAME PER STREAM, NOT A TIMESTAMP OR A PID: this directory is one job's, so the stream is
         // the only thing that distinguishes the two files, and a stable name means a re-run of the
         // same job overwrites its own spill instead of accumulating one per attempt.
-        using var stdout = new StreamCapture(spec.Run.SpillDir, "stdout.spill");
-        using var stderr = new StreamCapture(spec.Run.SpillDir, "stderr.spill");
+        // NOT `using`, for the same reason the process is not: the handlers above go on firing after
+        // a handover, and a capture disposed on the way out of this method would be written to by a
+        // line arriving a minute later. Both are disposed under the lock at every exit below.
+        var stdout = new StreamCapture(spec.Run.SpillDir, "stdout.spill");
+        var stderr = new StreamCapture(spec.Run.SpillDir, "stderr.spill");
         var outputLock = new object();
 
         void Capture(StreamCapture capture, string line)
@@ -290,8 +331,32 @@ public static class ProcessRunner
             lock (outputLock) capture.Add(line);
         }
 
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { ctx.Log(e.Data); Capture(stdout, e.Data); } };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { ctx.Log(JobLogLevel.Warning, e.Data); Capture(stderr, e.Data); } };
+        // THE SAME HANDLERS SERVE BOTH LIVES OF THIS PROCESS, which is what makes the handover
+        // possible at all: a Process's reading loop is started once by BeginOutputReadLine and
+        // cannot be re-pointed at new handlers afterwards. So the handlers close over a slot that is
+        // empty while the caller is waiting and holds the DetachedProcess after a deadline hands the
+        // command over — and the command's output goes on reaching a file across the transition,
+        // with no line lost at the seam.
+        // READ AND WRITTEN WITHOUT A LOCK, which is safe for exactly one reason: a reference
+        // assignment cannot tear, so a handler sees either null or the whole object and never a
+        // half-built one. Taking `outputLock` here would instead make every output line contend with
+        // a handover that happens at most once.
+        DetachedProcess? handedOver = null;
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            ctx.Log(e.Data);
+            Capture(stdout, e.Data);
+            handedOver?.Write(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            ctx.Log(JobLogLevel.Warning, e.Data);
+            Capture(stderr, e.Data);
+            handedOver?.Write(e.Data);
+        };
 
         process.Start();
 
@@ -306,16 +371,32 @@ public static class ProcessRunner
 
         // The monitor's Updated event fires on its own Timer thread; ctx.ReportResources just
         // re-raises for whoever is subscribed (the UI marshals onto its own thread from there —
-        // this call site does not know or care about the UI thread). Disposed in the same scope
-        // as `process` below, fire-and-forget (Dispose only stops the Timer, no wait involved).
-        using var resourceMonitor = new ProcessResourceMonitor(process);
+        // this call site does not know or care about the UI thread). Disposed whichever way this
+        // call ends, fire-and-forget (Dispose only stops the Timer, no wait involved) — INCLUDING
+        // after a handover, because nobody is left watching this call's resource reports.
+        var resourceMonitor = new ProcessResourceMonitor(process);
         resourceMonitor.Updated += (_, snapshot) => ctx.ReportResources(snapshot);
 
-        // Link the caller's ct with a timeout token so either kills the tree.
+        // Link the caller's ct with a timeout token. Cancellation always kills; the deadline only
+        // stops the WAIT unless DetachOnTimeout says otherwise.
         using var timeoutCts = spec.Run.TimeoutSeconds is int secs
             ? new CancellationTokenSource(TimeSpan.FromSeconds(secs))
             : new CancellationTokenSource();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+        // Everything this method returns, read under the output lock at whichever exit it takes.
+        // A local function rather than four copies, because the ORDER matters: the writers are
+        // closed before their paths are handed out, so a reader opening the file named in the
+        // result finds all of it rather than whatever had happened to flush.
+        (string Out, string Err, Spill? OutSpill, Spill? ErrSpill) CloseAndRead()
+        {
+            lock (outputLock)
+            {
+                stdout.Dispose();
+                stderr.Dispose();
+                return (stdout.Text(), stderr.Text(), stdout.Result(), stderr.Result());
+            }
+        }
 
         bool timedOut = false;
         try
@@ -325,6 +406,35 @@ public static class ProcessRunner
         catch (OperationCanceledException)
         {
             timedOut = timeoutCts.IsCancellationRequested; // distinguish timeout from external cancel
+
+            // THE DEADLINE HANDS THE COMMAND OVER; A CANCEL KILLS IT. Only a timeout takes this
+            // branch: `ct` firing is a user or a caller deciding the command should stop, and a
+            // decision to stop is not satisfied by letting it run somewhere else.
+            if (timedOut && spec.Run.DetachOnTimeout)
+            {
+                var (o, e, os, es) = CloseAndRead();
+                var handover = HandOver(process, spec.Run.SpillDir, resourceMonitor, registry,
+                    ref handedOver);
+                if (handover is not null)
+                    return new ProcessResult(-1, TimedOut: true, o, e)
+                    {
+                        StdoutSpill = os, StderrSpill = es, Detached = handover,
+                    };
+
+                // THE HANDOVER FAILED, SO THE OLD BEHAVIOUR IS THE ONLY HONEST ONE LEFT. The
+                // concurrency cap is the reason it can fail, and a process that could not be
+                // registered is the orphan the registry exists to prevent — so it is killed and
+                // reported as a timeout, exactly as it was before this option existed. The text
+                // below already reads on both cases.
+                TryKillTree(process);
+                try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch { /* best effort */ }
+                try { process.WaitForExit(); } catch { /* already exited */ }
+                resourceMonitor.Dispose();
+                process.Dispose();
+                return new ProcessResult(-1, TimedOut: true, o, e) { StdoutSpill = os, StderrSpill = es };
+            }
+
             TryKillTree(process);
             // Give WaitForExit a brief unconditional window so ExitCode is available.
             try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)); }
@@ -337,30 +447,71 @@ public static class ProcessRunner
         int exitCode;
         try { exitCode = process.ExitCode; } catch { exitCode = -1; }
 
-        // CLOSED BEFORE THE PATHS ARE HANDED OUT, so a reader opening the file named in the result
-        // finds all of it rather than whatever had happened to flush. The `using` above would close
-        // them on the way out of the method — too late, since the result carries the paths.
-        //
-        // Under the lock, because a handler for a line still in flight would otherwise write to a
-        // writer being disposed. Both handlers are quiet by now (WaitForExit above flushes them), but
-        // "by now" is a timing argument and the lock is not.
-        string outText, errText;
-        Spill? outSpill, errSpill;
-        lock (outputLock)
+        var read = CloseAndRead();
+
+        // BY HAND, because the process carries no `using` — a deadline may hand it to something that
+        // outlives this call, and the type system cannot express "disposed unless returned".
+        resourceMonitor.Dispose();
+        process.Dispose();
+
+        return new ProcessResult(exitCode, timedOut, read.Out, read.Err)
         {
-            stdout.Dispose();
-            stderr.Dispose();
-            outText = stdout.Text();
-            errText = stderr.Text();
-            outSpill = stdout.Result();
-            errSpill = stderr.Result();
+            StdoutSpill = read.OutSpill,
+            StderrSpill = read.ErrSpill,
+        };
+    }
+
+    /// <summary>
+    /// Moves ownership of a still-running process to a <see cref="DetachedProcess"/>, or returns null
+    /// when the registry will not take it.
+    ///
+    /// <para>THE ORDER IS THE WHOLE OF IT. The output file is opened and the holder filled BEFORE the
+    /// registry is asked, because the handlers already firing on thread-pool threads read that slot —
+    /// a line arriving between "registered" and "holder filled" would be written nowhere. And the
+    /// resource monitor is stopped here rather than left running: its reports go to a call that has
+    /// already returned, so a UI would keep painting CPU for a command nobody is waiting on.</para>
+    ///
+    /// <para>RETURNS NULL RATHER THAN THROWING when the cap refuses, and the process is left alive for
+    /// the caller to kill. A throw out of a timeout would turn a slow command into a broken tool.</para>
+    /// </summary>
+    /// <param name="process">The live child, whose handlers are already reading.</param>
+    /// <param name="spillDir">Where the detached output file goes, or null for nowhere to write.</param>
+    /// <param name="resourceMonitor">Stopped here — see the summary.</param>
+    /// <param name="registry">Which registry reaps it, or null for the process-wide default.</param>
+    /// <param name="holder">The slot the still-attached output handlers read, filled before the
+    /// registry is asked so no line arrives with nowhere to go.</param>
+    private static DetachedProcess? HandOver(Process process, string? spillDir,
+        ProcessResourceMonitor resourceMonitor, DetachedProcessRegistry? registry,
+        ref DetachedProcess? holder)
+    {
+        resourceMonitor.Dispose();
+
+        var (writer, outputPath) = TryOpenDetachedOutput(spillDir);
+
+        DetachedProcess detached;
+        try
+        {
+            detached = new DetachedProcess(process, writer, outputPath);
+        }
+        catch (Exception)
+        {
+            // Process.Id throws once the handle is gone, which a command exiting in this very instant
+            // can arrange. Nothing to hand over then, and nothing to reap either.
+            try { writer?.Dispose(); } catch (Exception) { }
+            return null;
         }
 
-        return new ProcessResult(exitCode, timedOut, outText, errText)
-        {
-            StdoutSpill = outSpill,
-            StderrSpill = errSpill,
-        };
+        holder = detached;
+
+        var target = registry ?? DetachedProcessRegistry.Default;
+        if (target.Add(detached)) return detached;
+
+        // REFUSED: unwound rather than left half-owned. The holder is cleared first so a line still in
+        // flight does not write into a DetachedProcess the caller is about to kill, and Dispose both
+        // kills the process and closes the file — see DetachedProcess.Dispose.
+        holder = null;
+        detached.Dispose();
+        return null;
     }
 
     /// <summary>
