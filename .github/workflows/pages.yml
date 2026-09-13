@@ -33,7 +33,18 @@ on:
       # adding them also touched plugins.json.
       - 'docs/screenshots/**'
       - '.github/workflows/pages.yml'
+  # DISPATCHABLE WITH THE SAME INPUT release.yml PASSES, because that is how a release publishes its
+  # catalog: only a master-ref deployment is served, so the release dispatches this workflow on master
+  # and names the tag it just made. Left empty, the run resolves "latest" itself, which is what an
+  # ordinary site edit wants.
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          The release whose assets this catalog describes. Leave empty to use the current latest
+          release, which is what a site edit wants.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -94,7 +105,34 @@ jobs:
           echo "catalog describes release $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+          # AND WHETHER THIS RUN IS AHEAD OF ITS OWN RELEASE. A push to master fires this workflow
+          # before the release carrying the pushed plugin exists, so "latest" is the PREVIOUS release
+          # and every hash below is taken from ITS zips. That catalog is internally consistent and
+          # passes every check in this file, which is why it publishes happily — then promises hashes
+          # that `releases/latest/download` no longer serves, and every install refuses on a checksum
+          # mismatch. The asset check further down cannot see it: the plugin's zip IS on the old
+          # release, just built from different source.
+          #
+          # THE SIDECAR IS WHAT GIVES IT AWAY. publish.sh sets a changed plugin's version to the
+          # release number BEFORE tagging, so a sidecar numbered ABOVE the release this run resolved
+          # is a plugin whose release has not happened yet. Deploying then would overwrite a correct
+          # catalog with one describing superseded zips — and because only a master-ref deployment is
+          # ever served, the tag's own run cannot repair it afterwards.
+          AHEAD=""
+          for f in plugins/*/*.plugin.json; do
+            V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['version'])" "$f")
+            # sort -V puts the greater version last; equal versions are fine, only ABOVE is a problem.
+            [ "$V" = "${TAG#v}" ] && continue
+            [ "$(printf '%s\n%s\n' "$V" "${TAG#v}" | sort -V | tail -1)" = "$V" ] && AHEAD="$f ($V)"
+          done
+
+          if [ -n "$AHEAD" ]; then
+            echo "::notice::$AHEAD is newer than $TAG — its release has not happened yet, so the published catalog is kept."
+            echo "ahead=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download that release's plugin artifacts
+        if: steps.release.outputs.ahead != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -117,6 +155,7 @@ jobs:
       # the asset: present but undownloaded is a broken run, absent entirely is a plugin still
       # waiting for its release.
       - name: Check every catalogued plugin actually shipped
+        if: steps.release.outputs.ahead != 'true'
         id: shipped
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,8 +199,25 @@ jobs:
               echo "every catalogued plugin has its artifact." ;;
           esac
 
+      # THE SITE STILL PUBLISHES, ONLY THE CATALOG IS HELD. The ahead window spans days — a plugin's
+      # version lands on master and its release follows whenever the next one is cut — and every
+      # COMMANDS.md or screenshot edit inside it deserves to reach the site. What must NOT reach it is
+      # a catalog describing the previous release's zips, so the live one is fetched and carried
+      # forward: still true, because it describes what `releases/latest/download` serves right now.
+      #
+      # A MISSING FETCH IS NOT FATAL. If the site has no catalog yet, there is nothing to preserve and
+      # publishing the rest of it is still right; the next post-release run writes the first one.
+      - name: Carry the published catalog forward
+        if: steps.release.outputs.ahead == 'true'
+        run: |
+          if curl -fsSL "https://nickprotop.github.io/cxagent/catalog.json" -o _site/catalog.json; then
+            echo "kept the published catalog: $(python3 -c "import json;print(json.load(open('_site/catalog.json'))['cxagentVersion'])")"
+          else
+            echo "::notice::no published catalog to carry forward — the site publishes without one."
+          fi
+
       - name: Generate the catalog
-        if: steps.shipped.outputs.skip != 'true'
+        if: steps.shipped.outputs.skip != 'true' && steps.release.outputs.ahead != 'true'
         run: |
           # THE VERSION COMES FROM THE RELEASE THE ASSETS CAME FROM, not from the ref that
           # triggered this run: a push to master builds the site for whatever release is current,
@@ -183,6 +239,9 @@ jobs:
 
       # NOTHING TO PUBLISH IF THE CATALOG WAS SKIPPED. Uploading here would deploy a site whose
       # catalog.json is missing entirely — worse than the stale-but-true one already live.
+      # UPLOADED IN THE AHEAD CASE TOO, which is the whole point of carrying the catalog forward: the
+      # site's documents publish and only the catalog stands still. Only `skip` — a catalogued plugin
+      # with no zip anywhere — stops the upload, because then there is genuinely nothing true to send.
       - uses: actions/upload-pages-artifact@v3
         if: steps.shipped.outputs.skip != 'true'
         with:
@@ -199,5 +258,17 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # ONLY A master-REF DEPLOYMENT IS ACTUALLY SERVED, which is not visible from here: a deployment
+      # created on a tag ref is accepted, reports state=success with the live URL attached, and is
+      # then never published. Three v0.9.19-ref deployments did exactly that while the site kept
+      # serving an earlier master build; a single master-ref run replaced it in seconds. The
+      # github-pages environment policy is not the cause — it allows `v*`, which is why these deploys
+      # succeed instead of being refused.
+      #
+      # SO A RELEASE CANNOT PUBLISH ITS OWN CATALOG. release.yml calls this workflow, and a called
+      # workflow runs on the CALLER's ref — the tag — so its deploy is one of the silent ones. What
+      # actually publishes is the master-push run, and the `ahead` guard above is what stops that run
+      # doing it too early. A release therefore needs one master-ref Pages run after the tag exists:
+      # any later push to a watched path does it, or dispatch this workflow with --ref master.
       - id: deployment
         uses: actions/deploy-pages@v4

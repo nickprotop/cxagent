@@ -426,32 +426,36 @@ jobs:
   # catalog still points at the previous release's zips — a user installing a plugin gets the old
   # version, or a hash mismatch if the asset moved.
   #
-  # CALLED, NOT TRIGGERED. pages.yml cannot listen for `release: published` here: this workflow
-  # creates the release with the default GITHUB_TOKEN, and GitHub suppresses the events a workflow
-  # raises with that token, so nothing would ever fire. Calling it is the fix, and it keeps ONE
-  # definition of how the catalog is built rather than a copy that drifts from the original.
+  # DISPATCHED, NOT TRIGGERED AND NOT CALLED. pages.yml cannot listen for `release: published`: this
+  # workflow creates the release with the default GITHUB_TOKEN, and GitHub suppresses the events a
+  # workflow raises with that token, so nothing would fire. Dispatching keeps ONE definition of how
+  # the catalog is built rather than a copy that drifts from the original.
   #
-  # NEEDS THE RELEASE JOB, because the assets it downloads have to exist first.
+  # DISPATCHED ON master, NOT CALLED ON THE TAG. A called workflow runs on the caller's ref, and a
+  # Pages deployment created on a tag ref is accepted, reports success with the live URL attached, and
+  # is never served — so calling pages.yml from here published nothing, every time. The site was only
+  # ever corrected by whatever push to master happened next, which is why a release's catalog could
+  # sit wrong for hours and why v0.9.19 shipped a catalog promising v0.9.18's hashes.
   #
-  # AND THE github-pages ENVIRONMENT MUST ALLOW TAGS. Its deployment branch policy gates the deploy
-  # before any step runs, so a policy listing only `master` fails this job on a tag with an empty
-  # step list and no error text — the build succeeds, the deploy is refused, and the site silently
-  # keeps the previous catalog. A `v*` tag policy is what makes this job able to publish at all.
-
+  # THE TAG STILL TRAVELS, as release_tag: the dispatched run is on master, but what it must describe
+  # is the release this workflow just published, and at that moment "latest" is not reliably it.
+  #
+  # NEEDS THE RELEASE JOB, because the assets the catalog hashes have to exist first.
   pages:
     needs: release
+    runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/pages.yml
-    with:
-      # THE TAG THIS RUN JUST PUBLISHED, rather than letting Pages ask for "latest". At the moment
-      # this job starts, the release exists but "latest" is not reliably it — and a Pages run
-      # dispatched by hand while this one publishes would race it, hashing the previous release's
-      # zips into a catalog that then overwrites the correct one. Naming the tag removes the
-      # question rather than narrowing the window.
-      release_tag: ${{ github.ref_name }}
+      actions: write
+    steps:
+      - name: Publish the catalog from a served ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --repo "${GITHUB_REPOSITORY}" --ref master \
+              -f release_tag="${{ github.ref_name }}"
+          echo "dispatched pages.yml on master for ${{ github.ref_name }}"
+
 
   # THE LIBRARY, TO NUGET.ORG. Same tag, same version — the package a consumer references and the
   # binary a user downloads come from one commit, so "which cxagent is this Core from?" has an
