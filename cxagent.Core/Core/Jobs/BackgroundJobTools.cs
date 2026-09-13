@@ -60,8 +60,15 @@ public sealed class BackgroundJobTools(DetachedProcessRegistry registry, string 
             var command = job?.Command ?? "(unknown — started outside the shell tool)";
             sb.Append(index++).Append(". pid ").Append(entry.Process.Pid)
               .Append(" (").Append(age).Append(", ").Append(owner).Append(") ")
-              .Append(command)
-              .AppendLine();
+              .Append(command);
+
+            // AND WHERE TO READ IT, because a row that only says a command is running leaves the
+            // model holding a pid it cannot act on: the output is in a file, and the only way it
+            // knew that path was the `run_shell` result it may have long since dropped from context.
+            // Naming it here is what makes a listed job READABLE rather than merely visible.
+            if (job?.OutputPath is { } path) sb.Append(" -> ").Append(path);
+
+            sb.AppendLine();
         }
 
         // THE SLOT COUNT, LAST. Add refuses at MaxConcurrent, and a model that cannot start a new

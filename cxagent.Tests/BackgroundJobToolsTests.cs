@@ -143,5 +143,23 @@ public class BackgroundJobToolsTests
         Assert.DoesNotContain("SESSION or the session", answer);
         Assert.False(fx.Process.Finished);
     }
+    /// <summary>
+    /// A LISTED JOB MUST BE READABLE, not merely visible. The output of a background command is in a
+    /// file, and the only place the model ever saw that path was the `run_shell` result it may have
+    /// dropped from context many turns ago — so a row naming a pid and a command line leaves it
+    /// holding an identifier it cannot act on. The path is already on the entry; this pins that it
+    /// reaches the row.
+    /// </summary>
+    [Fact]
+    public void AListedJobNamesTheFileItsOutputIsGoingTo()
+    {
+        using var fx = new JobToolsFixture("SESSION");
+        var tools = new BackgroundJobTools(fx.Registry, "SESSION");
+
+        var listing = tools.Invoke(Tool.JobList, "SESSION", 0);
+
+        Assert.Contains(fx.Process.OutputPath!, listing);
+    }
+
 
 }

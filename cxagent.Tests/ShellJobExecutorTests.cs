@@ -477,6 +477,11 @@ public class ShellJobExecutorTests
         Assert.False(refused.Success);
         Assert.Contains("background", refused.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(DetachedProcessRegistry.MaxConcurrent.ToString(), refused.ErrorMessage!);
+
+        // AND NAMES THE WAY OUT. The cap is cleared by ending a command, so a refusal that lists only
+        // waiting and running in the foreground withholds the one action that actually frees a slot.
+        Assert.Contains(Tool.JobList, refused.ErrorMessage!);
+        Assert.Contains(Tool.JobKill, refused.ErrorMessage!);
     }
 
     [Fact]

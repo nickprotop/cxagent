@@ -35,6 +35,10 @@ public sealed class JobsCommand(DetachedProcessRegistry registry, string session
                 : job.AgentId;
             var age = job is null ? "?" : BackgroundJobTools.Age(job.Started);
             var command = job?.Command ?? "(unknown — started outside the shell tool)";
+            // NO OUTPUT PATH IN THIS TABLE, unlike `job_list`. These are aligned columns in a
+            // terminal and a log path is long enough to wreck them, while the person reading has a
+            // shell and can find the file. The model's listing names it because a model cannot go
+            // looking: the path is the only handle it has on what the command actually printed.
             return $"pid {entry.Process.Pid}  ·  {owner}  ·  {age}  ·  {command}";
         }));
     }

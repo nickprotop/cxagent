@@ -111,7 +111,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `agent` | Delegate a job to a sub-agent (fan-out mode) |
 | `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
 | `agent_list` | See which sub-agents this session has spawned |
-| `job_list` | Background commands running now, across every agent in the session |
+| `job_list` | Background commands running now, across every agent in the session, and where each one's output is going |
 | `job_kill` | Stop one by pid — your own, or any of them if you are the session agent |
 
 **A long command does not have to hold the turn.** `run_shell` with `background: true` starts the
@@ -120,7 +120,8 @@ nothing has been printed yet — and the agent is told separately when it exits,
 command that is *still* running at its `timeout_seconds` (120 by default) is handed over the same way
 rather than killed, so the work is not thrown away and re-run; `shellDetachOnTimeout: false` in
 config kills it at the deadline instead. Sixteen background commands may run at once, and past that
-`background: true` is refused rather than queued.
+`background: true` is refused rather than queued — the refusal names `job_list` and `job_kill`, since
+ending one is what frees a slot.
 
 **`/jobs` lists every background command running, and `/jobs kill <pid>` stops one** — the pid
 completes in the palette, so nothing has to be retyped from a row you just read. The model has the
