@@ -1,7 +1,7 @@
 {
   "pluginContract": 3,
   "name": "triggers",
-  "version": "0.9.18",
+  "version": "0.9.19",
   "spawns": true,
   "client": true,
   "instructions": "You can schedule work for later in this session. `trigger_wake` takes exactly one of `after`, `at` or `every`; `every` is a cron expression. Call `trigger_list` to see what is pending \u2014 you will not remember what you scheduled once it falls out of context. Triggers fire only while cxagent is running.",
