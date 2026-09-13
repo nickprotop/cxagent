@@ -55,6 +55,27 @@ public class PermissionPolicy
     public string? SessionId { get; init; }
 
     /// <summary>
+    /// The app's own log tree — the folder a backgrounded command's output is written into — or null
+    /// when nobody said.
+    ///
+    /// <para>SO THE AGENT CAN READ WHAT THE APP WROTE FOR IT. <c>run_shell</c> with
+    /// <c>background: true</c> writes to <c>&lt;logs&gt;/&lt;agent&gt;/&lt;job&gt;/background.out</c>
+    /// and hands the model that path, which sits OUTSIDE the working folder — so following the
+    /// instruction in the tool's own result raised "read a file outside the working folder?" on every
+    /// backgrounded command. See <see cref="ReadsOwnLog"/> for why that is not what the prompt is for.</para>
+    ///
+    /// <para>THE TREE, NOT ONE AGENT'S DIRECTORY UNDER IT. The per-session folder is named by the
+    /// AGENT's id, which is minted fresh on every re-wire and again on resume, while a policy outlives
+    /// all of that — pinning one would quietly stop matching the folder the running agent writes to,
+    /// and the prompt would come back with no visible cause.</para>
+    ///
+    /// <para>INIT-ONLY AND OPTIONAL for the reason <see cref="SessionId"/> is: every existing
+    /// construction site keeps working, and a policy built without one prompts exactly as before
+    /// rather than guessing at a path.</para>
+    /// </summary>
+    public string? LogDir { get; init; }
+
+    /// <summary>
     /// The model that reviews this session's requests in auto mode, or null when none is configured.
     ///
     /// <para>ON THE POLICY BECAUSE IT IS PER SESSION. The instance name comes from a session's own
@@ -555,14 +576,29 @@ public class PermissionPolicy
     /// and still shown ... that phrasing is what makes the button intelligible."</summary>
     public bool IsInBoundary(string path) => IsInsideBoundary(path);
 
-    private bool IsInsideBoundary(string path)
+    private bool IsInsideBoundary(string path) => IsInside(path, _root);
+
+    /// <summary>
+    /// Whether <paramref name="path"/> resolves to <paramref name="directory"/> or something beneath it.
+    ///
+    /// <para>THE DIRECTORY IS A PARAMETER SO THERE IS ONE RESOLVER. <see cref="LogDir"/> needs the
+    /// same geometry against a different folder, and a second containment test written beside this one
+    /// would be a second place to forget that <see cref="TryResolve"/> — not <c>GetFullPath</c> — is
+    /// what makes a symlink out of the folder count as outside it. Four holes of exactly that shape
+    /// have already been found in this file.</para>
+    ///
+    /// <para>RELATIVE PATHS STILL RESOLVE FROM THE SESSION ROOT, whatever directory is being tested
+    /// against: the model is told relative paths resolve from the working directory, and resolving
+    /// <c>notes.txt</c> against the log folder instead would test a path nobody is going to touch.</para>
+    /// </summary>
+    private bool IsInside(string path, string directory)
     {
         var resolved = TryResolve(path, _root);
         if (resolved is null) return false;   // resolution failed: fail toward asking, never toward silence.
 
-        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
-        return resolved == normalizedRoot ||
-               resolved.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        return resolved == normalized ||
+               resolved.StartsWith(normalized + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -594,8 +630,30 @@ public class PermissionPolicy
     public bool AllowsSilentWrites(PermissionRequest request) =>
         request.Kind is PermissionKind.FileRead or PermissionKind.FileWrite
         && _rules.GetTrust(_root) == TrustState.Trusted
-        && IsInsideBoundary(request.Display)
+        && (IsInsideBoundary(request.Display) || ReadsOwnLog(request))
         && !IsExecutableConfig(request);
+
+    /// <summary>
+    /// Whether this is a READ of a file under <see cref="LogDir"/>.
+    ///
+    /// <para>THE PROMPT GUARDS FILES THE AGENT REACHED FOR ON ITS OWN, and this is not one of them.
+    /// A backgrounded command's output is written by the app, into the app's own log tree, and the
+    /// tool result then hands the model that path and tells it to read the file — so the read it asks
+    /// for is the one the app just asked for. Charging a prompt for it puts a question in front of the
+    /// user about a file they did not choose and an agent did not find.</para>
+    ///
+    /// <para>READS ONLY. The agent has no business WRITING into the log tree: that is where the
+    /// record of what happened lives, and a silent write there could edit the evidence. The kind
+    /// test is what keeps a fix for a read from widening into that.</para>
+    ///
+    /// <para>THE SAME RESOLVER AS THE WORKING BOUNDARY, via <see cref="IsInside"/>: without it
+    /// <c>logs/&lt;agent&gt;/&lt;job&gt;/../../../../etc/shadow</c> is lexically under the log folder
+    /// and this would be a path-traversal hole rather than a convenience.</para>
+    /// </summary>
+    private bool ReadsOwnLog(PermissionRequest request) =>
+        request.Kind == PermissionKind.FileRead
+        && LogDir is { Length: > 0 } dir
+        && IsInside(request.Display, dir);
 
     /// <summary>
     /// What a classifier verdict may change for this request. See <see cref="ReviewEffect"/>.

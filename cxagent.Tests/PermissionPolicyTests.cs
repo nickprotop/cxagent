@@ -849,4 +849,141 @@ public class PermissionPolicyTests
 
         Assert.DoesNotContain("KB", Assert.Single(reqs).Display);
     }
+
+    /// <summary>
+    /// A policy given the app's log tree, judging a folder the user trusts. The log tree is
+    /// DELIBERATELY OUTSIDE the working folder — that is the whole condition the log-dir grant exists
+    /// for, and a fixture that nested it inside would pass on the ordinary boundary instead.
+    /// </summary>
+    private static (PermissionPolicy Policy, string Logs) PolicyWithLogs(string root)
+    {
+        var rules = EmptyRules();
+        rules.SetTrust(root, TrustState.Trusted);
+        var logs = new CxAgent.Core.Storage.AppPaths(MakeTempDir()).LogsDir;
+        Directory.CreateDirectory(logs);
+        return (new PermissionPolicy(root, rules, EditMode.AcceptEdits) { LogDir = logs }, logs);
+    }
+
+    /// <summary>
+    /// THE APP'S OWN OUTPUT IS READABLE WITHOUT A PROMPT. `run_shell {background: true}` writes to
+    /// <c>&lt;logs&gt;/&lt;agent&gt;/&lt;job&gt;/background.out</c> and the tool result hands the model
+    /// that path with "read it" — a prompt there asks the user about a file the app itself named.
+    /// </summary>
+    [Fact]
+    public void ReadingTheSessionsOwnLogFile_IsSilent()
+    {
+        var root = MakeTempDir();
+        var (policy, logs) = PolicyWithLogs(root);
+        var background = Path.Combine(logs, "agent-1", "job-1",
+            CxAgent.Core.Execution.ProcessRunner.DetachedOutputName);
+
+        Assert.True(policy.IsSilentlyAllowed(FileRead(background)));
+    }
+
+    /// <summary>
+    /// AND WRITING THERE STILL ASKS. The log tree is the record of what happened; an agent editing it
+    /// silently would be editing the evidence. Reads and writes are one kind test apart, so this is
+    /// the assertion that keeps the convenience from becoming that.
+    /// </summary>
+    [Fact]
+    public void WritingIntoTheSessionsLogDirectory_StillAsks()
+    {
+        var root = MakeTempDir();
+        var (policy, logs) = PolicyWithLogs(root);
+
+        Assert.False(policy.IsSilentlyAllowed(
+            FileWrite(Path.Combine(logs, "agent-1", "job-1", "background.out"))));
+    }
+
+    /// <summary>
+    /// THE LOG GRANT RESOLVES LIKE THE WORKING BOUNDARY DOES. A new containment test that used
+    /// GetFullPath would be lexical, and the log path the model is handed is deep enough that walking
+    /// out of it is four dot-dots — a traversal hole dressed as a convenience.
+    /// </summary>
+    [Fact]
+    public void DotDotOutOfTheLogDirectory_IsNotSilent()
+    {
+        var root = MakeTempDir();
+        var (policy, logs) = PolicyWithLogs(root);
+        var escape = Path.Combine(logs, "agent-1", "job-1", "..", "..", "..", "..", "etc", "passwd");
+
+        Assert.False(policy.IsSilentlyAllowed(FileRead(escape)));
+    }
+
+    /// <summary>A SYMLINK OUT OF THE LOG TREE IS OUT OF IT, for the reason one out of the working
+    /// folder is: a directory can be a door.</summary>
+    [Fact]
+    public void ASymlinkOutOfTheLogDirectory_IsNotSilent()
+    {
+        var root = MakeTempDir();
+        var (policy, logs) = PolicyWithLogs(root);
+        var outside = MakeTempDir();
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "s");
+        Directory.CreateSymbolicLink(Path.Combine(logs, "link"), outside);
+
+        Assert.False(policy.IsSilentlyAllowed(FileRead(Path.Combine(logs, "link", "secret.txt"))));
+    }
+
+    /// <summary>A POLICY TOLD NO LOG DIRECTORY BEHAVES EXACTLY AS BEFORE — which is what makes the
+    /// property safe to add without touching the consumers in examples/ that never set it.</summary>
+    [Fact]
+    public void WithNoLogDirectory_AReadOutsideTheFolderStillAsks()
+    {
+        var root = MakeTempDir();
+        var policy = TrustedPolicy(root);   // no LogDir set
+
+        Assert.Null(policy.LogDir);
+
+        // THE APP'S REAL DEFAULT TREE, not a temp path standing in for one. Null must mean "no grant",
+        // and the tempting way to implement that is to fall back to AppPaths' own resolution — which
+        // would grant a consumer with no sessions at all a folder it never named. A fixture path is
+        // refused under either reading, so it cannot tell them apart.
+        var defaultLogs = new CxAgent.Core.Storage.AppPaths().LogsDir;
+        Assert.False(policy.IsSilentlyAllowed(
+            FileRead(Path.Combine(defaultLogs, "agent-1", "job-1", "background.out"))));
+
+        // And a temp tree nobody named, for the ordinary case.
+        Assert.False(policy.IsSilentlyAllowed(FileRead(
+            Path.Combine(new CxAgent.Core.Storage.AppPaths(MakeTempDir()).LogsDir, "x", "y", "background.out"))));
+    }
+
+    /// <summary>
+    /// THE RUNNING APP CARRIES IT. Every test above constructs the policy it then asserts on, so all
+    /// of them pass with the property wired nowhere — the feature would be complete and unreachable,
+    /// with a green suite. AppBootstrap.Run takes over the terminal and has no test seam (see
+    /// CommandLineTests), so the composition root is checked as SOURCE: every policy the UI builds
+    /// must set LogDir, and a fourth construction site added later fails here rather than silently
+    /// reintroducing the prompt.
+    /// </summary>
+    [Fact]
+    public void EveryPolicyTheUiBuilds_CarriesTheLogDirectory()
+    {
+        var ui = Path.Combine(RepoRoot(), "cxagent", "UI");
+        var missing = new List<string>();
+
+        foreach (var file in Directory.GetFiles(ui, "*.cs", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(file);
+            foreach (System.Text.RegularExpressions.Match match in
+                     System.Text.RegularExpressions.Regex.Matches(text, @"new PermissionPolicy\("))
+            {
+                // The initialiser follows the argument list, so look forward far enough to contain it
+                // and no further than the next statement could plausibly reach.
+                var window = text[match.Index..Math.Min(text.Length, match.Index + 400)];
+                if (!window.Contains("LogDir"))
+                    missing.Add($"{Path.GetFileName(file)}: {window.Split('\n')[0].Trim()}");
+            }
+        }
+
+        Assert.Empty(missing);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "cxagent.Core")))
+            dir = Path.GetDirectoryName(dir);
+
+        return dir ?? throw new DirectoryNotFoundException("repository root not found from " + AppContext.BaseDirectory);
+    }
 }

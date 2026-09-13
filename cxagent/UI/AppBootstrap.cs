@@ -398,10 +398,14 @@ public static class AppBootstrap
         // serves every session in the process and its reports named none of them; the policy is
         // already per-session and already attached to every request, so nothing that BUILDS a
         // request has to learn what a session is.
+        // AND THE LOG TREE, so the agent can read back a file the app told it to read. A
+        // backgrounded command's output lands under this folder and the tool result names that path;
+        // without it here, following that instruction costs a permission prompt every time.
         var permissionPolicy = new PermissionPolicy(session.WorkingDirectory, permissionRules,
             startupMode.Edits)
         {
             SessionId = session.Id,
+            LogDir = paths.LogsDir,
         };
         // The UI's own transcript writer. The control it wraps is created with mainWindow above and
         // never replaced, so there is no later lifetime to
@@ -1031,6 +1035,7 @@ public static class AppBootstrap
                     : new PermissionPolicy(wired.WorkingDirectory, permissionRules, startupMode.Edits)
                       {
                           SessionId = wired.Id,
+                          LogDir = paths.LogsDir,
                       },
                 ConfigDir: paths.ConfigDir);
 

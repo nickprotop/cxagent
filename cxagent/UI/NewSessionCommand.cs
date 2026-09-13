@@ -3,6 +3,7 @@ using CxAgent.Core.Llm;
 using CxAgent.Core.Models;
 using CxAgent.Core.Permissions;
 using CxAgent.Core.Sessions;
+using CxAgent.Core.Storage;
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Dialogs;
@@ -154,7 +155,14 @@ public sealed class NewSessionCommand
             // JUDGED BY ITS OWN ROOT, AND SAYING WHICH SESSION IT IS. The root stops this session
             // being measured against another's folder, and the id is what a permission decision is
             // filed under.
-            Policy: new PermissionPolicy(full, _host.Rules, _host.Mode.Edits) { SessionId = session.Id },
+            // AND THE LOG TREE, so a backgrounded command's output — which the app writes there and
+            // then tells the model to read — does not cost a prompt. Derived through AppPaths rather
+            // than combined here, so there is one definition of where logs live.
+            Policy: new PermissionPolicy(full, _host.Rules, _host.Mode.Edits)
+            {
+                SessionId = session.Id,
+                LogDir = new AppPaths(_host.ConfigDir).LogsDir,
+            },
             ConfigDir: _host.ConfigDir);
 
         var (sink, jobs) = SessionWiring.Sinks(_host.System, tab);
