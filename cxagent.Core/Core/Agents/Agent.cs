@@ -175,6 +175,23 @@ public sealed class Agent
     private readonly AgentReachTools? _reach;
 
     /// <summary>
+    /// Seeing and stopping background commands — <see cref="Jobs.BackgroundJobTools"/>.
+    ///
+    /// <para>NEVER NULL, UNLIKE <see cref="_reach"/>. Reach exists only where a spawner kept its
+    /// children, but any agent — session or child — can background a shell command, so any agent
+    /// needs to see and stop its own. Gating this on <c>CanSpawn</c> as the reach tools are would
+    /// hide job_list/job_kill from exactly the agent whose own command they answer for.</para>
+    ///
+    /// <para>AGAINST <see cref="Execution.DetachedProcessRegistry.Default"/>, THE SAME INSTANCE THE
+    /// SHELL TOOL WRITES INTO. Production always builds <c>ShellBackgrounding</c> with its own
+    /// <c>Registry</c> left null (see SessionFactory.Wire), and a null there falls back to Default
+    /// inside ProcessRunner — so Default is the one registry a backgrounded command ever actually
+    /// lands in. Constructing a fresh registry here would list nothing: every command this agent
+    /// backgrounds would exist in a registry job_list never reads from.</para>
+    /// </summary>
+    private readonly Jobs.BackgroundJobTools _jobTools;
+
+    /// <summary>
     /// The children this agent has running or has run, by their agent id.
     ///
     /// <para>KEYED ON THE CHILD'S AGENT ID because that is the only key both paths share. A spawn
@@ -623,6 +640,19 @@ public sealed class Agent
             : "";
 
     /// <summary>
+    /// job_kill's "pid" argument, or 0 for a call that omitted or malformed it — a value no live
+    /// process ever has, so <see cref="Jobs.BackgroundJobTools"/> reports "no such pid" rather than
+    /// this layer inventing a second error for the same case.
+    /// </summary>
+    private static int ArgOrZeroInt(ToolCall call, string name) =>
+        call.Arguments.ValueKind == JsonValueKind.Object
+        && call.Arguments.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt32(out var pid)
+            ? pid
+            : 0;
+
+    /// <summary>
     /// Whether this agent is a CHILD, fixed at construction.
     ///
     /// <para>Not derived from <c>_spawner is null</c>, which would be the tempting shortcut and is
@@ -918,6 +948,14 @@ public sealed class Agent
     /// <see cref="Execution.JobContext"/> it builds. Null wherever no session wired one, and an
     /// executor must treat delivery as best-effort rather than assume a port.
     /// </param>
+    /// <param name="sessionId">
+    /// The session agent's own <see cref="Id"/>, for <see cref="Jobs.BackgroundJobTools"/>'s kill
+    /// rule — "the session may kill any job; a sub-agent only its own". Null means this agent IS the
+    /// session: a top-level construction has no parent to name, and its own <see cref="Id"/> is the
+    /// value a child would be passed anyway. A child is always built with this set to the session's
+    /// id, never its immediate parent's, because sub-agents cannot nest — every child's parent already
+    /// IS the session.
+    /// </param>
     public Agent(ILlmProvider provider, JobRegistry executors, TokenLedger ledger,
         ISessionObserver sink, IToolObserver jobs, LogFileManager? logs, int maxTurns, int? compressAbove = null,
         AgentContext? context = null, string? globalInstructionsDir = null,
@@ -937,7 +975,8 @@ public sealed class Agent
         Jobs.ToolSelection? toolSelection = null,
         Permissions.PermissionPolicy? policy = null,
         Permissions.ActionClassifier? classifier = null,
-        IAgentDelivery? delivery = null)
+        IAgentDelivery? delivery = null,
+        string? sessionId = null)
     {
         // CARRIED FOR MCP, which builds its own PermissionRequest rather than going through
         // PermissionGatedExecutor. Without it the gate refuses every MCP call for want of a policy —
@@ -992,6 +1031,12 @@ public sealed class Agent
         _reach = spawner?.Store is { } kept
             ? new AgentReachTools(kept, spawner.ConcurrencySlot)
             : null;
+
+        // sessionId ?? Id: a null means nobody passed a parent, which is only ever true for the
+        // top-level construction — a child is always built with the session's own id (see
+        // SubAgentFactory.Create), so falling back to THIS agent's Id here is correct exactly for
+        // the one case that reaches it.
+        _jobTools = new Jobs.BackgroundJobTools(Execution.DetachedProcessRegistry.Default, sessionId ?? Id);
 
         // THE CLAIM IS THE SIGNAL, AND IT IS THE ONLY ONE BOTH PATHS RAISE. A spawn takes the same
         // claim a send takes — the spawner does it so a send cannot corrupt a context it is still
@@ -1285,6 +1330,11 @@ public sealed class Agent
             // been consulted. And an agent with no kept children still gets them: agent_list saying
             // "none yet" is an answer, where a missing tool is a capability the model cannot ask about.
             .Concat(CanSpawn && _reach is not null ? AgentReachTools.Definitions : [])
+            // THE JOB TOOLS, ALWAYS — NOT GATED ON CanSpawn. That gate keeps a child from waking a
+            // sibling it never spawned; backgrounding a shell command is a different capability every
+            // agent has regardless of whether it can spawn, so a sub-agent needs to see and stop its
+            // own job exactly as the session does.
+            .Concat(Jobs.BackgroundJobTools.Definitions)
             // THE LOAD TOOL, only when there is something to load. Offering it with an empty catalog
             // advertises a capability whose every call can only fail, and costs schema bytes in the
             // request for every session that has no skills — the same reasoning that keeps the
@@ -2663,6 +2713,13 @@ public sealed class Agent
                 ?? Text(CanSpawn && _reach is not null && _reach.Claims(call.Name)
                     ? await _reach.InvokeAsync(call.Name, ArgOrEmpty(call, "name"),
                         ArgOrEmpty(call, "prompt"), ct)
+                    : null)
+                // THE JOB TOOLS, UNGATED — unlike the reach tools just above, _jobTools is never
+                // null and Claims is checked with no CanSpawn test: a sub-agent that backgrounded a
+                // shell command must be able to list and kill it exactly as the session can.
+                // SYNCHRONOUS, so no await — see BackgroundJobTools' own doc for why.
+                ?? Text(_jobTools.Claims(call.Name)
+                    ? _jobTools.Invoke(call.Name, Id, ArgOrZeroInt(call, "pid"))
                     : null)
                 // SKILLS BEFORE MCP, for the same reason spawn leads: a server is free to advertise
                 // any name, and a skill load answered by an MCP server would be silently wrong.

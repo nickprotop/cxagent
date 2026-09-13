@@ -1,5 +1,9 @@
+using CxAgent.Core.Agents;
 using CxAgent.Core.Execution;
 using CxAgent.Core.Jobs;
+using CxAgent.Core.Llm;
+using CxAgent.Core.Models;
+using CxAgent.Core.Storage;
 using Xunit;
 
 namespace CxAgent.Tests;
@@ -55,6 +59,38 @@ public class BackgroundJobToolsTests
         var tools = new BackgroundJobTools(new DetachedProcessRegistry(), "SESSION");
         Assert.Contains("no background command with pid 999999",
             tools.Invoke(Tool.JobKill, "SESSION", 999999));
+    }
+
+    /// <summary>
+    /// A JOB_LIST CALL REACHES BackgroundJobTools — proving both halves of the wiring at once. The
+    /// model is only ALLOWED to call job_list if Agent advertised it (were the definition missing,
+    /// the terminator would answer "no such tool" rather than the empty-registry text this asserts
+    /// on), and the call only REACHES BackgroundJobTools if the dispatch chain actually claims it
+    /// rather than falling through. Either half missing produces a different wrong answer, so this
+    /// one assertion covers both.
+    /// </summary>
+    [Fact]
+    public async Task AJobListCallReachesTheJobTools()
+    {
+        var provider = new MockLlmProvider();
+        provider.EnqueueResponse(new LlmResponse
+        {
+            Text = "", StopReason = "tool_use",
+            ToolCalls = [new ToolCall { Id = "c1", Name = Tool.JobList, Arguments = default }],
+        });
+        provider.EnqueueResponse(new LlmResponse { Text = "done", StopReason = "end_turn" });
+
+        var agent = new Agent(provider, JobRegistry.CreateWithBuiltins(),
+            new TokenLedger(), new BufferedChatSink(), new BufferedJobPanel(), logs: null,
+            maxTurns: 5);
+
+        await agent.SendAsync("list background jobs", CancellationToken.None);
+
+        var toolResults = agent.Context.Messages
+            .Where(m => m.Role == "tool")
+            .Select(m => m.Content)
+            .ToList();
+        Assert.Contains(toolResults, c => c is not null && c.Contains("no background commands are running"));
     }
 
     /// <summary>

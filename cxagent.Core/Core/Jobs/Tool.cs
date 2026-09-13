@@ -102,7 +102,7 @@ public static class Tool
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
     {
         ReadFile, WriteFile, ReplaceInFile, Glob, Grep, RunShell, HttpRequest, WebFetch,
-        Agent, AgentSend, AgentList, TodoWrite, AskUser, Skill,
+        Agent, AgentSend, AgentList, JobList, JobKill, TodoWrite, AskUser, Skill,
     };
 
     /// <summary>

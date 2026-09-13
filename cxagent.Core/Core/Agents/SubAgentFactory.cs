@@ -393,7 +393,13 @@ public sealed class SubAgentFactory
             delivery: _runtime.Delivery,
             // THE SAME CLASSIFIER THE PARENT SPECULATES WITH. Null passes straight through —
             // Agent's own null check is what makes this "never speculate" rather than a crash.
-            classifier: _runtime.Classifier);
+            classifier: _runtime.Classifier,
+            // parentAgentId IS THE SESSION'S ID, NEVER AN INTERMEDIATE PARENT'S: a child cannot
+            // spawn (no spawner — see the note below), so whatever calls Create is always the
+            // session itself. Threaded through so BackgroundJobTools' kill rule ("the session may
+            // kill any job; a sub-agent only its own") can tell this child apart from the session
+            // it belongs to.
+            sessionId: parentAgentId);
 
         // NOTE WHAT IS NOT PASSED, because both absences are load-bearing:
         //

@@ -301,10 +301,11 @@ A shipped type may set `tools` even though it may not set `briefing`. The two ar
 thing: a briefing is text the code depends on, while a toolset is a property of **your** deployment,
 which cxagent cannot know.
 
-### The twelve names
+### The sixteen names
 
 `read_file` · `write_file` · `replace_in_file` · `glob` · `grep` · `run_shell` · `web_fetch` ·
-`http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` · `agent_list` · `skill`
+`http_request` · `todowrite` · `ask_user` · `agent` · `agent_send` · `agent_list` · `job_list` ·
+`job_kill` · `skill`
 
 A name that matches nothing is not an error and not a warning: names arrive late — a skill appears,
 an application injects a tool — so a term matching nothing today may match tomorrow, and an
