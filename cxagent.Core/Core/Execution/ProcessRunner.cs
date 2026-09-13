@@ -343,16 +343,20 @@ public static class ProcessRunner
         // a handover that happens at most once.
         DetachedProcess? handedOver = null;
 
+        // END-OF-STREAM IS FORWARDED TOO, for the case where this command is later handed over at its
+        // deadline: the DetachedProcess it becomes closes its output file only once both streams are
+        // finished, and it has no handlers of its own to learn that from — these are still the only
+        // readers. Harmless when no hand-over happens, since the holder is then null.
         process.OutputDataReceived += (_, e) =>
         {
-            if (e.Data is null) return;
+            if (e.Data is null) { handedOver?.StreamFinished(); return; }
             ctx.Log(e.Data);
             Capture(stdout, e.Data);
             handedOver?.Write(e.Data);
         };
         process.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data is null) return;
+            if (e.Data is null) { handedOver?.StreamFinished(); return; }
             ctx.Log(JobLogLevel.Warning, e.Data);
             Capture(stderr, e.Data);
             handedOver?.Write(e.Data);
@@ -503,6 +507,12 @@ public static class ProcessRunner
 
         holder = detached;
 
+        // THE EXIT MUST STILL BE NOTICED, and on this path nothing else will notice it: RunAsync has
+        // stopped waiting, and DetachedProcess subscribes to no Process.Exited of its own. Safe to
+        // start here rather than later because reading was established long ago — RunAsync's handlers
+        // have been streaming since Start — which is the one thing BeginWaiting must come after.
+        detached.BeginWaiting();
+
         var target = registry ?? DetachedProcessRegistry.Default;
         if (target.Add(detached)) return detached;
 
@@ -566,7 +576,12 @@ public static class ProcessRunner
         if (spec.Run.Env is not null)
             foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 
-        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        // NO EnableRaisingEvents HERE, unlike RunAsync: nothing on this path subscribes to
+        // Process.Exited. DetachedProcess notices the exit on a thread of its own precisely because the
+        // event is raised from a thread-pool work item a busy pool may not run for seconds — see
+        // DetachedProcess.BeginWaiting. Asking for an event nobody handles would only cost the
+        // registration.
+        var process = new Process { StartInfo = psi };
 
         var (writer, outputPath) = TryOpenDetachedOutput(spec.Run.SpillDir);
 
@@ -576,15 +591,19 @@ public static class ProcessRunner
         // close over a slot that is filled immediately after Start.
         DetachedProcess? detached = null;
 
+        // A NULL Data IS END-OF-STREAM, AND IT IS REPORTED RATHER THAN IGNORED. It is the only signal
+        // that a command's output is COMPLETE, and DetachedProcess needs it: the thread that notices
+        // the exit learns of it before these handlers have run, so without knowing both streams are
+        // finished it would close the output file while the command's last lines are still in flight.
         process.OutputDataReceived += (_, e) =>
         {
-            if (e.Data is null) return;
+            if (e.Data is null) { detached?.StreamFinished(); return; }
             ctx.Log(e.Data);
             detached?.Write(e.Data);
         };
         process.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data is null) return;
+            if (e.Data is null) { detached?.StreamFinished(); return; }
             ctx.Log(JobLogLevel.Warning, e.Data);
             detached?.Write(e.Data);
         };
@@ -609,6 +628,12 @@ public static class ProcessRunner
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
+
+        // ONLY NOW MAY THE EXIT BE NOTICED. Completing a DetachedProcess disposes the Process, and a
+        // command like `exit 9` is already dead by this point — so a waiter started any earlier
+        // disposes the object the two calls above are made on, and they throw "StandardError has not
+        // been redirected" out of a method whose job is to hand back a running command.
+        detached.BeginWaiting();
 
         var target = registry ?? DetachedProcessRegistry.Default;
         if (!target.Add(detached))

@@ -43,6 +43,50 @@ public class DetachedProcessTests
         Assert.Contains("finished", text);   // written AFTER the call returned
     }
 
+    /// <summary>
+    /// A COMMAND THAT FAILED BEFORE ANYONE SUBSCRIBED IS STILL REPORTED.
+    ///
+    /// <para>THE DEFECT THIS PINS, WHICH A LIVE DRIVE FOUND AND THE SUITE FLAKED ON: an agent that
+    /// backgrounded `exit 9` was never told it finished. <c>Process.Exited</c> is raised from a
+    /// thread-pool work item, so with the pool saturated it is not a notification but a request to be
+    /// notified eventually — measured at over four seconds for a child that had already died, against
+    /// a twenty-second delivery deadline the suite hit in full.</para>
+    ///
+    /// <para>SATURATION IS THE NORMAL CASE, NOT A CONTRIVED ONE. Backgrounding is what a model reaches
+    /// for when the machine is busy, and a parallel test suite is busy in the same way — which is why
+    /// this failed one run in two and never in isolation. And the reports lost are the ones carrying
+    /// BAD NEWS: a rejected argument or a failed authentication returns in microseconds, so it depends
+    /// entirely on the notification rather than on anyone still watching.</para>
+    ///
+    /// <para>THE STARVATION ITSELF IS NOT REPRODUCED HERE, DELIBERATELY. Doing so needs
+    /// <c>ThreadPool.SetMaxThreads</c> — queueing blocking work does not suffice, the pool grows past
+    /// it — and that setting is PROCESS-WIDE: applied in the test host it starved tests running in
+    /// parallel, failing <c>RunAsync_Timeout_HandsTheCommandOverStillRunning</c> and
+    /// <c>ProcessResourceMonitorTests</c> in most runs. Trading one flake for three is not a bargain,
+    /// so what is left here is the end-to-end behaviour, and the starvation stays measured rather than
+    /// asserted: with the pool capped at one busy thread, <c>Process.Exited</c> for an already-dead
+    /// child had not arrived after four seconds, and the parameterless <c>WaitForExit()</c> — which
+    /// also waits on the pool-driven readers — had not returned after six.</para>
+    ///
+    /// <para>WHAT IS ASSERTED IS THE EXIT CODE REACHING A LATE SUBSCRIBER, through the same
+    /// subscribe-then-re-check pair <c>ArrangeTheReport</c> uses, because that is the sequence the
+    /// agent's report actually depends on.</para>
+    /// </summary>
+    [Fact]
+    public void AFastExit_ReachesASubscriberThatArrivedAfterTheCommandHadFinished()
+    {
+        using var registry = NewRegistry();
+        var exited = new TaskCompletionSource<int>();
+
+        var detached = registry.Detach("exit 9");
+        detached.Exited += code => exited.TrySetResult(code);
+        if (detached.Finished) exited.TrySetResult(detached.ExitCode);
+
+        Assert.True(exited.Task.Wait(TimeSpan.FromSeconds(20)),
+            "the agent is never told a fast-failing background command finished");
+        Assert.Equal(9, exited.Task.Result);
+    }
+
     /// <summary>Killing a detached process stops it and is safe to call twice.</summary>
     [Fact]
     public void ADetachedProcess_CanBeKilled_Idempotently()

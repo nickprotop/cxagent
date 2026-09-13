@@ -370,11 +370,18 @@ public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobEx
         // subscription existed, because Exited is raised once and never replayed — `exit 7`, a
         // failing `git push`, anything that rejects its arguments finishes in milliseconds, so
         // without the second check the agent would hear nothing about exactly the commands that
-        // failed fastest. And the two can also RACE: Complete sets Finished inside its lock and
-        // raises Exited outside it, so a subscription landing between them is reached by both.
-        // Interlocked makes the first one win and the second a no-op — an agent told twice that
-        // a command finished reports it twice, and a model reading two reports has no way to know
-        // it was one command.
+        // failed fastest. But NEITHER route here is what makes the report arrive on time: a command
+        // this short is usually still alive at both lines above — it has been started, not yet run —
+        // so Finished reads false and the subscription is all that is left. What makes that
+        // subscription trustworthy lives in DetachedProcess.BeginWaiting: a thread of its own blocking
+        // on the child, because Exited alone is a thread-pool work item and a saturated pool simply
+        // never delivers it. Nothing can be fixed from this end; the check below is a cheap cover for
+        // the ordering, not the guarantee.
+        //
+        // And the routes can also RACE: Complete sets Finished inside its lock and raises Exited
+        // outside it, so a subscription landing between them is reached by both. Interlocked makes
+        // the first one win and the second a no-op — an agent told twice that a command finished
+        // reports it twice, and a model reading two reports has no way to know it was one command.
         var report = new BackgroundReport(delivery, agentId, command, start, detached.OutputPath);
         var reported = 0;
         void ReportOnce(int code)

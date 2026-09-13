@@ -27,6 +27,28 @@ public sealed class DetachedProcess : IDisposable
     private bool _finished;
     private int _exitCode;
 
+    /// <summary>Whether <see cref="ProcessRunner.DetachAsync"/> has finished starting the output
+    /// readers, before which the <see cref="Process"/> must not be disposed — see
+    /// <see cref="ReleaseTheHandle"/>.</summary>
+    private bool _readingBegun;
+
+    /// <summary>Set when the child exited before reading was established, so the disposal that was
+    /// skipped then still happens once it is.</summary>
+    private bool _releasePending;
+
+    /// <summary>
+    /// Signalled once BOTH redirected streams have reported end-of-stream, so the output file can be
+    /// closed knowing nothing more is coming.
+    ///
+    /// <para>WAITED FOR BEFORE THE WRITER IS CLOSED, because the exit and the last line of output are
+    /// noticed by different threads. The waiter thread learns of the exit from the OS, which happens
+    /// BEFORE the pool-driven read handlers have delivered what the command printed — so closing the
+    /// file on the exit alone truncates it, and a command's final line is exactly the part worth
+    /// reading. Measured: `echo started; sleep 2; echo finished; exit 3` lost "finished" in a quarter
+    /// of runs.</para>
+    /// </summary>
+    private readonly CountdownEvent _drained = new(2);
+
     /// <summary>The child's process id — the only handle a caller outside this process has on it.</summary>
     public int Pid { get; }
 
@@ -37,9 +59,14 @@ public sealed class DetachedProcess : IDisposable
     /// <summary>
     /// Raised once with the exit code when the child finally exits.
     ///
-    /// <para>ONCE, AND ONLY FROM INSIDE THE LOCK THAT SETS <see cref="_finished"/>. Both
-    /// <c>Process.Exited</c> and a <see cref="Kill"/> can reach the completion path, and an agent
-    /// told twice that a command finished would report it twice.</para>
+    /// <para>ONCE, AND ONLY FROM INSIDE THE LOCK THAT SETS <see cref="_finished"/>. Both the waiter
+    /// thread and a <see cref="Kill"/> reach the completion path, and an agent told twice that a
+    /// command finished would report it twice.</para>
+    ///
+    /// <para>RAISED ON WHICHEVER OF THOSE NOTICED FIRST, so a handler must assume no particular thread.
+    /// Ordinarily that is <see cref="WaitForTheChild"/>'s own thread, where a handler that blocks holds
+    /// up nothing else — but it is also the only thing running there, so the exit report is delivered
+    /// from it synchronously by design.</para>
     /// </summary>
     public event Action<int>? Exited;
 
@@ -58,15 +85,142 @@ public sealed class DetachedProcess : IDisposable
         OutputPath = outputPath;
         Pid = process.Id;
 
-        // SUBSCRIBED AFTER Pid IS READ, because Process.Id throws once the object has been disposed
-        // and Complete disposes it. Reading it first means this object can always answer which
-        // process it was, including after the child is gone.
-        process.Exited += (_, _) => Complete();
+        // NO Process.Exited SUBSCRIPTION AT ALL, AND THAT IS THE POINT. It looks like the obvious way
+        // to notice an exit and is the wrong one twice over: it is raised from a THREAD-POOL WORK ITEM,
+        // so a saturated pool delays it indefinitely — measured at over four seconds for a child that
+        // had already died, against a delivery deadline the agent's exit report has to meet — and it
+        // fires BEFORE the read handlers have delivered the command's last lines, so completing from it
+        // closes the output file mid sentence. BeginWaiting's thread has neither problem: it is not the
+        // pool's to schedule, and it waits for both streams to finish before completing.
+        //
+        // Pid IS STILL READ FIRST, because Process.Id throws once the object has been disposed and
+        // completion disposes it. Reading it here means this object can always answer which process it
+        // was, including after the child is gone.
 
-        // AND CHECKED ONCE BY HAND: a command short enough to finish before this constructor runs
-        // has already raised Exited, and EnableRaisingEvents does not replay it. Without this, `echo
-        // hi &` would leave a DetachedProcess nobody ever hears from.
-        if (process.HasExited) Complete();
+        // AND NOT COMPLETED HERE, EVEN FOR A CHILD THAT HAS ALREADY EXITED. Completing disposes the
+        // Process, and the caller has not yet called BeginOutputReadLine on it — doing so would throw
+        // "StandardError has not been redirected" out of DetachAsync, whose contract is to hand back a
+        // running command. A command short enough to finish before this constructor runs still has to
+        // be noticed, since EnableRaisingEvents does not replay Exited; BeginWaiting is what notices
+        // it, once reading has been established.
+    }
+
+    /// <summary>
+    /// Starts the thread that notices the child's exit. Called by
+    /// <see cref="ProcessRunner.DetachAsync"/> once reading has begun, and exactly once.
+    ///
+    /// <para>SEPARATE FROM THE CONSTRUCTOR BECAUSE COMPLETION DISPOSES THE PROCESS. A `exit 9` is gone
+    /// before either returns, so a waiter started in the constructor disposes the
+    /// <see cref="Process"/> while <c>DetachAsync</c> is still calling
+    /// <c>BeginOutputReadLine</c>/<c>BeginErrorReadLine</c> on it — which throws, out of a method whose
+    /// contract is to hand back a running command. Reading must be established first; the exit has
+    /// nowhere to go until it is.</para>
+    ///
+    /// <para>AND THE ORDER COSTS NOTHING, because no exit can be missed by waiting: the child is
+    /// already dead or it is not, and <see cref="WaitForTheChild"/> asks the OS either way.</para>
+    /// </summary>
+    internal void BeginWaiting()
+    {
+        // READING IS ESTABLISHED BY THE TIME THIS IS CALLED, so the handle may now be released — and
+        // must be here if an exit already tried and was deferred, or the Process leaks.
+        bool owed;
+        lock (_gate)
+        {
+            _readingBegun = true;
+            owed = _releasePending;
+        }
+        if (owed) ReleaseTheHandle();
+
+        // A THREAD OF OUR OWN, WHICH IS THE ONLY ROUTE THAT CANNOT BE STARVED.
+        // Process.Exited above is raised from a THREAD-POOL WORK ITEM, so it is not a notification so
+        // much as a request to be notified when the pool gets round to it — and the exit report is the
+        // one thing here with a deadline. Measured: with the worker pool saturated, the event for a
+        // child that had already died did not arrive within four seconds; in the suite, the agent was
+        // never told its background command finished at all.
+        //
+        // THE STARVATION IS NOT A PATHOLOGICAL CASE, IT IS THE NORMAL ONE. Backgrounding is what a
+        // model reaches for when the machine is busy, and the pool is busiest exactly then. Worse, a
+        // FAILING command is the likeliest to be lost: `exit 9`, a rejected argument, a failed
+        // authentication all return in microseconds, so they depend entirely on the notification
+        // rather than on anyone still watching — the reports that go missing are the ones carrying
+        // bad news.
+        //
+        // A DEDICATED THREAD RATHER THAN Task.Run OR WaitForExitAsync, both of which are the pool
+        // again. One blocked thread per detached command is affordable precisely because
+        // DetachedProcessRegistry.MaxConcurrent bounds them at sixteen; IsBackground so a thread
+        // still waiting on a long command never keeps the app from exiting, since shutdown reaps the
+        // children anyway.
+        var waiter = new Thread(WaitForTheChild)
+        {
+            IsBackground = true,
+            Name = $"detached-wait-{Pid}",
+        };
+        waiter.Start();
+    }
+
+    /// <summary>
+    /// Blocks on the child until it exits, then completes — the starvation-proof half of the pair that
+    /// notices an exit.
+    ///
+    /// <para>RACES <c>Process.Exited</c> ON PURPOSE, AND EITHER MAY WIN. <see cref="Complete"/> is
+    /// idempotent under its lock, so the loser is a no-op; what matters is that this one's timing
+    /// depends on nothing but the OS. Keeping the event as well costs nothing and still wins on an
+    /// idle machine, where it fires first.</para>
+    ///
+    /// <para>A FINITE TIMEOUT IN A LOOP, NEVER THE PARAMETERLESS <c>WaitForExit()</c>. That overload
+    /// also waits for the redirected output readers to reach end-of-stream — and those readers are
+    /// thread-pool work items, so it starves in exactly the case this thread exists to survive.
+    /// Measured with the pool saturated: the parameterless form had not returned after six seconds for
+    /// a child that was already dead, while the finite form below answered in ten milliseconds with
+    /// the right exit code. The finite overloads wait on the process handle alone, which is the only
+    /// thing being asked about here. <c>Timeout.Infinite</c> is not an option either — it is routed to
+    /// the same drain.</para>
+    ///
+    /// <para>THE LOOP IS THEREFORE NOT A POLL OF THE CHILD'S STATE: each call blocks on the handle for
+    /// the full interval and returns early the moment the child dies, so a long command costs one
+    /// wakeup a second rather than a spin. Flushing the output file is <see cref="Complete"/>'s job and
+    /// happens under the lock the writers take, so nothing here depends on the readers having drained.</para>
+    ///
+    /// <para>SWALLOWS EVERYTHING, INCLUDING A DISPOSED HANDLE. The winning path disposes the
+    /// <see cref="Process"/> inside <see cref="Complete"/>, so this thread can find the object gone
+    /// mid-wait — and it is then asking about a child whose exit has already been reported. An
+    /// exception escaping a thread with no caller to catch it would take the process down, which is a
+    /// crash caused by a background command having finished.</para>
+    /// </summary>
+    private void WaitForTheChild()
+    {
+        try
+        {
+            while (!_process.WaitForExit(1_000))
+                if (Finished) return;   // Kill or the event got there first; nothing left to wait for.
+        }
+        catch (Exception) { /* handle already released by whoever completed first */ }
+
+        // THEN LET THE OUTPUT CATCH UP, BRIEFLY. The child's death reaches this thread before the read
+        // handlers have delivered its last lines, so completing immediately closes the output file mid
+        // sentence — see _drained. BOUNDED, because the handlers run on the pool and a starved pool is
+        // the case this thread exists for: waiting for them without a limit would reintroduce exactly
+        // the hang being fixed. Two seconds is far longer than a drain takes and still finite, and a
+        // timeout costs a truncated tail rather than a lost report.
+        try { _drained.Wait(2_000); }
+        catch (Exception) { /* disposed by a completion that got here first */ }
+
+        Complete();
+    }
+
+    /// <summary>
+    /// Records that one redirected stream has reached end-of-stream. Called by
+    /// <see cref="ProcessRunner.DetachAsync"/>'s read handlers, once each.
+    ///
+    /// <para>THE ONLY RELIABLE SIGNAL THAT OUTPUT IS COMPLETE. A null <c>Data</c> on the handler is
+    /// how the framework says the stream is finished; without counting them, the waiter thread has no
+    /// way to tell "nothing printed yet" from "nothing more will be printed" and closes the file on a
+    /// guess.</para>
+    /// </summary>
+    internal void StreamFinished()
+    {
+        try { if (!_drained.IsSet) _drained.Signal(); }
+        catch (Exception) { /* already at zero, or disposed: either way the drain is done. */ }
     }
 
     /// <summary>
@@ -88,7 +242,8 @@ public sealed class DetachedProcess : IDisposable
     }
 
     /// <summary>Flushes the output file, raises <see cref="Exited"/> once, and releases the process
-    /// handle. Reached from the exit event, from <see cref="Kill"/> and from <see cref="Dispose"/>.</summary>
+    /// handle unless reading has yet to begin — see <see cref="ReleaseTheHandle"/>. Reached from the
+    /// exit event, from the waiter thread, from <see cref="Kill"/> and from <see cref="Dispose"/>.</summary>
     private void Complete()
     {
         int code;
@@ -114,6 +269,32 @@ public sealed class DetachedProcess : IDisposable
         // OUTSIDE THE LOCK: a subscriber is free to call Kill or Dispose from its handler, and both
         // take this lock.
         Exited?.Invoke(code);
+
+        ReleaseTheHandle();
+    }
+
+    /// <summary>
+    /// Disposes the <see cref="Process"/>, but never before <see cref="ProcessRunner.DetachAsync"/> has
+    /// finished starting the readers.
+    ///
+    /// <para>DISPOSING TOO EARLY THROWS OUT OF <c>DetachAsync</c>. A command like `exit 9` can complete
+    /// between that method's <c>BeginOutputReadLine</c> and <c>BeginErrorReadLine</c> calls, and the
+    /// second then fails with "StandardError has not been redirected" — the object it is called on was
+    /// released underneath it. So completion is free to happen whenever the child dies, and only the
+    /// disposal waits: <see cref="BeginWaiting"/> marks the point after which it is safe, and whichever
+    /// side arrives second does it.</para>
+    ///
+    /// <para>THE HANDLE IS ALWAYS RELEASED, by one side or the other. If the exit wins, this is a no-op
+    /// and <see cref="BeginWaiting"/> disposes; if reading was established first, the completion path
+    /// disposes as it always did. What is never left behind is an undisposed Process, which would leak
+    /// a file descriptor per background command.</para>
+    /// </summary>
+    private void ReleaseTheHandle()
+    {
+        lock (_gate)
+        {
+            if (!_readingBegun) { _releasePending = true; return; }
+        }
 
         try { _process.Dispose(); }
         catch (Exception) { /* handle already released */ }
