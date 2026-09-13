@@ -78,7 +78,7 @@ public class ProcessRunnerTests
         var ctx = new CollectingContext();
         var start = DateTimeOffset.UtcNow;
         var result = await ProcessRunner.RunAsync(
-            new ProcessSpec("/bin/sh", new[] { "-c", "sleep 30" }, TimeoutSeconds: 1), ctx, CancellationToken.None);
+            new ProcessSpec("/bin/sh", new[] { "-c", "sleep 30" }, new RunOptions(TimeoutSeconds: 1)), ctx, CancellationToken.None);
         var elapsed = DateTimeOffset.UtcNow - start;
 
         Assert.True(result.TimedOut);
@@ -119,7 +119,7 @@ public class ProcessRunnerTests
         var result = await ProcessRunner.RunAsync(
             new ProcessSpec("/bin/sh",
                 new[] { "-c", "echo FIRSTLINE; for i in $(seq 1 4000); do echo padpadpadpadpadpad; done; echo LASTLINE" },
-                SpillDir: dir),
+                new RunOptions(SpillDir: dir)),
             ctx, CancellationToken.None);
 
         Assert.Contains("LASTLINE", result.Stdout);
@@ -151,7 +151,7 @@ public class ProcessRunnerTests
         var dir = NewSpillDir();
         var ctx = new CollectingContext();
         var result = await ProcessRunner.RunAsync(
-            new ProcessSpec("/bin/sh", new[] { "-c", "echo hello" }, SpillDir: dir),
+            new ProcessSpec("/bin/sh", new[] { "-c", "echo hello" }, new RunOptions(SpillDir: dir)),
             ctx, CancellationToken.None);
 
         Assert.Contains("hello", result.Stdout);

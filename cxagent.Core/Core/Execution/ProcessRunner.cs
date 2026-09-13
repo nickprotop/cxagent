@@ -4,11 +4,41 @@ using CxAgent.Core.Jobs;
 
 namespace CxAgent.Core.Execution;
 
+/// <summary>
+/// WHAT to run — the two things every call must name, and nothing that varies by call site.
+///
+/// <para>SPLIT FROM <see cref="RunOptions"/> BECAUSE THE KNOBS ARE NOT PART OF THE COMMAND. Held as
+/// one record, the six members were a bag in two demonstrable ways. <c>WorkingDir</c> and
+/// <c>SpillDir</c> are both <c>string?</c> and both paths, so a positional call that transposed them
+/// compiled cleanly and ran the command in the LOG directory while writing spill files into the
+/// user's checkout. And <c>TimeoutSeconds</c> is meaningless to <see cref="ProcessRunner.DetachAsync"/>,
+/// which ignores it outright — a record whose members apply to one consumer and not the other is two
+/// records.</para>
+/// </summary>
 /// <param name="FileName">The executable to run.</param>
 /// <param name="Arguments">Its arguments, already split — passed through ArgumentList, so no quoting.</param>
+/// <param name="Options">How to run it, or null for every default — see <see cref="RunOptions"/>.</param>
+public record ProcessSpec(
+    string FileName,
+    IReadOnlyList<string> Arguments,
+    RunOptions? Options = null)
+{
+    /// <summary>The options as given, or the all-defaults set — so a reader never has to write
+    /// <c>spec.Options?.X ?? default</c> and never has to remember what each default was.</summary>
+    public RunOptions Run => Options ?? RunOptions.Default;
+}
+
+/// <summary>
+/// HOW to run a command: the knobs a call site varies, none of which change what is being run.
+/// </summary>
 /// <param name="WorkingDir">Where it runs, or null for the process's own directory.</param>
 /// <param name="Env">Variables added to the child's environment, or null to inherit unchanged.</param>
-/// <param name="TimeoutSeconds">How long before the tree is killed, or null for no deadline.</param>
+/// <param name="TimeoutSeconds">
+/// How long the caller will wait, or null to wait indefinitely.
+///
+/// <para>THE TREE IS KILLED AT IT. Ignored entirely by <see cref="ProcessRunner.DetachAsync"/>, where
+/// no caller is waiting at all.</para>
+/// </param>
 /// <param name="SpillDir">
 /// Where an over-long stream's full text is written, or null to write none and truncate outright.
 ///
@@ -21,13 +51,16 @@ namespace CxAgent.Core.Execution;
 /// wired no log directory has nowhere to put a file — and a runner that invented one (temp, say)
 /// would be writing files nobody sweeps on behalf of a caller that never asked for any.</para>
 /// </param>
-public record ProcessSpec(
-    string FileName,
-    IReadOnlyList<string> Arguments,
+public record RunOptions(
     string? WorkingDir = null,
     IReadOnlyDictionary<string, string>? Env = null,
     int? TimeoutSeconds = null,
-    string? SpillDir = null);
+    string? SpillDir = null)
+{
+    /// <summary>Every default: the process's own directory, an inherited environment, no deadline and
+    /// no spill file. Shared rather than allocated per call, since the record is immutable.</summary>
+    public static readonly RunOptions Default = new();
+}
 
 /// <summary>
 /// Where a stream's FULL text went, when it did not fit inline, and how big that full text was.
@@ -230,11 +263,11 @@ public static class ProcessRunner
             // that into a fast, legible failure the model can act on.
             RedirectStandardInput = true,
             UseShellExecute = false,
-            WorkingDirectory = spec.WorkingDir ?? Environment.CurrentDirectory,
+            WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
         foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
-        if (spec.Env is not null)
-            foreach (var kv in spec.Env) psi.Environment[kv.Key] = kv.Value;
+        if (spec.Run.Env is not null)
+            foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
@@ -248,8 +281,8 @@ public static class ProcessRunner
         // A NAME PER STREAM, NOT A TIMESTAMP OR A PID: this directory is one job's, so the stream is
         // the only thing that distinguishes the two files, and a stable name means a re-run of the
         // same job overwrites its own spill instead of accumulating one per attempt.
-        using var stdout = new StreamCapture(spec.SpillDir, "stdout.spill");
-        using var stderr = new StreamCapture(spec.SpillDir, "stderr.spill");
+        using var stdout = new StreamCapture(spec.Run.SpillDir, "stdout.spill");
+        using var stderr = new StreamCapture(spec.Run.SpillDir, "stderr.spill");
         var outputLock = new object();
 
         void Capture(StreamCapture capture, string line)
@@ -279,7 +312,7 @@ public static class ProcessRunner
         resourceMonitor.Updated += (_, snapshot) => ctx.ReportResources(snapshot);
 
         // Link the caller's ct with a timeout token so either kills the tree.
-        using var timeoutCts = spec.TimeoutSeconds is int secs
+        using var timeoutCts = spec.Run.TimeoutSeconds is int secs
             ? new CancellationTokenSource(TimeSpan.FromSeconds(secs))
             : new CancellationTokenSource();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
@@ -353,7 +386,7 @@ public static class ProcessRunner
     /// of <see cref="RunAsync"/> already have, and a later implementation that waits briefly to see
     /// whether the command fails immediately would need it.</para>
     ///
-    /// <para><paramref name="spec"/>'s <c>TimeoutSeconds</c> IS IGNORED. A deadline is a promise to
+    /// <para><see cref="RunOptions.TimeoutSeconds"/> IS IGNORED. A deadline is a promise to
     /// kill the process at it, and the caller that would have been told is gone; a background command
     /// ends when it ends, when it is killed, or when the app exits.</para>
     /// </summary>
@@ -376,15 +409,15 @@ public static class ProcessRunner
             // nobody can see.
             RedirectStandardInput = true,
             UseShellExecute = false,
-            WorkingDirectory = spec.WorkingDir ?? Environment.CurrentDirectory,
+            WorkingDirectory = spec.Run.WorkingDir ?? Environment.CurrentDirectory,
         };
         foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
-        if (spec.Env is not null)
-            foreach (var kv in spec.Env) psi.Environment[kv.Key] = kv.Value;
+        if (spec.Run.Env is not null)
+            foreach (var kv in spec.Run.Env) psi.Environment[kv.Key] = kv.Value;
 
         var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
-        var (writer, outputPath) = TryOpenDetachedOutput(spec.SpillDir);
+        var (writer, outputPath) = TryOpenDetachedOutput(spec.Run.SpillDir);
 
         // THE HOLDER EXISTS BECAUSE OF AN ORDERING BIND: handlers must be attached before Start (a
         // command that prints instantly would otherwise lose its first lines), and DetachedProcess
@@ -445,7 +478,7 @@ public static class ProcessRunner
     }
 
     /// <summary>Opens the detached output file, or returns nulls when there is nowhere to write —
-    /// which is a supported case for the same reason <see cref="ProcessSpec.SpillDir"/>'s null is.</summary>
+    /// which is a supported case for the same reason <see cref="RunOptions.SpillDir"/>'s null is.</summary>
     private static (StreamWriter? Writer, string? Path) TryOpenDetachedOutput(string? dir)
     {
         if (dir is null) return (null, null);

@@ -108,7 +108,7 @@ public class DetachedProcessTests
 
         public DetachedProcess Detach(string command) =>
             ProcessRunner.DetachAsync(
-                new ProcessSpec("/bin/sh", ["-c", command], SpillDir: _dir),
+                new ProcessSpec("/bin/sh", ["-c", command], new RunOptions(SpillDir: _dir)),
                 new CollectingContext(), Registry).GetAwaiter().GetResult();
 
         public void Dispose()

@@ -72,10 +72,11 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null) : IJobEx
         // on the concrete context rather than read off IJobContext: the interface is what plugins
         // implement, and only this built-in needs somewhere to write. A context without one (headless,
         // a test, an embedder that wired no logs) yields null, and the runner then truncates as
-        // before — see ProcessSpec.SpillDir.
+        // before — see RunOptions.SpillDir.
         var spillDir = (context as JobContext)?.JobDir;
 
-        var spec = new ProcessSpec("/bin/sh", new[] { "-c", command }, workingDir, env, timeout, spillDir);
+        var spec = new ProcessSpec("/bin/sh", new[] { "-c", command },
+            new RunOptions(workingDir, env, timeout, spillDir));
         var start = DateTimeOffset.UtcNow;
 
         // THROUGH ShellArguments, NOT Get("background") HERE. The permission gate reads the same
