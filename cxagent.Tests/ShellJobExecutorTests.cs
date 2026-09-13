@@ -185,7 +185,7 @@ public class ShellJobExecutorTests
     public async Task Execute_Timeout_WithDetachTurnedOffInConfig_KillsTheCommand()
     {
         using var fx = new BackgroundFixture();
-        var executor = new ShellJobExecutor(fx.Registry, detachOnTimeout: false);
+        var executor = new ShellJobExecutor(new ShellBackgrounding(fx.Registry, DetachOnTimeout: false));
 
         // A CollectingContext, NOT the fixture's JobContext, only because this test needs the pid the
         // command printed and a JobContext's log write is fire-and-forget async — a race a test must
@@ -290,7 +290,7 @@ public class ShellJobExecutorTests
             var paths = new AppPaths(_dir);
             paths.EnsureCreated();
 
-            Executor = new ShellJobExecutor(Registry);
+            Executor = new ShellJobExecutor(new ShellBackgrounding(Registry));
 
             // THE CONCRETE JobContext, NOT AN IJobContext DOUBLE, and that is the point of these
             // tests. Delivery and AgentId sit on the concrete class because IJobContext ships in the
@@ -419,7 +419,7 @@ public class ShellJobExecutorTests
         var registry = new DetachedProcessRegistry();
         try
         {
-            var r = await new ShellJobExecutor(registry).ExecuteAsync(
+            var r = await new ShellJobExecutor(new ShellBackgrounding(registry)).ExecuteAsync(
                 P(("command", "echo hi"), ("background", true)),
                 new CollectingContext(), CancellationToken.None);
 

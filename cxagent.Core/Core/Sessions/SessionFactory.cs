@@ -41,11 +41,16 @@ internal static class SessionFactory
         // SessionPorts.Policy.
         var executors = shared.Gate is null
             ? JobRegistry.CreateWithBuiltins()
-            // THE SHELL DEADLINE'S MEANING IS THIS MACHINE'S SETTING, carried in from config here
-            // because ProcessRunner is static and the executor is constructed here. The gate-less
-            // overload above keeps the default, which is what a headless or test caller wants.
+            // HOW A BACKGROUNDED COMMAND IS TREATED, assembled here because this is the one place
+            // that has both the machine's config and the directory a pid record survives a crash in.
+            // ProcessRunner is static and reads neither. The gate-less overload above keeps the
+            // defaults, which is what a headless or test caller wants.
             : JobRegistry.CreateWithBuiltins(resolution.Providers, shared.Gate, ports.Policy,
-                resolution.ShellDetachOnTimeout);
+                new Jobs.Builtin.ShellBackgrounding(
+                    DetachOnTimeout: resolution.ShellDetachOnTimeout,
+                    Children: shared.GlobalInstructionsDir is { } childDir
+                        ? new Plugins.ChildProcessStore(childDir)
+                        : null));
 
         // WRAPPED HERE, NOT BY THE EMBEDDER. A bare IAgentTool in ports.Tools is not a compile
         // error and would run with no gate at all — PermissionGatedExecutor cannot cover it, because

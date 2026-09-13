@@ -55,20 +55,18 @@ public class JobRegistry
     /// caller with no policy of its own can offer.</para>
     /// </param>
     /// <param name="providers">The configured models, for executors that need one.</param>
-    /// <param name="shellDetachOnTimeout">Whether a shell command still running at its deadline is
-    /// handed back alive rather than killed — config's <c>shellDetachOnTimeout</c>, default true.
-    ///
-    /// <para>OPTIONAL WITH A DEFAULT, which is AV1561's own exception: a fourth parameter almost no
-    /// caller passes is not a group wanting a name. Every test here and every headless path wants the
-    /// default, and only the composition root that has read config has anything else to say.</para></param>
+    /// <param name="backgrounding">How the shell executor treats a command it stops waiting for —
+    /// see <see cref="Builtin.ShellBackgrounding"/>. Null takes every default, which is what every
+    /// test and every headless path wants; only the composition root that has read config and knows
+    /// where to persist has anything else to say.</param>
     public static JobRegistry CreateWithBuiltins(Llm.ProviderRegistry? providers,
         IPermissionGate permissions, PermissionPolicy? policy = null,
-        bool shellDetachOnTimeout = true)
+        Builtin.ShellBackgrounding? backgrounding = null)
     {
         _ = providers;   // kept in the signature: callers pass their resolution's registry
         var reg = new JobRegistry();
         reg.Register(new PermissionGatedExecutor(
-            new ShellJobExecutor(detachOnTimeout: shellDetachOnTimeout), permissions, policy));
+            new ShellJobExecutor(backgrounding), permissions, policy));
         reg.Register(new PermissionGatedExecutor(new FileJobExecutor(), permissions, policy));
         reg.Register(new WaitJobExecutor());
         reg.Register(new PermissionGatedExecutor(new HttpJobExecutor(), permissions, policy));

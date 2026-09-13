@@ -4,17 +4,21 @@ using CxAgent.Core.Models;
 namespace CxAgent.Core.Jobs.Builtin;
 
 /// <summary>
-/// Runs a shell command via /bin/sh -c, streaming output and capturing the exit code — or, when the
-/// call asks to be backgrounded, starts it and hands back its pid and output file instead.
+/// Everything that decides what happens to a shell command this executor stops waiting for.
+///
+/// <para>A RECORD BECAUSE THE THIRD MEMBER MADE THEM ONE. Two constructor arguments were two
+/// unrelated favours to tests; the third — a store for surviving a crash — is when a name fits, and
+/// one does: these are the terms on which a command outlives its call. A caller setting one usually
+/// has something to say about the others, and a caller with nothing to say passes the record not at
+/// all.</para>
 /// </summary>
-/// <param name="registry">Which registry owns the processes this executor detaches, or null for the
+/// <param name="Registry">Which registry owns the processes this executor detaches, or null for the
 /// process-wide <see cref="DetachedProcessRegistry.Default"/> that shutdown reaps.
 ///
-/// <para>A PARAMETER ONLY SO TESTS CAN OWN THEIR OWN. The default is shared by every test in a
-/// parallel suite, where one test's reap kills another's command and a leaked entry makes a third
-/// test's cap accounting wrong. Production passes nothing; there is one construction site
-/// (<c>JobRegistry</c>) to keep honest.</para></param>
-/// <param name="detachOnTimeout">
+/// <para>A MEMBER ONLY SO TESTS CAN OWN THEIR OWN. The default is shared by every test in a parallel
+/// suite, where one test's reap kills another's command and a leaked entry makes a third test's cap
+/// accounting wrong.</para></param>
+/// <param name="DetachOnTimeout">
 /// Whether a command still running at its <c>timeout_seconds</c> is handed back alive rather than
 /// killed — config's <c>shellDetachOnTimeout</c>, default true.
 ///
@@ -23,9 +27,31 @@ namespace CxAgent.Core.Jobs.Builtin;
 /// answer into the options, and this executor is the one place in the app that builds a
 /// <c>RunOptions</c> from what a session was configured with. The option on the record is what
 /// <c>ProcessRunner</c> obeys; this is what decides its value.</para></param>
-public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool detachOnTimeout = true)
-    : IJobExecutor
+/// <param name="Children">
+/// Where a detached command's pid is written so the NEXT launch can kill it, or null for a caller
+/// with nowhere to persist — a headless run, a test, an embedder that wired no config directory.
+///
+/// <para>NULL IS A REAL CASE AND A REAL GAP, stated rather than papered over: without a store, a
+/// SIGKILL or a crash leaves a backgrounded command running with nothing on disk naming it. The
+/// in-memory registry still reaps it at an orderly shutdown; only the crash case is uncovered.</para>
+/// </param>
+public sealed record ShellBackgrounding(
+    DetachedProcessRegistry? Registry = null,
+    bool DetachOnTimeout = true,
+    Plugins.ChildProcessStore? Children = null)
 {
+    /// <summary>The process-wide registry, detaching on a deadline, and nothing persisted — what a
+    /// caller that has read no config gets.</summary>
+    public static readonly ShellBackgrounding Default = new();
+}
+
+/// <param name="backgrounding">What happens to a command this executor stops waiting for — see
+/// <see cref="ShellBackgrounding"/>. Null takes every default, which is what a test and a headless
+/// caller want; the composition root that has read config passes its own.</param>
+public class ShellJobExecutor(ShellBackgrounding? backgrounding = null) : IJobExecutor
+{
+    private readonly ShellBackgrounding _bg = backgrounding ?? ShellBackgrounding.Default;
+
     public string TypeName => "shell";
     public string DisplayName => "Shell Command";
 
@@ -86,7 +112,7 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
         var spillDir = (context as JobContext)?.JobDir;
 
         var spec = new ProcessSpec("/bin/sh", new[] { "-c", command },
-            new RunOptions(workingDir, env, timeout, spillDir, detachOnTimeout));
+            new RunOptions(workingDir, env, timeout, spillDir, _bg.DetachOnTimeout));
         var start = DateTimeOffset.UtcNow;
 
         // THROUGH ShellArguments, NOT Get("background") HERE. The permission gate reads the same
@@ -96,7 +122,7 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
         if (ShellArguments.IsBackground(parameters))
             return await StartInBackgroundAsync(command, spec, context, start);
 
-        var result = await ProcessRunner.RunAsync(spec, context, ct, registry);
+        var result = await ProcessRunner.RunAsync(spec, context, ct, _bg.Registry);
         var duration = DateTimeOffset.UtcNow - start;
 
         // CHECKED BEFORE TimedOut, BECAUSE BOTH ARE SET AND THEY MEAN OPPOSITE THINGS. The deadline
@@ -175,10 +201,11 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
     /// plan step on to the next job believing this one was done, and there is no exit code to judge
     /// it by yet — a zero here would make every eventual failure invisible.</para>
     /// </summary>
-    private static JobResult StillRunning(string command, int timeout, DetachedProcess detached,
+    private JobResult StillRunning(string command, int timeout, DetachedProcess detached,
         IJobContext context, DateTimeOffset start, TimeSpan duration)
     {
         var reporting = ArrangeTheReport(detached, command, context, start);
+        RecordForTheNextLaunch(detached);
 
         var output = new Dictionary<string, object?>
         {
@@ -233,7 +260,7 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
         DetachedProcess detached;
         try
         {
-            detached = await ProcessRunner.DetachAsync(spec, context, registry);
+            detached = await ProcessRunner.DetachAsync(spec, context, _bg.Registry);
         }
         catch (InvalidOperationException refusal)
         {
@@ -253,6 +280,7 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
         }
 
         var reporting = ArrangeTheReport(detached, command, context, start);
+        RecordForTheNextLaunch(detached);
 
         var output = new Dictionary<string, object?>
         {
@@ -278,6 +306,38 @@ public class ShellJobExecutor(DetachedProcessRegistry? registry = null, bool det
             Duration = DateTimeOffset.UtcNow - start,
             Output = output,
         };
+    }
+
+    /// <summary>
+    /// Writes the detached command's pid where the NEXT launch can kill it, and clears the record when
+    /// it exits on its own.
+    ///
+    /// <para>THE ONLY THING THAT SURVIVES A CRASH. <c>DetachedProcessRegistry</c> is reaped from
+    /// <c>SessionManager.Dispose</c>, which a SIGKILL never reaches — so without this file a
+    /// backgrounded command outlives the app with nothing left knowing its pid. That is the failure
+    /// backgrounding introduces, and it got worse when a deadline stopped killing: the timeout used to
+    /// guarantee a dead process.</para>
+    ///
+    /// <para>CLEARED ON EXIT, so the file holds what is RUNNING rather than a log of everything ever
+    /// backgrounded. A stale record is not merely untidy — the next launch looks up its pid, and every
+    /// stale entry is another chance for the pid to have been reused by a process the start-time match
+    /// then has to rule out.</para>
+    ///
+    /// <para>AND BY HAND AFTER SUBSCRIBING, for the reason every other subscriber here does it:
+    /// <c>Exited</c> is raised once and never replayed, so a command that finished before the
+    /// subscription would leave its record behind forever. The window is narrower here than for the
+    /// exit report, because <see cref="Plugins.ChildProcessStore.Record"/> itself writes nothing for a
+    /// process that has already gone — what remains is an exit landing between that write and the line
+    /// above. NO TEST REACHES IT, and it is kept anyway: it costs one comparison, and the alternative
+    /// is a stale record that makes the next launch ask the OS about a pid for nothing.</para>
+    /// </summary>
+    private void RecordForTheNextLaunch(DetachedProcess detached)
+    {
+        if (_bg.Children is not { } children) return;
+
+        children.Record(detached.Pid);
+        detached.Exited += _ => children.Remove(detached.Pid);
+        if (detached.Finished) children.Remove(detached.Pid);
     }
 
     /// <summary>

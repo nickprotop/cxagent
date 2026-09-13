@@ -35,7 +35,24 @@ namespace CxAgent.Core.Plugins;
 /// is the worse failure.</para>
 /// </param>
 public sealed record ChildProcessRecord(int Pid, DateTime StartTimeUtc, string Plugin,
-    string? Session = null);
+    string? Session = null)
+{
+    /// <summary>
+    /// The <see cref="Plugin"/> value a BACKGROUNDED SHELL COMMAND is recorded under, since there is
+    /// no plugin behind it.
+    ///
+    /// <para>THE SAME FILE RATHER THAN A SECOND STORE, because the problem is identical and this one
+    /// is already solved: a pid plus a start time, an atomic write, a merge across windows, and a
+    /// startup sweep wired into both of <c>SessionManager</c>'s construction paths. A parallel store
+    /// would be a second merge to get right and a second sweep to forget.</para>
+    ///
+    /// <para>THE ANGLE BRACKETS MAKE IT UNCLAIMABLE. <see cref="ChildProcessStore.ReapPlugin"/>
+    /// matches this field against a manifest name, so a marker a plugin could legally be called
+    /// would let <c>/plugin unwire</c> kill the user's background commands. A manifest name is an
+    /// identifier; <c>&lt;background&gt;</c> is not one.</para>
+    /// </summary>
+    public const string BackgroundCommand = "<background>";
+}
 
 /// <summary>
 /// Persists <see cref="ChildProcessRecord"/>s across a crash — one JSON file
@@ -75,6 +92,42 @@ public sealed class ChildProcessStore
 
     /// <summary>Where this store persists, for tests that want to inspect the file directly.</summary>
     public string FilePath => _path;
+
+    /// <summary>
+    /// Records a BACKGROUNDED SHELL COMMAND so the next launch can kill it if this one never gets to.
+    ///
+    /// <para>THE FAILURE THIS CLOSES IS THE ONE BACKGROUNDING INTRODUCES. In-memory reaping runs from
+    /// <c>SessionManager.Dispose</c>, which a SIGKILL or a crash never reaches — and unlike a
+    /// plugin's child there was nothing on disk naming a detached command, because
+    /// <c>IPluginContext.RegisterChildProcess</c> needs a plugin and this has none. A timeout used to
+    /// guarantee a dead process; now that it hands the command over, something has to.</para>
+    ///
+    /// <para>THE START TIME IS READ BACK FROM THE OS, not taken as <c>DateTime.UtcNow</c> — see
+    /// <see cref="ChildProcessRecord.StartTimeUtc"/>. A pid alone cannot be reaped safely, because the
+    /// OS reuses the number the moment the process exits, and a value we invented here would not
+    /// match the one <see cref="ReapOrphans"/> compares against.</para>
+    ///
+    /// <para>BEST-EFFORT, AND SILENT ON FAILURE. A command that exits in the instant between being
+    /// started and being recorded has no start time to read — and there is then nothing to reap
+    /// either, so refusing to background a command over it would trade a closed leak for a broken
+    /// feature.</para>
+    /// </summary>
+    /// <param name="pid">The detached command's process id.</param>
+    /// <param name="sessionId">Whose session backgrounded it, for the log line a reap writes. Not a
+    /// match key here: a crash sweep has no session to compare against.</param>
+    public void Record(int pid, string? sessionId = null)
+    {
+        try
+        {
+            var start = Process.GetProcessById(pid).StartTime.ToUniversalTime();
+            Add(new ChildProcessRecord(pid, start, ChildProcessRecord.BackgroundCommand, sessionId));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                      or System.ComponentModel.Win32Exception)
+        {
+            // Already gone, or not ours to read: nothing survives a crash that is not running now.
+        }
+    }
 
     /// <summary>Records one child process so a future reap can find it. Called from
     /// <see cref="IPluginContext.RegisterChildProcess"/>'s implementation, not by a plugin directly —
