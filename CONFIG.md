@@ -397,6 +397,29 @@ refusing to start over.
 
 Run `cxagent --help` to see what is installed; `--theme <name>` overrides this key for one run.
 
+## `shellDetachOnTimeout` — what a slow command gets
+
+```json
+"shellDetachOnTimeout": false
+```
+
+What happens to a `run_shell` command still running when its `timeout_seconds` passes. **Absent means
+`true`**: the command is handed over alive — the call stops waiting and comes back with the pid and the
+file its output is going to, and the agent is told the exit code when it arrives. `false` kills it
+at the deadline instead.
+
+**True by default because the deadline is usually the caller's patience, not a limit on the work.** A
+build or a test suite that overran two minutes is still doing something useful, and killing it throws
+that away and invites the agent to run it again from the start.
+
+**Set it to `false` when the deadline is a guarantee you need.** That is the only setting under which a
+command cannot outlive the call that started it. The cost is the killed command's partial output: the
+kill path returns an error and no output, so whatever it printed before the deadline — a failing
+build's error included — is lost.
+
+A malformed value warns at startup and the default is kept, rather than refusing to start over a
+behaviour switch.
+
 ## `orchestrator` — caps
 
 ```json

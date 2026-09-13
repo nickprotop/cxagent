@@ -79,6 +79,21 @@
     "Raise it if you run a busy local classifier; lower it if a hosted one being down should",
     "give up sooner. Zero or negative is refused and the default is kept."
   ],
+  "//shellDetachOnTimeout": [
+    "WHAT A run_shell COMMAND STILL RUNNING AT ITS `timeout_seconds` GETS. Absent means true.",
+    "TRUE HANDS IT OVER ALIVE: the call stops waiting and returns the pid and the file its output",
+    "is going to, and the agent is told the exit code when it arrives. FALSE kills it at the",
+    "deadline.",
+    "TRUE BY DEFAULT BECAUSE A DEADLINE IS USUALLY THE CALLER'S PATIENCE, not a limit on the work.",
+    "A build or a test suite that overran two minutes is still doing something useful; killing it",
+    "throws that away and invites the agent to start the whole thing again.",
+    "SET FALSE WHEN THE DEADLINE IS A GUARANTEE YOU NEED \u2014 it is the only setting under which a",
+    "command cannot outlive the call that started it. It costs the killed command's partial",
+    "output: the kill path returns an error and no output, so whatever it printed before the",
+    "deadline is lost.",
+    "A malformed value warns and the default is kept, rather than refusing to start over a",
+    "behaviour switch."
+  ],
   "//theme": [
     "WHICH THEME cxagent STARTS IN. A registered theme's name, or absent.",
     "ABSENT MEANS `cxagent` \u2014 its own palette, a near-black ground with a warm amber accent.",

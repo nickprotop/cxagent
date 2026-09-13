@@ -102,7 +102,7 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `replace_in_file` | Replace an exact passage, leaving the rest untouched |
 | `glob` | Find files by path pattern, e.g. `**/*.cs` |
 | `grep` | Search file contents, literal or regex |
-| `run_shell` | Run a command |
+| `run_shell` | Run a command, or start one in the background (`background`) and be told when it exits |
 | `http_request` | Call an HTTP endpoint |
 | `web_fetch` | Read a web page as text, markup stripped |
 | `skill` | Load a skill's instructions on demand |
@@ -111,6 +111,28 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `agent` | Delegate a job to a sub-agent (fan-out mode) |
 | `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
 | `agent_list` | See which sub-agents this session has spawned |
+
+**A long command does not have to hold the turn.** `run_shell` with `background: true` starts the
+command and returns at once with its pid and the path its output is going to — no `stdout`, because
+nothing has been printed yet — and the agent is told separately when it exits, with the exit code. A
+command that is *still* running at its `timeout_seconds` (120 by default) is handed over the same way
+rather than killed, so the work is not thrown away and re-run; `shellDetachOnTimeout: false` in
+config kills it at the deadline instead. Sixteen background commands may run at once, and past that
+`background: true` is refused rather than queued.
+
+**Nothing in the app lists or stops a background command.** There is no `/background`, and the pid in
+the result is the only handle on it — killing one means another `run_shell`, permission-gated like any
+other command. A detached command is killed when cxagent exits, and one left behind by a crash is
+killed by the next launch.
+
+**A long output arrives as its tail.** Above 8,192 characters `run_shell` returns the END of the
+stream, plus `stdout_spill` — a file in the job's log directory holding everything the call captured,
+head included — and `stdout_bytes`, the true size. The end is where a command's answer is: a failing
+build's error and its summary are last, while a head would show the compiler banner. A command that
+was then handed over at its deadline keeps printing to `background.out` in the same directory, so
+reading all of one takes both files.
+
+`run_shell` also takes `env`, a set of environment variables added to the command's own.
 
 **A sub-agent is kept, not thrown away.** When one finishes, its context — everything it read, ran
 and concluded — stays for the life of the session, and `agent_send` asks it more on that same

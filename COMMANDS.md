@@ -486,10 +486,11 @@ someone look* rather than *how long until a crash is stale*.
 
 ## `/shell`
 
-`run_shell` runs a command and reads what it printed. That covers everything except what needs a
-person: a `sudo` password, `gcloud auth login`, `git rebase -i`, an installer that paints a screen.
-There is nothing to type into behind a captured stream, so the agent reaches that wall and hands the
-job back.
+`run_shell` runs a command with its streams captured — waiting for it and reading what it printed, or,
+with `background: true`, handing back a pid and a file path at once and reporting the exit code when it
+arrives. Either way it covers everything except what needs a person: a `sudo` password, `gcloud auth
+login`, `git rebase -i`, an installer that paints a screen. There is nothing to type into behind a
+captured stream, so the agent reaches that wall and hands the job back.
 
 `/shell` opens a real terminal in a window over the session — a PTY, so a program that checks
 `isatty()` gets the truth and behaves as it would anywhere else.

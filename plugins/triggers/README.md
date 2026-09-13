@@ -37,6 +37,14 @@ instead of a tool call.
 **Survive the process.** A trigger dies with the session that scheduled it. There is nowhere durable
 to put one — a session is a folder, and this plugin is handed no path to it.
 
+**Wake on anything but a clock.** This plugin schedules by time and nothing else. Waking when a
+command finishes was `trigger_on_exit`, removed in 0.9.19: `run_shell` with `background: true` now
+starts a command and tells the agent its exit code when it exits, which is a built-in rather than a
+plugin tool. **What has no replacement is the composed prompt** — `trigger_on_exit` let a caller say
+"if CI failed, fix the test" and have that instruction arrive *with* the exit code. A background
+command's report carries the code and the output path, and whatever the agent does next is its own
+decision at that moment.
+
 **Fire outside cxagent.** A trigger is not a system cron entry; it exists only while the process that
 scheduled it is running. **Triggers fire only while cxagent is running** — a cron line set for 3am
 with no terminal open does nothing at 3am. That changes with phase three, a daemon this plugin does
