@@ -111,6 +111,8 @@ and style, because it is looking at the actual text rather than reconstructing i
 | `agent` | Delegate a job to a sub-agent (fan-out mode) |
 | `agent_send` | Ask a sub-agent you already spawned for more — it still has its own context |
 | `agent_list` | See which sub-agents this session has spawned |
+| `job_list` | Background commands running now, across every agent in the session |
+| `job_kill` | Stop one by pid — your own, or any of them if you are the session agent |
 
 **A long command does not have to hold the turn.** `run_shell` with `background: true` starts the
 command and returns at once with its pid and the path its output is going to — no `stdout`, because
@@ -120,10 +122,13 @@ rather than killed, so the work is not thrown away and re-run; `shellDetachOnTim
 config kills it at the deadline instead. Sixteen background commands may run at once, and past that
 `background: true` is refused rather than queued.
 
-**Nothing in the app lists or stops a background command.** There is no `/background`, and the pid in
-the result is the only handle on it — killing one means another `run_shell`, permission-gated like any
-other command. A detached command is killed when cxagent exits, and one left behind by a crash is
-killed by the next launch.
+**`/jobs` lists every background command running, and `/jobs kill <pid>` stops one** — the pid
+completes in the palette, so nothing has to be retyped from a row you just read. The model has the
+same reach through `job_list` and `job_kill`, with one restriction a user does not have: the session
+agent may stop any job, but a sub-agent may stop only its own, and the refusal names who owns it.
+There is no permission prompt on a kill — the command was already approved when it was backgrounded.
+A detached command is killed when cxagent exits, and one left behind by a crash is killed by the next
+launch.
 
 **A long output arrives as its tail.** Above 8,192 characters `run_shell` returns the END of the
 stream, plus `stdout_spill` — a file in the job's log directory holding everything the call captured,

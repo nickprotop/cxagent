@@ -488,9 +488,10 @@ someone look* rather than *how long until a crash is stale*.
 
 `run_shell` runs a command with its streams captured — waiting for it and reading what it printed, or,
 with `background: true`, handing back a pid and a file path at once and reporting the exit code when it
-arrives. Either way it covers everything except what needs a person: a `sudo` password, `gcloud auth
-login`, `git rebase -i`, an installer that paints a screen. There is nothing to type into behind a
-captured stream, so the agent reaches that wall and hands the job back.
+arrives — and `/jobs` lists what is running. Either way it covers everything except what needs a
+person: a `sudo` password, `gcloud auth login`, `git rebase -i`, an installer that paints a screen.
+There is nothing to type into behind a captured stream, so the agent reaches that wall and hands the
+job back.
 
 `/shell` opens a real terminal in a window over the session — a PTY, so a program that checks
 `isatty()` gets the truth and behaves as it would anywhere else.
@@ -539,6 +540,33 @@ exactly what is running, live, which no dialog does.
 **Linux and Windows only.** The terminal control has no macOS backend yet, so there the command is
 not registered at all — and because the model is told only about commands that were registered, it
 never suggests one that could not work.
+
+---
+
+## `/jobs`
+
+`/shell` opens a terminal for work that needs a person at the keyboard. `/jobs` is the other side of
+that: work with no terminal at all, backgrounded by `run_shell` and running unattended.
+
+```
+/jobs              # every background command running now, across every agent
+/jobs kill <pid>   # stop one
+```
+
+Each row shows the pid, who started it, how long it has been running, and the command line. **It is
+every agent's work, not only yours** — the registry backing it is process-wide, and a job is killable
+by pid regardless of who is told about it, so hiding another agent's row would draw a boundary that
+is not really there.
+
+**The `<pid>` argument completes**, offering the live pids with their command lines as summaries, the
+same mechanism `/agents send` uses for a spawned agent's name — so nobody has to retype a pid they
+just read off a `/jobs` row.
+
+The model has the same two operations as `job_list` and `job_kill`, not as a `/jobs` it can type — it
+already has tools for this, and a command that only led to "the model has no terminal to run this in"
+would be a dead end. **The session agent may stop any job; a sub-agent may stop only its own**, and is
+told who owns it when refused. There is no permission prompt on a kill: the command was already
+approved once, when it was backgrounded.
 
 ---
 
