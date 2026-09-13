@@ -32,34 +32,37 @@ public class ManifestTests
     }
 
     [Fact]
-    public void It_declares_five_tools_and_four_commands()
+    public void It_declares_four_tools_and_four_commands()
     {
         var root = Sidecar();
 
-        Assert.Equal(5, root.GetProperty("tools").GetArrayLength());
+        Assert.Equal(4, root.GetProperty("tools").GetArrayLength());
         Assert.Equal(4, root.GetProperty("commands").GetArrayLength());
     }
 
     /// <summary>
-    /// ONLY trigger_on_exit IS GATED, and the line is "does this execute something" rather than
-    /// "does this have effects". A scheduled prompt's turn is itself fully governed when it runs, so
-    /// gating the scheduling too would ask twice for one thing and train the user to click through.
-    /// trigger_on_exit starts a process NOW, with arguments the model composed, and nothing
-    /// downstream will ask about it again.
+    /// NOTHING HERE IS GATED, and the line is "does this execute something" rather than "does this
+    /// have effects". Every tool this plugin declares only writes a time and a prompt into the
+    /// store; the turn a fire starts is itself fully governed when it runs, so gating the scheduling
+    /// too would ask twice for one thing and train the user to click through.
+    ///
+    /// <para>A DYNAMIC DECLARATION WOULD ALSO REFUSE THE LOAD. ManagedPluginLoader will not load a
+    /// plugin that declares <c>gated: "dynamic"</c> without implementing IPluginGateSource, and this
+    /// type implements no gate — so a tool added here with that value stops the plugin loading at
+    /// all rather than merely failing to ask.</para>
     /// </summary>
     [Fact]
-    public void Only_the_tool_that_runs_a_command_is_gated()
+    public void No_tool_asks_before_it_acts()
     {
         var gated = Sidecar().GetProperty("tools").EnumerateArray()
             .Where(t => t.TryGetProperty("gated", out var g)
-                        && g.ValueKind == JsonValueKind.String
-                        && g.GetString() == "dynamic")
+                        && g.ValueKind != JsonValueKind.False)
             // NON-NULL BY CONSTRUCTION: every tool in the sidecar has a name, and a manifest that
             // lost one would fail the count assertions above long before reaching here.
             .Select(t => t.GetProperty("name").GetString()!)
             .ToArray();
 
-        Assert.Equal(["trigger_on_exit"], gated);
+        Assert.Empty(gated);
     }
 
     /// <summary>

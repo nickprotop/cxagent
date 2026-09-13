@@ -1,10 +1,9 @@
 # triggers
 
-Work that starts without anybody typing — on a clock, or when a process exits.
+Work that starts without anybody typing — on a clock.
 
 A session only ever does something when a turn asks it to. This plugin is what lets a turn ask for a
-*later* turn: schedule a wake now, and the prompt arrives on its own when the time or the command
-says so.
+*later* turn: schedule a wake now, and the prompt arrives on its own when the time says so.
 
 ## The tools
 
@@ -20,11 +19,6 @@ id. Different from cancelling and rescheduling: a recreated trigger would get a 
 already seen.
 
 `trigger_cancel(id)` — stops a pending trigger.
-
-`trigger_on_exit(command, timeout, prompt)` — runs a command unattended until it exits or the
-timeout elapses, then wakes with the exit code and output appended to the prompt. This is the one
-gated tool: it starts a process now, with arguments the model composed, and nothing downstream asks
-about it again.
 
 ## The commands
 

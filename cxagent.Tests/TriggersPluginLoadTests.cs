@@ -37,7 +37,7 @@ public class TriggersPluginLoadTests
         var manifest = PluginManifest.Parse(File.ReadAllText(SidecarPath())).Manifest!;
 
         Assert.Equal("triggers", manifest.Name);
-        Assert.Equal(5, manifest.Tools.Count);
+        Assert.Equal(4, manifest.Tools.Count);
         Assert.Equal(4, manifest.Commands.Count);
     }
 
@@ -72,17 +72,17 @@ public class TriggersPluginLoadTests
     }
 
     /// <summary>
-    /// AND ONLY trigger_on_exit ASKS. PluginToolManifest.Gated defaults to Never, so a manifest that
-    /// says nothing ships tools that never ask — right for four of these and wrong for the fifth.
+    /// AND NONE OF THEM ASKS. Every tool here only writes into the trigger store, and
+    /// PluginToolManifest.Gated defaults to Never — so this reads the values Core actually parsed
+    /// rather than trusting the default. A tool that did need a gate would need IPluginGateSource on the type too, which this
+    /// plugin does not implement: ManagedPluginLoader refuses the whole load for a dynamic
+    /// declaration with no gate behind it.
     /// </summary>
     [Fact]
-    public void Only_the_tool_that_runs_a_command_is_gated()
+    public void No_tool_asks_before_it_acts()
     {
         var manifest = PluginManifest.Parse(File.ReadAllText(SidecarPath())).Manifest!;
 
-        Assert.Equal(
-            ["trigger_on_exit"],
-            manifest.Tools.Where(t => t.Gated == PluginGating.Dynamic)
-                .Select(t => t.Name).ToArray());
+        Assert.All(manifest.Tools, t => Assert.Equal(PluginGating.Never, t.Gated));
     }
 }

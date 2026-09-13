@@ -6,7 +6,7 @@ using CxAgent.Core.Plugins;
 namespace CxAgent.Plugins.Triggers;
 
 /// <summary>
-/// Work that starts without anybody typing — on a clock, or when a process exits.
+/// Work that starts without anybody typing — on a clock.
 ///
 /// <para>THE FIRST PRODUCTION CONSUMER OF CONTRACT 3. It declares the client, so
 /// <see cref="IPluginContext.Client"/> is non-null and a fire can submit into the session that
@@ -19,8 +19,7 @@ namespace CxAgent.Plugins.Triggers;
 /// there is nowhere to write that would be deleted with the conversation. Phase three owns
 /// durability, because a daemon has to answer missed-fire policy anyway.</para>
 /// </summary>
-public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler,
-    IPluginGateSource
+public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginCommandHandler
 {
     private IPluginContext? _context;
 
@@ -134,22 +133,27 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
         }
     }
 
-    public async Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
+    /// <summary>
+    /// COMPLETED SYNCHRONOUSLY, because every tool here only touches the in-memory store: scheduling
+    /// a wake decides a time and returns, and the submit that fires later happens on the timer's own
+    /// task. The signature is the contract's, so it still hands back a Task.
+    /// </summary>
+    public Task<JobResult> Invoke(string toolName, JobParameters call, IJobContext context,
         CancellationToken ct)
     {
         var session = _context?.SessionId;
         if (session is null)
-            return Fail("this host does not scope plugins by session, so triggers cannot be kept apart.");
+            return Task.FromResult(
+                Fail("this host does not scope plugins by session, so triggers cannot be kept apart."));
 
-        return toolName switch
+        return Task.FromResult(toolName switch
         {
             "trigger_wake" => Wake(session, call),
             "trigger_list" => Listing(session),
             "trigger_update" => UpdateOne(session, call),
             "trigger_cancel" => CancelOne(session, call),
-            "trigger_on_exit" => await OnExit(session, call),
             _ => Fail($"unknown tool '{toolName}'"),
-        };
+        });
     }
 
     private static JobResult Wake(string session, JobParameters call)
@@ -188,83 +192,6 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
             return Fail($"no trigger {id} in this session.");
 
         return Say($"trigger {id} cancelled.");
-    }
-
-    /// <summary>
-    /// Starts the watch and RETURNS — the tool call must not block on a process that may run for
-    /// half an hour. The wait itself continues on a task this plugin owns, registered against
-    /// <see cref="IPluginContext.Lifetime"/> so Stop's cancellation reaches it the same way a
-    /// trigger's timer does.
-    /// </summary>
-    private Task<JobResult> OnExit(string session, JobParameters call)
-    {
-        var command = call.Get<string>("command");
-        var timeoutText = call.Get<string>("timeout");
-        var prompt = call.Get<string>("prompt");
-
-        if (!When.TryParseDuration(timeoutText, out var timeout))
-            return Task.FromResult(Fail(
-                $"'{timeoutText}' is not a duration: an integer and one unit suffix, s/m/h/d — "
-                + "\"30m\", \"2h\". No compound forms."));
-
-        // NOT AWAITED BY THE TOOL CALL. The watch runs on its own task, ended by Lifetime exactly as
-        // the clock's Tick is — see Start's comment on why Stop must not be the thing that cancels it.
-        _ = Watch(command, timeout, prompt, _context!.Lifetime);
-
-        return Task.FromResult(Say($"watching `{command}`; you'll be woken in up to "
-            + $"{timeoutText} when it exits."));
-    }
-
-    private async Task Watch(string command, TimeSpan timeout, string prompt, CancellationToken lifetime)
-    {
-        // RUN AND COMPOSE ARE INSIDE THE TRY TOO. This runs on a task nobody awaits, so a throw
-        // from either — not just from Submit — would otherwise disappear with no message and the
-        // wake simply never arrives, the same silent failure the catch blocks below exist to avoid.
-        try
-        {
-            var outcome = await ProcessWatch.Run(command, timeout, _context!.RegisterChildProcess, lifetime);
-            var composed = ProcessWatch.Compose(prompt, outcome);
-
-            if (_context.Client is { } client)
-                await client.Submit(composed, wantResult: false, lifetime);
-        }
-        catch (ObjectDisposedException)
-        {
-            // THE SEVERED CLIENT IS THE CUE TO DROP THE WAKE, exactly as FireDue treats it — this
-            // runs on a task nobody awaits, so an uncaught throw here disappears silently.
-        }
-        catch (Exception ex)
-        {
-            _context?.Logger.Log($"trigger_on_exit for '{command}' failed to submit: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// The gate a dynamic tool is asked for, once, when the tool is CALLED.
-    ///
-    /// <para>NAMING THE COMMAND IN THE PROMPT IS WHAT THIS BUYS. `gated: "dynamic"` hands this the
-    /// ARGUMENTS, so the prompt says "run `gh run watch 12345` in the background until it exits"
-    /// rather than "run trigger_on_exit" — a decision someone can actually make, against one nobody
-    /// can.</para>
-    ///
-    /// <para>AND THE SUBJECT IS THE COMMAND, not the sentence around it: PermissionRequest.What is
-    /// Subject ?? Display, and ActionClassifier reads What.</para>
-    ///
-    /// <para>ONCE AT CREATION IS ALL THERE IS. The gate fires when trigger_on_exit is CALLED, not
-    /// when the process exits, so the user approves the command once and the firing carries no
-    /// further question. That is not an optimisation — it is what a tool gate already does.</para>
-    /// </summary>
-    public PluginGate? Gate(string toolName, JobParameters call)
-    {
-        if (toolName != "trigger_on_exit") return null;
-
-        var command = call.Get<string?>("command", null);
-        if (string.IsNullOrWhiteSpace(command)) return null;
-
-        return new PluginGate($"run `{command}` in the background until it exits")
-        {
-            Subject = command,
-        };
     }
 
     private static JobResult Fail(string why) =>
@@ -372,9 +299,9 @@ public sealed class TriggersPlugin : IPlugin, IPluginClientConsumer, IPluginComm
     /// that normally does the work.</para>
     ///
     /// <para>STOP DOES NOT CANCEL THE TIMER ITSELF, and must not start to: Lifetime already did that
-    /// at sever, before Stop is even awaited, so the timer and the watch are already ending by the
-    /// time this runs. Stop is timeout-bounded and abandoned if it overruns — work that depended on
-    /// Stop to stop it would be work that might never stop.</para>
+    /// at sever, before Stop is even awaited, so the timer is already ending by the time this runs.
+    /// Stop is timeout-bounded and abandoned if it overruns — work that depended on Stop to stop it
+    /// would be work that might never stop.</para>
     /// </summary>
     public Task Stop(CancellationToken ct)
     {
