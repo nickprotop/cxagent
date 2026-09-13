@@ -268,7 +268,20 @@ public sealed class DetachedProcess : IDisposable
 
         // OUTSIDE THE LOCK: a subscriber is free to call Kill or Dispose from its handler, and both
         // take this lock.
-        Exited?.Invoke(code);
+        //
+        // AND ONE AT A TIME, EACH GUARDED, BECAUSE THIS RUNS ON THE WAITER THREAD. A dedicated thread
+        // has no catch above it: an exception from any handler ends the PROCESS, and the handlers here
+        // do file I/O — ChildProcessStore.Remove rewrites a json file whose directory a caller may
+        // already have deleted. A plain Invoke also stops at the first thrower, so the registry could
+        // keep a dead entry because an unrelated subscriber failed first. Both are why this loops.
+        //
+        // A FAILED HANDLER IS NOT WORTH ENDING ANYTHING FOR: every subscriber here is bookkeeping
+        // about a process that has already exited, and the exit code is recorded before this line.
+        foreach (var handler in Exited?.GetInvocationList() ?? [])
+        {
+            try { ((Action<int>)handler)(code); }
+            catch (Exception) { /* bookkeeping for a process that is already gone. */ }
+        }
 
         ReleaseTheHandle();
     }

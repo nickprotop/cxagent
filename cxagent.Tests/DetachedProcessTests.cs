@@ -215,5 +215,32 @@ public class DetachedProcessTests
         return dir ?? throw new DirectoryNotFoundException(
             "repository root not found from " + AppContext.BaseDirectory);
     }
+    /// <summary>
+    /// A HANDLER THAT THROWS MUST NOT END THE PROCESS, and this crashed a CI run rather than failing a
+    /// test: the exit is noticed on a DEDICATED thread, which has no catch above it, and the handlers
+    /// do file I/O — ChildProcessStore.Remove rewrites a json file whose directory a caller may already
+    /// have deleted. The test host died with FileNotFoundException out of WaitForTheChild, aborting a
+    /// run that had already passed 2421 tests.
+    ///
+    /// AND THE HANDLERS AFTER IT MUST STILL RUN. A plain Invoke stops at the first thrower, so the
+    /// registry would keep a dead entry because an unrelated subscriber failed first.
+    /// </summary>
+    [Fact]
+    public void AThrowingExitHandlerNeitherEndsTheProcessNorSkipsTheOthers()
+    {
+        using var fixture = NewRegistry();
+        var owned = fixture.Detach("exit 0");
+
+        var reachedAfterTheThrower = false;
+        owned.Exited += _ => throw new InvalidOperationException("a subscriber's own failure");
+        owned.Exited += _ => reachedAfterTheThrower = true;
+
+        // The registry's own subscription already ran at Add; this waits for the exit to land.
+        for (var i = 0; i < 200 && !owned.Finished; i++) Thread.Sleep(25);
+
+        Assert.True(owned.Finished);
+        Assert.True(reachedAfterTheThrower, "a handler after the thrower did not run");
+    }
+
 
 }
