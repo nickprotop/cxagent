@@ -2172,6 +2172,16 @@ public static class AppBootstrap
         try { mcp.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)); }
         catch (Exception) { /* best effort: shutdown is not a place to hang */ }
 
+        // AND KILL WHAT A BACKGROUNDED COMMAND LEFT RUNNING. A detached process has no plugin, so
+        // ChildProcessStore — which matches on a plugin name — never recorded it, and nothing in the
+        // OS's process table says which app started it. Reaping it here is the only chance: past this
+        // line it is reparented to init and runs to completion unowned, holding whatever it had open.
+        //
+        // NOT THROUGH manager.Dispose(), which reaps as part of a full teardown this path does not
+        // want: Close above already ended the session on purpose, and Dispose would also wait up to
+        // fifteen seconds on plugin teardowns the UI deliberately detaches so `/exit` stays instant.
+        Core.Execution.DetachedProcessRegistry.Default.ReapAll();
+
         // HOW TO COME BACK, printed AFTER the TUI has released the terminal so it stays on screen
         // rather than being painted over by the last frame.
         //

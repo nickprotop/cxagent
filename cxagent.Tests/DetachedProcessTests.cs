@@ -161,4 +161,39 @@ public class DetachedProcessTests
             try { Directory.Delete(_dir, recursive: true); } catch (Exception) { }
         }
     }
+    /// <summary>
+    /// THE DEFECT THIS CATCHES WAS SHIPPED AND FOUND BY HAND. ReapAll is called by every test's own
+    /// cleanup, so the suite exercised it constantly while nothing asserted the APP calls it — and it
+    /// did not. A detached process survived `/exit`, reparented to init, running unowned.
+    ///
+    /// ANCHORED ON system.Run() BECAUSE THAT IS THE APP'S ONLY EXIT. Whatever follows that call is
+    /// the shutdown path by definition, so a future teardown added there cannot quietly omit the
+    /// reap: this fails naming the file, the way the policy/LogDir walk does.
+    /// </summary>
+    [Fact]
+    public void TheAppReapsDetachedProcessesOnTheWayOut()
+    {
+        var bootstrap = Path.Combine(RepoRoot(), "cxagent", "UI", "AppBootstrap.cs");
+        var text = File.ReadAllText(bootstrap);
+
+        var run = text.IndexOf("system.Run()", StringComparison.Ordinal);
+        Assert.True(run >= 0, $"{Path.GetFileName(bootstrap)}: no system.Run() — the anchor moved, so "
+            + "this test no longer proves anything and needs repointing at the new exit path.");
+
+        var shutdown = text[run..];
+        Assert.True(shutdown.Contains("DetachedProcessRegistry.Default.ReapAll()", StringComparison.Ordinal),
+            $"{Path.GetFileName(bootstrap)}: nothing after system.Run() reaps "
+            + "DetachedProcessRegistry.Default, so a backgrounded command outlives the app.");
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !Directory.Exists(Path.Combine(dir, "cxagent.Core")))
+            dir = Path.GetDirectoryName(dir);
+
+        return dir ?? throw new DirectoryNotFoundException(
+            "repository root not found from " + AppContext.BaseDirectory);
+    }
+
 }
