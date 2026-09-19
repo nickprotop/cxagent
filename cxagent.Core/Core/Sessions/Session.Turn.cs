@@ -396,7 +396,42 @@ public sealed partial class Session
         // awaiting Result means the plugin's own work executes on the turn loop's thread before
         // RunTurnAsync has unwound from the lap that produced the text.
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin, result), result.Task);
+
+        // STARTED OFF THE CALLER'S SYNCHRONIZATION CONTEXT, AND THIS IS A CORRECTNESS REQUIREMENT, not
+        // a throughput one. A TUI host installs a context whose Post queues onto the render thread, so
+        // calling RunTurnAsync directly makes every await in the turn — the provider call, each tool,
+        // the permission gate — resume there. A tool that blocks then blocks the FRAME LOOP: the app
+        // stops painting and stops accepting keys, permanently, because the loop is inside an action
+        // that will never return. A slow tool becomes a dead application.
+        //
+        // Observed exactly that way: a glob over a large repository fed `git check-ignore` more paths
+        // than a pipe holds, blocked in WriteLine, and took the whole UI down with it. The pipe bug is
+        // fixed where it lives, but ANY blocking work in ANY tool would have done the same.
+        //
+        // SUPPRESSED RATHER THAN Task.Run, BECAUSE THE PROLOGUE MUST STAY SYNCHRONOUS. RunTurnAsync
+        // echoes the user's own line — _sink.UserTurnAdded — BEFORE its first await, so Submit
+        // returning has always meant "the prompt is on screen". Moving the whole method to another
+        // thread breaks that promise: the echo then races the caller, and five tests assert on the
+        // transcript the instant Submit returns.
+        //
+        // What must NOT be inherited is the caller's synchronization context, so the awaits INSIDE
+        // resume on the thread pool rather than the render thread. Suppressing the context for the
+        // duration of the call does exactly that and nothing else: the synchronous prologue still runs
+        // here, on this thread, before this method returns.
+        //
+        // AND NOT ConfigureAwait(false) ON EVERY AWAIT: there are over two hundred in this path, and a
+        // single missed one silently restores the hazard. One boundary that cannot be forgotten beats
+        // two hundred that can.
+        var previous = System.Threading.SynchronizationContext.Current;
+        System.Threading.SynchronizationContext.SetSynchronizationContext(null);
+        try
+        {
+            return new SubmitOutcome.Started(RunTurnAsync(text, echo, tools, origin, result), result.Task);
+        }
+        finally
+        {
+            System.Threading.SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     /// <summary>
