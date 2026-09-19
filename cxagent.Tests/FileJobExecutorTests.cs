@@ -1373,4 +1373,43 @@ public class FileJobExecutorTests : IDisposable
         Assert.True(write.Success, write.ErrorMessage);
         Assert.Equal("absolute", File.ReadAllText(path));
     }
+    /// <summary>
+    /// THE DEADLOCK THIS CATCHES FROZE A RUNNING APP PERMANENTLY, and the suite could not see it
+    /// because every other test here lists a handful of files. WithoutIgnored feeds every match to
+    /// `git check-ignore --stdin`; a pipe holds about 64KB, so writing them all before reading a
+    /// single line blocks this process in WriteLine while git blocks writing an answer nobody drains.
+    /// The WaitForExit guard meant to bound a hung git sits AFTER the write loop and is never reached.
+    ///
+    /// <para>ENOUGH PATHS TO FILL THE BUFFER SEVERAL TIMES OVER — a real 27,000-file checkout does
+    /// this easily, which is why the bug stayed invisible on small repositories until a glob was
+    /// pointed at a large one.</para>
+    ///
+    /// <para>THE TIMEOUT IS THE ASSERTION. Without the concurrent drain this never returns, so a
+    /// bounded wait is what distinguishes "filtered correctly" from "hung forever".</para>
+    /// </summary>
+    [Fact]
+    public async Task List_WithMoreFilesThanAPipeHolds_DoesNotDeadlock()
+    {
+        InitRepo(".gitignore", "*.ignored\n");
+
+        // Long names on purpose: the deadlock is about BYTES in the pipe, not file count.
+        var padding = new string('n', 180);
+        for (var i = 0; i < 700; i++)
+        {
+            File.WriteAllText(Path.Combine(_dir, $"keep{i}-{padding}.cs"), "x");
+            File.WriteAllText(Path.Combine(_dir, $"drop{i}-{padding}.ignored"), "x");
+        }
+
+        var run = Run(("action", "list"), ("path", _dir), ("limit", 5000));
+        var finished = await Task.WhenAny(run, Task.Delay(TimeSpan.FromSeconds(30)));
+
+        Assert.True(ReferenceEquals(finished, run),
+            "listing a directory with more paths than a pipe buffer holds did not return within 30s — "
+            + "WithoutIgnored is writing to git's stdin without draining its stdout.");
+
+        var content = (string)(await run).Output["content"]!;
+        Assert.Contains("keep0-", content);
+        Assert.DoesNotContain(".ignored", content);
+    }
+
 }

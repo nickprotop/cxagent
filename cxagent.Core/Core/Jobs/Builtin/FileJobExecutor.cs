@@ -229,12 +229,36 @@ public class FileJobExecutor : IJobExecutor
             using var git = System.Diagnostics.Process.Start(psi);
             if (git is null) return kept;
 
+            // READ WHILE WRITING, AND THIS IS THE WHOLE REASON THIS METHOD IS SHAPED THIS WAY. A pipe
+            // holds about 64KB. Writing every path first and reading afterwards deadlocks the moment
+            // the paths exceed that: this process blocks in WriteLine because git is not reading, and
+            // git blocks writing its answer because nothing is draining its stdout. Neither side ever
+            // moves again, and the WaitForExit guard below — which exists precisely to bound a hung
+            // git — is never reached, because the hang happens before it.
+            //
+            // A REAL REPOSITORY REACHES THAT SIZE EASILY: a glob over a 27,000-file checkout sends
+            // enough paths to fill the buffer several times over, while a small repo never fills it
+            // once. So the deadlock is invisible until the tool is pointed at something large.
+            var ignored = new HashSet<string>(StringComparer.Ordinal);
+            var drain = Task.Run(() =>
+            {
+                // NO LOCK: this task is the set's only writer, and every read below happens after
+                // drain.Wait() has confirmed it finished. A lock here would suggest concurrent access
+                // that does not exist.
+                while (git.StandardOutput.ReadLine() is { } line)
+                    if (line.Length > 0) ignored.Add(line);
+            });
+
             foreach (var f in kept) git.StandardInput.WriteLine(f);
             git.StandardInput.Close();
 
-            var ignored = new HashSet<string>(StringComparer.Ordinal);
-            while (git.StandardOutput.ReadLine() is { } line)
-                if (line.Length > 0) ignored.Add(line);
+            // BOUNDED, for the same reason the exit wait below is: a drain that does not finish means
+            // git is not answering, and the caller gets the unfiltered list rather than waiting on it.
+            if (!drain.Wait(TimeSpan.FromSeconds(5)))
+            {
+                try { git.Kill(entireProcessTree: true); } catch { }
+                return kept;
+            }
 
             // Bounded, because a hung git must not hang the tool. check-ignore is a local index
             // lookup; a second is already pathological.
