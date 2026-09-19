@@ -80,13 +80,30 @@ public class AbiPluginLoaderTests
     /// starting a turn, because these tests prove what crosses the ABI boundary INTO
     /// <see cref="IPluginClient.Submit"/>, not what a real session does with a goal once it has one
     /// (<c>SessionPluginClientTests</c> already owns that half).</summary>
+    /// <summary>
+    /// LOCKED, BECAUSE THE WRITER AND THE READER ARE DIFFERENT THREADS. Submit is called from the
+    /// thread pumping the host process's stdout; the test polls from its own. A plain List gives no
+    /// guarantee the reader ever observes the write — and an unsynchronised List can also tear its
+    /// internal state when a growth races a read, which is not a hang but a wrong answer.
+    ///
+    /// <para>THIS IS WHY THE TEST APPEARED TO NEED A SIBLING. Run after another test in this class it
+    /// passed in milliseconds; run alone it never saw the submit at all, even given ninety seconds.
+    /// The sibling was not setting anything up — its own synchronisation was making this one's write
+    /// visible.</para>
+    /// </summary>
     private sealed class FakeClient : IPluginClient
     {
-        public List<(string Goal, bool WantResult)> Submits { get; } = [];
+        private readonly List<(string Goal, bool WantResult)> _submits = [];
+        private readonly object _gate = new();
+
+        public IReadOnlyList<(string Goal, bool WantResult)> Submits
+        {
+            get { lock (_gate) return [.. _submits]; }
+        }
 
         public Task<SubmitResult> Submit(string goal, bool wantResult = false, CancellationToken ct = default)
         {
-            Submits.Add((goal, wantResult));
+            lock (_gate) _submits.Add((goal, wantResult));
             return Task.FromResult(new SubmitResult(true, null, null));
         }
     }
